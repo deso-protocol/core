@@ -1,0 +1,12 @@
+bitcoin_testnet_blocks_containing_burn.txt:
+- Contains Bitcoin testnet blocks that contain "burn" transactions, where burn
+  transactions are defined as sending to the testnet burn address.
+- These blocks and their corresponding transactions are referenced in various
+  tests that exercise the BitcoinExchange logic.
+
+bitcoin_testnet_headers_for_burn.txt:
+- Contains headers associated with the blocks mentioned above as well as headers
+  for a large section of blocks before and after these blocks.
+- These headers are used for testing various scenarios related to BitcoinExchange
+  transaction validation. For example, testing when a burn transaction does not
+  have enough work on top of it to be valid.

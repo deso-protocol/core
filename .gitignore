@@ -1,0 +1,10 @@
+gopath
+bin
+quick_testing
+dump_txns
+compare_blocks.go
+backend
+
+.idea
+
+local_scripts/*

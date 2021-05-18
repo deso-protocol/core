@@ -1,0 +1,39 @@
+DATE=`date +%Y%m%d-%H:%M:%S-%N`
+
+# Seeds. This is the account corresponding to the public key below.
+# * Mnemonic:
+#   * verb find card ship another until version devote guilt strong lemon six
+# * BitClout public keys:
+#   * BC1YLg7Bk5sq9iNY17bAwoAYiChLYpmWEi6nY6q5gnA1UQV6xixHjfV
+#   * tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV
+# * Bitcoin burn addresses:
+#   * mhziDsPWSMwUqvZkVdKY92CjesziGP3wHL
+#   * 13UkvpJXdLWE4p68n4MAK6zQntQ1RHixyM
+
+rm /tmp/main.*.log
+
+# "-gcflags=”all=-N -l" was added to get GoLand debugger (Delve) to work, see
+# https://blog.jetbrains.com/go/2019/02/06/debugging-with-goland-getting-started/
+#
+# "If you are running with Go 1.10 or newer, you need to add ` -gcflags=”all=-N -l” `
+# to the ` go build ` command."
+
+(cd ../../ && go build -o backend -gcflags="all=-N -l" main.go && ./backend \
+  --alsologtostderr --stderrthreshold=FATAL --glog_v=0 \
+  --glog_vmodule="*api*=0,*bitcoin_manager*=2,*balance*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,server*=0,*mempool*=0,*miner*=0,*blockchain*=0,*block_producer*=1" \
+  --addips=localhost:19000 \
+  --bitclout_testnet=true  \
+  --json_api_port=18001 \
+  --protocol_listen_port=18000 \
+  --txindex \
+  --num_mining_threads=1 \
+  --miner_public_keys=BC1YLjJ3FNgo1Q8NU9sEzK3B2obeuq9GvzYr1GnAJgpsVnYCuczcYBe \
+  --block_producer_seed='essence camp ghost remove document vault ladder swim pupil index apart ring' \
+  --starter_bitclout_seed='road congress client market couple bid risk escape artwork rookie artwork food' \
+  --data_dir_path=/tmp/n0_test \
+  --access_control_allow_origins=http://localhost:4200,http://localhost:80,http://localhost:18002 \
+  --secure_header_middleware_allowed_hosts=localhost:4200 \
+  --secure_header_middleware_is_development=true \
+  --block_cypher_api_key=092dae962ea44b02809a4c74408b42a1 \
+  --min_satoshis_burned_for_profile_creation=0 \
+  --show_processing_spinners=true )

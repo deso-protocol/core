@@ -1,0 +1,19 @@
+DATE=`date +%Y%m%d-%H:%M:%S-%N`
+
+COMMAND="./backend
+  --alsologtostderr --stderrthreshold=FATAL --glog_v=0
+  --glog_vmodule="*bitcoin_manager*=0,*balance*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=2,*blockchain*=0"
+  --bitclout_testnet=true 
+  --json_api_port=19001
+  --protocol_listen_port=19000
+  --private_mode=true
+  --num_mining_threads=1
+  --data_dir_path=/tmp/fe2_$DATE
+  --block_cypher_api_key=092dae962ea44b02809a4c74408b42a1"
+
+  # --miner_public_keys=
+
+rm /tmp/main.*.log
+(cd ../../ && go build -o backend main.go && $COMMAND )
+
+

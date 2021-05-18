@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  BUILD_CACHE: /home/runner/.docker/buildkit
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/cache@v2
+        with:
+          path: ${{ env.BUILD_CACHE }}
+          key: ${{ runner.os }}-buildkit-v3-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-v3-
+
+      - name: Install the latest buildkit release
+        run: |
+          BUILDKIT_URL="$(curl -sL https://api.github.com/repos/moby/buildkit/releases \
+            | jq -r 'map(select(.name|startswith("v")))|sort_by(.name)[-1].assets[]|select(.name|endswith(".linux-amd64.tar.gz")).browser_download_url')"
+          curl -L "${BUILDKIT_URL}" | sudo tar -xz -C /usr/local
+
+      - name: Start buildkit daemon
+        run: |
+          sudo --non-interactive --shell <<END_SUDO
+            install -d -m 0750 -o root -g docker /run/buildkit
+            buildkitd &
+            while ! test -S /run/buildkit/buildkitd.sock; do sleep 0.1; done
+            chgrp docker /run/buildkit/buildkitd.sock
+          END_SUDO
+
+      - uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build docker image
+        run: |
+          buildctl build \
+            --frontend=dockerfile.v0 --local dockerfile=. --local context=.  \
+            --export-cache type=local,dest=${{ env.BUILD_CACHE }},mode=max \
+            --import-cache type=local,src=${{ env.BUILD_CACHE }} \
+            --output type=docker,name=${{ env.IMAGE_NAME }} | docker load
+          echo "Cache size: $(du -sh ${{ env.BUILD_CACHE }})"
+
+      - name: Tag stable
+        if: contains(github.event.head_commit.message, '[stable]')
+        run: |
+          docker tag ${{ env.IMAGE_NAME }} ${{ env.IMAGE_NAME }}:stable
+
+      - name: Tag and push
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          docker tag ${{ env.IMAGE_NAME }} ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push --all-tags ${{ env.IMAGE_NAME }}
+
+  test:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository }}-test
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/cache@v2
+        with:
+          path: ${{ env.BUILD_CACHE }}
+          key: ${{ runner.os }}-buildkit-test-v2-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-test-v2-
+
+      - name: Install the latest buildkit release
+        run: |
+          BUILDKIT_URL="$(curl -sL https://api.github.com/repos/moby/buildkit/releases \
+            | jq -r 'map(select(.name|startswith("v")))|sort_by(.name)[-1].assets[]|select(.name|endswith(".linux-amd64.tar.gz")).browser_download_url')"
+          curl -L "${BUILDKIT_URL}" | sudo tar -xz -C /usr/local
+
+      - name: Start buildkit daemon
+        run: |
+          sudo --non-interactive --shell <<END_SUDO
+            install -d -m 0750 -o root -g docker /run/buildkit
+            buildkitd &
+            while ! test -S /run/buildkit/buildkitd.sock; do sleep 0.1; done
+            chgrp docker /run/buildkit/buildkitd.sock
+          END_SUDO
+
+      - name: Build docker image
+        run: |
+          buildctl build \
+            --frontend=dockerfile.v0 --local dockerfile=. --local context=. --opt filename=./test.Dockerfile  \
+            --export-cache type=local,dest=${{ env.BUILD_CACHE }},mode=max \
+            --import-cache type=local,src=${{ env.BUILD_CACHE }} \
+            --output type=docker,name=${{ env.IMAGE_NAME }} | docker load
+          echo "Cache size: $(du -sh ${{ env.BUILD_CACHE }})"
+
+      - name: Run tests
+        run: |
+          docker run ${{ env.IMAGE_NAME }}

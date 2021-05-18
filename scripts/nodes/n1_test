@@ -1,0 +1,20 @@
+DATE=`date +%Y%m%d-%H:%M:%S-%N`
+
+COMMAND="./backend
+  --alsologtostderr --stderrthreshold=FATAL --glog_v=0
+  --glog_vmodule="*bitcoin_manager*=0,*balance*=0,*frontend*=0,*peer*=2,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0,*block_view*=0"
+  --connectips=localhost:18000
+  --target_outbound_peers=1
+  --bitclout_testnet=true 
+  --trusted_block_producer_public_keys=BC1YLiQ86kwXUy3nfK391xht7N72UmbFY6bGrUsds1A7QKZrs4jJsxo
+  --trusted_block_producer_start_height=5
+  --json_api_port=19001
+  --protocol_listen_port=19000
+  --num_mining_threads=1
+  --data_dir_path=/tmp/n1_0000000003
+  --block_cypher_api_key=092dae962ea44b02809a4c74408b42a1"
+
+rm /tmp/main.*.log
+(cd ../../ && go build -o backend main.go && $COMMAND )
+
+exit

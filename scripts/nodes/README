@@ -1,0 +1,12 @@
+This configuration represents three nodes in a chain.
+n0 -> n1 -> n2
+
+The organization of these nodes isn't strict, but since n0 is only aware of
+n1 initially and n1 is only aware of n2 initially, they end up routing in a
+chain. If this were a real network they would all connect to each other in a
+clique. The reason this doesn't happen with this test configuration is because
+nodes are forbidden from connecting to multiple outbound IPs from the same
+group, and since all are running on localhost, they never expand beyond their
+single outbound peer.
+
+
