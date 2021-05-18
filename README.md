@@ -59,7 +59,7 @@ For more information on the BitClout Rosetta API, see our bitclout-rosetta repo 
 ## Example 3: A MongoDB Data Dumper
 
 Another example of composing the core repo is the BitClout MongoDB Dumper.
-* **[github.com/bitclout/mongo-dumper](https://github.com/bitclout/mongo-dumper)**
+* **[github.com/bitclout/mongodb-dumper](https://github.com/bitclout/mongodb-dumper)**
 
 This tool does the following:
 * It includes core as a library
