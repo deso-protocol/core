@@ -101,9 +101,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"messages. If unset, the port will default to what is present in the BitCloutParams set. "+
 			"Note also that even though the node will listen on this port, its outbound "+
 			"connections will not be determined by this flag.")
-	cmd.PersistentFlags().Uint64("api-port", 0,
-		"When set, determines the port on which this node will listen for json "+
-			"requests. If unset, the port will default to what is present in the BitCloutParams set.")
 
 	// Mining + Admin
 	cmd.PersistentFlags().StringSlice("miner-public-keys", []string{},
