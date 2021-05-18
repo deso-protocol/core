@@ -31,10 +31,9 @@ type Config struct {
 	MaxInboundPeers        uint32
 	OneInboundPerIp        bool
 
-	// Mining + Admin
+	// Mining
 	MinerPublicKeys        []string
 	NumMiningThreads       uint64
-	AdminPublicKeys        []string
 
 	// Fees
 	RateLimitFeerate       uint64
