@@ -3382,6 +3382,12 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	checkMerkleProof bool, minBitcoinBurnWork int64) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
+	if bav.Params.DeflationBombBlockHeight != 0 &&
+		uint64(blockHeight) >= bav.Params.DeflationBombBlockHeight {
+
+		return 0, 0, nil, RuleErrorDeflationBombForbidsMintingAnyMoreBitClout
+	}
+
 	if bav.BitcoinManager == nil ||
 		!bav.BitcoinManager.IsCurrent(false /*considerCumWork*/) {
 

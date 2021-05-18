@@ -64,6 +64,7 @@ const (
 	RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey        RuleError = "RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey"
 	RuleErrorBlockRewardTxnNotAllowedToHaveInputs               RuleError = "RuleErrorBlockRewardTxnNotAllowedToHaveInputs"
 	RuleErrorBlockRewardTxnNotAllowedToHaveSignature            RuleError = "RuleErrorBlockRewardTxnNotAllowedToHaveSignature"
+	RuleErrorDeflationBombForbidsMintingAnyMoreBitClout         RuleError = "RuleErrorDeflationBombForbidsMintingAnyMoreBitClout"
 	RuleErrorBitcoinExchangeShouldNotHaveInputs                 RuleError = "RuleErrorBitcoinExchangeShouldNotHaveInputs"
 	RuleErrorBitcoinExchangeShouldNotHaveOutputs                RuleError = "RuleErrorBitcoinExchangeShouldNotHaveOutputs"
 	RuleErrorBitcoinExchangeShouldNotHavePublicKey              RuleError = "RuleErrorBitcoinExchangeShouldNotHavePublicKey"

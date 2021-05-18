@@ -406,6 +406,9 @@ type BitCloutParams struct {
 	// A higher CreatorCoinAutoSellThresholdNanos makes it prohibitively expensive for someone to
 	// attack the bancor curve to any meaningful measure.
 	CreatorCoinAutoSellThresholdNanos uint64
+
+	// The most deflationary event in BitClout history has yet to come...
+	DeflationBombBlockHeight uint64
 }
 
 // GenesisBlock defines the genesis block used for the BitClout maainnet and testnet
