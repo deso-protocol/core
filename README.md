@@ -17,7 +17,7 @@ multiple examples of how to do this in this README.
 
 # Building on BitClout Core
 
-We currently have two examples of how to compose BitClout core into your project.
+Below we provide a few real-world examples of how to compose BitClout core into your project.
 
 ## Example 1: A BitClout Website (aka [bitclout.com](https://bitclout.com))
 
