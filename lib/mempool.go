@@ -205,6 +205,7 @@ type BitCloutMempool struct {
 	// to the mempool to the corresponding transaction that resulted in their
 	// addition. It is useful for figuring out how much BitClout a particular public
 	// key has available to spend.
+	mtxPubKeyToTxnMap deadlock.RWMutex
 	pubKeyToTxnMap map[PkMapKey]map[BlockHash]*MempoolTx
 
 	// BitcoinExchange transactions that contain Bitcoin transactions that have not
@@ -1785,6 +1786,9 @@ func (mp *BitCloutMempool) ProcessUnconnectedTransactions(acceptedTx *MsgBitClou
 }
 
 func (mp *BitCloutMempool) _addTxnToPublicKeyMap(mempoolTx *MempoolTx, publicKey []byte) {
+	mp.mtxPubKeyToTxnMap.Lock()
+	defer mp.mtxPubKeyToTxnMap.Unlock()
+
 	pkMapKey := MakePkMapKey(publicKey)
 	mapForPk, exists := mp.pubKeyToTxnMap[pkMapKey]
 	if !exists {
@@ -1795,8 +1799,18 @@ func (mp *BitCloutMempool) _addTxnToPublicKeyMap(mempoolTx *MempoolTx, publicKey
 }
 
 func (mp *BitCloutMempool) PublicKeyTxnMap(publicKey []byte) (txnMap map[BlockHash]*MempoolTx) {
+	mp.mtxPubKeyToTxnMap.RLock()
+	defer mp.mtxPubKeyToTxnMap.RUnlock()
+
 	pkMapKey := MakePkMapKey(publicKey)
-	return mp.pubKeyToTxnMap[pkMapKey]
+	retVal := mp.pubKeyToTxnMap[pkMapKey]
+
+	retCopy := make(map[BlockHash]*MempoolTx, len(retVal))
+	for kk, vv := range retVal {
+		retCopy[kk] = vv
+	}
+
+	return retCopy
 }
 
 // TODO: This needs to consolidate with ConnectTxnAndComputeTransactionMetadata which
