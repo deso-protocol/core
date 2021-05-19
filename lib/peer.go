@@ -375,7 +375,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgBitCloutInv) {
 
 	for _, invVect := range msg.InvList {
 		// No matter what, add the inv to the peer's known inventory.
-		pp.knownInventory.Add(invVect)
+		pp.knownInventory.Add(*invVect)
 
 		// If this is a hash we are currently processing, no need to do anything.
 		// This check serves to fill the gap between the time when we've decided
@@ -392,7 +392,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgBitCloutInv) {
 		// - Receive same inv from peer2
 		// - Notice second inv is already in inventoryBeingProcessed so don't
 		//   request data for it.
-		if pp.srv.inventoryBeingProcessed.Contains(invVect) {
+		if pp.srv.inventoryBeingProcessed.Contains(*invVect) {
 			continue
 		}
 
@@ -422,7 +422,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgBitCloutInv) {
 
 		// If we made it here, it means the inventory was added to one of the
 		// lists so mark it as processed on the Server.
-		pp.srv.inventoryBeingProcessed.Add(invVect)
+		pp.srv.inventoryBeingProcessed.Add(*invVect)
 	}
 
 	// If there were any transactions we don't yet have, request them using
@@ -867,7 +867,7 @@ out:
 
 				// Add the new inventory to the peer's knownInventory.
 				for _, invVect := range invMsg.InvList {
-					pp.knownInventory.Add(invVect)
+					pp.knownInventory.Add(*invVect)
 				}
 			}
 

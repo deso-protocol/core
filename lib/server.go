@@ -148,7 +148,7 @@ func (srv *Server) _removeRequest(hash *BlockHash) {
 		Type: InvTypeTx,
 		Hash: *hash,
 	}
-	srv.inventoryBeingProcessed.Delete(invVect)
+	srv.inventoryBeingProcessed.Delete(*invVect)
 }
 
 // dataLock must be acquired for writing before calling this function.
@@ -1006,7 +1006,7 @@ func (srv *Server) _relayTransactions() {
 			}
 
 			// If the peer has this txn already then skip it.
-			if pp.knownInventory.Contains(invVect) {
+			if pp.knownInventory.Contains(*invVect) {
 				continue
 			}
 
