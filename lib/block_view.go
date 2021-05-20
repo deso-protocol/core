@@ -4671,10 +4671,9 @@ func (bav *UtxoView) _connectUpdateProfile(
 		newProfileEntry = *existingProfileEntry
 
 		// Modifying a profile is only allowed if the transaction public key equals
-		// the profile public key or if the public key belongs to a paramUpdater.
+		// the profile public key
 		_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
-		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) &&
-			!updaterIsParamUpdater {
+		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) {
 
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorProfileModificationNotAuthorized,
