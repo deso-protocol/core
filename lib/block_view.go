@@ -4781,12 +4781,6 @@ func (bav *UtxoView) _connectSwapIdentity(
 	}
 	txMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 
-	// The txn.PublicKey must be paramUpdater
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
-	if !updaterIsParamUpdater {
-		return 0, 0, nil, RuleErrorSwapIdentityIsParamUpdaterOnly
-	}
-
 	// call _connectBasicTransfer to verify signatures
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
@@ -4806,6 +4800,11 @@ func (bav *UtxoView) _connectSwapIdentity(
 	}
 	if _, err := btcec.ParsePubKey(fromPublicKey, btcec.S256()); err != nil {
 		return 0, 0, nil, errors.Wrap(RuleErrorInvalidFromPublicKey, err.Error())
+	}
+	
+	// Only the private key holder can transfer the profile to another user
+	if fromPublicKey != txn.PublicKey {
+		return 0, 0, nil, RuleErrorFromPublicKeyIsRequired
 	}
 
 	// The "to" public key must be set and valid.
