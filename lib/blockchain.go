@@ -2593,9 +2593,9 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	if len(recloutPostHashBytes) > 0 {
 		txnExtraData[RecloutedPostHash] = recloutPostHashBytes
 		if isQuotedReclout {
-			txnExtraData[IsQuotedReclout] = QuotedRecloutVal
+			txnExtraData[IsQuotedRecloutKey] = QuotedRecloutVal
 		} else {
-			txnExtraData[IsQuotedReclout] = NotQuotedRecloutVal
+			txnExtraData[IsQuotedRecloutKey] = NotQuotedRecloutVal
 		}
 	}
 
