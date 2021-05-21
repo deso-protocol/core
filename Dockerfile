@@ -27,3 +27,5 @@ FROM alpine:edge
 RUN apk add --update vips-dev
 
 COPY --from=core /bitclout/src/core/bin/core /bitclout/bin/core
+
+ENTRYPOINT ["/bitclout/bin/core"]
