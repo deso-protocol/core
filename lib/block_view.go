@@ -3462,7 +3462,11 @@ func (bav *UtxoView) _connectBitcoinExchange(
 		// Check that the BitcoinBlockHash exists in our main Bitcoin header chain.
 		blockNodeForBlockHash := bav.BitcoinManager.GetBitcoinBlockNode(txMetaa.BitcoinBlockHash)
 		if blockNodeForBlockHash == nil {
-			return 0, 0, nil, RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain,
+				"Bitcoin txn hash: %v",
+				txMetaa.BitcoinTransaction.TxHash(),
+			)
 		}
 
 		// Verify that the BitcoinMerkleRoot lines up with what is present in the Bitcoin
