@@ -854,7 +854,7 @@ var BitCloutTestnetParams = BitCloutParams{
 	// Miners need to wait some time before spending their block reward.
 	// TODO: Make this 24 hours when we launch the testnet. In the meantime this value
 	// is more useful for local testing.
-	BlockRewardMaturity: time.Second * 4,
+	BlockRewardMaturity: 0,
 
 	V1DifficultyAdjustmentFactor: 10,
 
