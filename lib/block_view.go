@@ -3303,6 +3303,9 @@ func ExtractBitcoinPublicKeyFromBitcoinTransactionInputs(
 
 	for _, input := range bitcoinTransaction.TxIn {
 		// P2PKH follows the form: <sig len> <sig> <pubKeyLen> <pubKey>
+		if len(input.SignatureScript) == 0 {
+			continue
+		}
 		sigLen := input.SignatureScript[0]
 		pubKeyStart := sigLen + 2
 		pubKeyBytes := input.SignatureScript[pubKeyStart:]
