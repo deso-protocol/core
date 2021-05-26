@@ -462,6 +462,35 @@ func _enumerateLimitedKeysReversedForPrefixWithTxn(dbTxn *badger.Txn, dbPrefix [
 	return keysFound, valsFound, nil
 }
 
+func _enumeratePaginatedKeysForPrefixWithTxn(dbTxn *badger.Txn, startDbPrefix []byte, endDbPrefix []byte, limit uint64, skipFirstTxn bool) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	nodeIterator := dbTxn.NewIterator(opts)
+	defer nodeIterator.Close()
+	for nodeIterator.Seek(startDbPrefix); nodeIterator.ValidForPrefix(endDbPrefix); nodeIterator.Next() {
+		if uint64(len(keysFound)) == limit {
+			break
+		}
+		if skipFirstTxn {
+			skipFirstTxn = false
+			continue
+		}
+		key := nodeIterator.Item().Key()
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
+		valCopy, err := nodeIterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		keysFound = append(keysFound, keyCopy)
+		valsFound = append(valsFound, valCopy)
+	}
+	return keysFound, valsFound, nil
+}
+
 // -------------------------------------------------------------------------------------
 // PrivateMessage mapping functions
 // <public key (33 bytes) || uint64 big-endian> ->
@@ -2684,6 +2713,38 @@ func DbTxindexPublicKeyIndexToTxnKey(publicKey []byte, index uint32) []byte {
 	return append(prefix, _EncodeUint32(index)...)
 }
 
+// DbGetTxindexTxnsForPublicKeyWithTxnPaginated ...
+func DbGetTxindexTxnsForPublicKeyWithTxnPaginated(dbTxn *badger.Txn, publicKey []byte, lastTransactionSeenIndex int64, limit uint64) (_blockHash []*BlockHash, _lastIndexFound uint32) {
+	txIDs := []*BlockHash{}
+	var startDbPrefix []byte
+	endDbPrefix := DbTxindexPublicKeyPrefix(publicKey)
+	lastIndexFound := uint32(0)
+	skipFirstTxn := false
+	if lastTransactionSeenIndex < 0 {
+		startDbPrefix = DbTxindexPublicKeyIndexToTxnKey(publicKey, math.MaxUint32)
+	} else {
+		startDbPrefix = DbTxindexPublicKeyIndexToTxnKey(publicKey, uint32(lastTransactionSeenIndex))
+		skipFirstTxn = true
+	}
+
+	keysFound, valsFound, err := _enumeratePaginatedKeysForPrefixWithTxn(dbTxn, startDbPrefix, endDbPrefix, limit, skipFirstTxn)
+	if err != nil {
+		return txIDs, lastIndexFound
+	}
+	if len(keysFound) > 0 {
+		lastKey := keysFound[len(keysFound)-1]
+		lastIndexFound = DecodeUint32(lastKey[len(endDbPrefix):])
+	}
+	for _, txIDBytes := range valsFound {
+		blockHash := &BlockHash{}
+		copy(blockHash[:], txIDBytes[:])
+		txIDs = append(txIDs, blockHash)
+	}
+
+	return txIDs, lastIndexFound
+}
+
+// DbGetTxindexTxnsForPublicKeyWithTxn ...
 func DbGetTxindexTxnsForPublicKeyWithTxn(dbTxn *badger.Txn, publicKey []byte) []*BlockHash {
 	txIDs := []*BlockHash{}
 	_, valsFound, err := _enumerateKeysForPrefixWithTxn(dbTxn, DbTxindexPublicKeyPrefix(publicKey))
@@ -2708,7 +2769,7 @@ func DbGetTxindexTxnsForPublicKey(handle *badger.DB, publicKey []byte) []*BlockH
 	return txIDs
 }
 
-func _DbGetTxindexNextIndexForPublicKeBySeekWithTxn(dbTxn *badger.Txn, publicKey []byte) uint64 {
+func _DbGetTxindexNextIndexForPublicKeyBySeekWithTxn(dbTxn *badger.Txn, publicKey []byte) uint64 {
 	dbPrefixx := DbTxindexPublicKeyPrefix(publicKey)
 
 	opts := badger.DefaultIteratorOptions
@@ -2746,6 +2807,55 @@ func _DbGetTxindexNextIndexForPublicKeBySeekWithTxn(dbTxn *badger.Txn, publicKey
 	return 0
 }
 
+// DbGetTxindexTxnsForPublicKeyPaginated ...
+func DbGetTxindexTxnsForPublicKeyPaginated(handle *badger.DB, publicKey []byte, lastTransactionSeenIndex int64, limit uint64) (_blockHash []*BlockHash, _lastIndexFound uint32) {
+	txIDs := []*BlockHash{}
+	lastIndexFound := uint32(0)
+	handle.Update(func(dbTxn *badger.Txn) error {
+		txIDs, lastIndexFound = DbGetTxindexTxnsForPublicKeyWithTxnPaginated(dbTxn, publicKey, lastTransactionSeenIndex, limit)
+		return nil
+	})
+	return txIDs, lastIndexFound
+}
+
+func DbGetTxindexNextIndexForPublicKeyWithTxn(dbTxn *badger.Txn, publicKey []byte) int64 {
+	dbPrefixx := DbTxindexPublicKeyPrefix(publicKey)
+
+	opts := badger.DefaultIteratorOptions
+
+	opts.PrefetchValues = false
+
+	// Go in reverse order.
+	opts.Reverse = true
+
+	it := dbTxn.NewIterator(opts)
+	defer it.Close()
+	// Since we iterate backwards, the prefix must be bigger than all possible
+	// counts that could actually exist. We use four bytes since the index is
+	// encoded as a 32-bit big-endian byte slice, which will be four bytes long.
+	maxBigEndianUint32Bytes := []byte{0xFF, 0xFF, 0xFF, 0xFF}
+	prefix := append([]byte{}, dbPrefixx...)
+	prefix = append(prefix, maxBigEndianUint32Bytes...)
+	for it.Seek(prefix); it.ValidForPrefix(dbPrefixx); it.Next() {
+		countKey := it.Item().Key()
+
+		// Strip the prefix off the key and check its length. If it contains
+		// a big-endian uint32 then it should be at least four bytes.
+		countKey = countKey[len(dbPrefixx):]
+		if len(countKey) < len(maxBigEndianUint32Bytes) {
+			glog.Errorf("DbGetTxindexNextIndexForPublicKey: Invalid public key "+
+				"index key length %d should be at least %d",
+				len(countKey), len(maxBigEndianUint32Bytes))
+			return 0
+		}
+
+		countVal := DecodeUint32(countKey[:len(maxBigEndianUint32Bytes)])
+		return int64(countVal + 1)
+	}
+	// If we get here it means we didn't find anything in the db so return zero.
+	return 0
+}
+
 func DbGetTxindexNextIndexForPublicKey(handle *badger.DB, publicKey []byte) *uint64 {
 	var nextIndex *uint64
 	handle.View(func(txn *badger.Txn) error {
@@ -2761,7 +2871,7 @@ func _DbGetTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte
 	if err != nil {
 		// If we haven't seen this public key yet, we won't have a next index for this key yet, so return 0.
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			nextIndexVal := _DbGetTxindexNextIndexForPublicKeBySeekWithTxn(txn, publicKey)
+			nextIndexVal := _DbGetTxindexNextIndexForPublicKeyBySeekWithTxn(txn, publicKey)
 			return &nextIndexVal
 		} else {
 			return nil
@@ -3126,6 +3236,41 @@ func DbDeleteTxindexTransactionMappings(
 	return handle.Update(func(dbTx *badger.Txn) error {
 		return DbDeleteTxindexTransactionMappingsWithTxn(dbTx, txn, params)
 	})
+}
+
+// DbGetTxindexFullTransactionByTxIDWithBlockMap... This function more efficiently gets a full transaction by
+// skiping a GetBlock call if we've already seen a given block.
+func DbGetTxindexFullTransactionByTxIDWithBlockMap (txindexDBHandle *badger.DB, blockchainDBHandle *badger.DB, txID *BlockHash, blockMap map[*BlockHash]*MsgBitCloutBlock) (
+	_txn *MsgBitCloutTxn, _txnMeta *TransactionMetadata, _blockMap map[*BlockHash]*MsgBitCloutBlock) {
+	var txnFound *MsgBitCloutTxn
+	var txnMeta *TransactionMetadata
+	err := txindexDBHandle.View(func(dbTxn *badger.Txn) error {
+		txnMeta = DbGetTxindexTransactionRefByTxIDWithTxn(dbTxn, txID)
+		if txnMeta == nil {
+			return fmt.Errorf("DbGetTxindexFullTransactionByTxID: Transaction not found")
+		}
+		blockHashBytes, err := hex.DecodeString(txnMeta.BlockHashHex)
+		if err != nil {
+			return fmt.Errorf("DbGetTxindexFullTransactionByTxID: Error parsing block "+
+				"hash hex: %v %v", txnMeta.BlockHashHex, err)
+		}
+		blockHash := &BlockHash{}
+		copy(blockHash[:], blockHashBytes)
+		block := blockMap[blockHash]
+		if block == nil {
+			block, err = GetBlock(blockHash, blockchainDBHandle)
+			if block == nil || err != nil {
+				return fmt.Errorf("DbGetTxindexFullTransactionByTxID: Block corresponding to txn not found")
+			}
+			blockMap[blockHash] = block
+		}
+		txnFound = block.Txns[txnMeta.TxnIndexInBlock]
+		return nil
+	})
+	if err != nil {
+		return nil, nil, nil
+	}
+	return txnFound, txnMeta, blockMap
 }
 
 // DbGetTxindexFullTransactionByTxID

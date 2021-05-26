@@ -1799,6 +1799,10 @@ func (mp *BitCloutMempool) PublicKeyTxnMap(publicKey []byte) (txnMap map[BlockHa
 	return mp.pubKeyToTxnMap[pkMapKey]
 }
 
+func (mp *BitCloutMempool) PubKeyToTxnMap() map[PkMapKey]map[BlockHash]*MempoolTx {
+	return mp.pubKeyToTxnMap
+}
+
 // TODO: This needs to consolidate with ConnectTxnAndComputeTransactionMetadata which
 // does a similar thing.
 func _getPublicKeysToIndexForTxn(txn *MsgBitCloutTxn, params *BitCloutParams) [][]byte {
