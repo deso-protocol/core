@@ -155,14 +155,14 @@ func (txi *TXIndex) Start() {
 	// except when run the first time or when a new block has arrived.
 	go func() {
 		for {
-			if txi.Server.GetBlockchain().ChainState() != SyncStateFullyCurrent {
+			if txi.Server.GetBlockchain().ChainState() == SyncStateFullyCurrent {
+				// If the node is fully synced, then try an update.
+				err := txi.Update()
+				if err != nil {
+					glog.Error(fmt.Errorf("tryUpdateTxindex: Problem running update: %v", err))
+				}
+			} else {
 				glog.Debugf("TXIndex: Waiting for node to sync before updating")
-				return
-			}
-
-			// If the node is fully synced, then try an update.
-			if err := txi.Update(); err != nil {
-				glog.Error(fmt.Errorf("tryUpdateTxindex: Problem running update: %v", err))
 			}
 
 			time.Sleep(1 * time.Second)
