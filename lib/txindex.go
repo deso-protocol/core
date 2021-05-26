@@ -31,7 +31,7 @@ type TXIndex struct {
 
 func NewTXIndex(server *Server, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
 	// Initialize database
-	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory))
+	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
 	txIndexOpts := badger.DefaultOptions(txIndexDir)
 	txIndexOpts.ValueDir = GetBadgerDbPath(txIndexDir)
 	txIndexOpts.MemTableSize = 1024 << 20

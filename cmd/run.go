@@ -51,6 +51,11 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("mempool-dump-dir", "",
 		"When set, the mempool is initialized using a db in the directory specified, and"+
 			"subsequent dumps are also written to this dir")
+	runCmd.PersistentFlags().Bool("txindex", false,
+		"When set to true, the node will generate an index mapping transaction "+
+			"ids to transaction information. This enables the use of certain API calls "+
+			"like ones that allow the lookup of particular transactions by their ID. "+
+			"Defaults to false because the index can be large.")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},

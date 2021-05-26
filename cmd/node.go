@@ -24,6 +24,7 @@ import (
 type Node struct {
 	Server     *lib.Server
 	chainDB    *badger.DB
+	TXIndex    *lib.TXIndex
 	Params     *lib.BitCloutParams
 	Config     *Config
 }
@@ -149,11 +150,22 @@ func (node *Node) Start() {
 	}
 
 	node.Server.Start()
+
+	// Setup TXIndex
+	if node.Config.TXIndex {
+		node.TXIndex, err = lib.NewTXIndex(node.Server, node.Params, node.Config.DataDirectory)
+		if err != nil {
+			glog.Fatal(err)
+		}
+
+		node.TXIndex.Start()
+	}
 }
 
 func (node* Node) Stop() {
 	node.Server.Stop()
 	node.chainDB.Close()
+	node.TXIndex.Stop()
 }
 
 func validateParams(params *lib.BitCloutParams) {
