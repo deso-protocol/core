@@ -13,6 +13,7 @@ type Config struct {
 	ProtocolPort           uint16
 	DataDirectory          string
 	MempoolDumpDirectory   string
+	TXIndex                bool
 
 	// Peers
 	ConnectIPs             []string
@@ -80,6 +81,7 @@ func LoadConfig() *Config {
 	}
 
 	config.MempoolDumpDirectory = viper.GetString("mempool-dump-dir")
+	config.TXIndex = viper.GetBool("txindex")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
