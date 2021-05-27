@@ -304,6 +304,20 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 	return utxoOps, txn, blockHeight
 }
 
+func _registerOrTransferWithTestMeta(testMeta *TestMeta, username string,
+	senderPk string, recipientPk string, senderPriv string) {
+
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, senderPk))
+
+	currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, senderPk, recipientPk,
+		senderPriv, 70 /*amount to send*/, 11 /*feerate*/)
+
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
 func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin uint64) (
@@ -500,6 +514,51 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
+type TestMeta struct {
+	t                      *testing.T
+	chain                  *Blockchain
+	db                     *badger.DB
+	params                 *BitCloutParams
+	mempool                *BitCloutMempool
+	miner                  *BitCloutMiner
+	txnOps                 [][]*UtxoOperation
+	txns                   []*MsgBitCloutTxn
+	expectedSenderBalances []uint64
+	savedHeight            uint32
+}
+
+func _submitPostWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	postHashToModify []byte,
+	parentStakeID []byte,
+	body *BitCloutBodySchema,
+	recloutedPostHash []byte,
+	tstampNanos uint64,
+	isHidden bool) {
+
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+
+	currentOps, currentTxn, _, err := _submitPost(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		postHashToModify,
+		parentStakeID,
+		body,
+		recloutedPostHash,
+		tstampNanos,
+		isHidden)
+
+	require.NoError(testMeta.t, err)
+
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
 func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, nftPostHash *BlockHash, numCopies uint64, hasUnlockable bool,
@@ -558,6 +617,148 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(utxoView.FlushToDb())
 
 	return utxoOps, txn, blockHeight, nil
+}
+
+func _createNFTWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	postHashToModify *BlockHash,
+	numCopies uint64,
+	hasUnlockable bool,
+) {
+
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, m0Pub))
+	currentOps, currentTxn, _, err := _createNFT(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		postHashToModify,
+		numCopies,
+		hasUnlockable,
+	)
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
+	// Roll back all of the above using the utxoOps from each.
+	for ii := 0; ii < len(testMeta.txnOps); ii++ {
+		backwardIter := len(testMeta.txnOps) - 1 - ii
+		currentOps := testMeta.txnOps[backwardIter]
+		currentTxn := testMeta.txns[backwardIter]
+		fmt.Printf(
+			"Disconnecting transaction with type %v index %d (going backwards)\n",
+			currentTxn.TxnMeta.GetTxnType(), backwardIter)
+
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+		require.NoError(testMeta.t, err)
+
+		currentHash := currentTxn.Hash()
+		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
+		require.NoError(testMeta.t, err)
+
+		require.NoError(testMeta.t, utxoView.FlushToDb())
+
+		// After disconnecting, the balances should be restored to what they
+		// were before this transaction was applied.
+		require.Equal(
+			testMeta.t,
+			testMeta.expectedSenderBalances[backwardIter],
+			_getBalance(testMeta.t, testMeta.chain, nil, PkToStringTestnet(currentTxn.PublicKey)),
+		)
+	}
+}
+
+func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
+	// Apply all the transactions to a mempool object and make sure we don't get any
+	// errors. Verify the balances align as we go.
+	for ii, tx := range testMeta.txns {
+		// See comment above on this transaction.
+		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
+
+		require.Equal(
+			testMeta.t,
+			testMeta.expectedSenderBalances[ii],
+			_getBalance(testMeta.t, testMeta.chain, testMeta.mempool, PkToStringTestnet(tx.PublicKey)))
+
+		_, err := testMeta.mempool.ProcessTransaction(tx, false, false, 0, true)
+		require.NoError(testMeta.t, err, "Problem adding transaction %d to mempool: %v", ii, tx)
+	}
+}
+
+func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
+	// Apply all the transactions to a view and flush the view to the db.
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+	require.NoError(testMeta.t, err)
+	for ii, txn := range testMeta.txns {
+		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
+
+		// Always use height+1 for validation since it's assumed the transaction will
+		// get mined into the next block.
+		txHash := txn.Hash()
+		blockHeight := testMeta.chain.blockTip().Height + 1
+		_, _, _, _, err =
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		require.NoError(testMeta.t, err)
+	}
+	// Flush the utxoView after having added all the transactions.
+	require.NoError(testMeta.t, utxoView.FlushToDb())
+}
+
+func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
+	// Disonnect the transactions from a single view in the same way as above
+	// i.e. without flushing each time.
+	utxoView2, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+	require.NoError(testMeta.t, err)
+	for ii := 0; ii < len(testMeta.txnOps); ii++ {
+		backwardIter := len(testMeta.txnOps) - 1 - ii
+		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
+		currentOps := testMeta.txnOps[backwardIter]
+		currentTxn := testMeta.txns[backwardIter]
+
+		currentHash := currentTxn.Hash()
+		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
+		require.NoError(testMeta.t, err)
+	}
+	require.NoError(testMeta.t, utxoView2.FlushToDb())
+	require.Equal(
+		testMeta.t,
+		testMeta.expectedSenderBalances[0],
+		_getBalance(testMeta.t, testMeta.chain, nil, senderPkString))
+}
+
+func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
+	// All the txns should be in the mempool already so mining a block should put
+	// all those transactions in it.
+	block, err := testMeta.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.mempool)
+	require.NoError(testMeta.t, err)
+	// Add one for the block reward. Now we have a meaty block.
+	require.Equal(testMeta.t, len(testMeta.txnOps)+1, len(block.Txns))
+
+	// Roll back the block and make sure we don't hit any errors.
+	{
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+		require.NoError(testMeta.t, err)
+
+		// Fetch the utxo operations for the block we're detaching. We need these
+		// in order to be able to detach the block.
+		hash, err := block.Header.Hash()
+		require.NoError(testMeta.t, err)
+		utxoOps, err := GetUtxoOperationsForBlock(testMeta.db, hash)
+		require.NoError(testMeta.t, err)
+
+		// Compute the hashes for all the transactions.
+		txHashes, err := ComputeTransactionHashes(block.Txns)
+		require.NoError(testMeta.t, err)
+		require.NoError(testMeta.t, utxoView.DisconnectBlock(block, txHashes, utxoOps))
+
+		// Flushing the view after applying and rolling back should work.
+		require.NoError(testMeta.t, utxoView.FlushToDb())
+	}
 }
 
 func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -14768,95 +14969,35 @@ func TestNFTBasic(t *testing.T) {
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 
-	// Setup some convenience functions for the test.
-	txnOps := [][]*UtxoOperation{}
-	txns := []*MsgBitCloutTxn{}
-	expectedSenderBalances := []uint64{}
-
-	// We take the block tip to be the blockchain height rather than the
-	// header chain height.
-	savedHeight := chain.blockTip().Height + 1
-	registerOrTransfer := func(username string,
-		senderPk string, recipientPk string, senderPriv string) {
-
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, senderPk))
-
-		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
-			t, chain, db, params, senderPk, recipientPk,
-			senderPriv, 70 /*amount to send*/, 11 /*feerate*/)
-
-		txnOps = append(txnOps, currentOps)
-		txns = append(txns, currentTxn)
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
 	}
 
 	// Fund all the keys.
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-
-	submitPost := func(
-		feeRateNanosPerKB uint64, updaterPkBase58Check string,
-		updaterPrivBase58Check string,
-		postHashToModify []byte,
-		parentStakeID []byte,
-		body *BitCloutBodySchema,
-		recloutedPostHash []byte,
-		tstampNanos uint64,
-		isHidden bool) {
-
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
-
-		currentOps, currentTxn, _, err := _submitPost(
-			t, chain, db, params, feeRateNanosPerKB,
-			updaterPkBase58Check,
-			updaterPrivBase58Check,
-			postHashToModify,
-			parentStakeID,
-			body,
-			recloutedPostHash,
-			tstampNanos,
-			isHidden)
-
-		require.NoError(err)
-
-		txnOps = append(txnOps, currentOps)
-		txns = append(txns, currentTxn)
-	}
-	_ = submitPost
-
-	swapIdentity := func(
-		feeRateNanosPerKB uint64, updaterPkBase58Check string,
-		updaterPrivBase58Check string,
-		fromPkBytes []byte,
-		toPkBytes []byte) {
-
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
-
-		currentOps, currentTxn, _, err := _swapIdentity(
-			t, chain, db, params, feeRateNanosPerKB,
-			updaterPkBase58Check,
-			updaterPrivBase58Check,
-			fromPkBytes, toPkBytes)
-
-		require.NoError(err)
-
-		txnOps = append(txnOps, currentOps)
-		txns = append(txns, currentTxn)
-	}
-	_ = swapIdentity
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString)
 
 	// Create a simple post.
 	{
-		submitPost(
+		_submitPostWithTestMeta(
+			testMeta,
 			10,                                   /*feeRateNanosPerKB*/
 			m0Pub,                                /*updaterPkBase58Check*/
 			m0Priv,                               /*updaterPrivBase58Check*/
@@ -14867,7 +15008,7 @@ func TestNFTBasic(t *testing.T) {
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 	}
-	post1Txn := txns[len(txns)-1]
+	post1Txn := testMeta.txns[len(testMeta.txns)-1]
 	post1Hash := post1Txn.Hash()
 	_, _ = post1Txn, post1Hash
 
@@ -14924,9 +15065,20 @@ func TestNFTBasic(t *testing.T) {
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
 	{
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m0Pub))
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			5,     /*NumCopies*/
+			false, /*HasUnlockable*/
+		)
+	}
 
-		currentOps, currentTxn, _, err := _createNFT(
+	// Error case: cannot turn post into an NFT twice.
+	{
+		_, _, _, err := _createNFT(
 			t, chain, db, params, 10,
 			m0Pub,
 			m0Priv,
@@ -14934,105 +15086,14 @@ func TestNFTBasic(t *testing.T) {
 			5,     /*NumCopies*/
 			false, /*HasUnlockable*/
 		)
-
-		require.NoError(err)
-
-		txnOps = append(txnOps, currentOps)
-		txns = append(txns, currentTxn)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
 	}
 
-	// Roll back all of the above using the utxoOps from each.
-	for ii := 0; ii < len(txnOps); ii++ {
-		backwardIter := len(txnOps) - 1 - ii
-		currentOps := txnOps[backwardIter]
-		currentTxn := txns[backwardIter]
-		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
-
-		utxoView, err := NewUtxoView(db, params, nil)
-		require.NoError(err)
-
-		currentHash := currentTxn.Hash()
-		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
-		require.NoError(err)
-
-		require.NoError(utxoView.FlushToDb())
-
-		// After disconnecting, the balances should be restored to what they
-		// were before this transaction was applied.
-		require.Equal(expectedSenderBalances[backwardIter], _getBalance(t, chain, nil, PkToStringTestnet(currentTxn.PublicKey)))
-	}
-
-	// Apply all the transactions to a mempool object and make sure we don't get any
-	// errors. Verify the balances align as we go.
-	for ii, tx := range txns {
-		// See comment above on this transaction.
-		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
-
-		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, PkToStringTestnet(tx.PublicKey)))
-
-		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
-		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
-	}
-
-	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
-	require.NoError(err)
-	for ii, txn := range txns {
-		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
-
-		// Always use height+1 for validation since it's assumed the transaction will
-		// get mined into the next block.
-		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.NoError(err)
-	}
-	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
-
-	// Disonnect the transactions from a single view in the same way as above
-	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
-	require.NoError(err)
-	for ii := 0; ii < len(txnOps); ii++ {
-		backwardIter := len(txnOps) - 1 - ii
-		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
-		currentOps := txnOps[backwardIter]
-		currentTxn := txns[backwardIter]
-
-		currentHash := currentTxn.Hash()
-		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
-		require.NoError(err)
-	}
-	require.NoError(utxoView2.FlushToDb())
-	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
-
-	// All the txns should be in the mempool already so mining a block should put
-	// all those transactions in it.
-	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	// Add one for the block reward. Now we have a meaty block.
-	require.Equal(len(txnOps)+1, len(block.Txns))
-
-	// Roll back the block and make sure we don't hit any errors.
-	{
-		utxoView, err := NewUtxoView(db, params, nil)
-		require.NoError(err)
-
-		// Fetch the utxo operations for the block we're detaching. We need these
-		// in order to be able to detach the block.
-		hash, err := block.Header.Hash()
-		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
-		require.NoError(err)
-
-		// Compute the hashes for all the transactions.
-		txHashes, err := ComputeTransactionHashes(block.Txns)
-		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
-
-		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
-	}
+	// Roll transactions through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
