@@ -353,6 +353,7 @@ type BitCloutParams struct {
 	MaxProfilePicLengthBytes      uint64
 	MaxProfilePicDimensions       uint64
 	MaxPrivateMessageLengthBytes  uint64
+	MaxCopiesPerNFT               uint64
 
 	StakeFeeBasisPoints         uint64
 	MaxPostBodyLengthBytes      uint64
@@ -670,6 +671,8 @@ var BitCloutMainnetParams = BitCloutParams{
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
 
+	MaxCopiesPerNFT: 1000,
+
 	// Set the stake fee to 10%
 	StakeFeeBasisPoints: 10 * 100,
 	// TODO(performance): We're currently storing posts using HTML, which
@@ -886,6 +889,8 @@ var BitCloutTestnetParams = BitCloutParams{
 	// MaxPrivateMessageLengthBytes is the maximum number of bytes of encrypted
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
+
+	MaxCopiesPerNFT: 1000,
 
 	// Set the stake fee to 5%
 	StakeFeeBasisPoints: 5 * 100,

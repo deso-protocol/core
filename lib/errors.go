@@ -194,6 +194,13 @@ const (
 	RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked           RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked"
 	RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller              RuleError = "RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller"
 
+	// NFTs
+	RuleErrorTooManyNFTCopies                RuleError = "RuleErrorTooManyNFTCopies"
+	RuleErrorCreateNFTRequiresNonZeroInput   RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
+	RuleErrorCreateNFTOnNonexistentPost      RuleError = "RuleErrorCreateNFTOnNonexistentPost"
+	RuleErrorCreateNFTWithInsufficientFunds  RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
+	RuleErrorCreateNFTOnPostThatAlreadyIsNFT RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
+
 	RuleErrorSwapIdentityIsParamUpdaterOnly RuleError = "RuleErrorSwapIdentityIsParamUpdaterOnly"
 	RuleErrorFromPublicKeyIsRequired        RuleError = "RuleErrorFromPublicKeyIsRequired"
 	RuleErrorInvalidFromPublicKey           RuleError = "RuleErrorInvalidFromPublicKey"

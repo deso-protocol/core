@@ -2818,6 +2818,50 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) CreateCreateNFTTxn(
+	UpdaterPublicKey []byte,
+	NFTPostHash *BlockHash,
+	NumCopies uint64,
+	HasUnlockable bool,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a transaction containing the creator coin fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta: &CreateNFTMetadata{
+			NFTPostHash,
+			NumCopies,
+			HasUnlockable,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// RPH-FIXME: Add a global params fee for NFTs.
+	nftFee := uint64(0)
+
+	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, nftFee)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
+	}
+	_ = spendAmount
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateCreateNFTTxn: CreateNFT txn " +
+			"must have at least one input but had zero inputs " +
+			"instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
 // Each diamond level is worth a fixed amount of BitClout. These amounts can be changed
 // in the future by simply returning a new set of values after a particular block height.
 func GetBitCloutNanosDiamondLevelMapAtBlockHeight(

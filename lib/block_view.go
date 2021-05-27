@@ -535,6 +535,11 @@ type PostEntry struct {
 	// Indicator if a post is pinned or not.
 	IsPinned bool
 
+	// NFT info.
+	IsNFT         bool
+	NumNFTCopies  uint64
+	HasUnlockable bool
+
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte
 }
@@ -770,8 +775,12 @@ const (
 	OperationTypeSwapIdentity                 OperationType = 12
 	OperationTypeUpdateGlobalParams           OperationType = 13
 	OperationTypeCreatorCoinTransfer          OperationType = 14
+	OperationTypeCreateNFT                    OperationType = 15
+	OperationTypeUpdateNFT                    OperationType = 16
+	OperationTypeAcceptNFTBid                 OperationType = 17
+	OperationTypeNFTBid                       OperationType = 18
 
-	// NEXT_TAG = 15
+	// NEXT_TAG = 19
 )
 
 func (op OperationType) String() string {
@@ -815,6 +824,22 @@ func (op OperationType) String() string {
 	case OperationTypeCreatorCoin:
 		{
 			return "OperationTypeCreatorCoin"
+		}
+	case OperationTypeCreateNFT:
+		{
+			return "OperationTypeCreateNFT"
+		}
+	case OperationTypeUpdateNFT:
+		{
+			return "OperationTypeUpdateNFT"
+		}
+	case OperationTypeAcceptNFTBid:
+		{
+			return "OperationTypeAcceptNFTBid"
+		}
+	case OperationTypeNFTBid:
+		{
+			return "OperationTypeNFTBid"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -2268,6 +2293,120 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
 }
 
+func (bav *UtxoView) _disconnectCreateNFT(
+	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is a CreatorCoinTransfer operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectCreateNFT: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeCreateNFT {
+		return fmt.Errorf("_disconnectCreateNFT: Trying to revert "+
+			"OperationTypeCreateNFT but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+	txMeta := currentTxn.TxnMeta.(*CreateNFTMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+
+	// Get the postEntry corresponding to this txn.
+	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	// Sanity-check that it exists.
+	if existingPostEntry == nil || existingPostEntry.isDeleted {
+		return fmt.Errorf("_disconnectCreateNFT: Post entry for "+
+			"post hash %v doesn't exist; this should never happen",
+			txMeta.NFTPostHash.String())
+	}
+
+	// Revert the post entry mapping since we likely updated the DiamondCount.
+	bav._setPostEntryMappings(operationData.PrevPostEntry)
+
+	// Now revert the basic transfer with the remaining operations. Cut off
+	// the CreatorCoin operation at the end since we just reverted it.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+}
+
+func (bav *UtxoView) _disconnectUpdateNFT(
+	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is a CreatorCoinTransfer operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUpdateNFT: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeUpdateNFT {
+		return fmt.Errorf("_disconnectUpdateNFT: Trying to revert "+
+			"OperationTypeUpdateNFT but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+	txMeta := currentTxn.TxnMeta.(*CreateNFTMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+	_, _ = txMeta, operationData
+
+	// RPH-FIXME: Fill this in.
+
+	// Now revert the basic transfer with the remaining operations.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+}
+
+func (bav *UtxoView) _disconnectAcceptNFTBid(
+	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is a CreatorCoinTransfer operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUpdateNFT: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeAcceptNFTBid {
+		return fmt.Errorf("_disconnectUpdateNFT: Trying to revert "+
+			"OperationTypeAcceptNFTBid but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+	txMeta := currentTxn.TxnMeta.(*CreateNFTMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+	_, _ = txMeta, operationData
+
+	// RPH-FIXME: Fill this in.
+
+	// Now revert the basic transfer with the remaining operations.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+}
+
+func (bav *UtxoView) _disconnectNFTBid(
+	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is a CreatorCoinTransfer operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUpdateNFT: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeNFTBid {
+		return fmt.Errorf("_disconnectUpdateNFT: Trying to revert "+
+			"OperationTypeNFTBid but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+	txMeta := currentTxn.TxnMeta.(*CreateNFTMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+	_, _ = txMeta, operationData
+
+	// RPH-FIXME: Fill this in.
+
+	// Now revert the basic transfer with the remaining operations.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+}
+
 func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
@@ -2318,6 +2457,22 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgBitCloutTxn, txnHash *
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
 		return bav._disconnectSwapIdentity(
 			OperationTypeSwapIdentity, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+		return bav._disconnectCreateNFT(
+			OperationTypeCreateNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+		return bav._disconnectUpdateNFT(
+			OperationTypeUpdateNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+		return bav._disconnectAcceptNFTBid(
+			OperationTypeAcceptNFTBid, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+		return bav._disconnectNFTBid(
+			OperationTypeNFTBid, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	}
 
@@ -4774,6 +4929,117 @@ func (bav *UtxoView) _connectUpdateProfile(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
+func (bav *UtxoView) _connectCreateNFT(
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
+	ignoreUtxos bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeCreateNFT {
+		return 0, 0, nil, fmt.Errorf("_connectCreateNFT: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*CreateNFTMetadata)
+
+	// Validate the txMeta.
+	if txMeta.NumCopies > bav.Params.MaxCopiesPerNFT {
+		return 0, 0, nil, RuleErrorTooManyNFTCopies
+	}
+	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	if postEntry == nil {
+		return 0, 0, nil, RuleErrorCreateNFTOnNonexistentPost
+	}
+	if postEntry.IsNFT {
+		return 0, 0, nil, RuleErrorCreateNFTOnPostThatAlreadyIsNFT
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	//
+	// The ignoreUtxos flag is used to connect "seed" transactions when initializing
+	// the blockchain. It allows us to "seed" the database with posts and profiles
+	// when we do a hard fork, without having the transactions rejected due to their
+	// not being spendable.
+	var totalInput, totalOutput uint64
+	var utxoOpsForTxn = []*UtxoOperation{}
+	var err error
+	if !ignoreUtxos {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(
+			txn, txHash, blockHeight, verifySignatures)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: ")
+		}
+
+		// Force the input to be non-zero so that we can prevent replay attacks.
+		if totalInput == 0 {
+			return 0, 0, nil, RuleErrorCreateNFTRequiresNonZeroInput
+		}
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+	}
+
+	// RPH-FIXME: Add a global params fee for NFTs.
+	nftFee := uint64(0)
+
+	// Ensure that the transaction covers the NFT fee.
+	totalOutput += nftFee
+	if totalInput < totalOutput {
+		return 0, 0, nil, RuleErrorCreateNFTWithInsufficientFunds
+	}
+
+	// Save a copy of the post entry so so that we can safely modify it.
+	prevPostEntry := &PostEntry{}
+	*prevPostEntry = *postEntry
+
+	// Update and save the post entry.
+	postEntry.IsNFT = true
+	postEntry.NumNFTCopies = txMeta.NumCopies
+	postEntry.HasUnlockable = txMeta.HasUnlockable
+	bav._setPostEntryMappings(postEntry)
+
+	// Add an operation to the list at the end indicating we've updated a profile.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:          OperationTypeUpdateProfile,
+		PrevPostEntry: prevPostEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _connectUpdateNFT(
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
+	ignoreUtxos bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// RPH-FIXME: Fill this in.
+
+	return 0, 0, nil, nil
+}
+
+func (bav *UtxoView) _connectAcceptNFTBid(
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
+	ignoreUtxos bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// RPH-FIXME: Fill this in.
+
+	return 0, 0, nil, nil
+}
+
+func (bav *UtxoView) _connectNFTBid(
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
+	ignoreUtxos bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// RPH-FIXME: Fill this in.
+
+	return 0, 0, nil, nil
+}
+
 func (bav *UtxoView) _connectSwapIdentity(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -6142,6 +6408,26 @@ func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSwapIdentity(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectCreateNFT(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectUpdateNFT(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectAcceptNFTBid(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectNFTBid(
 				txn, txHash, blockHeight, verifySignatures)
 
 	} else {
