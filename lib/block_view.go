@@ -282,6 +282,9 @@ type GlobalParamsEntry struct {
 	// The new create profile fee
 	CreateProfileFeeNanos uint64
 
+	// The fee to create a single NFT (NFTs with n copies incur n of these fees).
+	CreateNFTFeeNanos uint64
+
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
 }
@@ -3921,6 +3924,20 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		newGlobalParamsEntry.CreateProfileFeeNanos = newCreateProfileFeeNanos
 	}
 
+	if len(extraData[CreateNFTFeeNanos]) > 0 {
+		newCreateNFTFeeNanos, createNFTFeeNanosBytesRead := Uvarint(extraData[CreateNFTFeeNanos])
+		if createNFTFeeNanosBytesRead <= 0 {
+			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode CreateNFTFeeNanos as uint64")
+		}
+		if newCreateNFTFeeNanos < MinCreateNFTFeeNanos {
+			return 0, 0, nil, RuleErrorCreateNFTFeeTooLow
+		}
+		if newCreateNFTFeeNanos > MaxCreateNFTFeeNanos {
+			return 0, 0, nil, RuleErrorCreateNFTTooHigh
+		}
+		newGlobalParamsEntry.CreateNFTFeeNanos = newCreateNFTFeeNanos
+	}
+
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
@@ -4930,8 +4947,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 }
 
 func (bav *UtxoView) _connectCreateNFT(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
-	ignoreUtxos bool) (
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -4955,25 +4971,15 @@ func (bav *UtxoView) _connectCreateNFT(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	//
-	// The ignoreUtxos flag is used to connect "seed" transactions when initializing
-	// the blockchain. It allows us to "seed" the database with posts and profiles
-	// when we do a hard fork, without having the transactions rejected due to their
-	// not being spendable.
-	var totalInput, totalOutput uint64
-	var utxoOpsForTxn = []*UtxoOperation{}
-	var err error
-	if !ignoreUtxos {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(
-			txn, txHash, blockHeight, verifySignatures)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: ")
-		}
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: ")
+	}
 
-		// Force the input to be non-zero so that we can prevent replay attacks.
-		if totalInput == 0 {
-			return 0, 0, nil, RuleErrorCreateNFTRequiresNonZeroInput
-		}
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorCreateNFTRequiresNonZeroInput
 	}
 
 	if verifySignatures {
@@ -4982,8 +4988,9 @@ func (bav *UtxoView) _connectCreateNFT(
 		// public key.
 	}
 
-	// RPH-FIXME: Add a global params fee for NFTs.
-	nftFee := uint64(0)
+	// Since issuing N copies of an NFT multiplies the downstream processing overhead by N,
+	// we charge a fee for each additional copy minted.
+	nftFee := txMeta.NumCopies * bav.GlobalParamsEntry.CreateNFTFeeNanos
 
 	// Ensure that the transaction covers the NFT fee.
 	totalOutput += nftFee
@@ -5011,8 +5018,7 @@ func (bav *UtxoView) _connectCreateNFT(
 }
 
 func (bav *UtxoView) _connectUpdateNFT(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
-	ignoreUtxos bool) (
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// RPH-FIXME: Fill this in.
@@ -5021,8 +5027,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 }
 
 func (bav *UtxoView) _connectAcceptNFTBid(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
-	ignoreUtxos bool) (
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// RPH-FIXME: Fill this in.
@@ -5031,8 +5036,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 }
 
 func (bav *UtxoView) _connectNFTBid(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
-	ignoreUtxos bool) (
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// RPH-FIXME: Fill this in.

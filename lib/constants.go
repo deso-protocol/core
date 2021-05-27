@@ -951,6 +951,7 @@ const (
 	USDCentsPerBitcoin            = "USDCentsPerBitcoin"
 	MinNetworkFeeNanosPerKB       = "MinNetworkFeeNanosPerKB"
 	CreateProfileFeeNanos         = "CreateProfileFeeNanos"
+	CreateNFTFeeNanos             = "CreateNFTFeeNanos"
 	ForbiddenBlockSignaturePubKey = "ForbiddenBlockSignaturePubKey"
 
 	DiamondLevelKey    = "DiamondLevel"
@@ -994,4 +995,8 @@ const (
 	MinCreateProfileFeeNanos = 0
 	// MaxCreateProfileFeeNanos - Maximum value to which the create profile fee can be set.
 	MaxCreateProfileFeeNanos = 100 * NanosPerUnit
+	// MinCreateNFTFeeNanos - Minimum value to which the create NFT fee can be set.
+	MinCreateNFTFeeNanos = 0
+	// MaxCreateNFTFeeNanos - Maximum value to which the create NFT fee can be set.
+	MaxCreateNFTFeeNanos = 100 * NanosPerUnit
 )

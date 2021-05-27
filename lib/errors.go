@@ -151,6 +151,8 @@ const (
 	RuleErrorMinNetworkFeeTooHigh                  RuleError = "RuleErrorMinNetworkFeeTooHigh"
 	RuleErrorCreateProfileFeeTooLow                RuleError = "RuleErrorCreateProfileFeeTooLow"
 	RuleErrorCreateProfileTooHigh                  RuleError = "RuleErrorCreateProfileTooHigh"
+	RuleErrorCreateNFTFeeTooLow                    RuleError = "RuleErrorCreateNFTFeeTooLow"
+	RuleErrorCreateNFTTooHigh                      RuleError = "RuleErrorCreateNFTTooHigh"
 	RuleErrorForbiddenPubKeyLength                 RuleError = "RuleErrorForbiddenPubKeyLength"
 	RuleErrorUserNotAuthorizedToUpdateExchangeRate RuleError = "RuleErrorUserNotAuthorizedToUpdateExchangeRate"
 	RuleErrorUserNotAuthorizedToUpdateGlobalParams RuleError = "RuleErrorUserNotAuthorizedToUpdateGlobalParams"

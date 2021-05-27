@@ -363,7 +363,7 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin uint64, minimumNetworkFeesNanosPerKB uint64,
-	createProfileFeeNanos uint64, flushToDb bool) (
+	createProfileFeeNanos uint64, createNFTFeeNanos uint64, flushToDb bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -378,6 +378,7 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 		updaterPkBytes,
 		int64(usdCentsPerBitcoin),
 		int64(createProfileFeeNanos),
+		int64(createNFTFeeNanos),
 		int64(minimumNetworkFeesNanosPerKB),
 		nil,
 		feeRateNanosPerKB,
@@ -2567,6 +2568,7 @@ func TestUpdateProfile(t *testing.T) {
 			InitialUSDCentsPerBitcoinExchangeRate,
 			minimumNetworkFeeNanosPerKb,
 			createProfileFeeNanos,
+			0, /*createNFTFeeNanos*/
 			true)
 		require.NoError(err)
 		txnOps = append(txnOps, currentOps)
@@ -6634,7 +6636,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			if ii == rateUpdateIndex {
 				newUSDCentsPerBitcoin := uint64(27000 * 100)
 				_, rateUpdateTxn, _, err := _updateGlobalParamsEntry(t, chain, db, params, 10,
-					moneyPkString, moneyPrivString, newUSDCentsPerBitcoin, 0, 0, false)
+					moneyPkString, moneyPrivString, newUSDCentsPerBitcoin, 0, 0, 0, false)
 
 				require.NoError(err)
 
@@ -7375,6 +7377,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 				rateUpdateTxn, _, _, _, err := chain.CreateUpdateGlobalParamsTxn(
 					updaterPkBytes,
 					newUSDCentsPerBitcoin,
+					0,
 					0,
 					0,
 					nil,
@@ -8740,7 +8743,8 @@ func TestUpdateGlobalParams(t *testing.T) {
 	{
 		newUSDCentsPerBitcoin := uint64(27000 * 100)
 		newMinimumNetworkFeeNanosPerKB := uint64(100)
-		newCreateProfileFeeNanos := uint64(100)
+		newCreateProfileFeeNanos := uint64(200)
+		newCreateNFTFeeNanos := uint64(300)
 		_, _, _, err := _updateGlobalParamsEntry(
 			t, chain, db, params, 100, /*feeRateNanosPerKB*/
 			m0Pub,
@@ -8748,6 +8752,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			newUSDCentsPerBitcoin,
 			newMinimumNetworkFeeNanosPerKB,
 			newCreateProfileFeeNanos,
+			newCreateNFTFeeNanos,
 			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorUserNotAuthorizedToUpdateGlobalParams)
@@ -8760,6 +8765,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		newUSDCentsPerBitcoin := uint64(270430 * 100)
 		newMinimumNetworkFeeNanosPerKB := uint64(191)
 		newCreateProfileFeeNanos := uint64(10015)
+		newCreateNFTFeeNanos := uint64(14983)
 		_, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntry(
 			t, chain, db, params, 200, /*feeRateNanosPerKB*/
 			moneyPkString,
@@ -8767,6 +8773,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			newUSDCentsPerBitcoin,
 			newMinimumNetworkFeeNanosPerKB,
 			newCreateProfileFeeNanos,
+			newCreateNFTFeeNanos,
 			false)
 		require.NoError(err)
 
@@ -8787,6 +8794,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			USDCentsPerBitcoin:          newUSDCentsPerBitcoin,
 			MinimumNetworkFeeNanosPerKB: newMinimumNetworkFeeNanosPerKB,
 			CreateProfileFeeNanos:       newCreateProfileFeeNanos,
+			CreateNFTFeeNanos:           newCreateNFTFeeNanos,
 		}
 		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle), &expectedGlobalParams)
 
@@ -8800,6 +8808,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		newUSDCentsPerBitcoin := uint64(270434 * 100)
 		newMinimumNetworkFeeNanosPerKB := uint64(131)
 		newCreateProfileFeeNanos := uint64(102315)
+		newCreateNFTFeeNanos := uint64(3244099)
 		_, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntry(
 			t, chain, db, params, 200, /*feeRateNanosPerKB*/
 			moneyPkString,
@@ -8807,6 +8816,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			newUSDCentsPerBitcoin,
 			newMinimumNetworkFeeNanosPerKB,
 			newCreateProfileFeeNanos,
+			newCreateNFTFeeNanos,
 			false)
 		require.NoError(err)
 
@@ -8829,6 +8839,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			USDCentsPerBitcoin:          newUSDCentsPerBitcoin,
 			MinimumNetworkFeeNanosPerKB: newMinimumNetworkFeeNanosPerKB,
 			CreateProfileFeeNanos:       newCreateProfileFeeNanos,
+			CreateNFTFeeNanos:           newCreateNFTFeeNanos,
 		}
 		require.NotEqual(DbGetGlobalParamsEntry(utxoView.Handle), &expectedGlobalParams)
 

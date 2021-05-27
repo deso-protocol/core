@@ -2487,6 +2487,7 @@ func (bc *Blockchain) CreateFollowTxn(
 func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	usdCentsPerBitcoin int64,
 	createProfileFeesNanos int64,
+	createNFTFeesNanos int64,
 	minimumNetworkFeeNanosPerKb int64,
 	forbiddenPubKey []byte,
 	// Standard transaction fields
@@ -2500,6 +2501,9 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	}
 	if createProfileFeesNanos >= 0 {
 		extraData[CreateProfileFeeNanos] = UintToBuf(uint64(createProfileFeesNanos))
+	}
+	if createNFTFeesNanos >= 0 {
+		extraData[CreateNFTFeeNanos] = UintToBuf(uint64(createNFTFeesNanos))
 	}
 	if minimumNetworkFeeNanosPerKb >= 0 {
 		extraData[MinNetworkFeeNanosPerKB] = UintToBuf(uint64(minimumNetworkFeeNanosPerKb))
@@ -2823,6 +2827,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTPostHash *BlockHash,
 	NumCopies uint64,
 	HasUnlockable bool,
+	NFTFee uint64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -2840,12 +2845,9 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 		// inputs and change.
 	}
 
-	// RPH-FIXME: Add a global params fee for NFTs.
-	nftFee := uint64(0)
-
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, nftFee)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
 	}
