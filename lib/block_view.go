@@ -4965,6 +4965,9 @@ func (bav *UtxoView) _connectCreateNFT(
 	if postEntry == nil {
 		return 0, 0, nil, RuleErrorCreateNFTOnNonexistentPost
 	}
+	if !reflect.DeepEqual(postEntry.PosterPublicKey, txn.PublicKey) {
+		return 0, 0, nil, RuleErrorCreateNFTMustBeCalledByPoster
+	}
 	if postEntry.IsNFT {
 		return 0, 0, nil, RuleErrorCreateNFTOnPostThatAlreadyIsNFT
 	}
@@ -5010,7 +5013,7 @@ func (bav *UtxoView) _connectCreateNFT(
 
 	// Add an operation to the list at the end indicating we've updated a profile.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:          OperationTypeUpdateProfile,
+		Type:          OperationTypeCreateNFT,
 		PrevPostEntry: prevPostEntry,
 	})
 

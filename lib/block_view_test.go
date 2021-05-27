@@ -500,6 +500,66 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
+func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	updaterPrivBase58Check string, nftPostHash *BlockHash, numCopies uint64, hasUnlockable bool,
+) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	require.NoError(err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
+
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreateNFTTxn(
+		updaterPkBytes,
+		nftPostHash,
+		numCopies,
+		hasUnlockable,
+		nftFee,
+		feeRateNanosPerKB,
+		nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, updaterPrivBase58Check)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeCreateNFT operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
 func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, fromPublicKey []byte, toPublicKey []byte) (
@@ -14684,5 +14744,295 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			require.Error(err)
 			require.Equal(0, len(mempoolTxsAdded))
 		}
+	}
+}
+
+func TestNFTBasic(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3 a paramUpdater for this test
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// Setup some convenience functions for the test.
+	txnOps := [][]*UtxoOperation{}
+	txns := []*MsgBitCloutTxn{}
+	expectedSenderBalances := []uint64{}
+
+	// We take the block tip to be the blockchain height rather than the
+	// header chain height.
+	savedHeight := chain.blockTip().Height + 1
+	registerOrTransfer := func(username string,
+		senderPk string, recipientPk string, senderPriv string) {
+
+		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, senderPk))
+
+		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
+			t, chain, db, params, senderPk, recipientPk,
+			senderPriv, 70 /*amount to send*/, 11 /*feerate*/)
+
+		txnOps = append(txnOps, currentOps)
+		txns = append(txns, currentTxn)
+	}
+
+	// Fund all the keys.
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+
+	submitPost := func(
+		feeRateNanosPerKB uint64, updaterPkBase58Check string,
+		updaterPrivBase58Check string,
+		postHashToModify []byte,
+		parentStakeID []byte,
+		body *BitCloutBodySchema,
+		recloutedPostHash []byte,
+		tstampNanos uint64,
+		isHidden bool) {
+
+		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
+
+		currentOps, currentTxn, _, err := _submitPost(
+			t, chain, db, params, feeRateNanosPerKB,
+			updaterPkBase58Check,
+			updaterPrivBase58Check,
+			postHashToModify,
+			parentStakeID,
+			body,
+			recloutedPostHash,
+			tstampNanos,
+			isHidden)
+
+		require.NoError(err)
+
+		txnOps = append(txnOps, currentOps)
+		txns = append(txns, currentTxn)
+	}
+	_ = submitPost
+
+	swapIdentity := func(
+		feeRateNanosPerKB uint64, updaterPkBase58Check string,
+		updaterPrivBase58Check string,
+		fromPkBytes []byte,
+		toPkBytes []byte) {
+
+		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
+
+		currentOps, currentTxn, _, err := _swapIdentity(
+			t, chain, db, params, feeRateNanosPerKB,
+			updaterPkBase58Check,
+			updaterPrivBase58Check,
+			fromPkBytes, toPkBytes)
+
+		require.NoError(err)
+
+		txnOps = append(txnOps, currentOps)
+		txns = append(txns, currentTxn)
+	}
+	_ = swapIdentity
+
+	// Create a simple post.
+	{
+		submitPost(
+			10,                                   /*feeRateNanosPerKB*/
+			m0Pub,                                /*updaterPkBase58Check*/
+			m0Priv,                               /*updaterPrivBase58Check*/
+			[]byte{},                             /*postHashToModify*/
+			[]byte{},                             /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Txn := txns[len(txns)-1]
+	post1Hash := post1Txn.Hash()
+	_, _ = post1Txn, post1Hash
+
+	// Error case: m1 should not be able to turn m0's post into an NFT.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			100,   /*NumCopies*/
+			false, /*HasUnlockable*/
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
+	}
+
+	// Error case: m0 should not be able to make 1B copies of the NFT.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1000000000, /*NumCopies*/
+			false,      /*HasUnlockable*/
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorTooManyNFTCopies)
+	}
+
+	// Error case: non-existent post.
+	{
+
+		fakePostHash := &BlockHash{
+			0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+			0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+			0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			fakePostHash,
+			1,     /*NumCopies*/
+			false, /*HasUnlockable*/
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCreateNFTOnNonexistentPost)
+	}
+
+	// Finally, have m0 turn post1 into an NFT. Woohoo!
+	{
+		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m0Pub))
+
+		currentOps, currentTxn, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			5,     /*NumCopies*/
+			false, /*HasUnlockable*/
+		)
+
+		require.NoError(err)
+
+		txnOps = append(txnOps, currentOps)
+		txns = append(txns, currentTxn)
+	}
+
+	// Roll back all of the above using the utxoOps from each.
+	for ii := 0; ii < len(txnOps); ii++ {
+		backwardIter := len(txnOps) - 1 - ii
+		currentOps := txnOps[backwardIter]
+		currentTxn := txns[backwardIter]
+		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		currentHash := currentTxn.Hash()
+		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
+		require.NoError(err)
+
+		require.NoError(utxoView.FlushToDb())
+
+		// After disconnecting, the balances should be restored to what they
+		// were before this transaction was applied.
+		require.Equal(expectedSenderBalances[backwardIter], _getBalance(t, chain, nil, PkToStringTestnet(currentTxn.PublicKey)))
+	}
+
+	// Apply all the transactions to a mempool object and make sure we don't get any
+	// errors. Verify the balances align as we go.
+	for ii, tx := range txns {
+		// See comment above on this transaction.
+		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
+
+		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, PkToStringTestnet(tx.PublicKey)))
+
+		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
+		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
+	}
+
+	// Apply all the transactions to a view and flush the view to the db.
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+	for ii, txn := range txns {
+		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
+
+		// Always use height+1 for validation since it's assumed the transaction will
+		// get mined into the next block.
+		txHash := txn.Hash()
+		blockHeight := chain.blockTip().Height + 1
+		_, _, _, _, err =
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		require.NoError(err)
+	}
+	// Flush the utxoView after having added all the transactions.
+	require.NoError(utxoView.FlushToDb())
+
+	// Disonnect the transactions from a single view in the same way as above
+	// i.e. without flushing each time.
+	utxoView2, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+	for ii := 0; ii < len(txnOps); ii++ {
+		backwardIter := len(txnOps) - 1 - ii
+		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
+		currentOps := txnOps[backwardIter]
+		currentTxn := txns[backwardIter]
+
+		currentHash := currentTxn.Hash()
+		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
+		require.NoError(err)
+	}
+	require.NoError(utxoView2.FlushToDb())
+	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
+
+	// All the txns should be in the mempool already so mining a block should put
+	// all those transactions in it.
+	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	// Add one for the block reward. Now we have a meaty block.
+	require.Equal(len(txnOps)+1, len(block.Txns))
+
+	// Roll back the block and make sure we don't hit any errors.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		// Fetch the utxo operations for the block we're detaching. We need these
+		// in order to be able to detach the block.
+		hash, err := block.Header.Hash()
+		require.NoError(err)
+		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		require.NoError(err)
+
+		// Compute the hashes for all the transactions.
+		txHashes, err := ComputeTransactionHashes(block.Txns)
+		require.NoError(err)
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+
+		// Flushing the view after applying and rolling back should work.
+		require.NoError(utxoView.FlushToDb())
 	}
 }

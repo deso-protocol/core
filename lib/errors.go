@@ -145,6 +145,7 @@ const (
 	RuleErrorAddStakeRequiresNonZeroInput        RuleError = "RuleErrorAddStakeRequiresNonZeroInput"
 	RuleErrorProfileForPostDoesNotExist          RuleError = "RuleErrorProfileForPostDoesNotExist"
 
+	// Global Params
 	RuleErrorExchangeRateTooLow                    RuleError = "RuleErrorExchangeRateTooLow"
 	RuleErrorExchangeRateTooHigh                   RuleError = "RuleErrorExchangeRateTooHigh"
 	RuleErrorMinNetworkFeeTooLow                   RuleError = "RuleErrorMinNetworkFeeTooLow"
@@ -202,6 +203,7 @@ const (
 	RuleErrorCreateNFTOnNonexistentPost      RuleError = "RuleErrorCreateNFTOnNonexistentPost"
 	RuleErrorCreateNFTWithInsufficientFunds  RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
 	RuleErrorCreateNFTOnPostThatAlreadyIsNFT RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
+	RuleErrorCreateNFTMustBeCalledByPoster   RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
 
 	RuleErrorSwapIdentityIsParamUpdaterOnly RuleError = "RuleErrorSwapIdentityIsParamUpdaterOnly"
 	RuleErrorFromPublicKeyIsRequired        RuleError = "RuleErrorFromPublicKeyIsRequired"
