@@ -216,8 +216,9 @@ const (
 	TxnTypeSwapIdentity TxnType = 12
 	TxnTypeUpdateGlobalParams = 13
 	TxnTypeCreatorCoinTransfer TxnType = 14
+	TxnTypeBlockPublicKey TxnType = 15
 
-	// NEXT_ID = 15
+	// NEXT_ID = 16
 )
 
 func (txnType TxnType) String() string {
@@ -250,6 +251,8 @@ func (txnType TxnType) String() string {
 		return "SWAP_IDENTITY"
 	case TxnTypeUpdateGlobalParams:
 		return "UPDATE_GLOBAL_PARAMS"
+	case TxnTypeBlockPublicKey:
+		return "BLOCK_PUBLIC_KEY"
 
 	default:
 		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", txnType)
@@ -293,6 +296,8 @@ func NewTxnMetadata(txType TxnType) (BitCloutTxnMetadata, error) {
 		return (&SwapIdentityMetadataa{}).New(), nil
 	case TxnTypeUpdateGlobalParams:
 		return (&UpdateGlobalParamsMetadata{}).New(), nil
+	case TxnTypeBlockPublicKey:
+		return (&BlockPublicKeyMetadata{}).New(), nil
 
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
@@ -3799,4 +3804,68 @@ func (txnData *SwapIdentityMetadataa) FromBytes(dataa []byte) error {
 
 func (txnData *SwapIdentityMetadataa) New() BitCloutTxnMetadata {
 	return &SwapIdentityMetadataa{}
+}
+
+// ==================================================================
+// BlockPublicKeyMetadata
+// ==================================================================
+
+type BlockPublicKeyOperationType uint8
+
+// BlockPublicKeyMetadata ...
+type BlockPublicKeyMetadata struct {
+	// TODO: This is currently only accessible by ParamUpdater. This avoids the
+	// possibility that a user will stomp over another user's profile, and
+	// simplifies the logic. In the long run, though, we should eliminate all
+	// dependencies on ParamUpdater.
+
+	// The public key is being blocked or unblocked by another a public key
+	BlockedPublicKey []byte
+
+	// If true, indicates that a public key is blocking BlockedPublicKeyBytes.
+	// If false, indicates that a public key is unblocking BlockedPublicKeyBytes
+	IsUnblock bool
+}
+
+// GetTxnType ...
+func (txnData *BlockPublicKeyMetadata) GetTxnType() TxnType {
+	return TxnTypeBlockPublicKey
+}
+
+// ToBytes ...
+func (txnData *BlockPublicKeyMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// BlockedPublicKeyBytes
+	data = append(data, UintToBuf(uint64(len(txnData.BlockedPublicKey)))...)
+	data = append(data, txnData.BlockedPublicKey...)
+
+	// IsUnblock
+	data = append(data, _boolToByte(txnData.IsUnblock))
+
+	return data, nil
+}
+
+// FromBytes ...
+func (txnData *BlockPublicKeyMetadata) FromBytes(data []byte) error {
+	ret := BlockPublicKeyMetadata{}
+	rr := bytes.NewReader(data)
+
+	// BlockedPublicKey
+	var err error
+	ret.BlockedPublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"BlockPublicKeyMetadata.BlockedPublicKey: Error reading BlockedPublicKey: %v", err)
+	}
+
+	// IsUnblock
+	ret.IsUnblock = _readBoolByte(rr)
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *BlockPublicKeyMetadata) New() BitCloutTxnMetadata {
+	return &BlockPublicKeyMetadata{}
 }

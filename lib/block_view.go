@@ -216,7 +216,30 @@ type FollowEntry struct {
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
+// MakeBlockedKey ...
+func MakeBlockedKey(blockerPKID *PKID , blockedPKID *PKID) BlockedKey {
+	return BlockedKey{
+		BlockerPKID: *blockerPKID,
+		BlockedPKID: *blockedPKID,
+	}
+}
 
+// BlockedKey ...
+type BlockedKey struct {
+	BlockerPKID  PKID
+	BlockedPKID  PKID
+}
+
+// BlockedEntry stores the content of a Block Public KEy transaction.
+type BlockedEntry struct {
+	BlockerPKID   *PKID
+	BlockedPKID   *PKID
+
+	// Whether or not this entry is deleted in the view.
+	isDeleted bool
+}
+
+// DiamondKey ...
 type DiamondKey struct {
 	SenderPKID      PKID
 	ReceiverPKID    PKID
@@ -724,6 +747,9 @@ type UtxoView struct {
 	// Like data
 	LikeKeyToLikeEntry map[LikeKey]*LikeEntry
 
+	// Blocked Public Key data
+	BlockedKeyToBlockedEntry map[BlockedKey]*BlockedEntry
+
 	// Reclout data
 	RecloutKeyToRecloutEntry map[RecloutKey]*RecloutEntry
 
@@ -770,8 +796,9 @@ const (
 	OperationTypeSwapIdentity                 OperationType = 12
 	OperationTypeUpdateGlobalParams           OperationType = 13
 	OperationTypeCreatorCoinTransfer          OperationType = 14
+	OperationTypeBlockPublicKey               OperationType = 15
 
-	// NEXT_TAG = 15
+	// NEXT_TAG = 16
 )
 
 func (op OperationType) String() string {
@@ -812,9 +839,25 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeFollow"
 		}
+	case OperationTypeLike:
+		{
+			return "OperationTypeLike"
+		}
 	case OperationTypeCreatorCoin:
 		{
 			return "OperationTypeCreatorCoin"
+		}
+	case OperationTypeSwapIdentity:
+		{
+			return "OperationTypeSwapIdentity"
+		}
+	case OperationTypeUpdateGlobalParams:
+		{
+			return "OperationTypeUpdateGlobalParams"
+		}
+	case OperationTypeBlockPublicKey:
+		{
+			return "OperationTypeBlockPublicKey"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -931,6 +974,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Like data
 	bav.LikeKeyToLikeEntry = make(map[LikeKey]*LikeEntry)
 
+	// Block data
+	bav.BlockedKeyToBlockedEntry = make(map[BlockedKey]*BlockedEntry)
+
 	// Reclout data
 	bav.RecloutKeyToRecloutEntry = make(map[RecloutKey]*RecloutEntry)
 
@@ -1017,6 +1063,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for likeKey, likeEntry := range bav.LikeKeyToLikeEntry {
 		newLikeEntry := *likeEntry
 		newView.LikeKeyToLikeEntry[likeKey] = &newLikeEntry
+	}
+
+	// Copy the block data
+	newView.BlockedKeyToBlockedEntry = make(map[BlockedKey]*BlockedEntry, len(bav.BlockedKeyToBlockedEntry))
+	for blockedKey, blockedEntry := range bav.BlockedKeyToBlockedEntry {
+		newBlockedEntry := *blockedEntry
+		newView.BlockedKeyToBlockedEntry[blockedKey] = &newBlockedEntry
 	}
 
 	// Copy the reclout data
@@ -1670,6 +1723,80 @@ func (bav *UtxoView) _disconnectLike(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }
 
+func (bav *UtxoView) _disconnectBlockPublicKey(
+	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is a Block operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectBlockPublicKey: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeBlockPublicKey {
+		return fmt.Errorf("_disconnectBlockPublicKey: Trying to revert "+
+			"OperationTypeBlockPublicKey but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+
+	// Now we know the txMeta is a Block
+	txMeta := currentTxn.TxnMeta.(*BlockPublicKeyMetadata)
+
+	// Get the PKIDs for the public keys associated with the blocker and the user being blocked.
+	blockerPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if blockerPKID == nil || blockerPKID.isDeleted {
+		return fmt.Errorf("_disconnectBlockPublicKey: blockerPKID was nil or deleted; this should never happen")
+	}
+	blockedPKID := bav.GetPKIDForPublicKey(txMeta.BlockedPublicKey)
+	if blockedPKID == nil || blockedPKID.isDeleted {
+		return fmt.Errorf("_disconnectBlockPublicKey: blockedPKID was nil or deleted; this should never happen")
+	}
+
+	// If the transaction is an unblock, it removed the block entry from the DB
+	// so we have to add it back.  Then we can finish by reverting the basic transfer.
+	if txMeta.IsUnblock {
+		blockedEntry := BlockedEntry{
+			BlockerPKID: blockerPKID.PKID,
+			BlockedPKID: blockedPKID.PKID,
+		}
+		bav._setBlockedEntryMappings(&blockedEntry)
+		return bav._disconnectBasicTransfer(
+			currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
+	}
+
+	// Get the BlockedEntry. If we don't find it or isDeleted=true, that's an error.
+	blockedKey := MakeBlockedKey(blockerPKID.PKID, blockedPKID.PKID)
+	blockedEntry := bav._getBlockedEntryForBlockedKey(&blockedKey)
+	if blockedEntry == nil || blockedEntry.isDeleted {
+		return fmt.Errorf("_disconnectBlockPublicKey: BlockedEntry for "+
+			"blockedKey %v was found to be nil or isDeleted not set appropriately: %v",
+			&blockedKey, blockedEntry)
+	}
+
+	// Verify that the blocker and blocked in the entry match the TxnMeta as
+	// a sanity check.
+	if !reflect.DeepEqual(blockedEntry.BlockerPKID, blockerPKID.PKID) {
+		return fmt.Errorf("_disconnectBlockPublicKey: Blocker PKID on "+
+			"BlockedEntry was %s but the PKID looked up from the txn was %s",
+			PkToString(blockedKey.BlockerPKID[:], bav.Params),
+			PkToString(blockerPKID.PKID[:], bav.Params))
+	}
+	if !reflect.DeepEqual(blockedEntry.BlockedPKID, blockedPKID.PKID) {
+		return fmt.Errorf("_disconnectBlockPublicKey: Blocked PKID on "+
+			"BlockedEntry was %s but the BlockedPKID looked up from the txn was %s",
+			PkToString(blockedKey.BlockedPKID[:], bav.Params),
+			PkToString(blockedPKID.PKID[:], bav.Params))
+	}
+
+	// Now that we are confident the BlockedEntry lines up with the transaction we're
+	// rolling back, delete the mappings.
+	bav._deleteBlockedEntryMappings(blockedEntry)
+
+	// Now revert the basic transfer with the remaining operations. Cut off
+	// the BlockedPublicKey operation at the end since we just reverted it.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
+}
+
 func (bav *UtxoView) _disconnectFollow(
 	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
@@ -2302,7 +2429,9 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgBitCloutTxn, txnHash *
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeFollow {
 		return bav._disconnectFollow(
 			OperationTypeFollow, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
-
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeBlockPublicKey {
+		return bav._disconnectBlockPublicKey(
+			OperationTypeBlockPublicKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeLike {
 		return bav._disconnectLike(
 			OperationTypeFollow, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
@@ -2708,6 +2837,64 @@ func (bav *UtxoView) _deleteLikeEntryMappings(likeEntry *LikeEntry) {
 
 	// Set the mappings to point to the tombstone entry.
 	bav._setLikeEntryMappings(&tombstoneLikeEntry)
+}
+func (bav *UtxoView) _setBlockedEntryMappings(blockedEntry *BlockedEntry) {
+	// This function shouldn't be called with nil.
+	if blockedEntry == nil {
+		glog.Errorf("_setBlockedEntryMappings: Called with nil BlockedEntry; " +
+			"this should never happen.")
+		return
+	}
+
+	blockedKey := MakeBlockedKey(blockedEntry.BlockerPKID, blockedEntry.BlockedPKID)
+	bav.BlockedKeyToBlockedEntry[blockedKey] = blockedEntry
+}
+
+func (bav *UtxoView) _deleteBlockedEntryMappings(blockedEntry *BlockedEntry) {
+
+	// Create a tombstone entry.
+	tombstoneBlockedEntry := *blockedEntry
+	tombstoneBlockedEntry.isDeleted = true
+
+	// Set the mappings to point to the tombstone entry.
+	bav._setBlockedEntryMappings(&tombstoneBlockedEntry)
+}
+
+func (bav *UtxoView) _getBlockedEntryForBlockedKey(blockedKey *BlockedKey) *BlockedEntry {
+	// If an entry exists in the in-memory map, return the value of that mapping.
+	mapValue, existsMapValue := bav.BlockedKeyToBlockedEntry[*blockedKey]
+	if existsMapValue {
+		return mapValue
+	}
+
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil. Either way, save the value to the in-memory view mapping got later.
+	if DbGetBlockedPubKeyMapping(
+		bav.Handle, &blockedKey.BlockerPKID, &blockedKey.BlockedPKID) != nil {
+		blockedEntry := BlockedEntry{
+			BlockerPKID: &blockedKey.BlockerPKID,
+			BlockedPKID: &blockedKey.BlockedPKID,
+		}
+		bav._setBlockedEntryMappings(&blockedEntry)
+		return &blockedEntry
+	}
+	return nil
+}
+
+func (bav *UtxoView) IsBlocked(blockerPublicKey []byte, blockedPublicKey []byte) bool {
+	if blockerPublicKey == nil || blockedPublicKey == nil {
+		return false
+	}
+	blockerPKID := bav.GetPKIDForPublicKey(blockerPublicKey)
+	blockedPKID := bav.GetPKIDForPublicKey(blockedPublicKey)
+	blockedKey := MakeBlockedKey(blockerPKID.PKID, blockedPKID.PKID)
+	blockedEntry := bav._getBlockedEntryForBlockedKey(&blockedKey)
+	isBlocked := false
+	if blockedEntry != nil {
+		isBlocked = true
+	}
+	return isBlocked
 }
 
 func (bav *UtxoView) _setRecloutEntryMappings(recloutEntry *RecloutEntry) {
@@ -4115,6 +4302,95 @@ func (bav *UtxoView) _connectFollow(
 	// Add an operation to the list at the end indicating we've added a follow.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypeFollow,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _connectBlockPublicKey(
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeBlockPublicKey {
+		return 0, 0, nil, fmt.Errorf("_connectBlockPublicKey: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*BlockPublicKeyMetadata)
+
+	// Check that a proper public key is provided in the message metadata
+	if len(txMeta.BlockedPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorBlockPublicKeyPubKeyLen, "_connectBlockPublicKey: "+
+				"BlockedPubKeyLen = %d; Expected length = %d",
+			len(txMeta.BlockedPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+	_, err := btcec.ParsePubKey(txMeta.BlockedPublicKey, btcec.S256())
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorBlockPublicKeyParsePubKeyError, "_connectBlockPublicKey: Parse error: %v", err)
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectFollow: ")
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
+	// At this point the inputs and outputs have been processed. Now we
+	// need to handle the metadata.
+
+	// Get the PKIDs for the public keys associated with the follower and the followed.
+	blockerPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if blockerPKID == nil || blockerPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectBlockPublicKey: blockerPKID was nil or deleted; this should never happen")
+	}
+	blockedPKID := bav.GetPKIDForPublicKey(txMeta.BlockedPublicKey)
+	if blockedPKID == nil || blockedPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectBlockPublicKey: blockedPKID was nil or deleted; this should never happen")
+	}
+
+	// Here we consider existing blockedEntries.  It is handled differently in the blocked
+	// vs. unblocked case so the code splits those cases out.
+	blockedKey := MakeBlockedKey(blockerPKID.PKID, blockedPKID.PKID)
+	existingBlockedEntry := bav._getBlockedEntryForBlockedKey(&blockedKey)
+	if txMeta.IsUnblock {
+		// If this is an unblock, a BlockedEntry *should* exist.
+		if existingBlockedEntry == nil || existingBlockedEntry.isDeleted {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorCannotUnblockNonexistentBlockedEntry,
+				"_connectBlockPublicKey: Blocked key: %v", &blockedKey)
+		}
+
+		// Now that we know that this is a valid unfollow entry, delete mapping.
+		bav._deleteBlockedEntryMappings(existingBlockedEntry)
+	} else {
+		if existingBlockedEntry != nil && !existingBlockedEntry.isDeleted {
+			// If this is a block, a Blocked entry *should not* exist.
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorBlockedEntryAlreadyExists,
+				"_connectBlockPublicKey: Blocked key: %v", &blockedKey)
+		}
+
+		// Now that we know that this is a valid block, update the mapping.
+		blockedEntry := &BlockedEntry{
+			BlockerPKID: blockerPKID.PKID,
+			BlockedPKID: blockedPKID.PKID,
+		}
+		bav._setBlockedEntryMappings(blockedEntry)
+	}
+
+	// Add an operation to the list at the end indicating we've added a follow.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type: OperationTypeBlockPublicKey,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -6127,7 +6403,9 @@ func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectFollow(
 				txn, txHash, blockHeight, verifySignatures)
-
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeBlockPublicKey {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectBlockPublicKey(txn, txHash, blockHeight, verifySignatures)
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectLike(txn, txHash, blockHeight, verifySignatures)
@@ -7074,7 +7352,55 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// At this point all of the MessageEntry mappings in the db should be up-to-date.
+	// At this point all of the FollowEntry mappings in the db should be up-to-date.
+
+	return nil
+}
+
+func (bav *UtxoView) _flushBlockedEntriesToDbWithTxn(txn *badger.Txn) error {
+
+	// Go through all the entries in the FollowKeyToFollowEntry map.
+	for blockedKeyIter, blockedEntry := range bav.BlockedKeyToBlockedEntry {
+		// Make a copy of the iterator since we make references to it below.
+		blockedKey := blockedKeyIter
+
+		// Sanity-check that the BlockedKey computed from the BlockedEntry is
+		// equal to the BlockedKey that maps to that entry.
+		blockedKeyInEntry := MakeBlockedKey(
+			blockedEntry.BlockerPKID, blockedEntry.BlockedPKID)
+		if blockedKeyInEntry != blockedKey {
+			return fmt.Errorf("_flushBlockedEntriesToDbWithTxn: BlockedEntry has "+
+				"BlockedKey: %v, which doesn't match the BlockedKeyToBlockedEntry map key %v",
+				&blockedKeyInEntry, &blockedKey)
+		}
+
+		// Delete the existing mappings in the db for this BlockedKey. They will be re-added
+		// if the corresponding entry in memory has isDeleted=false.
+		if err := DbDeleteBlockedPubKeyMappingWithTxn(
+			txn, blockedEntry.BlockerPKID, blockedEntry.BlockedPKID); err != nil {
+
+			return errors.Wrapf(
+				err, "_flushBlockedEntriesToDbWithTxn: Problem deleting mappings "+
+					"for BlockedKey: %v: ", &blockedKey)
+		}
+	}
+
+	// Go through all the entries in the FollowKeyToFollowEntry map.
+	for _, blockedEntry := range bav.BlockedKeyToBlockedEntry {
+		if blockedEntry.isDeleted {
+			// If the BlockedEntry has isDeleted=true then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			// If the FollowEntry has (isDeleted = false) then we put the corresponding
+			// mappings for it into the db.
+			if err := DbPutBlockedPubKeyMappingsWithTxn(
+				txn, blockedEntry.BlockerPKID, blockedEntry.BlockedPKID); err != nil {
+				return err
+			}
+		}
+	}
+
+	// At this point all of the BlockedEntry mappings in the db should be up-to-date.
 
 	return nil
 }
@@ -7372,6 +7698,10 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	if err := bav._flushFollowEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+	
+	if err := bav._flushBlockedEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 
