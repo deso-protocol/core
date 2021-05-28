@@ -133,6 +133,7 @@ const (
 	RuleErrorSubmitPostRecloutOfReclout              RuleError = "RuleErrorSubmitPostRecloutOfReclout"
 	RuleErrorSubmitPostUpdateRecloutHash             RuleError = "RuleErrorSubmitPostUpdateRecloutHash"
 	RuleErrorSubmitPostUpdateIsQuotedReclout         RuleError = "RuleErrorSubmitPostUpdateIsQuotedReclout"
+	RuleErrorSubmitPostCannotUpdateNFT               RuleError = "RuleErrorSubmitPostCannotUpdateNFT"
 
 	RuleErrorInvalidStakeID                      RuleError = "RuleErrorInvalidStakeID"
 	RuleErrorInvalidStakeIDSize                  RuleError = "RuleErrorInvalidStakeIDSize"

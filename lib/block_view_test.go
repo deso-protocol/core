@@ -1824,34 +1824,6 @@ func TestSubmitPost(t *testing.T) {
 			true /*isHidden*/)
 	}
 
-	// ParamUpdater modifying an anonymous user's post should succeed
-	{
-		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m3Pub,                      /*updaterPkBase58Check*/
-			m3Priv,                     /*updaterPrivBase58Check*/
-			post2Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
-			&BitCloutBodySchema{Body: "paramUpdater m0 post body MODIFIED"}, /*body*/
-			[]byte{},
-			1502947020*1e9, /*tstampNanos*/
-			true /*isHidden*/)
-	}
-
-	// ParamUpdater modifying a registered user's post should succeed
-	{
-		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m3Pub,                      /*updaterPkBase58Check*/
-			m3Priv,                     /*updaterPrivBase58Check*/
-			post6Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
-			&BitCloutBodySchema{Body: "paramUpdater m2 post body MODIFIED"}, /*body*/
-			[]byte{},
-			1502947021*1e9, /*tstampNanos*/
-			true /*isHidden*/)
-	}
-
 	// Modifying a post and then modifying it back should work.
 	{
 		submitPost(
@@ -2418,8 +2390,8 @@ func TestSubmitPost(t *testing.T) {
 		}
 		{
 			require.Equal(m0PkBytes, corePosts[1].PosterPublicKey)
-			comparePostBody(corePosts[1], "paramUpdater m0 post body MODIFIED", nil)
-			require.Equal(true, corePosts[1].IsHidden)
+			comparePostBody(corePosts[1], "m0 post body 2 no profile", nil)
+			require.Equal(false, corePosts[1].IsHidden)
 			require.Equal(int64(10*100), int64(corePosts[1].CreatorBasisPoints))
 			require.Equal(int64(1.25*100*100), int64(corePosts[1].StakeMultipleBasisPoints))
 		}
@@ -2450,8 +2422,8 @@ func TestSubmitPost(t *testing.T) {
 		}
 		{
 			require.Equal(m2PkBytes, corePosts[5].PosterPublicKey)
-			comparePostBody(corePosts[5], "paramUpdater m2 post body MODIFIED", nil)
-			require.Equal(true, corePosts[5].IsHidden)
+			comparePostBody(corePosts[5], "m2 post body 2 WITH profile", nil)
+			require.Equal(false, corePosts[5].IsHidden)
 			require.Equal(int64(10*100), int64(corePosts[5].CreatorBasisPoints))
 			require.Equal(int64(1.25*100*100), int64(corePosts[5].StakeMultipleBasisPoints))
 			// Quote clouts do not count towards reclout count
@@ -15076,7 +15048,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 	}
 
-	// Error case: cannot turn post into an NFT twice.
+	// Error case: cannot turn a post into an NFT twice.
 	{
 		_, _, _, err := _createNFT(
 			t, chain, db, params, 10,
@@ -15090,7 +15062,25 @@ func TestNFTBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
 	}
 
-	// Roll transactions through connect and disconnect loops to make sure nothing breaks.
+	// Error case: cannot modify a post after it is NFTed.
+	{
+		_, _, _, err := _submitPost(
+			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+			10,
+			m0Pub,
+			m0Priv,
+			post1Hash[:],
+			[]byte{},
+			&BitCloutBodySchema{Body: "modified m0 post"},
+			[]byte{},
+			1502947011*1e9,
+			false)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorSubmitPostCannotUpdateNFT)
+	}
+
+	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)

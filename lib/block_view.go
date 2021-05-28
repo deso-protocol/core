@@ -4381,11 +4381,8 @@ func (bav *UtxoView) _connectSubmitPost(
 				"_connectSubmitPost: Post hash: %v", postHash)
 		}
 
-		// Post modification is only allowed by the original poster or a
-		// paramUpdater for now.
-		_, posterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
-		if !reflect.DeepEqual(txn.PublicKey, existingPostEntryy.PosterPublicKey) &&
-			!posterIsParamUpdater {
+		// Post modification is only allowed by the original poster.
+		if !reflect.DeepEqual(txn.PublicKey, existingPostEntryy.PosterPublicKey) {
 
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorSubmitPostPostModificationNotAuthorized,
@@ -4393,6 +4390,11 @@ func (bav *UtxoView) _connectSubmitPost(
 					"txn public key: %v, paramUpdater: %v", postHash,
 				PkToStringBoth(existingPostEntryy.PosterPublicKey),
 				PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+		}
+
+		// Modification of an NFT is not allowed.
+		if existingPostEntryy.IsNFT {
+			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
 		}
 
 		// It's an error if we are updating the value of RecloutedPostHash. A post can only ever reclout a single post.
