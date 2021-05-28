@@ -376,8 +376,8 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 
 func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
-	updaterPrivBase58Check string, usdCentsPerBitcoin uint64, minimumNetworkFeesNanosPerKB uint64,
-	createProfileFeeNanos uint64, createNFTFeeNanos uint64, flushToDb bool) (
+	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
+	createProfileFeeNanos int64, createNFTFeeNanos int64, flushToDb bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -390,10 +390,10 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateGlobalParamsTxn(
 		updaterPkBytes,
-		int64(usdCentsPerBitcoin),
-		int64(createProfileFeeNanos),
-		int64(createNFTFeeNanos),
-		int64(minimumNetworkFeesNanosPerKB),
+		usdCentsPerBitcoin,
+		createProfileFeeNanos,
+		createNFTFeeNanos,
+		minimumNetworkFeesNanosPerKB,
 		nil,
 		feeRateNanosPerKB,
 		nil)
@@ -435,6 +435,36 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 		require.NoError(utxoView.FlushToDb())
 	}
 	return utxoOps, txn, blockHeight, nil
+}
+
+func _updateGlobalParamsEntryWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	USDCentsPerBitcoinExchangeRate int64,
+	minimumNetworkFeeNanosPerKb int64,
+	createProfileFeeNanos int64,
+	createNFTFeeNanos int64,
+) {
+
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances,
+		_getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+
+	currentOps, currentTxn, _, err := _updateGlobalParamsEntry(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		int64(InitialUSDCentsPerBitcoinExchangeRate),
+		minimumNetworkFeeNanosPerKb,
+		createProfileFeeNanos,
+		createNFTFeeNanos, /*createNFTFeeNanos*/
+		true)              /*flushToDB*/
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
 func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -559,9 +589,9 @@ func _submitPostWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
-	updaterPrivBase58Check string, nftPostHash *BlockHash, numCopies uint64, hasUnlockable bool,
+func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCloutParams,
+	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
+	nftPostHash *BlockHash, numCopies uint64, hasUnlockable bool, nftFee uint64,
 ) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -575,8 +605,6 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
-	nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
-
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreateNFTTxn(
 		updaterPkBytes,
 		nftPostHash,
@@ -589,7 +617,8 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 
-	require.Equal(totalInputMake, changeAmountMake+feesMake)
+	// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
+	require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
 
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
@@ -627,6 +656,7 @@ func _createNFTWithTestMeta(
 	postHashToModify *BlockHash,
 	numCopies uint64,
 	hasUnlockable bool,
+	nftFee uint64,
 ) {
 
 	testMeta.expectedSenderBalances = append(
@@ -638,6 +668,7 @@ func _createNFTWithTestMeta(
 		postHashToModify,
 		numCopies,
 		hasUnlockable,
+		nftFee,
 	)
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -2790,7 +2821,9 @@ func TestUpdateProfile(t *testing.T) {
 	updateGlobalParamsEntry := func(
 		feeRateNanosPerKB uint64, updaterPkBase58Check string,
 		updaterPrivBase58Check string,
-		USDCentsPerBitcoinExchangeRate uint64, minimumNetworkFeeNanosPerKb uint64, createProfileFeeNanos uint64) {
+		USDCentsPerBitcoinExchangeRate int64,
+		minimumNetworkFeeNanosPerKb int64,
+		createProfileFeeNanos int64) {
 
 		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
 
@@ -2798,7 +2831,7 @@ func TestUpdateProfile(t *testing.T) {
 			feeRateNanosPerKB,
 			updaterPkBase58Check,
 			updaterPrivBase58Check,
-			InitialUSDCentsPerBitcoinExchangeRate,
+			int64(InitialUSDCentsPerBitcoinExchangeRate),
 			minimumNetworkFeeNanosPerKb,
 			createProfileFeeNanos,
 			0, /*createNFTFeeNanos*/
@@ -3262,7 +3295,7 @@ func TestUpdateProfile(t *testing.T) {
 			100,
 			m3Pub,
 			m3Priv,
-			InitialUSDCentsPerBitcoinExchangeRate,
+			int64(InitialUSDCentsPerBitcoinExchangeRate),
 			0,
 			100)
 
@@ -3287,7 +3320,7 @@ func TestUpdateProfile(t *testing.T) {
 			100,
 			m3Pub,
 			m3Priv,
-			InitialUSDCentsPerBitcoinExchangeRate,
+			int64(InitialUSDCentsPerBitcoinExchangeRate),
 			5,
 			1)
 
@@ -3325,7 +3358,7 @@ func TestUpdateProfile(t *testing.T) {
 			100,
 			m3Pub,
 			m3Priv,
-			InitialUSDCentsPerBitcoinExchangeRate,
+			int64(InitialUSDCentsPerBitcoinExchangeRate),
 			0,
 			0)
 
@@ -6867,7 +6900,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 			// When we hit the rate update, populate the placeholder.
 			if ii == rateUpdateIndex {
-				newUSDCentsPerBitcoin := uint64(27000 * 100)
+				newUSDCentsPerBitcoin := int64(27000 * 100)
 				_, rateUpdateTxn, _, err := _updateGlobalParamsEntry(t, chain, db, params, 10,
 					moneyPkString, moneyPrivString, newUSDCentsPerBitcoin, 0, 0, 0, false)
 
@@ -8974,10 +9007,10 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 	// Should fail when founder key is not equal to moneyPk
 	{
-		newUSDCentsPerBitcoin := uint64(27000 * 100)
-		newMinimumNetworkFeeNanosPerKB := uint64(100)
-		newCreateProfileFeeNanos := uint64(200)
-		newCreateNFTFeeNanos := uint64(300)
+		newUSDCentsPerBitcoin := int64(27000 * 100)
+		newMinimumNetworkFeeNanosPerKB := int64(100)
+		newCreateProfileFeeNanos := int64(200)
+		newCreateNFTFeeNanos := int64(300)
 		_, _, _, err := _updateGlobalParamsEntry(
 			t, chain, db, params, 100, /*feeRateNanosPerKB*/
 			m0Pub,
@@ -8995,10 +9028,10 @@ func TestUpdateGlobalParams(t *testing.T) {
 	var updateGlobalParamsTxn *MsgBitCloutTxn
 	var err error
 	{
-		newUSDCentsPerBitcoin := uint64(270430 * 100)
-		newMinimumNetworkFeeNanosPerKB := uint64(191)
-		newCreateProfileFeeNanos := uint64(10015)
-		newCreateNFTFeeNanos := uint64(14983)
+		newUSDCentsPerBitcoin := int64(270430 * 100)
+		newMinimumNetworkFeeNanosPerKB := int64(191)
+		newCreateProfileFeeNanos := int64(10015)
+		newCreateNFTFeeNanos := int64(14983)
 		_, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntry(
 			t, chain, db, params, 200, /*feeRateNanosPerKB*/
 			moneyPkString,
@@ -9024,10 +9057,10 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		// Verify that utxoView and db reflect the new global parmas entry.
 		expectedGlobalParams := GlobalParamsEntry{
-			USDCentsPerBitcoin:          newUSDCentsPerBitcoin,
-			MinimumNetworkFeeNanosPerKB: newMinimumNetworkFeeNanosPerKB,
-			CreateProfileFeeNanos:       newCreateProfileFeeNanos,
-			CreateNFTFeeNanos:           newCreateNFTFeeNanos,
+			USDCentsPerBitcoin:          uint64(newUSDCentsPerBitcoin),
+			MinimumNetworkFeeNanosPerKB: uint64(newMinimumNetworkFeeNanosPerKB),
+			CreateProfileFeeNanos:       uint64(newCreateProfileFeeNanos),
+			CreateNFTFeeNanos:           uint64(newCreateNFTFeeNanos),
 		}
 		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle), &expectedGlobalParams)
 
@@ -9038,10 +9071,10 @@ func TestUpdateGlobalParams(t *testing.T) {
 	}
 
 	{
-		newUSDCentsPerBitcoin := uint64(270434 * 100)
-		newMinimumNetworkFeeNanosPerKB := uint64(131)
-		newCreateProfileFeeNanos := uint64(102315)
-		newCreateNFTFeeNanos := uint64(3244099)
+		newUSDCentsPerBitcoin := int64(270434 * 100)
+		newMinimumNetworkFeeNanosPerKB := int64(131)
+		newCreateProfileFeeNanos := int64(102315)
+		newCreateNFTFeeNanos := int64(3244099)
 		_, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntry(
 			t, chain, db, params, 200, /*feeRateNanosPerKB*/
 			moneyPkString,
@@ -9069,10 +9102,10 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		// Verify that utxoView and db reflect the new global parmas entry.
 		expectedGlobalParams := GlobalParamsEntry{
-			USDCentsPerBitcoin:          newUSDCentsPerBitcoin,
-			MinimumNetworkFeeNanosPerKB: newMinimumNetworkFeeNanosPerKB,
-			CreateProfileFeeNanos:       newCreateProfileFeeNanos,
-			CreateNFTFeeNanos:           newCreateNFTFeeNanos,
+			USDCentsPerBitcoin:          uint64(newUSDCentsPerBitcoin),
+			MinimumNetworkFeeNanosPerKB: uint64(newMinimumNetworkFeeNanosPerKB),
+			CreateProfileFeeNanos:       uint64(newCreateProfileFeeNanos),
+			CreateNFTFeeNanos:           uint64(newCreateNFTFeeNanos),
 		}
 		require.NotEqual(DbGetGlobalParamsEntry(utxoView.Handle), &expectedGlobalParams)
 
@@ -14970,19 +15003,17 @@ func TestNFTBasic(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                   /*feeRateNanosPerKB*/
-			m0Pub,                                /*updaterPkBase58Check*/
-			m0Priv,                               /*updaterPrivBase58Check*/
-			[]byte{},                             /*postHashToModify*/
-			[]byte{},                             /*parentStakeID*/
-			&BitCloutBodySchema{Body: "m0 post"}, /*body*/
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 	}
-	post1Txn := testMeta.txns[len(testMeta.txns)-1]
-	post1Hash := post1Txn.Hash()
-	_, _ = post1Txn, post1Hash
+	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
 	// Error case: m1 should not be able to turn m0's post into an NFT.
 	{
@@ -14993,21 +15024,23 @@ func TestNFTBasic(t *testing.T) {
 			post1Hash,
 			100,   /*NumCopies*/
 			false, /*HasUnlockable*/
+			0,     /*nftFee*/
 		)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
 	}
 
-	// Error case: m0 should not be able to make 1B copies of the NFT.
+	// Error case: m0 should not be able to make more than MaxCopiesPerNFT.
 	{
 		_, _, _, err := _createNFT(
 			t, chain, db, params, 10,
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			1000000000, /*NumCopies*/
-			false,      /*HasUnlockable*/
+			params.MaxCopiesPerNFT+1, /*NumCopies*/
+			false,                    /*HasUnlockable*/
+			0,                        /*nftFee*/
 		)
 
 		require.Error(err)
@@ -15029,6 +15062,7 @@ func TestNFTBasic(t *testing.T) {
 			fakePostHash,
 			1,     /*NumCopies*/
 			false, /*HasUnlockable*/
+			0,     /*nftFee*/
 		)
 
 		require.Error(err)
@@ -15037,6 +15071,9 @@ func TestNFTBasic(t *testing.T) {
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
 	{
+		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		require.Equal(uint64(68), m0BalBeforeNFT)
+
 		_createNFTWithTestMeta(
 			testMeta,
 			10, /*FeeRateNanosPerKB*/
@@ -15045,7 +15082,12 @@ func TestNFTBasic(t *testing.T) {
 			post1Hash,
 			5,     /*NumCopies*/
 			false, /*HasUnlockable*/
+			0,     /*nftFee*/
 		)
+
+		// Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		require.Equal(uint64(67), m0BalAfterNFT)
 	}
 
 	// Error case: cannot turn a post into an NFT twice.
@@ -15057,6 +15099,7 @@ func TestNFTBasic(t *testing.T) {
 			post1Hash,
 			5,     /*NumCopies*/
 			false, /*HasUnlockable*/
+			0,     /*nftFee*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
@@ -15078,6 +15121,77 @@ func TestNFTBasic(t *testing.T) {
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostCannotUpdateNFT)
+	}
+
+	// Now let's try adding a fee to creating NFT copies. This fee exists since creating
+	// n-copies of an NFT causes the chain to do n-times as much work.
+	{
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			-1, -1, -1,
+			1, /*createNFTFeeNanos*/
+		)
+	}
+
+	// Have m0 create another post for us to NFTify.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 2"}, /*body*/
+			[]byte{},
+			1502947012*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+
+	// Error case: creating an NFT without paying the nftFee should fail.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			1000,  /*NumCopies*/
+			false, /*HasUnlockable*/
+			0,     /*nftFee*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
+	}
+
+	// Creating an NFT with the correct NFT fee should succeed.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		numCopies := uint64(10)
+		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
+
+		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		require.Equal(uint64(65), m0BalBeforeNFT)
+
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			10,     /*NumCopies*/
+			false,  /*HasUnlockable*/
+			nftFee, /*nftFee*/
+		)
+
+		// Check that m0 was charged the correct nftFee.
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		require.Equal(uint64(64)-nftFee, m0BalAfterNFT)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
