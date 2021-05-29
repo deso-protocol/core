@@ -265,7 +265,7 @@ func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgBitCloutTxn) error {
 //     This happens for example when an outbound peer is disconnected in order to
 //     maintain TargetOutboundPeers.
 // - The server could also receive a control message that a peer has been disconnected.
-//   This can be userful to the server if, for example, it was expecting a response from
+//   This can be useful to the server if, for example, it was expecting a response from
 //   a particular peer, which could be the case in initial block download where a single
 //   sync peer is used.
 //
