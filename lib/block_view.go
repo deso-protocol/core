@@ -194,6 +194,31 @@ type LikeEntry struct {
 	isDeleted bool
 }
 
+func MakeNFTKey(nftPostHash *BlockHash, serialNumber uint64) NFTKey {
+	return NFTKey{
+		NFTPostHash:  *nftPostHash,
+		SerialNumber: serialNumber,
+	}
+}
+
+type NFTKey struct {
+	NFTPostHash  BlockHash
+	SerialNumber uint64
+}
+
+// This struct defines an individual NFT owned by a PKID. An NFT entry  maps to a single
+// postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
+// defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
+type NFTEntry struct {
+	OwnerPKID    *PKID
+	NFTPostHash  *BlockHash
+	SerialNumber uint64
+	IsForSale    bool
+
+	// Whether or not this entry is deleted in the view.
+	isDeleted bool
+}
+
 func MakeFollowKey(followerPKID *PKID, followedPKID *PKID) FollowKey {
 	return FollowKey{
 		FollowerPKID: *followerPKID,
@@ -726,6 +751,9 @@ type UtxoView struct {
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
 
+	// NFT data
+	NFTKeyToNFTEntry map[NFTKey]*NFTEntry
+
 	// Diamond data
 	DiamondKeyToDiamondEntry map[DiamondKey]*DiamondEntry
 
@@ -952,6 +980,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
+
+	// NFT data
+	bav.NFTKeyToNFTEntry = make(map[NFTKey]*NFTEntry)
 
 	// Diamond data
 	bav.DiamondKeyToDiamondEntry = make(map[DiamondKey]*DiamondEntry)
@@ -2326,6 +2357,18 @@ func (bav *UtxoView) _disconnectCreateNFT(
 	// Revert the post entry mapping since we likely updated the DiamondCount.
 	bav._setPostEntryMappings(operationData.PrevPostEntry)
 
+	// Delete the NFT entries.
+	posterPKID := bav.GetPKIDForPublicKey(existingPostEntry.PosterPublicKey)
+	for ii := uint64(0); ii < txMeta.NumCopies; ii++ {
+		nftEntry := &NFTEntry{
+			OwnerPKID:    posterPKID.PKID,
+			NFTPostHash:  txMeta.NFTPostHash,
+			SerialNumber: ii,
+			IsForSale:    true,
+		}
+		bav._deleteNFTEntryMappings(nftEntry)
+	}
+
 	// Now revert the basic transfer with the remaining operations. Cut off
 	// the CreatorCoin operation at the end since we just reverted it.
 	return bav._disconnectBasicTransfer(
@@ -3038,6 +3081,28 @@ func (bav *UtxoView) _deleteFollowEntryMappings(followEntry *FollowEntry) {
 
 	// Set the mappings to point to the tombstone entry.
 	bav._setFollowEntryMappings(&tombstoneFollowEntry)
+}
+
+func (bav *UtxoView) _setNFTEntryMappings(nftEntry *NFTEntry) {
+	// This function shouldn't be called with nil.
+	if nftEntry == nil {
+		glog.Errorf("_setNFTEntryMappings: Called with nil NFTEntry; " +
+			"this should never happen.")
+		return
+	}
+
+	nftKey := MakeNFTKey(nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	bav.NFTKeyToNFTEntry[nftKey] = nftEntry
+}
+
+func (bav *UtxoView) _deleteNFTEntryMappings(nftEntry *NFTEntry) {
+
+	// Create a tombstone entry.
+	tombstoneNFTEntry := *nftEntry
+	tombstoneNFTEntry.isDeleted = true
+
+	// Set the mappings to point to the tombstone entry.
+	bav._setNFTEntryMappings(&tombstoneNFTEntry)
 }
 
 func (bav *UtxoView) _setDiamondEntryMappings(diamondEntry *DiamondEntry) {
@@ -5003,7 +5068,7 @@ func (bav *UtxoView) _connectCreateNFT(
 		return 0, 0, nil, RuleErrorCreateNFTWithInsufficientFunds
 	}
 
-	// Save a copy of the post entry so so that we can safely modify it.
+	// Save a copy of the post entry so that we can safely modify it.
 	prevPostEntry := &PostEntry{}
 	*prevPostEntry = *postEntry
 
@@ -5012,6 +5077,18 @@ func (bav *UtxoView) _connectCreateNFT(
 	postEntry.NumNFTCopies = txMeta.NumCopies
 	postEntry.HasUnlockable = txMeta.HasUnlockable
 	bav._setPostEntryMappings(postEntry)
+
+	// Add the appropriate NFT entries.
+	posterPKID := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
+	for ii := uint64(0); ii < txMeta.NumCopies; ii++ {
+		nftEntry := &NFTEntry{
+			OwnerPKID:    posterPKID.PKID,
+			NFTPostHash:  txMeta.NFTPostHash,
+			SerialNumber: ii,
+			IsForSale:    true,
+		}
+		bav._setNFTEntryMappings(nftEntry)
+	}
 
 	// Add an operation to the list at the end indicating we've updated a profile.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -7371,6 +7448,51 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
+func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
+
+	// Go through and delete all the entries so they can be added back fresh.
+	for nftKeyIter, nftEntry := range bav.NFTKeyToNFTEntry {
+		// Make a copy of the iterator since we make references to it below.
+		nftKey := nftKeyIter
+
+		// Sanity-check that the NFTKey computed from the NFTEntry is
+		// equal to the NFTKey that maps to that entry.
+		nftKeyInEntry := MakeNFTKey(nftEntry.NFTPostHash, nftEntry.SerialNumber)
+		if nftKeyInEntry != nftKey {
+			return fmt.Errorf("_flushNFTEntriesToDbWithTxn: NFTEntry has "+
+				"NFTKey: %v, which doesn't match the NFTKeyToNFTEntry map key %v",
+				&nftKeyInEntry, &nftKey)
+		}
+
+		// Delete the existing mappings in the db for this NFTKey. They will be re-added
+		// if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+
+			return errors.Wrapf(
+				err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
+					"for NFTKey: %v: ", &nftKey)
+		}
+	}
+
+	// Add back all of the entries that aren't deleted.
+	for _, nftEntry := range bav.NFTKeyToNFTEntry {
+		if nftEntry.isDeleted {
+			// If the NFTEntry has isDeleted=true then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			// If the NFTEntry has (isDeleted = false) then we put the corresponding
+			// mappings for it into the db.
+			if err := DBPutNFTEntryMappingsWithTxn(txn, nftEntry); err != nil {
+				return err
+			}
+		}
+	}
+
+	// At this point all of the MessageEntry mappings in the db should be up-to-date.
+
+	return nil
+}
+
 func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 
 	// Go through and delete all the entries so they can be added back fresh.
@@ -7664,6 +7786,10 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	if err := bav._flushFollowEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+
+	if err := bav._flushNFTEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 

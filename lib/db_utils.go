@@ -197,7 +197,15 @@ var (
 	// <prefix, ForbiddenPublicKey [33]byte> -> <>
 	_PrefixForbiddenBlockSignaturePubKeys = []byte{44}
 
-	// NEXT_TAG: 45
+	// Prefixes for NFT ownership entries:
+	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
+	_PrefixPostHashSerialNumberToNFTEntry = []byte{45}
+
+	// Prefixes for NFT bids:
+	_PrefixPostHashSerialNumberBidNanosToBidderPubKey = []byte{46}
+	_PrefixBidderPubKeyPostHashSerialNumberToBidNanos = []byte{47}
+
+	// NEXT_TAG: 48
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -3686,6 +3694,95 @@ func DBGetCommentPostHashesForParentStakeID(
 	return tstampsFetched, commentPostHashes, commentEntriesFetched, nil
 }
 
+// =======================================================================================
+// NFTEntry db functions
+// =======================================================================================
+
+func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
+	key := append(prefixCopy, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func DBGetNFTEntryByPostHashSerialNumberWithTxn(
+	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+
+	key := _dbKeyForNFTPostHashSerialNumber(postHash, serialNumber)
+	nftEntryObj := &NFTEntry{}
+	nftEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftEntryObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetNFTEntryByPostHashSerialNumberWithTxn: Problem reading "+
+			"NFTEntry for postHash %v", postHash)
+		return nil
+	}
+	return nftEntryObj
+}
+
+func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+	var ret *NFTEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetNFTEntryByPostHashSerialNumberWithTxn(txn, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+
+	// First pull up the mapping that exists for the post / serial # passed in.
+	// If one doesn't exist then there's nothing to do.
+	nftEntry := DBGetNFTEntryByPostHashSerialNumberWithTxn(txn, nftPostHash, serialNumber)
+	if nftEntry == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete the mapping.
+	if err := txn.Delete(_dbKeyForNFTPostHashSerialNumber(nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
+			"nft mapping for post hash %v serial number %d", nftPostHash, serialNumber)
+	}
+
+	return nil
+}
+
+func DBDeleteNFTMappings(
+	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteNFTMappingsWithTxn(txn, postHash, serialNumber)
+	})
+}
+
+func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
+
+	nftDataBuf := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(nftDataBuf).Encode(nftEntry)
+
+	if err := txn.Set(_dbKeyForNFTPostHashSerialNumber(
+		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftDataBuf.Bytes()); err != nil {
+
+		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
+			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	}
+
+	return nil
+}
+
+func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutNFTEntryMappingsWithTxn(txn, nftEntry)
+	})
+}
+
 // ======================================================================================
 // Profile code
 // ======================================================================================
@@ -4103,7 +4200,7 @@ func DBPutCreatorCoinBalanceEntryMappings(
 
 // GetSingleBalanceEntryFromPublicKeys fetchs a single balance entry of a holder's creator coin.
 // Returns nil if the balance entry never existed.
-func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView *UtxoView) (*BalanceEntry, error){
+func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView *UtxoView) (*BalanceEntry, error) {
 	holderPKIDEntry := utxoView.GetPKIDForPublicKey(holder)
 	if holderPKIDEntry == nil || holderPKIDEntry.isDeleted {
 		return nil, fmt.Errorf("DbGetSingleBalanceEntryFromPublicKeys: holderPKID was nil or deleted; this should never happen")
