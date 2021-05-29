@@ -219,6 +219,23 @@ type NFTEntry struct {
 	isDeleted bool
 }
 
+type NFTBidKey struct {
+	BidderPKID   PKID
+	NFTPostHash  BlockHash
+	SerialNumber uint64
+}
+
+// This struct defines a single bid on an NFT.
+type NFTBidEntry struct {
+	BidderPKID     *PKID
+	NFTPostHash    *BlockHash
+	SerialNumber   uint64
+	BidAmountNanos uint64
+
+	// Whether or not this entry is deleted in the view.
+	isDeleted bool
+}
+
 func MakeFollowKey(followerPKID *PKID, followedPKID *PKID) FollowKey {
 	return FollowKey{
 		FollowerPKID: *followerPKID,
@@ -927,6 +944,9 @@ type UtxoOperation struct {
 
 	// For disconnecting diamonds.
 	PrevDiamondEntry *DiamondEntry
+
+	// For disconnecting NFT bids.
+	PrevNFTBidEntry *NFTBidEntry
 
 	// Save the previous reclout entry and reclout count when making an update.
 	PrevRecloutEntry *RecloutEntry
@@ -2359,7 +2379,7 @@ func (bav *UtxoView) _disconnectCreateNFT(
 
 	// Delete the NFT entries.
 	posterPKID := bav.GetPKIDForPublicKey(existingPostEntry.PosterPublicKey)
-	for ii := uint64(0); ii < txMeta.NumCopies; ii++ {
+	for ii := uint64(1); ii <= txMeta.NumCopies; ii++ {
 		nftEntry := &NFTEntry{
 			OwnerPKID:    posterPKID.PKID,
 			NFTPostHash:  txMeta.NFTPostHash,
@@ -5080,7 +5100,7 @@ func (bav *UtxoView) _connectCreateNFT(
 
 	// Add the appropriate NFT entries.
 	posterPKID := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
-	for ii := uint64(0); ii < txMeta.NumCopies; ii++ {
+	for ii := uint64(1); ii <= txMeta.NumCopies; ii++ {
 		nftEntry := &NFTEntry{
 			OwnerPKID:    posterPKID.PKID,
 			NFTPostHash:  txMeta.NFTPostHash,
@@ -5121,9 +5141,75 @@ func (bav *UtxoView) _connectNFTBid(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	// RPH-FIXME: Fill this in.
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeNFTBid {
+		return 0, 0, nil, fmt.Errorf("_connectNFTBid: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*NFTBidMetadata)
 
-	return 0, 0, nil, nil
+	// Verify that the postEntry being bid on exists, is an NFT, and supports the given serial #.
+	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	if postEntry == nil {
+		return 0, 0, nil, RuleErrorNFTBidOnNonExistentPost
+	} else if !postEntry.IsNFT {
+		return 0, 0, nil, RuleErrorNFTBidOnPostThatIsNotAnNFT
+	} else if txMeta.SerialNumber == 0 || txMeta.SerialNumber > postEntry.NumNFTCopies {
+		return 0, 0, nil, RuleErrorNFTBidOnInvalidSerialNumber
+	}
+
+	// Verify the NFT entry that is being bid on exists.
+	nftEntry := bav.GetNFTEntryForPostHashSerialNumber(txMeta.NFTPostHash, txMeta.SerialNumber)
+	if nftEntry == nil {
+		return 0, 0, nil, RuleErrorNFTBidOnNonExistentNFTEntry
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: ")
+	}
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorCreateNFTRequiresNonZeroInput
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+	}
+
+	bidderPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+
+	// Save a copy of the bid entry so that we can use it in the disconnect.
+	prevNFTBidEntry := bav.GetNFTBidEntryForBidderPKIDPostHashSerialNumber(
+		bidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+
+	// If an old bid exists, delete it.
+	bav._deleteNFTBidEntryMappings(bidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+
+	if txMeta.BidAmountNanos != 0 {
+		// Zero bids are not allowed, submitting a zero bid effectively withdraws a prior bid.
+		newBidEntry := &NFTBidEntry{
+			BidderPKID:     bidderPKID,
+			NFTPostHash:    txMeta.NFTPostHash,
+			SerialNumber:   txMeta.SerialNumber,
+			BidAmountNanos: txMeta.BidAmountNanos,
+		}
+		bav._setNFTBidEntryMappings(newBidEntry)
+	}
+
+	// Add an operation to the list at the end indicating we've updated a profile.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:            OperationTypeNFTBid,
+		PrevNFTBidEntry: prevNFTBidEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectSwapIdentity(

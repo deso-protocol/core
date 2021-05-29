@@ -206,6 +206,12 @@ const (
 	RuleErrorCreateNFTOnPostThatAlreadyIsNFT RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
 	RuleErrorCreateNFTMustBeCalledByPoster   RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
 
+	// NFT Bids
+	RuleErrorNFTBidOnNonExistentPost     RuleError = "RuleErrorNFTBidOnNonExistentPost"
+	RuleErrorNFTBidOnPostThatIsNotAnNFT  RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
+	RuleErrorNFTBidOnInvalidSerialNumber RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"
+	RuleErrorNFTBidOnNonExistentNFTEntry RuleError = "RuleErrorNFTBidOnNonExistentNFTEntry"
+
 	RuleErrorSwapIdentityIsParamUpdaterOnly RuleError = "RuleErrorSwapIdentityIsParamUpdaterOnly"
 	RuleErrorFromPublicKeyIsRequired        RuleError = "RuleErrorFromPublicKeyIsRequired"
 	RuleErrorInvalidFromPublicKey           RuleError = "RuleErrorInvalidFromPublicKey"
