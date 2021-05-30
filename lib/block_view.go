@@ -318,27 +318,10 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	postEntryReaderState := &PostEntryReaderState{}
 
 	// Get like state.
-	likeKey := MakeLikeKey(readerPK, *postEntry.PostHash)
-	likeEntry := bav._getLikeEntryForLikeKey(&likeKey)
-	if likeEntry != nil && !likeEntry.isDeleted {
-		postEntryReaderState.LikedByReader = true
-	}
+	postEntryReaderState.LikedByReader = bav.GetLikedByReader(readerPK, postEntry.PostHash)
 
 	// Get reclout state.
-	recloutKey := MakeRecloutKey(readerPK, *postEntry.PostHash)
-	recloutEntry := bav._getRecloutEntryForRecloutKey(&recloutKey)
-	if recloutEntry != nil {
-		recloutPostEntry := bav.GetPostEntryForPostHash(recloutEntry.RecloutPostHash)
-		if recloutPostEntry == nil {
-			glog.Errorf("Could not find reclout post entry from post hash: %v", recloutEntry.RecloutedPostHash)
-			return nil
-		}
-		// If the user's reclout of this post is hidden, we set RecloutedByReader to false.
-		postEntryReaderState.RecloutedByReader = !recloutPostEntry.IsHidden
-		// We include the PostHashHex of this user's post that reclouts the current post to
-		// handle undo-ing (AKA hiding) a reclout.
-		postEntryReaderState.RecloutPostHashHex = hex.EncodeToString(recloutEntry.RecloutPostHash[:])
-	}
+	postEntryReaderState.RecloutPostHashHex, postEntryReaderState.RecloutedByReader = bav.GetRecloutPostEntryStateForReader(readerPK, postEntry.PostHash)
 
 	// Get diamond state.
 	senderPKID := bav.GetPKIDForPublicKey(readerPK)
@@ -356,6 +339,30 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	}
 
 	return postEntryReaderState
+}
+
+func (bav *UtxoView) GetLikedByReader(readerPK []byte, postHash *BlockHash) bool {
+	// Get like state.
+	likeKey := MakeLikeKey(readerPK, *postHash)
+	likeEntry := bav._getLikeEntryForLikeKey(&likeKey)
+	return likeEntry != nil && !likeEntry.isDeleted
+}
+
+func (bav *UtxoView) GetRecloutPostEntryStateForReader(readerPK []byte, postHash *BlockHash) (string, bool) {
+	recloutKey := MakeRecloutKey(readerPK, *postHash)
+	recloutEntry := bav._getRecloutEntryForRecloutKey(&recloutKey)
+	if recloutEntry == nil {
+		return "", false
+	}
+	recloutPostEntry := bav.GetPostEntryForPostHash(recloutEntry.RecloutPostHash)
+	if recloutPostEntry == nil {
+		glog.Errorf("Could not find reclout post entry from post hash: %v", recloutEntry.RecloutedPostHash)
+		return "", false
+	}
+	// We include the PostHashHex of this user's post that reclouts the current post to
+	// handle undo-ing (AKA hiding) a reclout.
+	// If the user's reclout of this post is hidden, we set RecloutedByReader to false.
+	return hex.EncodeToString(recloutEntry.RecloutPostHash[:]), !recloutPostEntry.IsHidden
 }
 
 type SingleStake struct {
