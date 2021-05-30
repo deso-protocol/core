@@ -2463,20 +2463,36 @@ func (bav *UtxoView) _disconnectNFTBid(
 
 	// Verify that the last operation is a CreatorCoinTransfer operation
 	if len(utxoOpsForTxn) == 0 {
-		return fmt.Errorf("_disconnectUpdateNFT: utxoOperations are missing")
+		return fmt.Errorf("_disconnectNFTBid: utxoOperations are missing")
 	}
 	operationIndex := len(utxoOpsForTxn) - 1
 	if utxoOpsForTxn[operationIndex].Type != OperationTypeNFTBid {
-		return fmt.Errorf("_disconnectUpdateNFT: Trying to revert "+
+		return fmt.Errorf("_disconnectNFTBid: Trying to revert "+
 			"OperationTypeNFTBid but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*CreateNFTMetadata)
+	txMeta := currentTxn.TxnMeta.(*NFTBidMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 	_, _ = txMeta, operationData
 
-	// RPH-FIXME: Fill this in.
+	// Get the NFTBidEntry corresponding to this txn.
+	bidderPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
+	// Sanity-check that it exists.
+	if nftBidEntry == nil || nftBidEntry.isDeleted {
+		return fmt.Errorf("_disconnectNFTBid: Bid entry for "+
+			"nftBidKey %v doesn't exist; this should never happen", nftBidKey)
+	}
+
+	// Delete the existing NFT bid entry.
+	bav._deleteNFTBidEntryMappings(nftBidEntry)
+
+	// If a previous entry exists, set it.
+	if operationData.PrevNFTBidEntry != nil {
+		bav._setNFTBidEntryMappings(operationData.PrevNFTBidEntry)
+	}
 
 	// Now revert the basic transfer with the remaining operations.
 	return bav._disconnectBasicTransfer(
@@ -5263,7 +5279,7 @@ func (bav *UtxoView) _connectNFTBid(
 		bav._deleteNFTBidEntryMappings(prevNFTBidEntry)
 	}
 
-	// If the new bid has a non-zero amount, set it in the view.
+	// If the new bid has a non-zero amount, set it.
 	if txMeta.BidAmountNanos != 0 {
 		// Zero bids are not allowed, submitting a zero bid effectively withdraws a prior bid.
 		newBidEntry := &NFTBidEntry{
