@@ -5276,6 +5276,17 @@ func (bav *UtxoView) _connectNFTBid(
 		return 0, 0, nil, RuleErrorNFTBidOnNonExistentNFTEntry
 	}
 
+	// Verify the NFT entry being bid on is for sale.
+	if !nftEntry.IsForSale {
+		return 0, 0, nil, RuleErrorNFTBidOnNFTThatIsNotForSale
+	}
+
+	// Verify that the bidder is not the current owner of the NFT.
+	bidderPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if reflect.DeepEqual(nftEntry.OwnerPKID, bidderPKID.PKID) {
+		return 0, 0, nil, RuleErrorNFTOwnerCannotBidOnOwnedNFT
+	}
+
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
@@ -5294,8 +5305,6 @@ func (bav *UtxoView) _connectNFTBid(
 		// signed by the top-level public key, which we take to be the poster's
 		// public key.
 	}
-
-	bidderPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
 
 	// Save a copy of the bid entry so that we can use it in the disconnect.
 	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
@@ -7548,6 +7557,7 @@ func (bav *UtxoView) _flushRecloutEntriesToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	// At this point all of the RecloutEntry mappings in the db should be up-to-date.
+
 	return nil
 }
 
@@ -7594,8 +7604,6 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 			}
 		}
 	}
-
-	// At this point all of the MessageEntry mappings in the db should be up-to-date.
 
 	return nil
 }
@@ -7644,8 +7652,6 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// At this point all of the MessageEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
@@ -7689,7 +7695,49 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// At this point all of the MessageEntry mappings in the db should be up-to-date.
+	return nil
+}
+
+func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
+
+	// Go through and delete all the entries so they can be added back fresh.
+	for nftBidKeyIter, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
+		// Make a copy of the iterator since we make references to it below.
+		nftBidKey := nftBidKeyIter
+
+		// Sanity-check that the NFTBidKey computed from the NFTBidEntry is
+		// equal to the NFTBidKey that maps to that entry.
+		nftBidKeyInEntry := MakeNFTBidKey(
+			nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)
+		if nftBidKeyInEntry != nftBidKey {
+			return fmt.Errorf("_flushNFTBidEntriesToDbWithTxn: NFTBidEntry has "+
+				"NFTBidKey: %v, which doesn't match the NFTBidKeyToNFTEntry map key %v",
+				&nftBidKeyInEntry, &nftBidKey)
+		}
+
+		// Delete the existing mappings in the db for this NFTBidKey. They will be re-added
+		// if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
+
+			return errors.Wrapf(
+				err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
+					"for NFTBidKey: %v: ", &nftBidKey)
+		}
+	}
+
+	// Add back all of the entries that aren't deleted.
+	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
+		if nftBidEntry.isDeleted {
+			// If the NFTEntry has isDeleted=true then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			// If the NFTEntry has (isDeleted = false) then we put the corresponding
+			// mappings for it into the db.
+			if err := DBPutNFTBidEntryMappingsWithTxn(txn, nftBidEntry); err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
 }
@@ -7991,6 +8039,10 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	if err := bav._flushNFTEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+
+	if err := bav._flushNFTBidEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 

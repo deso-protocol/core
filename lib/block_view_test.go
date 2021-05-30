@@ -663,7 +663,7 @@ func _createNFTWithTestMeta(
 	require.Equal(testMeta.t, 0, len(dbNFTEntries))
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, m0Pub))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
 	currentOps, currentTxn, _, err := _createNFT(
 		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
@@ -682,6 +682,87 @@ func _createNFTWithTestMeta(
 	// Sanity check that the first entry has serial number 1.
 	require.Equal(testMeta.t, uint64(1), dbNFTEntries[0].SerialNumber)
 
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCloutParams,
+	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
+	nftPostHash *BlockHash, serialNumber uint64, bidAmountNanos uint64,
+) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	require.NoError(err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateNFTBidTxn(
+		updaterPkBytes,
+		nftPostHash,
+		serialNumber,
+		bidAmountNanos,
+		feeRateNanosPerKB,
+		nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, updaterPrivBase58Check)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeCreateNFT operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
+func _createNFTBidWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	postHash *BlockHash,
+	serialNumber uint64,
+	bidAmountNanos uint64,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+	currentOps, currentTxn, _, err := _createNFTBid(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		postHash,
+		serialNumber,
+		bidAmountNanos,
+	)
+	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
@@ -15220,6 +15301,111 @@ func TestNFTBasic(t *testing.T) {
 		// Check that m0 was charged the correct nftFee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
 		require.Equal(uint64(64)-nftFee, m0BalAfterNFT)
+	}
+
+	//
+	// Bidding on NFTs
+	//
+
+	// Error case: non-existent NFT.
+	{
+		fakePostHash := &BlockHash{
+			0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+			0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+			0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+
+		_, _, _, err := _createNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			fakePostHash,
+			1,          /*SerialNumber*/
+			1000000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTBidOnNonExistentPost)
+	}
+
+	// Have m0 create another post that has not been NFTed.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 3"}, /*body*/
+			[]byte{},
+			1502947013*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post3Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+
+	// Error case: cannot bid on a post that is not an NFT.
+	{
+		_, _, _, err := _createNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post3Hash,
+			1,          /*SerialNumber*/
+			1000000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTBidOnPostThatIsNotAnNFT)
+	}
+
+	// Error case: Bidding on a serial number that does not exist should fail (post1 has 5 copies).
+	{
+		_, _, _, err := _createNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			0,          /*SerialNumber*/
+			1000000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTBidOnInvalidSerialNumber)
+
+		_, _, _, err = _createNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			6,          /*SerialNumber*/
+			1000000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTBidOnInvalidSerialNumber)
+	}
+
+	// Error case: m0 cannot bid on its own NFT.
+	{
+		_, _, _, err := _createNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,          /*SerialNumber*/
+			1000000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTOwnerCannotBidOnOwnedNFT)
+	}
+
+	// Have m1 create a successful NFT bid of 1 nano on post #1 / serial #1.
+	{
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.

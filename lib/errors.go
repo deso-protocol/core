@@ -212,6 +212,8 @@ const (
 	RuleErrorNFTBidOnPostThatIsNotAnNFT  RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
 	RuleErrorNFTBidOnInvalidSerialNumber RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"
 	RuleErrorNFTBidOnNonExistentNFTEntry RuleError = "RuleErrorNFTBidOnNonExistentNFTEntry"
+	RuleErrorNFTBidOnNFTThatIsNotForSale RuleError = "RuleErrorNFTBidOnNFTThatIsNotForSale"
+	RuleErrorNFTOwnerCannotBidOnOwnedNFT RuleError = "RuleErrorNFTOwnerCannotBidOnOwnedNFT"
 
 	RuleErrorSwapIdentityIsParamUpdaterOnly RuleError = "RuleErrorSwapIdentityIsParamUpdaterOnly"
 	RuleErrorFromPublicKeyIsRequired        RuleError = "RuleErrorFromPublicKeyIsRequired"
