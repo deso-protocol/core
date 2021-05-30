@@ -658,6 +658,9 @@ func _createNFTWithTestMeta(
 	hasUnlockable bool,
 	nftFee uint64,
 ) {
+	// Sanity check: the number of NFT entries before should be 0.
+	dbNFTEntries := DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
+	require.Equal(testMeta.t, 0, len(dbNFTEntries))
 
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, m0Pub))
@@ -671,6 +674,14 @@ func _createNFTWithTestMeta(
 		nftFee,
 	)
 	require.NoError(testMeta.t, err)
+
+	// Sanity check: the number of NFT entries after should be numCopies.
+	dbNFTEntries = DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
+	require.Equal(testMeta.t, int(numCopies), len(dbNFTEntries))
+
+	// Sanity check that the first entry has serial number 1.
+	require.Equal(testMeta.t, uint64(1), dbNFTEntries[0].SerialNumber)
+
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
@@ -15047,6 +15058,22 @@ func TestNFTBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorTooManyNFTCopies)
 	}
 
+	// Error case: m0 should not be able to make an NFT with zero copies.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			0,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			0,     /*nftFee*/
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTMustHaveNonZeroCopies)
+	}
+
 	// Error case: non-existent post.
 	{
 
@@ -15071,7 +15098,8 @@ func TestNFTBasic(t *testing.T) {
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
 	{
-		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		// Balance before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(68), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
@@ -15085,7 +15113,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftFee*/
 		)
 
-		// Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
+		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
 		require.Equal(uint64(67), m0BalAfterNFT)
 	}

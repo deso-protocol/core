@@ -3169,6 +3169,30 @@ func (bav *UtxoView) GetNFTEntryForNFTKey(nftKey *NFTKey) *NFTEntry {
 	return dbNFTEntry
 }
 
+func (bav *UtxoView) GetNFTEntriesForPostHash(nftPostHash *BlockHash) []*NFTEntry {
+	// Get all the entries in the DB.
+	dbNFTEntries := DBGetNFTEntriesForPostHash(bav.Handle, nftPostHash)
+
+	// Make sure all of the DB entries are loaded in the view.
+	for _, dbNFTEntry := range dbNFTEntries {
+		nftKey := MakeNFTKey(dbNFTEntry.NFTPostHash, dbNFTEntry.SerialNumber)
+
+		// If the NFT is not in the view, add it to the view.
+		if _, ok := bav.NFTKeyToNFTEntry[nftKey]; !ok {
+			bav._setNFTEntryMappings(dbNFTEntry)
+		}
+	}
+
+	// Loop over the view and build the final set of NFTEntries to return.
+	nftEntries := []*NFTEntry{}
+	for _, nftEntry := range bav.NFTKeyToNFTEntry {
+		if reflect.DeepEqual(nftEntry.NFTPostHash, nftPostHash) {
+			nftEntries = append(nftEntries, nftEntry)
+		}
+	}
+	return nftEntries
+}
+
 func (bav *UtxoView) _setNFTBidEntryMappings(nftBidEntry *NFTBidEntry) {
 	// This function shouldn't be called with nil.
 	if nftBidEntry == nil {
@@ -5131,6 +5155,9 @@ func (bav *UtxoView) _connectCreateNFT(
 	// Validate the txMeta.
 	if txMeta.NumCopies > bav.Params.MaxCopiesPerNFT {
 		return 0, 0, nil, RuleErrorTooManyNFTCopies
+	}
+	if txMeta.NumCopies == 0 {
+		return 0, 0, nil, RuleErrorNFTMustHaveNonZeroCopies
 	}
 	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
 	if postEntry == nil {

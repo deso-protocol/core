@@ -205,6 +205,7 @@ const (
 	RuleErrorCreateNFTWithInsufficientFunds  RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
 	RuleErrorCreateNFTOnPostThatAlreadyIsNFT RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
 	RuleErrorCreateNFTMustBeCalledByPoster   RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
+	RuleErrorNFTMustHaveNonZeroCopies        RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
 
 	// NFT Bids
 	RuleErrorNFTBidOnNonExistentPost     RuleError = "RuleErrorNFTBidOnNonExistentPost"
