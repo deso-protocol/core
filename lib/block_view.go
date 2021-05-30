@@ -547,19 +547,13 @@ func (pe *PostEntry) IsDeleted() bool {
 }
 
 func IsQuotedReclout(postEntry *PostEntry) bool {
-	if postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil {
-		return true
-	}
-	return false
+	return postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil
 }
 
 // Return true if postEntry is a vanilla reclout.  A vanilla reclout is a post that reclouts another post,
 // but does not have a body.
 func IsVanillaReclout(postEntry *PostEntry) bool {
-	if !postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil {
-		return true
-	}
-	return false
+	return !postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil
 }
 
 type BalanceEntryMapKey struct {
@@ -6620,6 +6614,10 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
+
+	diamondPostEntry := bav.GetPostEntryForPostHash(postHash)
+	receiverPKIDEntry := bav.GetPKIDForPublicKey(diamondPostEntry.PosterPublicKey)
+
 	// Iterate over all the db keys & values and load them into the view.
 	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed + 8
 	for _, key := range keysFound {
@@ -6627,11 +6625,6 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 		if len(key) != expectedKeyLength {
 			return nil, fmt.Errorf("UtxoView.GetDiamondsForPostHash: Invalid key length found: %d", len(key))
 		}
-
-		diamondPostHash := &BlockHash{}
-		copy(diamondPostHash[:], key[1:1+HashSizeBytes])
-		diamondPostEntry := bav.GetPostEntryForPostHash(diamondPostHash)
-		receiverPKIDEntry := bav.GetPKIDForPublicKey(diamondPostEntry.PosterPublicKey)
 
 		senderPKID := &PKID{}
 		copy(senderPKID[:], key[1+HashSizeBytes:])
@@ -6642,8 +6635,7 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 			DiamondPostHash: *postHash,
 		}
 
-		loadedEntry := bav.GetDiamondEntryForDiamondKey(diamondKey)
-		_ = loadedEntry
+		bav.GetDiamondEntryForDiamondKey(diamondKey)
 	}
 
 	// Iterate over the view and create the final map to return.
@@ -6671,14 +6663,11 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][
 			return nil, fmt.Errorf("UtxoView.GetLikesForPostHash: Invalid key length found: %d", len(key))
 		}
 
-		likedPostHash := &BlockHash{}
-		copy(likedPostHash[:], key[1:1+HashSizeBytes])
-
 		likerPubKey := key[1+HashSizeBytes:]
 
 		likeKey := &LikeKey{
 			LikerPubKey:   MakePkMapKey(likerPubKey),
-			LikedPostHash: *likedPostHash,
+			LikedPostHash: *postHash,
 		}
 
 		bav._getLikeEntryForLikeKey(likeKey)
@@ -6709,14 +6698,11 @@ func (bav *UtxoView) GetRecloutsForPostHash(postHash *BlockHash) (_reclouterPubK
 			return nil, fmt.Errorf("UtxoView.GetRecloutersForPostHash: Invalid key length found: %d", len(key))
 		}
 
-		recloutedPostHash := &BlockHash{}
-		copy(recloutedPostHash[:], key[1:1+HashSizeBytes])
-
 		reclouterPubKey := key[1+HashSizeBytes:]
 
 		recloutKey := &RecloutKey{
 			ReclouterPubKey:   MakePkMapKey(reclouterPubKey),
-			RecloutedPostHash: *recloutedPostHash,
+			RecloutedPostHash: *postHash,
 		}
 
 		bav._getRecloutEntryForRecloutKey(recloutKey)
@@ -6742,6 +6728,8 @@ func (bav *UtxoView) GetQuoteRecloutsForPostHash(postHash *BlockHash,
 
 	// Iterate over all the db keys & values and load them into the view.
 	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed + HashSizeBytes
+
+	recloutPostHashIdx := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
 	for _, key := range keysFound {
 		// Sanity check that this is a reasonable key.
 		if len(key) != expectedKeyLength {
@@ -6749,7 +6737,6 @@ func (bav *UtxoView) GetQuoteRecloutsForPostHash(postHash *BlockHash,
 		}
 
 		recloutPostHash := &BlockHash{}
-		recloutPostHashIdx := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
 		copy(recloutPostHash[:], key[recloutPostHashIdx:])
 
 		bav.GetPostEntryForPostHash(recloutPostHash)
