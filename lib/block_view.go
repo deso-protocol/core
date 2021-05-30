@@ -219,6 +219,14 @@ type NFTEntry struct {
 	isDeleted bool
 }
 
+func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
+	return NFTBidKey{
+		BidderPKID:   *bidderPKID,
+		NFTPostHash:  *nftPostHash,
+		SerialNumber: serialNumber,
+	}
+}
+
 type NFTBidKey struct {
 	BidderPKID   PKID
 	NFTPostHash  BlockHash
@@ -769,7 +777,8 @@ type UtxoView struct {
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
 
 	// NFT data
-	NFTKeyToNFTEntry map[NFTKey]*NFTEntry
+	NFTKeyToNFTEntry       map[NFTKey]*NFTEntry
+	NFTBidKeyToNFTBidEntry map[NFTBidKey]*NFTBidEntry
 
 	// Diamond data
 	DiamondKeyToDiamondEntry map[DiamondKey]*DiamondEntry
@@ -1003,6 +1012,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// NFT data
 	bav.NFTKeyToNFTEntry = make(map[NFTKey]*NFTEntry)
+	bav.NFTBidKeyToNFTBidEntry = make(map[NFTBidKey]*NFTBidEntry)
 
 	// Diamond data
 	bav.DiamondKeyToDiamondEntry = make(map[DiamondKey]*DiamondEntry)
@@ -3125,6 +3135,64 @@ func (bav *UtxoView) _deleteNFTEntryMappings(nftEntry *NFTEntry) {
 	bav._setNFTEntryMappings(&tombstoneNFTEntry)
 }
 
+func (bav *UtxoView) GetNFTEntryForNFTKey(nftKey *NFTKey) *NFTEntry {
+	// If an entry exists in the in-memory map, return the value of that mapping.
+
+	mapValue, existsMapValue := bav.NFTKeyToNFTEntry[*nftKey]
+	if existsMapValue {
+		return mapValue
+	}
+
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil.
+	dbNFTEntry := DBGetNFTEntryByPostHashSerialNumber(bav.Handle, &nftKey.NFTPostHash, nftKey.SerialNumber)
+	if dbNFTEntry != nil {
+		bav._setNFTEntryMappings(dbNFTEntry)
+	}
+	return dbNFTEntry
+}
+
+func (bav *UtxoView) _setNFTBidEntryMappings(nftBidEntry *NFTBidEntry) {
+	// This function shouldn't be called with nil.
+	if nftBidEntry == nil {
+		glog.Errorf("_setNFTBidEntryMappings: Called with nil NFTEntry; " +
+			"this should never happen.")
+		return
+	}
+
+	nftBidKey := MakeNFTBidKey(nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)
+	bav.NFTBidKeyToNFTBidEntry[nftBidKey] = nftBidEntry
+}
+
+func (bav *UtxoView) _deleteNFTBidEntryMappings(nftBidEntry *NFTBidEntry) {
+
+	// Create a tombstone entry.
+	tombstoneNFTBidEntry := *nftBidEntry
+	tombstoneNFTBidEntry.isDeleted = true
+
+	// Set the mappings to point to the tombstone entry.
+	bav._setNFTBidEntryMappings(&tombstoneNFTBidEntry)
+}
+
+func (bav *UtxoView) GetNFTBidEntryForNFTBidKey(nftBidKey *NFTBidKey) *NFTBidEntry {
+	// If an entry exists in the in-memory map, return the value of that mapping.
+
+	mapValue, existsMapValue := bav.NFTBidKeyToNFTBidEntry[*nftBidKey]
+	if existsMapValue {
+		return mapValue
+	}
+
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil.
+	dbNFTBidEntry := DBGetNFTBidEntryForNFTBidKey(bav.Handle, nftBidKey)
+	if dbNFTBidEntry != nil {
+		bav._setNFTBidEntryMappings(dbNFTBidEntry)
+	}
+	return dbNFTBidEntry
+}
+
 func (bav *UtxoView) _setDiamondEntryMappings(diamondEntry *DiamondEntry) {
 	// This function shouldn't be called with nil.
 	if diamondEntry == nil {
@@ -5159,7 +5227,8 @@ func (bav *UtxoView) _connectNFTBid(
 	}
 
 	// Verify the NFT entry that is being bid on exists.
-	nftEntry := bav.GetNFTEntryForPostHashSerialNumber(txMeta.NFTPostHash, txMeta.SerialNumber)
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	nftEntry := bav.GetNFTEntryForNFTKey(&nftKey)
 	if nftEntry == nil {
 		return 0, 0, nil, RuleErrorNFTBidOnNonExistentNFTEntry
 	}
@@ -5186,16 +5255,19 @@ func (bav *UtxoView) _connectNFTBid(
 	bidderPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
 
 	// Save a copy of the bid entry so that we can use it in the disconnect.
-	prevNFTBidEntry := bav.GetNFTBidEntryForBidderPKIDPostHashSerialNumber(
-		bidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+	prevNFTBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 
 	// If an old bid exists, delete it.
-	bav._deleteNFTBidEntryMappings(bidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+	if prevNFTBidEntry != nil {
+		bav._deleteNFTBidEntryMappings(prevNFTBidEntry)
+	}
 
+	// If the new bid has a non-zero amount, set it in the view.
 	if txMeta.BidAmountNanos != 0 {
 		// Zero bids are not allowed, submitting a zero bid effectively withdraws a prior bid.
 		newBidEntry := &NFTBidEntry{
-			BidderPKID:     bidderPKID,
+			BidderPKID:     bidderPKID.PKID,
 			NFTPostHash:    txMeta.NFTPostHash,
 			SerialNumber:   txMeta.SerialNumber,
 			BidAmountNanos: txMeta.BidAmountNanos,
@@ -5203,7 +5275,7 @@ func (bav *UtxoView) _connectNFTBid(
 		bav._setNFTBidEntryMappings(newBidEntry)
 	}
 
-	// Add an operation to the list at the end indicating we've updated a profile.
+	// Add an operation to the list at the end indicating we've connected an NFT bid.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:            OperationTypeNFTBid,
 		PrevNFTBidEntry: prevNFTBidEntry,
