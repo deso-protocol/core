@@ -15395,8 +15395,11 @@ func TestNFTBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorNFTOwnerCannotBidOnOwnedNFT)
 	}
 
-	// Have m1 create a successful NFT bid of 1 nano on post #1 / serial #1.
+	// Have m1 and m2 bid on post #1 / serial #1.
 	{
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
 		_createNFTBidWithTestMeta(
 			testMeta,
 			10, /*FeeRateNanosPerKB*/
@@ -15406,6 +15409,22 @@ func TestNFTBasic(t *testing.T) {
 			1, /*SerialNumber*/
 			1, /*BidAmountNanos*/
 		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			2, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(2, len(bidEntries))
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.

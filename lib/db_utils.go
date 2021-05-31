@@ -3927,6 +3927,35 @@ func DBPutNFTBidEntryMappings(handle *badger.DB, nftEntry *NFTBidEntry) error {
 	})
 }
 
+// Get NFT bid Entries *from the DB*. Does not include mempool txns.
+func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber uint64,
+) (_nftBidEntries []*NFTBidEntry) {
+	nftBidEntries := []*NFTBidEntry{}
+	{
+		prefix := append([]byte{}, _PrefixPostHashSerialNumberBidNanosToBidderPKID...)
+		keyPrefix := append(prefix, nftPostHash[:]...)
+		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
+		keysFound, valsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+		for ii, bidderPKIDBytes := range valsFound {
+			// Cut the bid amount out of the key and decode.
+			bidAmountBytes := keysFound[ii][HashSizeBytes+8:]
+			bidAmountNanos := DecodeUint64(bidAmountBytes)
+
+			// Construct the bidder PKID.
+			bidderPKID := PublicKeyToPKID(bidderPKIDBytes)
+
+			currentEntry := &NFTBidEntry{
+				NFTPostHash:    nftPostHash,
+				SerialNumber:   serialNumber,
+				BidderPKID:     bidderPKID,
+				BidAmountNanos: bidAmountNanos,
+			}
+			nftBidEntries = append(nftBidEntries, currentEntry)
+		}
+	}
+	return nftBidEntries
+}
+
 // ======================================================================================
 // Profile code
 // ======================================================================================
