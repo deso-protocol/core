@@ -208,12 +208,14 @@ const (
 	RuleErrorNFTMustHaveNonZeroCopies        RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
 
 	// NFT Bids
-	RuleErrorNFTBidOnNonExistentPost     RuleError = "RuleErrorNFTBidOnNonExistentPost"
-	RuleErrorNFTBidOnPostThatIsNotAnNFT  RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
-	RuleErrorNFTBidOnInvalidSerialNumber RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"
-	RuleErrorNFTBidOnNonExistentNFTEntry RuleError = "RuleErrorNFTBidOnNonExistentNFTEntry"
-	RuleErrorNFTBidOnNFTThatIsNotForSale RuleError = "RuleErrorNFTBidOnNFTThatIsNotForSale"
-	RuleErrorNFTOwnerCannotBidOnOwnedNFT RuleError = "RuleErrorNFTOwnerCannotBidOnOwnedNFT"
+	RuleErrorNFTBidOnNonExistentPost          RuleError = "RuleErrorNFTBidOnNonExistentPost"
+	RuleErrorNFTBidOnPostThatIsNotAnNFT       RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
+	RuleErrorNFTBidOnInvalidSerialNumber      RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"
+	RuleErrorNFTBidOnNonExistentNFTEntry      RuleError = "RuleErrorNFTBidOnNonExistentNFTEntry"
+	RuleErrorNFTBidOnNFTThatIsNotForSale      RuleError = "RuleErrorNFTBidOnNFTThatIsNotForSale"
+	RuleErrorNFTOwnerCannotBidOnOwnedNFT      RuleError = "RuleErrorNFTOwnerCannotBidOnOwnedNFT"
+	RuleErrorCantAcceptNonExistentBid         RuleError = "RuleErrorCantAcceptNonExistentBid"
+	RuleErrorAcceptedNFTBidAmountDoesNotMatch RuleError = "RuleErrorAcceptedNFTBidAmountDoesNotMatch"
 
 	RuleErrorSwapIdentityIsParamUpdaterOnly RuleError = "RuleErrorSwapIdentityIsParamUpdaterOnly"
 	RuleErrorFromPublicKeyIsRequired        RuleError = "RuleErrorFromPublicKeyIsRequired"

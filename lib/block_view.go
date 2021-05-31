@@ -954,8 +954,10 @@ type UtxoOperation struct {
 	// For disconnecting diamonds.
 	PrevDiamondEntry *DiamondEntry
 
-	// For disconnecting NFT bids.
-	PrevNFTBidEntry *NFTBidEntry
+	// For disconnecting NFTs.
+	PrevNFTEntry         *NFTEntry
+	PrevNFTBidEntry      *NFTBidEntry
+	DeletedNFTBidEntries []*NFTBidEntry
 
 	// Save the previous reclout entry and reclout count when making an update.
 	PrevRecloutEntry *RecloutEntry
@@ -3233,6 +3235,30 @@ func (bav *UtxoView) GetNFTBidEntryForNFTBidKey(nftBidKey *NFTBidKey) *NFTBidEnt
 	return dbNFTBidEntry
 }
 
+func (bav *UtxoView) GetAllNFTBidEntries(nftPostHash *BlockHash, serialNumber uint64) []*NFTBidEntry {
+	// Get all the entries in the DB.
+	dbEntries := DBGetNFTBidEntries(bav.Handle, nftPostHash, serialNumber)
+
+	// Make sure all of the DB entries are loaded in the view.
+	for _, dbEntry := range dbEntries {
+		nftBidKey := MakeNFTBidKey(dbEntry.BidderPKID, dbEntry.NFTPostHash, dbEntry.SerialNumber)
+
+		// If the bidEntry is not in the view, add it to the view.
+		if _, ok := bav.NFTBidKeyToNFTBidEntry[nftBidKey]; !ok {
+			bav._setNFTBidEntryMappings(dbEntry)
+		}
+	}
+
+	// Loop over the view and build the final set of NFTBidEntries to return.
+	nftBidEntries := []*NFTBidEntry{}
+	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
+		if reflect.DeepEqual(nftBidEntry.NFTPostHash, nftPostHash) && nftBidEntry.SerialNumber == serialNumber {
+			nftBidEntries = append(nftBidEntries, nftBidEntry)
+		}
+	}
+	return nftBidEntries
+}
+
 func (bav *UtxoView) _setDiamondEntryMappings(diamondEntry *DiamondEntry) {
 	// This function shouldn't be called with nil.
 	if diamondEntry == nil {
@@ -5243,9 +5269,89 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	// RPH-FIXME: Fill this in.
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeAcceptNFTBid {
+		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTBid: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 
-	return 0, 0, nil, nil
+	// Verify the NFT entry that is being bid on exists and is on sale.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	prevNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	if prevNFTEntry == nil {
+		// We wrap these errors in order to differentiate versus _connectNFTBid().
+		return 0, 0, nil, errors.Wrapf(RuleErrorNFTBidOnNonExistentNFTEntry, "_connectAcceptNFTBid: ")
+	}
+	if !prevNFTEntry.IsForSale {
+		return 0, 0, nil, errors.Wrapf(RuleErrorNFTBidOnNFTThatIsNotForSale, "_connectAcceptNFTBid: ")
+	}
+
+	// Verify the NFT bid entry being accepted exists and has a bid consistent with the metadata.
+	// If we did not require an AcceptNFTBid txn to have a bid amount, it would leave the door
+	// open for an attack where someone replaces a high bid with a low bid after the owner accepts.
+	nftBidKey := MakeNFTBidKey(txMeta.BidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
+	if nftBidEntry == nil {
+		return 0, 0, nil, RuleErrorCantAcceptNonExistentBid
+	}
+	if nftBidEntry.BidAmountNanos != txMeta.BidAmountNanos {
+		return 0, 0, nil, RuleErrorAcceptedNFTBidAmountDoesNotMatch
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: ")
+	}
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorCreateNFTRequiresNonZeroInput
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+	}
+
+	// Now we are ready to accept the bid. When we accept, two things must happen:
+	// 	(1) Update the nft entry with the new owner and set it as "not for sale".
+	//  (2) Delete all of the bids on this NFT since they are no longer relevant.
+
+	// Set an appropriate NFTEntry for the new owner.
+	newNFTEntry := &NFTEntry{
+		OwnerPKID:    txMeta.BidderPKID,
+		NFTPostHash:  txMeta.NFTPostHash,
+		SerialNumber: txMeta.SerialNumber,
+		IsForSale:    false,
+	}
+	bav._setNFTEntryMappings(newNFTEntry)
+
+	// Iterate over all the NFTBidEntries for this NFT and delete them.
+	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
+	if len(bidEntries) == 0 {
+		// Quick sanity check to make sure that we found bid entries. There should be at least 1.
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: found zero bid entries to delete; this should never happen.")
+	}
+	deletedBidEntries := []*NFTBidEntry{}
+	for _, bidEntry := range bidEntries {
+		deletedBidEntries = append(deletedBidEntries, bidEntry)
+		bav._deleteNFTBidEntryMappings(bidEntry)
+	}
+
+	// Add an operation to the list at the end indicating we've connected an NFT bid.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                 OperationTypeAcceptNFTBid,
+		PrevNFTEntry:         prevNFTEntry,
+		DeletedNFTBidEntries: deletedBidEntries,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectNFTBid(

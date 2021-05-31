@@ -3891,9 +3891,10 @@ func (txnData *UpdateNFTMetadata) New() BitCloutTxnMetadata {
 // ==================================================================
 
 type AcceptNFTBidMetadata struct {
-	NFTPostHash     *BlockHash
-	SerialNumber    uint64
-	BidderPublicKey []byte
+	NFTPostHash    *BlockHash
+	SerialNumber   uint64
+	BidderPKID     *PKID
+	BidAmountNanos uint64
 }
 
 func (txnData *AcceptNFTBidMetadata) GetTxnType() TxnType {
@@ -3908,9 +3909,9 @@ func (txnData *AcceptNFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) 
 		return nil, fmt.Errorf("AcceptNFTBidMetadata.ToBytes: NFTPostHash "+
 			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
 	}
-	if len(txnData.BidderPublicKey) != btcec.PubKeyBytesLenCompressed {
+	if len(txnData.BidderPKID) != btcec.PubKeyBytesLenCompressed {
 		return nil, fmt.Errorf("AcceptNFTBidMetadata.ToBytes: BidderPublicKey "+
-			"has length %d != %d", len(txnData.BidderPublicKey), btcec.PubKeyBytesLenCompressed)
+			"has length %d != %d", len(txnData.BidderPKID), btcec.PubKeyBytesLenCompressed)
 	}
 
 	data := []byte{}
@@ -3921,9 +3922,9 @@ func (txnData *AcceptNFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) 
 	// SerialNumber uint64
 	data = append(data, UintToBuf(txnData.SerialNumber)...)
 
-	// BidderPublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.BidderPublicKey)))...)
-	data = append(data, txnData.BidderPublicKey...)
+	// BidderPKID
+	data = append(data, UintToBuf(uint64(len(txnData.BidderPKID)))...)
+	data = append(data, txnData.BidderPKID[:]...)
 
 	return data, nil
 }
