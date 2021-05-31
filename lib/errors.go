@@ -201,13 +201,19 @@ const (
 	// NFTs
 	RuleErrorTooManyNFTCopies                RuleError = "RuleErrorTooManyNFTCopies"
 	RuleErrorCreateNFTRequiresNonZeroInput   RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
+	RuleErrorUpdateNFTRequiresNonZeroInput   RuleError = "RuleErrorUpdateNFTRequiresNonZeroInput"
 	RuleErrorCreateNFTOnNonexistentPost      RuleError = "RuleErrorCreateNFTOnNonexistentPost"
 	RuleErrorCreateNFTWithInsufficientFunds  RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
 	RuleErrorCreateNFTOnPostThatAlreadyIsNFT RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
 	RuleErrorCreateNFTMustBeCalledByPoster   RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
 	RuleErrorNFTMustHaveNonZeroCopies        RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
+	RuleErrorCannotUpdateNonExistentNFT      RuleError = "RuleErrorCannotUpdateNonExistentNFT"
+	RuleErrorUpdateNFTByNonOwner             RuleError = "RuleErrorUpdateNFTByNonOwner"
+	RuleErrorNFTUpdateWithoutUpdates         RuleError = "RuleErrorNFTUpdateWithoutUpdates"
 
 	// NFT Bids
+	RuleErrorNFTBidRequiresNonZeroInput       RuleError = "RuleErrorNFTBidRequiresNonZeroInput"
+	RuleErrorAcceptNFTBidRequiresNonZeroInput RuleError = "RuleErrorAcceptNFTBidRequiresNonZeroInput"
 	RuleErrorNFTBidOnNonExistentPost          RuleError = "RuleErrorNFTBidOnNonExistentPost"
 	RuleErrorNFTBidOnPostThatIsNotAnNFT       RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
 	RuleErrorNFTBidOnInvalidSerialNumber      RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"

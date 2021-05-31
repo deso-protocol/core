@@ -2426,7 +2426,34 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 	operationIndex--
 	_, _ = txMeta, operationData
 
-	// RPH-FIXME: Fill this in.
+	// In order to disconnect an updated bid, we need to do the following:
+	// 	(1) Revert the NFT entry to the previous one.
+	//  (2) Add back all of the bids that were deleted (if any).
+
+	// Make sure that there is a prev NFT entry.
+	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
+		return fmt.Errorf("_disconnectUpdateNFT: prev NFT entry doesn't exist; " +
+			"this should never happen")
+	}
+
+	// If the previous NFT entry was not for sale, it should not have had any bids to delete.
+	if !operationData.PrevNFTEntry.IsForSale &&
+		operationData.DeletedNFTBidEntries != nil &&
+		len(operationData.DeletedNFTBidEntries) > 0 {
+
+		return fmt.Errorf("_disconnectUpdateNFT: prev NFT entry was not for sale but found " +
+			"deleted bids anyway; this should never happen")
+	}
+
+	// Set the old NFT entry.
+	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
+
+	// Set the old bids.
+	if operationData.DeletedNFTBidEntries != nil {
+		for _, nftBid := range operationData.DeletedNFTBidEntries {
+			bav._setNFTBidEntryMappings(nftBid)
+		}
+	}
 
 	// Now revert the basic transfer with the remaining operations.
 	return bav._disconnectBasicTransfer(
@@ -2452,7 +2479,30 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	operationIndex--
 	_, _ = txMeta, operationData
 
-	// RPH-FIXME: Fill this in.
+	// In order to disconnect an accepted bid, we need to do the following:
+	// 	(1) Revert the NFT entry to the previous one with the previous owner.
+	//  (2) Add back all of the bids that were deleted.
+	//  (3) RPH-FIXME: Disconnect UTXOs given to the bid accepter.
+
+	// Make sure that there is a prev NFT entry.
+	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
+		return fmt.Errorf("_disconnectAcceptNFTBid: prev NFT entry doesn't exist; " +
+			"this should never happen")
+	}
+
+	// Make sure that there are deleted NFT bids (there should be at least one).
+	if operationData.DeletedNFTBidEntries == nil || len(operationData.DeletedNFTBidEntries) == 0 {
+		return fmt.Errorf("_disconnectAcceptNFTBid: DeletedNFTBidEntries doesn't exist; " +
+			"this should never happen")
+	}
+
+	// Set the old NFT entry.
+	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
+
+	// Set the old bids.
+	for _, nftBid := range operationData.DeletedNFTBidEntries {
+		bav._setNFTBidEntryMappings(nftBid)
+	}
 
 	// Now revert the basic transfer with the remaining operations.
 	return bav._disconnectBasicTransfer(
@@ -5260,9 +5310,88 @@ func (bav *UtxoView) _connectUpdateNFT(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	// RPH-FIXME: Fill this in.
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeUpdateNFT {
+		return 0, 0, nil, fmt.Errorf("_connectUpdateNFT: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 
-	return 0, 0, nil, nil
+	// Verify the NFT entry exists.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	prevNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	if prevNFTEntry == nil {
+		return 0, 0, nil, RuleErrorCannotUpdateNonExistentNFT
+	}
+
+	// Verify that the updater is the owner of the NFT.
+	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if !reflect.DeepEqual(prevNFTEntry.OwnerPKID, updaterPKID.PKID) {
+		return 0, 0, nil, RuleErrorUpdateNFTByNonOwner
+	}
+
+	// Sanity check that the NFT entry is correct.
+	if !reflect.DeepEqual(prevNFTEntry.NFTPostHash, txMeta.NFTPostHash) ||
+		!reflect.DeepEqual(prevNFTEntry.SerialNumber, txMeta.SerialNumber) {
+		return 0, 0, nil, fmt.Errorf("_connectUpdateNFT: prevNFTEntry %v is inconsistent with txMeta %v;"+
+			" this should never happen.", prevNFTEntry, txMeta)
+	}
+
+	// Verify that we are actually updating something (only IsForSale can be updated at the moment).
+	if prevNFTEntry.IsForSale == txMeta.IsForSale {
+		return 0, 0, nil, RuleErrorNFTUpdateWithoutUpdates
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateNFTBid: ")
+	}
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorUpdateNFTRequiresNonZeroInput
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+	}
+
+	// Now we are ready to update the NFT. Two things must happen:
+	// 	(1) Update the NFT entry.
+	//  (2) If the NFT entry is being updated to "is not for sale", kill all the bids.
+
+	// Create the updated NFTEntry.
+	newNFTEntry := &NFTEntry{
+		OwnerPKID:    updaterPKID.PKID,
+		NFTPostHash:  txMeta.NFTPostHash,
+		SerialNumber: txMeta.SerialNumber,
+		IsForSale:    txMeta.IsForSale,
+	}
+	bav._setNFTEntryMappings(newNFTEntry)
+
+	// Iterate over all the NFTBidEntries for this NFT and delete them.
+	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
+	deletedBidEntries := []*NFTBidEntry{}
+	if bidEntries != nil {
+		for _, bidEntry := range bidEntries {
+			deletedBidEntries = append(deletedBidEntries, bidEntry)
+			bav._deleteNFTBidEntryMappings(bidEntry)
+		}
+	}
+
+	// Add an operation to the list at the end indicating we've connected an NFT bid.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                 OperationTypeUpdateNFT,
+		PrevNFTEntry:         prevNFTEntry,
+		DeletedNFTBidEntries: deletedBidEntries,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectAcceptNFTBid(
@@ -5309,7 +5438,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
-		return 0, 0, nil, RuleErrorCreateNFTRequiresNonZeroInput
+		return 0, 0, nil, RuleErrorAcceptNFTBidRequiresNonZeroInput
 	}
 
 	if verifySignatures {
@@ -5318,9 +5447,10 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		// public key.
 	}
 
-	// Now we are ready to accept the bid. When we accept, two things must happen:
+	// Now we are ready to accept the bid. When we accept, three things must happen:
 	// 	(1) Update the nft entry with the new owner and set it as "not for sale".
 	//  (2) Delete all of the bids on this NFT since they are no longer relevant.
+	//  (3) RPH-FIXME: Pay the accepter.
 
 	// Set an appropriate NFTEntry for the new owner.
 	newNFTEntry := &NFTEntry{
@@ -5403,7 +5533,7 @@ func (bav *UtxoView) _connectNFTBid(
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
-		return 0, 0, nil, RuleErrorCreateNFTRequiresNonZeroInput
+		return 0, 0, nil, RuleErrorNFTBidRequiresNonZeroInput
 	}
 
 	if verifySignatures {
