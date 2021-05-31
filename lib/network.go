@@ -3947,12 +3947,13 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading SerialNumber: %v", err)
 	}
 
-	// BidderPublicKey
-	ret.BidderPublicKey, err = ReadVarString(rr)
+	// BidderPKID
+	bidderPKIDBytes, err := ReadVarString(rr)
 	if err != nil {
 		return fmt.Errorf(
 			"AcceptNFTBidMetadata.FromBytes: Error reading BidderPublicKey: %v", err)
 	}
+	ret.BidderPKID = PublicKeyToPKID(bidderPKIDBytes)
 
 	*txnData = ret
 	return nil
