@@ -122,6 +122,8 @@ type Server struct {
 	// any peer. This is useful in a deployment setting because it makes it so that
 	// a health check can wait until this value becomes true.
 	hasProcessedFirstTransactionBundle bool
+
+	statsdClient *statsd.Client
 }
 
 func (srv *Server) HasProcessedFirstTransactionBundle() bool {
@@ -426,6 +428,8 @@ func NewServer(
 	// Make this hold a multiple of what we hold for individual peers.
 	srv.inventoryBeingProcessed = lru.NewCache(maxKnownInventory)
 	srv.requestTimeoutSeconds = 10
+
+	srv.statsdClient = statsd
 
 	// Initialize the addrs to broadcast map.
 	srv.addrsToBroadcastt = make(map[string][]*SingleAddr)
@@ -1712,6 +1716,10 @@ func (srv *Server) Stop() {
 	// Wait for the server to fully shut down.
 	srv.waitGroup.Wait()
 	glog.Info("Server.Stop: Successfully shut down Server")
+}
+
+func (srv *Server) GetStatsdClient() *statsd.Client {
+	return srv.statsdClient
 }
 
 // Start actually kicks off all of the management processes. Among other things, it causes
