@@ -366,7 +366,7 @@ func NewServer(
 	// blocks.
 	_mempool := NewBitCloutMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
-		_mempoolDumpDir, statsd)
+		_mempoolDumpDir)
 
 	// Useful for debugging. Every second, it outputs the contents of the mempool
 	// and the contents of the addrmanager.
@@ -430,6 +430,11 @@ func NewServer(
 	srv.requestTimeoutSeconds = 10
 
 	srv.statsdClient = statsd
+
+	// Start the mempool stats reporter
+	if srv.statsdClient != nil {
+		srv.StartMempoolStatsReporter()
+	}
 
 	// Initialize the addrs to broadcast map.
 	srv.addrsToBroadcastt = make(map[string][]*SingleAddr)
@@ -1391,6 +1396,30 @@ func (srv *Server) _handleMempool(pp *Peer, msg *MsgBitCloutMempool) {
 	glog.Debugf("Server._handleMempool: Received Mempool message from Peer %v", pp)
 
 	pp.canReceiveInvMessagess = true
+}
+
+func (srv *Server) StartMempoolStatsReporter() {
+	go func() {
+	out:
+		for {
+			select {
+			case <-time.After(5 * time.Second):
+				mp := srv.mempool
+				summary := mp.GetMempoolSummaryStats()
+				tags := []string{}
+
+				for k, v := range summary {
+					srv.statsdClient.Gauge(fmt.Sprintf("MEMPOOL.%s.COUNT", k), float64(v.Count), tags, 1)
+				}
+
+				total := len(mp.readOnlyUniversalTransactionList)
+				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(total), tags, 1)
+
+			case <-srv.mempool.quit:
+				break out
+			}
+		}
+	}()
 }
 
 func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgBitCloutAddr) {
