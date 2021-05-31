@@ -54,7 +54,7 @@ self-contained service. This allows exchanges to integrate BitClout without havi
 to run the unnecessary services associated with serving bitclout.com.
 
 For more information on the BitClout Rosetta API, see our bitclout-rosetta repo here:
-* **[github.com/bitclout/rosetta-api](https://github.com/bitclout/rosetta-api)**
+* **[https://github.com/bitclout/rosetta-bitclout](https://github.com/bitclout/rosetta-bitclout)**
 
 ## Example 3: A MongoDB Data Dumper
 
