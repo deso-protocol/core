@@ -148,7 +148,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	mempool.resetPool(NewBitCloutMempool(mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "", nil))
+		"" /*dataDir*/, ""))
 	{
 		timeStart := time.Now()
 		for _, tx := range txns {
