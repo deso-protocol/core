@@ -2287,7 +2287,7 @@ func (mp *BitCloutMempool) Stop() {
 // Create a new pool with no transactions in it.
 func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
-	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string, ) *BitCloutMempool {
+	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *BitCloutMempool {
 
 	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
 	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
