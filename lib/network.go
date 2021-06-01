@@ -3926,6 +3926,9 @@ func (txnData *AcceptNFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) 
 	data = append(data, UintToBuf(uint64(len(txnData.BidderPKID)))...)
 	data = append(data, txnData.BidderPKID[:]...)
 
+	// BidAmountNanos uint64
+	data = append(data, UintToBuf(txnData.BidAmountNanos)...)
+
 	return data, nil
 }
 
@@ -3954,6 +3957,12 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 			"AcceptNFTBidMetadata.FromBytes: Error reading BidderPublicKey: %v", err)
 	}
 	ret.BidderPKID = PublicKeyToPKID(bidderPKIDBytes)
+
+	// BidAmountNanos uint64
+	ret.BidAmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading BidAmountNanos: %v", err)
+	}
 
 	*txnData = ret
 	return nil

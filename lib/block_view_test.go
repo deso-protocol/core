@@ -767,6 +767,176 @@ func _createNFTBidWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
+func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCloutParams,
+	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
+	nftPostHash *BlockHash, serialNumber uint64, bidderPkBase58Check string, bidAmountNanos uint64,
+) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	require.NoError(err)
+
+	bidderPkBytes, _, err := Base58CheckDecode(bidderPkBase58Check)
+	require.NoError(err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	bidderPKID := utxoView.GetPKIDForPublicKey(bidderPkBytes)
+
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAcceptNFTBidTxn(
+		updaterPkBytes,
+		nftPostHash,
+		serialNumber,
+		bidderPKID.PKID,
+		bidAmountNanos,
+		feeRateNanosPerKB,
+		nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, updaterPrivBase58Check)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeCreateNFT operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeAcceptNFTBid, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
+func _acceptNFTBidWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	postHash *BlockHash,
+	serialNumber uint64,
+	bidderPkBase58Check string,
+	bidAmountNanos uint64,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+	currentOps, currentTxn, _, err := _acceptNFTBid(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		postHash,
+		serialNumber,
+		bidderPkBase58Check,
+		bidAmountNanos,
+	)
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCloutParams,
+	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
+	nftPostHash *BlockHash, serialNumber uint64, isForSale bool,
+) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	require.NoError(err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateNFTTxn(
+		updaterPkBytes,
+		nftPostHash,
+		serialNumber,
+		isForSale,
+		feeRateNanosPerKB,
+		nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, updaterPrivBase58Check)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeCreateNFT operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeUpdateNFT, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
+func _updateNFTWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	postHash *BlockHash,
+	serialNumber uint64,
+	isForSale bool,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+	currentOps, currentTxn, _, err := _updateNFT(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		postHash,
+		serialNumber,
+		isForSale,
+	)
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
 func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 	// Roll back all of the above using the utxoOps from each.
 	for ii := 0; ii < len(testMeta.txnOps); ii++ {
@@ -15425,6 +15595,133 @@ func TestNFTBasic(t *testing.T) {
 
 		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
 		require.Equal(2, len(bidEntries))
+	}
+
+	// Error case: m1 should not be able to accept or update m0's NFTs.
+	{
+		_, _, _, err := _updateNFT(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,     /*SerialNumber*/
+			false, /*IsForSale*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorUpdateNFTByNonOwner)
+
+		// m1 trying to be sneaky by accepting their own bid.
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m1Pub,
+			1, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTBidByNonOwner)
+	}
+
+	// Error case: accepting a bid that does not match the bid entry.
+	{
+		// m0 trying to be sneaky by setting m1's bid amount to 1000000x.
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m1Pub,
+			1000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptedNFTBidAmountDoesNotMatch)
+	}
+
+	// Error case: can't accept a non-existent bid.
+	{
+		// m3 has not bid on this NFT.
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m3Pub,
+			1000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCantAcceptNonExistentBid)
+	}
+
+	// Error case: can't accept or update a non-existent NFT.
+	{
+		_, _, _, err := _updateNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			666,   /*SerialNumber*/
+			false, /*IsForSale*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCannotUpdateNonExistentNFT)
+
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			666, /*SerialNumber*/
+			m1Pub,
+			1, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTBidOnNonExistentNFTEntry)
+	}
+
+	// Error case: can't submit an update txn that doesn't actually update anything.
+	{
+		// <post1, #1> is already for sale.
+		_, _, _, err := _updateNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			true, /*IsForSale*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTUpdateWithoutUpdates)
+	}
+
+	// Finally, accept m2's bid on <post1, #1>.
+	{
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m2Pub,
+			2, /*BidAmountNanos*/
+		)
+	}
+
+	// Update <post1, #2>, so that it is no longer for sale.
+	{
+		_updateNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			2,     /*SerialNumber*/
+			false, /*IsForSale*/
+		)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.

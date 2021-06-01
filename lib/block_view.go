@@ -2421,7 +2421,7 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 			"OperationTypeUpdateNFT but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*CreateNFTMetadata)
+	txMeta := currentTxn.TxnMeta.(*UpdateNFTMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 	_, _ = txMeta, operationData
@@ -2466,15 +2466,15 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 
 	// Verify that the last operation is a CreatorCoinTransfer operation
 	if len(utxoOpsForTxn) == 0 {
-		return fmt.Errorf("_disconnectUpdateNFT: utxoOperations are missing")
+		return fmt.Errorf("_disconnectAcceptNFTBid: utxoOperations are missing")
 	}
 	operationIndex := len(utxoOpsForTxn) - 1
 	if utxoOpsForTxn[operationIndex].Type != OperationTypeAcceptNFTBid {
-		return fmt.Errorf("_disconnectUpdateNFT: Trying to revert "+
+		return fmt.Errorf("_disconnectAcceptNFTBid: Trying to revert "+
 			"OperationTypeAcceptNFTBid but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*CreateNFTMetadata)
+	txMeta := currentTxn.TxnMeta.(*AcceptNFTBidMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 	_, _ = txMeta, operationData
@@ -5320,7 +5320,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 	// Verify the NFT entry exists.
 	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 	prevNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
-	if prevNFTEntry == nil {
+	if prevNFTEntry == nil || prevNFTEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCannotUpdateNonExistentNFT
 	}
 
@@ -5408,7 +5408,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	// Verify the NFT entry that is being bid on exists and is on sale.
 	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 	prevNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
-	if prevNFTEntry == nil {
+	if prevNFTEntry == nil || prevNFTEntry.isDeleted {
 		// We wrap these errors in order to differentiate versus _connectNFTBid().
 		return 0, 0, nil, errors.Wrapf(RuleErrorNFTBidOnNonExistentNFTEntry, "_connectAcceptNFTBid: ")
 	}
@@ -5416,12 +5416,18 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		return 0, 0, nil, errors.Wrapf(RuleErrorNFTBidOnNFTThatIsNotForSale, "_connectAcceptNFTBid: ")
 	}
 
+	// Verify that the updater is the owner of the NFT.
+	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if !reflect.DeepEqual(prevNFTEntry.OwnerPKID, updaterPKID.PKID) {
+		return 0, 0, nil, RuleErrorAcceptNFTBidByNonOwner
+	}
+
 	// Verify the NFT bid entry being accepted exists and has a bid consistent with the metadata.
 	// If we did not require an AcceptNFTBid txn to have a bid amount, it would leave the door
 	// open for an attack where someone replaces a high bid with a low bid after the owner accepts.
 	nftBidKey := MakeNFTBidKey(txMeta.BidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
-	if nftBidEntry == nil {
+	if nftBidEntry == nil || nftBidEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCantAcceptNonExistentBid
 	}
 	if nftBidEntry.BidAmountNanos != txMeta.BidAmountNanos {
@@ -5508,7 +5514,7 @@ func (bav *UtxoView) _connectNFTBid(
 	// Verify the NFT entry that is being bid on exists.
 	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftEntry := bav.GetNFTEntryForNFTKey(&nftKey)
-	if nftEntry == nil {
+	if nftEntry == nil || nftEntry.isDeleted {
 		return 0, 0, nil, RuleErrorNFTBidOnNonExistentNFTEntry
 	}
 

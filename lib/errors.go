@@ -209,6 +209,7 @@ const (
 	RuleErrorNFTMustHaveNonZeroCopies        RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
 	RuleErrorCannotUpdateNonExistentNFT      RuleError = "RuleErrorCannotUpdateNonExistentNFT"
 	RuleErrorUpdateNFTByNonOwner             RuleError = "RuleErrorUpdateNFTByNonOwner"
+	RuleErrorAcceptNFTBidByNonOwner          RuleError = "RuleErrorAcceptNFTBidByNonOwner"
 	RuleErrorNFTUpdateWithoutUpdates         RuleError = "RuleErrorNFTUpdateWithoutUpdates"
 
 	// NFT Bids
