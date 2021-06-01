@@ -5302,7 +5302,7 @@ func _dumpAndLoadMempool(mempool *BitCloutMempool) {
 	newMempool := NewBitCloutMempool(
 		mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		mempool.dataDir, mempoolDir, nil)
+		mempool.dataDir, mempoolDir)
 	mempool.mempoolDir = ""
 	mempool.resetPool(newMempool)
 }
@@ -5462,7 +5462,7 @@ func TestBitcoinExchange(t *testing.T) {
 	mempool.resetPool(NewBitCloutMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "", nil))
+		"" /*dataDir*/, ""))
 
 	// Validating the first Bitcoin burn transaction via a UtxoView should
 	// fail because the block corresponding to it is not yet in the BitcoinManager.
@@ -6360,7 +6360,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	mempool.resetPool(NewBitCloutMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "", nil))
+		"" /*dataDir*/, ""))
 
 	// Validating the first Bitcoin burn transaction via a UtxoView should
 	// fail because the block corresponding to it is not yet in the BitcoinManager.
@@ -7258,7 +7258,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	mempool.resetPool(NewBitCloutMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "", nil))
+		"" /*dataDir*/, ""))
 
 	// The amount of work on the first burn transaction should be zero.
 	burnTxn1 := bitcoinExchangeTxns[0]
@@ -7998,7 +7998,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	mempool.resetPool(NewBitCloutMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "", nil))
+		"" /*dataDir*/, ""))
 
 	// The amount of work on the first burn transaction should be zero.
 	burnTxn1 := bitcoinExchangeTxns[0]

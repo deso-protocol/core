@@ -18,8 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/datadog-go/statsd"
-
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -263,9 +261,6 @@ type BitCloutMempool struct {
 	// We pass a copy of the data dir flag to the tx pool so that we can instantiate
 	// temp badger db instances and dump mempool txns to them.
 	dataDir string
-
-	// Report mempool summary status if we have a statsd client
-	statsd *statsd.Client
 }
 
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
@@ -393,7 +388,7 @@ func (mp *BitCloutMempool) UpdateAfterConnectBlock(blk *MsgBitCloutBlock) (_txns
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "", nil)
+		"" /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -496,7 +491,7 @@ func (mp *BitCloutMempool) UpdateAfterDisconnectBlock(blk *MsgBitCloutBlock) {
 	newPool := NewBitCloutMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "", nil)
+		"" /*dataDir*/, "")
 
 	// Add the transactions from the block to the new pool (except for the block reward,
 	// which should always be the first transaction). Break out if we encounter
@@ -2020,7 +2015,7 @@ func (mp *BitCloutMempool) inefficientRemoveTransaction(tx *MsgBitCloutTxn) {
 	newPool := NewBitCloutMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "", nil)
+		"" /*dataDir*/, "")
 	// At this point the block txns have been added to the new pool. Now we need to
 	// add the txns from the original pool. Start by fetching them in slice form.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -2085,7 +2080,7 @@ func (mp *BitCloutMempool) EvictUnminedBitcoinTransactions(bitcoinTxnHashes []st
 	}
 
 	// Create a new pool to apply them to.
-	newPool := NewBitCloutMempool(mp.bc, 0, 0, "", false, "", "", nil)
+	newPool := NewBitCloutMempool(mp.bc, 0, 0, "", false, "", "")
 
 	isHashToEvict := func(evictHash string) bool {
 		for _, txnHash := range bitcoinTxnHashes {
@@ -2211,29 +2206,6 @@ func (mp *BitCloutMempool) BlockUntilReadOnlyViewRegenerated() {
 	}
 }
 
-func (mp *BitCloutMempool) StartMempoolStatsReporter() {
-	go func() {
-	out:
-		for {
-			select {
-			case <-time.After(5 * time.Second):
-				summary := mp.GetMempoolSummaryStats()
-				tags := []string{}
-
-				for k, v := range summary {
-					mp.statsd.Gauge(fmt.Sprintf("MEMPOOL.%s.COUNT", k), float64(v.Count), tags, 1)
-				}
-
-				total := len(mp.readOnlyUniversalTransactionList)
-				mp.statsd.Gauge("MEMPOOL.COUNT", float64(total), tags, 1)
-
-			case <-mp.quit:
-				break out
-			}
-		}
-	}()
-}
-
 func (mp *BitCloutMempool) StartMempoolDBDumper() {
 	// If we were instructed to dump txns to the db, then do so periodically
 	// Note this acquired a very minimal lock on the universalTransactionList
@@ -2315,8 +2287,7 @@ func (mp *BitCloutMempool) Stop() {
 // Create a new pool with no transactions in it.
 func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
-	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string,
-	_statsd *statsd.Client) *BitCloutMempool {
+	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *BitCloutMempool {
 
 	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
 	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
@@ -2342,7 +2313,6 @@ func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		readOnlyUniversalTransactionMap: make(map[BlockHash]*MempoolTx),
 		readOnlyOutpoints:               make(map[UtxoKey]*MsgBitCloutTxn),
 		dataDir:                         _dataDir,
-		statsd:                          _statsd,
 	}
 
 	// TODO: DELETEME: This code is no longer needed because we check for double-spends up-front.
@@ -2366,10 +2336,6 @@ func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 
 	if newPool.mempoolDir != "" {
 		newPool.StartMempoolDBDumper()
-	}
-
-	if newPool.statsd != nil {
-		newPool.StartMempoolStatsReporter()
 	}
 
 	return newPool
