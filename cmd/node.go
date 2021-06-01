@@ -215,10 +215,6 @@ func validateParams(params *lib.BitCloutParams) {
 	if params.MaxDifficultyRetargetFactor == 0 {
 		glog.Fatalf("The BitCloutParams MaxDifficultyRetargetFactor is unset")
 	}
-
-	if params.BlockRewardMaturity == 0 {
-		glog.Fatalf("The BitCloutParams BlockRewardMaturity is unset")
-	}
 }
 
 func getAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
