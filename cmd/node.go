@@ -153,7 +153,7 @@ func (node *Node) Start() {
 
 	// Setup TXIndex
 	if node.Config.TXIndex {
-		node.TXIndex, err = lib.NewTXIndex(node.Server, node.Params, node.Config.DataDirectory)
+		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Server.GetBitcoinManager(), node.Params, node.Config.DataDirectory)
 		if err != nil {
 			glog.Fatal(err)
 		}
