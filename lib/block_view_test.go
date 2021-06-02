@@ -768,8 +768,8 @@ func _createNFTBidWithTestMeta(
 }
 
 func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCloutParams,
-	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
-	nftPostHash *BlockHash, serialNumber uint64, bidderPkBase58Check string, bidAmountNanos uint64,
+	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string, nftPostHash *BlockHash,
+	serialNumber uint64, bidderPkBase58Check string, bidAmountNanos uint64, unencryptedUnlockableText string,
 ) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -794,6 +794,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 		serialNumber,
 		bidderPKID.PKID,
 		bidAmountNanos,
+		unencryptedUnlockableText,
 		feeRateNanosPerKB,
 		nil)
 	if err != nil {
@@ -839,6 +840,7 @@ func _acceptNFTBidWithTestMeta(
 	serialNumber uint64,
 	bidderPkBase58Check string,
 	bidAmountNanos uint64,
+	unencryptedUnlockableText string,
 ) {
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
@@ -850,6 +852,7 @@ func _acceptNFTBidWithTestMeta(
 		serialNumber,
 		bidderPkBase58Check,
 		bidAmountNanos,
+		unencryptedUnlockableText,
 	)
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -15447,6 +15450,7 @@ func TestNFTBasic(t *testing.T) {
 	}
 
 	// Creating an NFT with the correct NFT fee should succeed.
+	// This time set HasUnlockable to 'true'.
 	{
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
@@ -15464,7 +15468,7 @@ func TestNFTBasic(t *testing.T) {
 			m0Priv,
 			post2Hash,
 			10,     /*NumCopies*/
-			false,  /*HasUnlockable*/
+			true,   /*HasUnlockable*/
 			nftFee, /*nftFee*/
 		)
 
@@ -15618,7 +15622,8 @@ func TestNFTBasic(t *testing.T) {
 			post1Hash,
 			1, /*SerialNumber*/
 			m1Pub,
-			1, /*BidAmountNanos*/
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorAcceptNFTBidByNonOwner)
@@ -15626,7 +15631,7 @@ func TestNFTBasic(t *testing.T) {
 
 	// Error case: accepting a bid that does not match the bid entry.
 	{
-		// m0 trying to be sneaky by setting m1's bid amount to 1000000x.
+		// m0 trying to be sneaky by setting m1's bid amount to 100x.
 		_, _, _, err = _acceptNFTBid(
 			t, chain, db, params, 10,
 			m0Pub,
@@ -15634,7 +15639,8 @@ func TestNFTBasic(t *testing.T) {
 			post1Hash,
 			1, /*SerialNumber*/
 			m1Pub,
-			1000000, /*BidAmountNanos*/
+			100, /*BidAmountNanos*/
+			"",  /*UnlockableText*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorAcceptedNFTBidAmountDoesNotMatch)
@@ -15650,7 +15656,8 @@ func TestNFTBasic(t *testing.T) {
 			post1Hash,
 			1, /*SerialNumber*/
 			m3Pub,
-			1000000, /*BidAmountNanos*/
+			200, /*BidAmountNanos*/
+			"",  /*UnlockableText*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCantAcceptNonExistentBid)
@@ -15676,7 +15683,8 @@ func TestNFTBasic(t *testing.T) {
 			post1Hash,
 			666, /*SerialNumber*/
 			m1Pub,
-			1, /*BidAmountNanos*/
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTBidOnNonExistentNFTEntry)
@@ -15707,7 +15715,8 @@ func TestNFTBasic(t *testing.T) {
 			post1Hash,
 			1, /*SerialNumber*/
 			m2Pub,
-			2, /*BidAmountNanos*/
+			2,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
 		)
 	}
 
@@ -15722,6 +15731,146 @@ func TestNFTBasic(t *testing.T) {
 			2,     /*SerialNumber*/
 			false, /*IsForSale*/
 		)
+	}
+
+	// Error case: <post1, #1> and <post1, #2> are no longer for sale and should not accept bids.
+	{
+		_, _, _, err := _createNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,          /*SerialNumber*/
+			1000000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTBidOnNFTThatIsNotForSale)
+
+		_, _, _, err = _createNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			2,          /*SerialNumber*/
+			1000000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTBidOnNFTThatIsNotForSale)
+	}
+
+	// Have m1, m2, and m3 bid on <post #2, #1> (which has an unlockable).
+	{
+		bidEntries := DBGetNFTBidEntries(db, post2Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post2Hash,
+			1, /*SerialNumber*/
+			5, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post2Hash, 1)
+		require.Equal(1, len(bidEntries))
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post2Hash,
+			1,  /*SerialNumber*/
+			10, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post2Hash, 1)
+		require.Equal(2, len(bidEntries))
+
+		// m1 updates their bid to outbid m2.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post2Hash,
+			1,  /*SerialNumber*/
+			11, /*BidAmountNanos*/
+		)
+
+		// The number of bid entries should not change since this is just an update.
+		bidEntries = DBGetNFTBidEntries(db, post2Hash, 1)
+		require.Equal(2, len(bidEntries))
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			post2Hash,
+			1,  /*SerialNumber*/
+			12, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post2Hash, 1)
+		require.Equal(3, len(bidEntries))
+
+		// m1 updates their bid to outbid m3.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post2Hash,
+			1,  /*SerialNumber*/
+			13, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post2Hash, 1)
+		require.Equal(3, len(bidEntries))
+	}
+
+	// Error case: can't accept a bid for an unlockable NFT, without providing the unlockable.
+	{
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			1, /*SerialNumber*/
+			m3Pub,
+			12, /*BidAmountNanos*/
+			"", /*UnencryptedUnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorUnlockableNFTMustProvideUnlockableText)
+	}
+
+	{
+		unencryptedUnlockableText := "this is an unlockable string"
+
+		// Accepting the bid with an unlockable string should work.
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			1,                         /*SerialNumber*/
+			m3Pub,                     /*bidderPkBase58Check*/
+			12,                        /*BidAmountNanos*/
+			unencryptedUnlockableText, /*UnencryptedUnlockableText*/
+		)
+
+		// Check and make sure the unlockable looks gucci.
+		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 1)
+		priv, _ := btcec.PrivKeyFromBytes(btcec.S256(), _strToPk(t, m3Priv))
+		decryptedBytes, err := DecryptBytesWithPrivateKey(nftEntry.UnlockableText, priv.ToECDSA())
+		require.NoError(err)
+		require.Equal(unencryptedUnlockableText, string(decryptedBytes))
+		require.Equal(nftEntry.IsForSale, false)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.

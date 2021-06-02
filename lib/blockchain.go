@@ -2911,9 +2911,82 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	SerialNumber uint64,
 	BidderPKID *PKID,
 	BidAmountNanos uint64,
+	UnencryptedUnlockableText string,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateAcceptNFTBidTxn: Problem getting augmented UtxoView from mempool: ")
+		}
+	}
+
+	// Get the spendable UtxoEntrys.
+	bidderPkBytes := utxoView.GetPublicKeyForPKID(BidderPKID)
+	bidderSpendableUtxos, err := bc.GetSpendableUtxosForPublicKey(bidderPkBytes, nil, utxoView)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAcceptNFTBidTxn: Problem getting spendable UtxoEntrys: ")
+	}
+
+	// Add input utxos to the transaction until we have enough total input to cover
+	// the amount we want to spend plus the maximum fee (or until we've exhausted
+	// all the utxos available).
+	bidderInputs := []*BitCloutInput{}
+	totalBidderInput := uint64(0)
+	for _, utxoEntry := range bidderSpendableUtxos {
+
+		// If the amount of input we have isn't enough to cover the bid amount, add an input and continue.
+		if totalBidderInput < BidAmountNanos {
+			bidderInputs = append(bidderInputs, (*BitCloutInput)(utxoEntry.UtxoKey))
+
+			amountToAdd := utxoEntry.AmountNanos
+			// For Bitcoin burns, we subtract a tiny amount of slippage to the amount we can
+			// spend. This makes reorderings more forgiving.
+			if utxoEntry.UtxoType == UtxoTypeBitcoinBurn {
+				amountToAdd = uint64(float64(amountToAdd) * .999)
+			}
+
+			totalBidderInput += amountToAdd
+			continue
+		}
+
+		// If we get here, we know we have enough input to cover the upper bound
+		// estimate of our amount needed so break.
+		break
+	}
+
+	// If we get here and we don't have sufficient input to cover the bid, error.
+	if totalBidderInput < BidAmountNanos {
+		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateAcceptNFTBidTxn: Bidder has insufficient "+
+			"UTXOs (%d total) to cover BidAmountNanos %d: ", totalBidderInput, BidAmountNanos)
+	}
+
+	// Handle any unlockable text that is passed in.
+	var encryptedUnlockableText []byte
+	if len(UnencryptedUnlockableText) != 0 {
+		winningBidderPkBytes := utxoView.GetPublicKeyForPKID(BidderPKID)
+		winningBidderPk, err := btcec.ParsePubKey(winningBidderPkBytes, btcec.S256())
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem parsing "+
+				"recipient public key: ")
+		}
+		encryptedUnlockableText, err = EncryptBytesWithPublicKey(
+			[]byte(UnencryptedUnlockableText), winningBidderPk.ToECDSA())
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem "+
+				"encrypting message text: ")
+		}
+	}
 
 	// Create a transaction containing the creator coin fields.
 	txn := &MsgBitCloutTxn{
@@ -2923,6 +2996,8 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 			SerialNumber,
 			BidderPKID,
 			BidAmountNanos,
+			encryptedUnlockableText,
+			bidderInputs,
 		},
 
 		// We wait to compute the signature until we've added all the

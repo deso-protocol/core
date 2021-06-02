@@ -3895,6 +3895,12 @@ type AcceptNFTBidMetadata struct {
 	SerialNumber   uint64
 	BidderPKID     *PKID
 	BidAmountNanos uint64
+	UnlockableText []byte
+
+	// When an NFT owner accepts a bid, they must specify the bidder's UTXO inputs they will lock up
+	// as payment for the purchase. This prevents the transaction from accidentally using UTXOs
+	// that are used by future transactions.
+	BidderInputs []*BitCloutInput
 }
 
 func (txnData *AcceptNFTBidMetadata) GetTxnType() TxnType {
@@ -3929,6 +3935,17 @@ func (txnData *AcceptNFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) 
 	// BidAmountNanos uint64
 	data = append(data, UintToBuf(txnData.BidAmountNanos)...)
 
+	// UnlockableText
+	data = append(data, UintToBuf(uint64(len(txnData.UnlockableText)))...)
+	data = append(data, txnData.UnlockableText...)
+
+	// Serialize the bidder inputs
+	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
+	for _, bitcloutInput := range txnData.BidderInputs {
+		data = append(data, bitcloutInput.TxID[:]...)
+		data = append(data, UintToBuf(uint64(bitcloutInput.Index))...)
+	}
+
 	return data, nil
 }
 
@@ -3962,6 +3979,45 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 	ret.BidAmountNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading BidAmountNanos: %v", err)
+	}
+
+	// UnlockableText
+	unlockableTextLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem "+
+			"decoding UnlockableText length")
+	}
+	if unlockableTextLen > MaxMessagePayload {
+		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: unlockableTextLen %d "+
+			"exceeds max %d", unlockableTextLen, MaxMessagePayload)
+	}
+	ret.UnlockableText = make([]byte, unlockableTextLen)
+	_, err = io.ReadFull(rr, ret.UnlockableText)
+	if err != nil {
+		return fmt.Errorf("PrivateMessageMetadata.FromBytes: Error reading EncryptedText: %v", err)
+	}
+
+	// De-serialize the inputs
+	numInputs, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem getting length of inputs")
+	}
+	for ii := uint64(0); ii < numInputs; ii++ {
+		currentInput := NewBitCloutInput()
+		_, err = io.ReadFull(rr, currentInput.TxID[:])
+		if err != nil {
+			return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem converting input txid")
+		}
+		inputIndex, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem converting input index")
+		}
+		if inputIndex > uint64(^uint32(0)) {
+			return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Input index (%d) must not exceed (%d)", inputIndex, ^uint32(0))
+		}
+		currentInput.Index = uint32(inputIndex)
+
+		ret.BidderInputs = append(ret.BidderInputs, currentInput)
 	}
 
 	*txnData = ret

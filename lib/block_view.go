@@ -210,10 +210,11 @@ type NFTKey struct {
 // postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
 // defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
 type NFTEntry struct {
-	OwnerPKID    *PKID
-	NFTPostHash  *BlockHash
-	SerialNumber uint64
-	IsForSale    bool
+	OwnerPKID      *PKID
+	NFTPostHash    *BlockHash
+	SerialNumber   uint64
+	IsForSale      bool
+	UnlockableText []byte
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -5422,6 +5423,25 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		return 0, 0, nil, RuleErrorAcceptNFTBidByNonOwner
 	}
 
+	// Get the post entry, verify it exists.
+	nftPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+
+	// If this is an unlockable NFT, make sure that an unlockable string was provided.
+	if nftPostEntry == nil || nftPostEntry.isDeleted {
+		return 0, 0, nil, RuleErrorPostEntryNotFoundForAcceptedNFTBid
+	}
+	if nftPostEntry.HasUnlockable && (txMeta.UnlockableText == nil || len(txMeta.UnlockableText) == 0) {
+		return 0, 0, nil, RuleErrorUnlockableNFTMustProvideUnlockableText
+	}
+
+	// Check the length of the UnlockableText.
+	if uint64(len(txMeta.UnlockableText)) > bav.Params.MaxPrivateMessageLengthBytes {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorUnlockableTextLengthExceedsMax, "_connectAcceptNFTBid: "+
+				"UnlockableTextLen = %d; Max length = %d",
+			len(txMeta.UnlockableText), bav.Params.MaxPrivateMessageLengthBytes)
+	}
+
 	// Verify the NFT bid entry being accepted exists and has a bid consistent with the metadata.
 	// If we did not require an AcceptNFTBid txn to have a bid amount, it would leave the door
 	// open for an attack where someone replaces a high bid with a low bid after the owner accepts.
@@ -5460,10 +5480,11 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// Set an appropriate NFTEntry for the new owner.
 	newNFTEntry := &NFTEntry{
-		OwnerPKID:    txMeta.BidderPKID,
-		NFTPostHash:  txMeta.NFTPostHash,
-		SerialNumber: txMeta.SerialNumber,
-		IsForSale:    false,
+		OwnerPKID:      txMeta.BidderPKID,
+		NFTPostHash:    txMeta.NFTPostHash,
+		SerialNumber:   txMeta.SerialNumber,
+		IsForSale:      false,
+		UnlockableText: txMeta.UnlockableText,
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 
