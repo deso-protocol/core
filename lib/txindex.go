@@ -22,14 +22,15 @@ type TXIndex struct {
 	// with the goings-on of the main chain.
 	TXIndexChain *Blockchain
 
-	// Core server object
-	Server *Server
+	// Core objects from Server
+	CoreChain      *Blockchain
+	BitcoinManager *BitcoinManager
 
 	// Core params object
 	Params *BitCloutParams
 }
 
-func NewTXIndex(server *Server, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
+func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
 	txIndexOpts := badger.DefaultOptions(txIndexDir)
@@ -121,12 +122,6 @@ func NewTXIndex(server *Server, params *BitCloutParams, dataDirectory string) (*
 		}
 	}()
 
-	// Only set a BitcoinManager if we have one. This makes some tests pass.
-	var bitcoinManager *BitcoinManager
-	if server != nil && server.GetBitcoinManager() != nil {
-		bitcoinManager = server.GetBitcoinManager()
-	}
-
 	// Note that we *DONT* pass server here because it is already tied to the to the main blockchain.
 	txIndexChain, err := NewBlockchain(
 		[]string{}, 0,
@@ -142,9 +137,10 @@ func NewTXIndex(server *Server, params *BitCloutParams, dataDirectory string) (*
 	// txns to our txindex should work smoothly now.
 
 	return &TXIndex{
-		TXIndexChain: txIndexChain,
-		Server:       server,
-		Params:       params,
+		TXIndexChain:   txIndexChain,
+		CoreChain:      coreChain,
+		BitcoinManager: bitcoinManager,
+		Params:         params,
 	}, nil
 }
 
@@ -155,7 +151,7 @@ func (txi *TXIndex) Start() {
 	// except when run the first time or when a new block has arrived.
 	go func() {
 		for {
-			if txi.Server.GetBlockchain().ChainState() == SyncStateFullyCurrent {
+			if txi.CoreChain.ChainState() == SyncStateFullyCurrent {
 				// If the node is fully synced, then try an update.
 				err := txi.Update()
 				if err != nil {
@@ -196,20 +192,20 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	// The only thing we can really do in this case is rebuild the entire index
 	// from scratch. To do that, we return all the blocks in the index to detach
 	// and all the blocks in the real chain to attach.
-	txindexTipNode := txi.Server.GetBlockchain().CopyBlockIndex()[*txindexTipHash.Hash]
+	txindexTipNode := txi.CoreChain.CopyBlockIndex()[*txindexTipHash.Hash]
 
 	if txindexTipNode == nil {
 		glog.Info("GetTxindexUpdateBlockNodes: Txindex tip was not found; building txindex starting at genesis block")
 
 		newTxIndexBestChain, _ := txi.TXIndexChain.CopyBestChain()
-		newBlockchainBestChain, _ := txi.Server.GetBlockchain().CopyBestChain()
+		newBlockchainBestChain, _ := txi.CoreChain.CopyBestChain()
 
-		return txindexTipNode, txi.Server.GetBlockchain().BlockTip(), nil, newTxIndexBestChain, newBlockchainBestChain
+		return txindexTipNode, txi.CoreChain.BlockTip(), nil, newTxIndexBestChain, newBlockchainBestChain
 	}
 
 	// At this point, we know our txindex tip is in our block index so
 	// there must be a common ancestor between the tip and the block tip.
-	blockTip := txi.Server.GetBlockchain().BlockTip()
+	blockTip := txi.CoreChain.BlockTip()
 	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(txindexTipNode, blockTip)
 
 	return txindexTipNode, blockTip, commonAncestor, detachBlocks, attachBlocks
@@ -285,14 +281,8 @@ func (txi *TXIndex) Update() error {
 
 		// Now that all the transactions have been deleted from our txindex,
 		// it's safe to disconnect the block from our txindex chain.
-		//
-		// Only set a BitcoinManager if we have one. This prevents some tests from erroring out.
-		var bitcoinManager *BitcoinManager
-		if txi.Server != nil && txi.Server.GetBitcoinManager() != nil {
-			bitcoinManager = txi.Server.GetBitcoinManager()
-		}
 		utxoView, err := NewUtxoView(
-			txi.TXIndexChain.DB(), txi.Params, bitcoinManager)
+			txi.TXIndexChain.DB(), txi.Params, txi.BitcoinManager)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
@@ -361,7 +351,7 @@ func (txi *TXIndex) Update() error {
 		glog.Tracef("Update: Attaching block (height: %d, hash: %v)",
 			blockToAttach.Height, blockToAttach.Hash)
 
-		blockMsg, err := GetBlock(blockToAttach.Hash, txi.Server.GetBlockchain().DB())
+		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB())
 		if err != nil {
 			return fmt.Errorf("Update: Problem fetching attach block "+
 				"with hash %v: %v", blockToAttach.Hash, err)
@@ -371,11 +361,7 @@ func (txi *TXIndex) Update() error {
 		// us to extract custom metadata fields that we can show in our block explorer.
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
-		var bitcoinManager *BitcoinManager
-		if txi.Server != nil && txi.Server.GetBitcoinManager() != nil {
-			bitcoinManager = txi.Server.GetBitcoinManager()
-		}
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, bitcoinManager)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, txi.BitcoinManager)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
