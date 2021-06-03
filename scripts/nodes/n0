@@ -3,7 +3,7 @@ DATE=`date +%Y%m%d-%H:%M:%S-%N`
 rm /tmp/main.*.log
 
 (cd ../../ && go build -o backend -gcflags="all=-N -l" main.go && \
-  dlv exec ./backend --\
+  ./backend \
   --alsologtostderr --stderrthreshold=FATAL --v=0 \
   --vmodule="*bitcoin_manager*=2,*balance*=2,*view*=2,*frontend*=2,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=2,*mempool*=2,*miner*=2,*blockchain*=2" \
   --num_mining_threads=1  \
