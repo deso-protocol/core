@@ -708,6 +708,9 @@ var BitCloutMainnetParams = BitCloutParams{
 	// It's just high enough where you avoid drifting creating coin
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
+
+	// Triggers approximately Saturday June 12th at 8pm PT
+	DeflationBombBlockHeight: 33783,
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
