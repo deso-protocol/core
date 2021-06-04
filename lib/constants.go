@@ -360,6 +360,7 @@ type BitCloutParams struct {
 	MaxPostSubLengthBytes       uint64
 	MaxStakeMultipleBasisPoints uint64
 	MaxCreatorBasisPoints       uint64
+	MaxNFTRoyaltyBasisPoints    uint64
 	ParamUpdaterPublicKeys      map[PkMapKey]bool
 
 	// A list of transactions to apply when initializing the chain. Useful in
@@ -685,8 +686,9 @@ var BitCloutMainnetParams = BitCloutParams{
 	MaxStakeMultipleBasisPoints: 10 * 100 * 100,
 	// 100% is the max creator percentage. Not sure why you'd buy such a coin
 	// but whatever.
-	MaxCreatorBasisPoints:  100 * 100,
-	ParamUpdaterPublicKeys: ParamUpdaterPublicKeys,
+	MaxCreatorBasisPoints:    100 * 100,
+	MaxNFTRoyaltyBasisPoints: 100 * 100,
+	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
 	SeedTxns: SeedTxns,
@@ -904,8 +906,9 @@ var BitCloutTestnetParams = BitCloutParams{
 	MaxStakeMultipleBasisPoints: 10 * 100 * 100,
 	// 100% is the max creator percentage. Not sure why you'd buy such a coin
 	// but whatever.
-	MaxCreatorBasisPoints:  100 * 100,
-	ParamUpdaterPublicKeys: ParamUpdaterPublicKeys,
+	MaxCreatorBasisPoints:    100 * 100,
+	MaxNFTRoyaltyBasisPoints: 100 * 100,
+	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
 	SeedTxns: TestSeedTxns,

@@ -882,6 +882,8 @@ func TestSerializeCreateNFT(t *testing.T) {
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
 	txMeta.NumCopies = uint64(100)
 	txMeta.HasUnlockable = true
+	txMeta.NFTRoyaltyToCreatorBasisPoints = 1234
+	txMeta.NFTRoyaltyToCoinBasisPoints = 4321
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
@@ -957,6 +959,7 @@ func TestSerializeAcceptNFTBid(t *testing.T) {
 			Index: 222,
 		},
 	}
+	txMeta.UnlockableText = []byte("accept nft bid")
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)

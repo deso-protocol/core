@@ -592,6 +592,7 @@ func _submitPostWithTestMeta(
 func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCloutParams,
 	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
 	nftPostHash *BlockHash, numCopies uint64, hasUnlockable bool, nftFee uint64,
+	nftRoyaltyToCreatorBasisPoints uint64, nftRoyaltyToCoinBasisPoints uint64,
 ) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -611,6 +612,8 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *BitClout
 		numCopies,
 		hasUnlockable,
 		nftFee,
+		nftRoyaltyToCreatorBasisPoints,
+		nftRoyaltyToCoinBasisPoints,
 		feeRateNanosPerKB,
 		nil)
 	if err != nil {
@@ -657,6 +660,8 @@ func _createNFTWithTestMeta(
 	numCopies uint64,
 	hasUnlockable bool,
 	nftFee uint64,
+	nftRoyaltyToCreatorBasisPoints uint64,
+	nftRoyaltyToCoinBasisPoints uint64,
 ) {
 	// Sanity check: the number of NFT entries before should be 0.
 	dbNFTEntries := DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
@@ -672,6 +677,8 @@ func _createNFTWithTestMeta(
 		numCopies,
 		hasUnlockable,
 		nftFee,
+		nftRoyaltyToCoinBasisPoints,
+		feeRateNanosPerKB,
 	)
 	require.NoError(testMeta.t, err)
 
@@ -1179,6 +1186,34 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(utxoView.FlushToDb())
 
 	return utxoOps, txn, blockHeight, nil
+}
+
+func _updateProfileWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	profilePubKey []byte,
+	newUsername string,
+	newDescription string,
+	newProfilePic string,
+	newCreatorBasisPoints uint64,
+	newStakeMultipleBasisPoints uint64,
+	isHidden bool) {
+
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+
+	currentOps, currentTxn, _, err := _updateProfile(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		feeRateNanosPerKB, updaterPkBase58Check,
+		updaterPrivBase58Check, profilePubKey, newUsername,
+		newDescription, newProfilePic, newCreatorBasisPoints,
+		newStakeMultipleBasisPoints, isHidden)
+
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
 func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -15280,6 +15315,40 @@ func TestNFTBasic(t *testing.T) {
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
+	// Error case: can't make an NFT without a profile.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			100,   /*NumCopies*/
+			false, /*HasUnlockable*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCantCreateNFTWithoutProfileEntry)
+	}
+
+	// Create a profile so me can make an NFT.
+	{
+		_updateProfileWithTestMeta(
+			testMeta,
+			10,            /*feeRateNanosPerKB*/
+			m0Pub,         /*updaterPkBase58Check*/
+			m0Priv,        /*updaterPrivBase58Check*/
+			[]byte{},      /*profilePubKey*/
+			"m2",          /*newUsername*/
+			"i am the m2", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+	}
+
 	// Error case: m1 should not be able to turn m0's post into an NFT.
 	{
 		_, _, _, err := _createNFT(
@@ -15290,10 +15359,29 @@ func TestNFTBasic(t *testing.T) {
 			100,   /*NumCopies*/
 			false, /*HasUnlockable*/
 			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
+	}
+
+	// Error case: m0 should not be able to set >10000 basis points in royalties.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			100,   /*NumCopies*/
+			false, /*HasUnlockable*/
+			0,     /*nftFee*/
+			10000, /*nftRoyaltyToCreatorBasisPoints*/
+			1,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 	}
 
 	// Error case: m0 should not be able to make more than MaxCopiesPerNFT.
@@ -15306,6 +15394,8 @@ func TestNFTBasic(t *testing.T) {
 			params.MaxCopiesPerNFT+1, /*NumCopies*/
 			false,                    /*HasUnlockable*/
 			0,                        /*nftFee*/
+			0,                        /*nftRoyaltyToCreatorBasisPoints*/
+			0,                        /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
@@ -15322,6 +15412,8 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*NumCopies*/
 			false, /*HasUnlockable*/
 			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
@@ -15344,6 +15436,8 @@ func TestNFTBasic(t *testing.T) {
 			1,     /*NumCopies*/
 			false, /*HasUnlockable*/
 			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
@@ -15354,7 +15448,7 @@ func TestNFTBasic(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(68), m0BalBeforeNFT)
+		require.Equal(uint64(29), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -15365,11 +15459,13 @@ func TestNFTBasic(t *testing.T) {
 			5,     /*NumCopies*/
 			false, /*HasUnlockable*/
 			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(67), m0BalAfterNFT)
+		require.Equal(uint64(28), m0BalAfterNFT)
 	}
 
 	// Error case: cannot turn a post into an NFT twice.
@@ -15382,6 +15478,8 @@ func TestNFTBasic(t *testing.T) {
 			5,     /*NumCopies*/
 			false, /*HasUnlockable*/
 			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
@@ -15444,6 +15542,8 @@ func TestNFTBasic(t *testing.T) {
 			1000,  /*NumCopies*/
 			false, /*HasUnlockable*/
 			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
@@ -15459,7 +15559,7 @@ func TestNFTBasic(t *testing.T) {
 		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
 
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(65), m0BalBeforeNFT)
+		require.Equal(uint64(26), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -15470,11 +15570,13 @@ func TestNFTBasic(t *testing.T) {
 			10,     /*NumCopies*/
 			true,   /*HasUnlockable*/
 			nftFee, /*nftFee*/
+			0,      /*nftRoyaltyToCreatorBasisPoints*/
+			0,      /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		// Check that m0 was charged the correct nftFee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(64)-nftFee, m0BalAfterNFT)
+		require.Equal(uint64(25)-nftFee, m0BalAfterNFT)
 	}
 
 	//

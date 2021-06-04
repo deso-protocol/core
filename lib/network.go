@@ -3759,9 +3759,11 @@ func (txnData *CreatorCoinTransferMetadataa) New() BitCloutTxnMetadata {
 // ==================================================================
 
 type CreateNFTMetadata struct {
-	NFTPostHash   *BlockHash
-	NumCopies     uint64
-	HasUnlockable bool
+	NFTPostHash                    *BlockHash
+	NumCopies                      uint64
+	HasUnlockable                  bool
+	NFTRoyaltyToCreatorBasisPoints uint64
+	NFTRoyaltyToCoinBasisPoints    uint64
 }
 
 func (txnData *CreateNFTMetadata) GetTxnType() TxnType {
@@ -3788,6 +3790,12 @@ func (txnData *CreateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// HasUnlockable
 	data = append(data, _boolToByte(txnData.HasUnlockable))
 
+	// NFTRoyaltyToCreatorBasisPoints uint64
+	data = append(data, UintToBuf(txnData.NFTRoyaltyToCreatorBasisPoints)...)
+
+	// NFTRoyaltyToCoinBasisPoints uint64
+	data = append(data, UintToBuf(txnData.NFTRoyaltyToCoinBasisPoints)...)
+
 	return data, nil
 }
 
@@ -3811,6 +3819,18 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 
 	// HasUnlockable
 	ret.HasUnlockable = _readBoolByte(rr)
+
+	// NFTRoyaltyToCreatorBasisPoints uint64
+	ret.NFTRoyaltyToCreatorBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("NFTRoyaltyToCreatorBasisPoints.FromBytes: Error reading NumCopies: %v", err)
+	}
+
+	// NFTRoyaltyToCoinBasisPoints uint64
+	ret.NFTRoyaltyToCoinBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("NFTRoyaltyToCoinBasisPoints.FromBytes: Error reading NumCopies: %v", err)
+	}
 
 	*txnData = ret
 	return nil

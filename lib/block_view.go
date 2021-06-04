@@ -45,8 +45,11 @@ const (
 	UtxoTypeStakeReward              UtxoType = 3
 	UtxoTypeCreatorCoinSale          UtxoType = 4
 	UtxoTypeCreatorCoinFounderReward UtxoType = 5
+	UtxoTypeNFTSeller                UtxoType = 6
+	UtxoTypeNFTBidderChange          UtxoType = 7
+	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
 
-	// NEXT_TAG = 6
+	// NEXT_TAG = 9
 )
 
 func (mm UtxoType) String() string {
@@ -590,9 +593,11 @@ type PostEntry struct {
 	IsPinned bool
 
 	// NFT info.
-	IsNFT         bool
-	NumNFTCopies  uint64
-	HasUnlockable bool
+	IsNFT                              bool
+	NumNFTCopies                       uint64
+	HasUnlockable                      bool
+	NFTRoyaltyToCreatorBasisPoints     uint64
+	NFTRoyaltyToCreatorCoinBasisPoints uint64
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte
@@ -959,6 +964,7 @@ type UtxoOperation struct {
 	PrevNFTEntry         *NFTEntry
 	PrevNFTBidEntry      *NFTBidEntry
 	DeletedNFTBidEntries []*NFTBidEntry
+	NFTPaymentUtxoKeys   []*UtxoKey
 
 	// Save the previous reclout entry and reclout count when making an update.
 	PrevRecloutEntry *RecloutEntry
@@ -2483,26 +2489,53 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	// In order to disconnect an accepted bid, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one with the previous owner.
 	//  (2) Add back all of the bids that were deleted.
-	//  (3) RPH-FIXME: Disconnect UTXOs given to the bid accepter.
+	//  (3) Disconnect payment UTXOs.
+	//  (4) Revert profileEntry to undo royalties added to BitCloutLockedNanos.
 
-	// Make sure that there is a prev NFT entry.
+	// (1) Set the old NFT entry.
 	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
 		return fmt.Errorf("_disconnectAcceptNFTBid: prev NFT entry doesn't exist; " +
 			"this should never happen")
 	}
 
-	// Make sure that there are deleted NFT bids (there should be at least one).
+	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
+
+	// (2) Set the old bids.
 	if operationData.DeletedNFTBidEntries == nil || len(operationData.DeletedNFTBidEntries) == 0 {
 		return fmt.Errorf("_disconnectAcceptNFTBid: DeletedNFTBidEntries doesn't exist; " +
 			"this should never happen")
 	}
 
-	// Set the old NFT entry.
-	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
-
-	// Set the old bids.
 	for _, nftBid := range operationData.DeletedNFTBidEntries {
 		bav._setNFTBidEntryMappings(nftBid)
+	}
+
+	// (3) Revert payments made from accepting the NFT bids.
+	if operationData.NFTPaymentUtxoKeys == nil || len(operationData.NFTPaymentUtxoKeys) == 0 {
+		return fmt.Errorf("_disconnectAcceptNFTBid: NFTPaymentUtxoKeys was nil; " +
+			"this should never happen")
+	}
+	for _, paymentUtxoKey := range operationData.NFTPaymentUtxoKeys {
+		if err := bav._unAddUtxo(paymentUtxoKey); err != nil {
+			return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unAdding utxo %v: ", paymentUtxoKey)
+		}
+	}
+
+	// (4) Revert the creator's CoinEntry if a previous one exists.
+	if operationData.PrevCoinEntry != nil {
+		nftPostEntry := bav.GetPostEntryForPostHash(operationData.PrevNFTEntry.NFTPostHash)
+		// We have to get the post entry first so that we have the poster's pub key.
+		if nftPostEntry == nil {
+			return fmt.Errorf("_disconnectAcceptNFTBid: nftPostEntry was nil; " +
+				"this should never happen")
+		}
+		existingProfileEntry := bav.GetProfileEntryForPublicKey(nftPostEntry.PosterPublicKey)
+		if existingProfileEntry == nil {
+			return fmt.Errorf("_disconnectAcceptNFTBid: existingProfileEntry was nil; " +
+				"this should never happen")
+		}
+		existingProfileEntry.CoinEntry = *operationData.PrevCoinEntry
+		bav._setProfileEntryMappings(existingProfileEntry)
 	}
 
 	// Now revert the basic transfer with the remaining operations.
@@ -5236,8 +5269,12 @@ func (bav *UtxoView) _connectCreateNFT(
 	if txMeta.NumCopies == 0 {
 		return 0, 0, nil, RuleErrorNFTMustHaveNonZeroCopies
 	}
+	royaltyBasisPoints := txMeta.NFTRoyaltyToCreatorBasisPoints + txMeta.NFTRoyaltyToCoinBasisPoints
+	if royaltyBasisPoints > bav.Params.MaxNFTRoyaltyBasisPoints {
+		return 0, 0, nil, RuleErrorNFTRoyaltyHasTooManyBasisPoints
+	}
 	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
-	if postEntry == nil {
+	if postEntry == nil || postEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCreateNFTOnNonexistentPost
 	}
 	if !reflect.DeepEqual(postEntry.PosterPublicKey, txn.PublicKey) {
@@ -5245,6 +5282,10 @@ func (bav *UtxoView) _connectCreateNFT(
 	}
 	if postEntry.IsNFT {
 		return 0, 0, nil, RuleErrorCreateNFTOnPostThatAlreadyIsNFT
+	}
+	profileEntry := bav.GetProfileEntryForPublicKey(postEntry.PosterPublicKey)
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil, RuleErrorCantCreateNFTWithoutProfileEntry
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -5284,6 +5325,8 @@ func (bav *UtxoView) _connectCreateNFT(
 	postEntry.IsNFT = true
 	postEntry.NumNFTCopies = txMeta.NumCopies
 	postEntry.HasUnlockable = txMeta.HasUnlockable
+	postEntry.NFTRoyaltyToCreatorBasisPoints = txMeta.NFTRoyaltyToCreatorBasisPoints
+	postEntry.NFTRoyaltyToCreatorCoinBasisPoints = txMeta.NFTRoyaltyToCreatorBasisPoints
 	bav._setPostEntryMappings(postEntry)
 
 	// Add the appropriate NFT entries.
@@ -5442,6 +5485,18 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			len(txMeta.UnlockableText), bav.Params.MaxPrivateMessageLengthBytes)
 	}
 
+	// Get the poster's profile.
+	existingProfileEntry := bav.GetProfileEntryForPublicKey(nftPostEntry.PosterPublicKey)
+	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: Profile missing for NFT pub key: %v %v",
+			PkToStringMainnet(nftPostEntry.PosterPublicKey), PkToStringTestnet(nftPostEntry.PosterPublicKey))
+	}
+	// Save all the old values from the CoinEntry before we potentially
+	// update them. Note that CoinEntry doesn't contain any pointers and so
+	// a direct copy is OK.
+	prevCoinEntry := existingProfileEntry.CoinEntry
+
 	// Verify the NFT bid entry being accepted exists and has a bid consistent with the metadata.
 	// If we did not require an AcceptNFTBid txn to have a bid amount, it would leave the door
 	// open for an attack where someone replaces a high bid with a low bid after the owner accepts.
@@ -5453,6 +5508,42 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	if nftBidEntry.BidAmountNanos != txMeta.BidAmountNanos {
 		return 0, 0, nil, RuleErrorAcceptedNFTBidAmountDoesNotMatch
 	}
+
+	//
+	// Validate bidder UTXOs.
+	//
+	if len(txMeta.BidderInputs) == 0 {
+		return 0, 0, nil, RuleErrorAcceptedNFTBidMustSpecifyBidderInputs
+	}
+	totalBidderInput := uint64(0)
+	for _, bidderInput := range txMeta.BidderInputs {
+		bidderUtxoKey := UtxoKey(*bidderInput)
+		bidderUtxoEntry := bav.GetUtxoEntryForUtxoKey(&bidderUtxoKey)
+		if bidderUtxoEntry == nil || bidderUtxoEntry.isSpent {
+			return 0, 0, nil, RuleErrorBidderInputForAcceptedNFTBidNoLongerExists
+		}
+		totalBidderInput += bidderUtxoEntry.AmountNanos
+	}
+
+	if totalBidderInput < txMeta.BidAmountNanos {
+		return 0, 0, nil, RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount
+	}
+
+	// The bidder gets back any unspent nanos from the inputs specified.
+	bidderChangeNanos := totalBidderInput - txMeta.BidAmountNanos
+	// The amount of bitclout that should go to the original creator from this purchase.
+	creatorRoyaltyNanos := IntDiv(
+		IntMul(
+			big.NewInt(int64(txMeta.BidAmountNanos)),
+			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCreatorBasisPoints))),
+		big.NewInt(100*100)).Uint64()
+	// The amount of bitclout that should go to the original creator's coin from this purchase.
+	creatorCoinRoyaltyNanos := IntDiv(
+		IntMul(
+			big.NewInt(int64(txMeta.BidAmountNanos)),
+			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCreatorCoinBasisPoints))),
+		big.NewInt(100*100)).Uint64()
+	bidAmountMinusRoyalties := txMeta.BidAmountNanos - creatorRoyaltyNanos - creatorCoinRoyaltyNanos
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -5473,12 +5564,15 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		// public key.
 	}
 
-	// Now we are ready to accept the bid. When we accept, three things must happen:
+	// Now we are ready to accept the bid. When we accept, the folloiwng must happen:
 	// 	(1) Update the nft entry with the new owner and set it as "not for sale".
 	//  (2) Delete all of the bids on this NFT since they are no longer relevant.
-	//  (3) RPH-FIXME: Pay the accepter.
+	//  (3) Pay the seller.
+	//  (4) Pay royalties to the original creator.
+	//  (5) Pay change to the bidder.
+	//  (6) Add creator coin royalties to bitclout locked.
 
-	// Set an appropriate NFTEntry for the new owner.
+	// (1) Set an appropriate NFTEntry for the new owner.
 	newNFTEntry := &NFTEntry{
 		OwnerPKID:      txMeta.BidderPKID,
 		NFTPostHash:    txMeta.NFTPostHash,
@@ -5488,7 +5582,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 
-	// Iterate over all the NFTBidEntries for this NFT and delete them.
+	// (2) Iterate over all the NFTBidEntries for this NFT and delete them.
 	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
 	if len(bidEntries) == 0 {
 		// Quick sanity check to make sure that we found bid entries. There should be at least 1.
@@ -5501,11 +5595,99 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		bav._deleteNFTBidEntryMappings(bidEntry)
 	}
 
+	// (3) Pay the seller by creating a new entry for this output and add it to the view.
+	nftPaymentUtxoKeys := []*UtxoKey{}
+	nextUtxoIndex := uint32(len(txn.TxOutputs))
+	sellerOutputKey := &UtxoKey{
+		TxID:  *txHash,
+		Index: nextUtxoIndex,
+	}
+
+	utxoEntry := UtxoEntry{
+		AmountNanos: bidAmountMinusRoyalties,
+		PublicKey:   txn.PublicKey,
+		BlockHeight: blockHeight,
+		UtxoType:    UtxoTypeNFTSeller,
+		UtxoKey:     sellerOutputKey,
+		// We leave the position unset and isSpent to false by default.
+		// The position will be set in the call to _addUtxo.
+	}
+
+	_, err = bav._addUtxo(&utxoEntry)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
+	}
+	nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, sellerOutputKey)
+
+	// (4) Pay royalties to the original artist.
+	if creatorRoyaltyNanos > 0 {
+		nextUtxoIndex += 1
+		royaltyOutputKey := &UtxoKey{
+			TxID:  *txHash,
+			Index: nextUtxoIndex,
+		}
+
+		utxoEntry := UtxoEntry{
+			AmountNanos: creatorRoyaltyNanos,
+			PublicKey:   nftPostEntry.PosterPublicKey,
+			BlockHeight: blockHeight,
+			UtxoType:    UtxoTypeNFTCreatorRoyalty,
+
+			UtxoKey: royaltyOutputKey,
+			// We leave the position unset and isSpent to false by default.
+			// The position will be set in the call to _addUtxo.
+		}
+
+		_, err = bav._addUtxo(&utxoEntry)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
+		}
+		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, royaltyOutputKey)
+	}
+
+	// (5) Give any change back to the bidder.
+	if bidderChangeNanos > 0 {
+		nextUtxoIndex += 1
+		bidderChangeOutputKey := &UtxoKey{
+			TxID:  *txHash,
+			Index: nextUtxoIndex,
+		}
+
+		bidderPublicKey := bav.GetPublicKeyForPKID(txMeta.BidderPKID)
+		utxoEntry := UtxoEntry{
+			AmountNanos: bidderChangeNanos,
+			PublicKey:   bidderPublicKey,
+			BlockHeight: blockHeight,
+			UtxoType:    UtxoTypeNFTCreatorRoyalty,
+
+			UtxoKey: bidderChangeOutputKey,
+			// We leave the position unset and isSpent to false by default.
+			// The position will be set in the call to _addUtxo.
+		}
+
+		_, err = bav._addUtxo(&utxoEntry)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
+		}
+		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, bidderChangeOutputKey)
+	}
+
+	//  (6) Add creator coin royalties to bitclout locked.
+	if creatorCoinRoyaltyNanos > 0 {
+		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
+		newCoinEntry := prevCoinEntry
+		newCoinEntry.BitCloutLockedNanos += creatorCoinRoyaltyNanos
+		existingProfileEntry.CoinEntry = newCoinEntry
+		bav._setProfileEntryMappings(existingProfileEntry)
+	}
+
 	// Add an operation to the list at the end indicating we've connected an NFT bid.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeAcceptNFTBid,
 		PrevNFTEntry:         prevNFTEntry,
+		PrevCoinEntry:        &prevCoinEntry,
 		DeletedNFTBidEntries: deletedBidEntries,
+		NFTPaymentUtxoKeys:   nftPaymentUtxoKeys,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
