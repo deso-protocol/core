@@ -1680,7 +1680,7 @@ func (msg *MsgBitCloutHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, e
 		// TODO: Don't allow this field to exceed 32-bits for now. This will
 		// adjust once other parts of the code are fixed to handle the wider
 		// type.
-		if msg.TstampSecs > math.MaxUint32 {
+		if msg.Height > math.MaxUint32 {
 			return nil, fmt.Errorf("EncodeHeaderVersion1: Height not yet allowed " +
 				"to exceed max uint32. This will be fixed in the future")
 		}
