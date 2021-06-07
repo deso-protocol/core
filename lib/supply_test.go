@@ -31,7 +31,7 @@ func TestTotalMiningSupply(t *testing.T) {
 		numNanosMinedInInterval := blockRewardNanos * uint64(numBlocksInInterval)
 		totalMiningSupply += numNanosMinedInInterval
 	}
-	require.Equal(int64(509832*NanosPerUnit), int64(totalMiningSupply))
+	require.Equal(int64(276238800000000), int64(totalMiningSupply))
 }
 
 func TestCalcBlockReward(t *testing.T) {
@@ -42,18 +42,28 @@ func TestCalcBlockReward(t *testing.T) {
 
 	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(0))
 	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(1))
-	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(1*BlocksPerYear-1))
-	require.Equal(1*NanosPerUnit/2, CalcBlockRewardNanos(1*BlocksPerYear))
-	require.Equal(1*NanosPerUnit/2, CalcBlockRewardNanos(1*BlocksPerYear+1))
-	require.Equal(1*NanosPerUnit/2, CalcBlockRewardNanos(3*BlocksPerYear-1))
-	require.Equal(NanosPerUnit/4, CalcBlockRewardNanos(3*BlocksPerYear))
-	require.Equal(NanosPerUnit/4, CalcBlockRewardNanos(3*BlocksPerYear+1))
-	require.Equal(NanosPerUnit/4, CalcBlockRewardNanos(7*BlocksPerYear-1))
-	require.Equal(NanosPerUnit/8, CalcBlockRewardNanos(7*BlocksPerYear))
-	require.Equal(NanosPerUnit/8, CalcBlockRewardNanos(7*BlocksPerYear+1))
-	require.Equal(NanosPerUnit/8, CalcBlockRewardNanos(15*BlocksPerYear-1))
+
+	// .75
+	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight-1))
+	require.Equal(int64(float64(NanosPerUnit) * .75), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight)))
+	// .5
+	require.Equal(int64(float64(NanosPerUnit) * .75), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 288 - 1)))
+	require.Equal(int64(float64(NanosPerUnit) * .5), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 288)))
+	// .25
+	require.Equal(int64(float64(NanosPerUnit) * .5), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 2*288 - 1)))
+	require.Equal(int64(float64(NanosPerUnit) * .25), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 2*288)))
+	// .125
+	require.Equal(int64(float64(NanosPerUnit) * .25), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 3*288 - 1)))
+	require.Equal(int64(float64(NanosPerUnit) * .125), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 3*288)))
+	// .1
+	require.Equal(int64(float64(NanosPerUnit) * .125), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 4*288 - 1)))
+	require.Equal(int64(float64(NanosPerUnit) * .1), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 4*288)))
+
+	// .05
+	require.Equal(int64(1*NanosPerUnit/10), int64(CalcBlockRewardNanos(15*BlocksPerYear-1)))
 	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(15*BlocksPerYear))
 	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(15*BlocksPerYear+1))
+	// 0
 	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(32*BlocksPerYear-1))
 	require.Equal(uint64(0), CalcBlockRewardNanos(32*BlocksPerYear))
 	require.Equal(uint64(0), CalcBlockRewardNanos(32*BlocksPerYear+1))
