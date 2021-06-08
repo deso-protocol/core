@@ -116,10 +116,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"How many threads to run for mining. Only has an effect when --miner-public-keys "+
 			"is set. If set to zero, which is the default, then the number of "+
 			"threads available to the system will be used.")
-	cmd.PersistentFlags().StringSlice("admin-public-keys", []string{},
-		"A list of public keys which gives users access to the admin panel. "+
-			"If no keys are specified anyone can access the admin panel. You can add a space "+
-			"and a comment after every public key and leave a note about who the public key belongs to.")
 
 	// Fees
 	cmd.PersistentFlags().Uint64("rate-limit-feerate", 0,
