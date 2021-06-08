@@ -2968,6 +2968,10 @@ type TransactionMetadata struct {
 	TransactorPublicKeyBase58Check string
 	AffectedPublicKeys             []*AffectedPublicKey
 
+	// We store these outputs so we don't have to load the full transaction from disk
+	// when looking up output amounts
+	TxnOutputs []*BitCloutOutput
+
 	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata
 	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata
 	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata

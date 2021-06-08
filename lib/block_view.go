@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -605,6 +606,16 @@ type PostEntry struct {
 
 func (pe *PostEntry) IsDeleted() bool {
 	return pe.isDeleted
+}
+
+func (pe *PostEntry) HasMedia() bool {
+	bodyJSONObj := BitCloutBodySchema{}
+	err := json.Unmarshal(pe.Body, &bodyJSONObj)
+	//Return true if body json can be parsed and ImageUrls is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
+	if (err == nil && len(bodyJSONObj.ImageURLs) > 0) || len(pe.PostExtraData["EmbedVideoURL"]) > 0 {
+		return true
+	}
+	return false
 }
 
 // Return true if postEntry is a vanilla reclout.  A vanilla reclout is a post that reclouts another post,
@@ -7535,7 +7546,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	return allCorePosts, commentsByPostHash, nil
 }
 
-func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64) (_posts []*PostEntry, _err error) {
+func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool) (_posts []*PostEntry, _err error) {
 	handle := bav.Handle
 	dbPrefix := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
 	dbPrefix = append(dbPrefix, publicKey...)
@@ -7585,6 +7596,12 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			if postEntry.isDeleted || postEntry.ParentStakeID != nil || postEntry.IsHidden {
 				continue
 			}
+
+			// mediaRequired set to determine if we only want posts that include media and ignore posts without
+			if mediaRequired && !postEntry.HasMedia() {
+				continue
+			}
+
 			posts = append(posts, postEntry)
 		}
 		return nil
@@ -7597,6 +7614,11 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 	for _, postEntry := range bav.PostHashToPostEntry {
 		// Ignore deleted or hidden posts and any comments.
 		if postEntry.isDeleted || postEntry.IsHidden || len(postEntry.ParentStakeID) != 0 {
+			continue
+		}
+
+		// mediaRequired set to determine if we only want posts that include media and ignore posts without
+		if mediaRequired && !postEntry.HasMedia() {
 			continue
 		}
 

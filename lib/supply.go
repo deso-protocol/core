@@ -18,6 +18,7 @@ type PurchaseSupplyIntervalStart struct {
 const (
 	NanosPerUnit  = uint64(1000000000)
 	BlocksPerYear = uint32(12 * 24 * 365)
+	BlocksPerDay = uint32(12 * 24)
 	// Every 1M BitClout we sell causes the price to increase by a factor of 2.
 	TrancheSizeNanos = uint64(1000000000000000)
 	// When exchanging Bitcoin for BitClout, we don't allow transactions to create
@@ -40,23 +41,40 @@ const (
 var (
 	NaturalLogOfTwo = BigFloatLog(NewFloat().SetUint64(2))
 
+	DeflationBombBlockRewardAdjustmentBlockHeight = uint32(32060)
+
 	MiningSupplyIntervals = []*MiningSupplyIntervalStart{
 		{
 			StartBlockHeight: 0,
 			BlockRewardNanos: 1 * NanosPerUnit,
 		},
+		// Adjust the block reward as part of the deflation bomb to mark the BitClout
+		// dev community's commitment to a zero-waste, environmentally-friendly
+		// consensus mechanism. Do a smooth ramp in order to minimize issues with
+		// block mining times.
 		{
-			StartBlockHeight: 1 * BlocksPerYear,
-			BlockRewardNanos: 1 * NanosPerUnit / 2,
+			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight,
+			BlockRewardNanos: NanosPerUnit * 3 / 4,
 		},
 		{
-			StartBlockHeight: 3 * BlocksPerYear,
+			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + BlocksPerDay,
+			BlockRewardNanos: NanosPerUnit / 2,
+		},
+		{
+			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 2 * BlocksPerDay,
 			BlockRewardNanos: NanosPerUnit / 4,
 		},
 		{
-			StartBlockHeight: 7 * BlocksPerYear,
+			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 3 * BlocksPerDay,
 			BlockRewardNanos: NanosPerUnit / 8,
 		},
+		{
+			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 4 * BlocksPerDay,
+			BlockRewardNanos: NanosPerUnit / 10,
+		},
+		// Leave the block reward at .1 for the medium-term then tamp it down to zero.
+		// Note that the consensus mechanism will likely change to something more
+		// more energy-efficient before this point.
 		{
 			StartBlockHeight: 15 * BlocksPerYear,
 			BlockRewardNanos: NanosPerUnit / 20,

@@ -1352,6 +1352,8 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			// it's so long so I'm commenting it out for now.
 			// UtxoOpsDump:      spew.Sdump(utxoOps),
 		},
+
+		TxnOutputs: txn.TxOutputs,
 	}
 
 	extraData := txn.ExtraData
