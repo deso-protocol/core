@@ -16420,3 +16420,258 @@ func TestNFTCreatorRoyalties(t *testing.T) {
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
+
+func TestNFTSerialNumberZeroBid(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3 a paramUpdater for this test
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund all the keys.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 100)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 15000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 15000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 15000)
+
+	// Create a simple post.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 1"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+
+	// Create a profile so me can make an NFT.
+	{
+		_updateProfileWithTestMeta(
+			testMeta,
+			10,            /*feeRateNanosPerKB*/
+			m0Pub,         /*updaterPkBase58Check*/
+			m0Priv,        /*updaterPrivBase58Check*/
+			[]byte{},      /*profilePubKey*/
+			"m2",          /*newUsername*/
+			"i am the m2", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+	}
+
+	// Create NFT: Let's have m0 create an NFT with a ton of copies.
+	{
+		// Balance before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(59), m0BalBeforeNFT)
+
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			100,   /*NumCopies*/
+			false, /*HasUnlockable*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
+		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		require.Equal(uint64(58), m0BalAfterNFT)
+	}
+
+	// Have m1,m2,m3 make some bids, including a bid on serial #0.
+	{
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		// m1: This is a blanket bid on any serial number of post1.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			0,   /*SerialNumber*/
+			100, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 0)
+		require.Equal(1, len(bidEntries))
+
+		// m1: This is a specific bid for serial #1 of post1.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			1000, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+
+		// m2: Add a bid from m2 for fun.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1,   /*SerialNumber*/
+			999, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(2, len(bidEntries))
+
+		// m3: Add a blanket bid from m3 for fun.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			0,   /*SerialNumber*/
+			999, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 0)
+		require.Equal(2, len(bidEntries))
+	}
+
+	// Error case: m1 has two active bids. One for serial #1 for 1000 nanos, and one for
+	// serial #0 for 100 nanos. m0 can accept the serial #0 bid on any serial number. In this
+	// case they try and accept it for serial #2 while spoofing the 1000 nano bid amount from
+	// the serial #1 bid.  This should obviously fail.
+	//
+	// In addition, m0 should not be able to accept the serial #0 bid on serial #1 since it is
+	// trumped by the specific serial #1 bid placed by m1.
+	{
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			2, /*SerialNumber*/
+			m1Pub,
+			1000, /*BidAmountNanos*/
+			"",   /*UnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptedNFTBidAmountDoesNotMatch)
+
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m1Pub,
+			100, /*BidAmountNanos*/
+			"",  /*UnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptedNFTBidAmountDoesNotMatch)
+	}
+
+	// Accept some bids!
+	{
+		// Balance before.
+		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(58), m0BalBefore)
+
+		// This will accept m1's serial #0 bid.
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			2,     /*SerialNumber*/
+			m1Pub, /*bidderPkBase58Check*/
+			100,   /*bidAmountNanos*/
+			"",    /*UnencryptedUnlockableText*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 0)
+		require.Equal(1, len(bidEntries))
+
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,     /*SerialNumber*/
+			m1Pub, /*bidderPkBase58Check*/
+			1000,  /*bidAmountNanos*/
+			"",    /*UnencryptedUnlockableText*/
+		)
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		// This will accept m3's serial #0 bid.
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			3,     /*SerialNumber*/
+			m3Pub, /*bidderPkBase58Check*/
+			999,   /*bidAmountNanos*/
+			"",    /*UnencryptedUnlockableText*/
+		)
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 0)
+		require.Equal(0, len(bidEntries))
+
+		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
+		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(m0BalBefore-6+100+1000+999, m0BalAfter)
+		require.Equal(uint64(2151), m0BalAfter)
+	}
+
+	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}

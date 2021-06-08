@@ -5521,7 +5521,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	nftBidKey := MakeNFTBidKey(txMeta.BidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 	if nftBidEntry == nil || nftBidEntry.isDeleted {
-		return 0, 0, nil, RuleErrorCantAcceptNonExistentBid
+		// NOTE: Users can submit a bit for SerialNumber zero as a blanket bid for any SerialNumber
+		// in an NFT collection. Thus, we must check to see if a SerialNumber zero bid exists
+		// for this bidder before we return an error.
+		nftBidKey = MakeNFTBidKey(txMeta.BidderPKID, txMeta.NFTPostHash, uint64(0))
+		nftBidEntry = bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
+		if nftBidEntry == nil || nftBidEntry.isDeleted {
+			return 0, 0, nil, RuleErrorCantAcceptNonExistentBid
+		}
 	}
 	if nftBidEntry.BidAmountNanos != txMeta.BidAmountNanos {
 		return 0, 0, nil, RuleErrorAcceptedNFTBidAmountDoesNotMatch
@@ -5602,7 +5609,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// (2) Iterate over all the NFTBidEntries for this NFT and delete them.
 	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
-	if len(bidEntries) == 0 {
+	if len(bidEntries) == 0 && nftBidEntry.SerialNumber != 0 {
 		// Quick sanity check to make sure that we found bid entries. There should be at least 1.
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: found zero bid entries to delete; this should never happen.")
@@ -5611,6 +5618,11 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	for _, bidEntry := range bidEntries {
 		deletedBidEntries = append(deletedBidEntries, bidEntry)
 		bav._deleteNFTBidEntryMappings(bidEntry)
+	}
+	// If this is a SerialNumber zero BidEntry, we must delete it specifically.
+	if nftBidEntry.SerialNumber == uint64(0) {
+		deletedBidEntries = append(deletedBidEntries, nftBidEntry)
+		bav._deleteNFTBidEntryMappings(nftBidEntry)
 	}
 
 	// (3) Pay the seller by creating a new entry for this output and add it to the view.
@@ -5729,26 +5741,31 @@ func (bav *UtxoView) _connectNFTBid(
 		return 0, 0, nil, RuleErrorNFTBidOnNonExistentPost
 	} else if !postEntry.IsNFT {
 		return 0, 0, nil, RuleErrorNFTBidOnPostThatIsNotAnNFT
-	} else if txMeta.SerialNumber == 0 || txMeta.SerialNumber > postEntry.NumNFTCopies {
+	} else if txMeta.SerialNumber > postEntry.NumNFTCopies {
 		return 0, 0, nil, RuleErrorNFTBidOnInvalidSerialNumber
 	}
 
-	// Verify the NFT entry that is being bid on exists.
+	// Validate the nftEntry.  Note that there is a special case where a bidder can submit a bid
+	// on SerialNumber zero.  This acts as a blanket bid on any serial number version of this NFT
+	// As a result, the nftEntry will be nil and should not be validated.
 	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftEntry := bav.GetNFTEntryForNFTKey(&nftKey)
-	if nftEntry == nil || nftEntry.isDeleted {
-		return 0, 0, nil, RuleErrorNFTBidOnNonExistentNFTEntry
-	}
-
-	// Verify the NFT entry being bid on is for sale.
-	if !nftEntry.IsForSale {
-		return 0, 0, nil, RuleErrorNFTBidOnNFTThatIsNotForSale
-	}
-
-	// Verify that the bidder is not the current owner of the NFT.
 	bidderPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
-	if reflect.DeepEqual(nftEntry.OwnerPKID, bidderPKID.PKID) {
-		return 0, 0, nil, RuleErrorNFTOwnerCannotBidOnOwnedNFT
+	if txMeta.SerialNumber != uint64(0) {
+		// Verify the NFT entry that is being bid on exists.
+		if nftEntry == nil || nftEntry.isDeleted {
+			return 0, 0, nil, RuleErrorNFTBidOnNonExistentNFTEntry
+		}
+
+		// Verify the NFT entry being bid on is for sale.
+		if !nftEntry.IsForSale {
+			return 0, 0, nil, RuleErrorNFTBidOnNFTThatIsNotForSale
+		}
+
+		// Verify that the bidder is not the current owner of the NFT.
+		if reflect.DeepEqual(nftEntry.OwnerPKID, bidderPKID.PKID) {
+			return 0, 0, nil, RuleErrorNFTOwnerCannotBidOnOwnedNFT
+		}
 	}
 
 	// Connect basic txn to get the total input and the total output without
