@@ -3336,7 +3336,11 @@ func (bav *UtxoView) GetAllNFTBidEntries(nftPostHash *BlockHash, serialNumber ui
 	// Loop over the view and build the final set of NFTBidEntries to return.
 	nftBidEntries := []*NFTBidEntry{}
 	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
-		if reflect.DeepEqual(nftBidEntry.NFTPostHash, nftPostHash) && nftBidEntry.SerialNumber == serialNumber {
+
+		if reflect.DeepEqual(nftBidEntry.NFTPostHash, nftPostHash) &&
+			nftBidEntry.SerialNumber == serialNumber &&
+			!nftBidEntry.isDeleted {
+
 			nftBidEntries = append(nftBidEntries, nftBidEntry)
 		}
 	}
@@ -5675,8 +5679,9 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, bidderChangeOutputKey)
 	}
 
-	//  (6) Add creator coin royalties to bitclout locked.
-	if creatorCoinRoyaltyNanos > 0 {
+	// (6) Add creator coin royalties to bitclout locked. If the number of coins in circulation is
+	// less than the "auto sell threshold" we burn the bitclout.
+	if creatorCoinRoyaltyNanos > 0 && existingProfileEntry.CoinsInCirculationNanos >= bav.Params.CreatorCoinAutoSellThresholdNanos {
 		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
 		newCoinEntry := prevCoinEntry
 		newCoinEntry.BitCloutLockedNanos += creatorCoinRoyaltyNanos

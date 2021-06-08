@@ -266,6 +266,22 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *BitCloutMempool, pkSt
 	return balanceForUserNanos
 }
 
+func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *BitCloutParams, pkStr string,
+) (_bitCloutLocked uint64, _coinsInCirculation uint64) {
+	pkBytes, _, err := Base58CheckDecode(pkStr)
+	require.NoError(t, err)
+
+	utxoView, _ := NewUtxoView(db, params, nil)
+
+	// Profile fields
+	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)
+	if creatorProfile == nil {
+		return 0, 0
+	}
+
+	return creatorProfile.BitCloutLockedNanos, creatorProfile.CoinsInCirculationNanos
+}
+
 func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
