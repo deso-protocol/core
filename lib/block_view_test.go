@@ -16342,6 +16342,77 @@ func TestNFTCreatorRoyalties(t *testing.T) {
 		require.Equal(m0InitialBitCloutLocked+uint64(1011), bitCloutLocked)
 	}
 
+	// Error case: Let's make sure that no royalties are paid if there are no coins in circulation.
+	{
+		_, coinsInCirculationNanos := _getCreatorCoinInfo(t, db, params, m0Pub)
+		require.Equal(uint64(30365901), coinsInCirculationNanos)
+
+		// Sell all the coins.
+		_creatorCoinTxnWithTestMeta(
+			testMeta,
+			10,     /*feeRateNanosPerKB*/
+			m0Pub,  /*updaterPkBase58Check*/
+			m0Priv, /*updaterPrivBase58Check*/
+			m0Pub,  /*profilePubKeyBase58Check*/
+			CreatorCoinOperationTypeSell,
+			0,                       /*BitCloutToSellNanos*/
+			coinsInCirculationNanos, /*CreatorCoinToSellNanos*/
+			0,                       /*BitCloutToAddNanos*/
+			0,                       /*MinBitCloutExpectedNanos*/
+			0,                       /*MinCreatorCoinExpectedNanos*/
+		)
+
+		// Create a bid on <post1, #9>, which is still for sale.
+		bidAmountNanos := uint64(100)
+		serialNumber := uint64(9)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, serialNumber)
+		require.Equal(0, len(bidEntries))
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			serialNumber,   /*SerialNumber*/
+			bidAmountNanos, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, serialNumber)
+		require.Equal(1, len(bidEntries))
+
+		// Balance before.
+		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(2159), m0BalBefore)
+
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			serialNumber, /*SerialNumber*/
+			m3Pub,        /*bidderPkBase58Check*/
+			bidAmountNanos,
+			"", /*UnencryptedUnlockableText*/
+		)
+
+		// Check royalties. 10% for the creator, 10% for the coin.
+		expectedCreatorRoyalty := bidAmountNanos / 10
+		require.Equal(uint64(10), expectedCreatorRoyalty)
+		expectedCoinRoyalty := bidAmountNanos / 10
+		require.Equal(uint64(10), expectedCoinRoyalty)
+		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
+
+		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
+		require.Equal(uint64(2247), m0BalAfter)
+
+		// Creator coin --> Make sure no royalties were added.
+		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
+		require.Equal(uint64(0), bitCloutLocked)
+	}
+
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
