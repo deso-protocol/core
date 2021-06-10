@@ -508,3 +508,48 @@ func TestFollows(t *testing.T) {
 		require.Equal(len(pubKeys), 0)
 	}
 }
+
+func TestBlockPublicKey(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	// Create a test db and clean up the files at the end.
+	db, dir := GetTestBadgerDb()
+	defer os.RemoveAll(dir)
+
+	priv1, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	pk1 := priv1.PubKey().SerializeCompressed()
+
+	priv2, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	pk2 := priv2.PubKey().SerializeCompressed()
+
+	priv3, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	pk3 := priv3.PubKey().SerializeCompressed()
+
+	// Get the PKIDs for all the public keys
+	pkid1 := DBGetPKIDEntryForPublicKey(db, pk1).PKID
+	pkid2 := DBGetPKIDEntryForPublicKey(db, pk2).PKID
+	pkid3 := DBGetPKIDEntryForPublicKey(db, pk3).PKID
+
+	// PK2 blocks everyone. Make sure "get" works properly.
+	require.Nil(DbGetBlockedPubKeyMapping(db, pkid2, pkid1))
+	require.NoError(DbPutBlockedPubKeyMappings(db, pkid2, pkid1))
+	require.NotNil(DbGetBlockedPubKeyMapping(db, pkid2, pkid1))
+	require.Nil(DbGetBlockedPubKeyMapping(db, pkid2, pkid3))
+	require.NoError(DbPutBlockedPubKeyMappings(db, pkid2, pkid3))
+	require.NotNil(DbGetBlockedPubKeyMapping(db, pkid2, pkid3))
+
+	// pkid3 only blocks pkid1. Make sure "get" works properly.
+	require.Nil(DbGetBlockedPubKeyMapping(db, pkid3, pkid1))
+	require.NoError(DbPutBlockedPubKeyMappings(db, pkid3, pkid1))
+	require.NotNil(DbGetBlockedPubKeyMapping(db, pkid3, pkid1))
+
+	// pkid3 unblocks pkid1. Make sure "delete" works properly.
+	require.NoError(DbDeleteBlockedPubKeyMapping(db, pkid3, pkid1))
+	require.Nil(DbGetBlockedPubKeyMapping(db, pkid3, pkid1))
+}

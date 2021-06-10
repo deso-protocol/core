@@ -1070,6 +1070,63 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
+func _doBlockPublicKeyTxn(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *BitCloutParams, feeRateNanosPerKB uint64, blockerPkBase58Check string,
+	blockedPkBase58Check string, blockerPrivBase58Check string, isUnblock bool) (
+	_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	blockerPkBytes, _, err := Base58CheckDecode(blockerPkBase58Check)
+	require.NoError(err)
+
+	blockedPkBytes, _, err := Base58CheckDecode(blockedPkBase58Check)
+	require.NoError(err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateBlockPublicKeyTxn(
+		blockerPkBytes, blockedPkBytes, isUnblock, feeRateNanosPerKB, nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, blockerPrivBase58Check)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	// ConnectTransaction should treat the amount locked as contributing to the
+	// output.
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypePrivateMessage operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeBlockPublicKey, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
 func TestSubmitPost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -5006,6 +5063,450 @@ func TestFollowTxns(t *testing.T) {
 	// All the txns should be in the mempool already so mining a block should put
 	// all those transactions in it.
 	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	// Add one for the block reward. Now we have a meaty block.
+	require.Equal(len(txnOps)+1, len(block.Txns))
+	// Estimate the transaction fees of the tip block in various ways.
+	{
+		// Threshold above what's in the block should return the default fee at all times.
+		require.Equal(int64(0), int64(chain.EstimateDefaultFeeRateNanosPerKB(.1, 0)))
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.1, 7)))
+		// Threshold below what's in the block should return the max of the median
+		// and the minfee. This means with a low minfee the value returned should be
+		// higher. And with a high minfee the value returned should be equal to the
+		// fee.
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
+		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
+		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+	}
+
+	testConnectedState()
+
+	// Roll back the block and make sure we don't hit any errors.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		// Fetch the utxo operations for the block we're detaching. We need these
+		// in order to be able to detach the block.
+		hash, err := block.Header.Hash()
+		require.NoError(err)
+		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		require.NoError(err)
+
+		// Compute the hashes for all the transactions.
+		txHashes, err := ComputeTransactionHashes(block.Txns)
+		require.NoError(err)
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+
+		// Flushing the view after applying and rolling back should work.
+		require.NoError(utxoView.FlushToDb())
+	}
+
+	testDisconnectedState()
+}
+
+func TestBlockPublicKeyTxns(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3 a paramUpdater for this test
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+
+	// Mine a few blocks to give the senderPkString some money.
+	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, _ = block, mempool
+	block, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	block, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	block, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// Setup some convenience functions for the test.
+	txnOps := [][]*UtxoOperation{}
+	txns := []*MsgBitCloutTxn{}
+	expectedSenderBalances := []uint64{}
+	expectedRecipientBalances := []uint64{}
+
+	// We take the block tip to be the blockchain height rather than the
+	// header chain height.
+	savedHeight := chain.blockTip().Height + 1
+	registerOrTransfer := func(username string,
+		senderPk string, recipientPk string, senderPriv string) {
+
+		expectedSenderBalances = append(
+			expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
+		expectedRecipientBalances = append(
+			expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
+
+		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
+			t, chain, db, params, senderPk, recipientPk,
+			senderPriv, 7 /*amount to send*/, 11 /*feerate*/)
+
+		txnOps = append(txnOps, currentOps)
+		txns = append(txns, currentTxn)
+	}
+
+	// Fund all the keys.
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+
+	doBlockPublicKeyTxn := func(
+		blockerPkBase58Check string, blockedPkBase58Check string,
+		blockerPrivBase58Check string, isUnblock bool, feeRateNanosPerKB uint64) {
+
+		expectedSenderBalances = append(
+			expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
+		expectedRecipientBalances = append(
+			expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
+
+		currentOps, currentTxn, _, err := _doBlockPublicKeyTxn(
+			t, chain, db, params, feeRateNanosPerKB, blockerPkBase58Check,
+			blockedPkBase58Check, blockerPrivBase58Check, isUnblock)
+		require.NoError(err)
+
+		txnOps = append(txnOps, currentOps)
+		txns = append(txns, currentTxn)
+	}
+
+	// m0 -> m1
+	doBlockPublicKeyTxn(m0Pub, m1Pub, m0Priv, false /*isUnblock*/, 10 /*feeRateNanosPerKB*/)
+
+	// Duplicating "m0 -> m1" should fail.
+	_, _, _, err = _doBlockPublicKeyTxn(
+		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
+		m1Pub, m0Priv, false /*isUnfollow*/)
+	require.Error(err)
+	require.Contains(err.Error(), RuleErrorBlockedEntryAlreadyExists)
+
+	// m2 -> m1
+	doBlockPublicKeyTxn(m2Pub, m1Pub, m2Priv, false /*isUnblock*/, 10 /*feeRateNanosPerKB*/)
+
+	// m3 -> m1
+	doBlockPublicKeyTxn(m3Pub, m1Pub, m3Priv, false /*isUnblock*/, 10 /*feeRateNanosPerKB*/)
+
+	// m3 -> m2
+	doBlockPublicKeyTxn(m3Pub, m2Pub, m3Priv, false /*isUnblock*/, 10 /*feeRateNanosPerKB*/)
+
+	// m1 -> m2
+	doBlockPublicKeyTxn(m1Pub, m2Pub, m1Priv, false /*isUnblock*/, 10 /*feeRateNanosPerKB*/)
+
+	// m2 -> m3
+	doBlockPublicKeyTxn(m2Pub, m3Pub, m2Priv, false /*isUnblock*/, 10 /*feeRateNanosPerKB*/)
+
+	blockingM1 := [][]byte{
+		_strToPk(t, m0Pub),
+		_strToPk(t, m2Pub),
+		_strToPk(t, m3Pub),
+	}
+
+	blockingM2 := [][]byte{
+		_strToPk(t, m1Pub),
+		_strToPk(t, m3Pub),
+	}
+
+	blockingM3 := [][]byte{
+		_strToPk(t, m2Pub),
+	}
+
+	// Verify pks blocking m1.
+	{
+		m1PKIDEntry := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+		for _, pk := range blockingM1 {
+			pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+			blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m1PKIDEntry.PKID)
+			require.NotNil(blockedEntry)
+		}
+	}
+
+	// Verify pks blocking m2.
+	{
+		m2PKIDEntry := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+		for _, pk := range blockingM2 {
+			pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+			blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m2PKIDEntry.PKID)
+			require.NotNil(blockedEntry)
+		}
+	}
+
+	// Verify pks blocking m3.
+	{
+		m3PKIDEntry := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+		for _, pk := range blockingM3 {
+			pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+			blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m3PKIDEntry.PKID)
+			require.NotNil(blockedEntry)
+		}
+	}
+
+	// Try an "unblock".
+	//
+	// m0 -> m1 (unblock)
+	doBlockPublicKeyTxn(m0Pub, m1Pub, m0Priv, true /*isUnblock*/, 10 /*feeRateNanosPerKB*/)
+
+	// m3 -> m2 (unblock)
+	doBlockPublicKeyTxn(m3Pub, m2Pub, m3Priv, true /*isUnblock*/, 10 /*feeRateNanosPerKB*/)
+
+	// Duplicating "m0 -> m1" (unblock) should fail now that the blocked entry is deleted.
+	_, _, _, err = _doBlockPublicKeyTxn(
+		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
+		m1Pub, m0Priv, true /*isUnblock*/)
+	require.Error(err)
+	require.Contains(err.Error(), RuleErrorCannotUnblockNonexistentBlockedEntry)
+
+	blockingM1 = [][]byte{
+		_strToPk(t, m2Pub),
+		_strToPk(t, m3Pub),
+	}
+
+	blockingM2 = [][]byte{
+		_strToPk(t, m1Pub),
+	}
+
+	// Verify pks following and check like count m1.
+	{
+		m1PKIDEntry := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+		for _, pk := range blockingM1 {
+			pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+			blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m1PKIDEntry.PKID)
+			require.NotNil(blockedEntry)
+		}
+	}
+
+	// Verify pks following and check like count m2.
+	{
+		m2PKIDEntry := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+		for _, pk := range blockingM2 {
+			pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+			blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m2PKIDEntry.PKID)
+			require.NotNil(blockedEntry)
+		}
+	}
+
+	// ===================================================================================
+	// Finish it off with some transactions
+	// ===================================================================================
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
+	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
+	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
+	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
+	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
+	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
+	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
+	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
+	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
+	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
+	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
+	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
+	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
+
+	// This function tests the final state of applying all transactions to the view.
+	testConnectedState := func() {
+
+		blockingM1 = [][]byte{
+			_strToPk(t, m2Pub),
+			_strToPk(t, m3Pub),
+		}
+
+		blockingM2 = [][]byte{
+			_strToPk(t, m1Pub),
+		}
+
+		blockingM3 = [][]byte{
+			_strToPk(t, m2Pub),
+		}
+
+		// Verify pks blocking m1.
+		{
+			m1PKIDEntry := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+			for _, pk := range blockingM1 {
+				pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+				blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m1PKIDEntry.PKID)
+				require.NotNil(blockedEntry)
+			}
+		}
+
+		// Verify pks blocking m2.
+		{
+			m2PKIDEntry := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+			for _, pk := range blockingM2 {
+				pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+				blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m2PKIDEntry.PKID)
+				require.NotNil(blockedEntry)
+			}
+		}
+
+		// Verify pks blocking m3.
+		{
+			m3PKIDEntry := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+			for _, pk := range blockingM3 {
+				pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+				blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m3PKIDEntry.PKID)
+				require.Nil(blockedEntry)
+			}
+		}
+
+	}
+	testConnectedState()
+
+	// Roll back all of the above using the utxoOps from each.
+	for ii := 0; ii < len(txnOps); ii++ {
+		backwardIter := len(txnOps) - 1 - ii
+		currentOps := txnOps[backwardIter]
+		currentTxn := txns[backwardIter]
+		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		currentHash := currentTxn.Hash()
+		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
+		require.NoError(err)
+
+		require.NoError(utxoView.FlushToDb())
+
+		// After disconnecting, the balances should be restored to what they
+		// were before this transaction was applied.
+		require.Equal(int64(expectedSenderBalances[backwardIter]), int64(_getBalance(t, chain, nil, senderPkString)))
+		require.Equal(expectedRecipientBalances[backwardIter], _getBalance(t, chain, nil, recipientPkString))
+	}
+
+	// This function is used to test the state after all ops are rolled back.
+	testDisconnectedState := func() {
+		// Verify that all the pks following you have been deleted.
+		blockingM1 = [][]byte{
+			_strToPk(t, m2Pub),
+			_strToPk(t, m3Pub),
+		}
+
+		blockingM2 = [][]byte{
+			_strToPk(t, m1Pub),
+		}
+
+		blockingM3 = [][]byte{
+			_strToPk(t, m2Pub),
+		}
+
+		// Verify no pks blocking m1.
+		{
+			m1PKIDEntry := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+			for _, pk := range blockingM1 {
+				pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+				blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m1PKIDEntry.PKID)
+				require.Nil(blockedEntry)
+			}
+		}
+
+		// Verify no pks blocking m2.
+		{
+			m2PKIDEntry := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+			for _, pk := range blockingM2 {
+				pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+				blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m2PKIDEntry.PKID)
+				require.Nil(blockedEntry)
+			}
+		}
+
+		// Verify no pks blocking m3.
+		{
+			m3PKIDEntry := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+			for _, pk := range blockingM3 {
+				pkidEntry := DBGetPKIDEntryForPublicKey(db, pk)
+				blockedEntry := DbGetBlockedPubKeyMapping(db, pkidEntry.PKID, m3PKIDEntry.PKID)
+				require.Nil(blockedEntry)
+			}
+		}
+	}
+
+	testDisconnectedState()
+
+	// Apply all the transactions to a mempool object and make sure we don't get any
+	// errors. Verify the balances align as we go.
+	for ii, tx := range txns {
+		// See comment above on this transaction.
+		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
+
+		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, senderPkString))
+		require.Equal(expectedRecipientBalances[ii], _getBalance(t, chain, mempool, recipientPkString))
+
+		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
+		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
+	}
+
+	// Apply all the transactions to a view and flush the view to the db.
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+	for ii, txn := range txns {
+		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
+
+		// Always use height+1 for validation since it's assumed the transaction will
+		// get mined into the next block.
+		txHash := txn.Hash()
+		blockHeight := chain.blockTip().Height + 1
+		_, _, _, _, err :=
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		require.NoError(err)
+	}
+	// Flush the utxoView after having added all the transactions.
+	require.NoError(utxoView.FlushToDb())
+	testConnectedState()
+
+	// Disconnect the transactions from a single view in the same way as above
+	// i.e. without flushing each time.
+	utxoView2, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+	for ii := 0; ii < len(txnOps); ii++ {
+		backwardIter := len(txnOps) - 1 - ii
+		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
+		currentOps := txnOps[backwardIter]
+		currentTxn := txns[backwardIter]
+
+		currentHash := currentTxn.Hash()
+		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
+		require.NoError(err)
+	}
+	require.NoError(utxoView2.FlushToDb())
+	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
+	require.Equal(expectedRecipientBalances[0], _getBalance(t, chain, nil, recipientPkString))
+
+	testDisconnectedState()
+
+	// All the txns should be in the mempool already so mining a block should put
+	// all those transactions in it.
+	block, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	// Add one for the block reward. Now we have a meaty block.
 	require.Equal(len(txnOps)+1, len(block.Txns))

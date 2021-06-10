@@ -2686,6 +2686,43 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) CreateBlockPublicKeyTxn(
+	UpdaterPublicKeyBytes []byte,
+	BlockedPublicKeyBytes []byte,
+	IsUnblock bool,
+// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a transaction containing the profile fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKeyBytes,
+		TxnMeta: &BlockPublicKeyMetadata{
+			BlockedPublicKey: BlockedPublicKeyBytes,
+			IsUnblock: IsUnblock,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// We don't need to make any tweaks to the amount because it's basically
+	// a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateProfileTxn: Problem adding inputs: ")
+	}
+
+	// The spend amount should be zero for profile submissions.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateBlockPublicKeyTxn: Spend amount "+
+			"should be zero but was %d instead: ", spendAmount)
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
 func (bc *Blockchain) CreateSwapIdentityTxn(
 	UpdaterPublicKeyBytes []byte,
 	FromPublicKeyBytes []byte,

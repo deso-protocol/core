@@ -102,6 +102,11 @@ const (
 	RuleErrorCannotLikeNonexistentPost         RuleError = "RuleErrorCannotLikeNonexistentPost"
 	RuleErrorCannotUnlikeWithoutAnExistingLike RuleError = "RuleErrorCannotUnlikeWithoutAnExistingLike"
 
+	RuleErrorBlockPublicKeyPubKeyLen                         RuleError = "RuleErrorBlockPublicKeyPubKeyLen"
+	RuleErrorBlockPublicKeyParsePubKeyError                  RuleError = "RuleErrorBlockPublicKeyParsePubKeyError"
+	RuleErrorCannotUnblockNonexistentBlockedEntry            RuleError = "RuleErrorCannotUnblockNonexistentBlockedEntry"
+	RuleErrorBlockedEntryAlreadyExists                       RuleError = "RuleErrorBlockedEntryAlreadyExists"
+	
 	RuleErrorProfileUsernameTooShort            RuleError = "RuleErrorProfileUsernameTooShort"
 	RuleErrorProfileDescriptionTooShort         RuleError = "RuleErrorProfileDescriptionTooShort"
 	RuleErrorProfileUsernameTooLong             RuleError = "RuleErrorProfileUsernameTooLong"

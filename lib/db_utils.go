@@ -183,6 +183,11 @@ var (
 	// Prefixes for Reclouts:
 	// <prefix, user pub key [39]byte, reclouted post hash [39]byte> -> RecloutEntry
 	_PrefixReclouterPubKeyRecloutedPostHashToRecloutPostHash = []byte{39}
+
+	// Prefix for blocked public keys:
+	// <prefix, blocker PKID [33] byte, blocked PKID [33]byte> -> <>
+	_PrefixBlockerPKIDToBlockedPKID = []byte{45}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
@@ -197,7 +202,7 @@ var (
 	// <prefix, ForbiddenPublicKey [33]byte> -> <>
 	_PrefixForbiddenBlockSignaturePubKeys = []byte{44}
 
-	// NEXT_TAG: 45
+	// NEXT_TAG: 46
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -1001,6 +1006,103 @@ func DbGetPostHashesYouReclout(handle *badger.DB, yourPublicKey []byte) (
 	}
 
 	return postHashesYouReclout, nil
+}
+
+// -------------------------------------------------------------------------------------
+// Blocked Public Key mapping functions
+// 		<prefix, blocker pub key [33]byte, blocked pub key [33]byte> -> <>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForBlockedPublicKeyMapping(blockerPKID *PKID, blockedPKID *PKID) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixBlockerPKIDToBlockedPKID...)
+	key := append(prefixCopy, blockerPKID[:]...)
+	key = append(key, blockedPKID[:]...)
+	return key
+}
+
+// Note that this adds a mapping for the follower *and* the pub key being followed.
+func DbPutBlockedPubKeyMappingsWithTxn(
+	txn *badger.Txn, blockerPKID *PKID, blockedPKID *PKID) error {
+
+	if len(blockerPKID) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutBlockedPubKeyMappingsWithTxn: Blocker PKID "+
+			"length %d != %d", len(blockerPKID[:]), btcec.PubKeyBytesLenCompressed)
+	}
+	if len(blockedPKID) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutBlockedPubKeyMappingsWithTxn: Blocked PKID "+
+			"length %d != %d", len(blockedPKID), btcec.PubKeyBytesLenCompressed)
+	}
+
+	if err := txn.Set(_dbKeyForBlockedPublicKeyMapping(
+		blockerPKID, blockedPKID), []byte{}); err != nil {
+
+		return errors.Wrapf(
+			err, "DbPutBlockedPubKeyMappingsWithTxn: Problem adding blocker to blocked mapping: ")
+	}
+
+	return nil
+}
+
+func DbPutBlockedPubKeyMappings(
+	handle *badger.DB, blockerPKID *PKID, blockedPKID *PKID) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutBlockedPubKeyMappingsWithTxn(txn, blockerPKID, blockedPKID)
+	})
+}
+
+func DbGetBlockedPubKeyMappingWithTxn(
+	txn *badger.Txn, blockerPKID *PKID, blockedPKID *PKID) []byte {
+
+	key := _dbKeyForBlockedPublicKeyMapping(blockerPKID, blockedPKID)
+	_, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+
+	// Typically we return a DB entry here but we don't store anything for blocked public key mappings.
+	// We use this function instead of one returning true / false for feature consistency.
+	return []byte{}
+}
+
+func DbGetBlockedPubKeyMapping(db *badger.DB, blockerPKID *PKID, blockedPKID *PKID) []byte {
+	var ret []byte
+	db.View(func(txn *badger.Txn) error {
+		ret = DbGetBlockedPubKeyMappingWithTxn(txn, blockerPKID, blockedPKID)
+		return nil
+	})
+	return ret
+}
+
+// Note this deletes the follow for the follower *and* followed since a mapping
+// should exist for each.
+func DbDeleteBlockedPubKeyMappingWithTxn(
+	txn *badger.Txn, blockerPKID *PKID, blockedPKID *PKID) error {
+
+	// First check that a mapping exists for the PKIDs passed in.
+	// If one doesn't exist then there's nothing to do.
+	existingMapping := DbGetBlockedPubKeyMappingWithTxn(
+		txn, blockerPKID, blockedPKID)
+	if existingMapping == nil {
+		return nil
+	}
+
+	// When a message exists, delete the mapping for the sender and receiver.
+	if err := txn.Delete(_dbKeyForBlockedPublicKeyMapping(blockerPKID, blockedPKID)); err != nil {
+		return errors.Wrapf(err, "DbDeleteBlockedPubKeyMappingWithTxn: Deleting "+
+			"blockerPKID %s and blockedPKID %s failed",
+			PkToStringMainnet(blockerPKID[:]), PkToStringMainnet(blockedPKID[:]))
+	}
+
+	return nil
+}
+
+func DbDeleteBlockedPubKeyMapping(
+	handle *badger.DB, blockerPKID *PKID, blockedPKID *PKID) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbDeleteBlockedPubKeyMappingWithTxn(txn, blockerPKID, blockedPKID)
+	})
 }
 
 // -------------------------------------------------------------------------------------
