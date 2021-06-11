@@ -51,6 +51,11 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("mempool-dump-dir", "",
 		"When set, the mempool is initialized using a db in the directory specified, and"+
 			"subsequent dumps are also written to this dir")
+	cmd.PersistentFlags().Bool("txindex", false,
+		"When set to true, the node will generate an index mapping transaction "+
+			"ids to transaction information. This enables the use of certain API calls "+
+			"like ones that allow the lookup of particular transactions by their ID. "+
+			"Defaults to false because the index can be large.")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
@@ -111,10 +116,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"How many threads to run for mining. Only has an effect when --miner-public-keys "+
 			"is set. If set to zero, which is the default, then the number of "+
 			"threads available to the system will be used.")
-	cmd.PersistentFlags().StringSlice("admin-public-keys", []string{},
-		"A list of public keys which gives users access to the admin panel. "+
-			"If no keys are specified anyone can access the admin panel. You can add a space "+
-			"and a comment after every public key and leave a note about who the public key belongs to.")
 
 	// Fees
 	cmd.PersistentFlags().Uint64("rate-limit-feerate", 0,

@@ -122,6 +122,8 @@ type Server struct {
 	// any peer. This is useful in a deployment setting because it makes it so that
 	// a health check can wait until this value becomes true.
 	hasProcessedFirstTransactionBundle bool
+
+	statsdClient *statsd.Client
 }
 
 func (srv *Server) HasProcessedFirstTransactionBundle() bool {
@@ -364,7 +366,7 @@ func NewServer(
 	// blocks.
 	_mempool := NewBitCloutMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
-		_mempoolDumpDir, statsd)
+		_mempoolDumpDir)
 
 	// Useful for debugging. Every second, it outputs the contents of the mempool
 	// and the contents of the addrmanager.
@@ -426,6 +428,13 @@ func NewServer(
 	// Make this hold a multiple of what we hold for individual peers.
 	srv.inventoryBeingProcessed = lru.NewCache(maxKnownInventory)
 	srv.requestTimeoutSeconds = 10
+
+	srv.statsdClient = statsd
+
+	// Start the mempool stats reporter
+	if srv.statsdClient != nil {
+		srv.StartMempoolStatsReporter()
+	}
 
 	// Initialize the addrs to broadcast map.
 	srv.addrsToBroadcastt = make(map[string][]*SingleAddr)
@@ -1389,6 +1398,30 @@ func (srv *Server) _handleMempool(pp *Peer, msg *MsgBitCloutMempool) {
 	pp.canReceiveInvMessagess = true
 }
 
+func (srv *Server) StartMempoolStatsReporter() {
+	go func() {
+	out:
+		for {
+			select {
+			case <-time.After(5 * time.Second):
+				mp := srv.mempool
+				summary := mp.GetMempoolSummaryStats()
+				tags := []string{}
+
+				for k, v := range summary {
+					srv.statsdClient.Gauge(fmt.Sprintf("MEMPOOL.%s.COUNT", k), float64(v.Count), tags, 1)
+				}
+
+				total := len(mp.readOnlyUniversalTransactionList)
+				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(total), tags, 1)
+
+			case <-srv.mempool.quit:
+				break out
+			}
+		}
+	}()
+}
+
 func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgBitCloutAddr) {
 	srv.addrsToBroadcastLock.Lock()
 	defer srv.addrsToBroadcastLock.Unlock()
@@ -1712,6 +1745,10 @@ func (srv *Server) Stop() {
 	// Wait for the server to fully shut down.
 	srv.waitGroup.Wait()
 	glog.Info("Server.Stop: Successfully shut down Server")
+}
+
+func (srv *Server) GetStatsdClient() *statsd.Client {
+	return srv.statsdClient
 }
 
 // Start actually kicks off all of the management processes. Among other things, it causes

@@ -56,7 +56,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 	mp := NewBitCloutMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "", nil)
+		"" /*dataDir*/, "")
 	_, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 
@@ -115,7 +115,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	mpNoMinFees := NewBitCloutMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "", nil)
+		"" /*dataDir*/, "")
 
 	// Create a transaction that sends 1 BitClout to the recipient as its
 	// zeroth output.
@@ -131,7 +131,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	mpWithMinFee := NewBitCloutMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		100 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "", nil)
+		"" /*dataDir*/, "")
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.Error(err)
 	require.Contains(err.Error(), TxErrorInsufficientFeeMinFee)
@@ -180,7 +180,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	mpWithRateLimit := NewBitCloutMempool(
 		chain, 100, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "", nil)
+		"" /*dataDir*/, "")
 	processingErrors := []error{}
 	for _, txn := range txnsCreated {
 		_, err := mpWithRateLimit.processTransaction(txn, false /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
@@ -301,7 +301,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	mp := NewBitCloutMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "", nil)
+		"" /*dataDir*/, "")
 
 	// Process the first transaction.
 	mempoolTx1, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
