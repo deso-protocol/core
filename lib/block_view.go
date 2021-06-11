@@ -775,8 +775,9 @@ func (pe *ProfileEntry) IsDeleted() bool {
 
 type UtxoView struct {
 	// Utxo data
-	NumUtxoEntries     uint64
-	UtxoKeyToUtxoEntry map[UtxoKey]*UtxoEntry
+	NumUtxoEntries                  uint64
+	UtxoKeyToUtxoEntry              map[UtxoKey]*UtxoEntry
+	PublicKeyToBitcloutBalanceNanos map[PkMapKey]uint64
 
 	// BitcoinExchange data
 	NanosPurchased     uint64
@@ -1007,6 +1008,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Utxo data
 	bav.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry)
 	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle)
+	bav.PublicKeyToBitcloutBalanceNanos = make(map[PkMapKey]uint64)
 
 	// BitcoinExchange data
 	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle)
@@ -1062,6 +1064,12 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.UtxoKeyToUtxoEntry[utxoKey] = &newUtxoEntry
 	}
 	newView.NumUtxoEntries = bav.NumUtxoEntries
+
+	// Copy the public key to balance data
+	newView.PublicKeyToBitcloutBalanceNanos = make(map[PkMapKey]uint64, len(bav.PublicKeyToBitcloutBalanceNanos))
+	for pkMapKey, bitcloutBalance := range bav.PublicKeyToBitcloutBalanceNanos {
+		newView.PublicKeyToBitcloutBalanceNanos[pkMapKey] = bitcloutBalance
+	}
 
 	// Copy the BitcoinExchange data
 	newView.BitcoinBurnTxIDs = make(map[BlockHash]bool, len(bav.BitcoinBurnTxIDs))
@@ -1235,6 +1243,19 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	return utxoEntry
 }
 
+func (bav *UtxoView) GetBitcloutBalanceNanosForPublicKey(publicKey []byte) uint64 {
+	balanceNanos, ok := bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)]
+	// If the utxo entry isn't in our in-memory data structure, fetch it from the db.
+	if !ok {
+		balanceNanos = DbGetBitcloutBalanceNanosForPublicKey(bav.Handle, publicKey)
+
+		// Add the balance to memory for future references.
+		bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)] = balanceNanos
+	}
+
+	return balanceNanos
+}
+
 func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 	// Operate on a copy of the entry in order to avoid bugs. Note that not
 	// doing this could result in us maintaining a reference to the entry and
@@ -1258,6 +1279,11 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 
 	// Since we re-added the utxo, bump the number of entries.
 	bav.NumUtxoEntries++
+
+	// Add the utxo back to the spender's balance.
+	bitcloutBalanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	bitcloutBalanceNanos += utxoEntryy.AmountNanos
+	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = bitcloutBalanceNanos
 
 	return nil
 }
@@ -1284,6 +1310,11 @@ func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
 	// Decrement the number of entries by one since we marked one as spent in the
 	// view.
 	bav.NumUtxoEntries--
+
+	// Deduct the utxo from the spender's balance.
+	bitcloutBalanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntry.PublicKey)
+	bitcloutBalanceNanos -= utxoEntry.AmountNanos
+	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = bitcloutBalanceNanos
 
 	// Record a UtxoOperation in case we want to roll this back in the
 	// future. At this point, the UtxoEntry passed in still has all of its
@@ -1322,6 +1353,11 @@ func (bav *UtxoView) _unAddUtxo(utxoKey *UtxoKey) error {
 	// In addition to marking the output as spent, we update the number of
 	// entries to reflect the output is no longer in our utxo list.
 	bav.NumUtxoEntries--
+
+	// Remove the utxo back from the spender's balance.
+	bitcloutBalanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntry.PublicKey)
+	bitcloutBalanceNanos -= utxoEntry.AmountNanos
+	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = bitcloutBalanceNanos
 
 	return nil
 }
@@ -1365,6 +1401,11 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 
 	// Bump the number of entries since we just added this one at the end.
 	bav.NumUtxoEntries++
+
+	// Add the utxo back to the spender's balance.
+	bitcloutBalanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	bitcloutBalanceNanos += utxoEntryy.AmountNanos
+	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = bitcloutBalanceNanos
 
 	// Finally record a UtxoOperation in case we want to roll back this ADD
 	// in the future. Note that Entry data isn't required for an ADD operation.
@@ -5547,6 +5588,11 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		if bidderUtxoEntry == nil || bidderUtxoEntry.isSpent {
 			return 0, 0, nil, RuleErrorBidderInputForAcceptedNFTBidNoLongerExists
 		}
+		// If the utxo is from a block reward txn, make sure enough time has passed to
+		// make it spendable.
+		if _isEntryImmatureBlockReward(bidderUtxoEntry, blockHeight, bav.Params) {
+			return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
+		}
 		totalBidderInput += bidderUtxoEntry.AmountNanos
 	}
 
@@ -5774,6 +5820,15 @@ func (bav *UtxoView) _connectNFTBid(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: ")
+	}
+
+	// Verify that the transaction creator has sufficient bitclout to create the bid.
+	spendableBalance, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: Error getting bidder balance: ")
+
+	} else if txMeta.BidAmountNanos > spendableBalance {
+		return 0, 0, nil, RuleErrorInsufficientFundsForNFTBid
 	}
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
@@ -7827,6 +7882,34 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	return utxoEntriesToReturn, nil
 }
 
+func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte) (_spendableBalance uint64, _err error) {
+	// In order to get the spendable balance, we need to account for any immature block rewards.
+	// We get these by starting at the chain tip and iterating backwards until we have collected
+	// all of the immature block rewards for this public key.
+	nextBlockHash := bav.TipHash
+	numImmatureBlocks := uint64(bav.Params.BlockRewardMaturity / bav.Params.TimeBetweenBlocks)
+	immatureBlockRewards := uint64(0)
+	for ii := uint64(1); ii < numImmatureBlocks; ii++ {
+		// Don't look up the genesis block since it isn't in the DB.
+		if GenesisBlockHashHex == nextBlockHash.String() {
+			break
+		}
+
+		block, err := GetBlock(nextBlockHash, bav.Handle)
+		if err != nil {
+			return 0, errors.Wrapf(
+				err, "GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block for blockhash %s",
+				nextBlockHash.String())
+		}
+		blockRewardForPK := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
+		immatureBlockRewards += blockRewardForPK
+		nextBlockHash = block.Header.PrevBlockHash
+	}
+
+	balanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(pkBytes)
+	return balanceNanos - immatureBlockRewards, nil
+}
+
 func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 	glog.Debugf("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
 
@@ -7878,6 +7961,34 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 	// At this point, the db's position index should be updated and the (key -> entry)
 	// index should be updated to remove all spent utxos. The number of entries field
 	// in the db should also be accurate.
+
+	return nil
+}
+
+func (bav *UtxoView) _flushBitcloutBalancesToDbWithTxn(txn *badger.Txn) error {
+	glog.Debugf("_flushBitcloutBalancesToDbWithTxn: flushing %d mappings",
+		len(bav.PublicKeyToBitcloutBalanceNanos))
+
+	for pubKeyIter := range bav.PublicKeyToBitcloutBalanceNanos {
+		// Make a copy of the iterator since it might change from under us.
+		pubKey := pubKeyIter[:]
+
+		// Start by deleting the pre-existing mappings in the db for this key if they
+		// have not yet been modified.
+		if err := DbDeletePublicKeyToBitcloutBalanceWithTxn(txn, pubKey); err != nil {
+			return err
+		}
+	}
+	for pubKeyIter, balanceNanos := range bav.PublicKeyToBitcloutBalanceNanos {
+		// Make a copy of the iterator since it might change from under us.
+		pubKey := pubKeyIter[:]
+
+		if balanceNanos > 0 {
+			if err := DbPutBitcloutBalanceForPublicKeyWithTxn(txn, pubKey, balanceNanos); err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
 }
@@ -8503,6 +8614,10 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	// Flush the utxos to the db.
 	if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
+		return err
+	}
+
+	if err := bav._flushBitcloutBalancesToDbWithTxn(txn); err != nil {
 		return err
 	}
 

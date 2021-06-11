@@ -263,6 +263,20 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *BitCloutMempool, pkSt
 	for _, utxoEntry := range utxoEntriesFound {
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
+
+	utxoView, err := NewUtxoView(chain.db, chain.params, chain.bitcoinManager)
+	require.NoError(t, err)
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+	}
+
+	balanceNanos, err := utxoView.GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes)
+	require.NoError(t, err)
+
+	// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
+	require.Equal(t, balanceForUserNanos, balanceNanos)
+
 	return balanceForUserNanos
 }
 

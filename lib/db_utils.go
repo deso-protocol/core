@@ -205,7 +205,13 @@ var (
 	_PrefixPostHashSerialNumberBidNanosToBidderPKID = []byte{46}
 	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{47}
 
-	// NEXT_TAG: 48
+	// <prefix, PublicKey [33]byte> -> uint64
+	_PrefixPublicKeyToBitCloutBalanceNanos = []byte{48}
+	// Block reward prefix (used for deducting immature block rewards from bitclout balances):
+	// <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
+	_PrefixPublicKeyBlockHashToBlockReward = []byte{49}
+
+	// NEXT_TAG: 50
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -468,6 +474,82 @@ func _enumerateLimitedKeysReversedForPrefixWithTxn(dbTxn *badger.Txn, dbPrefix [
 		valsFound = append(valsFound, valCopy)
 	}
 	return keysFound, valsFound, nil
+}
+
+// -------------------------------------------------------------------------------------
+// Bitclout balance mapping functions
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPublicKeyToBitCloutBalanceNanos...)
+	key := append(prefixCopy, publicKey...)
+	return key
+}
+
+func DbGetBitcloutBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) uint64 {
+
+	key := _dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey)
+	bitcloutBalanceItem, err := txn.Get(key)
+	if err != nil {
+		return uint64(0)
+	}
+	bitcloutBalanceBytes, err := bitcloutBalanceItem.ValueCopy(nil)
+	bitcloutBalance := DecodeUint64(bitcloutBalanceBytes)
+
+	return bitcloutBalance
+}
+
+func DbGetBitcloutBalanceNanosForPublicKey(db *badger.DB, publicKey []byte) uint64 {
+	ret := uint64(0)
+	db.View(func(txn *badger.Txn) error {
+		ret = DbGetBitcloutBalanceNanosForPublicKeyWithTxn(txn, publicKey)
+		return nil
+	})
+	return ret
+}
+
+func DbPutBitcloutBalanceForPublicKeyWithTxn(
+	txn *badger.Txn, publicKey []byte, balanceNanos uint64) error {
+
+	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutBitcloutBalanceForPublicKeyWithTxn: Public key "+
+			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	balanceBytes := EncodeUint64(balanceNanos)
+
+	if err := txn.Set(_dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey), balanceBytes); err != nil {
+
+		return errors.Wrapf(
+			err, "DbPutBitcloutBalanceForPublicKey: Problem adding balance mapping of %d for: %s ",
+			balanceNanos, PkToStringBoth(publicKey))
+	}
+
+	return nil
+}
+
+func DbPutBitcloutBalanceForPublicKey(handle *badger.DB, publicKey []byte, balanceNanos uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutBitcloutBalanceForPublicKeyWithTxn(txn, publicKey, balanceNanos)
+	})
+}
+
+func DbDeletePublicKeyToBitcloutBalanceWithTxn(txn *badger.Txn, publicKey []byte) error {
+
+	if err := txn.Delete(_dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey)); err != nil {
+		return errors.Wrapf(err, "DbDeletePublicKeyToBitcloutBalanceWithTxn: Problem deleting "+
+			"balance for public key %s", PkToStringMainnet(publicKey))
+	}
+
+	return nil
+}
+
+func DbDeletePublicKeyToBitcloutBalance(handle *badger.DB, publicKey []byte) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbDeletePublicKeyToBitcloutBalanceWithTxn(txn, publicKey)
+	})
 }
 
 // -------------------------------------------------------------------------------------
@@ -2192,6 +2274,14 @@ func BlockHashToBlockKey(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, _PrefixBlockHashToBlock...), blockHash[:]...)
 }
 
+func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPublicKeyBlockHashToBlockReward...)
+	key := append(prefixCopy, publicKey...)
+	key = append(key, blockHash[:]...)
+	return key
+}
+
 func GetBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) *MsgBitCloutBlock {
 	hashKey := BlockHashToBlockKey(blockHash)
 	var blockRet *MsgBitCloutBlock
@@ -2272,6 +2362,32 @@ func PutBlockWithTxn(txn *badger.Txn, bitcloutBlock *MsgBitCloutBlock) error {
 	if err := txn.Set(blockKey, data); err != nil {
 		return err
 	}
+
+	// Index the block reward. Used for deducting immature block rewards from user balances.
+	if len(bitcloutBlock.Txns) == 0 {
+		return fmt.Errorf("PutBlockWithTxn: Got block without any txns %v", bitcloutBlock)
+	}
+	blockRewardTxn := bitcloutBlock.Txns[0]
+	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return fmt.Errorf("PutBlockWithTxn: Got block without block reward as first txn %v", bitcloutBlock)
+	}
+	// It's possible the block reward is split across multiple public keys.
+	pubKeyToBlockRewardMap := make(map[PkMapKey]uint64)
+	for _, bro := range bitcloutBlock.Txns[0].TxOutputs {
+		pkMapKey := MakePkMapKey(bro.PublicKey)
+		if _, hasKey := pubKeyToBlockRewardMap[pkMapKey]; !hasKey {
+			pubKeyToBlockRewardMap[pkMapKey] = bro.AmountNanos
+		} else {
+			pubKeyToBlockRewardMap[pkMapKey] += bro.AmountNanos
+		}
+	}
+	for pkMapKey, blockReward := range pubKeyToBlockRewardMap {
+		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
+		if err := txn.Set(blockRewardKey, EncodeUint64(blockReward)); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -2284,6 +2400,27 @@ func PutBlock(bitcloutBlock *MsgBitCloutBlock, handle *badger.DB) error {
 	}
 
 	return nil
+}
+
+func DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn *badger.Txn, publicKey []byte, blockHash *BlockHash) uint64 {
+	key := PublicKeyBlockHashToBlockRewardKey(publicKey, blockHash)
+	bitcloutBalanceItem, err := txn.Get(key)
+	if err != nil {
+		return uint64(0)
+	}
+	bitcloutBalanceBytes, err := bitcloutBalanceItem.ValueCopy(nil)
+	bitcloutBalance := DecodeUint64(bitcloutBalanceBytes)
+
+	return bitcloutBalance
+}
+
+func DbGetBlockRewardForPublicKeyBlockHash(db *badger.DB, publicKey []byte, blockHash *BlockHash) uint64 {
+	ret := uint64(0)
+	db.View(func(txn *badger.Txn) error {
+		ret = DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn, publicKey, blockHash)
+		return nil
+	})
+	return ret
 }
 
 func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {

@@ -231,6 +231,7 @@ const (
 	RuleErrorAcceptedNFTBidMustSpecifyBidderInputs         RuleError = "RuleErrorAcceptedNFTBidMustSpecifyBidderInputs"
 	RuleErrorBidderInputForAcceptedNFTBidNoLongerExists    RuleError = "RuleErrorBidderInputForAcceptedNFTBidNoLongerExists"
 	RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount RuleError = "RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount"
+	RuleErrorInsufficientFundsForNFTBid                    RuleError = "RuleErrorInsufficientFundsForNFTBid"
 
 	RuleErrorSwapIdentityIsParamUpdaterOnly RuleError = "RuleErrorSwapIdentityIsParamUpdaterOnly"
 	RuleErrorFromPublicKeyIsRequired        RuleError = "RuleErrorFromPublicKeyIsRequired"

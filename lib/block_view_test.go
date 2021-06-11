@@ -980,13 +980,12 @@ func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
 	// Apply all the transactions to a mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
 	for ii, tx := range testMeta.txns {
-		// See comment above on this transaction.
-		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
-
 		require.Equal(
 			testMeta.t,
 			testMeta.expectedSenderBalances[ii],
 			_getBalance(testMeta.t, testMeta.chain, testMeta.mempool, PkToStringTestnet(tx.PublicKey)))
+
+		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
 		_, err := testMeta.mempool.ProcessTransaction(tx, false, false, 0, true)
 		require.NoError(testMeta.t, err, "Problem adding transaction %d to mempool: %v", ii, tx)
@@ -15638,17 +15637,6 @@ func TestNFTBasic(t *testing.T) {
 
 	// Error case: Bidding on a serial number that does not exist should fail (post1 has 5 copies).
 	{
-		_, _, _, err := _createNFTBid(
-			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
-			post1Hash,
-			0,          /*SerialNumber*/
-			1000000000, /*BidAmountNanos*/
-		)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorNFTBidOnInvalidSerialNumber)
-
 		_, _, _, err = _createNFTBid(
 			t, chain, db, params, 10,
 			m1Pub,
@@ -15659,6 +15647,20 @@ func TestNFTBasic(t *testing.T) {
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTBidOnInvalidSerialNumber)
+	}
+
+	// Error case: cannot make a bid with a sufficient bitclout balance to fill the bid.
+	{
+		_, _, _, err = _createNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,          /*SerialNumber*/
+			1000000000, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorInsufficientFundsForNFTBid)
 	}
 
 	// Error case: m0 cannot bid on its own NFT.
