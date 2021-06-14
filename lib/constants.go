@@ -943,7 +943,7 @@ const (
 	// Key in transaction's extra data map that points to a post that the current transaction is reclouting
 	RecloutedPostHash = "RecloutedPostHash"
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a reclout with a quote.
-	IsQuotedReclout = "IsQuotedReclout"
+	IsQuotedRecloutKey = "IsQuotedReclout"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoin            = "USDCentsPerBitcoin"
@@ -957,7 +957,7 @@ const (
 
 // Defines values that may exist in a transaction's ExtraData map
 var (
-	PostExtraDataConsensusKeys = [2]string{RecloutedPostHash, IsQuotedReclout}
+	PostExtraDataConsensusKeys = [2]string{RecloutedPostHash, IsQuotedRecloutKey}
 )
 
 var (
