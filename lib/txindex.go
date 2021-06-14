@@ -30,6 +30,29 @@ type TXIndex struct {
 	Params *BitCloutParams
 }
 
+func GetDummyTxIndexGenesisTxn(params *BitCloutParams) (
+	*MsgBitCloutTxn, string, []*AffectedPublicKey, uint64) {
+
+	dummyPk := ArchitectPubKeyBase58Check
+	dummyTxn := &MsgBitCloutTxn{
+		TxInputs:  []*BitCloutInput{},
+		TxOutputs: params.SeedBalances,
+		TxnMeta:   &BlockRewardMetadataa{},
+		PublicKey: MustBase58CheckDecode(dummyPk),
+	}
+	affectedPublicKeys := []*AffectedPublicKey{}
+	totalOutput := uint64(0)
+	for _, seedBal := range params.SeedBalances {
+		affectedPublicKeys = append(affectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(seedBal.PublicKey, params),
+			Metadata:             "GenesisBlockSeedBalance",
+		})
+		totalOutput += seedBal.AmountNanos
+	}
+
+	return dummyTxn, dummyPk, affectedPublicKeys, totalOutput
+}
+
 func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
@@ -53,22 +76,7 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 		// Add the seed balances. Originate them from the architect public key and
 		// set their block as the genesis block.
 		{
-			dummyPk := ArchitectPubKeyBase58Check
-			dummyTxn := &MsgBitCloutTxn{
-				TxInputs:  []*BitCloutInput{},
-				TxOutputs: params.SeedBalances,
-				TxnMeta:   &BlockRewardMetadataa{},
-				PublicKey: MustBase58CheckDecode(dummyPk),
-			}
-			affectedPublicKeys := []*AffectedPublicKey{}
-			totalOutput := uint64(0)
-			for _, seedBal := range params.SeedBalances {
-				affectedPublicKeys = append(affectedPublicKeys, &AffectedPublicKey{
-					PublicKeyBase58Check: PkToString(seedBal.PublicKey, params),
-					Metadata:             "GenesisBlockSeedBalance",
-				})
-				totalOutput += seedBal.AmountNanos
-			}
+			dummyTxn, dummyPk, affectedPublicKeys, totalOutput := GetDummyTxIndexGenesisTxn(params)
 			err := DbPutTxindexTransactionMappings(txIndexDb, dummyTxn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: dummyPk,
 				AffectedPublicKeys:             affectedPublicKeys,

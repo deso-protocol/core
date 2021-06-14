@@ -2976,7 +2976,19 @@ type TransactionMetadata struct {
 	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata
 }
 
-func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
+func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash, params *BitCloutParams) *TransactionMetadata {
+
+	// TODO: This is a hack to account for the special case of inputs that spend from
+	// the genesis block UTXOs. Right now, core indexes the genesis block UTXOs with
+	// txID zero, but the txindex indexes them using the tx hash of this dummy txn.
+	// Unfortunately, *neither* of these is correct, but we hack around it here rather
+	// than fix the problem for now (since fixing it would require all nodes to resync).
+	zeroBlockHash := BlockHash{}
+	if *txID == zeroBlockHash {
+		dummyTxn, _, _, _ := GetDummyTxIndexGenesisTxn(params)
+		txID = dummyTxn.Hash()
+	}
+
 	key := DbTxindexTxIDKey(txID)
 	valObj := TransactionMetadata{}
 
@@ -2994,10 +3006,12 @@ func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *
 	return &valObj
 }
 
-func DbGetTxindexTransactionRefByTxID(handle *badger.DB, txID *BlockHash) *TransactionMetadata {
+func DbGetTxindexTransactionRefByTxID(
+	handle *badger.DB, txID *BlockHash, params *BitCloutParams) *TransactionMetadata {
+
 	var valObj *TransactionMetadata
 	handle.View(func(txn *badger.Txn) error {
-		valObj = DbGetTxindexTransactionRefByTxIDWithTxn(txn, txID)
+		valObj = DbGetTxindexTransactionRefByTxIDWithTxn(txn, txID, params)
 		return nil
 	})
 	return valObj
