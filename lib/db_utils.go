@@ -3113,7 +3113,7 @@ func DbDeleteTxindexTransactionMappingsWithTxn(
 	txID := txn.Hash()
 
 	// If the txnMeta isn't in the db then that's an error.
-	txnMeta := DbGetTxindexTransactionRefByTxIDWithTxn(dbTxn, txID)
+	txnMeta := DbGetTxindexTransactionRefByTxIDWithTxn(dbTxn, txID, params)
 	if txnMeta == nil {
 		return fmt.Errorf("DbDeleteTxindexTransactionMappingsWithTxn: Missing txnMeta for txID %v", txID)
 	}
@@ -3150,13 +3150,13 @@ func DbDeleteTxindexTransactionMappings(
 // TODO: This makes lookups inefficient when blocks are large. Shouldn't be a
 // problem for a while, but keep an eye on it.
 func DbGetTxindexFullTransactionByTxID(
-	txindexDBHandle *badger.DB, blockchainDBHandle *badger.DB, txID *BlockHash) (
+	txindexDBHandle *badger.DB, blockchainDBHandle *badger.DB, txID *BlockHash, params *BitCloutParams) (
 	_txn *MsgBitCloutTxn, _txnMeta *TransactionMetadata) {
 
 	var txnFound *MsgBitCloutTxn
 	var txnMeta *TransactionMetadata
 	err := txindexDBHandle.View(func(dbTxn *badger.Txn) error {
-		txnMeta = DbGetTxindexTransactionRefByTxIDWithTxn(dbTxn, txID)
+		txnMeta = DbGetTxindexTransactionRefByTxIDWithTxn(dbTxn, txID, params)
 		if txnMeta == nil {
 			return fmt.Errorf("DbGetTxindexFullTransactionByTxID: Transaction not found")
 		}
