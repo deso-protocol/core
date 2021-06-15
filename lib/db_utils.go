@@ -183,35 +183,43 @@ var (
 	// Prefixes for Reclouts:
 	// <prefix, user pub key [39]byte, reclouted post hash [39]byte> -> RecloutEntry
 	_PrefixReclouterPubKeyRecloutedPostHashToRecloutPostHash = []byte{39}
-	// TODO: This process is a bit error-prone. We should come up with a test or
-	// something to at least catch cases where people have two prefixes with the
-	// same ID.
 
 	// Prefixes for diamonds:
 	//  <prefix, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
 	//  <prefix, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
 	_PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash = []byte{41}
-	_PrefixDiamondSenderPKIDDiamondReciverPKIDPostHash  = []byte{43}
+	_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash = []byte{43}
 
 	// Public keys that have been restricted from signing blocks.
 	// <prefix, ForbiddenPublicKey [33]byte> -> <>
 	_PrefixForbiddenBlockSignaturePubKeys = []byte{44}
 
+	// These indexes are used in order to fetch the pub keys of users that liked or diamonded a post.
+	// 		Reclouts: <prefix, RecloutedPostHash, ReclouterPubKey> -> <>
+	// 		Quote Reclouts: <prefix, RecloutedPostHash, ReclouterPubKey, RecloutPostHash> -> <>
+	// 		Diamonds: <prefix, DiamondedPostHash, DiamonderPubKey [33]byte> -> <DiamondLevel (uint64)>
+	_PrefixRecloutedPostHashReclouterPubKey                = []byte{45}
+	_PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash = []byte{46}
+	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel      = []byte{47}
+
 	// Prefixes for NFT ownership entries:
 	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
-	_PrefixPostHashSerialNumberToNFTEntry = []byte{45}
+	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
 
 	// Prefixes for NFT bids:
-	_PrefixPostHashSerialNumberBidNanosToBidderPKID = []byte{46}
-	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{47}
+	_PrefixPostHashSerialNumberBidNanosToBidderPKID = []byte{49}
+	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{50}
 
 	// <prefix, PublicKey [33]byte> -> uint64
-	_PrefixPublicKeyToBitCloutBalanceNanos = []byte{48}
+	_PrefixPublicKeyToBitCloutBalanceNanos = []byte{51}
 	// Block reward prefix (used for deducting immature block rewards from bitclout balances):
 	// <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
-	_PrefixPublicKeyBlockHashToBlockReward = []byte{49}
+	_PrefixPublicKeyBlockHashToBlockReward = []byte{52}
 
-	// NEXT_TAG: 50
+	// TODO: This process is a bit error-prone. We should come up with a test or
+	// something to at least catch cases where people have two prefixes with the
+	// same ID.
+	// NEXT_TAG: 53
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -982,6 +990,27 @@ func _dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(userPubKey []byt
 	return key
 }
 
+//_PrefixRecloutedPostHashReclouterPubKey
+func _dbKeyForRecloutedPostHashReclouterPubKey(recloutedPostHash *BlockHash, reclouterPubKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKey...)
+	key := append(prefixCopy, recloutedPostHash[:]...)
+	key = append(key, reclouterPubKey...)
+	return key
+}
+
+// **For quoted reclouts**
+//_PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash
+func _dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash(
+	recloutedPostHash *BlockHash, reclouterPubKey []byte, recloutPostHash *BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash...)
+	key := append(prefixCopy, recloutedPostHash[:]...)
+	key = append(key, reclouterPubKey...)
+	key = append(key, recloutPostHash[:]...)
+	return key
+}
+
 func _dbSeekPrefixForPostHashesYouReclout(yourPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixReclouterPubKeyRecloutedPostHashToRecloutPostHash...)
@@ -1305,7 +1334,16 @@ func DbGetPubKeysFollowingYou(handle *badger.DB, yourPubKey []byte) (
 //  <prefix, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <[]byte{DiamondLevel}>
 // -------------------------------------------------------------------------------------
 
-func _dbKeyForDiamondReceiverToDiamondSenderMapping(
+func _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry *DiamondEntry) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
+	key := append(prefixCopy, diamondEntry.ReceiverPKID[:]...)
+	key = append(key, diamondEntry.SenderPKID[:]...)
+	key = append(key, diamondEntry.DiamondPostHash[:]...)
+	return key
+}
+
+func _dbKeyForDiamondReceiverToDiamondSenderMappingWithoutEntry(
 	diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
@@ -1315,16 +1353,35 @@ func _dbKeyForDiamondReceiverToDiamondSenderMapping(
 	return key
 }
 
+func _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry *DiamondEntry) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
+	key := append(prefixCopy, diamondEntry.DiamondPostHash[:]...)
+	key = append(key, diamondEntry.SenderPKID[:]...)
+	// Diamond level is an int64 in extraData but it forced to be non-negative in consensus.
+	key = append(key, EncodeUint64(uint64(diamondEntry.DiamondLevel))...)
+	return key
+}
+
 func _dbSeekPrefixForPKIDsThatDiamondedYou(yourPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
-func _dbKeyForDiamondSenderToDiamondRecieverMapping(
+func _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry *DiamondEntry) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
+	key := append(prefixCopy, diamondEntry.SenderPKID[:]...)
+	key = append(key, diamondEntry.ReceiverPKID[:]...)
+	key = append(key, diamondEntry.DiamondPostHash[:]...)
+	return key
+}
+
+func _dbKeyForDiamondSenderToDiamondReceiverMappingWithoutEntry(
 	diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReciverPKIDPostHash...)
+	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	key := append(prefixCopy, diamondSenderPKID[:]...)
 	key = append(key, diamondReceiverPKID[:]...)
 	key = append(key, diamondPostHash[:]...)
@@ -1333,7 +1390,7 @@ func _dbKeyForDiamondSenderToDiamondRecieverMapping(
 
 func _dbSeekPrefixForPKIDsThatYouDiamonded(yourPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReciverPKIDPostHash...)
+	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
@@ -1362,7 +1419,6 @@ func _DbDiamondEntryForDbBuf(buf []byte) *DiamondEntry {
 	return ret
 }
 
-// Note that this adds a mapping for the follower *and* the pub key being followed.
 func DbPutDiamondMappingsWithTxn(
 	txn *badger.Txn,
 	diamondEntry *DiamondEntry) error {
@@ -1375,19 +1431,21 @@ func DbPutDiamondMappingsWithTxn(
 		return fmt.Errorf("DbPutDiamondMappingsWithTxn: Sender PKID "+
 			"length %d != %d", len(diamondEntry.SenderPKID), btcec.PubKeyBytesLenCompressed)
 	}
-	diamondEntryBytes := _DbBufForDiamondEntry(diamondEntry)
-	if err := txn.Set(_dbKeyForDiamondReceiverToDiamondSenderMapping(
-		diamondEntry.ReceiverPKID, diamondEntry.SenderPKID, diamondEntry.DiamondPostHash),
-		diamondEntryBytes); err != nil {
 
+	diamondEntryBytes := _DbBufForDiamondEntry(diamondEntry)
+	if err := txn.Set(_dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry), diamondEntryBytes); err != nil {
 		return errors.Wrapf(
 			err, "DbPutDiamondMappingsWithTxn: Problem adding receiver to giver mapping: ")
 	}
 
-	if err := txn.Set(_dbKeyForDiamondSenderToDiamondRecieverMapping(
-		diamondEntry.ReceiverPKID, diamondEntry.SenderPKID, diamondEntry.DiamondPostHash),
-		diamondEntryBytes); err != nil {
+	if err := txn.Set(_dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry), diamondEntryBytes); err != nil {
 		return errors.Wrapf(err, "DbPutDiamondMappingsWithTxn: Problem adding sender to receiver mapping: ")
+	}
+
+	if err := txn.Set(_dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry),
+		[]byte{}); err != nil {
+		return errors.Wrapf(
+			err, "DbPutDiamondMappingsWithTxn: Problem adding DiamondedPostHash Diamonder Diamond Level mapping: ")
 	}
 
 	return nil
@@ -1406,7 +1464,8 @@ func DbPutDiamondMappings(
 func DbGetDiamondMappingsWithTxn(
 	txn *badger.Txn, diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) *DiamondEntry {
 
-	key := _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondReceiverPKID, diamondSenderPKID, diamondPostHash)
+	key := _dbKeyForDiamondReceiverToDiamondSenderMappingWithoutEntry(
+		diamondReceiverPKID, diamondSenderPKID, diamondPostHash)
 	item, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -1434,47 +1493,50 @@ func DbGetDiamondMappings(
 	return ret
 }
 
-// This currently only deletes one index mapping for diamonds. However, we will likely
-// add additional index mappings in the future.
-func DbDeleteDiamondMappingsWithTxn(
-	txn *badger.Txn, diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) error {
+func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, diamondEntry *DiamondEntry) error {
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
 	existingMapping := DbGetDiamondMappingsWithTxn(
-		txn, diamondReceiverPKID, diamondSenderPKID, diamondPostHash)
+		txn, diamondEntry.ReceiverPKID, diamondEntry.SenderPKID, diamondEntry.DiamondPostHash)
 	if existingMapping == nil {
 		return nil
 	}
 
-	// When a DiamondEntry exists, delete the mapping.
-	if err := txn.Delete(_dbKeyForDiamondReceiverToDiamondSenderMapping(
-		diamondReceiverPKID, diamondSenderPKID, diamondPostHash)); err != nil {
+	// When a DiamondEntry exists, delete the diamond mappings.
+	if err := txn.Delete(_dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry)); err != nil {
 		return errors.Wrapf(err, "DbDeleteDiamondMappingsWithTxn: Deleting "+
 			"diamondReceiverPKID %s and diamondSenderPKID %s and diamondPostHash %s failed",
-			PkToStringMainnet(diamondReceiverPKID[:]),
-			PkToStringMainnet(diamondSenderPKID[:]),
-			diamondPostHash.String(),
+			PkToStringMainnet(diamondEntry.ReceiverPKID[:]),
+			PkToStringMainnet(diamondEntry.SenderPKID[:]),
+			diamondEntry.DiamondPostHash.String(),
+		)
+	}
+	// When a DiamondEntry exists, delete the diamond mappings.
+	if err := txn.Delete(_dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry)); err != nil {
+		return errors.Wrapf(err, "DbDeleteDiamondMappingsWithTxn: Deleting "+
+			"diamondedPostHash %s and diamonderPKID %s and diamondLevel %s failed",
+			diamondEntry.DiamondPostHash.String(),
+			PkToStringMainnet(diamondEntry.SenderPKID[:]),
+			diamondEntry.DiamondPostHash.String(),
 		)
 	}
 
-	if err := txn.Delete(_dbKeyForDiamondSenderToDiamondRecieverMapping(
-		diamondReceiverPKID, diamondSenderPKID, diamondPostHash)); err != nil {
+	if err := txn.Delete(_dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry)); err != nil {
 		return errors.Wrapf(err, "DbDeleteDiamondMappingsWithTxn: Deleting "+
 			"diamondSenderPKID %s and diamondReceiverPKID %s and diamondPostHash %s failed",
-			PkToStringMainnet(diamondSenderPKID[:]),
-			PkToStringMainnet(diamondReceiverPKID[:]),
-			diamondPostHash.String(),
+			PkToStringMainnet(diamondEntry.SenderPKID[:]),
+			PkToStringMainnet(diamondEntry.ReceiverPKID[:]),
+			diamondEntry.DiamondPostHash.String(),
 		)
 	}
 
 	return nil
 }
 
-func DbDeleteDiamondMappings(
-	handle *badger.DB, diamondReceiverPKID *PKID, diamondGiverPKID *PKID, diamondPostHash *BlockHash) error {
+func DbDeleteDiamondMappings(handle *badger.DB, diamondEntry *DiamondEntry) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteDiamondMappingsWithTxn(txn, diamondReceiverPKID, diamondGiverPKID, diamondPostHash)
+		return DbDeleteDiamondMappingsWithTxn(txn, diamondEntry)
 	})
 }
 
@@ -3422,7 +3484,7 @@ func StakeIDToHash(stakeID []byte) *BlockHash {
 func DBDeletePostEntryMappingsWithTxn(
 	txn *badger.Txn, postHash *BlockHash, params *BitCloutParams) error {
 
-	// First pull up the mapping that texists for the post hash passed in.
+	// First pull up the mapping that exists for the post hash passed in.
 	// If one doesn't exist then there's nothing to do.
 	postEntry := DBGetPostEntryByPostHashWithTxn(txn, postHash)
 	if postEntry == nil {
@@ -3487,13 +3549,27 @@ func DBDeletePostEntryMappingsWithTxn(
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
 				"StakeAmountNanos mapping for post hash %v", postHash)
 		}
+	}
 
-		// Delete the reclout entries for the post.
-		if IsVanillaReclout(postEntry) {
-			if err := txn.Delete(
-				_dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(postEntry.PosterPublicKey, *postEntry.RecloutedPostHash)); err != nil {
-				return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem deleting mapping for recloutPostHash to ReclouterPubKey: %v", err)
-			}
+	// Delete the reclout entries for the post.
+	if IsVanillaReclout(postEntry) {
+		if err := txn.Delete(
+			_dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(postEntry.PosterPublicKey, *postEntry.RecloutedPostHash)); err != nil {
+			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem deleting mapping for recloutPostHash to ReclouterPubKey: %v", err)
+		}
+		if err := txn.Delete(
+			_dbKeyForRecloutedPostHashReclouterPubKey(postEntry.RecloutedPostHash, postEntry.PosterPublicKey)); err != nil {
+			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem adding "+
+				"mapping for _dbKeyForRecloutedPostHashReclouterPubKey: %v", err)
+		}
+	} else if IsQuotedReclout(postEntry) {
+		// Put quoted reclout stuff.
+		if err := txn.Delete(
+			_dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash(
+				postEntry.RecloutedPostHash, postEntry.PosterPublicKey, postEntry.PostHash)); err != nil {
+			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem adding "+
+				"mapping for _dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash: %v", err)
+
 		}
 	}
 
@@ -3598,6 +3674,21 @@ func DBPutPostEntryMappingsWithTxn(
 			_dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(postEntry.PosterPublicKey, *postEntry.RecloutedPostHash),
 			recloutDataBuf.Bytes()); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding mapping for recloutPostHash to ReclouterPubKey: %v", err)
+		}
+		if err := txn.Set(
+			_dbKeyForRecloutedPostHashReclouterPubKey(postEntry.RecloutedPostHash, postEntry.PosterPublicKey),
+			[]byte{}); err != nil {
+			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
+				"mapping for _dbKeyForRecloutedPostHashReclouterPubKey: %v", err)
+		}
+	} else if IsQuotedReclout(postEntry) {
+		// Put quoted reclout stuff.
+		if err := txn.Set(
+			_dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash(
+				postEntry.RecloutedPostHash, postEntry.PosterPublicKey, postEntry.PostHash),
+			[]byte{}); err != nil {
+			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
+				"mapping for _dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash: %v", err)
 		}
 	}
 	return nil

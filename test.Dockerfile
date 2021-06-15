@@ -2,7 +2,7 @@ FROM alpine:edge AS core
 
 RUN apk update
 RUN apk upgrade
-RUN apk add --update go=1.16.4-r0 gcc g++ vips vips-dev
+RUN apk add --update go=1.16.5-r0 gcc g++ vips vips-dev
 
 WORKDIR /bitclout/src/core
 

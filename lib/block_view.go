@@ -376,27 +376,10 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	postEntryReaderState := &PostEntryReaderState{}
 
 	// Get like state.
-	likeKey := MakeLikeKey(readerPK, *postEntry.PostHash)
-	likeEntry := bav._getLikeEntryForLikeKey(&likeKey)
-	if likeEntry != nil && !likeEntry.isDeleted {
-		postEntryReaderState.LikedByReader = true
-	}
+	postEntryReaderState.LikedByReader = bav.GetLikedByReader(readerPK, postEntry.PostHash)
 
 	// Get reclout state.
-	recloutKey := MakeRecloutKey(readerPK, *postEntry.PostHash)
-	recloutEntry := bav._getRecloutEntryForRecloutKey(&recloutKey)
-	if recloutEntry != nil {
-		recloutPostEntry := bav.GetPostEntryForPostHash(recloutEntry.RecloutPostHash)
-		if recloutPostEntry == nil {
-			glog.Errorf("Could not find reclout post entry from post hash: %v", recloutEntry.RecloutedPostHash)
-			return nil
-		}
-		// If the user's reclout of this post is hidden, we set RecloutedByReader to false.
-		postEntryReaderState.RecloutedByReader = !recloutPostEntry.IsHidden
-		// We include the PostHashHex of this user's post that reclouts the current post to
-		// handle undo-ing (AKA hiding) a reclout.
-		postEntryReaderState.RecloutPostHashHex = hex.EncodeToString(recloutEntry.RecloutPostHash[:])
-	}
+	postEntryReaderState.RecloutPostHashHex, postEntryReaderState.RecloutedByReader = bav.GetRecloutPostEntryStateForReader(readerPK, postEntry.PostHash)
 
 	// Get diamond state.
 	senderPKID := bav.GetPKIDForPublicKey(readerPK)
@@ -414,6 +397,30 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	}
 
 	return postEntryReaderState
+}
+
+func (bav *UtxoView) GetLikedByReader(readerPK []byte, postHash *BlockHash) bool {
+	// Get like state.
+	likeKey := MakeLikeKey(readerPK, *postHash)
+	likeEntry := bav._getLikeEntryForLikeKey(&likeKey)
+	return likeEntry != nil && !likeEntry.isDeleted
+}
+
+func (bav *UtxoView) GetRecloutPostEntryStateForReader(readerPK []byte, postHash *BlockHash) (string, bool) {
+	recloutKey := MakeRecloutKey(readerPK, *postHash)
+	recloutEntry := bav._getRecloutEntryForRecloutKey(&recloutKey)
+	if recloutEntry == nil {
+		return "", false
+	}
+	recloutPostEntry := bav.GetPostEntryForPostHash(recloutEntry.RecloutPostHash)
+	if recloutPostEntry == nil {
+		glog.Errorf("Could not find reclout post entry from post hash: %v", recloutEntry.RecloutedPostHash)
+		return "", false
+	}
+	// We include the PostHashHex of this user's post that reclouts the current post to
+	// handle undo-ing (AKA hiding) a reclout.
+	// If the user's reclout of this post is hidden, we set RecloutedByReader to false.
+	return hex.EncodeToString(recloutEntry.RecloutPostHash[:]), !recloutPostEntry.IsHidden
 }
 
 type SingleStake struct {
@@ -575,6 +582,9 @@ type PostEntry struct {
 	// Counter of users that have reclouted this post.
 	RecloutCount uint64
 
+	// Counter of quote reclouts for this post.
+	QuoteRecloutCount uint64
+
 	// Counter of diamonds that the post has received.
 	DiamondCount uint64
 
@@ -608,6 +618,10 @@ func (pe *PostEntry) IsDeleted() bool {
 	return pe.isDeleted
 }
 
+func IsQuotedReclout(postEntry *PostEntry) bool {
+	return postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil
+}
+
 func (pe *PostEntry) HasMedia() bool {
 	bodyJSONObj := BitCloutBodySchema{}
 	err := json.Unmarshal(pe.Body, &bodyJSONObj)
@@ -621,10 +635,7 @@ func (pe *PostEntry) HasMedia() bool {
 // Return true if postEntry is a vanilla reclout.  A vanilla reclout is a post that reclouts another post,
 // but does not have a body.
 func IsVanillaReclout(postEntry *PostEntry) bool {
-	if !postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil {
-		return true
-	}
-	return false
+	return !postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil
 }
 
 type BalanceEntryMapKey struct {
@@ -4695,12 +4706,12 @@ func (bav *UtxoView) _connectSubmitPost(
 	}
 	// Set the IsQuotedReclout attribute of postEntry based on extra data
 	isQuotedReclout := false
-	if quotedReclout, hasQuotedReclout := extraData[IsQuotedReclout]; hasQuotedReclout {
+	if quotedReclout, hasQuotedReclout := extraData[IsQuotedRecloutKey]; hasQuotedReclout {
 		if reflect.DeepEqual(quotedReclout, QuotedRecloutVal) {
 			isQuotedReclout = true
 		}
 		// Delete key since it is not needed in the PostExtraData map as IsQuotedReclout is involved in consensus code.
-		delete(extraData, IsQuotedReclout)
+		delete(extraData, IsQuotedRecloutKey)
 	}
 	var recloutedPostHash *BlockHash
 	if recloutedPostHashBytes, isReclout := extraData[RecloutedPostHash]; isReclout {
@@ -4822,6 +4833,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		// Figure out how much we need to change the parent / grandparent's comment count by
 		var commentCountUpdateAmount int
 		recloutCountUpdateAmount := 0
+		quoteRecloutCountUpdateAmount := 0
 		hidingPostEntry := !prevPostEntry.IsHidden && newPostEntry.IsHidden
 		if hidingPostEntry {
 			// If we're hiding a post then we need to decrement the comment count of the parent
@@ -4832,6 +4844,8 @@ func (bav *UtxoView) _connectSubmitPost(
 			// post that was reclouted.
 			if IsVanillaReclout(newPostEntry) {
 				recloutCountUpdateAmount = -1
+			} else if isQuotedReclout {
+				quoteRecloutCountUpdateAmount = -1
 			}
 		}
 
@@ -4844,6 +4858,8 @@ func (bav *UtxoView) _connectSubmitPost(
 			// the post that was reclouted.
 			if IsVanillaReclout(newPostEntry) {
 				recloutCountUpdateAmount = 1
+			} else if isQuotedReclout {
+				quoteRecloutCountUpdateAmount = 1
 			}
 		}
 
@@ -4879,8 +4895,13 @@ func (bav *UtxoView) _connectSubmitPost(
 					RecloutedPostHash: newPostEntry.RecloutedPostHash,
 					RecloutPostHash:   newPostEntry.PostHash,
 				}
+
+				// Update the reclout count if it has changed.
+				bav._updateRecloutCount(newRecloutedPostEntry, recloutCountUpdateAmount)
+			} else {
+				// Update the quote reclout count if it has changed.
+				bav._updateQuoteRecloutCount(newRecloutedPostEntry, quoteRecloutCountUpdateAmount)
 			}
-			bav._updateRecloutCount(newRecloutedPostEntry, recloutCountUpdateAmount)
 		}
 	} else {
 		// In this case we are creating a post from scratch so validate
@@ -4991,6 +5012,9 @@ func (bav *UtxoView) _connectSubmitPost(
 					RecloutedPostHash: newPostEntry.RecloutedPostHash,
 					RecloutPostHash:   newPostEntry.PostHash,
 				}
+			} else {
+				// If it is a quote reclout, we need to increment the corresponding count.
+				bav._updateQuoteRecloutCount(newRecloutedPostEntry, 1)
 			}
 		}
 	}
@@ -5078,6 +5102,20 @@ func (bav *UtxoView) _updateRecloutCount(recloutedPost *PostEntry, amount int) {
 		result = 0
 	}
 	recloutedPost.RecloutCount = uint64(result)
+
+}
+
+// Adds amount to the quote reclout count of the post at recloutPostHash
+func (bav *UtxoView) _updateQuoteRecloutCount(recloutedPost *PostEntry, amount int) {
+	result := int(recloutedPost.QuoteRecloutCount) + amount
+
+	// Reclout count should never be below 0.
+	if result < 0 {
+		glog.Errorf("_updateQuoteRecloutCountForPost: QuoteRecloutCount < 0 for result %v, reclout post hash: %v, amount : %v",
+			result, recloutedPost, amount)
+		result = 0
+	}
+	recloutedPost.QuoteRecloutCount = uint64(result)
 
 }
 
@@ -7061,7 +7099,9 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 			return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel
 		}
 		diamondLevel, bytesRead := Varint(diamondLevelBytes)
-		if bytesRead < 0 {
+		// NOTE: Despite being an int, diamondLevel is required to be non-negative. This
+		// is useful for sorting our dbkeys by diamondLevel.
+		if bytesRead < 0 || diamondLevel < 0 {
 			return 0, 0, nil, RuleErrorCreatorCoinTransferHasInvalidDiamondLevel
 		}
 
@@ -7699,6 +7739,157 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 		}
 	}
 	return postEntries, nil
+}
+
+func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToDiamondLevel map[PKID]int64, _err error) {
+	handle := bav.Handle
+	dbPrefix := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
+	dbPrefix = append(dbPrefix, postHash[:]...)
+	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+
+
+	diamondPostEntry := bav.GetPostEntryForPostHash(postHash)
+	receiverPKIDEntry := bav.GetPKIDForPublicKey(diamondPostEntry.PosterPublicKey)
+
+	// Iterate over all the db keys & values and load them into the view.
+	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed + 8
+	for _, key := range keysFound {
+		// Sanity check that this is a reasonable key.
+		if len(key) != expectedKeyLength {
+			return nil, fmt.Errorf("UtxoView.GetDiamondsForPostHash: Invalid key length found: %d", len(key))
+		}
+
+		senderPKID := &PKID{}
+		copy(senderPKID[:], key[1+HashSizeBytes:])
+
+		diamondKey := &DiamondKey{
+			SenderPKID:      *senderPKID,
+			ReceiverPKID:    *receiverPKIDEntry.PKID,
+			DiamondPostHash: *postHash,
+		}
+
+		bav.GetDiamondEntryForDiamondKey(diamondKey)
+	}
+
+	// Iterate over the view and create the final map to return.
+	pkidToDiamondLevel := make(map[PKID]int64)
+	for _, diamondEntry := range bav.DiamondKeyToDiamondEntry {
+		if !diamondEntry.isDeleted && reflect.DeepEqual(diamondEntry.DiamondPostHash[:], postHash[:]) {
+			pkidToDiamondLevel[*diamondEntry.SenderPKID] = diamondEntry.DiamondLevel
+		}
+	}
+
+	return pkidToDiamondLevel, nil
+}
+
+func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][]byte, _err error) {
+	handle := bav.Handle
+	dbPrefix := append([]byte{}, _PrefixLikedPostHashToLikerPubKey...)
+	dbPrefix = append(dbPrefix, postHash[:]...)
+	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+
+	// Iterate over all the db keys & values and load them into the view.
+	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
+	for _, key := range keysFound {
+		// Sanity check that this is a reasonable key.
+		if len(key) != expectedKeyLength {
+			return nil, fmt.Errorf("UtxoView.GetLikesForPostHash: Invalid key length found: %d", len(key))
+		}
+
+		likerPubKey := key[1+HashSizeBytes:]
+
+		likeKey := &LikeKey{
+			LikerPubKey:   MakePkMapKey(likerPubKey),
+			LikedPostHash: *postHash,
+		}
+
+		bav._getLikeEntryForLikeKey(likeKey)
+	}
+
+	// Iterate over the view and create the final list to return.
+	likerPubKeys := [][]byte{}
+	for _, likeEntry := range bav.LikeKeyToLikeEntry {
+		if !likeEntry.isDeleted && reflect.DeepEqual(likeEntry.LikedPostHash[:], postHash[:]) {
+			likerPubKeys = append(likerPubKeys, likeEntry.LikerPubKey)
+		}
+	}
+
+	return likerPubKeys, nil
+}
+
+func (bav *UtxoView) GetRecloutsForPostHash(postHash *BlockHash) (_reclouterPubKeys [][]byte, _err error) {
+	handle := bav.Handle
+	dbPrefix := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKey...)
+	dbPrefix = append(dbPrefix, postHash[:]...)
+	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+
+	// Iterate over all the db keys & values and load them into the view.
+	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
+	for _, key := range keysFound {
+		// Sanity check that this is a reasonable key.
+		if len(key) != expectedKeyLength {
+			return nil, fmt.Errorf("UtxoView.GetRecloutersForPostHash: Invalid key length found: %d", len(key))
+		}
+
+		reclouterPubKey := key[1+HashSizeBytes:]
+
+		recloutKey := &RecloutKey{
+			ReclouterPubKey:   MakePkMapKey(reclouterPubKey),
+			RecloutedPostHash: *postHash,
+		}
+
+		bav._getRecloutEntryForRecloutKey(recloutKey)
+	}
+
+	// Iterate over the view and create the final list to return.
+	reclouterPubKeys := [][]byte{}
+	for _, recloutEntry := range bav.RecloutKeyToRecloutEntry {
+		if !recloutEntry.isDeleted && reflect.DeepEqual(recloutEntry.RecloutedPostHash[:], postHash[:]) {
+			reclouterPubKeys = append(reclouterPubKeys, recloutEntry.ReclouterPubKey)
+		}
+	}
+
+	return reclouterPubKeys, nil
+}
+
+func (bav *UtxoView) GetQuoteRecloutsForPostHash(postHash *BlockHash,
+) (_quoteReclouterPubKeys [][]byte, _quoteReclouterPubKeyToPosts map[PkMapKey][]*PostEntry, _err error) {
+	handle := bav.Handle
+	dbPrefix := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash...)
+	dbPrefix = append(dbPrefix, postHash[:]...)
+	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+
+	// Iterate over all the db keys & values and load them into the view.
+	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed + HashSizeBytes
+
+	recloutPostHashIdx := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
+	for _, key := range keysFound {
+		// Sanity check that this is a reasonable key.
+		if len(key) != expectedKeyLength {
+			return nil, nil, fmt.Errorf("UtxoView.GetQuoteRecloutsForPostHash: Invalid key length found: %d", len(key))
+		}
+
+		recloutPostHash := &BlockHash{}
+		copy(recloutPostHash[:], key[recloutPostHashIdx:])
+
+		bav.GetPostEntryForPostHash(recloutPostHash)
+	}
+
+	// Iterate over the view and create the final map to return.
+	quoteReclouterPubKeys := [][]byte{}
+	quoteReclouterPubKeyToPosts := make(map[PkMapKey][]*PostEntry)
+
+	for _, postEntry := range bav.PostHashToPostEntry {
+		if !postEntry.isDeleted && postEntry.IsQuotedReclout && reflect.DeepEqual(postEntry.RecloutedPostHash[:], postHash[:]) {
+			quoteReclouterPubKeys = append(quoteReclouterPubKeys, postEntry.PosterPublicKey)
+
+			quoteRecloutPosts, _ := quoteReclouterPubKeyToPosts[MakePkMapKey(postEntry.PosterPublicKey)]
+			quoteRecloutPosts = append(quoteRecloutPosts, postEntry)
+			quoteReclouterPubKeyToPosts[MakePkMapKey(postEntry.PosterPublicKey)] = quoteRecloutPosts
+		}
+	}
+
+	return quoteReclouterPubKeys, quoteReclouterPubKeyToPosts, nil
 }
 
 // Just fetch all the profiles from the db and join them with all the profiles
@@ -8364,8 +8555,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this DiamondKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteDiamondMappingsWithTxn(
-			txn, diamondEntry.ReceiverPKID, diamondEntry.SenderPKID, diamondEntry.DiamondPostHash); err != nil {
+		if err := DbDeleteDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushDiamondEntriesToDbWithTxn: Problem deleting mappings "+
