@@ -188,7 +188,7 @@ var (
 	//  <prefix, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
 	//  <prefix, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
 	_PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash = []byte{41}
-	_PrefixDiamondSenderPKIDDiamondReciverPKIDPostHash  = []byte{43}
+	_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash  = []byte{43}
 
 	// Public keys that have been restricted from signing blocks.
 	// <prefix, ForbiddenPublicKey [33]byte> -> <>
@@ -1279,10 +1279,19 @@ func _dbSeekPrefixForPKIDsThatDiamondedYou(yourPKID *PKID) []byte {
 	return append(prefixCopy, yourPKID[:]...)
 }
 
-func _dbKeyForDiamondSenderToDiamondRecieverMapping(
+func _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry *DiamondEntry) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
+	key := append(prefixCopy, diamondEntry.SenderPKID[:]...)
+	key = append(key, diamondEntry.ReceiverPKID[:]...)
+	key = append(key, diamondEntry.DiamondPostHash[:]...)
+	return key
+}
+
+func _dbKeyForDiamondSenderToDiamondReceiverMappingWithoutEntry(
 	diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReciverPKIDPostHash...)
+	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	key := append(prefixCopy, diamondSenderPKID[:]...)
 	key = append(key, diamondReceiverPKID[:]...)
 	key = append(key, diamondPostHash[:]...)
@@ -1291,7 +1300,7 @@ func _dbKeyForDiamondSenderToDiamondRecieverMapping(
 
 func _dbSeekPrefixForPKIDsThatYouDiamonded(yourPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReciverPKIDPostHash...)
+	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
@@ -1333,18 +1342,20 @@ func DbPutDiamondMappingsWithTxn(
 			"length %d != %d", len(diamondEntry.SenderPKID), btcec.PubKeyBytesLenCompressed)
 	}
 
-	if err := txn.Set(_dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry),
-		_DbBufForDiamondEntry(diamondEntry)); err != nil {
-
+	diamondEntryBytes := _DbBufForDiamondEntry(diamondEntry)
+	if err := txn.Set(_dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry), diamondEntryBytes); err != nil {
 		return errors.Wrapf(
 			err, "DbPutDiamondMappingsWithTxn: Problem adding receiver to giver mapping: ")
 	}
 
+	if err := txn.Set(_dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry), diamondEntryBytes); err != nil {
+		return errors.Wrapf(err, "DbPutDiamondMappingsWithTxn: Problem adding sender to receiver mapping: ")
+	}
+
 	if err := txn.Set(_dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry),
 		[]byte{}); err != nil {
-
 		return errors.Wrapf(
-			err, "DbPutDiamondMappingsWithTxn: Problem adding receiver to giver mapping: ")
+			err, "DbPutDiamondMappingsWithTxn: Problem adding DiamondedPostHash Diamonder Diamond Level mapping: ")
 	}
 
 	return nil
@@ -1421,8 +1432,7 @@ func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, diamondEntry *DiamondEntry)
 		)
 	}
 
-	if err := txn.Delete(_dbKeyForDiamondSenderToDiamondRecieverMapping(
-		diamondEntry.ReceiverPKID, diamondEntry.SenderPKID, diamondEntry.DiamondPostHash)); err != nil {
+	if err := txn.Delete(_dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry)); err != nil {
 		return errors.Wrapf(err, "DbDeleteDiamondMappingsWithTxn: Deleting "+
 			"diamondSenderPKID %s and diamondReceiverPKID %s and diamondPostHash %s failed",
 			PkToStringMainnet(diamondEntry.SenderPKID[:]),
