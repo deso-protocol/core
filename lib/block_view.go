@@ -214,11 +214,12 @@ type NFTKey struct {
 // postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
 // defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
 type NFTEntry struct {
-	OwnerPKID      *PKID
-	NFTPostHash    *BlockHash
-	SerialNumber   uint64
-	IsForSale      bool
-	UnlockableText []byte
+	OwnerPKID         *PKID
+	NFTPostHash       *BlockHash
+	SerialNumber      uint64
+	IsForSale         bool
+	MinBidAmountNanos uint64
+	UnlockableText    []byte
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -5430,10 +5431,11 @@ func (bav *UtxoView) _connectCreateNFT(
 	posterPKID := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
 	for ii := uint64(1); ii <= txMeta.NumCopies; ii++ {
 		nftEntry := &NFTEntry{
-			OwnerPKID:    posterPKID.PKID,
-			NFTPostHash:  txMeta.NFTPostHash,
-			SerialNumber: ii,
-			IsForSale:    true,
+			OwnerPKID:         posterPKID.PKID,
+			NFTPostHash:       txMeta.NFTPostHash,
+			SerialNumber:      ii,
+			IsForSale:         txMeta.IsForSale,
+			MinBidAmountNanos: txMeta.MinBidAmountNanos,
 		}
 		bav._setNFTEntryMappings(nftEntry)
 	}
@@ -5478,9 +5480,10 @@ func (bav *UtxoView) _connectUpdateNFT(
 			" this should never happen.", prevNFTEntry, txMeta)
 	}
 
-	// Verify that we are actually updating something (only IsForSale can be updated at the moment).
+	// At the moment, updates can only be made if the 'IsForSale' status of the NFT is changing.
+	// As a result, you cannot change the MinBidAmountNanos of an NFT while it is for sale.
 	if prevNFTEntry.IsForSale == txMeta.IsForSale {
-		return 0, 0, nil, RuleErrorNFTUpdateWithoutUpdates
+		return 0, 0, nil, RuleErrorNFTUpdateMustUpdateIsForSaleStatus
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -5508,10 +5511,11 @@ func (bav *UtxoView) _connectUpdateNFT(
 
 	// Create the updated NFTEntry.
 	newNFTEntry := &NFTEntry{
-		OwnerPKID:    updaterPKID.PKID,
-		NFTPostHash:  txMeta.NFTPostHash,
-		SerialNumber: txMeta.SerialNumber,
-		IsForSale:    txMeta.IsForSale,
+		OwnerPKID:         updaterPKID.PKID,
+		NFTPostHash:       txMeta.NFTPostHash,
+		SerialNumber:      txMeta.SerialNumber,
+		IsForSale:         txMeta.IsForSale,
+		MinBidAmountNanos: txMeta.MinBidAmountNanos,
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 
@@ -5849,6 +5853,11 @@ func (bav *UtxoView) _connectNFTBid(
 		// Verify that the bidder is not the current owner of the NFT.
 		if reflect.DeepEqual(nftEntry.OwnerPKID, bidderPKID.PKID) {
 			return 0, 0, nil, RuleErrorNFTOwnerCannotBidOnOwnedNFT
+		}
+
+		// Verify that the bid amount is greater than the min bid amount for this NFT.
+		if txMeta.BidAmountNanos < nftEntry.MinBidAmountNanos {
+			return 0, 0, nil, RuleErrorNFTBidLessThanMinBidAmountNanos
 		}
 	}
 
@@ -7746,7 +7755,6 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 	dbPrefix := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
-
 
 	diamondPostEntry := bav.GetPostEntryForPostHash(postHash)
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(diamondPostEntry.PosterPublicKey)

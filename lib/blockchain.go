@@ -2827,6 +2827,8 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTPostHash *BlockHash,
 	NumCopies uint64,
 	HasUnlockable bool,
+	IsForSale bool,
+	MinBidAmountNanos uint64,
 	NFTFee uint64,
 	NFTRoyaltyToCreatorBasisPoints uint64,
 	NFTRoyaltyToCoinBasisPoints uint64,
@@ -2841,6 +2843,8 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 			NFTPostHash,
 			NumCopies,
 			HasUnlockable,
+			IsForSale,
+			MinBidAmountNanos,
 			NFTRoyaltyToCreatorBasisPoints,
 			NFTRoyaltyToCoinBasisPoints,
 		},
@@ -3032,6 +3036,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	IsForSale bool,
+	MinBidAmountNanos uint64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3043,6 +3048,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 			NFTPostHash,
 			SerialNumber,
 			IsForSale,
+			MinBidAmountNanos,
 		},
 
 		// We wait to compute the signature until we've added all the
