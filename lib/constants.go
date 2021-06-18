@@ -945,6 +945,9 @@ const (
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a reclout with a quote.
 	IsQuotedRecloutKey = "IsQuotedReclout"
 
+	// Key in transaction's extra data map that is set true if a post is pinned, and set false otherwise
+	IsPinnedPostKey = "IsPinnedPost"
+
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoin            = "USDCentsPerBitcoin"
 	MinNetworkFeeNanosPerKB       = "MinNetworkFeeNanosPerKB"

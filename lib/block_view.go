@@ -4199,6 +4199,13 @@ func (bav *UtxoView) _connectSubmitPost(
 		copy(recloutedPostHash[:], recloutedPostHashBytes)
 		delete(extraData, RecloutedPostHash)
 	}
+	// Set the IsPinned attribute based on extra data
+	isPinned := false
+	if _, hasPinned := extraData[IsPinnedPostKey]; hasPinned {
+		isPinned = true
+		delete(extraData, IsPinnedPostKey)
+	}
+	_ = isPinned
 
 	// At this point the inputs and outputs have been processed. Now we
 	// need to handle the metadata.

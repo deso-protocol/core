@@ -2578,6 +2578,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	tstampNanos uint64,
 	postExtraData map[string][]byte,
 	isHidden bool,
+	isPinned bool,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -2597,6 +2598,14 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 		} else {
 			txnExtraData[IsQuotedRecloutKey] = NotQuotedRecloutVal
 		}
+	}
+
+	// Set the IsPinnedPostKey if the post should be pinned.
+	// If this key is not set we do 1 of 2 things when the transaction is connected:
+	//	(1) If we're updating this post and it's been pinned before we remove it as a pinned post from the database.
+	//	(2) If it's not been pinned before, we don't do anything.
+	if isPinned {
+		txnExtraData[IsPinnedPostKey] = []byte{}
 	}
 
 	// Create a transaction containing the post fields.
