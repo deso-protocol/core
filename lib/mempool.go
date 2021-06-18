@@ -54,7 +54,7 @@ var (
 	// resets both counters.
 	//
 	// We make these vars rather than const for testing
-	ReadOnlyUtxoViewRegenerationIntervalSeconds = float64(1.0)
+	ReadOnlyUtxoViewRegenerationIntervalSeconds = float64(0.1)
 	ReadOnlyUtxoViewRegenerationIntervalTxns    = int64(1000)
 
 	// LowFeeTxLimitBytesPerTenMinutes defines the number of bytes per 10 minutes of "low fee"
@@ -2202,7 +2202,8 @@ func (mp *BitCloutMempool) BlockUntilReadOnlyViewRegenerated() {
 	newSeqNum := oldSeqNum
 	for newSeqNum == oldSeqNum {
 		// Check fairly often. Not too often.
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(time.Duration(
+			ReadOnlyUtxoViewRegenerationIntervalSeconds / 10) * time.Second)
 
 		newSeqNum = atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
 	}
