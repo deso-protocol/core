@@ -5976,6 +5976,11 @@ func TestBitcoinExchange(t *testing.T) {
 
 	// Test that the mempool can be backed up properly by dumping them and then
 	// reloading them.
+	//
+	// Don't refresh the universal view for this test, since it causes a race condition
+	// to trigger.
+	// TODO: Lower this value to .1 and fix this race condition.
+	ReadOnlyUtxoViewRegenerationIntervalSeconds = 100
 	_dumpAndLoadMempool(mempool)
 
 	// The balances according to the mempool after applying all the transactions
