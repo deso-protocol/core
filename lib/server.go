@@ -431,9 +431,9 @@ func NewServer(
 
 	srv.statsdClient = statsd
 
-	// Start the mempool stats reporter
+	// Start statsd reporter
 	if srv.statsdClient != nil {
-		srv.StartMempoolStatsReporter()
+		srv.StartStatsdReporter()
 	}
 
 	// Initialize the addrs to broadcast map.
@@ -1398,22 +1398,24 @@ func (srv *Server) _handleMempool(pp *Peer, msg *MsgBitCloutMempool) {
 	pp.canReceiveInvMessagess = true
 }
 
-func (srv *Server) StartMempoolStatsReporter() {
+func (srv *Server) StartStatsdReporter() {
 	go func() {
 	out:
 		for {
 			select {
 			case <-time.After(5 * time.Second):
-				mp := srv.mempool
-				summary := mp.GetMempoolSummaryStats()
 				tags := []string{}
 
-				for k, v := range summary {
-					srv.statsdClient.Gauge(fmt.Sprintf("MEMPOOL.%s.COUNT", k), float64(v.Count), tags, 1)
-				}
+				// Report mempool size
+				mempoolTotal := len(srv.mempool.readOnlyUniversalTransactionList)
+				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(mempoolTotal), tags, 1)
 
-				total := len(mp.readOnlyUniversalTransactionList)
-				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(total), tags, 1)
+				// Report block + headers height
+				blocksHeight := srv.blockchain.BlockTip().Height
+				srv.statsdClient.Gauge("BLOCKS.HEIGHT", float64(blocksHeight), tags, 1)
+
+				headersHeight := srv.blockchain.HeaderTip().Height
+				srv.statsdClient.Gauge("HEADERS.HEIGHT", float64(headersHeight), tags, 1)
 
 			case <-srv.mempool.quit:
 				break out

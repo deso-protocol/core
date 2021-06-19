@@ -5918,6 +5918,11 @@ func TestBitcoinExchange(t *testing.T) {
 	_ = assert
 	_ = require
 
+	// Don't refresh the universal view for this test, since it causes a race condition
+	// to trigger.
+	// TODO: Lower this value to .1 and fix this race condition.
+	ReadOnlyUtxoViewRegenerationIntervalSeconds = 100
+
 	oldInitialUSDCentsPerBitcoinExchangeRate := InitialUSDCentsPerBitcoinExchangeRate
 	InitialUSDCentsPerBitcoinExchangeRate = uint64(1350000)
 	defer func() {
@@ -6815,6 +6820,11 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	require := require.New(t)
 	_ = assert
 	_ = require
+
+	// Don't refresh the universal view for this test, since it causes a race condition
+	// to trigger.
+	// TODO: Lower this value to .1 and fix this race condition.
+	ReadOnlyUtxoViewRegenerationIntervalSeconds = 100
 
 	oldInitialUSDCentsPerBitcoinExchangeRate := InitialUSDCentsPerBitcoinExchangeRate
 	InitialUSDCentsPerBitcoinExchangeRate = uint64(1350000)
@@ -8454,6 +8464,11 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	require := require.New(t)
 	_ = assert
 	_ = require
+
+	// Don't refresh the universal view for this test, since it causes a race condition
+	// to trigger.
+	// TODO: Lower this value to .1 and fix this race condition.
+	ReadOnlyUtxoViewRegenerationIntervalSeconds = 100
 
 	oldInitialUSDCentsPerBitcoinExchangeRate := InitialUSDCentsPerBitcoinExchangeRate
 	InitialUSDCentsPerBitcoinExchangeRate = 1350000
