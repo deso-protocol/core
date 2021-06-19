@@ -927,6 +927,21 @@ func _dbSeekPrefixForPostHashesYouReclout(yourPubKey []byte) []byte {
 	return append(prefixCopy, yourPubKey...)
 }
 
+func _dbKeyForPinnedPost(pinnerPubKey []byte, tstampNanos uint64, postHash *BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash...)
+	key := append(prefixCopy, pinnerPubKey[:]...)
+	key = append(key, EncodeUint64(tstampNanos)...)
+	key = append(key, postHash[:]...)
+	return key
+}
+
+func _dbSeekPrefixForPostsPinned(pinnerPubKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash...)
+	return append(prefixCopy, pinnerPubKey[:]...)
+}
+
 // Note that this adds a mapping for the user *and* the reclouted post.
 func DbPutRecloutMappingsWithTxn(
 	txn *badger.Txn, userPubKey []byte, recloutedPostHash BlockHash, recloutEntry RecloutEntry) error {

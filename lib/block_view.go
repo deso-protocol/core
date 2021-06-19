@@ -751,6 +751,7 @@ type UtxoView struct {
 
 	// Post data
 	PostHashToPostEntry map[BlockHash]*PostEntry
+	PublicKeyToPostHashToPinnedStatus map[PkMapKey]map[BlockHash]bool
 
 	// Profile data
 	PublicKeyToPKIDEntry map[PkMapKey]*PKIDEntry
@@ -3060,6 +3061,15 @@ func (bav *UtxoView) _setPostEntryMappings(postEntry *PostEntry) {
 
 	// Add a mapping for the post.
 	bav.PostHashToPostEntry[*postEntry.PostHash] = postEntry
+
+	// Add or update the pinning status for the post.
+	pkMapKey := MakePkMapKey(postEntry.PosterPublicKey)
+	if _, hasPinnedStatus := bav.PublicKeyToPostHashToPinnedStatus[pkMapKey][*postEntry.PostHash]; hasPinnedStatus {
+		bav.PublicKeyToPostHashToPinnedStatus[pkMapKey][*postEntry.PostHash] = postEntry.IsPinned
+	} else if postEntry.IsPinned {
+		// We only create a pinned post status mapping if it's being pinned for the first time
+		bav.PublicKeyToPostHashToPinnedStatus[pkMapKey][*postEntry.PostHash] = postEntry.IsPinned
+	}
 }
 
 func (bav *UtxoView) _deletePostEntryMappings(postEntry *PostEntry) {
@@ -4205,7 +4215,6 @@ func (bav *UtxoView) _connectSubmitPost(
 		isPinned = true
 		delete(extraData, IsPinnedPostKey)
 	}
-	_ = isPinned
 
 	// At this point the inputs and outputs have been processed. Now we
 	// need to handle the metadata.
@@ -4457,6 +4466,7 @@ func (bav *UtxoView) _connectSubmitPost(
 			TimestampNanos:           txMeta.TimestampNanos,
 			ConfirmationBlockHeight:  blockHeight,
 			StakeEntry:               NewStakeEntry(),
+			IsPinned: 				  isPinned,
 			PostExtraData:            extraData,
 			// Don't set IsHidden on new posts.
 		}
