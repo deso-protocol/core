@@ -202,10 +202,14 @@ var (
 	_PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash = []byte{46}
 	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel      = []byte{47}
 
+	// This index is used in order to quickly fetch the n most recently pinned posts.
+	// <prefix, PublicKey [33]byte, tstampNanos uint64, PostHash]> -> <>
+	_PrefixPublicKeyTstampNanosPinnedPostHash = []byte{48}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 48
+	// NEXT_TAG: 49
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -929,7 +933,7 @@ func _dbSeekPrefixForPostHashesYouReclout(yourPubKey []byte) []byte {
 
 func _dbKeyForPinnedPost(pinnerPubKey []byte, tstampNanos uint64, postHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash...)
+	prefixCopy := append([]byte{}, _PrefixPublicKeyTstampNanosPinnedPostHash...)
 	key := append(prefixCopy, pinnerPubKey[:]...)
 	key = append(key, EncodeUint64(tstampNanos)...)
 	key = append(key, postHash[:]...)
@@ -938,7 +942,7 @@ func _dbKeyForPinnedPost(pinnerPubKey []byte, tstampNanos uint64, postHash *Bloc
 
 func _dbSeekPrefixForPostsPinned(pinnerPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash...)
+	prefixCopy := append([]byte{}, _PrefixPublicKeyTstampNanosPinnedPostHash...)
 	return append(prefixCopy, pinnerPubKey[:]...)
 }
 
@@ -3569,6 +3573,30 @@ func DBPutPostEntryMappings(handle *badger.DB, postEntry *PostEntry, params *Bit
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutPostEntryMappingsWithTxn(txn, postEntry, params)
 	})
+}
+
+// Updates a pinned post entry to the database. If the pinned field of pinEntry is true, we add the pinned
+// post to the databse. Otherwise, we check to see if a key exists and deletes it if it does.
+// A false pinned field in pinEntry signals that the pinned post should be deleted if it exists.
+func DBUpdatePinEntryMappingsWithTxn(txn *badger.Txn, publicKeyBytes []byte, postHash *BlockHash, pinEntry PinEntry) error {
+	dbKey := _dbKeyForPinnedPost(publicKeyBytes, pinEntry.tstampNanos, postHash)
+	if pinEntry.pinned {
+		// We add the key to the database to reflect the key etnry
+		if err := txn.Set(dbKey, []byte{}); err != nil {
+			return errors.Wrapf(err, "DBPutPinEntryMappingsWithTxn: Error problem adding "+
+				"mapping for _dbKeyForPinnedPost: %v", err)
+		}
+	} else {
+		// We check to see if the key exists in the database
+		_, err := txn.Get(dbKey)
+		if err == nil  {
+			txn.Delete(dbKey) // The key is known to exist, so we delete it.
+		} else if err != badger.ErrKeyNotFound {
+			return errors.Wrapf(err, "DBPutPinEntryMappingsWithTxn: Error problem checking "+
+				"entry existence for _dbKeyForPinnedPost: %v", err)
+		}
+	}
+	return nil
 }
 
 // Specifying minTimestampNanos gives you all posts after minTimestampNanos
