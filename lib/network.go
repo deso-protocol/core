@@ -5,7 +5,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,7 +16,6 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-	"github.com/golang/glog"
 	merkletree "github.com/laser/go-merkle-tree"
 
 	"github.com/pkg/errors"
@@ -42,15 +40,40 @@ var MaxBitcoinHeadersPerMsg = uint32(2000)
 
 const HashSizeBytes = 32
 
-// OutputSizeBytes is the size of an BitCloutOutput in bytes. 33 bytes for
-// the public key and 8 bytes for the uint64.
-const OutputSizeBytes = 33 + 8
-
 // BlockHash is a convenient alias for a block hash.
 type BlockHash [HashSizeBytes]byte
 
+func NewBlockHash(input []byte) *BlockHash {
+	blockHash := &BlockHash{}
+	copy(blockHash[:], input)
+	return blockHash
+}
+
 func (bh *BlockHash) String() string {
 	return fmt.Sprintf("%064x", HashToBigint(bh))
+}
+
+func (bh *BlockHash) ToBytes() []byte {
+	res := make([]byte, HashSizeBytes)
+	copy(res, bh[:])
+	return res
+}
+
+// IsEqual returns true if target is the same as hash.
+func (bh *BlockHash) IsEqual(target *BlockHash) bool {
+	if bh == nil && target == nil {
+		return true
+	}
+	if bh == nil || target == nil {
+		return false
+	}
+	return *bh == *target
+}
+
+func (bh *BlockHash) NewBlockHash() *BlockHash {
+	newBlockhash := &BlockHash{}
+	copy(newBlockhash[:], bh[:])
+	return newBlockhash
 }
 
 // The MsgType is usually sent on the wire to indicate what type of
@@ -199,7 +222,7 @@ type BitCloutMessage interface {
 }
 
 // TxnType specifies the type for a transaction message.
-type TxnType uint64
+type TxnType uint8
 
 const (
 	TxnTypeUnset                        TxnType = 0
@@ -317,27 +340,6 @@ func NewTxnMetadata(txType TxnType) (BitCloutTxnMetadata, error) {
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
-}
-
-func NewBlockHash(hexBytes string) *BlockHash {
-	bb, err := hex.DecodeString(hexBytes)
-	if err != nil {
-		glog.Errorf("NewBlockHash: Problem decoding hex string (%s) to bytes: %v", hexBytes, err)
-	}
-	var newHash BlockHash
-	copy(newHash[:], bb)
-	return &newHash
-}
-
-// IsEqual returns true if target is the same as hash.
-func (bh *BlockHash) IsEqual(target *BlockHash) bool {
-	if bh == nil && target == nil {
-		return true
-	}
-	if bh == nil || target == nil {
-		return false
-	}
-	return *bh == *target
 }
 
 // WriteMessage takes an io.Writer and serializes and writes the specified message
@@ -3390,6 +3392,7 @@ type UpdateProfileMetadata struct {
 	NewStakeMultipleBasisPoints uint64
 
 	// Profile is hidden from the UI when this field is true.
+	// TODO: This field is deprecated; delete it.
 	IsHidden bool
 }
 

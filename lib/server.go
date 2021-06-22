@@ -123,6 +123,8 @@ type Server struct {
 	hasProcessedFirstTransactionBundle bool
 
 	statsdClient *statsd.Client
+
+	Notifier *Notifier
 }
 
 func (srv *Server) HasProcessedFirstTransactionBundle() bool {
@@ -270,6 +272,7 @@ func NewServer(
 	_bitcloutAddrMgr *addrmgr.AddrManager,
 	_connectIps []string,
 	_db *badger.DB,
+	postgres *Postgres,
 	_targetOutboundPeers uint32,
 	_maxInboundPeers uint32,
 	_minerPublicKeys []string,
@@ -329,7 +332,7 @@ func NewServer(
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys,
 		_trustedBlockProducerStartHeight,
-		_params, timesource, _db, srv)
+		_params, timesource, _db, postgres, srv)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain")
 	}
@@ -377,7 +380,7 @@ func NewServer(
 			_minBlockUpdateIntervalSeconds, _maxBlockTemplatesToCache,
 			_blockProducerSeed,
 			_mempool, _chain,
-			_params)
+			_params, postgres)
 		if err != nil {
 			panic(err)
 		}
@@ -408,6 +411,10 @@ func NewServer(
 	srv.requestTimeoutSeconds = 10
 
 	srv.statsdClient = statsd
+
+	// TODO: Make this configurable
+	//srv.Notifier = NewNotifier(_chain, postgres)
+	//srv.Notifier.Start()
 
 	// Start statsd reporter
 	if srv.statsdClient != nil {
@@ -1065,7 +1072,6 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(blk *MsgBitCloutBlock) {
 func (srv *Server) _maybeRequestSync(pp *Peer) {
 	// Send the mempool message if BitClout and Bitcoin are fully current
 	if srv.blockchain.chainState() == SyncStateFullyCurrent {
-
 		if pp != nil {
 			glog.Debugf("Server._maybeRequestSync: Sending mempool message: %v", pp)
 			pp.AddBitCloutMessage(&MsgBitCloutMempool{}, false)

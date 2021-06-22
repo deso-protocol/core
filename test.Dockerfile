@@ -13,10 +13,11 @@ COPY go.sum .
 RUN go mod download
 
 COPY clouthash clouthash
-COPY cmd cmd
-COPY lib lib
+COPY cmd       cmd
+COPY lib       lib
 COPY test_data test_data
-COPY main.go .
+COPY migrate   migrate
+COPY main.go   .
 
 # build backend
 RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
