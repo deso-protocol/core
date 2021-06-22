@@ -3578,7 +3578,7 @@ func DBPutPostEntryMappings(handle *badger.DB, postEntry *PostEntry, params *Bit
 // Updates a pinned post entry to the database. If the pinned field of pinEntry is true, we add the pinned
 // post to the databse. Otherwise, we check to see if a key exists and deletes it if it does.
 // A false pinned field in pinEntry signals that the pinned post should be deleted if it exists.
-func DBUpdatePinEntryMappingsWithTxn(txn *badger.Txn, publicKeyBytes []byte, postHash *BlockHash, pinEntry PinEntry) error {
+func DBUpdatePinEntryMappingsWithTxn(txn *badger.Txn, publicKeyBytes []byte, postHash *BlockHash, pinEntry *PinEntry) error {
 	dbKey := _dbKeyForPinnedPost(publicKeyBytes, pinEntry.tstampNanos, postHash)
 	if pinEntry.pinned {
 		// We add the key to the database to reflect the key etnry

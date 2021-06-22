@@ -760,7 +760,7 @@ type UtxoView struct {
 
 	// Post data
 	PostHashToPostEntry map[BlockHash]*PostEntry
-	PublicKeyToPostHashToPinEntry map[PkMapKey]map[BlockHash]PinEntry
+	PublicKeyToPostHashToPinEntry map[PkMapKey]map[BlockHash]*PinEntry
 
 	// Profile data
 	PublicKeyToPKIDEntry map[PkMapKey]*PKIDEntry
@@ -946,6 +946,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Post and profile data
 	bav.PostHashToPostEntry = make(map[BlockHash]*PostEntry)
+	bav.PublicKeyToPostHashToPinEntry = make(map[PkMapKey]map[BlockHash]*PinEntry)
 	bav.PublicKeyToPKIDEntry = make(map[PkMapKey]*PKIDEntry)
 	bav.PKIDToPublicKey = make(map[PKID]*PKIDEntry)
 	bav.ProfilePKIDToProfileEntry = make(map[PKID]*ProfileEntry)
@@ -1849,6 +1850,8 @@ func (bav *UtxoView) _disconnectSubmitPost(
 				bav._deletePostEntryPinning(postEntry)
 			}
 		}
+	} else if postEntry.IsPinned {
+		bav._deletePostEntryPinning(postEntry) // We remove the pin on a post that was intially pinned
 	}
 
 	// Now that we are confident the PostEntry lines up with the transaction we're
@@ -2801,7 +2804,7 @@ func (bav *UtxoView) _addPostEntryPinning(postEntry *PostEntry) {
 	if prevEntryExists {
 		pinEntry.pinned = true
 	} else {
-		pinEntry = PinEntry{ tstampNanos: postEntry.TimestampNanos, pinned: true, }
+		pinEntry = &PinEntry{ tstampNanos: postEntry.TimestampNanos, pinned: true, }
 	}
 	bav.PublicKeyToPostHashToPinEntry[pkMapKey][*postEntry.PostHash] = pinEntry
 }
@@ -2812,7 +2815,7 @@ func (bav *UtxoView) _deletePostEntryPinning(postEntry *PostEntry) {
 	if prevEntryExists {
 		pinEntry.pinned = false
 	} else {
-		pinEntry = PinEntry{ tstampNanos: postEntry.TimestampNanos, pinned: false, }
+		pinEntry = &PinEntry{ tstampNanos: postEntry.TimestampNanos, pinned: false, }
 	}
 	bav.PublicKeyToPostHashToPinEntry[pkMapKey][*postEntry.PostHash] = pinEntry
 }
@@ -4584,7 +4587,8 @@ func (bav *UtxoView) _connectSubmitPost(
 			}
 		}
 
-		// If the new post is pinned, we add the pin entry
+		// If the new post is pinned, we add the pin entry. We don't consider if the post is hidden
+		// as we do not allow new posts to be hidden.
 		if isPinned {
 			bav._addPostEntryPinning(newPostEntry)
 		}
