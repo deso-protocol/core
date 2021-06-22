@@ -5315,7 +5315,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	buyerBalanceEntry, hodlerPKID, creatorPKID :=
 		bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			txn.PublicKey, existingProfileEntry.PublicKey)
-	if buyerBalanceEntry == nil {
+	if buyerBalanceEntry == nil || buyerBalanceEntry.isDeleted {
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
@@ -5343,7 +5343,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		// existing one.
 		creatorBalanceEntry, hodlerPKID, creatorPKID = bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			existingProfileEntry.PublicKey, existingProfileEntry.PublicKey)
-		if creatorBalanceEntry == nil {
+		if creatorBalanceEntry == nil || creatorBalanceEntry.isDeleted {
 			// If there is no balance entry then it means the creator doesn't own
 			// any of their coin yet. In this case we create a new entry for them
 			// with a zero balance.
