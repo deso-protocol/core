@@ -147,7 +147,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"When set, all blocks produced by the block producer will be signed by this " +
 			"seed.")
 	cmd.PersistentFlags().StringSlice("trusted-block-producer-public-keys", []string{
-		"BC1YLhULV1UBa7gYxEttkLdtzzkvXBwmgmyPKgJaGs35g2tiPafA2hv",
+		"BC1YLgS1zDJQqywFpsty4fFheUrZxVQNKEsrttppvUESFZCq6Nfoypm",
 			"BC1YLh768bVj2R3QpSiduxcvn7ipxF3L3XHsabZYtCGtsinUnNrZvNN",
 			"BC1YLgsiUgM1Vr35YwbkSfZB3NC9tyrMXBPuJ2SEBf8naDf6PRpNit9",
 			"BC1YLgW5jWudzSUvrvNkD4GReN3kvGvsTuqLLttKfsCbXb7vLSCjwTk",
