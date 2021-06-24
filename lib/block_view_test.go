@@ -1379,7 +1379,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.GreaterOrEqual(int64(totalInput), int64(totalInputMake))
+	require.Equal(int64(totalInput), int64(totalInputMake))
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypePrivateMessage operation at the end.

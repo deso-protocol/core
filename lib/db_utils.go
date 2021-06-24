@@ -4018,15 +4018,13 @@ func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
 // Get NFT Entries *from the DB*. Does not include mempool txns.
 func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nftEntries []*NFTEntry) {
 	nftEntries := []*NFTEntry{}
-	{
-		prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
-		keyPrefix := append(prefix, nftPostHash[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
-		for _, byteString := range entryByteStringsFound {
-			currentEntry := &NFTEntry{}
-			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
-			nftEntries = append(nftEntries, currentEntry)
-		}
+	prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
+	keyPrefix := append(prefix, nftPostHash[:]...)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	for _, byteString := range entryByteStringsFound {
+		currentEntry := &NFTEntry{}
+		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+		nftEntries = append(nftEntries, currentEntry)
 	}
 	return nftEntries
 }

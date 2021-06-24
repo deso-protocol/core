@@ -2457,7 +2457,7 @@ func (bav *UtxoView) _disconnectCreateNFT(
 			txMeta.NFTPostHash.String())
 	}
 
-	// Revert the post entry mapping since we likely updated the DiamondCount.
+	// Revert to the old post entry since we changed IsNFT, etc.
 	bav._setPostEntryMappings(operationData.PrevPostEntry)
 
 	// Delete the NFT entries.
@@ -2492,10 +2492,8 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 			"OperationTypeUpdateNFT but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*UpdateNFTMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
-	_, _ = txMeta, operationData
 
 	// In order to disconnect an updated bid, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one.
@@ -2545,10 +2543,8 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 			"OperationTypeAcceptNFTBid but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*AcceptNFTBidMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
-	_, _ = txMeta, operationData
 
 	// In order to disconnect an accepted bid, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one with the previous owner.
@@ -2624,7 +2620,6 @@ func (bav *UtxoView) _disconnectNFTBid(
 	txMeta := currentTxn.TxnMeta.(*NFTBidMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
-	_, _ = txMeta, operationData
 
 	// Get the NFTBidEntry corresponding to this txn.
 	bidderPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
@@ -3346,7 +3341,7 @@ func (bav *UtxoView) GetNFTEntriesForPostHash(nftPostHash *BlockHash) []*NFTEntr
 func (bav *UtxoView) _setNFTBidEntryMappings(nftBidEntry *NFTBidEntry) {
 	// This function shouldn't be called with nil.
 	if nftBidEntry == nil {
-		glog.Errorf("_setNFTBidEntryMappings: Called with nil NFTEntry; " +
+		glog.Errorf("_setNFTBidEntryMappings: Called with nil nftBidEntry; " +
 			"this should never happen.")
 		return
 	}
@@ -5440,7 +5435,7 @@ func (bav *UtxoView) _connectCreateNFT(
 		bav._setNFTEntryMappings(nftEntry)
 	}
 
-	// Add an operation to the list at the end indicating we've updated a profile.
+	// Add an operation to the utxoOps list indicating we've created an NFT.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:          OperationTypeCreateNFT,
 		PrevPostEntry: prevPostEntry,
@@ -5604,7 +5599,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	nftBidKey := MakeNFTBidKey(txMeta.BidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 	if nftBidEntry == nil || nftBidEntry.isDeleted {
-		// NOTE: Users can submit a bit for SerialNumber zero as a blanket bid for any SerialNumber
+		// NOTE: Users can submit a bid for SerialNumber zero as a blanket bid for any SerialNumber
 		// in an NFT collection. Thus, we must check to see if a SerialNumber zero bid exists
 		// for this bidder before we return an error.
 		nftBidKey = MakeNFTBidKey(txMeta.BidderPKID, txMeta.NFTPostHash, uint64(0))
@@ -5645,12 +5640,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	// The bidder gets back any unspent nanos from the inputs specified.
 	bidderChangeNanos := totalBidderInput - txMeta.BidAmountNanos
 	// The amount of bitclout that should go to the original creator from this purchase.
+	// Calculated as: (BidAmountNanos * NFTRoyaltyToCreatorBasisPoints) / (100 * 100)
 	creatorRoyaltyNanos := IntDiv(
 		IntMul(
 			big.NewInt(int64(txMeta.BidAmountNanos)),
 			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCreatorBasisPoints))),
 		big.NewInt(100*100)).Uint64()
 	// The amount of bitclout that should go to the original creator's coin from this purchase.
+	// Calculated as: (BidAmountNanos * NFTRoyaltyToCreatorCoinBasisPoints) / (100 * 100)
 	creatorCoinRoyaltyNanos := IntDiv(
 		IntMul(
 			big.NewInt(int64(txMeta.BidAmountNanos)),

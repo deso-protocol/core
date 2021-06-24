@@ -2836,7 +2836,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a transaction containing the creator coin fields.
+	// Create a transaction containing the create NFT fields.
 	txn := &MsgBitCloutTxn{
 		PublicKey: UpdaterPublicKey,
 		TxnMeta: &CreateNFTMetadata{
@@ -2854,12 +2854,11 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	}
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
-	totalInput, spendAmount, changeAmount, fees, err :=
+	totalInput, _, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -2895,12 +2894,11 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
-	totalInput, spendAmount, changeAmount, fees, err :=
+	totalInput, _, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTBidTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -3013,12 +3011,11 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
-	totalInput, spendAmount, changeAmount, fees, err :=
+	totalInput, _, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
