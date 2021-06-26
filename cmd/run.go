@@ -162,7 +162,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"of the public keys can release her key material, pulling a metaphorical 'ripcord'). " +
 			"Importantly, until this point, the network will be completely protected from a 51% attack, " +
 			"giving it time to accumulate the necessary hash power.")
-	cmd.PersistentFlags().Uint64("trusted-block-producer-start-height", 25005,
+	cmd.PersistentFlags().Uint64("trusted-block-producer-start-height", 37000,
 		"If --trusted-block-producer-public-keys is set, then all blocks after this height must " +
 			"be signed by one of these keys in order to be considered valid. Setting this value to zero " +
 			"enforces that all blocks after genesis must be signed by a trusted block producer. The default " +
