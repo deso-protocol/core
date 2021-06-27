@@ -17161,6 +17161,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	// - CoinBasisPoints is greater than max value
 	// - Test than an NFT can only be minted once.
 	// - Test that you cannot AcceptNFTBid if nft is not for sale.
+	// - Test that min bid amount is behaving correctly.
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -17196,7 +17197,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	// Fund all the keys.
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 70)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 420)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 140)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 2000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 210)
 
 	// Create a simple post.
@@ -17330,7 +17331,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
 
-		// Should behave the same if we chane the NFT metadata.
+		// Should behave the same if we change the NFT metadata.
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
 			m0Pub,
@@ -17348,7 +17349,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
 
-		// Should behave the same if we chane the NFT metadata.
+		// Should behave the same if we change the NFT metadata.
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
 			m0Pub,
@@ -17369,7 +17370,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 
 	// Have m1 make a standing offer on post1.
 	{
-		bidEntries := DBGetNFTBidEntries(db, post1Hash, 01)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 0)
 		require.Equal(0, len(bidEntries))
 
 		_createNFTBidWithTestMeta(
@@ -17400,6 +17401,75 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTBidOnNFTThatIsNotForSale)
+	}
+
+	// Update <post1, #1>, so that it is on sale.
+	{
+		_updateNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			true, /*IsForSale*/
+			1000, /*MinBidAmountNanos*/
+		)
+	}
+
+	// Error case: make sure the min bid amount behaves correctly.
+	{
+		// You should not be able to create an NFT bid below the min bid amount.
+		_, _, _, err := _createNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTBidLessThanMinBidAmountNanos)
+	}
+
+	// A bid above the min bid amount should succeed.
+	{
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			1001, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+	}
+
+	// Accept m1's standing offer for the post. This should succeed despite the min bid amount.
+	{
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m1Pub,
+			5,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+
+		// Make sure the entries in the DB were deleted.
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 0)
+		require.Equal(0, len(bidEntries))
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
