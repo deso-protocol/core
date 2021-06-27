@@ -8111,11 +8111,16 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 
 		block, err := GetBlock(nextBlockHash, bav.Handle)
 		if err != nil {
-			return 0, errors.Wrapf(
+			return uint64(0), errors.Wrapf(
 				err, "GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 				nextBlockHash.String())
 		}
-		blockRewardForPK := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
+		blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
+		if err != nil {
+			return uint64(0), errors.Wrapf(
+				err, "GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block reward for "+
+					"public key %s blockhash %s", PkToString(pkBytes, bav.Params), nextBlockHash.String())
+		}
 		immatureBlockRewards += blockRewardForPK
 		nextBlockHash = block.Header.PrevBlockHash
 	}

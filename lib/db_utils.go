@@ -2479,25 +2479,38 @@ func PutBlock(bitcloutBlock *MsgBitCloutBlock, handle *badger.DB) error {
 	return nil
 }
 
-func DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn *badger.Txn, publicKey []byte, blockHash *BlockHash) uint64 {
+func DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn *badger.Txn, publicKey []byte, blockHash *BlockHash,
+) (_balance uint64, _err error) {
 	key := PublicKeyBlockHashToBlockRewardKey(publicKey, blockHash)
 	bitcloutBalanceItem, err := txn.Get(key)
 	if err != nil {
-		return uint64(0)
+		return uint64(0), nil
 	}
 	bitcloutBalanceBytes, err := bitcloutBalanceItem.ValueCopy(nil)
+	if err != nil {
+		return uint64(0), errors.Wrap(err, "DbGetBlockRewardForPublicKeyBlockHashWithTxn: "+
+			"Problem getting block reward value, this should never happen: ")
+	}
 	bitcloutBalance := DecodeUint64(bitcloutBalanceBytes)
 
-	return bitcloutBalance
+	return bitcloutBalance, nil
 }
 
-func DbGetBlockRewardForPublicKeyBlockHash(db *badger.DB, publicKey []byte, blockHash *BlockHash) uint64 {
+func DbGetBlockRewardForPublicKeyBlockHash(db *badger.DB, publicKey []byte, blockHash *BlockHash,
+) (_balance uint64, _err error) {
 	ret := uint64(0)
-	db.View(func(txn *badger.Txn) error {
-		ret = DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn, publicKey, blockHash)
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn, publicKey, blockHash)
+		if err != nil {
+			return errors.Wrap(err, "DbGetBlockRewardForPublicKeyBlockHash: ")
+		}
 		return nil
 	})
-	return ret
+	if dbErr != nil {
+		return uint64(0), dbErr
+	}
+	return ret, nil
 }
 
 func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
