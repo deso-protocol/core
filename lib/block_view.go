@@ -4779,7 +4779,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// In this case we need to set all the fields using what was passed
 		// into the transaction.
 		newProfileEntry = ProfileEntry{
-			PublicKey:   txn.PublicKey,
+			PublicKey:   profilePublicKey,
 			Username:    txMeta.NewUsername,
 			Description: txMeta.NewDescription,
 			ProfilePic:  txMeta.NewProfilePic,
