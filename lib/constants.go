@@ -90,6 +90,8 @@ var (
 	// BitCloutFounderRewardBlockHeight defines a block height where the protocol switches from
 	// paying the founder reward in the founder's own creator coin to paying in BitClout instead.
 	BitCloutFounderRewardBlockHeight = uint32(21869)
+
+	ParamUpdaterProfileUpdateFixBlockHeight = uint32(38685)
 )
 
 func (nt NetworkType) String() string {
