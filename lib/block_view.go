@@ -1255,17 +1255,22 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	return utxoEntry
 }
 
-func (bav *UtxoView) GetBitcloutBalanceNanosForPublicKey(publicKey []byte) uint64 {
+func (bav *UtxoView) GetBitcloutBalanceNanosForPublicKey(publicKey []byte,
+) (_balance uint64, _err error) {
 	balanceNanos, ok := bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)]
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the db.
 	if !ok {
-		balanceNanos = DbGetBitcloutBalanceNanosForPublicKey(bav.Handle, publicKey)
+		var err error
+		balanceNanos, err = DbGetBitcloutBalanceNanosForPublicKey(bav.Handle, publicKey)
+		if err != nil {
+			return uint64(0), errors.Wrap(err, "GetBitcloutBalanceNanosForPublicKey: ")
+		}
 
 		// Add the balance to memory for future references.
 		bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)] = balanceNanos
 	}
 
-	return balanceNanos
+	return balanceNanos, nil
 }
 
 func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
@@ -1293,7 +1298,10 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 	bav.NumUtxoEntries++
 
 	// Add the utxo back to the spender's balance.
-	bitcloutBalanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	bitcloutBalanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	if err != nil {
+		return errors.Wrap(err, "_unSpendUtxo: ")
+	}
 	bitcloutBalanceNanos += utxoEntryy.AmountNanos
 	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = bitcloutBalanceNanos
 
@@ -1324,7 +1332,10 @@ func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
 	bav.NumUtxoEntries--
 
 	// Deduct the utxo from the spender's balance.
-	bitcloutBalanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntry.PublicKey)
+	bitcloutBalanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntry.PublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_spendUtxo: ")
+	}
 	bitcloutBalanceNanos -= utxoEntry.AmountNanos
 	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = bitcloutBalanceNanos
 
@@ -1367,7 +1378,10 @@ func (bav *UtxoView) _unAddUtxo(utxoKey *UtxoKey) error {
 	bav.NumUtxoEntries--
 
 	// Remove the utxo back from the spender's balance.
-	bitcloutBalanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntry.PublicKey)
+	bitcloutBalanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntry.PublicKey)
+	if err != nil {
+		return errors.Wrapf(err, "_unAddUtxo: ")
+	}
 	bitcloutBalanceNanos -= utxoEntry.AmountNanos
 	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = bitcloutBalanceNanos
 
@@ -1415,7 +1429,10 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 	bav.NumUtxoEntries++
 
 	// Add the utxo back to the spender's balance.
-	bitcloutBalanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	bitcloutBalanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_addUtxo: ")
+	}
 	bitcloutBalanceNanos += utxoEntryy.AmountNanos
 	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = bitcloutBalanceNanos
 
@@ -8078,7 +8095,8 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	return utxoEntriesToReturn, nil
 }
 
-func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte) (_spendableBalance uint64, _err error) {
+func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte,
+) (_spendableBalance uint64, _err error) {
 	// In order to get the spendable balance, we need to account for any immature block rewards.
 	// We get these by starting at the chain tip and iterating backwards until we have collected
 	// all of the immature block rewards for this public key.
@@ -8102,7 +8120,10 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 		nextBlockHash = block.Header.PrevBlockHash
 	}
 
-	balanceNanos := bav.GetBitcloutBalanceNanosForPublicKey(pkBytes)
+	balanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(pkBytes)
+	if err != nil {
+		return uint64(0), errors.Wrap(err, "GetSpendableUtxosForPublicKey: ")
+	}
 	return balanceNanos - immatureBlockRewards, nil
 }
 

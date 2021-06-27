@@ -495,26 +495,41 @@ func _dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey []byte) []byte {
 	return key
 }
 
-func DbGetBitcloutBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) uint64 {
+func DbGetBitcloutBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
+) (_balance uint64, _err error) {
 
 	key := _dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey)
 	bitcloutBalanceItem, err := txn.Get(key)
 	if err != nil {
-		return uint64(0)
+		return uint64(0), nil
 	}
 	bitcloutBalanceBytes, err := bitcloutBalanceItem.ValueCopy(nil)
+	if err != nil {
+		return uint64(0), errors.Wrapf(
+			err, "DbGetBitcloutBalanceNanosForPublicKeyWithTxn: Problem getting balance for: %s ",
+			PkToStringBoth(publicKey))
+	}
+
 	bitcloutBalance := DecodeUint64(bitcloutBalanceBytes)
 
-	return bitcloutBalance
+	return bitcloutBalance, nil
 }
 
-func DbGetBitcloutBalanceNanosForPublicKey(db *badger.DB, publicKey []byte) uint64 {
+func DbGetBitcloutBalanceNanosForPublicKey(db *badger.DB, publicKey []byte,
+) (_balance uint64, _err error) {
 	ret := uint64(0)
-	db.View(func(txn *badger.Txn) error {
-		ret = DbGetBitcloutBalanceNanosForPublicKeyWithTxn(txn, publicKey)
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetBitcloutBalanceNanosForPublicKeyWithTxn(txn, publicKey)
+		if err != nil {
+			return fmt.Errorf("DbGetBitcloutBalanceNanosForPublicKey: %v", err)
+		}
 		return nil
 	})
-	return ret
+	if dbErr != nil {
+		return ret, dbErr
+	}
+	return ret, nil
 }
 
 func DbPutBitcloutBalanceForPublicKeyWithTxn(
