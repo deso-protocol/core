@@ -207,7 +207,7 @@ var (
 	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
 
 	// Prefixes for NFT bids:
-	_PrefixPostHashSerialNumberBidNanosToBidderPKID = []byte{49}
+	_PrefixPostHashSerialNumberBidNanosBidderPKID   = []byte{49}
 	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{50}
 
 	// <prefix, PublicKey [33]byte> -> uint64
@@ -4033,13 +4033,13 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 // NFTBidEntry db functions
 // =======================================================================================
 
-func _dbKeyForNFTPostHashSerialNumberBidNanos(
-	nftPostHash *BlockHash, serialNumber uint64, bidNanos uint64) []byte {
+func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *NFTBidEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosToBidderPKID...)
-	key := append(prefixCopy, nftPostHash[:]...)
-	key = append(key, EncodeUint64(serialNumber)...)
-	key = append(key, EncodeUint64(bidNanos)...)
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+	key := append(prefixCopy, bidEntry.NFTPostHash[:]...)
+	key = append(key, EncodeUint64(bidEntry.SerialNumber)...)
+	key = append(key, EncodeUint64(bidEntry.BidAmountNanos)...)
+	key = append(key, bidEntry.BidderPKID[:]...)
 	return key
 }
 
@@ -4102,8 +4102,7 @@ func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) error 
 	}
 
 	// When an nftEntry exists, delete both mapping.
-	if err := txn.Delete(_dbKeyForNFTPostHashSerialNumberBidNanos(
-		nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber, nftBidEntry.BidAmountNanos)); err != nil {
+	if err := txn.Delete(_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry)); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTBidMappingsWithTxn: Deleting "+
 			"nft bid mapping for nftBidKey %v", nftBidKey)
 	}
@@ -4129,10 +4128,8 @@ func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, nftBidEntry *NFTBidEntry) 
 	// We store two indexes for NFT bids. (1) sorted by bid amount nanos in the key and
 	// (2) sorted by the bidder public key. Both come in handy.
 
-	// Put the first index --> BidderPKID
-	if err := txn.Set(_dbKeyForNFTPostHashSerialNumberBidNanos(
-		nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber, nftBidEntry.BidAmountNanos,
-	), nftBidEntry.BidderPKID[:]); err != nil {
+	// Put the first index --> []byte{} (no data needs to be stored since it all info is in the key)
+	if err := txn.Set(_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), []byte{}); err != nil {
 
 		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
 			"adding mapping to BidderPKID for bid entry: %v", nftBidEntry)
@@ -4162,14 +4159,20 @@ func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber 
 ) (_nftBidEntries []*NFTBidEntry) {
 	nftBidEntries := []*NFTBidEntry{}
 	{
-		prefix := append([]byte{}, _PrefixPostHashSerialNumberBidNanosToBidderPKID...)
+		prefix := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
 		keyPrefix := append(prefix, nftPostHash[:]...)
 		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
-		keysFound, valsFound := _enumerateKeysForPrefix(handle, keyPrefix)
-		for ii, bidderPKIDBytes := range valsFound {
+		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix)
+		for _, keyFound := range keysFound {
+			bidAmountStartIdx := 1 + HashSizeBytes + 8 // The length of prefix + the post hash + the serial #.
+			bidAmountEndIdx := bidAmountStartIdx + 8   // Add the length of the bid amount (uint64).
+
 			// Cut the bid amount out of the key and decode.
-			bidAmountBytes := keysFound[ii][HashSizeBytes+8:]
+			bidAmountBytes := keyFound[bidAmountStartIdx:bidAmountEndIdx]
 			bidAmountNanos := DecodeUint64(bidAmountBytes)
+
+			// Cut the pkid bytes out of the keys
+			bidderPKIDBytes := keyFound[bidAmountEndIdx:]
 
 			// Construct the bidder PKID.
 			bidderPKID := PublicKeyToPKID(bidderPKIDBytes)

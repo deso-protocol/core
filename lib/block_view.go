@@ -5486,7 +5486,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateNFTBid: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateNFT: ")
 	}
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
