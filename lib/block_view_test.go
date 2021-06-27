@@ -8954,6 +8954,7 @@ func _helpTestCreatorCoinBuySell(
 
 	// These are block heights where bitclout forked.
 	SalomonFixBlockHeight = 0
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
 	BitCloutFounderRewardBlockHeight = 0
 	if !bitCloutFounderReward {
 		BitCloutFounderRewardBlockHeight = 1e9

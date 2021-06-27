@@ -90,6 +90,12 @@ var (
 	// BitCloutFounderRewardBlockHeight defines a block height where the protocol switches from
 	// paying the founder reward in the founder's own creator coin to paying in BitClout instead.
 	BitCloutFounderRewardBlockHeight = uint32(21869)
+
+	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight defines a block height after which the protocol will create
+	// a new BalanceEntry when a user purchases a Creator Coin and their current BalanceEntry is deleted.
+	// The situation in which a BalanceEntry reaches is a deleted state occurs when a user transfers all their holdings
+	// of a certain creator to another public key and subsequently purchases that same creator within the same block.
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(39713)
 )
 
 func (nt NetworkType) String() string {
