@@ -90,6 +90,10 @@ var (
 	// BitCloutFounderRewardBlockHeight defines a block height where the protocol switches from
 	// paying the founder reward in the founder's own creator coin to paying in BitClout instead.
 	BitCloutFounderRewardBlockHeight = uint32(21869)
+
+	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
+	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
+	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
 )
 
 func (nt NetworkType) String() string {
