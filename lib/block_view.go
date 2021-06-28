@@ -5317,8 +5317,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			txn.PublicKey, existingProfileEntry.PublicKey)
 	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
-	if buyerBalanceEntry == nil ||
-			(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight){
+	buyerBalanceDeleted := buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight
+	if buyerBalanceEntry == nil || buyerBalanceDeleted {
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
@@ -5348,8 +5348,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			existingProfileEntry.PublicKey, existingProfileEntry.PublicKey)
 		// If the creator does not have a balance entry or the creator's balance entry is deleted and we have passed the
 		// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
-		if creatorBalanceEntry == nil ||
-			(creatorBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
+		creatorBalanceDeleted := creatorBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight
+		if creatorBalanceEntry == nil || creatorBalanceDeleted {
 			// If there is no balance entry then it means the creator doesn't own
 			// any of their coin yet. In this case we create a new entry for them
 			// with a zero balance.
