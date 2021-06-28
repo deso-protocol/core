@@ -353,7 +353,6 @@ type BitCloutParams struct {
 	MaxProfilePicLengthBytes      uint64
 	MaxProfilePicDimensions       uint64
 	MaxPrivateMessageLengthBytes  uint64
-	MaxCopiesPerNFT               uint64
 
 	StakeFeeBasisPoints         uint64
 	MaxPostBodyLengthBytes      uint64
@@ -672,8 +671,6 @@ var BitCloutMainnetParams = BitCloutParams{
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
 
-	MaxCopiesPerNFT: 1000,
-
 	// Set the stake fee to 10%
 	StakeFeeBasisPoints: 10 * 100,
 	// TODO(performance): We're currently storing posts using HTML, which
@@ -895,8 +892,6 @@ var BitCloutTestnetParams = BitCloutParams{
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
 
-	MaxCopiesPerNFT: 1000,
-
 	// Set the stake fee to 5%
 	StakeFeeBasisPoints: 5 * 100,
 	// TODO(performance): We're currently storing posts using HTML, which
@@ -954,11 +949,12 @@ const (
 	IsQuotedRecloutKey = "IsQuotedReclout"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoin            = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKB       = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanos         = "CreateProfileFeeNanos"
-	CreateNFTFeeNanos             = "CreateNFTFeeNanos"
-	ForbiddenBlockSignaturePubKey = "ForbiddenBlockSignaturePubKey"
+	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey       = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey         = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey             = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey               = "MaxCopiesPerNFT"
+	ForbiddenBlockSignaturePubKeyKey = "ForbiddenBlockSignaturePubKey"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -988,6 +984,9 @@ var (
 		MinimumNetworkFeeNanosPerKB: 0,
 		// We initialize the CreateProfileFeeNanos to 0 so we do not assess a fee to create a profile until specified by ParamUpdater.
 		CreateProfileFeeNanos: 0,
+		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
+		CreateNFTFeeNanos: 0,
+		MaxCopiesPerNFT:   InitialMaxCopiesPerNFT,
 	}
 )
 
@@ -1001,8 +1000,11 @@ const (
 	MinCreateProfileFeeNanos = 0
 	// MaxCreateProfileFeeNanos - Maximum value to which the create profile fee can be set.
 	MaxCreateProfileFeeNanos = 100 * NanosPerUnit
-	// MinCreateNFTFeeNanos - Minimum value to which the create NFT fee can be set.
+	// Min/MaxCreateNFTFeeNanos - Min/max value to which the create NFT fee can be set.
 	MinCreateNFTFeeNanos = 0
-	// MaxCreateNFTFeeNanos - Maximum value to which the create NFT fee can be set.
 	MaxCreateNFTFeeNanos = 100 * NanosPerUnit
+	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
+	MinMaxCopiesPerNFT     = 1
+	MaxMaxCopiesPerNFT     = 10000
+	InitialMaxCopiesPerNFT = 1000 // Initial value when global params are initiated for the chain.
 )

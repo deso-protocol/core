@@ -341,6 +341,9 @@ type GlobalParamsEntry struct {
 	// The fee to create a single NFT (NFTs with n copies incur n of these fees).
 	CreateNFTFeeNanos uint64
 
+	// The maximum number of NFT copies that are allowed to be minted.
+	MaxCopiesPerNFT uint64
+
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
 }
@@ -4267,9 +4270,9 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 	if !updaterIsParamUpdater {
 		return 0, 0, nil, RuleErrorUserNotAuthorizedToUpdateGlobalParams
 	}
-	if len(extraData[USDCentsPerBitcoin]) > 0 {
+	if len(extraData[USDCentsPerBitcoinKey]) > 0 {
 		// Validate that the exchange rate is not less than the floor as a sanity-check.
-		newUSDCentsPerBitcoin, usdCentsPerBitcoinBytesRead := Uvarint(extraData[USDCentsPerBitcoin])
+		newUSDCentsPerBitcoin, usdCentsPerBitcoinBytesRead := Uvarint(extraData[USDCentsPerBitcoinKey])
 		if usdCentsPerBitcoinBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode USDCentsPerBitcoin as uint64")
 		}
@@ -4282,8 +4285,8 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		newGlobalParamsEntry.USDCentsPerBitcoin = newUSDCentsPerBitcoin
 	}
 
-	if len(extraData[MinNetworkFeeNanosPerKB]) > 0 {
-		newMinNetworkFeeNanosPerKB, minNetworkFeeNanosPerKBBytesRead := Uvarint(extraData[MinNetworkFeeNanosPerKB])
+	if len(extraData[MinNetworkFeeNanosPerKBKey]) > 0 {
+		newMinNetworkFeeNanosPerKB, minNetworkFeeNanosPerKBBytesRead := Uvarint(extraData[MinNetworkFeeNanosPerKBKey])
 		if minNetworkFeeNanosPerKBBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode MinNetworkFeeNanosPerKB as uint64")
 		}
@@ -4296,8 +4299,8 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		newGlobalParamsEntry.MinimumNetworkFeeNanosPerKB = newMinNetworkFeeNanosPerKB
 	}
 
-	if len(extraData[CreateProfileFeeNanos]) > 0 {
-		newCreateProfileFeeNanos, createProfileFeeNanosBytesRead := Uvarint(extraData[CreateProfileFeeNanos])
+	if len(extraData[CreateProfileFeeNanosKey]) > 0 {
+		newCreateProfileFeeNanos, createProfileFeeNanosBytesRead := Uvarint(extraData[CreateProfileFeeNanosKey])
 		if createProfileFeeNanosBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode CreateProfileFeeNanos as uint64")
 		}
@@ -4310,8 +4313,8 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		newGlobalParamsEntry.CreateProfileFeeNanos = newCreateProfileFeeNanos
 	}
 
-	if len(extraData[CreateNFTFeeNanos]) > 0 {
-		newCreateNFTFeeNanos, createNFTFeeNanosBytesRead := Uvarint(extraData[CreateNFTFeeNanos])
+	if len(extraData[CreateNFTFeeNanosKey]) > 0 {
+		newCreateNFTFeeNanos, createNFTFeeNanosBytesRead := Uvarint(extraData[CreateNFTFeeNanosKey])
 		if createNFTFeeNanosBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode CreateNFTFeeNanos as uint64")
 		}
@@ -4319,16 +4322,30 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			return 0, 0, nil, RuleErrorCreateNFTFeeTooLow
 		}
 		if newCreateNFTFeeNanos > MaxCreateNFTFeeNanos {
-			return 0, 0, nil, RuleErrorCreateNFTTooHigh
+			return 0, 0, nil, RuleErrorCreateNFTFeeTooHigh
 		}
 		newGlobalParamsEntry.CreateNFTFeeNanos = newCreateNFTFeeNanos
+	}
+
+	if len(extraData[MaxCopiesPerNFTKey]) > 0 {
+		newMaxCopiesPerNFT, maxCopiesPerNFTBytesRead := Uvarint(extraData[MaxCopiesPerNFTKey])
+		if maxCopiesPerNFTBytesRead <= 0 {
+			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode MaxCopiesPerNFT as uint64")
+		}
+		if newMaxCopiesPerNFT < MinMaxCopiesPerNFT {
+			return 0, 0, nil, RuleErrorMaxCopiesPerNFTTooLow
+		}
+		if newMaxCopiesPerNFT > MaxMaxCopiesPerNFT {
+			return 0, 0, nil, RuleErrorMaxCopiesPerNFTTooHigh
+		}
+		newGlobalParamsEntry.MaxCopiesPerNFT = newMaxCopiesPerNFT
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
-	if _, exists := extraData[ForbiddenBlockSignaturePubKey]; exists {
-		forbiddenPubKey := extraData[ForbiddenBlockSignaturePubKey]
+	if _, exists := extraData[ForbiddenBlockSignaturePubKeyKey]; exists {
+		forbiddenPubKey := extraData[ForbiddenBlockSignaturePubKeyKey]
 
 		if len(forbiddenPubKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, RuleErrorForbiddenPubKeyLength
@@ -5373,7 +5390,7 @@ func (bav *UtxoView) _connectCreateNFT(
 	txMeta := txn.TxnMeta.(*CreateNFTMetadata)
 
 	// Validate the txMeta.
-	if txMeta.NumCopies > bav.Params.MaxCopiesPerNFT {
+	if txMeta.NumCopies > bav.GlobalParamsEntry.MaxCopiesPerNFT {
 		return 0, 0, nil, RuleErrorTooManyNFTCopies
 	}
 	if txMeta.NumCopies == 0 {

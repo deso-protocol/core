@@ -377,7 +377,7 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
-	createProfileFeeNanos int64, createNFTFeeNanos int64, flushToDb bool) (
+	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, flushToDb bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -393,6 +393,7 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 		usdCentsPerBitcoin,
 		createProfileFeeNanos,
 		createNFTFeeNanos,
+		maxCopiesPerNFT,
 		minimumNetworkFeesNanosPerKB,
 		nil,
 		feeRateNanosPerKB,
@@ -446,6 +447,7 @@ func _updateGlobalParamsEntryWithTestMeta(
 	minimumNetworkFeeNanosPerKb int64,
 	createProfileFeeNanos int64,
 	createNFTFeeNanos int64,
+	maxCopiesPerNFT int64,
 ) {
 
 	testMeta.expectedSenderBalances = append(
@@ -460,8 +462,9 @@ func _updateGlobalParamsEntryWithTestMeta(
 		int64(InitialUSDCentsPerBitcoinExchangeRate),
 		minimumNetworkFeeNanosPerKb,
 		createProfileFeeNanos,
-		createNFTFeeNanos, /*createNFTFeeNanos*/
-		true)              /*flushToDB*/
+		createNFTFeeNanos,
+		maxCopiesPerNFT,
+		true) /*flushToDB*/
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
 	testMeta.txns = append(testMeta.txns, currentTxn)
@@ -3170,7 +3173,8 @@ func TestUpdateProfile(t *testing.T) {
 			int64(InitialUSDCentsPerBitcoinExchangeRate),
 			minimumNetworkFeeNanosPerKb,
 			createProfileFeeNanos,
-			0, /*createNFTFeeNanos*/
+			0,  /*createNFTFeeNanos*/
+			-1, /*maxCopiesPerNFT*/
 			true)
 		require.NoError(err)
 		txnOps = append(txnOps, currentOps)
@@ -7248,7 +7252,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			if ii == rateUpdateIndex {
 				newUSDCentsPerBitcoin := int64(27000 * 100)
 				_, rateUpdateTxn, _, err := _updateGlobalParamsEntry(t, chain, db, params, 10,
-					moneyPkString, moneyPrivString, newUSDCentsPerBitcoin, 0, 0, 0, false)
+					moneyPkString, moneyPrivString, newUSDCentsPerBitcoin, 0, 0, 0, -1, false)
 
 				require.NoError(err)
 
@@ -7991,6 +7995,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 					newUSDCentsPerBitcoin,
 					0,
 					0,
+					-1,
 					0,
 					nil,
 					100, /*feeRateNanosPerKB*/
@@ -9370,6 +9375,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			newMinimumNetworkFeeNanosPerKB,
 			newCreateProfileFeeNanos,
 			newCreateNFTFeeNanos,
+			-1, /*maxCopiesPerNFT*/
 			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorUserNotAuthorizedToUpdateGlobalParams)
@@ -9383,6 +9389,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		newMinimumNetworkFeeNanosPerKB := int64(191)
 		newCreateProfileFeeNanos := int64(10015)
 		newCreateNFTFeeNanos := int64(14983)
+		newMaxCopiesPerNFT := int64(123)
 		_, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntry(
 			t, chain, db, params, 200, /*feeRateNanosPerKB*/
 			moneyPkString,
@@ -9391,6 +9398,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			newMinimumNetworkFeeNanosPerKB,
 			newCreateProfileFeeNanos,
 			newCreateNFTFeeNanos,
+			newMaxCopiesPerNFT,
 			false)
 		require.NoError(err)
 
@@ -9412,6 +9420,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			MinimumNetworkFeeNanosPerKB: uint64(newMinimumNetworkFeeNanosPerKB),
 			CreateProfileFeeNanos:       uint64(newCreateProfileFeeNanos),
 			CreateNFTFeeNanos:           uint64(newCreateNFTFeeNanos),
+			MaxCopiesPerNFT:             123,
 		}
 		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle), &expectedGlobalParams)
 
@@ -9422,11 +9431,17 @@ func TestUpdateGlobalParams(t *testing.T) {
 	}
 
 	{
+
+		// Save the prev global params entry so we can check it after disconnect.
+		prevGlobalParams := DbGetGlobalParamsEntry(db)
+
 		newUSDCentsPerBitcoin := int64(270434 * 100)
 		newMinimumNetworkFeeNanosPerKB := int64(131)
 		newCreateProfileFeeNanos := int64(102315)
 		newCreateNFTFeeNanos := int64(3244099)
-		_, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntry(
+		newMaxCopiesPerNFT := int64(555)
+		var utxoOps []*UtxoOperation
+		utxoOps, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntry(
 			t, chain, db, params, 200, /*feeRateNanosPerKB*/
 			moneyPkString,
 			moneyPrivString,
@@ -9434,33 +9449,32 @@ func TestUpdateGlobalParams(t *testing.T) {
 			newMinimumNetworkFeeNanosPerKB,
 			newCreateProfileFeeNanos,
 			newCreateNFTFeeNanos,
-			false)
+			newMaxCopiesPerNFT, /*maxCopiesPerNFT*/
+			true)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
-		require.NoError(err)
-		txnSize := getTxnSize(*updateGlobalParamsTxn)
-		blockHeight := chain.blockTip().Height + 1
-		utxoOps, totalInput, totalOutput, fees, err :=
-			utxoView.ConnectTransaction(updateGlobalParamsTxn,
-				updateGlobalParamsTxn.Hash(), txnSize, blockHeight, true, /*verifySignature*/
-				false /*ignoreUtxos*/)
-		require.NoError(err)
-		_, _, _, _ = utxoOps, totalInput, totalOutput, fees
-		utxoView.DisconnectTransaction(updateGlobalParamsTxn, updateGlobalParamsTxn.Hash(), utxoOps, blockHeight)
-
-		require.NoError(utxoView.FlushToDb())
-
-		// Verify that utxoView and db reflect the new global parmas entry.
-		expectedGlobalParams := GlobalParamsEntry{
+		// Verify that the db reflects the new global params entry.
+		expectedGlobalParams := &GlobalParamsEntry{
 			USDCentsPerBitcoin:          uint64(newUSDCentsPerBitcoin),
 			MinimumNetworkFeeNanosPerKB: uint64(newMinimumNetworkFeeNanosPerKB),
 			CreateProfileFeeNanos:       uint64(newCreateProfileFeeNanos),
 			CreateNFTFeeNanos:           uint64(newCreateNFTFeeNanos),
+			MaxCopiesPerNFT:             uint64(newMaxCopiesPerNFT),
 		}
-		require.NotEqual(DbGetGlobalParamsEntry(utxoView.Handle), &expectedGlobalParams)
 
-		require.NotEqual(utxoView.GlobalParamsEntry, &expectedGlobalParams)
+		require.Equal(DbGetGlobalParamsEntry(db), expectedGlobalParams)
+
+		// Now let's do a disconnect and make sure the values reflect the previous entry.
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		blockHeight := chain.blockTip().Height + 1
+		utxoView.DisconnectTransaction(
+			updateGlobalParamsTxn, updateGlobalParamsTxn.Hash(), utxoOps, blockHeight)
+
+		require.NoError(utxoView.FlushToDb())
+
+		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle), prevGlobalParams)
+		require.Equal(utxoView.GlobalParamsEntry, prevGlobalParams)
 
 		// Check the balance of the updater after this txn
 		require.NotEqual(0, _getBalance(t, chain, nil, moneyPkString))
@@ -15421,7 +15435,7 @@ func TestNFTBasic(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			params.MaxCopiesPerNFT+1, /*NumCopies*/
+			InitialMaxCopiesPerNFT+1, /*NumCopies*/
 			false,                    /*HasUnlockable*/
 			true,                     /*IsForSale*/
 			0,                        /*MinBidAmountNanos*/
@@ -15552,7 +15566,8 @@ func TestNFTBasic(t *testing.T) {
 			m3Pub,
 			m3Priv,
 			-1, -1, -1,
-			1, /*createNFTFeeNanos*/
+			1,  /*createNFTFeeNanos*/
+			-1, /*maxCopiesPerNFT*/
 		)
 	}
 
@@ -18004,6 +18019,296 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			post1Hash,
 			5,   /*SerialNumber*/
 			200, /*BidAmountNanos*/
+		)
+	}
+
+	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}
+
+func TestNFTMaxCopiesGlobalParam(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3 a paramUpdater for this test
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund all the keys.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 1000)
+
+	// Create a couple posts to test NFT creation with.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 1"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 2"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 3"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+	post2Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
+	post3Hash := testMeta.txns[len(testMeta.txns)-3].Hash()
+
+	// Create a profile so me can make an NFT.
+	{
+		_updateProfileWithTestMeta(
+			testMeta,
+			10,            /*feeRateNanosPerKB*/
+			m0Pub,         /*updaterPkBase58Check*/
+			m0Priv,        /*updaterPrivBase58Check*/
+			[]byte{},      /*profilePubKey*/
+			"m2",          /*newUsername*/
+			"i am the m2", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+	}
+
+	// Error case: creating an NFT with 1001 copies should fail since the default max is 1000.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1001,  /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorTooManyNFTCopies)
+	}
+
+	// Make post 1 an NFT with 1000 copies, the default MaxCopiesPerNFT.
+	{
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1000,  /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+	}
+
+	// Now let's try making the MaxCopiesPerNFT ridiculously small.
+	{
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			-1, -1, -1, -1,
+			1, /*maxCopiesPerNFT*/
+		)
+	}
+
+	// Error case: now creating an NFT with 2 copies should fail.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			2,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorTooManyNFTCopies)
+	}
+
+	// Making an NFT with only 1 copy should succeed.
+	{
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			1,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+	}
+
+	// Error case: setting MaxCopiesPerNFT to be  >MaxMaxCopiesPerNFT or <MinMaxCopiesPerNFT should fail.
+	{
+		require.Equal(1, MinMaxCopiesPerNFT)
+		require.Equal(10000, MaxMaxCopiesPerNFT)
+
+		_, _, _, err := _updateGlobalParamsEntry(
+			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			-1, -1, -1, -1,
+			MaxMaxCopiesPerNFT+1, /*maxCopiesPerNFT*/
+			true)                 /*flushToDB*/
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorMaxCopiesPerNFTTooHigh)
+
+		_, _, _, err = _updateGlobalParamsEntry(
+			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			-1, -1, -1, -1,
+			MinMaxCopiesPerNFT-1, /*maxCopiesPerNFT*/
+			true)                 /*flushToDB*/
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorMaxCopiesPerNFTTooLow)
+	}
+
+	// Now let's try making the MaxCopiesPerNFT ridiculously large.
+	{
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			-1, -1, -1, -1,
+			10000, /*maxCopiesPerNFT*/
+		)
+	}
+
+	// Making an NFT with 10000 copies should now be possible!
+	{
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post3Hash,
+			10000, /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+	}
+
+	// Now place some bids to make sure the NFTs were really minted.
+	{
+		// Post 1 should have 1000 copies.
+		dbEntries := DBGetNFTEntriesForPostHash(db, post1Hash)
+		require.Equal(1000, len(dbEntries))
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1000, /*SerialNumber*/
+			1,    /*BidAmountNanos*/
+		)
+
+		// Post 2 should have 1 copy.
+		dbEntries = DBGetNFTEntriesForPostHash(db, post2Hash)
+		require.Equal(1, len(dbEntries))
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post2Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+
+		// Post 3 should have 10000 copies.
+		dbEntries = DBGetNFTEntriesForPostHash(db, post3Hash)
+		require.Equal(10000, len(dbEntries))
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			post3Hash,
+			10000, /*SerialNumber*/
+			1,     /*BidAmountNanos*/
 		)
 	}
 

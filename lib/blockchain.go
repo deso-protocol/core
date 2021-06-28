@@ -2488,6 +2488,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	usdCentsPerBitcoin int64,
 	createProfileFeesNanos int64,
 	createNFTFeesNanos int64,
+	maxCopiesPerNFT int64,
 	minimumNetworkFeeNanosPerKb int64,
 	forbiddenPubKey []byte,
 	// Standard transaction fields
@@ -2497,19 +2498,22 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	// Set RecloutedPostHash and IsQuotedReclout on the extra data map as necessary to track reclouting.
 	extraData := make(map[string][]byte)
 	if usdCentsPerBitcoin >= 0 {
-		extraData[USDCentsPerBitcoin] = UintToBuf(uint64(usdCentsPerBitcoin))
+		extraData[USDCentsPerBitcoinKey] = UintToBuf(uint64(usdCentsPerBitcoin))
 	}
 	if createProfileFeesNanos >= 0 {
-		extraData[CreateProfileFeeNanos] = UintToBuf(uint64(createProfileFeesNanos))
+		extraData[CreateProfileFeeNanosKey] = UintToBuf(uint64(createProfileFeesNanos))
 	}
 	if createNFTFeesNanos >= 0 {
-		extraData[CreateNFTFeeNanos] = UintToBuf(uint64(createNFTFeesNanos))
+		extraData[CreateNFTFeeNanosKey] = UintToBuf(uint64(createNFTFeesNanos))
+	}
+	if maxCopiesPerNFT >= 0 {
+		extraData[MaxCopiesPerNFTKey] = UintToBuf(uint64(maxCopiesPerNFT))
 	}
 	if minimumNetworkFeeNanosPerKb >= 0 {
-		extraData[MinNetworkFeeNanosPerKB] = UintToBuf(uint64(minimumNetworkFeeNanosPerKb))
+		extraData[MinNetworkFeeNanosPerKBKey] = UintToBuf(uint64(minimumNetworkFeeNanosPerKb))
 	}
 	if len(forbiddenPubKey) > 0 {
-		extraData[ForbiddenBlockSignaturePubKey] = forbiddenPubKey
+		extraData[ForbiddenBlockSignaturePubKeyKey] = forbiddenPubKey
 	}
 
 	txn := &MsgBitCloutTxn{
