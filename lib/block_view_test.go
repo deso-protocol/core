@@ -8984,6 +8984,7 @@ func _helpTestCreatorCoinBuySell(
 
 	// These are block heights where bitclout forked.
 	SalomonFixBlockHeight = 0
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
 	BitCloutFounderRewardBlockHeight = 0
 	if !bitCloutFounderReward {
 		BitCloutFounderRewardBlockHeight = 1e9
@@ -10932,6 +10933,135 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
+
+func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
+	// Set up a blockchain
+	assert := assert.New(t)
+	require := require.New(t)
+	_, _ = assert, require
+
+	creatorCoinTests := []*_CreatorCoinTestData{
+		// Create a profile for m0
+		{
+			TxnType:                      TxnTypeUpdateProfile,
+			UpdaterPublicKeyBase58Check:  m0Pub,
+			UpdaterPrivateKeyBase58Check: m0Priv,
+			ProfilePublicKeyBase58Check:  m0Pub,
+			ProfileUsername:              "m0",
+			ProfileDescription:           "i am m0",
+			ProfilePic:                   "m0 profile pic",
+			ProfileCreatorBasisPoints:    2500,
+			ProfileIsHidden:              false,
+
+			SkipChecks: true,
+		},
+		// Have m1 buy some of m0's coins
+		{
+			// These are the transaction params
+			UpdaterPublicKeyBase58Check:  m1Pub,
+			UpdaterPrivateKeyBase58Check: m1Priv,
+			ProfilePublicKeyBase58Check:  m0Pub,
+			OperationType:                CreatorCoinOperationTypeBuy,
+			BitCloutToSellNanos:          1271123456,
+			CreatorCoinToSellNanos:       0,
+			BitCloutToAddNanos:           0,
+			MinBitCloutExpectedNanos:     0,
+			MinCreatorCoinExpectedNanos:  0,
+
+			// These are the expectations
+			CoinsInCirculationNanos: 10832150315,
+			BitCloutLockedNanos:     1270996343,
+			CoinWatermarkNanos:      10832150315,
+			m0CCBalance:             2708037578,
+			m0HasPurchased:          false,
+			m1CCBalance:             8124112737,
+			m1HasPurchased:          true,
+			m2CCBalance:             0,
+			m2HasPurchased:          false,
+			m0BitCloutBalance:       5999999998,
+			m1BitCloutBalance:       4728876542,
+			m2BitCloutBalance:       6000000000,
+		},
+		// Have m1 send all of their creator coins to m2
+		{
+			TxnType: TxnTypeCreatorCoinTransfer,
+			// These are the transaction params
+			UpdaterPublicKeyBase58Check:  m1Pub,
+			UpdaterPrivateKeyBase58Check: m1Priv,
+			ProfilePublicKeyBase58Check:  m0Pub,
+			ReceiverPublicKeyBase58Check: m2Pub,
+			CreatorCoinToTransferNanos:   8124112737,
+
+			// These are the expectations
+			CoinsInCirculationNanos: 10832150315,
+			BitCloutLockedNanos:     1270996343,
+			CoinWatermarkNanos:      10832150315,
+			m0CCBalance:             2708037578,
+			m0HasPurchased:          false,
+			m1CCBalance:             0,
+			m1HasPurchased:          false,
+			m2CCBalance:             8124112737,
+			m2HasPurchased:          false,
+			m0BitCloutBalance:       5999999998,
+			m1BitCloutBalance:       4728876540,
+			m2BitCloutBalance:       6000000000,
+		},
+		// Have m1 buy some more of m0's coins
+		{
+			// These are the transaction params
+			UpdaterPublicKeyBase58Check:  m1Pub,
+			UpdaterPrivateKeyBase58Check: m1Priv,
+			ProfilePublicKeyBase58Check:  m0Pub,
+			OperationType:                CreatorCoinOperationTypeBuy,
+			BitCloutToSellNanos:          1271123456,
+			CreatorCoinToSellNanos:       0,
+			BitCloutToAddNanos:           0,
+			MinBitCloutExpectedNanos:     0,
+			MinCreatorCoinExpectedNanos:  0,
+
+			// These are the expectations
+			CoinsInCirculationNanos: 13647653882,
+			BitCloutLockedNanos:     2541992686,
+			CoinWatermarkNanos:      13647653882,
+			m0CCBalance:             3411913469,
+			m0HasPurchased:          false,
+			m1CCBalance:             2111627676,
+			m1HasPurchased:          true,
+			m2CCBalance:             8124112737,
+			m2HasPurchased:          false,
+			m0BitCloutBalance:       5999999998,
+			m1BitCloutBalance:       3457753082,
+			m2BitCloutBalance:       6000000000,
+		},
+		// Have m1 transfer all their m0 coins to m2
+		{
+			TxnType: TxnTypeCreatorCoinTransfer,
+			// These are the transaction params
+			UpdaterPublicKeyBase58Check:  m1Pub,
+			UpdaterPrivateKeyBase58Check: m1Priv,
+			ProfilePublicKeyBase58Check:  m0Pub,
+			ReceiverPublicKeyBase58Check: m2Pub,
+			CreatorCoinToTransferNanos:   2111627676,
+
+			// These are the expectations
+			CoinsInCirculationNanos: 13647653882,
+			BitCloutLockedNanos:     2541992686,
+			CoinWatermarkNanos:      13647653882,
+			m0CCBalance:             3411913469,
+			m0HasPurchased:          false,
+			m1CCBalance:             0,
+			m1HasPurchased:          false,
+			m2CCBalance:             10235740413,
+			m2HasPurchased:          false,
+			m0BitCloutBalance:       5999999998,
+			m1BitCloutBalance:       3457753080,
+			m2BitCloutBalance:       5999999998,
+		},
+	}
+
+	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
+}
+
 
 func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	assert := assert.New(t)
