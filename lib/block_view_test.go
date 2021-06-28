@@ -2473,6 +2473,9 @@ const (
 )
 
 func TestUpdateProfile(t *testing.T) {
+	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
+	ParamUpdaterProfileUpdateFixBlockHeight = 0
+
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -3020,6 +3023,21 @@ func TestUpdateProfile(t *testing.T) {
 			true /*isHidden*/)
 	}
 
+	// ParamUpdater creating another user's profile should succeed.
+	{
+		updateProfile(
+			1,                            /*feeRateNanosPerKB*/
+			m3Pub,                        /*updaterPkBase58Check*/
+			m3Priv,                       /*updaterPrivBase58Check*/
+			m5PkBytes,                    /*profilePubKey*/
+			"m5_paramUpdater",            /*newUsername*/
+			"m5 created by paramUpdater", /*newDescription*/
+			otherShortPic,                /*newProfilePic*/
+			11*100,                       /*newCreatorBasisPoints*/
+			1.5*100*100,                  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+	}
+
 	// Create Profile Fee and Minimum Network Fee tests
 	{
 		// Set the create profile fee to 100 nanos
@@ -3102,13 +3120,15 @@ func TestUpdateProfile(t *testing.T) {
 	// m1Pub, m1_updated_by_m1, m1 updated by m1, otherShortPic, 12*100, 1.6*100*100, true
 	// user2
 	// m2Pub, m2, i am m2, 10*100, 1.25*100*100
+	// user5
+	// m5Pub, m5_paramUpdater, m5 created by paramUpdater, otherShortPic, 11*100, 1.5*100*100, false
 	checkProfilesExist := func() {
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
 		// 3 profiles from seed txns
-		require.Equal(7, len(profileEntriesByPublicKey))
+		require.Equal(8, len(profileEntriesByPublicKey))
 		{
 			m0Entry, m0Exists := profileEntriesByPublicKey[MakePkMapKey(m0PkBytes)]
 			require.True(m0Exists)
@@ -3148,6 +3168,16 @@ func TestUpdateProfile(t *testing.T) {
 			require.Equal(int64(m4Entry.CreatorBasisPoints), int64(11*100))
 			require.Equal(int64(m4Entry.StakeMultipleBasisPoints), int64(1.5*100*100))
 			require.False(m4Entry.IsHidden)
+		}
+		{
+			m5Entry, m5Exists := profileEntriesByPublicKey[MakePkMapKey(m5PkBytes)]
+			require.True(m5Exists)
+			require.Equal(string(m5Entry.Username), "m5_paramUpdater")
+			require.Equal(string(m5Entry.Description), "m5 created by paramUpdater")
+			require.Equal(string(m5Entry.ProfilePic), otherShortPic)
+			require.Equal(int64(m5Entry.CreatorBasisPoints), int64(11*100))
+			require.Equal(int64(m5Entry.StakeMultipleBasisPoints), int64(1.5*100*100))
+			require.False(m5Entry.IsHidden)
 		}
 	}
 	checkProfilesExist()

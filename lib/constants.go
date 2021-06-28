@@ -99,6 +99,10 @@ var (
 	// block and then the creator coins would be added to a deleted balance.  When the Balance Entries are flushed to
 	// the database, the user would lose the creator coins they purchased.
 	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(39713)
+
+  // ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
+	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
+	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
 )
 
 func (nt NetworkType) String() string {
