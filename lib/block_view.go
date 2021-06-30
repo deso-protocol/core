@@ -6687,8 +6687,9 @@ func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []by
 	mediaRequired bool) (_posts []*PostEntry, _postsIncluded map[BlockHash]struct{}, _err error) {
 	dbPrefix := _dbReverseSeekPrefixForPostsPinned(publicKey)
 
-	// Get the posts associated from the database
-	keysFound, _ := _enumerateLimitedKeysReversedForPrefix(bav.Handle, dbPrefix, limit)
+	// Get the posts associated from the database. We get double the limit incase a post was recently hidden
+	// and had not been reflected on the keys in the database yet.
+	keysFound, _ := _enumerateLimitedKeysReversedForPrefix(bav.Handle, dbPrefix, 2 * limit)
 	var posts []*PostEntry
 	for _, key := range keysFound {
 		postHash := &BlockHash{}
