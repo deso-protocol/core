@@ -90,6 +90,19 @@ var (
 	// BitCloutFounderRewardBlockHeight defines a block height where the protocol switches from
 	// paying the founder reward in the founder's own creator coin to paying in BitClout instead.
 	BitCloutFounderRewardBlockHeight = uint32(21869)
+
+	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight defines a block height after which the protocol will create
+	// a new BalanceEntry when a user purchases a Creator Coin and their current BalanceEntry is deleted.
+	// The situation in which a BalanceEntry reaches a deleted state occurs when a user transfers all their holdings
+	// of a certain creator to another public key and subsequently purchases that same creator within the same block.
+	// This resolves a bug in which users would purchase creator coins after transferring all holdings within the same
+	// block and then the creator coins would be added to a deleted balance.  When the Balance Entries are flushed to
+	// the database, the user would lose the creator coins they purchased.
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(39713)
+
+  // ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
+	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
+	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
 )
 
 func (nt NetworkType) String() string {

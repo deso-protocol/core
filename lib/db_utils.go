@@ -3045,16 +3045,16 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*BitCloutOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata
-	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata
-	LikeTxindexMetadata                *LikeTxindexMetadata
-	FollowTxindexMetadata              *FollowTxindexMetadata
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata
+	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata `json:",omitempty"`
+	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata `json:",omitempty"`
+	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
+	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata `json:",omitempty"`
+	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata `json:",omitempty"`
+	LikeTxindexMetadata                *LikeTxindexMetadata `json:",omitempty"`
+	FollowTxindexMetadata              *FollowTxindexMetadata `json:",omitempty"`
+	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata `json:",omitempty"`
+	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata `json:",omitempty"`
 }
 
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
