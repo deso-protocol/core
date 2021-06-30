@@ -429,7 +429,8 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	bodyObj *BitCloutBodySchema,
 	recloutedPostHash []byte,
 	tstampNanos uint64,
-	isHidden bool) (
+	isHidden bool,
+	isPinned bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -461,6 +462,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 		tstampNanos,
 		postExtraData,
 		isHidden,
+		isPinned,
 		feeRateNanosPerKB,
 		nil)
 	if err != nil {
@@ -863,6 +865,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		uint64(time.Now().UnixNano()),
 		extraData,
 		isHidden,
+		false,
 		feeRateNanosPerKB,
 		nil /*mempool*/)
 	if err != nil {
@@ -1175,7 +1178,8 @@ func TestSubmitPost(t *testing.T) {
 		body *BitCloutBodySchema,
 		recloutedPostHash []byte,
 		tstampNanos uint64,
-		isHidden bool) {
+		isHidden bool,
+		isPinned bool) {
 
 		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
 
@@ -1188,7 +1192,8 @@ func TestSubmitPost(t *testing.T) {
 			body,
 			recloutedPostHash,
 			tstampNanos,
-			isHidden)
+			isHidden,
+			isPinned)
 
 		require.NoError(err)
 
@@ -1228,7 +1233,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m0 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	post1Txn := txns[len(txns)-1]
 	post1Hash := post1Txn.Hash()
@@ -1244,7 +1250,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m0 post body 2 no profile"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	post2Txn := txns[len(txns)-1]
 	post2Hash := post2Txn.Hash()
@@ -1260,7 +1267,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m1 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	post3Txn := txns[len(txns)-1]
 	post3Hash := post3Txn.Hash()
@@ -1289,7 +1297,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m2 post body 1 WITH profile"}, /*body*/
 			[]byte{},
 			1502947014*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	post4Txn := txns[len(txns)-1]
 	post4Hash := post4Txn.Hash()
@@ -1317,7 +1326,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m3 post body 1 WITH profile"}, /*body*/
 			[]byte{},
 			1502947015*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	post5Txn := txns[len(txns)-1]
 	post5Hash := post5Txn.Hash()
@@ -1334,7 +1344,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m2 post body 2 WITH profile"}, /*body*/
 			[]byte{},
 			1502947016*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	post6Txn := txns[len(txns)-1]
 	post6Hash := post6Txn.Hash()
@@ -1352,7 +1363,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
 	}
@@ -1369,7 +1381,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostInvalidPostHashToModify)
 	}
@@ -1386,7 +1399,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostModifyingNonexistentPost)
 	}
@@ -1403,7 +1417,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostInvalidParentStakeIDLength)
 	}
@@ -1420,7 +1435,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -1437,7 +1453,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			0, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostTimestampIsZero)
 	}
@@ -1456,7 +1473,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -1475,7 +1493,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -1494,7 +1513,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -1513,7 +1533,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -1530,7 +1551,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m0 post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947017*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 	}
 
 	// Owner with profile modifying one of their posts should succeed but
@@ -1545,7 +1567,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m2 post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947018*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 	}
 
 	// ParamUpdater modifying their own post should succeed
@@ -1559,7 +1582,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "paramUpdater post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947019*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 	}
 
 	// ParamUpdater modifying an anonymous user's post should succeed
@@ -1573,7 +1597,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "paramUpdater m0 post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947020*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 	}
 
 	// ParamUpdater modifying a registered user's post should succeed
@@ -1587,7 +1612,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "paramUpdater m2 post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947021*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 	}
 
 	// Modifying a post and then modifying it back should work.
@@ -1601,7 +1627,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "sldkfjlskdfjlajflkasjdflkasjdf"}, /*body*/
 			[]byte{},
 			1502947022*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 		submitPost(
 			10,                         /*feeRateNanosPerKB*/
 			m1Pub,                      /*updaterPkBase58Check*/
@@ -1611,7 +1638,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "m1 post body 1 no profile modified back"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 
 	// Comment on a post with an anonymous public key
@@ -1625,7 +1653,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment 1 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947001*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	comment1Txn := txns[len(txns)-1]
 	comment1Hash := comment1Txn.Hash()
@@ -1641,7 +1670,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment 2 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947002*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	comment2CreatedTxnIndex := len(txns) - 1
 	comment2Txn := txns[comment2CreatedTxnIndex]
@@ -1657,7 +1687,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment 1 from m2 on post6"}, /*body*/
 			[]byte{},
 			1502947003*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	comment3CreatedTxnIndex := len(txns) - 1
 	comment3Txn := txns[comment3CreatedTxnIndex]
@@ -1673,7 +1704,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment 1 from m3 on post6"}, /*body*/
 			[]byte{},
 			1502947004*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	comment4CreatedTxnIndex := len(txns) - 1
 	comment4Txn := txns[comment4CreatedTxnIndex]
@@ -1693,7 +1725,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "modifying comment 1 by m1 should fail"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 
@@ -1707,7 +1740,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 
 		// Modifying the comment with the proper key should work.
 		submitPost(
@@ -1719,7 +1753,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment from m2 on post6 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 		comment3HiddenTxnIndex = len(txns) - 1
 
 		// Modify a comment and modify it back.
@@ -1732,7 +1767,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 		submitPost(
 			10,              /*feeRateNanosPerKB*/
 			m0Pub,           /*updaterPkBase58Check*/
@@ -1742,7 +1778,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment 2 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 
 	// Commenting on a public key should work regardless of whether
@@ -1757,7 +1794,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment m0 on profile m1 [1]"}, /*body*/
 			[]byte{},
 			1502947005*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	comment5Txn := txns[len(txns)-1]
 	comment5Hash := comment5Txn.Hash()
@@ -1771,7 +1809,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment m1 on profile m2 [1]"}, /*body*/
 			[]byte{},
 			1502947006*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	comment6Txn := txns[len(txns)-1]
 	comment6Hash := comment6Txn.Hash()
@@ -1785,7 +1824,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment m3 on profile m3 [1]"}, /*body*/
 			[]byte{},
 			1502947007*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	comment7Txn := txns[len(txns)-1]
 	comment7Hash := comment7Txn.Hash()
@@ -1799,7 +1839,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment m0 on profile m3 [2]"}, /*body*/
 			[]byte{},
 			1502947008*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 	comment8Txn := txns[len(txns)-1]
 	comment8Hash := comment8Txn.Hash()
@@ -1816,7 +1857,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment 1 from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 
 		_, _, _, err = _submitPost(
 			t, chain, db, params,
@@ -1828,7 +1870,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "modifying comment 1 by m1 should fail"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 
@@ -1842,7 +1885,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment m1 on profile m2 [1] MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 		submitPost(
 			10,              /*feeRateNanosPerKB*/
 			m1Pub,           /*updaterPkBase58Check*/
@@ -1852,7 +1896,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "comment m1 on profile m2 [1]"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 	}
 
 	// Reclouting tests
@@ -1867,7 +1912,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{},
 			post3Hash[:],
 			15029557050*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 
 	}
 	reclout1Txn := txns[len(txns)-1]
@@ -1884,7 +1930,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{},
 			post4Hash[:],
 			15029557051*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			false)
 		reclout2Txn := txns[len(txns)-1]
 		reclout2Hash := reclout2Txn.Hash()
 		submitPost(
@@ -1896,7 +1943,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{},
 			post4Hash[:],
 			15029557052*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			false)
 	}
 	// reclout 3 - Quote Reclout
 	{
@@ -1909,7 +1957,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "quote-clout"},
 			post5Hash[:],
 			15029557053*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			true)
 	}
 	// reclout 4 - Quote Reclout + hide
 	{
@@ -1922,7 +1971,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "quote-clout-hide-me"},
 			post6Hash[:],
 			15029557054*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false /*isHidden*/,
+			true)
 		reclout4Txn := txns[len(txns)-1]
 		reclout4hash := reclout4Txn.Hash()
 		submitPost(
@@ -1934,7 +1984,8 @@ func TestSubmitPost(t *testing.T) {
 			&BitCloutBodySchema{Body: "quote-clout-hide-me"},
 			post6Hash[:],
 			15029557054*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true /*isHidden*/,
+			true)
 	}
 	// reclout -- test exceptions
 	{
@@ -1949,6 +2000,7 @@ func TestSubmitPost(t *testing.T) {
 				&BitCloutBodySchema{},
 				[]byte{1, 2, 3},
 				15029557055,
+				false,
 				false,
 			)
 			require.Error(err)
@@ -1966,6 +2018,7 @@ func TestSubmitPost(t *testing.T) {
 				reclout1Hash[:],
 				15029557055,
 				false,
+				false,
 			)
 			require.Error(err)
 			require.Contains(err.Error(), RuleErrorSubmitPostRecloutOfReclout)
@@ -1981,6 +2034,7 @@ func TestSubmitPost(t *testing.T) {
 				&BitCloutBodySchema{},
 				post4Hash[:],
 				15029557055,
+				false,
 				false,
 			)
 			require.Error(err)
@@ -2230,6 +2284,7 @@ func TestSubmitPost(t *testing.T) {
 			require.Equal(m1PkBytes, corePosts[12].PosterPublicKey)
 			comparePostBody(corePosts[12], "quote-clout", corePosts[4].PostHash)
 			require.Equal(false, corePosts[12].IsHidden)
+			require.Equal(true, corePosts[12].IsPinned)
 			m1Post4ReaderState := utxoView.GetPostEntryReaderState(m1PkBytes, corePosts[4])
 			// Quote reclouts do not impact PostEntryReaderState
 			require.Equal(m1Post4ReaderState.RecloutedByReader, false)
@@ -2242,6 +2297,7 @@ func TestSubmitPost(t *testing.T) {
 			require.Equal(m1PkBytes, corePosts[13].PosterPublicKey)
 			comparePostBody(corePosts[13], "quote-clout-hide-me", corePosts[5].PostHash)
 			require.Equal(true, corePosts[13].IsHidden)
+			require.Equal(true, corePosts[13].IsPinned)
 			m1Post5ReaderState := utxoView.GetPostEntryReaderState(m1PkBytes, corePosts[5])
 			// Quote reclouts do not impact PostEntryReaderState
 			require.Equal(m1Post5ReaderState.RecloutedByReader, false)
@@ -3852,7 +3908,8 @@ func TestLikeTxns(t *testing.T) {
 			bodyObj,
 			recloutedPostHash,
 			tstampNanos,
-			isHidden)
+			isHidden,
+			false)
 
 		require.NoError(err)
 
