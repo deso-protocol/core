@@ -608,11 +608,11 @@ type PostEntry struct {
 	IsPinned bool
 
 	// NFT info.
-	IsNFT                              bool
-	NumNFTCopies                       uint64
-	HasUnlockable                      bool
-	NFTRoyaltyToCreatorBasisPoints     uint64
-	NFTRoyaltyToCreatorCoinBasisPoints uint64
+	IsNFT                          bool
+	NumNFTCopies                   uint64
+	HasUnlockable                  bool
+	NFTRoyaltyToCreatorBasisPoints uint64
+	NFTRoyaltyToCoinBasisPoints    uint64
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte
@@ -5453,7 +5453,7 @@ func (bav *UtxoView) _connectCreateNFT(
 	postEntry.NumNFTCopies = txMeta.NumCopies
 	postEntry.HasUnlockable = txMeta.HasUnlockable
 	postEntry.NFTRoyaltyToCreatorBasisPoints = txMeta.NFTRoyaltyToCreatorBasisPoints
-	postEntry.NFTRoyaltyToCreatorCoinBasisPoints = txMeta.NFTRoyaltyToCreatorBasisPoints
+	postEntry.NFTRoyaltyToCoinBasisPoints = txMeta.NFTRoyaltyToCoinBasisPoints
 	bav._setPostEntryMappings(postEntry)
 
 	// Add the appropriate NFT entries.
@@ -5681,12 +5681,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCreatorBasisPoints))),
 		big.NewInt(100*100)).Uint64()
 	// The amount of bitclout that should go to the original creator's coin from this purchase.
-	// Calculated as: (BidAmountNanos * NFTRoyaltyToCreatorCoinBasisPoints) / (100 * 100)
+	// Calculated as: (BidAmountNanos * NFTRoyaltyToCoinBasisPoints) / (100 * 100)
 	creatorCoinRoyaltyNanos := IntDiv(
 		IntMul(
 			big.NewInt(int64(txMeta.BidAmountNanos)),
-			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCreatorCoinBasisPoints))),
+			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCoinBasisPoints))),
 		big.NewInt(100*100)).Uint64()
+	fmt.Printf("Bid amount: %d, coin basis points: %d, coin royalty: %d",
+		txMeta.BidAmountNanos, nftPostEntry.NFTRoyaltyToCoinBasisPoints, creatorCoinRoyaltyNanos)
 	bidAmountMinusRoyalties := txMeta.BidAmountNanos - creatorRoyaltyNanos - creatorCoinRoyaltyNanos
 
 	// Connect basic txn to get the total input and the total output without

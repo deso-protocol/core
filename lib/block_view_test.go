@@ -686,8 +686,8 @@ func _createNFTWithTestMeta(
 		isForSale,
 		minBidAmountNanos,
 		nftFee,
+		nftRoyaltyToCreatorBasisPoints,
 		nftRoyaltyToCoinBasisPoints,
-		feeRateNanosPerKB,
 	)
 	require.NoError(testMeta.t, err)
 
@@ -16049,7 +16049,7 @@ func TestNFTBasic(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestNFTCreatorRoyalties(t *testing.T) {
+func TestNFTRoyalties(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -16158,6 +16158,22 @@ func TestNFTCreatorRoyalties(t *testing.T) {
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
+
+		_, _, _, err = _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			10,    /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			1,     /*nftRoyaltyToCreatorBasisPoints*/
+			10000, /*nftRoyaltyToCoinBasisPoints*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 	}
 
 	// Create NFT: Let's have m0 create an NFT with 10% royalties for the coin and creator.
@@ -16232,7 +16248,7 @@ func TestNFTCreatorRoyalties(t *testing.T) {
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
 		require.Equal(uint64(27), m0BalAfter)
-		// Creator coin.
+		// Creator coin: zero royalties should be paid.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
 		require.Equal(m0InitialBitCloutLocked+uint64(0), bitCloutLocked)
 	}
@@ -16284,7 +16300,7 @@ func TestNFTCreatorRoyalties(t *testing.T) {
 		require.Equal(uint64(34), m0BalAfter)
 		// Creator coin.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
-		require.Equal(m0InitialBitCloutLocked+uint64(1), bitCloutLocked)
+		require.Equal(m0InitialBitCloutLocked+expectedCoinRoyalty, bitCloutLocked)
 	}
 
 	// 100 nano bid: Have m1 make a bid on <post1, #3>, accept it and check the royalties.
