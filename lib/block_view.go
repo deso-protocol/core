@@ -6673,7 +6673,7 @@ func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []by
 	mediaRequired bool) (_posts []*PostEntry, _postsIncluded map[BlockHash]struct{}, _err error) {
 	dbPrefix := _dbReverseSeekPrefixForPostsPinned(publicKey)
 
-	// Get the posts associated
+	// Get the posts associated from the database
 	keysFound, _ := _enumerateLimitedKeysReversedForPrefix(bav.Handle, dbPrefix, limit)
 	var posts []*PostEntry
 	for _, key := range keysFound {
@@ -6684,7 +6684,7 @@ func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []by
 		if postEntry == nil {
 			return nil, nil, fmt.Errorf("Missing post entry")
 		}
-		if postEntry.isDeleted || postEntry.IsHidden {
+		if postEntry.isDeleted || postEntry.IsHidden || !postEntry.IsPinned {
 			continue
 		}
 
@@ -6696,7 +6696,7 @@ func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []by
 		posts = append(posts, postEntry)
 	}
 
-	// Iterate over the view's pinned posts for the public key
+	// Iterate over the view's pinned posts for the public key, saving the ones that are being actively unpinned
 	pkMapKey := MakePkMapKey(publicKey)
 	if _, utxoMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]; utxoMapExists {
 		for postHash, pinEntry := range bav.PublicKeyToPostHashToPinEntry[MakePkMapKey(publicKey)] {
@@ -6728,7 +6728,8 @@ func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []by
 		posts = posts[:limit]
 	}
 
-	// Create a map of the included posts.
+	// Create a map of the included posts. This will be used to quickly determine which
+	// posts to ignore when fetching the remaining posts on a profile.
 	includedPosts := make(map[BlockHash]struct{})
 	for _, postEntry := range posts {
 		includedPosts[*postEntry.PostHash] = struct{}{}
