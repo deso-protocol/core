@@ -940,7 +940,7 @@ func _dbKeyForPinnedPost(pinnerPubKey []byte, tstampNanos uint64, postHash *Bloc
 	return key
 }
 
-func _dbSeekPrefixForPostsPinned(pinnerPubKey []byte) []byte {
+func _dbReverseSeekPrefixForPostsPinned(pinnerPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixPublicKeyTstampNanosPinnedPostHash...)
 	return append(prefixCopy, pinnerPubKey[:]...)

@@ -2605,7 +2605,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	//	(1) If we're updating this post and it's been pinned before we remove it as a pinned post from the database.
 	//	(2) If it's not been pinned before, we don't do anything.
 	if isPinned {
-		txnExtraData[IsPinnedPostKey] = []byte{}
+		txnExtraData[IsPinnedPostKey] = []byte{0}
 	}
 
 	// Create a transaction containing the post fields.

@@ -552,8 +552,11 @@ type PostEntry struct {
 	// How many comments this post has
 	CommentCount uint64
 
-	// Indicator if a post is pinned or not.
+	// Indicator if a post is pinned or not to the user's profile.
 	IsPinned bool
+
+	// Indicator if a post is pinned to the global feed.
+	IsGlobalPinned bool
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte
@@ -2800,6 +2803,13 @@ func (bav *UtxoView) _deleteRecloutEntryMappings(recloutEntry *RecloutEntry) {
 
 func (bav *UtxoView) _addPostEntryPinning(postEntry *PostEntry) {
 	pkMapKey := MakePkMapKey(postEntry.PosterPublicKey)
+
+	// Check if there is a map associated with the key
+	_, pinEntryMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]
+	if !pinEntryMapExists {
+		bav.PublicKeyToPostHashToPinEntry[pkMapKey] = make(map[BlockHash]*PinEntry)
+	}
+
 	pinEntry, prevEntryExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey][*postEntry.PostHash]
 	if prevEntryExists {
 		pinEntry.pinned = true
@@ -2811,6 +2821,13 @@ func (bav *UtxoView) _addPostEntryPinning(postEntry *PostEntry) {
 
 func (bav *UtxoView) _deletePostEntryPinning(postEntry *PostEntry) {
 	pkMapKey := MakePkMapKey(postEntry.PosterPublicKey)
+
+	// Check if there is a map associated with the key
+	_, pinEntryMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]
+	if !pinEntryMapExists {
+		bav.PublicKeyToPostHashToPinEntry[pkMapKey] = make(map[BlockHash]*PinEntry)
+	}
+
 	pinEntry, prevEntryExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey][*postEntry.PostHash]
 	if prevEntryExists {
 		pinEntry.pinned = false
@@ -4364,6 +4381,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		// which seems like undesired behavior if a paramUpdater is trying to reduce
 		// spam
 		newPostEntry.IsHidden = txMeta.IsHidden
+		newPostEntry.IsPinned = isPinned
 
 		// Obtain the parent posts
 		newParentPostEntry, newGrandparentPostEntry, err = bav._getParentAndGrandparentPostEntry(newPostEntry)
@@ -6653,64 +6671,51 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 
 func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []byte, limit uint64,
 	mediaRequired bool) (_posts []*PostEntry, _postsIncluded map[BlockHash]struct{}, _err error) {
-	dbPrefix := _dbSeekPrefixForPostsPinned(publicKey)
-	dbPrefix = append(dbPrefix, []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}...)
+	dbPrefix := _dbReverseSeekPrefixForPostsPinned(publicKey)
 
+	// Get the posts associated
+	keysFound, _ := _enumerateLimitedKeysReversedForPrefix(bav.Handle, dbPrefix, limit)
 	var posts []*PostEntry
-	err := bav.Handle.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
+	for _, key := range keysFound {
+		postHash := &BlockHash{}
+		copy(postHash[:], key[len(key) - HashSizeBytes:])
 
-		opts.PrefetchValues = false
-
-		// Go in reverse order
-		opts.Reverse = true
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		it.Seek(dbPrefix)
-		for ; it.ValidForPrefix(dbPrefix) && uint64(len(posts)) < limit; it.Next() {
-			rawKey := it.Item().Key()
-			postHash := &BlockHash{}
-			copy(postHash[:], rawKey[len(rawKey) - HashSizeBytes:])
-
-			postEntry := bav.GetPostEntryForPostHash(postHash)
-			if postEntry == nil {
-				return fmt.Errorf("Missing post entry")
-			}
-			if postEntry.isDeleted || postEntry.IsHidden {
-				continue
-			}
-
-			// mediaRequired set to determine if we only want posts that include media and ignore posts without
-			if mediaRequired && !postEntry.HasMedia() {
-				continue
-			}
-
-			posts = append(posts, postEntry)
+		postEntry := bav.GetPostEntryForPostHash(postHash)
+		if postEntry == nil {
+			return nil, nil, fmt.Errorf("Missing post entry")
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
+		if postEntry.isDeleted || postEntry.IsHidden {
+			continue
+		}
+
+		// mediaRequired set to determine if we only want posts that include media and ignore posts without
+		if mediaRequired && !postEntry.HasMedia() {
+			continue
+		}
+
+		posts = append(posts, postEntry)
 	}
 
 	// Iterate over the view's pinned posts for the public key
-	for postHash, pinEntry := range bav.PublicKeyToPostHashToPinEntry[MakePkMapKey(publicKey)] {
-		if !pinEntry.pinned {
-			postEntry := bav.GetPostEntryForPostHash(&postHash)
-			if postEntry == nil {
-				return nil, nil, fmt.Errorf("Missing post entry")
-			}
-			if postEntry.isDeleted || postEntry.IsHidden {
-				continue
-			}
+	pkMapKey := MakePkMapKey(publicKey)
+	if _, utxoMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]; utxoMapExists {
+		for postHash, pinEntry := range bav.PublicKeyToPostHashToPinEntry[MakePkMapKey(publicKey)] {
+			if !pinEntry.pinned {
+				postEntry := bav.GetPostEntryForPostHash(&postHash)
+				if postEntry == nil {
+					return nil, nil, fmt.Errorf("Missing post entry")
+				}
+				if postEntry.isDeleted || postEntry.IsHidden {
+					continue
+				}
 
-			// mediaRequired set to determine if we only want posts that include media and ignore posts without
-			if mediaRequired && !postEntry.HasMedia() {
-				continue
-			}
+				// mediaRequired set to determine if we only want posts that include media and ignore posts without
+				if mediaRequired && !postEntry.HasMedia() {
+					continue
+				}
 
-			posts = append(posts, postEntry)
+				posts = append(posts, postEntry)
+			}
 		}
 	}
 
@@ -6719,7 +6724,9 @@ func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []by
 	sort.Slice(posts, func(ii, jj int) bool {
 		return posts[ii].TimestampNanos > posts[jj].TimestampNanos
 	})
-	posts = posts[:limit]
+	if len(posts) > int(limit) {
+		posts = posts[:limit]
+	}
 
 	// Create a map of the included posts.
 	includedPosts := make(map[BlockHash]struct{})
@@ -7581,8 +7588,8 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 func (bav *UtxoView) _flushPostPinEntriesToDbWithTxn(txn *badger.Txn) error {
 	// Go through every public key map in the pinned post map
 	for pkMapKey, postHashToPinEntry := range bav.PublicKeyToPostHashToPinEntry {
-		var publicKeyBytes []byte
-		copy(publicKeyBytes[:], pkMapKey[:])
+		var publicKeyBytes = make([]byte, btcec.PubKeyBytesLenCompressed)
+		copy(publicKeyBytes, pkMapKey[:])
 
 		// Go through every updated pin assocaited with the public key and update their state in badger
 		for postHash, pinEntry := range postHashToPinEntry {
