@@ -2482,6 +2482,9 @@ func (bav *UtxoView) _disconnectCreateNFT(
 
 	// Delete the NFT entries.
 	posterPKID := bav.GetPKIDForPublicKey(existingPostEntry.PosterPublicKey)
+	if posterPKID == nil || posterPKID.isDeleted {
+	     return fmt.Errorf("_disconnectCreateNFT: PKID for poster public key %v doesn't exist; this should never happen", string(existingPostEntry.PosterPublicKey))
+	}
 	for ii := uint64(1); ii <= txMeta.NumCopies; ii++ {
 		nftEntry := &NFTEntry{
 			OwnerPKID:    posterPKID.PKID,
@@ -2605,12 +2608,12 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	if operationData.PrevCoinEntry != nil {
 		nftPostEntry := bav.GetPostEntryForPostHash(operationData.PrevNFTEntry.NFTPostHash)
 		// We have to get the post entry first so that we have the poster's pub key.
-		if nftPostEntry == nil {
+		if nftPostEntry == nil || nftPostEntry.isDeleted {
 			return fmt.Errorf("_disconnectAcceptNFTBid: nftPostEntry was nil; " +
 				"this should never happen")
 		}
 		existingProfileEntry := bav.GetProfileEntryForPublicKey(nftPostEntry.PosterPublicKey)
-		if existingProfileEntry == nil {
+		if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 			return fmt.Errorf("_disconnectAcceptNFTBid: existingProfileEntry was nil; " +
 				"this should never happen")
 		}
@@ -2643,6 +2646,9 @@ func (bav *UtxoView) _disconnectNFTBid(
 
 	// Get the NFTBidEntry corresponding to this txn.
 	bidderPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if bidderPKID == nil || bidderPKID.isDeleted {
+		return fmt.Errorf("_disconnectNFTBid: PKID for bidder public key %v doesn't exist; this should never happen", string(currentTxn.PublicKey))
+	}
 	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 	// Sanity-check that it exists.
@@ -5858,7 +5864,7 @@ func (bav *UtxoView) _connectNFTBid(
 
 	// Verify that the postEntry being bid on exists, is an NFT, and supports the given serial #.
 	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
-	if postEntry == nil {
+	if postEntry == nil || postEntry.isDeleted {
 		return 0, 0, nil, RuleErrorNFTBidOnNonExistentPost
 	} else if !postEntry.IsNFT {
 		return 0, 0, nil, RuleErrorNFTBidOnPostThatIsNotAnNFT
@@ -5872,6 +5878,9 @@ func (bav *UtxoView) _connectNFTBid(
 	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftEntry := bav.GetNFTEntryForNFTKey(&nftKey)
 	bidderPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if bidderPKID == nil || bidderPKID.isDeleted {
+		return fmt.Errorf("_connectNFTBid: PKID for bidder public key %v doesn't exist; this should never happen", string(txn.PublicKey))
+	}
 	if txMeta.SerialNumber != uint64(0) {
 		// Verify the NFT entry that is being bid on exists.
 		if nftEntry == nil || nftEntry.isDeleted {

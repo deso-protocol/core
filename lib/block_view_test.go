@@ -747,7 +747,7 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreateNFT operation at the end.
+	// for each output, and one OperationTypeNFTBid operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -803,7 +803,8 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 	require.NoError(err)
 
 	bidderPKID := utxoView.GetPKIDForPublicKey(bidderPkBytes)
-
+require.NotNil(bidderPKID)
+require.False(bidderPKID.isDeleted)
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAcceptNFTBidTxn(
 		updaterPkBytes,
 		nftPostHash,
@@ -835,7 +836,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreateNFT operation at the end.
+	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -921,7 +922,7 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *BitClout
 	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreateNFT operation at the end.
+	// for each output, and one OperationTypeUpdateNFT operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -1026,7 +1027,7 @@ func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
 	require.NoError(testMeta.t, err)
 	for ii := 0; ii < len(testMeta.txnOps); ii++ {
 		backwardIter := len(testMeta.txnOps) - 1 - ii
@@ -1035,10 +1036,10 @@ func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 		currentTxn := testMeta.txns[backwardIter]
 
 		currentHash := currentTxn.Hash()
-		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
+		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
 		require.NoError(testMeta.t, err)
 	}
-	require.NoError(testMeta.t, utxoView2.FlushToDb())
+	require.NoError(testMeta.t, utxoView.FlushToDb())
 	require.Equal(
 		testMeta.t,
 		testMeta.expectedSenderBalances[0],
@@ -1120,7 +1121,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
+	// for each output, and one OperationTypeSwapIdentity operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -1186,7 +1187,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
+	// for each output, and one OperationTypeUpdateProfile operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -1290,10 +1291,10 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.GreaterOrEqual(int64(totalInput), int64(totalInputMake))
+	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
+	// for each output, and one OperationTypeCreatorCoin operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -1382,10 +1383,10 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(int64(totalInput), int64(totalInputMake))
+	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
+	// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -1449,10 +1450,10 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.GreaterOrEqual(int64(totalInput), int64(totalInputMake))
+	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
+	// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -1516,10 +1517,10 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.GreaterOrEqual(int64(totalInput), int64(totalInputMake))
+	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
+	// for each output, and one OperationTypeSubmitPost operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -1690,7 +1691,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
+	// for each output, and one OperationTypeFollow operation at the end.
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -15392,7 +15393,7 @@ func TestNFTBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorCantCreateNFTWithoutProfileEntry)
 	}
 
-	// Create a profile so me can make an NFT.
+	// Create a profile so we can make an NFT.
 	{
 		_updateProfileWithTestMeta(
 			testMeta,
@@ -16250,7 +16251,7 @@ func TestNFTRoyalties(t *testing.T) {
 		require.Equal(uint64(27), m0BalAfter)
 		// Creator coin: zero royalties should be paid.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
-		require.Equal(m0InitialBitCloutLocked+uint64(0), bitCloutLocked)
+		require.Equal(m0InitialBitCloutLocked+expectedCoinRoyalty, bitCloutLocked)
 	}
 
 	// 10 nano bid: Have m1 make a bid on <post1, #2>, accept it and check the royalties.
@@ -17091,7 +17092,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 		require.Equal(uint64(14958), m0BalAfterNFT)
 	}
 
-	// Error case: Attempt to make some bids below the minimum bid amount, they should error.
+	// Error case: Attempt to make some bids on an NFT that is not for sale, they should error.
 	{
 		_, _, _, err := _createNFTBid(
 			t, chain, db, params, 10,
@@ -17157,7 +17158,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(14957), m0BalBefore)
 
-		// This will accept m3's serial #1 bid.
+		// This will accept m1's serial #1 bid.
 		_acceptNFTBidWithTestMeta(
 			testMeta,
 			10, /*FeeRateNanosPerKB*/
@@ -18228,7 +18229,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 		)
 	}
 
-	// Error case: setting MaxCopiesPerNFT to be  >MaxMaxCopiesPerNFT or <MinMaxCopiesPerNFT should fail.
+	// Error case: setting MaxCopiesPerNFT to be >MaxMaxCopiesPerNFT or <MinMaxCopiesPerNFT should fail.
 	{
 		require.Equal(1, MinMaxCopiesPerNFT)
 		require.Equal(10000, MaxMaxCopiesPerNFT)
