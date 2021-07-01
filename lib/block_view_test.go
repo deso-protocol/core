@@ -803,8 +803,8 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 	require.NoError(err)
 
 	bidderPKID := utxoView.GetPKIDForPublicKey(bidderPkBytes)
-require.NotNil(bidderPKID)
-require.False(bidderPKID.isDeleted)
+	require.NotNil(bidderPKID)
+	require.False(bidderPKID.isDeleted)
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAcceptNFTBidTxn(
 		updaterPkBytes,
 		nftPostHash,
@@ -1291,7 +1291,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
+	require.GreaterOrEqual(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeCreatorCoin operation at the end.
@@ -1383,7 +1383,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
+	require.GreaterOrEqual(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
@@ -1517,7 +1517,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
+	require.GreaterOrEqual(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeSubmitPost operation at the end.
