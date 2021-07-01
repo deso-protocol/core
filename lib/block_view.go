@@ -5336,8 +5336,16 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// In this case we need to set all the fields using what was passed
 		// into the transaction.
+
+		// If below block height, user transaction public key.
+		// If above block height, use ProfilePublicKey if available.
+		profileEntryPublicKey := txn.PublicKey
+		if blockHeight > ParamUpdaterProfileUpdateFixBlockHeight {
+			profileEntryPublicKey = profilePublicKey
+		}
+
 		newProfileEntry = ProfileEntry{
-			PublicKey:   txn.PublicKey,
+			PublicKey:   profileEntryPublicKey,
 			Username:    txMeta.NewUsername,
 			Description: txMeta.NewDescription,
 			ProfilePic:  txMeta.NewProfilePic,
@@ -6450,7 +6458,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	buyerBalanceEntry, hodlerPKID, creatorPKID :=
 		bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			txn.PublicKey, existingProfileEntry.PublicKey)
-	if buyerBalanceEntry == nil {
+	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
+	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
+	if buyerBalanceEntry == nil ||
+			(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight){
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
@@ -6478,7 +6489,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		// existing one.
 		creatorBalanceEntry, hodlerPKID, creatorPKID = bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			existingProfileEntry.PublicKey, existingProfileEntry.PublicKey)
-		if creatorBalanceEntry == nil {
+		// If the creator does not have a balance entry or the creator's balance entry is deleted and we have passed the
+		// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
+		if creatorBalanceEntry == nil ||
+			(creatorBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 			// If there is no balance entry then it means the creator doesn't own
 			// any of their coin yet. In this case we create a new entry for them
 			// with a zero balance.
