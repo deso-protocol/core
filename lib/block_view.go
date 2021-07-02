@@ -1869,6 +1869,15 @@ func (bav *UtxoView) _disconnectSubmitPost(
 	}
 	if currentOperation.PrevPinEntry != nil {
 		bav._setPinEntryMappings(currentOperation.PrevPinEntry)
+	} else {
+		// If the previous pin entry was nil, that means this is the first submission of this post and we
+		// must clear the associated pin entry during a disconnect.
+		bav._deletePinEntryMappings(&PinEntry{
+			PinnerPubKey:   postEntry.PosterPublicKey,
+			TstampNanos:    postEntry.TimestampNanos,
+			PinnedPostHash: *postEntry.PostHash,
+			isDeleted:      true,
+		})
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
@@ -4390,8 +4399,7 @@ func (bav *UtxoView) _connectSubmitPost(
 			PinnerPubKey:   newPostEntry.PosterPublicKey,
 			TstampNanos:    newPostEntry.TimestampNanos,
 			PinnedPostHash: *newPostEntry.PostHash,
-			isDeleted:      (prevPostEntry.IsHidden && prevPostEntry.IsPinned) || (!prevPostEntry.IsHidden &&
-				!prevPostEntry.IsPinned),
+			isDeleted:      prevPostEntry.IsHidden || (!prevPostEntry.IsHidden && !prevPostEntry.IsPinned),
 		}
 
 		// Figure out how much we need to change the parent / grandparent's comment count by
