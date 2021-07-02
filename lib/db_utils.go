@@ -3579,8 +3579,8 @@ func DBPutPostEntryMappings(handle *badger.DB, postEntry *PostEntry, params *Bit
 // post to the databse. Otherwise, we check to see if a key exists and deletes it if it does.
 // A false pinned field in pinEntry signals that the pinned post should be deleted if it exists.
 func DBUpdatePinEntryMappingsWithTxn(txn *badger.Txn, publicKeyBytes []byte, postHash *BlockHash, pinEntry *PinEntry) error {
-	dbKey := _dbKeyForPinnedPost(publicKeyBytes, pinEntry.tstampNanos, postHash)
-	if pinEntry.pinned {
+	dbKey := _dbKeyForPinnedPost(publicKeyBytes, pinEntry.TstampNanos, postHash)
+	if !pinEntry.isDeleted {
 		// We add the key to the database to reflect the key etnry
 		if err := txn.Set(dbKey, []byte{}); err != nil {
 			return errors.Wrapf(err, "DBPutPinEntryMappingsWithTxn: Error problem adding "+

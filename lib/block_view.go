@@ -279,10 +279,16 @@ type RecloutEntry struct {
 // PinEntry stores the timestamp and state of a PostEntry.
 // It's used in the UtxoView to keep track of pinned posts not yet in the database.
 type PinEntry struct {
-	tstampNanos uint64
+	PinnerPubKey []byte
 
-	// State of the post
-	pinned bool
+	// Timestamp of the original post being updated
+	TstampNanos uint64
+
+	// Post Hash of the pinned post
+	PinnedPostHash BlockHash
+
+	// Whether or not this pin entry is deleted in the view.
+	isDeleted bool
 }
 
 type GlobalParamsEntry struct {
@@ -896,6 +902,7 @@ type UtxoOperation struct {
 	PrevParentPostEntry      *PostEntry
 	PrevGrandparentPostEntry *PostEntry
 	PrevRecloutedPostEntry   *PostEntry
+	PrevPinEntry             *PinEntry
 
 	// Save the previous profile entry when making an update.
 	PrevProfileEntry *ProfileEntry
@@ -1007,6 +1014,12 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for postHash, postEntry := range bav.PostHashToPostEntry {
 		newPostEntry := *postEntry
 		newView.PostHashToPostEntry[postHash] = &newPostEntry
+	}
+
+	// Copy the post pin data
+	newView.PublicKeyToPostHashToPinEntry = make(map[PkMapKey]map[BlockHash]*PinEntry, len(bav.PublicKeyToPostHashToPinEntry))
+	for pkMapKey, postHashToPinEntry := range bav.PublicKeyToPostHashToPinEntry {
+		newView.PublicKeyToPostHashToPinEntry[pkMapKey] = postHashToPinEntry
 	}
 
 	// Copy the PKID data
@@ -1829,34 +1842,6 @@ func (bav *UtxoView) _disconnectSubmitPost(
 		bav._deleteRecloutEntryMappings(recloutEntry)
 	}
 
-	// Depending on wheter a post is being hidden/unhidden, updated, and pinned/unpinned
-	// we update the view to reflect this disconnect. The updates will be reflected in the database
-	// during the next flush.
-	if currentOperation.PrevPostEntry != nil {
-		hidingPostEntry := !currentOperation.PrevPostEntry.IsHidden && postEntry.IsHidden
-		unhidingPostEntry := currentOperation.PrevPostEntry.IsHidden && !postEntry.IsHidden
-
-		if hidingPostEntry {
-			if (currentOperation.PrevPostEntry.IsPinned && postEntry.IsPinned) ||
-				(currentOperation.PrevPostEntry.IsPinned && !postEntry.IsPinned) {
-				bav._addPostEntryPinning(postEntry)
-			}
-		} else if unhidingPostEntry {
-			if (currentOperation.PrevPostEntry.IsPinned && postEntry.IsPinned) ||
-				(currentOperation.PrevPostEntry.IsPinned && !postEntry.IsPinned) {
-				bav._deletePostEntryPinning(postEntry)
-			}
-		} else {
-			if currentOperation.PrevPostEntry.IsPinned && !postEntry.IsPinned {
-				bav._addPostEntryPinning(postEntry)
-			} else if !currentOperation.PrevPostEntry.IsPinned && postEntry.IsPinned {
-				bav._deletePostEntryPinning(postEntry)
-			}
-		}
-	} else if postEntry.IsPinned {
-		bav._deletePostEntryPinning(postEntry) // We remove the pin on a post that was intially pinned
-	}
-
 	// Now that we are confident the PostEntry lines up with the transaction we're
 	// rolling back, use the entry to delete the mappings for this post.
 	//
@@ -1881,6 +1866,9 @@ func (bav *UtxoView) _disconnectSubmitPost(
 	}
 	if currentOperation.PrevRecloutEntry != nil {
 		bav._setRecloutEntryMappings(currentOperation.PrevRecloutEntry)
+	}
+	if currentOperation.PrevPinEntry != nil {
+		bav._setPinEntryMappings(currentOperation.PrevPinEntry)
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
@@ -2801,40 +2789,35 @@ func (bav *UtxoView) _deleteRecloutEntryMappings(recloutEntry *RecloutEntry) {
 	bav._setRecloutEntryMappings(&tombstoneRecloutEntry)
 }
 
-func (bav *UtxoView) _addPostEntryPinning(postEntry *PostEntry) {
-	pkMapKey := MakePkMapKey(postEntry.PosterPublicKey)
+func (bav *UtxoView) _setPinEntryMappings(pinEntry *PinEntry) {
+	if pinEntry == nil {
+		glog.Errorf("_setPinEntryMappings: called with nil PinEntry; " +
+			"this should never happen")
+		return
+	}
 
-	// Check if there is a map associated with the key
+	pkMapKey := MakePkMapKey(pinEntry.PinnerPubKey)
 	_, pinEntryMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]
 	if !pinEntryMapExists {
 		bav.PublicKeyToPostHashToPinEntry[pkMapKey] = make(map[BlockHash]*PinEntry)
 	}
 
-	pinEntry, prevEntryExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey][*postEntry.PostHash]
-	if prevEntryExists {
-		pinEntry.pinned = true
-	} else {
-		pinEntry = &PinEntry{ tstampNanos: postEntry.TimestampNanos, pinned: true, }
-	}
-	bav.PublicKeyToPostHashToPinEntry[pkMapKey][*postEntry.PostHash] = pinEntry
+	bav.PublicKeyToPostHashToPinEntry[pkMapKey][pinEntry.PinnedPostHash] = pinEntry
 }
 
-func (bav *UtxoView) _deletePostEntryPinning(postEntry *PostEntry) {
-	pkMapKey := MakePkMapKey(postEntry.PosterPublicKey)
-
-	// Check if there is a map associated with the key
-	_, pinEntryMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]
-	if !pinEntryMapExists {
-		bav.PublicKeyToPostHashToPinEntry[pkMapKey] = make(map[BlockHash]*PinEntry)
+func (bav *UtxoView) _deletePinEntryMappings(pinEntry *PinEntry) {
+	if pinEntry == nil {
+		glog.Errorf("_deletePinEntryMappings: called with nil PinEntry; " +
+			"this should never happen")
+		return
 	}
 
-	pinEntry, prevEntryExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey][*postEntry.PostHash]
-	if prevEntryExists {
-		pinEntry.pinned = false
-	} else {
-		pinEntry = &PinEntry{ tstampNanos: postEntry.TimestampNanos, pinned: false, }
-	}
-	bav.PublicKeyToPostHashToPinEntry[pkMapKey][*postEntry.PostHash] = pinEntry
+	// Create the tombstone entry
+	tombstonePinEntry := *pinEntry
+	tombstonePinEntry.isDeleted = true
+
+	// Set the pin entry
+	bav._setPinEntryMappings(&tombstonePinEntry)
 }
 
 func (bav *UtxoView) _getFollowEntryForFollowKey(followKey *FollowKey) *FollowEntry {
@@ -4294,6 +4277,7 @@ func (bav *UtxoView) _connectSubmitPost(
 	var prevGrandparentPostEntry *PostEntry
 	var prevRecloutedPostEntry *PostEntry
 	var prevRecloutEntry *RecloutEntry
+	var prevPinEntry *PinEntry
 
 	var newPostEntry *PostEntry
 	var newParentPostEntry *PostEntry
@@ -4393,6 +4377,23 @@ func (bav *UtxoView) _connectSubmitPost(
 			newRecloutedPostEntry = bav.GetPostEntryForPostHash(newPostEntry.RecloutedPostHash)
 		}
 
+		// The post's new pin state can be derived entirely from the current and previous post entries.
+		// We set or delete the following pinEntry depending on the current and previous state of the post.
+		// Previous pin entry is also simple to derive given the previous state, so it can be set here as well.
+		pinEntry := &PinEntry{
+			PinnerPubKey:   newPostEntry.PosterPublicKey,
+			TstampNanos:    newPostEntry.TimestampNanos,
+			PinnedPostHash: *newPostEntry.PostHash,
+			isDeleted:      false,
+		}
+		prevPinEntry = &PinEntry{
+			PinnerPubKey:   newPostEntry.PosterPublicKey,
+			TstampNanos:    newPostEntry.TimestampNanos,
+			PinnedPostHash: *newPostEntry.PostHash,
+			isDeleted:      (prevPostEntry.IsHidden && prevPostEntry.IsPinned) || (!prevPostEntry.IsHidden &&
+				!prevPostEntry.IsPinned),
+		}
+
 		// Figure out how much we need to change the parent / grandparent's comment count by
 		var commentCountUpdateAmount int
 		recloutCountUpdateAmount := 0
@@ -4410,13 +4411,6 @@ func (bav *UtxoView) _connectSubmitPost(
 			} else if isQuotedReclout {
 				quoteRecloutCountUpdateAmount = -1
 			}
-
-			// We update the pinned posts entrys depending on the posts new state
-			if prevPostEntry.IsPinned && newPostEntry.IsPinned {
-				bav._deletePostEntryPinning(newPostEntry)
-			} else if prevPostEntry.IsPinned && !newPostEntry.IsPinned {
-				bav._deletePostEntryPinning(newPostEntry)
-			}
 		}
 
 		unhidingPostEntry := prevPostEntry.IsHidden && !newPostEntry.IsHidden
@@ -4431,22 +4425,17 @@ func (bav *UtxoView) _connectSubmitPost(
 			} else if isQuotedReclout {
 				quoteRecloutCountUpdateAmount = 1
 			}
-
-			// We update the pinned posts entrys depending on the posts new state
-			if prevPostEntry.IsPinned && newPostEntry.IsPinned {
-				bav._addPostEntryPinning(newPostEntry)
-			} else if !prevPostEntry.IsPinned && newPostEntry.IsPinned {
-				bav._addPostEntryPinning(newPostEntry)
-			}
 		}
 
-		// If the post is not being hidden/unhidden we check if the post is being pinned/unpinned
-		if !hidingPostEntry && !unhidingPostEntry {
-			if !prevPostEntry.IsPinned && newPostEntry.IsPinned {
-				bav._addPostEntryPinning(newPostEntry)
-			} else if prevPostEntry.IsPinned && !newPostEntry.IsPinned {
-				bav._deletePostEntryPinning(newPostEntry)
-			}
+		// We set/delete the pin entry mappings depending on the previous and current state of the post.
+		if hidingPostEntry {
+			bav._deletePinEntryMappings(pinEntry)
+		} else if unhidingPostEntry && newPostEntry.IsPinned {
+			bav._setPinEntryMappings(pinEntry)
+		} else if !prevPostEntry.IsPinned && newPostEntry.IsPinned {
+			bav._setPinEntryMappings(pinEntry)
+		} else if prevPostEntry.IsPinned && !newPostEntry.IsPinned {
+			bav._deletePinEntryMappings(pinEntry)
 		}
 
 		// Save the data from the parent post. Note that we don't make a deep copy
@@ -4558,7 +4547,7 @@ func (bav *UtxoView) _connectSubmitPost(
 			TimestampNanos:           txMeta.TimestampNanos,
 			ConfirmationBlockHeight:  blockHeight,
 			StakeEntry:               NewStakeEntry(),
-			IsPinned: 				  isPinned,
+			IsPinned:                 isPinned,
 			PostExtraData:            extraData,
 			// Don't set IsHidden on new posts.
 		}
@@ -4605,10 +4594,20 @@ func (bav *UtxoView) _connectSubmitPost(
 			}
 		}
 
+		// The post's new pin state can be derived entirely from the current and previous post entries.
+		// We set or delete the following pinEntry depending on the current and previous state of the post.
+		pinEntry := &PinEntry{
+			PinnerPubKey:   newPostEntry.PosterPublicKey,
+			TstampNanos:    newPostEntry.TimestampNanos,
+			PinnedPostHash: *newPostEntry.PostHash,
+			isDeleted:      false,
+		}
+		prevPinEntry = nil
+
 		// If the new post is pinned, we add the pin entry. We don't consider if the post is hidden
 		// as we do not allow new posts to be hidden.
 		if isPinned {
-			bav._addPostEntryPinning(newPostEntry)
+			bav._setPinEntryMappings(pinEntry)
 		}
 	}
 
@@ -4644,6 +4643,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		PrevGrandparentPostEntry: prevGrandparentPostEntry,
 		PrevRecloutedPostEntry:   prevRecloutedPostEntry,
 		PrevRecloutEntry:         prevRecloutEntry,
+		PrevPinEntry:             prevPinEntry,
 		Type:                     OperationTypeSubmitPost,
 	})
 
@@ -6685,37 +6685,57 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 
 func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []byte, limit uint64,
 	mediaRequired bool) (_posts []*PostEntry, _postsIncluded map[BlockHash]struct{}, _err error) {
-	dbPrefix := _dbReverseSeekPrefixForPostsPinned(publicKey)
-
-	// Get the posts associated from the database. We get double the limit incase a post was recently hidden
-	// and had not been reflected on the keys in the database yet.
-	keysFound, _ := _enumerateLimitedKeysReversedForPrefix(bav.Handle, dbPrefix, 2 * limit)
+	prefix := _dbReverseSeekPrefixForPostsPinned(publicKey)
 	var posts []*PostEntry
-	for _, key := range keysFound {
-		postHash := &BlockHash{}
-		copy(postHash[:], key[len(key) - HashSizeBytes:])
 
-		postEntry := bav.GetPostEntryForPostHash(postHash)
-		if postEntry == nil {
-			return nil, nil, fmt.Errorf("Missing post entry")
-		}
-		if postEntry.isDeleted || postEntry.IsHidden || !postEntry.IsPinned {
-			continue
-		}
+	// Fetch all posts currently in the database who are pinned
+	err := bav.Handle.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
 
-		// mediaRequired set to determine if we only want posts that include media and ignore posts without
-		if mediaRequired && !postEntry.HasMedia() {
-			continue
-		}
+		// Go in reverse order
+		opts.Reverse = true
 
-		posts = append(posts, postEntry)
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+
+		counter := uint64(0)
+		for nodeIterator.Seek(append(prefix, 0xff)); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+			key := nodeIterator.Item().Key()
+			postHash := &BlockHash{}
+			copy(postHash[:], key[len(key) - HashSizeBytes:])
+
+			postEntry := bav.GetPostEntryForPostHash(postHash)
+			if postEntry == nil {
+				return fmt.Errorf("Missing post entry for key: %v", key)
+			}
+			if postEntry.isDeleted || postEntry.IsHidden || !postEntry.IsPinned {
+				continue
+			}
+
+			// mediaRequired set to determine if we only want posts that include media and ignore posts without
+			if mediaRequired && !postEntry.HasMedia() {
+				continue
+			}
+
+			posts = append(posts, postEntry)
+			counter += 1
+			if counter == limit {
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil,
+			fmt.Errorf("GetPinnedPostsForPublicKeyOrderedByTimestamp: Problem fetching " +
+				"pinned posts from db: %v", err)
 	}
 
-	// Iterate over the view's pinned posts for the public key, saving the ones that are being actively unpinned
+	// Iterate over the view's pinned posts for the public key, saving the ones that are being actively pinned
 	pkMapKey := MakePkMapKey(publicKey)
 	if _, utxoMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]; utxoMapExists {
 		for postHash, pinEntry := range bav.PublicKeyToPostHashToPinEntry[MakePkMapKey(publicKey)] {
-			if !pinEntry.pinned {
+			if !pinEntry.isDeleted {
 				postEntry := bav.GetPostEntryForPostHash(&postHash)
 				if postEntry == nil {
 					return nil, nil, fmt.Errorf("Missing post entry")
