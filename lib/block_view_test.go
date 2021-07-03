@@ -1074,6 +1074,8 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func TestSubmitPost(t *testing.T) {
+	PinnedPostTrackingUpdateBlockHeight = 0
+
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
