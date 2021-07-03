@@ -100,9 +100,16 @@ var (
 	// the database, the user would lose the creator coins they purchased.
 	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(39713)
 
-  // ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
+	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
 	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
 	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
+
+	// PinnedPostTrackingUpdateBlockHeight defines a block height where we begin indexing
+	// all newly added SubmitPost transactions with the IsPinnedPostKey extra data map key.
+	// This is a softfork, meaning upgraded nodes who begin tracking this information will
+	// not conflict with older nodes who haven't. A node operator who wishes
+	// to upgrade and begin tracking pins following the blockheight will have to resync their node from scratch.
+	PinnedPostTrackingUpdateBlockHeight = uint32(41729)
 )
 
 func (nt NetworkType) String() string {

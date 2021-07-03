@@ -4269,9 +4269,9 @@ func (bav *UtxoView) _connectSubmitPost(
 		copy(recloutedPostHash[:], recloutedPostHashBytes)
 		delete(extraData, RecloutedPostHash)
 	}
-	// Set the IsPinned attribute based on extra data
+	// Set the IsPinned attribute based on extra data and check that we've passed the PinnedPostTrackingUpdateBlockHeight.
 	isPinned := false
-	if _, hasPinned := extraData[IsPinnedPostKey]; hasPinned {
+	if _, hasPinned := extraData[IsPinnedPostKey]; hasPinned && blockHeight > PinnedPostTrackingUpdateBlockHeight {
 		isPinned = true
 		delete(extraData, IsPinnedPostKey)
 	}
