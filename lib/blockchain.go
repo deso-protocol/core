@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
@@ -2363,28 +2362,21 @@ func _computeMaxTxFee(_tx *MsgBitCloutTxn, minFeeRateNanosPerKB uint64) uint64 {
 }
 
 func (bc *Blockchain) CreatePrivateMessageTxn(
-	senderPublicKey []byte, recipientPublicKey []byte, unencryptedMessageText string,
+	senderPublicKey []byte, recipientPublicKey []byte, encryptedMessageText string,
 	tstampNanos uint64,
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Encrypt the passed-in message text with the recipient's public key.
-	//
-	// Parse the recipient public key.
-	recipientPk, err := btcec.ParsePubKey(recipientPublicKey, btcec.S256())
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem parsing "+
-			"recipient public key: ")
-	}
-	encryptedText, err := EncryptBytesWithPublicKey(
-		[]byte(unencryptedMessageText), recipientPk.ToECDSA())
+	// Message is already encrypted, so just decode it to hex format
+	encryptedMessageHex, err := hex.DecodeString(encryptedMessageText)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem "+
-			"encrypting message text: ")
+			"decoding message text to hex: ")
 	}
-	// Don't allow encryptedText to be nil.
-	if len(encryptedText) == 0 {
-		encryptedText = []byte{}
+
+	// Don't allow encryptedMessageHex to be nil.
+	if len(encryptedMessageHex) == 0 {
+		encryptedMessageHex = []byte{}
 	}
 
 	// Create a transaction containing the encrypted message text.
@@ -2393,13 +2385,19 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		PublicKey: senderPublicKey,
 		TxnMeta: &PrivateMessageMetadata{
 			RecipientPublicKey: recipientPublicKey,
-			EncryptedText:      encryptedText,
+			EncryptedText:      encryptedMessageHex,
 			TimestampNanos:     tstampNanos,
 		},
 
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
+
+	// Add {V2 : 1} field to ExtraData to indicate we are encrypting
+	// using shared secret.
+	messageExtraData := make(map[string][]byte)
+	messageExtraData["V2"] = UintToBuf(1)
+	txn.ExtraData = messageExtraData
 
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)

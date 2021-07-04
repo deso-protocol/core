@@ -164,6 +164,10 @@ type MessageEntry struct {
 	TstampNanos uint64
 
 	isDeleted bool
+
+	// If this field is set to true, it indicates that message was
+	// encrypted using shared secret
+	V2 bool
 }
 
 // Entry for a public key forbidden from signing blocks.
@@ -3939,6 +3943,17 @@ func (bav *UtxoView) _connectPrivateMessage(
 		RecipientPublicKey: txMeta.RecipientPublicKey,
 		EncryptedText:      txMeta.EncryptedText,
 		TstampNanos:        txMeta.TimestampNanos,
+		V2: 				false,
+	}
+
+
+	//Check if message is encrypted with shared secret
+	extraV2, hasExtraV2 := txn.ExtraData["V2"]
+	if hasExtraV2 {
+		isV2,_ := Uvarint(extraV2)
+		if isV2 == 1{
+			messageEntry.V2 = true
+		}
 	}
 
 	// Set the mappings in our in-memory map for the MessageEntry.
