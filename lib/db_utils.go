@@ -507,7 +507,7 @@ func DbPutMessageEntryWithTxn(
 		RecipientPublicKey: messageEntry.RecipientPublicKey,
 		EncryptedText:      messageEntry.EncryptedText,
 		TstampNanos:        messageEntry.TstampNanos,
-		V2:					messageEntry.V2,
+		Version:            messageEntry.Version,
 	}
 
 	messageDataBuf := bytes.NewBuffer([]byte{})

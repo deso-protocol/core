@@ -2362,21 +2362,51 @@ func _computeMaxTxFee(_tx *MsgBitCloutTxn, minFeeRateNanosPerKB uint64) uint64 {
 }
 
 func (bc *Blockchain) CreatePrivateMessageTxn(
-	senderPublicKey []byte, recipientPublicKey []byte, encryptedMessageText string,
+	senderPublicKey []byte, recipientPublicKey []byte,
+	unencryptedMessageText string, encryptedMessageText string,
 	tstampNanos uint64,
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Message is already encrypted, so just decode it to hex format
-	encryptedMessageHex, err := hex.DecodeString(encryptedMessageText)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem "+
-			"decoding message text to hex: ")
+	var encryptedMessageBytes []byte
+	messageExtraData := make(map[string][]byte)
+
+	if encryptedMessageText == "" {
+		// Encrypt the passed-in message text with the recipient's public key.
+		//
+		// Parse the recipient public key.
+		recipientPk, err := btcec.ParsePubKey(recipientPublicKey, btcec.S256())
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem parsing "+
+				"recipient public key: ")
+		}
+		encryptedMessageBytes, err = EncryptBytesWithPublicKey(
+			[]byte(unencryptedMessageText), recipientPk.ToECDSA())
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem "+
+				"encrypting message text to hex: ")
+		}
+
+		// Add {V : 1} version field to ExtraData to indicate we are
+		// encrypting using legacy public key method.
+		messageExtraData["V"] = UintToBuf(1)
+	} else {
+		var err error
+		// Message is already encrypted, so just decode it to hex format
+		encryptedMessageBytes, err = hex.DecodeString(encryptedMessageText)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem "+
+				"decoding message text to hex: ")
+		}
+
+		// Add {V : 2} version field to ExtraData to indicate we are
+		// encrypting using shared secret.
+		messageExtraData["V"] = UintToBuf(2)
 	}
 
-	// Don't allow encryptedMessageHex to be nil.
-	if len(encryptedMessageHex) == 0 {
-		encryptedMessageHex = []byte{}
+	// Don't allow encryptedMessageBytes to be nil.
+	if len(encryptedMessageBytes) == 0 {
+		encryptedMessageBytes = []byte{}
 	}
 
 	// Create a transaction containing the encrypted message text.
@@ -2385,7 +2415,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		PublicKey: senderPublicKey,
 		TxnMeta: &PrivateMessageMetadata{
 			RecipientPublicKey: recipientPublicKey,
-			EncryptedText:      encryptedMessageHex,
+			EncryptedText:      encryptedMessageBytes,
 			TimestampNanos:     tstampNanos,
 		},
 
@@ -2393,10 +2423,6 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		// inputs and change.
 	}
 
-	// Add {V2 : 1} field to ExtraData to indicate we are encrypting
-	// using shared secret.
-	messageExtraData := make(map[string][]byte)
-	messageExtraData["V2"] = UintToBuf(1)
 	txn.ExtraData = messageExtraData
 
 	totalInput, spendAmount, changeAmount, fees, err :=
