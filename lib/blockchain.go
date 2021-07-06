@@ -2418,12 +2418,11 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 			EncryptedText:      encryptedMessageBytes,
 			TimestampNanos:     tstampNanos,
 		},
+		ExtraData: messageExtraData,
 
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
-
-	txn.ExtraData = messageExtraData
 
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
