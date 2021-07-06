@@ -388,7 +388,7 @@ func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte) (_keysFound [][]byt
 		return nil
 	})
 	if dbErr != nil {
-		glog.Errorf("_enumerateKeysForPrefix: Problem fetching keys and vlaues from db: %v", dbErr)
+		glog.Errorf("_enumerateKeysForPrefix: Problem fetching keys and values from db: %v", dbErr)
 		return nil, nil
 	}
 
@@ -429,7 +429,7 @@ func _enumerateLimitedKeysReversedForPrefix(db *badger.DB, dbPrefix []byte, limi
 		return err
 	})
 	if dbErr != nil {
-		glog.Errorf("_enumerateKeysForPrefix: Problem fetching keys and vlaues from db: %v", dbErr)
+		glog.Errorf("_enumerateKeysForPrefix: Problem fetching keys and values from db: %v", dbErr)
 		return nil, nil
 	}
 
@@ -507,6 +507,7 @@ func DbPutMessageEntryWithTxn(
 		RecipientPublicKey: messageEntry.RecipientPublicKey,
 		EncryptedText:      messageEntry.EncryptedText,
 		TstampNanos:        messageEntry.TstampNanos,
+		Version:            messageEntry.Version,
 	}
 
 	messageDataBuf := bytes.NewBuffer([]byte{})
