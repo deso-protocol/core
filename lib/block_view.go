@@ -165,8 +165,9 @@ type MessageEntry struct {
 
 	isDeleted bool
 
-	// If this field is set to true, it indicates that message was
-	// encrypted using shared secret
+	// Indicates message encryption method
+	// Version = 2 : message encrypted using shared secret
+	// Version = 1 : message encrypted using public key
 	Version uint8
 }
 
