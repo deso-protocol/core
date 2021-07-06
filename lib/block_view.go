@@ -1174,6 +1174,18 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.DiamondKeyToDiamondEntry[diamondKey] = &newDiamondEntry
 	}
 
+	newView.NFTKeyToNFTEntry = make(map[NFTKey]*NFTEntry, len(bav.NFTKeyToNFTEntry))
+	for nftKey, nftEntry := range bav.NFTKeyToNFTEntry {
+		newNFTEntry := *nftEntry
+		newView.NFTKeyToNFTEntry[nftKey] = &newNFTEntry
+	}
+
+	newView.NFTBidKeyToNFTBidEntry = make(map[NFTBidKey]*NFTBidEntry, len(bav.NFTBidKeyToNFTBidEntry))
+	for nftBidKey, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
+		newNFTBidEntry := *nftBidEntry
+		newView.NFTBidKeyToNFTBidEntry[nftBidKey] = &newNFTBidEntry
+	}
+
 	return newView, nil
 }
 
@@ -3358,6 +3370,29 @@ func (bav *UtxoView) GetNFTEntriesForPostHash(nftPostHash *BlockHash) []*NFTEntr
 	nftEntries := []*NFTEntry{}
 	for _, nftEntry := range bav.NFTKeyToNFTEntry {
 		if reflect.DeepEqual(nftEntry.NFTPostHash, nftPostHash) {
+			nftEntries = append(nftEntries, nftEntry)
+		}
+	}
+	return nftEntries
+}
+
+func (bav *UtxoView) GetNFTEntriesForPKID(ownerPKID *PKID) []*NFTEntry {
+	dbNFTEntries := DBGetNFTEntriesForPKID(bav.Handle, ownerPKID)
+
+	// Make sure all of the DB entries are loaded in the view.
+	for _, dbNFTEntry := range dbNFTEntries {
+		nftKey := MakeNFTKey(dbNFTEntry.NFTPostHash, dbNFTEntry.SerialNumber)
+
+		// If the NFT is not in the view, add it to the view.
+		if _, ok := bav.NFTKeyToNFTEntry[nftKey]; !ok {
+			bav._setNFTEntryMappings(dbNFTEntry)
+		}
+	}
+
+	// Loop over the view and build the final set of NFTEntries to return.
+	nftEntries := []*NFTEntry{}
+	for _, nftEntry := range bav.NFTKeyToNFTEntry {
+		if reflect.DeepEqual(nftEntry.OwnerPKID, ownerPKID) {
 			nftEntries = append(nftEntries, nftEntry)
 		}
 	}
@@ -8540,7 +8575,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this NFTKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
