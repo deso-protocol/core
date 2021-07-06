@@ -1174,6 +1174,18 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.DiamondKeyToDiamondEntry[diamondKey] = &newDiamondEntry
 	}
 
+	newView.NFTKeyToNFTEntry = make(map[NFTKey]*NFTEntry, len(bav.NFTKeyToNFTEntry))
+	for nftKey, nftEntry := range bav.NFTKeyToNFTEntry {
+		newNFTEntry := *nftEntry
+		newView.NFTKeyToNFTEntry[nftKey] = &newNFTEntry
+	}
+
+	newView.NFTBidKeyToNFTBidEntry = make(map[NFTBidKey]*NFTBidEntry, len(bav.NFTBidKeyToNFTBidEntry))
+	for nftBidKey, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
+		newNFTBidEntry := *nftBidEntry
+		newView.NFTBidKeyToNFTBidEntry[nftBidKey] = &newNFTBidEntry
+	}
+
 	return newView, nil
 }
 
@@ -3364,6 +3376,29 @@ func (bav *UtxoView) GetNFTEntriesForPostHash(nftPostHash *BlockHash) []*NFTEntr
 	return nftEntries
 }
 
+func (bav *UtxoView) GetNFTEntriesForPKID(ownerPKID *PKID) []*NFTEntry {
+	dbNFTEntries := DBGetNFTEntriesForPKID(bav.Handle, ownerPKID)
+
+	// Make sure all of the DB entries are loaded in the view.
+	for _, dbNFTEntry := range dbNFTEntries {
+		nftKey := MakeNFTKey(dbNFTEntry.NFTPostHash, dbNFTEntry.SerialNumber)
+
+		// If the NFT is not in the view, add it to the view.
+		if _, ok := bav.NFTKeyToNFTEntry[nftKey]; !ok {
+			bav._setNFTEntryMappings(dbNFTEntry)
+		}
+	}
+
+	// Loop over the view and build the final set of NFTEntries to return.
+	nftEntries := []*NFTEntry{}
+	for _, nftEntry := range bav.NFTKeyToNFTEntry {
+		if reflect.DeepEqual(nftEntry.OwnerPKID, ownerPKID) {
+			nftEntries = append(nftEntries, nftEntry)
+		}
+	}
+	return nftEntries
+}
+
 func (bav *UtxoView) _setNFTBidEntryMappings(nftBidEntry *NFTBidEntry) {
 	// This function shouldn't be called with nil.
 	if nftBidEntry == nil {
@@ -5336,8 +5371,16 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// In this case we need to set all the fields using what was passed
 		// into the transaction.
+
+		// If below block height, user transaction public key.
+		// If above block height, use ProfilePublicKey if available.
+		profileEntryPublicKey := txn.PublicKey
+		if blockHeight > ParamUpdaterProfileUpdateFixBlockHeight {
+			profileEntryPublicKey = profilePublicKey
+		}
+
 		newProfileEntry = ProfileEntry{
-			PublicKey:   txn.PublicKey,
+			PublicKey:   profileEntryPublicKey,
 			Username:    txMeta.NewUsername,
 			Description: txMeta.NewDescription,
 			ProfilePic:  txMeta.NewProfilePic,
@@ -6450,7 +6493,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	buyerBalanceEntry, hodlerPKID, creatorPKID :=
 		bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			txn.PublicKey, existingProfileEntry.PublicKey)
-	if buyerBalanceEntry == nil {
+	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
+	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
+	if buyerBalanceEntry == nil ||
+			(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight){
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
@@ -6478,7 +6524,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		// existing one.
 		creatorBalanceEntry, hodlerPKID, creatorPKID = bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			existingProfileEntry.PublicKey, existingProfileEntry.PublicKey)
-		if creatorBalanceEntry == nil {
+		// If the creator does not have a balance entry or the creator's balance entry is deleted and we have passed the
+		// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
+		if creatorBalanceEntry == nil ||
+			(creatorBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 			// If there is no balance entry then it means the creator doesn't own
 			// any of their coin yet. In this case we create a new entry for them
 			// with a zero balance.
@@ -8526,7 +8575,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this NFTKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+

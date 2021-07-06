@@ -205,6 +205,7 @@ var (
 	// Prefixes for NFT ownership entries:
 	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
 	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
+	_PrefixPublicKeyPostHashSerialNumberToNFTEntry = []byte{53}
 
 	// Prefixes for NFT bids:
 	_PrefixPostHashSerialNumberBidNanosBidderPKID   = []byte{49}
@@ -219,7 +220,7 @@ var (
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 53
+	// NEXT_TAG: 54
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -3199,16 +3200,16 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*BitCloutOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata
-	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata
-	LikeTxindexMetadata                *LikeTxindexMetadata
-	FollowTxindexMetadata              *FollowTxindexMetadata
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata
+	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata `json:",omitempty"`
+	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata `json:",omitempty"`
+	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
+	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata `json:",omitempty"`
+	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata `json:",omitempty"`
+	LikeTxindexMetadata                *LikeTxindexMetadata `json:",omitempty"`
+	FollowTxindexMetadata              *FollowTxindexMetadata `json:",omitempty"`
+	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata `json:",omitempty"`
+	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata `json:",omitempty"`
 }
 
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
@@ -3966,6 +3967,14 @@ func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint6
 	return key
 }
 
+func _dbKeyForPublicKeyNFTPostHashSerialNumber(pkid *PKID, nftPostHash *BlockHash, serialNumber uint64) []byte {
+	prefixCopy := append([]byte{}, _PrefixPublicKeyPostHashSerialNumberToNFTEntry...)
+	key := append(prefixCopy, pkid[:]...)
+	key = append(key, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
 func DBGetNFTEntryByPostHashSerialNumberWithTxn(
 	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *NFTEntry {
 
@@ -3995,7 +4004,7 @@ func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, ser
 	return ret
 }
 
-func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, ownerPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) error {
 
 	// First pull up the mapping that exists for the post / serial # passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -4010,14 +4019,19 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialN
 			"nft mapping for post hash %v serial number %d", nftPostHash, serialNumber)
 	}
 
+	if err := txn.Delete(_dbKeyForPublicKeyNFTPostHashSerialNumber(ownerPKID, nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
+			"nft mapping for pkid %v post hash %v serial number %d", ownerPKID, nftPostHash, serialNumber)
+	}
+
 	return nil
 }
 
 func DBDeleteNFTMappings(
-	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+	handle *badger.DB, ownerPKID *PKID, postHash *BlockHash, serialNumber uint64) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteNFTMappingsWithTxn(txn, postHash, serialNumber)
+		return DBDeleteNFTMappingsWithTxn(txn, ownerPKID, postHash, serialNumber)
 	})
 }
 
@@ -4026,11 +4040,18 @@ func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
 	nftDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(nftDataBuf).Encode(nftEntry)
 
+	nftEntryBytes := nftDataBuf.Bytes()
 	if err := txn.Set(_dbKeyForNFTPostHashSerialNumber(
-		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftDataBuf.Bytes()); err != nil {
+		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
 
 		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
 			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	}
+
+	if err := txn.Set(_dbKeyForPublicKeyNFTPostHashSerialNumber(
+		nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
+			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
 	}
 
 	return nil
@@ -4048,6 +4069,20 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 	nftEntries := []*NFTEntry{}
 	prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, nftPostHash[:]...)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	for _, byteString := range entryByteStringsFound {
+		currentEntry := &NFTEntry{}
+		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+		nftEntries = append(nftEntries, currentEntry)
+	}
+	return nftEntries
+}
+
+// Get NFT Entries *from the DB*. Does not include mempool txns.
+func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
+	nftEntries := []*NFTEntry{}
+	prefix := append([]byte{}, _PrefixPublicKeyPostHashSerialNumberToNFTEntry...)
+	keyPrefix := append(prefix, ownerPKID[:]...)
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
