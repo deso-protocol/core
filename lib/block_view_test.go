@@ -920,7 +920,7 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
-		senderPkBytes, recipientPkBytes, unencryptedMessageText,
+		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
 		tstampNanos, feeRateNanosPerKB, nil)
 	if err != nil {
 		return nil, nil, 0, err
@@ -11061,7 +11061,6 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
-
 
 func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	assert := assert.New(t)
