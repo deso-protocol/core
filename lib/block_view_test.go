@@ -17517,25 +17517,25 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	{
 		_, _, _, err := _createNFT(
 			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
+			m0Pub,
+			m0Priv,
 			post1Hash,
 			100,   /*NumCopies*/
 			false, /*HasUnlockable*/
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			0,     /*nftFee*/
-			1001,  /*nftRoyaltyToCreatorBasisPoints*/
+			10001, /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
+			m0Pub,
+			m0Priv,
 			post1Hash,
 			100,   /*NumCopies*/
 			false, /*HasUnlockable*/
@@ -17543,28 +17543,28 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,     /*MinBidAmountNanos*/
 			0,     /*nftFee*/
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
-			1001,  /*nftRoyaltyToCoinBasisPoints*/
+			10001, /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
+			m0Pub,
+			m0Priv,
 			post1Hash,
 			100,   /*NumCopies*/
 			false, /*HasUnlockable*/
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			0,     /*nftFee*/
-			501,   /*nftRoyaltyToCreatorBasisPoints*/
-			501,   /*nftRoyaltyToCoinBasisPoints*/
+			5001,  /*nftRoyaltyToCreatorBasisPoints*/
+			5001,  /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 	}
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
