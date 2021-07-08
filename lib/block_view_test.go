@@ -11690,7 +11690,6 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
-
 func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -15573,14 +15572,14 @@ func TestNFTBasic(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                    /*feeRateNanosPerKB*/
+			m0Pub,                 /*updaterPkBase58Check*/
+			m0Priv,                /*updaterPrivBase58Check*/
+			[]byte{},              /*postHashToModify*/
+			[]byte{},              /*parentStakeID*/
 			&BitCloutBodySchema{}, /*body*/
-			post1Hash[:], /*recloutedPostHash*/
-			1502947011*1e9, /*tstampNanos*/
+			post1Hash[:],          /*recloutedPostHash*/
+			1502947011*1e9,        /*tstampNanos*/
 			false /*isHidden*/)
 
 		vanillaRecloutPostHash := testMeta.txns[len(testMeta.txns)-1].Hash()
@@ -16079,6 +16078,8 @@ func TestNFTBasic(t *testing.T) {
 			2,  /*BidAmountNanos*/
 			"", /*UnlockableText*/
 		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
 	}
 
 	// Update <post1, #2>, so that it is no longer for sale.
@@ -16093,6 +16094,8 @@ func TestNFTBasic(t *testing.T) {
 			false, /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 2)
+		require.Equal(0, len(bidEntries))
 	}
 
 	// Error case: <post1, #1> and <post1, #2> are no longer for sale and should not allow bids.
