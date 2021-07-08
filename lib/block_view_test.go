@@ -16739,7 +16739,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 15000)
 
-	// Create a simple post.
+	// Create two posts for testing.
 	{
 		_submitPostWithTestMeta(
 			testMeta,
@@ -16752,8 +16752,21 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
+
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 2"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
 	}
-	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+	post1Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
+	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
 	// Create a profile so me can make an NFT.
 	{
@@ -16771,12 +16784,13 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			false /*isHidden*/)
 	}
 
-	// Create NFT: Let's have m0 create an NFT with a ton of copies.
+	// Create NFT: Let's have m0 create two NFTs for testing.
 	{
 		// Balance before.
-		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(59), m0BalBeforeNFT)
+		m0BalBeforeNFTs := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(57), m0BalBeforeNFTs)
 
+		// Create an NFT with a ton of copies for testing accepting bids.
 		_createNFTWithTestMeta(
 			testMeta,
 			10, /*FeeRateNanosPerKB*/
@@ -16792,14 +16806,53 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 
+		// Create an NFT with one copy to test making a standing offer on an NFT that isn't for sale.
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			1,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			false, /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(58), m0BalAfterNFT)
+		m0BalAfterNFTs := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		require.Equal(m0BalBeforeNFTs-uint64(2), m0BalAfterNFTs)
+	}
+
+	// <Post2, #1> (the only copy of this NFT) is not for sale.  Ensure that we can make a #0 bid.
+	{
+		bidEntries := DBGetNFTBidEntries(db, post2Hash, 0)
+		require.Equal(0, len(bidEntries))
+
+		// m1: This is a standing offer for the post 2 NFT that can be accepted at any time.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post2Hash,
+			0,   /*SerialNumber*/
+			100, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post2Hash, 0)
+		require.Equal(1, len(bidEntries))
 	}
 
 	// Have m1,m2,m3 make some bids, including a bid on serial #0.
 	{
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 0)
 		require.Equal(0, len(bidEntries))
 
 		// m1: This is a blanket bid on any serial number of post1.
@@ -16898,7 +16951,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(58), m0BalBefore)
+		require.Equal(uint64(55), m0BalBefore)
 
 		// This will accept m1's serial #0 bid.
 		_acceptNFTBidWithTestMeta(
@@ -16947,7 +17000,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore-6+100+1000+999, m0BalAfter)
-		require.Equal(uint64(2151), m0BalAfter)
+		require.Equal(uint64(2148), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
