@@ -205,6 +205,7 @@ const (
 	RuleErrorCreateNFTRequiresNonZeroInput      RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
 	RuleErrorUpdateNFTRequiresNonZeroInput      RuleError = "RuleErrorUpdateNFTRequiresNonZeroInput"
 	RuleErrorCreateNFTOnNonexistentPost         RuleError = "RuleErrorCreateNFTOnNonexistentPost"
+	RuleErrorCreateNFTOnVanillaReclout          RuleError = "RuleErrorCreateNFTOnVanillaReclout"
 	RuleErrorCreateNFTWithInsufficientFunds     RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
 	RuleErrorCreateNFTOnPostThatAlreadyIsNFT    RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
 	RuleErrorCreateNFTMustBeCalledByPoster      RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"

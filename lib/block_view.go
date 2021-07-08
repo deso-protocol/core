@@ -5453,6 +5453,9 @@ func (bav *UtxoView) _connectCreateNFT(
 	if postEntry == nil || postEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCreateNFTOnNonexistentPost
 	}
+	if IsVanillaReclout(postEntry) {
+		return 0, 0, nil, RuleErrorCreateNFTOnVanillaReclout
+	}
 	if !reflect.DeepEqual(postEntry.PosterPublicKey, txn.PublicKey) {
 		return 0, 0, nil, RuleErrorCreateNFTMustBeCalledByPoster
 	}

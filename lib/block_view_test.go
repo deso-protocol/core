@@ -15569,6 +15569,39 @@ func TestNFTBasic(t *testing.T) {
 			false /*isHidden*/)
 	}
 
+	// Error case: m0 cannot turn a vanilla reclout of their post into an NFT.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{}, /*body*/
+			post1Hash[:], /*recloutedPostHash*/
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+
+		vanillaRecloutPostHash := testMeta.txns[len(testMeta.txns)-1].Hash()
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			vanillaRecloutPostHash,
+			100,   /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCreateNFTOnVanillaReclout)
+	}
+
 	// Error case: m1 should not be able to turn m0's post into an NFT.
 	{
 		_, _, _, err := _createNFT(
@@ -15659,7 +15692,7 @@ func TestNFTBasic(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(29), m0BalBeforeNFT)
+		require.Equal(uint64(27), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -15678,7 +15711,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(28), m0BalAfterNFT)
+		require.Equal(uint64(26), m0BalAfterNFT)
 	}
 
 	// Error case: cannot turn a post into an NFT twice.
@@ -15777,7 +15810,7 @@ func TestNFTBasic(t *testing.T) {
 		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
 
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(26), m0BalBeforeNFT)
+		require.Equal(uint64(24), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -15796,7 +15829,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Check that m0 was charged the correct nftFee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(25)-nftFee, m0BalAfterNFT)
+		require.Equal(uint64(23)-nftFee, m0BalAfterNFT)
 	}
 
 	//
