@@ -16373,7 +16373,7 @@ func TestNFTRoyalties(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 	}
 
-	// Create NFT: Let's have m0 create an NFT with 10% royalties for the coin and creator.
+	// Create NFT: Let's have m0 create an NFT with 10% royalties for the creator and 20% for the coin.
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
@@ -16391,7 +16391,7 @@ func TestNFTRoyalties(t *testing.T) {
 			0,     /*MinBidAmountNanos*/
 			0,     /*nftFee*/
 			1000,  /*nftRoyaltyToCreatorBasisPoints*/
-			1000,  /*nftRoyaltyToCoinBasisPoints*/
+			2000,  /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -16486,15 +16486,15 @@ func TestNFTRoyalties(t *testing.T) {
 			"", /*UnencryptedUnlockableText*/
 		)
 
-		// Check royalties. 10% for the creator, 10% for the coin.
+		// Check royalties. 10% for the creator, 20% for the coin.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		expectedCreatorRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(1), expectedCreatorRoyalty)
-		expectedCoinRoyalty := bidAmountNanos / 10
-		require.Equal(uint64(1), expectedCoinRoyalty)
+		expectedCoinRoyalty := 2 * bidAmountNanos / 10
+		require.Equal(uint64(2), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(34), m0BalAfter)
+		require.Equal(uint64(33), m0BalAfter)
 		// Creator coin.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
 		require.Equal(m0InitialBitCloutLocked+expectedCoinRoyalty, bitCloutLocked)
@@ -16502,6 +16502,9 @@ func TestNFTRoyalties(t *testing.T) {
 
 	// 100 nano bid: Have m1 make a bid on <post1, #3>, accept it and check the royalties.
 	{
+		m0BitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
+		require.Equal(uint64(30), m0BitCloutLocked)
+
 		bidAmountNanos := uint64(100)
 		serialNumber := uint64(3)
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, serialNumber)
@@ -16522,7 +16525,7 @@ func TestNFTRoyalties(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(34), m0BalBefore)
+		require.Equal(uint64(33), m0BalBefore)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -16536,18 +16539,18 @@ func TestNFTRoyalties(t *testing.T) {
 			"", /*UnencryptedUnlockableText*/
 		)
 
-		// Check royalties. 10% for the creator, 10% for the coin.
+		// Check royalties. 10% for the creator, 20% for the coin.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		expectedCreatorRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(10), expectedCreatorRoyalty)
-		expectedCoinRoyalty := bidAmountNanos / 10
-		require.Equal(uint64(10), expectedCoinRoyalty)
+		expectedCoinRoyalty := 2 * bidAmountNanos / 10
+		require.Equal(uint64(20), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(122), m0BalAfter)
+		require.Equal(uint64(111), m0BalAfter)
 		// Creator coin.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
-		require.Equal(m0InitialBitCloutLocked+uint64(11), bitCloutLocked)
+		require.Equal(m0BitCloutLocked+expectedCoinRoyalty, bitCloutLocked)
 	}
 
 	// Put <post1, #1> up for sale again and make sure royalties still work.
@@ -16566,6 +16569,9 @@ func TestNFTRoyalties(t *testing.T) {
 
 	// 10000 nano bid: Have m3 make a bid on <post1, #1>, accept it and check the royalties.
 	{
+		m0BitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
+		require.Equal(uint64(50), m0BitCloutLocked)
+
 		bidAmountNanos := uint64(10000)
 		serialNumber := uint64(1)
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, serialNumber)
@@ -16586,7 +16592,7 @@ func TestNFTRoyalties(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(122), m0BalBefore)
+		require.Equal(uint64(111), m0BalBefore)
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(3867), m1BalBefore)
 
@@ -16605,21 +16611,21 @@ func TestNFTRoyalties(t *testing.T) {
 		// Check royalties. 10% for the creator, 10% for the coin.
 		expectedCreatorRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(1000), expectedCreatorRoyalty)
-		expectedCoinRoyalty := bidAmountNanos / 10
-		require.Equal(uint64(1000), expectedCoinRoyalty)
+		expectedCoinRoyalty := 2 * bidAmountNanos / 10
+		require.Equal(uint64(2000), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(1122), m0BalAfter)
+		require.Equal(uint64(1111), m0BalAfter)
 
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-2+bidAmountMinusRoyalties, m1BalAfter)
-		require.Equal(uint64(11865), m1BalAfter)
+		require.Equal(uint64(10865), m1BalAfter)
 
 		// Creator coin.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
-		require.Equal(m0InitialBitCloutLocked+uint64(1011), bitCloutLocked)
+		require.Equal(m0BitCloutLocked+expectedCoinRoyalty, bitCloutLocked)
 	}
 
 	// Error case: Let's make sure that no royalties are paid if there are no coins in circulation.
@@ -16663,7 +16669,7 @@ func TestNFTRoyalties(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(2159), m0BalBefore)
+		require.Equal(uint64(3159), m0BalBefore)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -16677,16 +16683,16 @@ func TestNFTRoyalties(t *testing.T) {
 			"", /*UnencryptedUnlockableText*/
 		)
 
-		// Check royalties. 10% for the creator, 10% for the coin.
+		// Check royalties. 10% for the creator, 20% for the coin.
 		expectedCreatorRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(10), expectedCreatorRoyalty)
-		expectedCoinRoyalty := bidAmountNanos / 10
-		require.Equal(uint64(10), expectedCoinRoyalty)
+		expectedCoinRoyalty := 2 * bidAmountNanos / 10
+		require.Equal(uint64(20), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(2247), m0BalAfter)
+		require.Equal(uint64(3237), m0BalAfter)
 
 		// Creator coin --> Make sure no royalties were added.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
