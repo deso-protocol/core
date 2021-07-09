@@ -1509,7 +1509,7 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			glog.Tracef("UpdateTxindex: Error parsing post body for @ mentions: "+
 				"%v %v", string(realTxMeta.Body), err)
 		} else {
-			terminators := []rune(" ,.\n&*()-_+~'\"[]{}")
+			terminators := []rune(" ,.\n&*()-+~'\"[]{}")
 			dollarTagsFound := mention.GetTagsAsUniqueStrings('$', bodyObj.Body, terminators...)
 			atTagsFound := mention.GetTagsAsUniqueStrings('@', bodyObj.Body, terminators...)
 			tagsFound := append(dollarTagsFound, atTagsFound...)
