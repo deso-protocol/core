@@ -4233,12 +4233,10 @@ func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, postHash *B
 
 func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
 
-	// First pull up the mapping that exists for the post / serial # passed in.
-	// If one doesn't exist, that's an error as we can't remove an accepted bid from the slice.
+	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
 	nftBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, nftPostHash, serialNumber)
 	if nftBidEntries == nil {
-		return fmt.Errorf("DBDeleteAcceptedNFTBidEntriesMappingsWithTxn: No nftBidEntries " +
-			"found for post hash %v serial number %d", nftPostHash, serialNumber)
+		return nil
 	}
 
 	// When an nftEntry exists, delete both mapping.
