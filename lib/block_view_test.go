@@ -11690,7 +11690,6 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
-
 func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -15573,14 +15572,14 @@ func TestNFTBasic(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                    /*feeRateNanosPerKB*/
+			m0Pub,                 /*updaterPkBase58Check*/
+			m0Priv,                /*updaterPrivBase58Check*/
+			[]byte{},              /*postHashToModify*/
+			[]byte{},              /*parentStakeID*/
 			&BitCloutBodySchema{}, /*body*/
-			post1Hash[:], /*recloutedPostHash*/
-			1502947011*1e9, /*tstampNanos*/
+			post1Hash[:],          /*recloutedPostHash*/
+			1502947011*1e9,        /*tstampNanos*/
 			false /*isHidden*/)
 
 		vanillaRecloutPostHash := testMeta.txns[len(testMeta.txns)-1].Hash()
@@ -16079,6 +16078,8 @@ func TestNFTBasic(t *testing.T) {
 			2,  /*BidAmountNanos*/
 			"", /*UnlockableText*/
 		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
 	}
 
 	// Update <post1, #2>, so that it is no longer for sale.
@@ -16093,6 +16094,8 @@ func TestNFTBasic(t *testing.T) {
 			false, /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 2)
+		require.Equal(0, len(bidEntries))
 	}
 
 	// Error case: <post1, #1> and <post1, #2> are no longer for sale and should not allow bids.
@@ -16370,7 +16373,7 @@ func TestNFTRoyalties(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 	}
 
-	// Create NFT: Let's have m0 create an NFT with 10% royalties for the coin and creator.
+	// Create NFT: Let's have m0 create an NFT with 10% royalties for the creator and 20% for the coin.
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
@@ -16388,7 +16391,7 @@ func TestNFTRoyalties(t *testing.T) {
 			0,     /*MinBidAmountNanos*/
 			0,     /*nftFee*/
 			1000,  /*nftRoyaltyToCreatorBasisPoints*/
-			1000,  /*nftRoyaltyToCoinBasisPoints*/
+			2000,  /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -16483,15 +16486,15 @@ func TestNFTRoyalties(t *testing.T) {
 			"", /*UnencryptedUnlockableText*/
 		)
 
-		// Check royalties. 10% for the creator, 10% for the coin.
+		// Check royalties. 10% for the creator, 20% for the coin.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		expectedCreatorRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(1), expectedCreatorRoyalty)
-		expectedCoinRoyalty := bidAmountNanos / 10
-		require.Equal(uint64(1), expectedCoinRoyalty)
+		expectedCoinRoyalty := 2 * bidAmountNanos / 10
+		require.Equal(uint64(2), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(34), m0BalAfter)
+		require.Equal(uint64(33), m0BalAfter)
 		// Creator coin.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
 		require.Equal(m0InitialBitCloutLocked+expectedCoinRoyalty, bitCloutLocked)
@@ -16499,6 +16502,9 @@ func TestNFTRoyalties(t *testing.T) {
 
 	// 100 nano bid: Have m1 make a bid on <post1, #3>, accept it and check the royalties.
 	{
+		m0BitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
+		require.Equal(uint64(30), m0BitCloutLocked)
+
 		bidAmountNanos := uint64(100)
 		serialNumber := uint64(3)
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, serialNumber)
@@ -16519,7 +16525,7 @@ func TestNFTRoyalties(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(34), m0BalBefore)
+		require.Equal(uint64(33), m0BalBefore)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -16533,18 +16539,18 @@ func TestNFTRoyalties(t *testing.T) {
 			"", /*UnencryptedUnlockableText*/
 		)
 
-		// Check royalties. 10% for the creator, 10% for the coin.
+		// Check royalties. 10% for the creator, 20% for the coin.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		expectedCreatorRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(10), expectedCreatorRoyalty)
-		expectedCoinRoyalty := bidAmountNanos / 10
-		require.Equal(uint64(10), expectedCoinRoyalty)
+		expectedCoinRoyalty := 2 * bidAmountNanos / 10
+		require.Equal(uint64(20), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(122), m0BalAfter)
+		require.Equal(uint64(111), m0BalAfter)
 		// Creator coin.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
-		require.Equal(m0InitialBitCloutLocked+uint64(11), bitCloutLocked)
+		require.Equal(m0BitCloutLocked+expectedCoinRoyalty, bitCloutLocked)
 	}
 
 	// Put <post1, #1> up for sale again and make sure royalties still work.
@@ -16563,6 +16569,9 @@ func TestNFTRoyalties(t *testing.T) {
 
 	// 10000 nano bid: Have m3 make a bid on <post1, #1>, accept it and check the royalties.
 	{
+		m0BitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
+		require.Equal(uint64(50), m0BitCloutLocked)
+
 		bidAmountNanos := uint64(10000)
 		serialNumber := uint64(1)
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, serialNumber)
@@ -16583,7 +16592,7 @@ func TestNFTRoyalties(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(122), m0BalBefore)
+		require.Equal(uint64(111), m0BalBefore)
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(3867), m1BalBefore)
 
@@ -16602,21 +16611,21 @@ func TestNFTRoyalties(t *testing.T) {
 		// Check royalties. 10% for the creator, 10% for the coin.
 		expectedCreatorRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(1000), expectedCreatorRoyalty)
-		expectedCoinRoyalty := bidAmountNanos / 10
-		require.Equal(uint64(1000), expectedCoinRoyalty)
+		expectedCoinRoyalty := 2 * bidAmountNanos / 10
+		require.Equal(uint64(2000), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(1122), m0BalAfter)
+		require.Equal(uint64(1111), m0BalAfter)
 
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-2+bidAmountMinusRoyalties, m1BalAfter)
-		require.Equal(uint64(11865), m1BalAfter)
+		require.Equal(uint64(10865), m1BalAfter)
 
 		// Creator coin.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
-		require.Equal(m0InitialBitCloutLocked+uint64(1011), bitCloutLocked)
+		require.Equal(m0BitCloutLocked+expectedCoinRoyalty, bitCloutLocked)
 	}
 
 	// Error case: Let's make sure that no royalties are paid if there are no coins in circulation.
@@ -16660,7 +16669,7 @@ func TestNFTRoyalties(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(2159), m0BalBefore)
+		require.Equal(uint64(3159), m0BalBefore)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -16674,16 +16683,16 @@ func TestNFTRoyalties(t *testing.T) {
 			"", /*UnencryptedUnlockableText*/
 		)
 
-		// Check royalties. 10% for the creator, 10% for the coin.
+		// Check royalties. 10% for the creator, 20% for the coin.
 		expectedCreatorRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(10), expectedCreatorRoyalty)
-		expectedCoinRoyalty := bidAmountNanos / 10
-		require.Equal(uint64(10), expectedCoinRoyalty)
+		expectedCoinRoyalty := 2 * bidAmountNanos / 10
+		require.Equal(uint64(20), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(2247), m0BalAfter)
+		require.Equal(uint64(3237), m0BalAfter)
 
 		// Creator coin --> Make sure no royalties were added.
 		bitCloutLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
@@ -16736,7 +16745,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 15000)
 
-	// Create a simple post.
+	// Create two posts for testing.
 	{
 		_submitPostWithTestMeta(
 			testMeta,
@@ -16749,8 +16758,21 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
+
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 2"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
 	}
-	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+	post1Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
+	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
 	// Create a profile so me can make an NFT.
 	{
@@ -16768,12 +16790,13 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			false /*isHidden*/)
 	}
 
-	// Create NFT: Let's have m0 create an NFT with a ton of copies.
+	// Create NFT: Let's have m0 create two NFTs for testing.
 	{
 		// Balance before.
-		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(59), m0BalBeforeNFT)
+		m0BalBeforeNFTs := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(57), m0BalBeforeNFTs)
 
+		// Create an NFT with a ton of copies for testing accepting bids.
 		_createNFTWithTestMeta(
 			testMeta,
 			10, /*FeeRateNanosPerKB*/
@@ -16789,14 +16812,53 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 
+		// Create an NFT with one copy to test making a standing offer on an NFT that isn't for sale.
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			1,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			false, /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(58), m0BalAfterNFT)
+		m0BalAfterNFTs := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		require.Equal(m0BalBeforeNFTs-uint64(2), m0BalAfterNFTs)
+	}
+
+	// <Post2, #1> (the only copy of this NFT) is not for sale.  Ensure that we can make a #0 bid.
+	{
+		bidEntries := DBGetNFTBidEntries(db, post2Hash, 0)
+		require.Equal(0, len(bidEntries))
+
+		// m1: This is a standing offer for the post 2 NFT that can be accepted at any time.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post2Hash,
+			0,   /*SerialNumber*/
+			100, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post2Hash, 0)
+		require.Equal(1, len(bidEntries))
 	}
 
 	// Have m1,m2,m3 make some bids, including a bid on serial #0.
 	{
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 0)
 		require.Equal(0, len(bidEntries))
 
 		// m1: This is a blanket bid on any serial number of post1.
@@ -16895,7 +16957,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(58), m0BalBefore)
+		require.Equal(uint64(55), m0BalBefore)
 
 		// This will accept m1's serial #0 bid.
 		_acceptNFTBidWithTestMeta(
@@ -16944,7 +17006,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore-6+100+1000+999, m0BalAfter)
-		require.Equal(uint64(2151), m0BalAfter)
+		require.Equal(uint64(2148), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
@@ -17461,25 +17523,25 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	{
 		_, _, _, err := _createNFT(
 			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
+			m0Pub,
+			m0Priv,
 			post1Hash,
 			100,   /*NumCopies*/
 			false, /*HasUnlockable*/
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			0,     /*nftFee*/
-			1001,  /*nftRoyaltyToCreatorBasisPoints*/
+			10001, /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
+			m0Pub,
+			m0Priv,
 			post1Hash,
 			100,   /*NumCopies*/
 			false, /*HasUnlockable*/
@@ -17487,28 +17549,28 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,     /*MinBidAmountNanos*/
 			0,     /*nftFee*/
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
-			1001,  /*nftRoyaltyToCoinBasisPoints*/
+			10001, /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
+			m0Pub,
+			m0Priv,
 			post1Hash,
 			100,   /*NumCopies*/
 			false, /*HasUnlockable*/
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			0,     /*nftFee*/
-			501,   /*nftRoyaltyToCreatorBasisPoints*/
-			501,   /*nftRoyaltyToCoinBasisPoints*/
+			5001,  /*nftRoyaltyToCreatorBasisPoints*/
+			5001,  /*nftRoyaltyToCoinBasisPoints*/
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateNFTMustBeCalledByPoster)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 	}
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
@@ -18520,6 +18582,276 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			10000, /*SerialNumber*/
 			1,     /*BidAmountNanos*/
 		)
+	}
+
+	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}
+
+func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund all the keys.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 1000)
+
+	// Create a post for testing.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 1"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+
+	// NFT the post.
+	{
+		// You need a profile in order to create an NFT.
+		_updateProfileWithTestMeta(
+			testMeta,
+			10,            /*feeRateNanosPerKB*/
+			m0Pub,         /*updaterPkBase58Check*/
+			m0Priv,        /*updaterPrivBase58Check*/
+			[]byte{},      /*profilePubKey*/
+			"m2",          /*newUsername*/
+			"i am the m2", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+
+		// We only need 1 copy for this test.
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
+		// Post 1 should have 1 copies.
+		dbEntries := DBGetNFTEntriesForPostHash(db, post1Hash)
+		require.Equal(1, len(dbEntries))
+	}
+
+	// Have m1 place a bid and m0 accept it.
+	{
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m1Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+	}
+
+	// Error case: m0 should not be able to put m1's NFT for sale.
+	{
+		_, _, _, err := _updateNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,     /*SerialNumber*/
+			false, /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorUpdateNFTByNonOwner)
+	}
+
+	// Have m1 place the NFT for sale and m2 bid on it.
+	{
+		_updateNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			true, /*IsForSale*/
+			0,    /*MinBidAmountNanos*/
+		)
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+	}
+
+	// Error case: m0 cannot accept the m2's bid on m1's behalf.
+	{
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m2Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTBidByNonOwner)
+	}
+
+	// Have m1 accept the bid, m2 put the NFT for sale, and m3 bid on the NFT.
+	{
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m2Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		_updateNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			true, /*IsForSale*/
+			0,    /*MinBidAmountNanos*/
+		)
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+	}
+
+	// Error case: m0 and m1 cannot accept the m3's bid on m2's behalf.
+	{
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m3Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTBidByNonOwner)
+
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m3Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTBidByNonOwner)
+	}
+
+	// Have m2 accept the bid.
+	{
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m3Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.

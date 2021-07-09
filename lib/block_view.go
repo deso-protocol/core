@@ -3565,9 +3565,8 @@ func (bav *UtxoView) GetAllNFTBidEntries(nftPostHash *BlockHash, serialNumber ui
 	nftBidEntries := []*NFTBidEntry{}
 	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
 
-		if reflect.DeepEqual(nftBidEntry.NFTPostHash, nftPostHash) &&
-			nftBidEntry.SerialNumber == serialNumber &&
-			!nftBidEntry.isDeleted {
+		if nftBidEntry.SerialNumber == serialNumber && !nftBidEntry.isDeleted &&
+			reflect.DeepEqual(nftBidEntry.NFTPostHash, nftPostHash) {
 
 			nftBidEntries = append(nftBidEntries, nftBidEntry)
 		}
@@ -5616,8 +5615,13 @@ func (bav *UtxoView) _connectCreateNFT(
 	postEntry.NFTRoyaltyToCoinBasisPoints = txMeta.NFTRoyaltyToCoinBasisPoints
 	bav._setPostEntryMappings(postEntry)
 
-	// Add the appropriate NFT entries.
 	posterPKID := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
+	if posterPKID == nil || posterPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectCreateNFT: non-existent posterPKID: %s",
+			PkToString(postEntry.PosterPublicKey, bav.Params))
+	}
+
+	// Add the appropriate NFT entries.
 	for ii := uint64(1); ii <= txMeta.NumCopies; ii++ {
 		nftEntry := &NFTEntry{
 			OwnerPKID:         posterPKID.PKID,
@@ -5659,6 +5663,10 @@ func (bav *UtxoView) _connectUpdateNFT(
 
 	// Verify that the updater is the owner of the NFT.
 	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if updaterPKID == nil || updaterPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectUpdateNFT: non-existent updaterPKID: %s",
+			PkToString(txn.PublicKey, bav.Params))
+	}
 	if !reflect.DeepEqual(prevNFTEntry.OwnerPKID, updaterPKID.PKID) {
 		return 0, 0, nil, RuleErrorUpdateNFTByNonOwner
 	}
@@ -5761,6 +5769,10 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// Verify that the updater is the owner of the NFT.
 	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if updaterPKID == nil || updaterPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTBid: non-existent updaterPKID: %s",
+			PkToString(txn.PublicKey, bav.Params))
+	}
 	if !reflect.DeepEqual(prevNFTEntry.OwnerPKID, updaterPKID.PKID) {
 		return 0, 0, nil, RuleErrorAcceptNFTBidByNonOwner
 	}
@@ -6632,7 +6644,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
 	if buyerBalanceEntry == nil ||
-			(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight){
+		(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
@@ -8323,7 +8335,7 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 		}
 
 		block, err := GetBlock(nextBlockHash, bav.Handle)
-		if err != nil {
+		if err != nil || block == nil {
 			return uint64(0), errors.Wrapf(
 				err, "GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 				nextBlockHash.String())
