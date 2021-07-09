@@ -18585,3 +18585,273 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
+
+func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund all the keys.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 1000)
+
+	// Create a post for testing.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 1"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+
+	// NFT the post.
+	{
+		// You need a profile in order to create an NFT.
+		_updateProfileWithTestMeta(
+			testMeta,
+			10,            /*feeRateNanosPerKB*/
+			m0Pub,         /*updaterPkBase58Check*/
+			m0Priv,        /*updaterPrivBase58Check*/
+			[]byte{},      /*profilePubKey*/
+			"m2",          /*newUsername*/
+			"i am the m2", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+
+		// We only need 1 copy for this test.
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
+		// Post 1 should have 1 copies.
+		dbEntries := DBGetNFTEntriesForPostHash(db, post1Hash)
+		require.Equal(1, len(dbEntries))
+	}
+
+	// Have m1 place a bid and m0 accept it.
+	{
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m1Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+	}
+
+	// Error case: m0 should not be able to put m1's NFT for sale.
+	{
+		_, _, _, err := _updateNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,     /*SerialNumber*/
+			false, /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorUpdateNFTByNonOwner)
+	}
+
+	// Have m1 place the NFT for sale and m2 bid on it.
+	{
+		_updateNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			true, /*IsForSale*/
+			0,    /*MinBidAmountNanos*/
+		)
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+	}
+
+	// Error case: m0 cannot accept the m2's bid on m1's behalf.
+	{
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m2Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTBidByNonOwner)
+	}
+
+	// Have m1 accept the bid, m2 put the NFT for sale, and m3 bid on the NFT.
+	{
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m2Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		_updateNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			true, /*IsForSale*/
+			0,    /*MinBidAmountNanos*/
+		)
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+	}
+
+	// Error case: m0 and m1 cannot accept the m3's bid on m2's behalf.
+	{
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m3Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTBidByNonOwner)
+
+		_, _, _, err = _acceptNFTBid(
+			t, chain, db, params, 10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m3Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTBidByNonOwner)
+	}
+
+	// Have m2 accept the bid.
+	{
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m3Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+	}
+
+	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}
