@@ -8794,20 +8794,12 @@ func (bav *UtxoView) _flushNFTOwnershipEntriesToDbWithTxn(txn *badger.Txn) error
 func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
 	// Go through and delete all the entries so they can be added back fresh.
-	for nftKeyIter, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
+	for nftKeyIter, _ := range bav.NFTKeyToAcceptedNFTBidHistory {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
 
-		if acceptedNFTBidEntries != nil && len(*acceptedNFTBidEntries) > 0 {
-			// Sanity-check that the NFTOwnershipKey computed from the NFTEntry is
-			// equal to the NFTOwnershipKey that maps to that entry.
-			nftKeyInEntry := MakeNFTKey((*acceptedNFTBidEntries)[0].NFTPostHash, (*acceptedNFTBidEntries)[0].SerialNumber)
-			if nftKeyInEntry != nftKey {
-				return fmt.Errorf("_flushNFTOwnershipEntriesToDbWithTxn: NFTEntry has "+
-					"NFTKey: %v, which doesn't match the NFTKeyToNFTEntry map key %v",
-					&nftKeyInEntry, &nftKey)
-			}
-		}
+		// We skip the standard sanity check.  Since it is possible to accept a bid on serial number 0, it is possible
+		// that none of the accepted bids have the same serial number as the key.
 
 		// Delete the existing mappings in the db for this NFTKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
