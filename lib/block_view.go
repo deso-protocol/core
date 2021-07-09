@@ -8806,7 +8806,7 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 		if err := DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, &nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
 
 			return errors.Wrapf(
-				err, "_flushNFTOwnershipEntriesToDbWithTxn: Problem deleting mappings "+
+				err, "_flushAcceptedBidEntriesToDbWithTxn: Problem deleting mappings "+
 					"for NFTKey: %v: ", &nftKey)
 		}
 	}
