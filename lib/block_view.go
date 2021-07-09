@@ -8202,7 +8202,7 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 		}
 
 		block, err := GetBlock(nextBlockHash, bav.Handle)
-		if err != nil {
+		if err != nil || block == nil {
 			return uint64(0), errors.Wrapf(
 				err, "GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 				nextBlockHash.String())
