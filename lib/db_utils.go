@@ -205,22 +205,27 @@ var (
 	// Prefixes for NFT ownership entries:
 	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
 	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
-	_PrefixPublicKeyPostHashSerialNumberToNFTEntry = []byte{53}
+	//  <prefix, PublicKey [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
+	_PrefixPublicKeyIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry = []byte{49}
 
 	// Prefixes for NFT bids:
-	_PrefixPostHashSerialNumberBidNanosBidderPKID   = []byte{49}
-	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{50}
+	_PrefixPostHashSerialNumberBidNanosBidderPKID   = []byte{50}
+	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{51}
 
 	// <prefix, PublicKey [33]byte> -> uint64
-	_PrefixPublicKeyToBitCloutBalanceNanos = []byte{51}
+	_PrefixPublicKeyToBitCloutBalanceNanos = []byte{52}
 	// Block reward prefix (used for deducting immature block rewards from bitclout balances):
 	// <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
-	_PrefixPublicKeyBlockHashToBlockReward = []byte{52}
+	_PrefixPublicKeyBlockHashToBlockReward = []byte{53}
+
+	// <prefix>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
+	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{54}
+
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 54
+	// NEXT_TAG: 55
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -3958,7 +3963,6 @@ func DBGetCommentPostHashesForParentStakeID(
 // =======================================================================================
 // NFTEntry db functions
 // =======================================================================================
-
 func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
@@ -3967,9 +3971,11 @@ func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint6
 	return key
 }
 
-func _dbKeyForPublicKeyNFTPostHashSerialNumber(pkid *PKID, nftPostHash *BlockHash, serialNumber uint64) []byte {
-	prefixCopy := append([]byte{}, _PrefixPublicKeyPostHashSerialNumberToNFTEntry...)
+func _dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) []byte {
+	prefixCopy := append([]byte{}, _PrefixPublicKeyIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	key := append(prefixCopy, pkid[:]...)
+	key = append(key, _boolToByte(isForSale))
+	key = append(key, EncodeUint64(bidAmountNanos)...)
 	key = append(key, nftPostHash[:]...)
 	key = append(key, EncodeUint64(serialNumber)...)
 	return key
@@ -4004,7 +4010,7 @@ func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, ser
 	return ret
 }
 
-func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, ownerPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) error {
+func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
 
 	// First pull up the mapping that exists for the post / serial # passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -4019,19 +4025,14 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, ownerPKID *PKID, nftPostHash *B
 			"nft mapping for post hash %v serial number %d", nftPostHash, serialNumber)
 	}
 
-	if err := txn.Delete(_dbKeyForPublicKeyNFTPostHashSerialNumber(ownerPKID, nftPostHash, serialNumber)); err != nil {
-		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
-			"nft mapping for pkid %v post hash %v serial number %d", ownerPKID, nftPostHash, serialNumber)
-	}
-
 	return nil
 }
 
 func DBDeleteNFTMappings(
-	handle *badger.DB, ownerPKID *PKID, postHash *BlockHash, serialNumber uint64) error {
+	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteNFTMappingsWithTxn(txn, ownerPKID, postHash, serialNumber)
+		return DBDeleteNFTMappingsWithTxn(txn, postHash, serialNumber)
 	})
 }
 
@@ -4048,12 +4049,6 @@ func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
 			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
 	}
 
-	if err := txn.Set(_dbKeyForPublicKeyNFTPostHashSerialNumber(
-		nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
-		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
-			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
-	}
-
 	return nil
 }
 
@@ -4064,7 +4059,7 @@ func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
 	})
 }
 
-// Get NFT Entries *from the DB*. Does not include mempool txns.
+// DBGetNFTEntriesForPostHash gets NFT Entries *from the DB*. Does not include mempool txns.
 func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nftEntries []*NFTEntry) {
 	nftEntries := []*NFTEntry{}
 	prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
@@ -4078,10 +4073,93 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 	return nftEntries
 }
 
-// Get NFT Entries *from the DB*. Does not include mempool txns.
+// =======================================================================================
+// NFTOwnership db functions
+// NOTE: This index is not essential to running the protocol and should be computed
+// outside of the protocol layer once update to the creation of TxIndex are complete.
+// =======================================================================================
+
+func DBGetNFTEntryByNFTOwnershipDetailsWithTxn(
+	txn *badger.Txn, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+
+	key := _dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
+	nftEntryObj := &NFTEntry{}
+	nftEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftEntryObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetNFTEntryByNFTOwnershipDetailsWithTxn: Problem reading "+
+			"NFTEntry for postHash %v serial number %d", postHash, serialNumber)
+		return nil
+	}
+	return nftEntryObj
+}
+
+func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+	var ret *NFTEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetNFTEntryByNFTOwnershipDetailsWithTxn(txn, ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteNFTOwnershipMappingsWithTxn(txn *badger.Txn, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) error {
+
+	// First pull up the mapping that exists for the post / serial # passed in.
+	// If one doesn't exist then there's nothing to do.
+	nftEntry := DBGetNFTEntryByNFTOwnershipDetailsWithTxn(txn, ownerPKID, isForSale, bidAmountNanos, nftPostHash, serialNumber)
+	if nftEntry == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete the mapping.
+	if err := txn.Delete(_dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(ownerPKID, isForSale, bidAmountNanos, nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
+			"nft mapping for pkid %v post hash %v serial number %d", ownerPKID, nftPostHash, serialNumber)
+	}
+
+	return nil
+}
+
+func DBDeleteNFTOwnershipMappings(
+	handle *badger.DB, ownerPKID *PKID, postHash *BlockHash, serialNumber uint64, isForSale bool, bidAmountNanos uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteNFTOwnershipMappingsWithTxn(txn, ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
+	})
+}
+
+func DBPutNFTOwnershipEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
+
+	nftDataBuf := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(nftDataBuf).Encode(nftEntry)
+
+	nftEntryBytes := nftDataBuf.Bytes()
+	if err := txn.Set(_dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(
+		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
+			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	}
+
+	return nil
+}
+
+func DBPutNFTOwnershipEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutNFTOwnershipEntryMappingsWithTxn(txn, nftEntry)
+	})
+}
+
+// DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
 func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
 	nftEntries := []*NFTEntry{}
-	prefix := append([]byte{}, _PrefixPublicKeyPostHashSerialNumberToNFTEntry...)
+	prefix := append([]byte{}, _PrefixPublicKeyIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
@@ -4090,6 +4168,92 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 		nftEntries = append(nftEntries, currentEntry)
 	}
 	return nftEntries
+}
+
+// =======================================================================================
+// AcceptedNFTBidEntries db functions
+// NOTE: This index is not essential to running the protocol and should be computed
+// outside of the protocol layer once update to the creation of TxIndex are complete.
+// =======================================================================================
+func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToAcceptedBidEntries...)
+	key := append(prefixCopy, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+	nftDataBuf := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(nftDataBuf).Encode(nftBidEntries)
+
+	acceptedNFTBidEntryBytes := nftDataBuf.Bytes()
+	if err := txn.Set(_dbKeyForPostHashSerialNumberToAcceptedBidEntries(
+		&nftKey.NFTPostHash, nftKey.SerialNumber), acceptedNFTBidEntryBytes); err != nil {
+
+		return errors.Wrapf(err, "DBPutAcceptedNFTBidEntriesMappingWithTxn: Problem "+
+			"adding accepted bid mapping for post: %v, serial number: %d", nftKey.NFTPostHash, nftKey.SerialNumber)
+	}
+	return nil
+}
+
+func DBPutAcceptedNFTBidEntriesMapping(handle *badger.DB, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, nftKey, nftBidEntries)
+	})
+}
+
+func DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(
+	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
+
+	key := _dbKeyForPostHashSerialNumberToAcceptedBidEntries(postHash, serialNumber)
+	nftBidEntriesObj := &[]*NFTBidEntry{}
+	nftBidEntriesItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftBidEntriesItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftBidEntriesObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn: Problem reading "+
+			"NFTBidEntries for postHash %v serialNumber %d", postHash, serialNumber)
+		return nil
+	}
+	return nftBidEntriesObj
+}
+
+func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
+	var ret *[]*NFTBidEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+
+	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
+	nftBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, nftPostHash, serialNumber)
+	if nftBidEntries == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete both mapping.
+	if err := txn.Delete(_dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DBDeleteAcceptedNFTBidEntriesMappingsWithTxn: Deleting "+
+			"accepted nft bid mapping for post hash %v serial number %d", nftPostHash, serialNumber)
+	}
+
+	return nil
+}
+
+func DBDeleteAcceptedNFTBidMappings(
+	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, postHash, serialNumber)
+	})
 }
 
 // =======================================================================================

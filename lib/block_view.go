@@ -220,9 +220,28 @@ type NFTEntry struct {
 	IsForSale         bool
 	MinBidAmountNanos uint64
 	UnlockableText    []byte
+	LastAcceptedBidAmountNanos uint64
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+func MakeNFTOwnershipKey(ownerPKID *PKID, isForSale bool, lastAcceptedBidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) NFTOwnershipKey {
+	return NFTOwnershipKey{
+		OwnerPKID: *ownerPKID,
+		IsForSale: isForSale,
+		LastAcceptedBidAmountNanos: lastAcceptedBidAmountNanos,
+		NFTPostHash:  *nftPostHash,
+		SerialNumber: serialNumber,
+	}
+}
+
+type NFTOwnershipKey struct {
+	OwnerPKID 	 PKID
+	IsForSale    bool
+	LastAcceptedBidAmountNanos uint64
+	NFTPostHash  BlockHash
+	SerialNumber uint64
 }
 
 func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
@@ -811,7 +830,9 @@ type UtxoView struct {
 
 	// NFT data
 	NFTKeyToNFTEntry       map[NFTKey]*NFTEntry
+	NFTOwnershipKeyToNFTEntry map[NFTOwnershipKey]*NFTEntry
 	NFTBidKeyToNFTBidEntry map[NFTBidKey]*NFTBidEntry
+	NFTKeyToAcceptedNFTBidHistory map[NFTKey]*[]*NFTBidEntry
 
 	// Diamond data
 	DiamondKeyToDiamondEntry map[DiamondKey]*DiamondEntry
@@ -989,9 +1010,12 @@ type UtxoOperation struct {
 
 	// For disconnecting NFTs.
 	PrevNFTEntry         *NFTEntry
+	// We need the new NFT Entry to remove ownership mappings
+	NewNFTEntry          *NFTEntry
 	PrevNFTBidEntry      *NFTBidEntry
 	DeletedNFTBidEntries []*NFTBidEntry
 	NFTPaymentUtxoKeys   []*UtxoKey
+	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
 
 	// Save the previous reclout entry and reclout count when making an update.
 	PrevRecloutEntry *RecloutEntry
@@ -1049,7 +1073,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// NFT data
 	bav.NFTKeyToNFTEntry = make(map[NFTKey]*NFTEntry)
+	bav.NFTOwnershipKeyToNFTEntry = make(map[NFTOwnershipKey]*NFTEntry)
 	bav.NFTBidKeyToNFTBidEntry = make(map[NFTBidKey]*NFTBidEntry)
+	bav.NFTKeyToAcceptedNFTBidHistory = make(map[NFTKey]*[]*NFTBidEntry)
 
 	// Diamond data
 	bav.DiamondKeyToDiamondEntry = make(map[DiamondKey]*DiamondEntry)
@@ -1180,10 +1206,22 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.NFTKeyToNFTEntry[nftKey] = &newNFTEntry
 	}
 
+	newView.NFTOwnershipKeyToNFTEntry = make(map[NFTOwnershipKey]*NFTEntry, len(bav.NFTOwnershipKeyToNFTEntry))
+	for nftOwnershipKey, nftEntry := range bav.NFTOwnershipKeyToNFTEntry {
+		newNFTEntry := *nftEntry
+		newView.NFTOwnershipKeyToNFTEntry[nftOwnershipKey] = &newNFTEntry
+	}
+
 	newView.NFTBidKeyToNFTBidEntry = make(map[NFTBidKey]*NFTBidEntry, len(bav.NFTBidKeyToNFTBidEntry))
 	for nftBidKey, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
 		newNFTBidEntry := *nftBidEntry
 		newView.NFTBidKeyToNFTBidEntry[nftBidKey] = &newNFTBidEntry
+	}
+
+	newView.NFTKeyToAcceptedNFTBidHistory = make(map[NFTKey]*[]*NFTBidEntry, len(bav.NFTKeyToAcceptedNFTBidHistory))
+	for nftKey, nftBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
+		newNFTBidEntries := *nftBidEntries
+		newView.NFTKeyToAcceptedNFTBidHistory[nftKey] = &newNFTBidEntries
 	}
 
 	return newView, nil
@@ -2505,6 +2543,7 @@ func (bav *UtxoView) _disconnectCreateNFT(
 			IsForSale:    true,
 		}
 		bav._deleteNFTEntryMappings(nftEntry)
+		bav._deleteNFTOwnershipEntryMappings(nftEntry)
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
@@ -2552,6 +2591,10 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 	// Set the old NFT entry.
 	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
 
+	// Set the NFTOwnership Entry mappings appropriately.
+	bav._deleteNFTOwnershipEntryMappings(operationData.NewNFTEntry)
+	bav._setNFTOwnershipEntryMappings(operationData.PrevNFTEntry)
+
 	// Set the old bids.
 	if operationData.DeletedNFTBidEntries != nil {
 		for _, nftBid := range operationData.DeletedNFTBidEntries {
@@ -2593,7 +2636,15 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 			"this should never happen")
 	}
 
-	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
+	prevNFTEntry := operationData.PrevNFTEntry
+	bav._setNFTEntryMappings(prevNFTEntry)
+
+	// Set the NFTOwnership Entry mappings correctly
+	bav._deleteNFTOwnershipEntryMappings(operationData.NewNFTEntry)
+	bav._setNFTOwnershipEntryMappings(prevNFTEntry)
+
+	// Revert the accepted NFT bid history mappings
+	bav._setAcceptNFTBidHistoryMappings(MakeNFTKey(prevNFTEntry.NFTPostHash, prevNFTEntry.SerialNumber), operationData.PrevAcceptedNFTBidEntries)
 
 	// (2) Set the old bids.
 	if operationData.DeletedNFTBidEntries == nil || len(operationData.DeletedNFTBidEntries) == 0 {
@@ -3312,6 +3363,33 @@ func (bav *UtxoView) _deleteFollowEntryMappings(followEntry *FollowEntry) {
 	bav._setFollowEntryMappings(&tombstoneFollowEntry)
 }
 
+func (bav *UtxoView) _setNFTOwnershipEntryMappings(nftEntry *NFTEntry) {
+	// This function shouldn't be called with nil.
+	if nftEntry == nil {
+		glog.Errorf("_setNFTOwnershipEntryMappings: Called with nil NFTEntry; " +
+			"this should never happen.")
+		return
+	}
+
+	nftOwnershipKey := MakeNFTOwnershipKey(
+		nftEntry.OwnerPKID,
+		nftEntry.IsForSale,
+		nftEntry.LastAcceptedBidAmountNanos,
+		nftEntry.NFTPostHash,
+		nftEntry.SerialNumber)
+	bav.NFTOwnershipKeyToNFTEntry[nftOwnershipKey] = nftEntry
+}
+
+func (bav *UtxoView) _deleteNFTOwnershipEntryMappings(nftEntry *NFTEntry) {
+
+	// Create a tombstone entry.
+	tombstoneNFTEntry := *nftEntry
+	tombstoneNFTEntry.isDeleted = true
+
+	// Set the mappings to point to the tombstone entry.
+	bav._setNFTOwnershipEntryMappings(&tombstoneNFTEntry)
+}
+
 func (bav *UtxoView) _setNFTEntryMappings(nftEntry *NFTEntry) {
 	// This function shouldn't be called with nil.
 	if nftEntry == nil {
@@ -3397,6 +3475,36 @@ func (bav *UtxoView) GetNFTEntriesForPKID(ownerPKID *PKID) []*NFTEntry {
 		}
 	}
 	return nftEntries
+}
+
+func (bav *UtxoView) _setAcceptNFTBidHistoryMappings(nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) {
+	if nftBidEntries == nil {
+		glog.Errorf("_setAcceptedNFTBidHistoryMappings: Called with nil nftBidEntries; " +
+			"this should never happen.")
+		return
+	}
+
+	bav.NFTKeyToAcceptedNFTBidHistory[nftKey] = nftBidEntries
+}
+
+func (bav *UtxoView) GetAcceptNFTBidHistoryForNFTKey(nftKey *NFTKey) *[]*NFTBidEntry {
+	// If an entry exists in the in-memory map, return the value of that mapping.
+
+	mapValue, existsMapValue := bav.NFTKeyToAcceptedNFTBidHistory[*nftKey]
+	if existsMapValue {
+		return mapValue
+	}
+
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil.
+	dbNFTBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(bav.Handle, &nftKey.NFTPostHash, nftKey.SerialNumber)
+	if dbNFTBidEntries != nil {
+		bav._setAcceptNFTBidHistoryMappings(*nftKey, dbNFTBidEntries)
+		return dbNFTBidEntries
+	}
+	// We return an empty slice instead of nil
+	return &[]*NFTBidEntry{}
 }
 
 func (bav *UtxoView) _setNFTBidEntryMappings(nftBidEntry *NFTBidEntry) {
@@ -5523,6 +5631,7 @@ func (bav *UtxoView) _connectCreateNFT(
 			MinBidAmountNanos: txMeta.MinBidAmountNanos,
 		}
 		bav._setNFTEntryMappings(nftEntry)
+		bav._setNFTOwnershipEntryMappings(nftEntry)
 	}
 
 	// Add an operation to the utxoOps list indicating we've created an NFT.
@@ -5605,8 +5714,15 @@ func (bav *UtxoView) _connectUpdateNFT(
 		SerialNumber:      txMeta.SerialNumber,
 		IsForSale:         txMeta.IsForSale,
 		MinBidAmountNanos: txMeta.MinBidAmountNanos,
+		// Keep the last accepted bid amount nanos from the previous entry since this
+		// value is only updated when a new bid is accepted.
+		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
+
+	// We delete the previous NFT Ownership mapping and replace it with the new one.
+	bav._deleteNFTOwnershipEntryMappings(prevNFTEntry)
+	bav._setNFTOwnershipEntryMappings(newNFTEntry)
 
 	// Iterate over all the NFTBidEntries for this NFT and delete them.
 	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
@@ -5621,6 +5737,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 	// Add an operation to the list at the end indicating we've connected an NFT bid.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeUpdateNFT,
+		NewNFTEntry:          newNFTEntry,
 		PrevNFTEntry:         prevNFTEntry,
 		DeletedNFTBidEntries: deletedBidEntries,
 	})
@@ -5776,6 +5893,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// Now we are ready to accept the bid. When we accept, the folloiwng must happen:
 	// 	(1) Update the nft entry with the new owner and set it as "not for sale".
+	//		Set the ownership and accepted bid entries mappings as well.
 	//  (2) Delete all of the bids on this NFT since they are no longer relevant.
 	//  (3) Pay the seller.
 	//  (4) Pay royalties to the original creator.
@@ -5783,14 +5901,27 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	//  (6) Add creator coin royalties to bitclout locked.
 
 	// (1) Set an appropriate NFTEntry for the new owner.
+
 	newNFTEntry := &NFTEntry{
 		OwnerPKID:      txMeta.BidderPKID,
 		NFTPostHash:    txMeta.NFTPostHash,
 		SerialNumber:   txMeta.SerialNumber,
 		IsForSale:      false,
 		UnlockableText: txMeta.UnlockableText,
+
+		LastAcceptedBidAmountNanos: txMeta.BidAmountNanos,
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
+
+	// Update the ownership mappings. We must delete the previous since the new ownership entry will not overwrite
+	// the previous.
+	bav._deleteNFTOwnershipEntryMappings(prevNFTEntry)
+	bav._setNFTOwnershipEntryMappings(newNFTEntry)
+
+	// append the accepted bid entry to the list of accepted bid entries
+	prevAcceptedBidHistory := bav.GetAcceptNFTBidHistoryForNFTKey(&nftKey)
+	newAcceptedBidHistory := append(*prevAcceptedBidHistory, nftBidEntry)
+	bav._setAcceptNFTBidHistoryMappings(nftKey, &newAcceptedBidHistory)
 
 	// (2) Iterate over all the NFTBidEntries for this NFT and delete them.
 	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
@@ -5900,10 +6031,12 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	// Add an operation to the list at the end indicating we've connected an NFT bid.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeAcceptNFTBid,
+		NewNFTEntry:          newNFTEntry,
 		PrevNFTEntry:         prevNFTEntry,
 		PrevCoinEntry:        &prevCoinEntry,
 		DeletedNFTBidEntries: deletedBidEntries,
 		NFTPaymentUtxoKeys:   nftPaymentUtxoKeys,
+		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -8590,7 +8723,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this NFTKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
@@ -8607,6 +8740,86 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DBPutNFTEntryMappingsWithTxn(txn, nftEntry); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (bav *UtxoView) _flushNFTOwnershipEntriesToDbWithTxn(txn *badger.Txn) error {
+
+	// Go through and delete all the entries so they can be added back fresh.
+	for nftKeyIter, nftEntry := range bav.NFTOwnershipKeyToNFTEntry {
+		// Make a copy of the iterator since we make references to it below.
+		nftKey := nftKeyIter
+
+		// Sanity-check that the NFTOwnershipKey computed from the NFTEntry is
+		// equal to the NFTOwnershipKey that maps to that entry.
+		nftKeyInEntry := MakeNFTOwnershipKey(nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber)
+		if nftKeyInEntry != nftKey {
+			return fmt.Errorf("_flushNFTOwnershipEntriesToDbWithTxn: NFTEntry has "+
+				"NFTKey: %v, which doesn't match the NFTKeyToNFTEntry map key %v",
+				&nftKeyInEntry, &nftKey)
+		}
+
+		// Delete the existing mappings in the db for this NFTKey. They will be re-added
+		// if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteNFTOwnershipMappingsWithTxn(txn, nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+
+			return errors.Wrapf(
+				err, "_flushNFTOwnershipEntriesToDbWithTxn: Problem deleting mappings "+
+					"for NFTKey: %v: ", &nftKey)
+		}
+	}
+
+	// Add back all of the entries that aren't deleted.
+	for _, nftEntry := range bav.NFTOwnershipKeyToNFTEntry {
+		if nftEntry.isDeleted {
+			// If the NFTEntry has isDeleted=true then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			// If the NFTEntry has (isDeleted = false) then we put the corresponding
+			// mappings for it into the db.
+			if err := DBPutNFTOwnershipEntryMappingsWithTxn(txn, nftEntry); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error {
+
+	// Go through and delete all the entries so they can be added back fresh.
+	for nftKeyIter, _ := range bav.NFTKeyToAcceptedNFTBidHistory {
+		// Make a copy of the iterator since we make references to it below.
+		nftKey := nftKeyIter
+
+		// We skip the standard sanity check.  Since it is possible to accept a bid on serial number 0, it is possible
+		// that none of the accepted bids have the same serial number as the key.
+
+		// Delete the existing mappings in the db for this NFTKey. They will be re-added
+		// if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, &nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
+
+			return errors.Wrapf(
+				err, "_flushAcceptedBidEntriesToDbWithTxn: Problem deleting mappings "+
+					"for NFTKey: %v: ", &nftKey)
+		}
+	}
+
+	// Add back all of the entries that aren't nil or of length 0
+	for nftKey, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
+		if acceptedNFTBidEntries == nil || len(*acceptedNFTBidEntries) == 0 {
+			// If the acceptedNFTBidEntries is nil or has length 0 then there's nothing to do because
+			// we already deleted the entry above. length 0 means that there are no accepted bids yet.
+		} else {
+			// If the NFTEntry has (isDeleted = false) then we put the corresponding
+			// mappings for it into the db.
+			if err := DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, nftKey, acceptedNFTBidEntries); err != nil {
 				return err
 			}
 		}
@@ -8959,6 +9172,14 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	if err := bav._flushNFTEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+
+	if err := bav._flushNFTOwnershipEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+
+	if err := bav._flushAcceptedBidEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 
