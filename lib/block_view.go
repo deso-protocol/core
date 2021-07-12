@@ -1996,7 +1996,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	// Get the BalanceEntry of the transactor. This should always exist.
-	transactorBalanceEntry, _, _ := bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	transactorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		currentTxn.PublicKey, txMeta.ProfilePublicKey)
 	// Sanity-check that the transactor BalanceEntry exists
 	if transactorBalanceEntry == nil || transactorBalanceEntry.isDeleted {
@@ -2008,7 +2008,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 
 	// Get the BalanceEntry of the creator. It could be nil if this is a sell
 	// transaction or if the balance entry was deleted by a creator coin transfer.
-	creatorBalanceEntry, _, _ := bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	creatorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txMeta.ProfilePublicKey, txMeta.ProfilePublicKey)
 	if creatorBalanceEntry == nil || creatorBalanceEntry.isDeleted {
 		creatorPKID := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey)
@@ -2178,7 +2178,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	}
 
 	// Get the current / previous balance for the sender for sanity checking.
-	senderBalanceEntry, _, _ := bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	senderBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		currentTxn.PublicKey, txMeta.ProfilePublicKey)
 	// Sanity-check that the sender had a previous BalanceEntry, it should always exist.
 	if operationData.PrevSenderBalanceEntry == nil || operationData.PrevSenderBalanceEntry.isDeleted {
@@ -2195,7 +2195,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	}
 
 	// Get the current / previous balance for the receiver for sanity checking.
-	receiverBalanceEntry, _, _ := bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	receiverBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txMeta.ReceiverPublicKey, txMeta.ProfilePublicKey)
 	// Sanity-check that the receiver BalanceEntry exists, it should always exist here.
 	if receiverBalanceEntry == nil || receiverBalanceEntry.isDeleted {
@@ -3098,7 +3098,7 @@ func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(
 	return dbBalanceEntry
 }
 
-func (bav *UtxoView) _getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+func (bav *UtxoView) GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 	hodlerPubKey []byte, creatorPubKey []byte) (
 	_balanceEntry *BalanceEntry, _hodlerPKID *PKID, _creatorPKID *PKID) {
 
@@ -5335,7 +5335,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Look up a CreatorCoinBalanceEntry for the buyer and the creator. Create
 	// an entry for each if one doesn't exist already.
 	buyerBalanceEntry, hodlerPKID, creatorPKID :=
-		bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+		bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			txn.PublicKey, existingProfileEntry.PublicKey)
 	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
@@ -5366,7 +5366,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		// In this case, the creator is distinct from the buyer, so fetch and
 		// potentially create a new BalanceEntry for them rather than using the
 		// existing one.
-		creatorBalanceEntry, hodlerPKID, creatorPKID = bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+		creatorBalanceEntry, hodlerPKID, creatorPKID = bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			existingProfileEntry.PublicKey, existingProfileEntry.PublicKey)
 		// If the creator does not have a balance entry or the creator's balance entry is deleted and we have passed the
 		// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
@@ -5557,7 +5557,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// Look up a BalanceEntry for the seller. If it doesn't exist then the seller
 	// implicitly has a balance of zero coins, and so the sell transaction shouldn't be
 	// allowed.
-	sellerBalanceEntry, _, _ := bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	sellerBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txn.PublicKey, existingProfileEntry.PublicKey)
 	if sellerBalanceEntry == nil || sellerBalanceEntry.isDeleted {
 		return 0, 0, 0, nil, RuleErrorCreatorCoinSellerBalanceEntryDoesNotExist
@@ -5930,7 +5930,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 
 	// Look up a BalanceEntry for the sender. If it doesn't exist then the sender implicitly
 	// has a balance of zero coins, and so the transfer shouldn't be allowed.
-	senderBalanceEntry, _, _ := bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	senderBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txn.PublicKey, existingProfileEntry.PublicKey)
 	if senderBalanceEntry == nil || senderBalanceEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCreatorCoinTransferBalanceEntryDoesNotExist
@@ -5954,7 +5954,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 	// Now that we have validated this transaction, let's build the new BalanceEntry state.
 
 	// Look up a BalanceEntry for the receiver.
-	receiverBalanceEntry, _, _ := bav._getBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	receiverBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txMeta.ReceiverPublicKey, txMeta.ProfilePublicKey)
 
 	// Save the receiver's balance if it is non-nil.

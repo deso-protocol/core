@@ -36,7 +36,6 @@ require (
 	github.com/klauspost/compress v1.11.7 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/laser/go-merkle-tree v0.0.0-20180821204614-16c2f6ea4444
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe
 	github.com/nyaruka/phonenumbers v1.0.66
 	github.com/onsi/ginkgo v1.15.0 // indirect
@@ -48,7 +47,6 @@ require (
 	github.com/sasha-s/go-deadlock v0.2.0
 	github.com/shibukawa/configdir v0.0.0-20170330084843-e180dbdc8da0
 	github.com/spf13/cobra v1.1.3 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.7.1 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/tidwall/pretty v1.0.2 // indirect
@@ -69,6 +67,5 @@ require (
 	google.golang.org/grpc v1.37.0 // indirect
 	gopkg.in/DataDog/dd-trace-go.v1 v1.29.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
