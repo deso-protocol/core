@@ -2764,7 +2764,7 @@ func (bav *UtxoView) _deleteRecloutEntryMappings(recloutEntry *RecloutEntry) {
 	bav._setRecloutEntryMappings(&tombstoneRecloutEntry)
 }
 
-func (bav *UtxoView) GetFollowEntryForForFollowerPublicKeyCreatorPublicKey(followerPublicKey []byte, creatorPublicKey []byte) *FollowEntry {
+func (bav *UtxoView) GetFollowEntryForFollowerPublicKeyCreatorPublicKey(followerPublicKey []byte, creatorPublicKey []byte) *FollowEntry {
 	followerPKID := bav.GetPKIDForPublicKey(followerPublicKey)
 	creatorPKID := bav.GetPKIDForPublicKey(creatorPublicKey)
 
