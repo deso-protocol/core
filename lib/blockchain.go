@@ -2974,6 +2974,99 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func _verifyAuthorizeSignature(
+	OwnerPublicKey []byte, DerivedPublicKey []byte,
+	ExpirationBlock uint64, AccessSignature []byte) (bool, error) {
+
+	// Compute a hash of DerivedPublicKey+ExpirationBlock
+	expirationBlockByte := UintToBuf(ExpirationBlock)
+	accessByte := append(DerivedPublicKey, expirationBlockByte[:]...)
+	accessHash := Sha256DoubleHash(accessByte)
+
+	// Convert OwnerPublicKey to *btcec.PublicKey
+	ownerPk, err := btcec.ParsePubKey(OwnerPublicKey, btcec.S256())
+	if err != nil {
+		return false, errors.Wrapf(err, "_verifyAuthorizeSignature: Problem parsing owner public key: ")
+	}
+
+	// Convert AccessSignature to *btcec.Signature
+	signature, err := btcec.ParseDERSignature(AccessSignature, btcec.S256())
+	if err != nil {
+		return false, errors.Wrapf(err, "_verifyAuthorizeSignature: Problem parsing access signature: ")
+	}
+
+	return signature.Verify(accessHash[:], ownerPk), nil
+}
+
+func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
+	OwnerPublicKey []byte,
+	DerivedPublicKey []byte,
+	ExpirationBlock uint64,
+	AccessSignature []byte,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+
+	// Verify that the signature is valid
+	valid, err := _verifyAuthorizeSignature(OwnerPublicKey, DerivedPublicKey,
+		ExpirationBlock, AccessSignature)
+	if !valid || err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying signature: ")
+	}
+
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: "+
+				"Problem creating new utxo view: ")
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateAuthorizeDerivedKeyTxn: "+
+					"Problem getting augmented UtxoView from mempool: ")
+		}
+	}
+
+	// Create a transaction containing the creator coin fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta: &CreatorCoinTransferMetadataa{
+			ProfilePublicKey,
+			CreatorCoinToTransferNanos,
+			RecipientPublicKey,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// We don't need to make any tweaks to the amount because it's basically
+	// a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTransferTxn: Problem adding inputs: ")
+	}
+	_ = spendAmount
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateCreatorCoinTransferTxn: CreatorCoinTransfer txn " +
+			"must have at least one input but had zero inputs " +
+			"instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+
+}
+
 func (bc *Blockchain) CreateMaxSpend(
 	senderPkBytes []byte, recipientPkBytes []byte, minFeeRateNanosPerKB uint64,
 	mempool *BitCloutMempool) (

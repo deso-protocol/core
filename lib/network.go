@@ -3800,3 +3800,13 @@ func (txnData *SwapIdentityMetadataa) FromBytes(dataa []byte) error {
 func (txnData *SwapIdentityMetadataa) New() BitCloutTxnMetadata {
 	return &SwapIdentityMetadataa{}
 }
+
+// ==================================================================
+// AuthorizeDerivedKeyMetadata
+// ==================================================================
+
+type AuthorizeDerivedKeyOperationType uint8
+
+type AuthorizeDerivedKeyMetadata struct {
+
+}

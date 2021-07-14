@@ -2609,6 +2609,10 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// all of the inputs are authorized to be spent. One signature to rule them
 		// all.
 		//
+		// UPDATE: Transactions made by a derived key holder can be signed by a different
+		// public key. If initial signature verification fails, we loop through all
+		// non-expired derived keys and see if one of them signed the transaction.
+		//
 		// We treat block rewards as a special case in that we actually require that they
 		// not have a transaction-level public key and that they not be signed. Doing this
 		// simplifies things operationally for miners because it means they can run their
@@ -6225,7 +6229,9 @@ func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSwapIdentity(
 				txn, txHash, blockHeight, verifySignatures)
-
+	// ADD AUTHORIZE DERIVED KEY HERE
+	// #############################
+	// #############################
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}

@@ -202,10 +202,14 @@ var (
 	_PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash = []byte{46}
 	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel      = []byte{47}
 
+	// Prefix for Authorize Derived Key transactions:
+	// 		<prefix, OwnerPublicKey [33]byte> -> <>
+	_PrefixAuthorizeDerivedKey = []byte{48}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 48
+	// NEXT_TAG: 49
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
