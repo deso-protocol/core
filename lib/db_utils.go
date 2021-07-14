@@ -3787,6 +3787,123 @@ func DBGetCommentPostHashesForParentStakeID(
 }
 
 // ======================================================================================
+// Authorize derived key functions
+//  	<prefix, owner pub key [33]byte, derived pub key [33]byte> -> <expiration block []byte>
+// ======================================================================================
+
+func _dbKeyForOwnerToDerivedKeyMapping(
+	ownerPKID *PKID, derivedPKID *PKID) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
+	key := append(prefixCopy, ownerPKID[:]...)
+	key = append(key, derivedPKID[:]...)
+	return key
+}
+
+func _dbSeekPrefixForDerivedKeyMappings(
+	ownerPKID *PKID) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
+	key := append(prefixCopy, ownerPKID[:]...)
+	return key
+}
+
+func DBPutDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID, expirationBlock uint64) error {
+
+	if len(ownerPKID) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Follower PKID "+
+			"length %d != %d", len(ownerPKID), btcec.PubKeyBytesLenCompressed)
+	}
+	if len(derivedPKID) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Followed PKID "+
+			"length %d != %d", len(derivedPKID), btcec.PubKeyBytesLenCompressed)
+	}
+
+	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
+	valBuf := UintToBuf(expirationBlock)
+	return txn.Set(key, valBuf)
+}
+
+func DBPutDerivedKeyMapping(
+	handle *badger.DB, ownerPKID *PKID, derivedPKID *PKID, expirationBlock uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID, expirationBlock)
+	})
+}
+
+func DBGetOwnerToDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) []byte {
+
+	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
+	expirationBlock, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	return expirationBlock
+}
+
+func DBGetOwnerToDerivedKeyMapping(
+	db *badger.DB, ownerPKID *PKID, derivedPKID *PKID) []byte {
+
+	var ret []byte
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) error {
+
+	// First check that a mapping exists for the PKIDs passed in.
+	// If one doesn't exist then there's nothing to do.
+	existingMapping := DBGetOwnerToDerivedKeyMappingWithTxn(
+		txn, owenrPKID, derivedPKID)
+	if existingMapping == nil {
+		return nil
+	}
+
+	// When a mapping exists, delete it.
+	if err := txn.Delete(_dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)); err != nil {
+		return errors.Wrapf(err, "DBDeleteDerivedKeyMappingWithTxn: Deleting "+
+			"ownerPKID %s and derivedPKID %s failed",
+			PkToStringMainnet(ownerPKID[:]), PkToStringMainnet(derivedPKID[:]))
+	}
+
+	return nil
+}
+
+func DBDeleteDerivedKeyMapping(
+	handle *badger.DB, ownerPKID *PKID, derivedPKID *PKID) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
+	})
+}
+
+func DBGetDerivedPKIDsForOwner(handle *badgerDB, ownerPKID *PKID) (
+	_pkids []*PKID, _err error) {
+
+	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPKID)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+
+	derivedPKIDs := []*PKID{}
+	for _, keyBytes := range keysFound {
+		// We must slice off the first byte and followerPKID to get the followedPKID.
+		derivedPKIDBytes := keyBytes[1+btcec.PubKeyBytesLenCompressed:]
+		derivedPKID := &PKID{}
+		copy(derivedPKID[:], derivedPKIDBytes)
+		derivedPKIDs = append(derivedPKIDs, derivedPKID)
+	}
+
+	return derivedPKIDs, nil
+}
+
+// Question: should we have a PKIDToPublicKey mapping for derived keys or can we just handle it with btcec?
+
+// ======================================================================================
 // Profile code
 // ======================================================================================
 func _dbKeyForPKIDToProfileEntry(pkid *PKID) []byte {

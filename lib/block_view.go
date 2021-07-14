@@ -738,6 +738,9 @@ type DerivedKeyEntry struct {
 	// Derived public key uncompressed
 	DerivedPublicKey []byte
 
+	// Expiration Block
+	ExpirationBlock uint64
+
 	// Whether this entry is deleted in the view
 	isDeleted bool
 }
@@ -988,6 +991,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Coin balance entries
 	bav.HODLerPKIDCreatorPKIDToBalanceEntry = make(map[BalanceEntryMapKey]*BalanceEntry)
+
+	// Derived Key entries
+	bav.PKIDToDerivedKey = make(map[PKID]*DerivedKeyEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -2344,6 +2350,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 		currentTxn.PublicKey,
 		PublicKeyToPKID(txMeta.DerivedPublicKey),
 		txMeta.DerivedPublicKey,
+		txMeta.ExpirationBlock,
 		true,
 	}
 	bav._deleteDerivedKeyMappings(&derivedKeyEntry)
@@ -5119,6 +5126,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		ownerPublicKey,
 		PublicKeyToPKID(derivedPublicKey),
 		derivedPublicKey,
+		txMeta.ExpirationBlock,
 		false,
 	}
 	bav._setDerivedKeyMappings(&derivedKeyEntry)
@@ -7759,6 +7767,37 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
+func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
+	glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.PKIDToDerivedKey))
+
+	// Go through all entries in the PKIDToDerivedKey map.
+	// If entry has a isDeleted value of false it means that particular
+	// mapping should be expunged from the db. If isDeleted has a value
+	// of true it means that mapping should be added to the db.
+	for _, derivedKeyEntry := range bav.PKIDToDerivedKey {
+		// Make a copy of the iterator since we take references to it below.
+		derivedKeyEntryCopy := derivedKeyEntry
+
+		if !derivedKeyEntryCopy.isDeleted {
+			// In this case we add the mapping to the db
+			if err := DBPutDerivedKeyMappingWithTxn(txn, derivedKeyEntryCopy.OwnerPKID,
+				derivedKeyEntryCopy.DerivedPKID, derivedKeyEntryCopy.ExpirationBlock); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
+					"Problem putting DerivedKeyEntry %v to db", &derivedKeyEntryCopy)
+			}
+		} else {
+			// In this case we delete the mapping from the db
+			if err := DBDeleteDerivedKeyMappingWithTxn(txn, derivedKeyEntryCopy.OwnerPKID,
+				derivedKeyEntryCopy.DerivedPKID); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
+					"Problem deleting DerivedKeyEntry %v from db", &derivedKeyEntryCopy)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	// Flush the utxos to the db.
 	if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
@@ -7809,7 +7848,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	if err := bav._flushPKIDEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
-
+	if err := bav._flushDerivedKeyEntryToDbWithTxn(txn); err != nil {
+		return err
+	}
 	return nil
 }
 
