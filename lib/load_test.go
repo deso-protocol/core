@@ -97,6 +97,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				uint64(time.Now().UnixNano()),
 				postExtraData,
 				false,
+				false,
 				100,
 				mempool)
 			require.NoError(err)

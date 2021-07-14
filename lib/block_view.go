@@ -281,6 +281,21 @@ type RecloutEntry struct {
 	isDeleted bool
 }
 
+// PinEntry stores the timestamp and state of a PostEntry.
+// It's used in the UtxoView to keep track of pinned posts not yet in the database.
+type PinEntry struct {
+	PinnerPubKey []byte
+
+	// Timestamp of the original post being updated
+	TstampNanos uint64
+
+	// Post Hash of the pinned post
+	PinnedPostHash BlockHash
+
+	// Whether or not this pin entry is deleted in the view.
+	isDeleted bool
+}
+
 type GlobalParamsEntry struct {
 	// The new exchange rate to set.
 	USDCentsPerBitcoin uint64
@@ -548,8 +563,11 @@ type PostEntry struct {
 	// How many comments this post has
 	CommentCount uint64
 
-	// Indicator if a post is pinned or not.
+	// Indicator if a post is pinned or not to the user's profile.
 	IsPinned bool
+
+	// Indicator if a post is pinned to the global feed.
+	IsGlobalPinned bool
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte
@@ -756,6 +774,7 @@ type UtxoView struct {
 
 	// Post data
 	PostHashToPostEntry map[BlockHash]*PostEntry
+	PublicKeyToPostHashToPinEntry map[PkMapKey]map[BlockHash]*PinEntry
 
 	// Profile data
 	PublicKeyToPKIDEntry map[PkMapKey]*PKIDEntry
@@ -888,6 +907,7 @@ type UtxoOperation struct {
 	PrevParentPostEntry      *PostEntry
 	PrevGrandparentPostEntry *PostEntry
 	PrevRecloutedPostEntry   *PostEntry
+	PrevPinEntry             *PinEntry
 
 	// Save the previous profile entry when making an update.
 	PrevProfileEntry *ProfileEntry
@@ -941,6 +961,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Post and profile data
 	bav.PostHashToPostEntry = make(map[BlockHash]*PostEntry)
+	bav.PublicKeyToPostHashToPinEntry = make(map[PkMapKey]map[BlockHash]*PinEntry)
 	bav.PublicKeyToPKIDEntry = make(map[PkMapKey]*PKIDEntry)
 	bav.PKIDToPublicKey = make(map[PKID]*PKIDEntry)
 	bav.ProfilePKIDToProfileEntry = make(map[PKID]*ProfileEntry)
@@ -998,6 +1019,12 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for postHash, postEntry := range bav.PostHashToPostEntry {
 		newPostEntry := *postEntry
 		newView.PostHashToPostEntry[postHash] = &newPostEntry
+	}
+
+	// Copy the post pin data
+	newView.PublicKeyToPostHashToPinEntry = make(map[PkMapKey]map[BlockHash]*PinEntry, len(bav.PublicKeyToPostHashToPinEntry))
+	for pkMapKey, postHashToPinEntry := range bav.PublicKeyToPostHashToPinEntry {
+		newView.PublicKeyToPostHashToPinEntry[pkMapKey] = postHashToPinEntry
 	}
 
 	// Copy the PKID data
@@ -1844,6 +1871,18 @@ func (bav *UtxoView) _disconnectSubmitPost(
 	}
 	if currentOperation.PrevRecloutEntry != nil {
 		bav._setRecloutEntryMappings(currentOperation.PrevRecloutEntry)
+	}
+	if currentOperation.PrevPinEntry != nil {
+		bav._setPinEntryMappings(currentOperation.PrevPinEntry)
+	} else {
+		// If the previous pin entry was nil, that means this is the first submission of this post and we
+		// must clear the associated pin entry during a disconnect.
+		bav._deletePinEntryMappings(&PinEntry{
+			PinnerPubKey:   postEntry.PosterPublicKey,
+			TstampNanos:    postEntry.TimestampNanos,
+			PinnedPostHash: *postEntry.PostHash,
+			isDeleted:      true,
+		})
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
@@ -2762,6 +2801,37 @@ func (bav *UtxoView) _deleteRecloutEntryMappings(recloutEntry *RecloutEntry) {
 
 	// Set the mappings to point to the tombstone entry.
 	bav._setRecloutEntryMappings(&tombstoneRecloutEntry)
+}
+
+func (bav *UtxoView) _setPinEntryMappings(pinEntry *PinEntry) {
+	if pinEntry == nil {
+		glog.Errorf("_setPinEntryMappings: called with nil PinEntry; " +
+			"this should never happen")
+		return
+	}
+
+	pkMapKey := MakePkMapKey(pinEntry.PinnerPubKey)
+	_, pinEntryMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]
+	if !pinEntryMapExists {
+		bav.PublicKeyToPostHashToPinEntry[pkMapKey] = make(map[BlockHash]*PinEntry)
+	}
+
+	bav.PublicKeyToPostHashToPinEntry[pkMapKey][pinEntry.PinnedPostHash] = pinEntry
+}
+
+func (bav *UtxoView) _deletePinEntryMappings(pinEntry *PinEntry) {
+	if pinEntry == nil {
+		glog.Errorf("_deletePinEntryMappings: called with nil PinEntry; " +
+			"this should never happen")
+		return
+	}
+
+	// Create the tombstone entry
+	tombstonePinEntry := *pinEntry
+	tombstonePinEntry.isDeleted = true
+
+	// Set the pin entry
+	bav._setPinEntryMappings(&tombstonePinEntry)
 }
 
 func (bav *UtxoView) _getFollowEntryForFollowKey(followKey *FollowKey) *FollowEntry {
@@ -4213,6 +4283,12 @@ func (bav *UtxoView) _connectSubmitPost(
 		copy(recloutedPostHash[:], recloutedPostHashBytes)
 		delete(extraData, RecloutedPostHash)
 	}
+	// Set the IsPinned attribute based on extra data and check that we've passed the PinnedPostTrackingUpdateBlockHeight.
+	isPinned := false
+	if _, hasPinned := extraData[IsPinnedPostKey]; hasPinned && blockHeight > PinnedPostTrackingUpdateBlockHeight {
+		isPinned = true
+		delete(extraData, IsPinnedPostKey)
+	}
 
 	// At this point the inputs and outputs have been processed. Now we
 	// need to handle the metadata.
@@ -4224,6 +4300,7 @@ func (bav *UtxoView) _connectSubmitPost(
 	var prevGrandparentPostEntry *PostEntry
 	var prevRecloutedPostEntry *PostEntry
 	var prevRecloutEntry *RecloutEntry
+	var prevPinEntry *PinEntry
 
 	var newPostEntry *PostEntry
 	var newParentPostEntry *PostEntry
@@ -4311,6 +4388,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		// which seems like undesired behavior if a paramUpdater is trying to reduce
 		// spam
 		newPostEntry.IsHidden = txMeta.IsHidden
+		newPostEntry.IsPinned = isPinned
 
 		// Obtain the parent posts
 		newParentPostEntry, newGrandparentPostEntry, err = bav._getParentAndGrandparentPostEntry(newPostEntry)
@@ -4320,6 +4398,22 @@ func (bav *UtxoView) _connectSubmitPost(
 
 		if newPostEntry.RecloutedPostHash != nil {
 			newRecloutedPostEntry = bav.GetPostEntryForPostHash(newPostEntry.RecloutedPostHash)
+		}
+
+		// The post's new pin state can be derived entirely from the current and previous post entries.
+		// We set or delete the following pinEntry depending on the current and previous state of the post.
+		// Previous pin entry is also simple to derive given the previous state, so it can be set here as well.
+		pinEntry := &PinEntry{
+			PinnerPubKey:   newPostEntry.PosterPublicKey,
+			TstampNanos:    newPostEntry.TimestampNanos,
+			PinnedPostHash: *newPostEntry.PostHash,
+			isDeleted:      false,
+		}
+		prevPinEntry = &PinEntry{
+			PinnerPubKey:   newPostEntry.PosterPublicKey,
+			TstampNanos:    newPostEntry.TimestampNanos,
+			PinnedPostHash: *newPostEntry.PostHash,
+			isDeleted:      prevPostEntry.IsHidden || (!prevPostEntry.IsHidden && !prevPostEntry.IsPinned),
 		}
 
 		// Figure out how much we need to change the parent / grandparent's comment count by
@@ -4353,6 +4447,17 @@ func (bav *UtxoView) _connectSubmitPost(
 			} else if isQuotedReclout {
 				quoteRecloutCountUpdateAmount = 1
 			}
+		}
+
+		// We set/delete the pin entry mappings depending on the previous and current state of the post.
+		if hidingPostEntry {
+			bav._deletePinEntryMappings(pinEntry)
+		} else if unhidingPostEntry && newPostEntry.IsPinned {
+			bav._setPinEntryMappings(pinEntry)
+		} else if !prevPostEntry.IsPinned && newPostEntry.IsPinned {
+			bav._setPinEntryMappings(pinEntry)
+		} else if prevPostEntry.IsPinned && !newPostEntry.IsPinned {
+			bav._deletePinEntryMappings(pinEntry)
 		}
 
 		// Save the data from the parent post. Note that we don't make a deep copy
@@ -4464,6 +4569,7 @@ func (bav *UtxoView) _connectSubmitPost(
 			TimestampNanos:           txMeta.TimestampNanos,
 			ConfirmationBlockHeight:  blockHeight,
 			StakeEntry:               NewStakeEntry(),
+			IsPinned:                 isPinned,
 			PostExtraData:            extraData,
 			// Don't set IsHidden on new posts.
 		}
@@ -4509,6 +4615,22 @@ func (bav *UtxoView) _connectSubmitPost(
 				bav._updateQuoteRecloutCount(newRecloutedPostEntry, 1)
 			}
 		}
+
+		// The post's new pin state can be derived entirely from the current and previous post entries.
+		// We set or delete the following pinEntry depending on the current and previous state of the post.
+		pinEntry := &PinEntry{
+			PinnerPubKey:   newPostEntry.PosterPublicKey,
+			TstampNanos:    newPostEntry.TimestampNanos,
+			PinnedPostHash: *newPostEntry.PostHash,
+			isDeleted:      false,
+		}
+		prevPinEntry = nil
+
+		// If the new post is pinned, we add the pin entry. We don't consider if the post is hidden
+		// as we do not allow new posts to be hidden.
+		if isPinned {
+			bav._setPinEntryMappings(pinEntry)
+		}
 	}
 
 	if verifySignatures {
@@ -4543,6 +4665,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		PrevGrandparentPostEntry: prevGrandparentPostEntry,
 		PrevRecloutedPostEntry:   prevRecloutedPostEntry,
 		PrevRecloutEntry:         prevRecloutEntry,
+		PrevPinEntry:             prevPinEntry,
 		Type:                     OperationTypeSubmitPost,
 	})
 
@@ -6582,7 +6705,98 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	return allCorePosts, commentsByPostHash, nil
 }
 
-func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool) (_posts []*PostEntry, _err error) {
+func (bav *UtxoView) GetPinnedPostsForPublicKeyOrderedByTimestamp(publicKey []byte, limit uint64,
+	mediaRequired bool) (_posts []*PostEntry, _postsIncluded map[BlockHash]struct{}, _err error) {
+	prefix := _dbReverseSeekPrefixForPostsPinned(publicKey)
+	var posts []*PostEntry
+
+	// Fetch all posts currently in the database who are pinned
+	err := bav.Handle.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+
+		// Go in reverse order
+		opts.Reverse = true
+
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+
+		counter := uint64(0)
+		for nodeIterator.Seek(append(prefix, 0xff)); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+			key := nodeIterator.Item().Key()
+			postHash := &BlockHash{}
+			copy(postHash[:], key[len(key) - HashSizeBytes:])
+
+			postEntry := bav.GetPostEntryForPostHash(postHash)
+			if postEntry == nil {
+				return fmt.Errorf("Missing post entry for key: %v", key)
+			}
+			if postEntry.isDeleted || postEntry.IsHidden || !postEntry.IsPinned {
+				continue
+			}
+
+			// mediaRequired set to determine if we only want posts that include media and ignore posts without
+			if mediaRequired && !postEntry.HasMedia() {
+				continue
+			}
+
+			posts = append(posts, postEntry)
+			counter += 1
+			if counter == limit {
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil,
+			fmt.Errorf("GetPinnedPostsForPublicKeyOrderedByTimestamp: Problem fetching " +
+				"pinned posts from db: %v", err)
+	}
+
+	// Iterate over the view's pinned posts for the public key, saving the ones that are being actively pinned
+	pkMapKey := MakePkMapKey(publicKey)
+	if _, utxoMapExists := bav.PublicKeyToPostHashToPinEntry[pkMapKey]; utxoMapExists {
+		for postHash, pinEntry := range bav.PublicKeyToPostHashToPinEntry[MakePkMapKey(publicKey)] {
+			if !pinEntry.isDeleted {
+				postEntry := bav.GetPostEntryForPostHash(&postHash)
+				if postEntry == nil {
+					return nil, nil, fmt.Errorf("Missing post entry")
+				}
+				if postEntry.isDeleted || postEntry.IsHidden {
+					continue
+				}
+
+				// mediaRequired set to determine if we only want posts that include media and ignore posts without
+				if mediaRequired && !postEntry.HasMedia() {
+					continue
+				}
+
+				posts = append(posts, postEntry)
+			}
+		}
+	}
+
+	// Sort and limit the posts by their associated timestamps.
+	// This is necessary to sift in the pinned entries from the view.
+	sort.Slice(posts, func(ii, jj int) bool {
+		return posts[ii].TimestampNanos > posts[jj].TimestampNanos
+	})
+	if len(posts) > int(limit) {
+		posts = posts[:limit]
+	}
+
+	// Create a map of the included posts. This will be used to quickly determine which
+	// posts to ignore when fetching the remaining posts on a profile.
+	includedPosts := make(map[BlockHash]struct{})
+	for _, postEntry := range posts {
+		includedPosts[*postEntry.PostHash] = struct{}{}
+	}
+
+	return posts, includedPosts, nil
+}
+
+func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash,
+	ignorePostsMap map[BlockHash]struct{}, limit uint64, mediaRequired bool) (_posts []*PostEntry, _err error) {
 	handle := bav.Handle
 	dbPrefix := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
 	dbPrefix = append(dbPrefix, publicKey...)
@@ -6638,6 +6852,11 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 				continue
 			}
 
+			// Ignore if the postHash exists in the ignorePostsMap
+			if _, ignorePost := ignorePostsMap[*postEntry.PostHash]; ignorePost {
+				continue
+			}
+
 			posts = append(posts, postEntry)
 		}
 		return nil
@@ -6655,6 +6874,11 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 
 		// mediaRequired set to determine if we only want posts that include media and ignore posts without
 		if mediaRequired && !postEntry.HasMedia() {
+			continue
+		}
+
+		// Ignore if the postHash exists in the ignorePostsMap
+		if _, ignorePost := ignorePostsMap[*postEntry.PostHash]; ignorePost {
 			continue
 		}
 
@@ -7419,6 +7643,21 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 
 	return nil
 }
+func (bav *UtxoView) _flushPostPinEntriesToDbWithTxn(txn *badger.Txn) error {
+	// Go through every public key map in the pinned post map
+	for pkMapKey, postHashToPinEntry := range bav.PublicKeyToPostHashToPinEntry {
+		var publicKeyBytes = make([]byte, btcec.PubKeyBytesLenCompressed)
+		copy(publicKeyBytes, pkMapKey[:])
+
+		// Go through every updated pin assocaited with the public key and update their state in badger
+		for postHash, pinEntry := range postHashToPinEntry {
+			if err := DBUpdatePinEntryMappingsWithTxn(txn, publicKeyBytes, &postHash, pinEntry); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 	for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
 		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
@@ -7624,6 +7863,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	if err := bav._flushPostEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+	if err := bav._flushPostPinEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 	if err := bav._flushProfileEntriesToDbWithTxn(txn); err != nil {
