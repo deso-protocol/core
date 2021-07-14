@@ -725,15 +725,32 @@ func (pe *ProfileEntry) IsDeleted() bool {
 	return pe.isDeleted
 }
 
-type DerivedKeyEntry struct {
+// Obsolete?
+type DerivedKeyEntryMapKey struct {
 	// Owner public key compressed
-	OwnerPKID *PKID
-
-	// Owner public key uncompressed
-	OwnerPublicKey []byte
+	OwnerPKID PKID
 
 	// Derived public key compressed
-	DerivedPKID *PKID
+	DerivedPKID PKID
+}
+
+// Obsolete?
+func MakeDerivedKeyEntryMapKey (OwnerPKID *PKID, DerivedPKID *PKID) DerivedKeyEntryMapKey {
+	return DerivedKeyEntryMapKey{
+		*OwnerPKID,
+		*DerivedPKID,
+	}
+}
+
+// Obsolete?
+func (mm DerivedKeyEntryMapKey) String() string {
+	return fmt.Sprintf("DerivedKeyEntryMapKey: <Owner Pub Key: %v, Derived Pub Key: %v>",
+		PkToStringBoth(mm.OwnerPKID[:]), PkToStringBoth(mm.DerivedPKID[:]))
+}
+
+type DerivedKeyEntry struct {
+	// Owner public key uncompressed
+	OwnerPublicKey []byte
 
 	// Derived public key uncompressed
 	DerivedPublicKey []byte
@@ -742,6 +759,7 @@ type DerivedKeyEntry struct {
 	ExpirationBlock uint64
 
 	// Whether this entry is deleted in the view
+	// This is used for revoking the authorization
 	isDeleted bool
 }
 
@@ -787,8 +805,8 @@ type UtxoView struct {
 	// Coin balance entries
 	HODLerPKIDCreatorPKIDToBalanceEntry map[BalanceEntryMapKey]*BalanceEntry
 
-	// Derived Key entries
-	PKIDToDerivedKey map[PKID]*DerivedKeyEntry
+	// Derived Key entries. First index is owner PKID, then derived PKID
+	PKIDToDerivedKeyEntry map[PKID]map[PKID]*DerivedKeyEntry
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -993,7 +1011,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.HODLerPKIDCreatorPKIDToBalanceEntry = make(map[BalanceEntryMapKey]*BalanceEntry)
 
 	// Derived Key entries
-	bav.PKIDToDerivedKey = make(map[PKID]*DerivedKeyEntry)
+	bav.PKIDToDerivedKeyEntry = make(map[PKID]map[PKID]*DerivedKeyEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -2346,9 +2364,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 
 	// Delete old derived key mapping
 	derivedKeyEntry := DerivedKeyEntry {
-		PublicKeyToPKID(currentTxn.PublicKey),
 		currentTxn.PublicKey,
-		PublicKeyToPKID(txMeta.DerivedPublicKey),
 		txMeta.DerivedPublicKey,
 		txMeta.ExpirationBlock,
 		true,
@@ -2509,6 +2525,79 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 		}
 	}
 	return false
+}
+
+func (bav *UtxoView) _verifySignatureDerived(txn *MsgBitCloutTxn, blockHeight uint32) error {
+	// Compute a hash of the transaction
+	txBytes, err := txn.ToBytes(true /*preSignature*/)
+	if err != nil {
+		return errors.Wrapf(err, "_verifySignatureDerived: Problem serializing txn without signature: ")
+	}
+	txHash := Sha256DoubleHash(txBytes)
+
+	// Iterate through all derived key mappings to see if one matches the signature
+	// We're making this map to prevent a situation in which we have an outdated
+	// derived key entry in the DB, and an updated entry is in the mempool
+	derivedKeyMap := make(map[PKID]bool)
+	// Get owner PKID for map index
+	ownerPKID := *PublicKeyToPKID(txn.PublicKey)
+	for _, derivedKeyEntry := range bav.PKIDToDerivedKeyEntry[ownerPKID] {
+		// Check if the key hasn't been revoked
+		if derivedKeyEntry.isDeleted || derivedKeyEntry.ExpirationBlock <= uint64(blockHeight){
+			derivedKeyMap[*PublicKeyToPKID(derivedKeyEntry.DerivedPublicKey)] = false
+			continue
+		}
+		derivedKeyMap[*PublicKeyToPKID(derivedKeyEntry.DerivedPublicKey)] = true
+
+		// Convert the derived public key into a *btcec.PublicKey
+		txnPk, err := btcec.ParsePubKey(derivedKeyEntry.DerivedPublicKey, btcec.S256())
+		if err != nil {
+			continue
+		}
+
+		// Verify that the transaction is signed by the specified key.
+		if !txn.Signature.Verify(txHash[:], txnPk) {
+			continue
+		}
+
+		return nil
+	}
+
+	// Get derived keys from the DB and check if any of them matches the signature
+	derivedPKIDs, err := DBGetDerivedPKIDsForOwner(bav.Handle, &ownerPKID)
+	if err != nil {
+		return errors.Wrapf(err, "_verifySignatureDerived: Problem getting Derived PKIDs from DB: ")
+	}
+
+	// Iterate over the derived keys
+	for _, derivedPKID := range derivedPKIDs {
+		// If a derived key has already been checked earlier
+		// we can skip checking it again.
+		if _, ok := derivedKeyMap[*derivedPKID]; ok {
+			continue
+		}
+
+		// Get expiration blocks for all derived keys
+		expirationBlock := DBGetOwnerToDerivedKeyMapping(bav.Handle, &ownerPKID, derivedPKID)
+		if expirationBlock <= uint64(blockHeight) {
+			continue
+		}
+
+		// Convert the derived public key into a *btcec.PublicKey
+		// Question: is ParsePubKey smart enough to recover y from PKID, or we need full public key?
+		// Documentation says we should be fine.
+		txnPk, err := btcec.ParsePubKey(PKIDToPublicKey(derivedPKID), btcec.S256())
+		if err != nil {
+			continue
+		}
+
+		// Verify that the transaction is signed by the specified key.
+		if !txn.Signature.Verify(txHash[:], txnPk) {
+			continue
+		}
+		return nil
+	}
+	return RuleErrorInvalidTransactionSignature
 }
 
 func _verifySignature(txn *MsgBitCloutTxn) error {
@@ -2696,7 +2785,9 @@ func (bav *UtxoView) _connectBasicTransfer(
 			}
 		} else {
 			if err := _verifySignature(txn); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem verifying txn signature: ")
+				if err = bav._verifySignatureDerived(txn, blockHeight); err != nil {
+					return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem verifying txn signature: ")
+				}
 			}
 		}
 	}
@@ -3384,7 +3475,9 @@ func (bav *UtxoView) _setDerivedKeyMappings(derivedKeyEntry *DerivedKeyEntry) {
 	}
 
 	// Add a mapping for the derived key.
-	bav.PKIDToDerivedKey[*derivedKeyEntry.OwnerPKID] = derivedKeyEntry
+	ownerPKID := PublicKeyToPKID(derivedKeyEntry.OwnerPublicKey)
+	derivedPKID := PublicKeyToPKID(derivedKeyEntry.DerivedPublicKey)
+	bav.PKIDToDerivedKeyEntry[*ownerPKID][*derivedPKID] = derivedKeyEntry
 }
 
 func (bav *UtxoView) _deleteDerivedKeyMappings(derivedKeyEntry *DerivedKeyEntry) {
@@ -5122,9 +5215,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 
 	// Set a new mapping for the owner to derived public key
 	derivedKeyEntry := DerivedKeyEntry {
-		PublicKeyToPKID(ownerPublicKey),
 		ownerPublicKey,
-		PublicKeyToPKID(derivedPublicKey),
 		derivedPublicKey,
 		txMeta.ExpirationBlock,
 		false,
@@ -7768,29 +7859,31 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.PKIDToDerivedKey))
+	glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.PKIDToDerivedKeyEntry))
 
-	// Go through all entries in the PKIDToDerivedKey map.
+	// Go through all entries in the PKIDToDerivedKeyEntry map.
 	// If entry has a isDeleted value of false it means that particular
 	// mapping should be expunged from the db. If isDeleted has a value
 	// of true it means that mapping should be added to the db.
-	for _, derivedKeyEntry := range bav.PKIDToDerivedKey {
-		// Make a copy of the iterator since we take references to it below.
-		derivedKeyEntryCopy := derivedKeyEntry
+	for _, derivedKeyEntryOwner := range bav.PKIDToDerivedKeyEntry {
+		for _, derivedKeyEntry := range derivedKeyEntryOwner {
+			// Make a copy of the iterator since we take references to it below.
+			derivedKeyEntryCopy := derivedKeyEntry
 
-		if !derivedKeyEntryCopy.isDeleted {
-			// In this case we add the mapping to the db
-			if err := DBPutDerivedKeyMappingWithTxn(txn, derivedKeyEntryCopy.OwnerPKID,
-				derivedKeyEntryCopy.DerivedPKID, derivedKeyEntryCopy.ExpirationBlock); err != nil {
-				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
-					"Problem putting DerivedKeyEntry %v to db", &derivedKeyEntryCopy)
-			}
-		} else {
-			// In this case we delete the mapping from the db
-			if err := DBDeleteDerivedKeyMappingWithTxn(txn, derivedKeyEntryCopy.OwnerPKID,
-				derivedKeyEntryCopy.DerivedPKID); err != nil {
-				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
-					"Problem deleting DerivedKeyEntry %v from db", &derivedKeyEntryCopy)
+			if !derivedKeyEntryCopy.isDeleted {
+				// In this case we add the mapping to the db
+				if err := DBPutDerivedKeyMappingWithTxn(txn, PublicKeyToPKID(derivedKeyEntryCopy.OwnerPublicKey),
+					PublicKeyToPKID(derivedKeyEntryCopy.DerivedPublicKey), derivedKeyEntryCopy.ExpirationBlock); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
+						"Problem putting DerivedKeyEntry %v to db", &derivedKeyEntryCopy)
+				}
+			} else {
+				// In this case we delete the mapping from the db
+				if err := DBDeleteDerivedKeyMappingWithTxn(txn, PublicKeyToPKID(derivedKeyEntryCopy.OwnerPublicKey),
+					PublicKeyToPKID(derivedKeyEntryCopy.DerivedPublicKey)); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
+						"Problem deleting DerivedKeyEntry %v from db", &derivedKeyEntryCopy)
+				}
 			}
 		}
 	}

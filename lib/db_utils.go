@@ -3863,6 +3863,9 @@ func DBGetOwnerToDerivedKeyMapping(
 
 func DBDeleteDerivedKeyMappingWithTxn(
 	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) error {
+	// TODO
+	// We should call DBDeleteDerivedKeyMappingWithTxn whenever access
+	// for a key is revoked.
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
