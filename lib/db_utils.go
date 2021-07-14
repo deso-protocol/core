@@ -3834,20 +3834,26 @@ func DBPutDerivedKeyMapping(
 }
 
 func DBGetOwnerToDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) []byte {
+	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) uint64 {
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
-	expirationBlock, err := txn.Get(key)
+	expirationBlockItem, err := txn.Get(key)
 	if err != nil {
-		return nil
+		return 0
 	}
+	expirationBlockBytes, err := expirationBlockItem.ValueCopy(nil)
+	if err != nil {
+		return 0
+	}
+
+	expirationBlock, _ := Uvarint(expirationBlockBytes)
 	return expirationBlock
 }
 
 func DBGetOwnerToDerivedKeyMapping(
-	db *badger.DB, ownerPKID *PKID, derivedPKID *PKID) []byte {
+	db *badger.DB, ownerPKID *PKID, derivedPKID *PKID) uint64 {
 
-	var ret []byte
+	var ret uint64
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
 		return nil
@@ -3861,8 +3867,8 @@ func DBDeleteDerivedKeyMappingWithTxn(
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
 	existingMapping := DBGetOwnerToDerivedKeyMappingWithTxn(
-		txn, owenrPKID, derivedPKID)
-	if existingMapping == nil {
+		txn, ownerPKID, derivedPKID)
+	if existingMapping == 0 {
 		return nil
 	}
 
@@ -3883,7 +3889,7 @@ func DBDeleteDerivedKeyMapping(
 	})
 }
 
-func DBGetDerivedPKIDsForOwner(handle *badgerDB, ownerPKID *PKID) (
+func DBGetDerivedPKIDsForOwner(handle *badger.DB, ownerPKID *PKID) (
 	_pkids []*PKID, _err error) {
 
 	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPKID)
