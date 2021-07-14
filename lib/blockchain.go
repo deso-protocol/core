@@ -3016,30 +3016,20 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 			err, "Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying signature: ")
 	}
 
-	// Create a new UtxoView. If we have access to a mempool object, use it to
-	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateAuthorizeDerivedKeyTxn: "+
-				"Problem creating new utxo view: ")
-	}
-	if mempool != nil {
-		utxoView, err = mempool.GetAugmentedUniversalView()
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err,
-				"Blockchain.CreateAuthorizeDerivedKeyTxn: "+
-					"Problem getting augmented UtxoView from mempool: ")
-		}
+	blockHeight := bc.blockTip().Height + 1
+	if ExpirationBlock <= uint64(blockHeight) {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateAuthorizeDerivedKeyTxn: ExpirationBlock must be a future block: ")
 	}
 
-	// Create a transaction containing the creator coin fields.
+	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgBitCloutTxn{
-		PublicKey: UpdaterPublicKey,
-		TxnMeta: &CreatorCoinTransferMetadataa{
-			ProfilePublicKey,
-			CreatorCoinToTransferNanos,
-			RecipientPublicKey,
+		PublicKey: OwnerPublicKey,
+		TxnMeta: &AuthorizeDerivedKeyMetadata{
+			DerivedPublicKey,
+			ExpirationBlock,
+			AuthorizeDerivedKeyOperationValid,
+			AccessSignature,
 		},
 
 		// We wait to compute the signature until we've added all the
@@ -3051,16 +3041,13 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTransferTxn: Problem adding inputs: ")
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
-	// We want our transaction to have at least one input, even if it all
-	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateCreatorCoinTransferTxn: CreatorCoinTransfer txn " +
-			"must have at least one input but had zero inputs " +
-			"instead. Try increasing the fee rate.")
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateAuthorizeDerivedKeyTxn: Spend amount "+
+			"should be zero but was %d instead: ", spendAmount)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil

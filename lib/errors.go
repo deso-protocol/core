@@ -193,6 +193,7 @@ const (
 	RuleErrorCreatorCoinSellInsufficientCoins                          RuleError = "RuleErrorCreatorCoinSellInsufficientCoins"
 	RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked           RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked"
 	RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller              RuleError = "RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller"
+	RuleErrorAuthorizeDerivedKeySignatureIsNotValid                    RuleError = "RuleErrorAuthorizeDerivedKeySignatureIsNotValid"
 
 	RuleErrorSwapIdentityIsParamUpdaterOnly RuleError = "RuleErrorSwapIdentityIsParamUpdaterOnly"
 	RuleErrorFromPublicKeyIsRequired        RuleError = "RuleErrorFromPublicKeyIsRequired"
