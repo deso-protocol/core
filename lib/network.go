@@ -216,8 +216,9 @@ const (
 	TxnTypeSwapIdentity TxnType = 12
 	TxnTypeUpdateGlobalParams = 13
 	TxnTypeCreatorCoinTransfer TxnType = 14
+	TxnTypeAuthorizeDerivedKey TxnType = 15
 
-	// NEXT_ID = 15
+	// NEXT_ID = 16
 )
 
 func (txnType TxnType) String() string {
@@ -250,6 +251,8 @@ func (txnType TxnType) String() string {
 		return "SWAP_IDENTITY"
 	case TxnTypeUpdateGlobalParams:
 		return "UPDATE_GLOBAL_PARAMS"
+	case TxnTypeAuthorizeDerivedKey:
+		return "AUTHORIZE_DERIVED_KEY"
 
 	default:
 		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", txnType)
@@ -293,6 +296,8 @@ func NewTxnMetadata(txType TxnType) (BitCloutTxnMetadata, error) {
 		return (&SwapIdentityMetadataa{}).New(), nil
 	case TxnTypeUpdateGlobalParams:
 		return (&UpdateGlobalParamsMetadata{}).New(), nil
+	case TxnTypeAuthorizeDerivedKey:
+		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
 
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
@@ -3807,6 +3812,89 @@ func (txnData *SwapIdentityMetadataa) New() BitCloutTxnMetadata {
 
 type AuthorizeDerivedKeyOperationType uint8
 
-type AuthorizeDerivedKeyMetadata struct {
+const (
+	AuthorizeDerivedKeyOperationInValid AuthorizeDerivedKeyOperationType = 0
+	AuthorizeDerivedKeyOperationValid   AuthorizeDerivedKeyOperationType = 1
+)
 
+type AuthorizeDerivedKeyMetadata struct {
+	// DerivedPublicKey is the key that is authorized to sign transactions
+	// on behalf of the public key owner
+	DerivedPublicKey []byte
+
+	// ExpirationBlock is the block at which this authorization becomes invalid
+	ExpirationBlock uint64
+
+	// OperationType determines if transaction validates or invalidates derived key
+	OperationType AuthorizeDerivedKeyOperationType
+
+	// AccessSignature is the public key owner's signature of the hash of
+	// (DerivedPublicKey + ExpirationBlock)
+	AccessSignature []byte
+}
+
+func (txnData *AuthorizeDerivedKeyMetadata) GetTxnType() TxnType {
+	return TxnTypeAuthorizeDerivedKey
+}
+
+func (txnData *AuthorizeDerivedKeyMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// DerivedPublicKey
+	data = append(data, UintToBuf(uint64(len(txnData.DerivedPublicKey)))...)
+	data = append(data, txnData.DerivedPublicKey...)
+
+	// ExpirationBlock uint64
+	data = append(data, UintToBuf(uint64(txnData.ExpirationBlock))...)
+
+	// OperationType byte
+	data = append(data, byte(txnData.OperationType))
+
+	// AccessSignature
+	data = append(data, UintToBuf(uint64(len(txnData.AccessSignature)))...)
+	data = append(data, txnData.AccessSignature...)
+
+	return data, nil
+}
+
+func (txnData *AuthorizeDerivedKeyMetadata) FromBytes(data []byte) error {
+	ret := AuthorizeDerivedKeyMetadata{}
+	rr := bytes.NewReader(data)
+
+	// DerivedPublicKey
+	var err error
+	ret.DerivedPublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading DerivedPublicKey: %v", err)
+	}
+
+	// ExpirationBlock uint64
+	ret.ExpirationBlock, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading ExpirationBlock: %v", err)
+	}
+
+	// OperationType byte
+	operationType, err := rr.ReadByte()
+	if err != nil {
+		return fmt.Errorf(
+			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading OperationType: %v", err)
+	}
+	ret.OperationType = AuthorizeDerivedKeyOperationType(operationType)
+
+	// AccessSignature
+	ret.AccessSignature, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading AccessSignature: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *AuthorizeDerivedKeyMetadata) New() BitCloutTxnMetadata {
+	return &AuthorizeDerivedKeyMetadata{}
 }
