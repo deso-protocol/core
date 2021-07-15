@@ -2764,6 +2764,18 @@ func (bav *UtxoView) _deleteRecloutEntryMappings(recloutEntry *RecloutEntry) {
 	bav._setRecloutEntryMappings(&tombstoneRecloutEntry)
 }
 
+func (bav *UtxoView) GetFollowEntryForFollowerPublicKeyCreatorPublicKey(followerPublicKey []byte, creatorPublicKey []byte) *FollowEntry {
+	followerPKID := bav.GetPKIDForPublicKey(followerPublicKey)
+	creatorPKID := bav.GetPKIDForPublicKey(creatorPublicKey)
+
+	if followerPKID == nil || creatorPKID == nil {
+		return nil
+	}
+
+	followKey := MakeFollowKey(followerPKID.PKID, creatorPKID.PKID)
+	return bav._getFollowEntryForFollowKey(&followKey)
+}
+
 func (bav *UtxoView) _getFollowEntryForFollowKey(followKey *FollowKey) *FollowEntry {
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	mapValue, existsMapValue := bav.FollowKeyToFollowEntry[*followKey]
