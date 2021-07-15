@@ -17200,6 +17200,8 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 		require.Equal(3, len(bidEntries))
 	}
 
+	// TODO: add test to withdraw bid with a 0 BidAmountNanos
+
 	// Accept m3's bid on #1 and m1's blanked bid on #2, weeeee!
 	{
 		// Balance before.

@@ -6072,6 +6072,11 @@ func (bav *UtxoView) _connectNFTBid(
 	if bidderPKID == nil || bidderPKID.isDeleted {
 		return 0, 0, nil, fmt.Errorf("_connectNFTBid: PKID for bidder public key %v doesn't exist; this should never happen", string(txn.PublicKey))
 	}
+
+	// Save a copy of the bid entry so that we can use it in the disconnect.
+	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+	prevNFTBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
+
 	if txMeta.SerialNumber != uint64(0) {
 		// Verify the NFT entry that is being bid on exists.
 		if nftEntry == nil || nftEntry.isDeleted {
@@ -6089,7 +6094,8 @@ func (bav *UtxoView) _connectNFTBid(
 		}
 
 		// Verify that the bid amount is greater than the min bid amount for this NFT.
-		if txMeta.BidAmountNanos < nftEntry.MinBidAmountNanos {
+		// We allow BidAmountNanos to be 0 if there exists a previous bid entry. A value of 0 indicates that we should delete the entry.
+		if txMeta.BidAmountNanos < nftEntry.MinBidAmountNanos && !(txMeta.BidAmountNanos == 0 && prevNFTBidEntry != nil) {
 			return 0, 0, nil, RuleErrorNFTBidLessThanMinBidAmountNanos
 		}
 	}
@@ -6121,10 +6127,6 @@ func (bav *UtxoView) _connectNFTBid(
 		// signed by the top-level public key, which we take to be the poster's
 		// public key.
 	}
-
-	// Save a copy of the bid entry so that we can use it in the disconnect.
-	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
-	prevNFTBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 
 	// If an old bid exists, delete it.
 	if prevNFTBidEntry != nil {
