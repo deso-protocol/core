@@ -214,12 +214,12 @@ type NFTKey struct {
 // postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
 // defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
 type NFTEntry struct {
-	OwnerPKID         *PKID
-	NFTPostHash       *BlockHash
-	SerialNumber      uint64
-	IsForSale         bool
-	MinBidAmountNanos uint64
-	UnlockableText    []byte
+	OwnerPKID                  *PKID
+	NFTPostHash                *BlockHash
+	SerialNumber               uint64
+	IsForSale                  bool
+	MinBidAmountNanos          uint64
+	UnlockableText             []byte
 	LastAcceptedBidAmountNanos uint64
 
 	// Whether or not this entry is deleted in the view.
@@ -228,20 +228,20 @@ type NFTEntry struct {
 
 func MakeNFTOwnershipKey(ownerPKID *PKID, isForSale bool, lastAcceptedBidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) NFTOwnershipKey {
 	return NFTOwnershipKey{
-		OwnerPKID: *ownerPKID,
-		IsForSale: isForSale,
+		OwnerPKID:                  *ownerPKID,
+		IsForSale:                  isForSale,
 		LastAcceptedBidAmountNanos: lastAcceptedBidAmountNanos,
-		NFTPostHash:  *nftPostHash,
-		SerialNumber: serialNumber,
+		NFTPostHash:                *nftPostHash,
+		SerialNumber:               serialNumber,
 	}
 }
 
 type NFTOwnershipKey struct {
-	OwnerPKID 	 PKID
-	IsForSale    bool
+	OwnerPKID                  PKID
+	IsForSale                  bool
 	LastAcceptedBidAmountNanos uint64
-	NFTPostHash  BlockHash
-	SerialNumber uint64
+	NFTPostHash                BlockHash
+	SerialNumber               uint64
 }
 
 func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
@@ -829,9 +829,9 @@ type UtxoView struct {
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
 
 	// NFT data
-	NFTKeyToNFTEntry       map[NFTKey]*NFTEntry
-	NFTOwnershipKeyToNFTEntry map[NFTOwnershipKey]*NFTEntry
-	NFTBidKeyToNFTBidEntry map[NFTBidKey]*NFTBidEntry
+	NFTKeyToNFTEntry              map[NFTKey]*NFTEntry
+	NFTOwnershipKeyToNFTEntry     map[NFTOwnershipKey]*NFTEntry
+	NFTBidKeyToNFTBidEntry        map[NFTBidKey]*NFTBidEntry
 	NFTKeyToAcceptedNFTBidHistory map[NFTKey]*[]*NFTBidEntry
 
 	// Diamond data
@@ -1009,12 +1009,12 @@ type UtxoOperation struct {
 	PrevDiamondEntry *DiamondEntry
 
 	// For disconnecting NFTs.
-	PrevNFTEntry         *NFTEntry
+	PrevNFTEntry *NFTEntry
 	// We need the new NFT Entry to remove ownership mappings
-	NewNFTEntry          *NFTEntry
-	PrevNFTBidEntry      *NFTBidEntry
-	DeletedNFTBidEntries []*NFTBidEntry
-	NFTPaymentUtxoKeys   []*UtxoKey
+	NewNFTEntry               *NFTEntry
+	PrevNFTBidEntry           *NFTBidEntry
+	DeletedNFTBidEntries      []*NFTBidEntry
+	NFTPaymentUtxoKeys        []*UtxoKey
 	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
 
 	// Save the previous reclout entry and reclout count when making an update.
@@ -3475,6 +3475,118 @@ func (bav *UtxoView) GetNFTEntriesForPKID(ownerPKID *PKID) []*NFTEntry {
 		}
 	}
 	return nftEntries
+}
+
+func (bav *UtxoView) GetHighAndLowBidsForNFTCollection(
+	nftHash *BlockHash,
+) (_highBid uint64, _lowBid uint64) {
+	highBid := uint64(0)
+	lowBid := uint64(0)
+	postEntry := bav.GetPostEntryForPostHash(nftHash)
+
+	// First we get the highest and lowest bids from the db.
+	for ii := uint64(1); ii <= postEntry.NumNFTCopies; ii++ {
+		highBidForSerialNum, lowBidForSerialNum := bav.GetDBHighAndLowBidsForNFT(nftHash, ii)
+
+		if highBidForSerialNum > highBid {
+			highBid = highBidForSerialNum
+		}
+
+		if lowBidForSerialNum < lowBid {
+			lowBid = lowBidForSerialNum
+		}
+	}
+
+	// Then we loop over the view to for anything we missed.
+	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
+		if !nftBidEntry.isDeleted && reflect.DeepEqual(nftBidEntry.NFTPostHash, nftHash) {
+			if nftBidEntry.BidAmountNanos > highBid {
+				highBid = nftBidEntry.BidAmountNanos
+			}
+
+			if nftBidEntry.BidAmountNanos < lowBid {
+				lowBid = nftBidEntry.BidAmountNanos
+			}
+		}
+	}
+
+	return highBid, lowBid
+}
+
+// This function gets the highest and lowest bids for a specific NFT that
+// have not been deleted in the view.
+func (bav *UtxoView) GetDBHighAndLowBidsForNFT(
+	nftHash *BlockHash, serialNumber uint64,
+) (_highBid uint64, _lowBid uint64) {
+	numPerDBFetch := 5
+	highBid := uint64(0)
+	lowBid := uint64(0)
+
+	// Loop until we find the highest bid in the database that hasn't been deleted in the view.
+	exitLoop := false
+	highBidEntries := DBGetNFTBidEntriesPaginated(
+		bav.Handle, nftHash, serialNumber, nil, numPerDBFetch, false)
+	for {
+		for _, highBidEntry := range highBidEntries {
+			bidKey := &NFTBidKey{
+				NFTPostHash:  *highBidEntry.NFTPostHash,
+				SerialNumber: highBidEntry.SerialNumber,
+				BidderPKID:   *highBidEntry.BidderPKID,
+			}
+			bidEntry := bav.NFTBidKeyToNFTBidEntry[*bidKey]
+			if !bidEntry.isDeleted && !exitLoop {
+				exitLoop = true
+				highBid = bidEntry.BidAmountNanos
+			}
+		}
+
+		if len(highBidEntries) < numPerDBFetch {
+			exitLoop = true
+		}
+
+		if exitLoop {
+			break
+		} else {
+			nextStartEntry := highBidEntries[len(highBidEntries)-1]
+			highBidEntries = DBGetNFTBidEntriesPaginated(
+				bav.Handle, nftHash, serialNumber, nextStartEntry, numPerDBFetch, false,
+			)
+		}
+	}
+
+	// Loop until we find the lowest bid in the database that hasn't been deleted in the view.
+	exitLoop = false
+	lowBidEntries := DBGetNFTBidEntriesPaginated(
+		bav.Handle, nftHash, serialNumber, nil, numPerDBFetch, false)
+	for {
+		for _, lowBidEntry := range lowBidEntries {
+			bidKey := &NFTBidKey{
+				NFTPostHash:  *lowBidEntry.NFTPostHash,
+				SerialNumber: lowBidEntry.SerialNumber,
+				BidderPKID:   *lowBidEntry.BidderPKID,
+			}
+			bidEntry := bav.NFTBidKeyToNFTBidEntry[*bidKey]
+			if !bidEntry.isDeleted && !exitLoop {
+				exitLoop = true
+				lowBid = bidEntry.BidAmountNanos
+			}
+		}
+
+		if len(highBidEntries) < numPerDBFetch {
+			exitLoop = true
+		}
+
+		if exitLoop {
+			break
+		} else {
+			nextStartEntry := highBidEntries[len(highBidEntries)-1]
+			highBidEntries = DBGetNFTBidEntriesPaginated(
+				bav.Handle, nftHash, serialNumber, nextStartEntry, numPerDBFetch, false,
+			)
+		}
+	}
+
+	return highBid, lowBid
 }
 
 func (bav *UtxoView) _setAcceptNFTBidHistoryMappings(nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) {
@@ -6030,12 +6142,12 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// Add an operation to the list at the end indicating we've connected an NFT bid.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                 OperationTypeAcceptNFTBid,
-		NewNFTEntry:          newNFTEntry,
-		PrevNFTEntry:         prevNFTEntry,
-		PrevCoinEntry:        &prevCoinEntry,
-		DeletedNFTBidEntries: deletedBidEntries,
-		NFTPaymentUtxoKeys:   nftPaymentUtxoKeys,
+		Type:                      OperationTypeAcceptNFTBid,
+		NewNFTEntry:               newNFTEntry,
+		PrevNFTEntry:              prevNFTEntry,
+		PrevCoinEntry:             &prevCoinEntry,
+		DeletedNFTBidEntries:      deletedBidEntries,
+		NFTPaymentUtxoKeys:        nftPaymentUtxoKeys,
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 	})
 

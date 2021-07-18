@@ -221,7 +221,6 @@ var (
 	// <prefix>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
 	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{54}
 
-
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
@@ -3205,16 +3204,16 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*BitCloutOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata `json:",omitempty"`
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata `json:",omitempty"`
+	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
+	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata         `json:",omitempty"`
 	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata `json:",omitempty"`
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata `json:",omitempty"`
-	LikeTxindexMetadata                *LikeTxindexMetadata `json:",omitempty"`
-	FollowTxindexMetadata              *FollowTxindexMetadata `json:",omitempty"`
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata `json:",omitempty"`
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata `json:",omitempty"`
+	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
+	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
+	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
+	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
+	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
+	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
 }
 
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
@@ -4280,6 +4279,14 @@ func _dbKeyForNFTBidderPKIDPostHashSerialNumber(
 	return key
 }
 
+func _dbSeekKeyForNFTBids(nftHash *BlockHash, serialNumber uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+	key := append(prefixCopy, nftHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
 func DBGetNFTBidEntryForNFTBidKeyWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) *NFTBidEntry {
 
 	key := _dbKeyForNFTBidderPKIDPostHashSerialNumber(
@@ -4414,6 +4421,63 @@ func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber 
 		}
 	}
 	return nftBidEntries
+}
+
+func DBGetNFTBidEntriesPaginated(
+	handle *badger.DB,
+	nftHash *BlockHash,
+	serialNumber uint64,
+	startEntry *NFTBidEntry,
+	limit int,
+	reverse bool,
+) (_bidEntries []*NFTBidEntry) {
+	seekKey := _dbSeekKeyForNFTBids(nftHash, serialNumber)
+	startKey := seekKey
+	if startEntry != nil {
+		startKey = _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(startEntry)
+	}
+	// The key length consists of: (1 prefix byte) + (BlockHash) + (2 x uint64) + (PKID)
+	maxKeyLen := 1 + HashSizeBytes + 16 + btcec.PubKeyBytesLenCompressed
+	keysBytes, _, _ := DBGetPaginatedKeysAndValuesForPrefix(
+		handle,
+		startKey,
+		seekKey,
+		maxKeyLen,
+		limit,
+		reverse,
+		false)
+	// TODO: We should probably handle the err case for this function.
+
+	// Chop up the keyBytes into bid entries.
+	var bidEntries []*NFTBidEntry
+	for _, keyBytes := range keysBytes {
+		serialNumStartIdx := 1 + HashSizeBytes
+		bidAmountStartIdx := serialNumStartIdx + 8
+		bidderPKIDStartIdx := bidAmountStartIdx + 8
+
+		nftHashBytes := keyBytes[1:serialNumStartIdx]
+		serialNumberBytes := keyBytes[serialNumStartIdx:bidAmountStartIdx]
+		bidAmountBytes := keyBytes[bidAmountStartIdx:bidderPKIDStartIdx]
+		bidderPKIDBytes := keyBytes[bidderPKIDStartIdx:]
+
+		nftHash := &BlockHash{}
+		copy(nftHash[:], nftHashBytes)
+		serialNumber := DecodeUint64(serialNumberBytes)
+		bidAmount := DecodeUint64(bidAmountBytes)
+		bidderPKID := &PKID{}
+		copy(bidderPKID[:], bidderPKIDBytes)
+
+		bidEntry := &NFTBidEntry{
+			NFTPostHash:    nftHash,
+			SerialNumber:   serialNumber,
+			BidAmountNanos: bidAmount,
+			BidderPKID:     bidderPKID,
+		}
+
+		bidEntries = append(bidEntries, bidEntry)
+	}
+
+	return bidEntries
 }
 
 // ======================================================================================
