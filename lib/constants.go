@@ -438,6 +438,7 @@ func (params *BitCloutParams) EnableRegtest() {
 
 	// Mine blocks incredibly quickly
 	params.TimeBetweenBlocks = 2 * time.Second
+	params.TimeBetweenDifficultyRetargets = 6 * time.Second
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
@@ -873,7 +874,7 @@ var BitCloutTestnetParams = BitCloutParams{
 	// Use a faster block time in the testnet.
 	TimeBetweenBlocks: 1 * time.Minute,
 	// Use a very short difficulty retarget period in the testnet.
-	TimeBetweenDifficultyRetargets: 6 * time.Second,
+	TimeBetweenDifficultyRetargets: 3 * time.Minute,
 	// This is used as the starting difficulty for the chain.
 	MinDifficultyTargetHex: "0090000000000000000000000000000000000000000000000000000000000000",
 	// Minimum amount of work a valid chain needs to have. Useful for preventing
