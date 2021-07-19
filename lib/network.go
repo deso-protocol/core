@@ -74,20 +74,20 @@ const (
 	// the version negotiation.
 	MsgTypeVerack MsgType = 2
 	MsgTypeHeader MsgType = 3
-	MsgTypeBlock MsgType = 4
-	MsgTypeTxn MsgType = 5
+	MsgTypeBlock  MsgType = 4
+	MsgTypeTxn    MsgType = 5
 	// MsgTypeGetHeaders is used to fetch headers from a peer.
 	MsgTypeGetHeaders MsgType = 6
 	// MsgTypeHeaderBundle contains headers from a peer.
-	MsgTypeHeaderBundle MsgType = 7
-	MsgTypePing MsgType = 8
-	MsgTypePong MsgType = 9
-	MsgTypeInv MsgType = 10
-	MsgTypeGetBlocks MsgType = 11
+	MsgTypeHeaderBundle    MsgType = 7
+	MsgTypePing            MsgType = 8
+	MsgTypePong            MsgType = 9
+	MsgTypeInv             MsgType = 10
+	MsgTypeGetBlocks       MsgType = 11
 	MsgTypeGetTransactions MsgType = 12
 	// MsgTypeTransactionBundle contains transactions from a peer.
 	MsgTypeTransactionBundle MsgType = 13
-	MsgTypeMempool MsgType = 14
+	MsgTypeMempool           MsgType = 14
 	// MsgTypeAddr is used by peers to share addresses of nodes they're aware about
 	// with other peers.
 	MsgTypeAddr MsgType = 15
@@ -102,10 +102,10 @@ const (
 	// TODO: Should probably split these out into a separate channel in the server to
 	// make things more parallelized.
 
-	MsgTypeQuit MsgType = ControlMessagesStart
-	MsgTypeNewPeer MsgType = ControlMessagesStart + 1
-	MsgTypeDonePeer MsgType = ControlMessagesStart + 2
-	MsgTypeBlockAccepted MsgType = ControlMessagesStart + 3
+	MsgTypeQuit                 MsgType = ControlMessagesStart
+	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
+	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
+	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
 	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4
 
 	// NEXT_TAG = 7
@@ -202,20 +202,20 @@ type BitCloutMessage interface {
 type TxnType uint64
 
 const (
-	TxnTypeUnset TxnType = 0
-	TxnTypeBlockReward TxnType = 1
-	TxnTypeBasicTransfer TxnType = 2
-	TxnTypeBitcoinExchange TxnType = 3
-	TxnTypePrivateMessage TxnType = 4
-	TxnTypeSubmitPost TxnType = 5
-	TxnTypeUpdateProfile TxnType = 6
+	TxnTypeUnset                        TxnType = 0
+	TxnTypeBlockReward                  TxnType = 1
+	TxnTypeBasicTransfer                TxnType = 2
+	TxnTypeBitcoinExchange              TxnType = 3
+	TxnTypePrivateMessage               TxnType = 4
+	TxnTypeSubmitPost                   TxnType = 5
+	TxnTypeUpdateProfile                TxnType = 6
 	TxnTypeUpdateBitcoinUSDExchangeRate TxnType = 8
-	TxnTypeFollow TxnType = 9
-	TxnTypeLike TxnType = 10
-	TxnTypeCreatorCoin TxnType = 11
-	TxnTypeSwapIdentity TxnType = 12
-	TxnTypeUpdateGlobalParams = 13
-	TxnTypeCreatorCoinTransfer TxnType = 14
+	TxnTypeFollow                       TxnType = 9
+	TxnTypeLike                         TxnType = 10
+	TxnTypeCreatorCoin                  TxnType = 11
+	TxnTypeSwapIdentity                 TxnType = 12
+	TxnTypeUpdateGlobalParams                   = 13
+	TxnTypeCreatorCoinTransfer          TxnType = 14
 
 	// NEXT_ID = 15
 )
@@ -1833,7 +1833,6 @@ func DecodeHeader(rr io.Reader) (*MsgBitCloutHeader, error) {
 	}
 	headerVersion := binary.BigEndian.Uint32(scratchBytes[:])
 
-
 	var ret *MsgBitCloutHeader
 	if headerVersion == HeaderVersion0 {
 		ret, err = DecodeHeaderVersion0(rr)
@@ -1912,7 +1911,7 @@ func (bpi *BlockProducerInfo) Serialize() []byte {
 	return data
 }
 
-func (bpi *BlockProducerInfo) Deserialize(data []byte) (error) {
+func (bpi *BlockProducerInfo) Deserialize(data []byte) error {
 	ret := &BlockProducerInfo{}
 	rr := bytes.NewReader(data)
 
@@ -2021,7 +2020,7 @@ func (msg *MsgBitCloutBlock) EncodeBlockVersion1(preSignature bool) ([]byte, err
 	// BlockProducerInfo
 	blockProducerInfoBytes := []byte{}
 	if msg.BlockProducerInfo != nil {
-		blockProducerInfoBytes= msg.BlockProducerInfo.Serialize()
+		blockProducerInfoBytes = msg.BlockProducerInfo.Serialize()
 	}
 	data = append(data, UintToBuf(uint64(len(blockProducerInfoBytes)))...)
 	data = append(data, blockProducerInfoBytes...)
@@ -2100,7 +2099,7 @@ func (msg *MsgBitCloutBlock) FromBytes(data []byte) error {
 		var blockProducerInfo *BlockProducerInfo
 		if blockProducerInfoLen > 0 {
 			if blockProducerInfoLen > MaxMessagePayload {
-				return fmt.Errorf("MsgBitCloutBlock.FromBytes: Header length %d longer " +
+				return fmt.Errorf("MsgBitCloutBlock.FromBytes: Header length %d longer "+
 					"than max %d", blockProducerInfoLen, MaxMessagePayload)
 			}
 			blockProducerInfoBytes := make([]byte, blockProducerInfoLen)
