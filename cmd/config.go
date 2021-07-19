@@ -9,51 +9,52 @@ import (
 
 type Config struct {
 	// Core
-	Params                 *lib.BitCloutParams
-	ProtocolPort           uint16
-	DataDirectory          string
-	MempoolDumpDirectory   string
-	TXIndex                bool
+	Params               *lib.BitCloutParams
+	ProtocolPort         uint16
+	DataDirectory        string
+	MempoolDumpDirectory string
+	TXIndex              bool
+	Regtest              bool
 
 	// Peers
-	ConnectIPs             []string
-	AddIPs                 []string
-	AddSeeds               []string
-	TargetOutboundPeers    uint32
-	StallTimeoutSeconds    uint64
-	BitcoinConnectPeer     string
+	ConnectIPs          []string
+	AddIPs              []string
+	AddSeeds            []string
+	TargetOutboundPeers uint32
+	StallTimeoutSeconds uint64
+	BitcoinConnectPeer  string
 
 	// Peer Restrictions
-	PrivateMode            bool
-	ReadOnlyMode           bool
-	DisableNetworking      bool
-	IgnoreInboundInvs      bool
-	IgnoreUnminedBitcoin   bool
-	MaxInboundPeers        uint32
-	OneInboundPerIp        bool
+	PrivateMode          bool
+	ReadOnlyMode         bool
+	DisableNetworking    bool
+	IgnoreInboundInvs    bool
+	IgnoreUnminedBitcoin bool
+	MaxInboundPeers      uint32
+	OneInboundPerIp      bool
 
 	// Mining
-	MinerPublicKeys        []string
-	NumMiningThreads       uint64
+	MinerPublicKeys  []string
+	NumMiningThreads uint64
 
 	// Fees
-	RateLimitFeerate       uint64
-	MinFeerate             uint64
+	RateLimitFeerate uint64
+	MinFeerate       uint64
 
 	// BlockProducer
-	MaxBlockTemplatesCache uint64
-	MinBlockUpdateInterval uint64
-	BlockCypherAPIKey      string
-	BlockProducerSeed      string
-	TrustedBlockProducerPublicKeys []string
+	MaxBlockTemplatesCache          uint64
+	MinBlockUpdateInterval          uint64
+	BlockCypherAPIKey               string
+	BlockProducerSeed               string
+	TrustedBlockProducerPublicKeys  []string
 	TrustedBlockProducerStartHeight uint64
 
 	// Logging
-	LogDirectory           string
-	GlogV                  uint64
-	GlogVmodule            string
-	LogDBSummarySnapshots  bool
-	DatadogProfiler        bool
+	LogDirectory          string
+	GlogV                 uint64
+	GlogVmodule           string
+	LogDBSummarySnapshots bool
+	DatadogProfiler       bool
 }
 
 func LoadConfig() *Config {
@@ -82,6 +83,7 @@ func LoadConfig() *Config {
 
 	config.MempoolDumpDirectory = viper.GetString("mempool-dump-dir")
 	config.TXIndex = viper.GetBool("txindex")
+	config.Regtest = viper.GetBool("regtest")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
