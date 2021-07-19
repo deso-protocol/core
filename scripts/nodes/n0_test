@@ -19,21 +19,21 @@ rm /tmp/main.*.log
 # to the ` go build ` command."
 
 (cd ../../ && go build -o backend -gcflags="all=-N -l" main.go && ./backend \
-  --alsologtostderr --stderrthreshold=FATAL --glog_v=0 \
-  --glog_vmodule="*api*=0,*bitcoin_manager*=2,*balance*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,server*=0,*mempool*=0,*miner*=0,*blockchain*=0,*block_producer*=1" \
-  --addips=localhost:19000 \
-  --bitclout_testnet=true  \
-  --json_api_port=18001 \
-  --protocol_listen_port=18000 \
+  --glog-v=0 \
+  --glog-vmodule="*api*=0,*bitcoin_manager*=2,*balance*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,server*=0,*mempool*=0,*miner*=0,*blockchain*=0,*block_producer*=1" \
+  --add-ips=localhost:19000 \
+  --testnet=true  \
+  --api-port=18001 \
+  --protocol-port=18000 \
   --txindex \
-  --num_mining_threads=1 \
-  --miner_public_keys=BC1YLjJ3FNgo1Q8NU9sEzK3B2obeuq9GvzYr1GnAJgpsVnYCuczcYBe \
-  --block_producer_seed='essence camp ghost remove document vault ladder swim pupil index apart ring' \
-  --starter_bitclout_seed='road congress client market couple bid risk escape artwork rookie artwork food' \
-  --data_dir_path=/tmp/n0_test \
-  --access_control_allow_origins=http://localhost:4200,http://localhost:80,http://localhost:18002 \
-  --secure_header_middleware_allowed_hosts=localhost:4200 \
-  --secure_header_middleware_is_development=true \
-  --block_cypher_api_key=092dae962ea44b02809a4c74408b42a1 \
-  --min_satoshis_burned_for_profile_creation=0 \
-  --show_processing_spinners=true )
+  --num-mining-threads=1 \
+  --miner-public-keys=BC1YLjJ3FNgo1Q8NU9sEzK3B2obeuq9GvzYr1GnAJgpsVnYCuczcYBe \
+  --block-producer-seed='essence camp ghost remove document vault ladder swim pupil index apart ring' \
+  --starter-bitclout-seed='road congress client market couple bid risk escape artwork rookie artwork food' \
+  --data-dir=/tmp/n0_test \
+  --access-control-allow-origins=http://localhost:4200,http://localhost:80,http://localhost:18002 \
+  --secure-header-allow-hosts=localhost:4200 \
+  --secure-header-development=true \
+  --block-cypher-api-key=092dae962ea44b02809a4c74408b42a1 \
+  --min-satoshis-for-profile=0 \
+  --show-processing-spinners=true )
