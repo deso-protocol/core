@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -1509,10 +1510,17 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			glog.Tracef("UpdateTxindex: Error parsing post body for @ mentions: "+
 				"%v %v", string(realTxMeta.Body), err)
 		} else {
-			terminators := []rune(" ,.\n&*()-_+~'\"[]{}")
+			terminators := []rune(" ,.\n&*()-+~'\"[]{}")
 			dollarTagsFound := mention.GetTagsAsUniqueStrings('$', bodyObj.Body, terminators...)
 			atTagsFound := mention.GetTagsAsUniqueStrings('@', bodyObj.Body, terminators...)
-			tagsFound := append(dollarTagsFound, atTagsFound...)
+			tagsFound := atTagsFound
+			// We check that cashtag usernames have at least 1 non-numeric character
+			dollarTagRegex := regexp.MustCompile("\\w*[a-zA-Z_]\\w*")
+			for _, dollarTagFound := range dollarTagsFound {
+				if dollarTagRegex.MatchString(dollarTagFound) {
+					tagsFound = append(tagsFound, dollarTagFound)
+				}
+			}
 			for _, tag := range tagsFound {
 				profileFound := utxoView.GetProfileEntryForUsername([]byte(strings.ToLower(tag)))
 				// Don't worry about tags that don't line up to a profile.

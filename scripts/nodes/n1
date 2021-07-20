@@ -1,18 +1,16 @@
 DATE=`date +%Y%m%d-%H:%M:%S-%N`
 
 (cd ../../ && go build -o -gcflags="all=-N -l" main.go && ./backend \
-  --alsologtostderr --stderrthreshold=FATAL --glog_v=0 \
-  --glog_vmodule="*bitcoin_manager*=0,*balance*=0,*frontend*=0,*peer*=2,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0" \
-  --connectips=localhost:17000 \
-  --json_api_port=18001 \
-  --protocol_listen_port=18000 \
-  --web_client_port=18002 \
+  --glog-v=0 \
+  --glog-vmodule="*bitcoin_manager*=0,*balance*=0,*frontend*=0,*peer*=2,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0" \
+  --connect-ips=localhost:17000 \
+  --api-port=18001 \
+  --protocol-port=18000 \
   --txindex=true \
-  --read_only_mode=true \
-  --starter_bitclout_seed='road congress client market couple bid risk escape artwork rookie artwork food' \
-  --block_cypher_api_key=092dae962ea44b02809a4c74408b42a1 \
-  --data_dir_path=/tmp/fe1_loadtest_13 )
+  --read-only-mode=true \
+  --starter-bitclout-seed='road congress client market couple bid risk escape artwork rookie artwork food' \
+  --block-cypher-api-key=092dae962ea44b02809a4c74408b42a1 \
+  --data-dir=/tmp/fe1_loadtest_13 )
 
-  #--addips=localhost:17000
-  # --private_mode=true
-
+  #--add-ips=localhost:17000
+  # --private-mode=true

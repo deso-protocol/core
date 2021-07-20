@@ -407,7 +407,7 @@ func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte) (_keysFound [][]byt
 		return nil
 	})
 	if dbErr != nil {
-		glog.Errorf("_enumerateKeysForPrefix: Problem fetching keys and vlaues from db: %v", dbErr)
+		glog.Errorf("_enumerateKeysForPrefix: Problem fetching keys and values from db: %v", dbErr)
 		return nil, nil
 	}
 
@@ -448,7 +448,7 @@ func _enumerateLimitedKeysReversedForPrefix(db *badger.DB, dbPrefix []byte, limi
 		return err
 	})
 	if dbErr != nil {
-		glog.Errorf("_enumerateKeysForPrefix: Problem fetching keys and vlaues from db: %v", dbErr)
+		glog.Errorf("_enumerateKeysForPrefix: Problem fetching keys and values from db: %v", dbErr)
 		return nil, nil
 	}
 
@@ -617,6 +617,7 @@ func DbPutMessageEntryWithTxn(
 		RecipientPublicKey: messageEntry.RecipientPublicKey,
 		EncryptedText:      messageEntry.EncryptedText,
 		TstampNanos:        messageEntry.TstampNanos,
+		Version:            messageEntry.Version,
 	}
 
 	messageDataBuf := bytes.NewBuffer([]byte{})
@@ -3204,16 +3205,16 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*BitCloutOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata         `json:",omitempty"`
+	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata `json:",omitempty"`
+	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata `json:",omitempty"`
 	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
-	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
-	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
+	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata `json:",omitempty"`
+	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata `json:",omitempty"`
+	LikeTxindexMetadata                *LikeTxindexMetadata `json:",omitempty"`
+	FollowTxindexMetadata              *FollowTxindexMetadata `json:",omitempty"`
+	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata `json:",omitempty"`
+	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata `json:",omitempty"`
 }
 
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {

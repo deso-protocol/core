@@ -4,18 +4,18 @@ rm /tmp/main.*.log
 
 (cd ../../ && go build -o backend -gcflags="all=-N -l" main.go && \
   ./backend \
-  --alsologtostderr --stderrthreshold=FATAL --v=0 \
-  --vmodule="*bitcoin_manager*=2,*balance*=2,*view*=2,*frontend*=2,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=2,*mempool*=2,*miner*=2,*blockchain*=2" \
-  --num_mining_threads=1  \
+  --glog-v=0 \
+  --glog-vmodule="*bitcoin_manager*=2,*balance*=2,*view*=2,*frontend*=2,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=2,*mempool*=2,*miner*=2,*blockchain*=2" \
+  --num-mining-threads=1  \
   --txindex=true \
-  --miner_public_keys=BC1YLgKZyfgyNntCMXAZYExM8JooYqrYvVsrR8d8XVxorDruYFdq31p \
-  --starter_bitclout_seed='road congress client market couple bid risk escape artwork rookie artwork food' \
-  --data_dir_path=$HOME/data_dirs/n0_1  \
-  --block_cypher_api_key=092dae962ea44b02809a4c74408b42a1 \
-  --min_satoshis_burned_for_profile_creation=0 \
-  --connectips=35.232.92.5:17000
+  --miner-public-keys=BC1YLgKZyfgyNntCMXAZYExM8JooYqrYvVsrR8d8XVxorDruYFdq31p \
+  --starter-bitclout-seed='road congress client market couple bid risk escape artwork rookie artwork food' \
+  --data-dir=$HOME/data_dirs/n0_1  \
+  --block-cypher-api-key=092dae962ea44b02809a4c74408b42a1 \
+  --min-satoshis-for-profile=0 \
+  --connect-ips=35.232.92.5:17000
 )
 
 # These are nodes that can be relied upon if the decentralized seed
 # node discovery mechanism fails.
-# --connectips=35.232.92.5:17000
+# --connect-ips=35.232.92.5:17000
