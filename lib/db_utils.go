@@ -4388,6 +4388,40 @@ func DBPutNFTBidEntryMappings(handle *badger.DB, nftEntry *NFTBidEntry) error {
 	})
 }
 
+func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntries []*NFTBidEntry) {
+	nftBidEntries := []*NFTBidEntry{}
+	{
+		prefix := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
+		keyPrefix := append(prefix, bidderPKID[:]...)
+		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix)
+		bidderPKIDLength := len(bidderPKID[:])
+		for ii, keyFound := range keysFound {
+
+			postHashStartIdx := 1 + bidderPKIDLength // The length of prefix + length of PKID
+			postHashEndIdx := postHashStartIdx + HashSizeBytes   // Add the length of the bid amount (uint64).
+
+			// Cut the bid amount out of the key and decode.
+			postHashBytes := keyFound[postHashStartIdx:postHashEndIdx]
+
+			nftHash := &BlockHash{}
+			copy(nftHash[:], postHashBytes)
+
+			serialNumber := DecodeUint64(keyFound[postHashEndIdx:])
+
+			bidAmountNanos := DecodeUint64(valuesFound[ii])
+
+			currentEntry := &NFTBidEntry{
+				NFTPostHash:    nftHash,
+				SerialNumber:   serialNumber,
+				BidderPKID:     bidderPKID,
+				BidAmountNanos: bidAmountNanos,
+			}
+			nftBidEntries = append(nftBidEntries, currentEntry)
+		}
+	}
+	return nftBidEntries
+}
+
 // Get NFT bid Entries *from the DB*. Does not include mempool txns.
 func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber uint64,
 ) (_nftBidEntries []*NFTBidEntry) {

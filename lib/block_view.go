@@ -3477,6 +3477,29 @@ func (bav *UtxoView) GetNFTEntriesForPKID(ownerPKID *PKID) []*NFTEntry {
 	return nftEntries
 }
 
+func (bav *UtxoView) GetNFTBidEntriesForPKID(bidderPKID *PKID) (_nftBidEntries []*NFTBidEntry) {
+	dbNFTBidEntries := DBGetNFTBidEntriesForPKID(bav.Handle, bidderPKID)
+
+	// Make sure all of the DB entries are loaded in the view.
+	for _, dbNFTBidEntry := range dbNFTBidEntries {
+		nftBidKey := MakeNFTBidKey(bidderPKID, dbNFTBidEntry.NFTPostHash, dbNFTBidEntry.SerialNumber)
+
+		// If the NFT is not in the view, add it to the view.
+		if _, ok := bav.NFTBidKeyToNFTBidEntry[nftBidKey]; !ok {
+			bav._setNFTBidEntryMappings(dbNFTBidEntry)
+		}
+	}
+
+	// Loop over the view and build the final set of NFTEntries to return.
+	nftBidEntries := []*NFTBidEntry{}
+	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
+		if reflect.DeepEqual(nftBidEntry.BidderPKID, bidderPKID) {
+			nftBidEntries = append(nftBidEntries, nftBidEntry)
+		}
+	}
+	return nftBidEntries
+}
+
 func (bav *UtxoView) GetHighAndLowBidsForNFTCollection(
 	nftHash *BlockHash,
 ) (_highBid uint64, _lowBid uint64) {
@@ -3526,6 +3549,12 @@ func (bav *UtxoView) GetDBHighAndLowBidsForNFT(
 	exitLoop := false
 	highBidEntries := DBGetNFTBidEntriesPaginated(
 		bav.Handle, nftHash, serialNumber, nil, numPerDBFetch, false)
+	for _, bidEntry := range highBidEntries {
+		bidEntryKey := MakeNFTBidKey(bidEntry.BidderPKID, bidEntry.NFTPostHash, bidEntry.SerialNumber)
+		if _, exists := bav.NFTBidKeyToNFTBidEntry[bidEntryKey]; !exists {
+			bav._setNFTBidEntryMappings(bidEntry)
+		}
+	}
 	for {
 		for _, highBidEntry := range highBidEntries {
 			bidKey := &NFTBidKey{
@@ -3558,6 +3587,12 @@ func (bav *UtxoView) GetDBHighAndLowBidsForNFT(
 	exitLoop = false
 	lowBidEntries := DBGetNFTBidEntriesPaginated(
 		bav.Handle, nftHash, serialNumber, nil, numPerDBFetch, false)
+	for _, bidEntry := range lowBidEntries {
+		bidEntryKey := MakeNFTBidKey(bidEntry.BidderPKID, bidEntry.NFTPostHash, bidEntry.SerialNumber)
+		if _, exists := bav.NFTBidKeyToNFTBidEntry[bidEntryKey]; !exists {
+			bav._setNFTBidEntryMappings(bidEntry)
+		}
+	}
 	for {
 		for _, lowBidEntry := range lowBidEntries {
 			bidKey := &NFTBidKey{
