@@ -219,6 +219,7 @@ type NFTKey struct {
 // postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
 // defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
 type NFTEntry struct {
+	LastOwnerPKID              *PKID // This is needed to decrypt unlockable text.
 	OwnerPKID                  *PKID
 	NFTPostHash                *BlockHash
 	SerialNumber               uint64
@@ -5882,6 +5883,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 
 	// Create the updated NFTEntry.
 	newNFTEntry := &NFTEntry{
+		LastOwnerPKID:     prevNFTEntry.LastOwnerPKID,
 		OwnerPKID:         updaterPKID.PKID,
 		NFTPostHash:       txMeta.NFTPostHash,
 		SerialNumber:      txMeta.SerialNumber,
@@ -6076,6 +6078,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	// (1) Set an appropriate NFTEntry for the new owner.
 
 	newNFTEntry := &NFTEntry{
+		LastOwnerPKID:  updaterPKID.PKID,
 		OwnerPKID:      txMeta.BidderPKID,
 		NFTPostHash:    txMeta.NFTPostHash,
 		SerialNumber:   txMeta.SerialNumber,

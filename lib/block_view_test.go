@@ -811,7 +811,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 		serialNumber,
 		bidderPKID.PKID,
 		bidAmountNanos,
-		unencryptedUnlockableText,
+		[]byte(unencryptedUnlockableText),
 		feeRateNanosPerKB,
 		nil)
 	if err != nil {

@@ -3190,6 +3190,18 @@ type SwapIdentityTxindexMetadata struct {
 	ToPublicKeyBase58Check string
 }
 
+type NFTBidTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber uint64
+	BidAmountNanos uint64
+}
+
+type AcceptNFTBidTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber uint64
+	BidAmountNanos uint64
+}
+
 type TransactionMetadata struct {
 	BlockHashHex    string
 	TxnIndexInBlock uint64
@@ -3215,6 +3227,8 @@ type TransactionMetadata struct {
 	FollowTxindexMetadata              *FollowTxindexMetadata `json:",omitempty"`
 	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata `json:",omitempty"`
 	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata `json:",omitempty"`
+	NFTBidTxindexMetadata              *NFTBidTxindexMetadata `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata `json:",omitempty"`
 }
 
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {

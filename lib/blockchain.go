@@ -4,12 +4,6 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
-	"math"
-	"math/big"
-	"runtime/debug"
-	"sort"
-	"strings"
-	"time"
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
@@ -18,6 +12,12 @@ import (
 	merkletree "github.com/laser/go-merkle-tree"
 	"github.com/pkg/errors"
 	"github.com/sasha-s/go-deadlock"
+	"math"
+	"math/big"
+	"runtime/debug"
+	"sort"
+	"strings"
+	"time"
 )
 
 // blockchain.go is the work-horse for validating BitClout blocks and updating the
@@ -2944,7 +2944,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	SerialNumber uint64,
 	BidderPKID *PKID,
 	BidAmountNanos uint64,
-	UnencryptedUnlockableText string,
+	EncryptedUnlockableTextBytes []byte,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3005,21 +3005,21 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	}
 
 	// Handle any unlockable text that is passed in.
-	var encryptedUnlockableText []byte
-	if len(UnencryptedUnlockableText) != 0 {
-		winningBidderPkBytes := utxoView.GetPublicKeyForPKID(BidderPKID)
-		winningBidderPk, err := btcec.ParsePubKey(winningBidderPkBytes, btcec.S256())
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem parsing "+
-				"recipient public key: ")
-		}
-		encryptedUnlockableText, err = EncryptBytesWithPublicKey(
-			[]byte(UnencryptedUnlockableText), winningBidderPk.ToECDSA())
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem "+
-				"encrypting message text: ")
-		}
-	}
+	//var encryptedUnlockableText []byte
+	//if len(UnencryptedUnlockableText) != 0 {
+	//	winningBidderPkBytes := utxoView.GetPublicKeyForPKID(BidderPKID)
+	//	winningBidderPk, err := btcec.ParsePubKey(winningBidderPkBytes, btcec.S256())
+	//	if err != nil {
+	//		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem parsing "+
+	//			"recipient public key: ")
+	//	}
+	//	encryptedUnlockableText, err = EncryptBytesWithPublicKey(
+	//		[]byte(UnencryptedUnlockableText), winningBidderPk.ToECDSA())
+	//	if err != nil {
+	//		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem "+
+	//			"encrypting message text: ")
+	//	}
+	//}
 
 	// Create a transaction containing the creator coin fields.
 	txn := &MsgBitCloutTxn{
@@ -3029,7 +3029,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 			SerialNumber,
 			BidderPKID,
 			BidAmountNanos,
-			encryptedUnlockableText,
+			EncryptedUnlockableTextBytes,
 			bidderInputs,
 		},
 
