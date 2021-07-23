@@ -635,6 +635,7 @@ type PostEntry struct {
 	// NFT info.
 	IsNFT                          bool
 	NumNFTCopies                   uint64
+	NumNFTCopiesForSale            uint64
 	HasUnlockable                  bool
 	NFTRoyaltyToCreatorBasisPoints uint64
 	NFTRoyaltyToCoinBasisPoints    uint64
@@ -2572,12 +2573,14 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 			"OperationTypeUpdateNFT but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
+	txMeta := currentTxn.TxnMeta.(*UpdateNFTMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
 	// In order to disconnect an updated bid, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one.
 	//  (2) Add back all of the bids that were deleted (if any).
+	//  (3) Revert the post entry since we updated num NFT copies for sale.
 
 	// Make sure that there is a prev NFT entry.
 	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
@@ -2608,6 +2611,18 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 		}
 	}
 
+	// Get the postEntry corresponding to this txn.
+	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	// Sanity-check that it exists.
+	if existingPostEntry == nil || existingPostEntry.isDeleted {
+		return fmt.Errorf("_disconnectUpdateNFT: Post entry for "+
+			"post hash %v doesn't exist; this should never happen",
+			txMeta.NFTPostHash.String())
+	}
+
+	// Revert to the old post entry since we changed NumNFTCopiesForSale.
+	bav._setPostEntryMappings(operationData.PrevPostEntry)
+
 	// Now revert the basic transfer with the remaining operations.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
@@ -2627,6 +2642,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 			"OperationTypeAcceptNFTBid but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
+	txMeta := currentTxn.TxnMeta.(*UpdateNFTMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
@@ -2635,6 +2651,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	//  (2) Add back all of the bids that were deleted.
 	//  (3) Disconnect payment UTXOs.
 	//  (4) Revert profileEntry to undo royalties added to BitCloutLockedNanos.
+	//  (5) Revert the postEntry since NumNFTCopiesForSale was decremented.
 
 	// (1) Set the old NFT entry.
 	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
@@ -2689,6 +2706,20 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		existingProfileEntry.CoinEntry = *operationData.PrevCoinEntry
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
+
+	// (5) Verify a postEntry exists and then revert it since NumNFTCopiesForSale was decremented.
+
+	// Get the postEntry corresponding to this txn.
+	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	// Sanity-check that it exists.
+	if existingPostEntry == nil || existingPostEntry.isDeleted {
+		return fmt.Errorf("_disconnectAcceptNFTBid: Post entry for "+
+			"post hash %v doesn't exist; this should never happen",
+			txMeta.NFTPostHash.String())
+	}
+
+	// Revert to the old post entry since we changed NumNFTCopiesForSale.
+	bav._setPostEntryMappings(operationData.PrevPostEntry)
 
 	// Now revert the basic transfer with the remaining operations.
 	return bav._disconnectBasicTransfer(
@@ -4805,11 +4836,10 @@ func (bav *UtxoView) _connectPrivateMessage(
 		Version:            1,
 	}
 
-
 	//Check if message is encrypted with shared secret
 	extraV, hasExtraV := txn.ExtraData["V"]
 	if hasExtraV {
-		Version,_ := Uvarint(extraV)
+		Version, _ := Uvarint(extraV)
 		messageEntry.Version = uint8(Version)
 	}
 
@@ -5784,6 +5814,9 @@ func (bav *UtxoView) _connectCreateNFT(
 	// Update and save the post entry.
 	postEntry.IsNFT = true
 	postEntry.NumNFTCopies = txMeta.NumCopies
+	if txMeta.IsForSale {
+		postEntry.NumNFTCopiesForSale = txMeta.NumCopies
+	}
 	postEntry.HasUnlockable = txMeta.HasUnlockable
 	postEntry.NFTRoyaltyToCreatorBasisPoints = txMeta.NFTRoyaltyToCreatorBasisPoints
 	postEntry.NFTRoyaltyToCoinBasisPoints = txMeta.NFTRoyaltyToCoinBasisPoints
@@ -5835,6 +5868,13 @@ func (bav *UtxoView) _connectUpdateNFT(
 		return 0, 0, nil, RuleErrorCannotUpdateNonExistentNFT
 	}
 
+	// Get the postEntry so we can update the number of NFT copies for sale.
+	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	if postEntry == nil || postEntry.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectUpdateNFT: non-existent postEntry for NFTPostHash: %s",
+			txMeta.NFTPostHash.String())
+	}
+
 	// Verify that the updater is the owner of the NFT.
 	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if updaterPKID == nil || updaterPKID.isDeleted {
@@ -5880,6 +5920,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 	// Now we are ready to update the NFT. Two things must happen:
 	// 	(1) Update the NFT entry.
 	//  (2) If the NFT entry is being updated to "is not for sale", kill all the bids.
+	//  (3) Update the number of NFT copies for sale on the post entry.
 
 	// Create the updated NFTEntry.
 	newNFTEntry := &NFTEntry{
@@ -5909,11 +5950,28 @@ func (bav *UtxoView) _connectUpdateNFT(
 		}
 	}
 
+	// Save a copy of the post entry so that we can safely modify it.
+	prevPostEntry := &PostEntry{}
+	*prevPostEntry = *postEntry
+
+	// Update the number of NFT copies that are for sale.
+	if prevNFTEntry.IsForSale && !txMeta.IsForSale {
+		// For sale --> Not for sale.
+		postEntry.NumNFTCopiesForSale--
+	} else if !prevNFTEntry.IsForSale && txMeta.IsForSale {
+		// Not for sale --> For sale.
+		postEntry.NumNFTCopiesForSale++
+	}
+
+	// Set the new postEntry.
+	bav._setPostEntryMappings(postEntry)
+
 	// Add an operation to the list at the end indicating we've connected an NFT bid.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeUpdateNFT,
 		NewNFTEntry:          newNFTEntry,
 		PrevNFTEntry:         prevNFTEntry,
+		PrevPostEntry:        prevPostEntry,
 		DeletedNFTBidEntries: deletedBidEntries,
 	})
 
@@ -6066,7 +6124,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		// public key.
 	}
 
-	// Now we are ready to accept the bid. When we accept, the folloiwng must happen:
+	// Now we are ready to accept the bid. When we accept, the following must happen:
 	// 	(1) Update the nft entry with the new owner and set it as "not for sale".
 	//		Set the ownership and accepted bid entries mappings as well.
 	//  (2) Delete all of the bids on this NFT since they are no longer relevant.
@@ -6074,6 +6132,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	//  (4) Pay royalties to the original creator.
 	//  (5) Pay change to the bidder.
 	//  (6) Add creator coin royalties to bitclout locked.
+	//  (7) Decrement the nftPostEntry NumNFTCopiesForSale.
 
 	// (1) Set an appropriate NFTEntry for the new owner.
 
@@ -6204,11 +6263,18 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
 
+	// (7) Save a copy of the previous postEntry and then decrement NumNFTCopiesForSale.
+	prevPostEntry := &PostEntry{}
+	*prevPostEntry = *nftPostEntry
+	nftPostEntry.NumNFTCopiesForSale--
+	bav._setPostEntryMappings(nftPostEntry)
+
 	// Add an operation to the list at the end indicating we've connected an NFT bid.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                      OperationTypeAcceptNFTBid,
 		NewNFTEntry:               newNFTEntry,
 		PrevNFTEntry:              prevNFTEntry,
+		PrevPostEntry:             prevPostEntry,
 		PrevCoinEntry:             &prevCoinEntry,
 		DeletedNFTBidEntries:      deletedBidEntries,
 		NFTPaymentUtxoKeys:        nftPaymentUtxoKeys,
@@ -6822,7 +6888,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
 	if buyerBalanceEntry == nil ||
-			(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight){
+		(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
