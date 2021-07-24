@@ -545,6 +545,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) Start() {
 
 	// Set the time to a nil value so we run on the first iteration of the loop.
 	var lastBlockUpdate time.Time
+	bitcloutBlockProducer.producerWaitGroup.Add(1)
 
 	for {
 		select {
