@@ -6,6 +6,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"time"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
@@ -28,6 +29,12 @@ type TXIndex struct {
 
 	// Core params object
 	Params *BitCloutParams
+
+	// Update wait group
+	updateWaitGroup sync.WaitGroup
+
+	// Shutdown channel
+	stopUpdateChannel chan struct{}
 }
 
 func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
@@ -137,10 +144,11 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 	// txns to our txindex should work smoothly now.
 
 	return &TXIndex{
-		TXIndexChain:   txIndexChain,
-		CoreChain:      coreChain,
-		BitcoinManager: bitcoinManager,
-		Params:         params,
+		TXIndexChain:      txIndexChain,
+		CoreChain:         coreChain,
+		BitcoinManager:    bitcoinManager,
+		Params:            params,
+		stopUpdateChannel: make(chan struct{}),
 	}, nil
 }
 
@@ -150,15 +158,24 @@ func (txi *TXIndex) Start() {
 	// Run a loop to continuously update the txindex. Note that this is a noop
 	// except when run the first time or when a new block has arrived.
 	go func() {
+		txi.updateWaitGroup.Add(1)
+
 		for {
-			if txi.CoreChain.ChainState() == SyncStateFullyCurrent {
-				// If the node is fully synced, then try an update.
-				err := txi.Update()
-				if err != nil {
-					glog.Error(fmt.Errorf("tryUpdateTxindex: Problem running update: %v", err))
+			select {
+			case <-txi.stopUpdateChannel:
+				txi.updateWaitGroup.Done()
+				return
+			default:
+				if txi.CoreChain.ChainState() == SyncStateFullyCurrent {
+					// If the node is fully synced, then try an update.
+					err := txi.Update()
+					if err != nil {
+						glog.Error(fmt.Errorf("tryUpdateTxindex: Problem running update: %v", err))
+					}
+				} else {
+					glog.Debugf("TXIndex: Waiting for node to sync before updating")
 				}
-			} else {
-				glog.Debugf("TXIndex: Waiting for node to sync before updating")
+				break
 			}
 
 			time.Sleep(1 * time.Second)
@@ -167,7 +184,10 @@ func (txi *TXIndex) Start() {
 }
 
 func (txi *TXIndex) Stop() {
-	glog.Info("TXIndex: Closing database")
+	glog.Info("TXIndex: Stopping updates and closing database")
+
+	txi.stopUpdateChannel <- struct{}{}
+	txi.updateWaitGroup.Wait()
 
 	txi.TXIndexChain.DB().Close()
 }

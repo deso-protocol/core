@@ -170,7 +170,10 @@ func (node *Node) Start() {
 func (node *Node) Stop() {
 	node.Server.Stop()
 	node.chainDB.Close()
-	node.TXIndex.Stop()
+
+	if node.TXIndex != nil {
+		node.TXIndex.Stop()
+	}
 }
 
 func validateParams(params *lib.BitCloutParams) {
