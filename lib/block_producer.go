@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/tyler-smith/go-bip39"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -42,6 +43,9 @@ type BitCloutBlockProducer struct {
 	chain          *Blockchain
 	bitcoinManager *BitcoinManager
 	params         *BitCloutParams
+
+	producerWaitGroup   sync.WaitGroup
+	stopProducerChannel chan struct{}
 }
 
 type BlockTemplateStats struct {
@@ -81,13 +85,14 @@ func NewBitCloutBlockProducer(
 	return &BitCloutBlockProducer{
 		minBlockUpdateIntervalSeconds: _minBlockUpdateIntervalSeconds,
 		maxBlockTemplatesToCache:      _maxBlockTemplatesToCache,
-		blockProducerPrivateKey: _privKey,
+		blockProducerPrivateKey:       _privKey,
 		recentBlockTemplatesProduced:  make(map[BlockHash]*MsgBitCloutBlock),
 
-		mempool:        _mempool,
-		chain:          _chain,
-		bitcoinManager: _bitcoinManager,
-		params:         _params,
+		mempool:             _mempool,
+		chain:               _chain,
+		bitcoinManager:      _bitcoinManager,
+		params:              _params,
+		stopProducerChannel: make(chan struct{}),
 	}, nil
 }
 
@@ -325,6 +330,8 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 }
 
 func (bitcloutBlockProducer *BitCloutBlockProducer) Stop() {
+	bitcloutBlockProducer.stopProducerChannel <- struct{}{}
+	bitcloutBlockProducer.producerWaitGroup.Wait()
 }
 
 func (bitcloutBlockProducer *BitCloutBlockProducer) GetRecentBlock(blockHash *BlockHash) *MsgBitCloutBlock {
@@ -540,24 +547,31 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) Start() {
 	var lastBlockUpdate time.Time
 
 	for {
-		secondsLeft := float64(bitcloutBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
-		if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
-			glog.Debugf("Sleeping for %v seconds before producing next block template...", secondsLeft)
-			time.Sleep(time.Duration(math.Ceil(secondsLeft)) * time.Second)
-			continue
-		}
+		select {
+		case <-bitcloutBlockProducer.stopProducerChannel:
+			bitcloutBlockProducer.producerWaitGroup.Done()
+			return
+		default:
+			secondsLeft := float64(bitcloutBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
+			if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
+				glog.Debugf("Sleeping for %v seconds before producing next block template...", secondsLeft)
+				time.Sleep(time.Duration(math.Ceil(secondsLeft)) * time.Second)
+				continue
+			}
 
-		// Update the time so start the clock for the next iteration.
-		lastBlockUpdate = time.Now()
+			// Update the time so start the clock for the next iteration.
+			lastBlockUpdate = time.Now()
 
-		glog.Debugf("Producing block template...")
-		err := bitcloutBlockProducer.UpdateLatestBlockTemplate()
-		if err != nil {
-			// If we hit an error, log it and sleep for a second. This could happen due to us
-			// being in the middle of processing a block or something.
-			glog.Errorf("Error producing block template: %v", err)
-			time.Sleep(time.Second)
-			continue
+			glog.Debugf("Producing block template...")
+			err := bitcloutBlockProducer.UpdateLatestBlockTemplate()
+			if err != nil {
+				// If we hit an error, log it and sleep for a second. This could happen due to us
+				// being in the middle of processing a block or something.
+				glog.Errorf("Error producing block template: %v", err)
+				time.Sleep(time.Second)
+				continue
+			}
+
 		}
 	}
 }
