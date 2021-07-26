@@ -5947,7 +5947,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 	// Set the new postEntry.
 	bav._setPostEntryMappings(postEntry)
 
-	// Add an operation to the list at the end indicating we've connected an NFT bid.
+	// Add an operation to the list at the end indicating we've connected an NFT update.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeUpdateNFT,
 		PrevNFTEntry:         prevNFTEntry,
