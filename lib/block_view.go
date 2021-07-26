@@ -8575,6 +8575,11 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 	if err != nil {
 		return uint64(0), errors.Wrap(err, "GetSpendableUtxosForPublicKey: ")
 	}
+	// Sanity check that the balanceNanos >= immatureBlockRewards to prevent underflow.
+	if balanceNanos < immatureBlockRewards {
+		return uint64(0), fmt.Errorf(
+			"GetSpendableUtxosForPublicKey: balance underflow (%d,%d)", balanceNanos, immatureBlockRewards)
+	}
 	return balanceNanos - immatureBlockRewards, nil
 }
 
