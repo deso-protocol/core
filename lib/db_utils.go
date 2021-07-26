@@ -4034,6 +4034,12 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialN
 	}
 
 	// When an nftEntry exists, delete the mapping.
+	if err := txn.Delete(_dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber( nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.MinBidAmountNanos, nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
+			"nft mapping for pkid %v post hash %v serial number %d", nftEntry.OwnerPKID, nftPostHash, serialNumber)
+	}
+
+	// When an nftEntry exists, delete the mapping.
 	if err := txn.Delete(_dbKeyForNFTPostHashSerialNumber(nftPostHash, serialNumber)); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
 			"nft mapping for post hash %v serial number %d", nftPostHash, serialNumber)
@@ -4061,6 +4067,12 @@ func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
 
 		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
 			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	}
+
+	if err := txn.Set(_dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(
+		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
+			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
 	}
 
 	return nil
@@ -4120,54 +4132,6 @@ func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSal
 		return nil
 	})
 	return ret
-}
-
-func DBDeleteNFTOwnershipMappingsWithTxn(txn *badger.Txn, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) error {
-
-	// First pull up the mapping that exists for the post / serial # passed in.
-	// If one doesn't exist then there's nothing to do.
-	nftEntry := DBGetNFTEntryByNFTOwnershipDetailsWithTxn(txn, ownerPKID, isForSale, bidAmountNanos, nftPostHash, serialNumber)
-	if nftEntry == nil {
-		return nil
-	}
-
-	// When an nftEntry exists, delete the mapping.
-	if err := txn.Delete(_dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(ownerPKID, isForSale, bidAmountNanos, nftPostHash, serialNumber)); err != nil {
-		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
-			"nft mapping for pkid %v post hash %v serial number %d", ownerPKID, nftPostHash, serialNumber)
-	}
-
-	return nil
-}
-
-func DBDeleteNFTOwnershipMappings(
-	handle *badger.DB, ownerPKID *PKID, postHash *BlockHash, serialNumber uint64, isForSale bool, bidAmountNanos uint64) error {
-
-	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteNFTOwnershipMappingsWithTxn(txn, ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
-	})
-}
-
-func DBPutNFTOwnershipEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
-
-	nftDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(nftDataBuf).Encode(nftEntry)
-
-	nftEntryBytes := nftDataBuf.Bytes()
-	if err := txn.Set(_dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(
-		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
-		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
-			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
-	}
-
-	return nil
-}
-
-func DBPutNFTOwnershipEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
-
-	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutNFTOwnershipEntryMappingsWithTxn(txn, nftEntry)
-	})
 }
 
 // DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
