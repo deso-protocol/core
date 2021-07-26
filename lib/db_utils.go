@@ -205,7 +205,7 @@ var (
 	// Prefixes for NFT ownership:
 	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
 	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
-	//  <prefix, PublicKey [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
+	//  <prefix, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
 	_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry = []byte{49}
 
 	// Prefixes for NFT bids:
