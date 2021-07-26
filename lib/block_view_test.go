@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"reflect"
@@ -16368,6 +16369,25 @@ func TestNFTRoyalties(t *testing.T) {
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
+	}
+
+	// Error case: royalty values big enough to overflow should fail.
+	{
+		_, _, _, err := _createNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			10,               /*NumCopies*/
+			false,            /*HasUnlockable*/
+			true,             /*IsForSale*/
+			0,                /*MinBidAmountNanos*/
+			0,                /*nftFee*/
+			math.MaxUint64-1, /*nftRoyaltyToCreatorBasisPoints*/
+			2,                /*nftRoyaltyToCoinBasisPoints*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTRoyaltyOverflow)
 	}
 
 	// Create NFT: Let's have m0 create an NFT with 10% royalties for the creator and 20% for the coin.
