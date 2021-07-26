@@ -5915,6 +5915,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 		SerialNumber:      txMeta.SerialNumber,
 		IsForSale:         txMeta.IsForSale,
 		MinBidAmountNanos: txMeta.MinBidAmountNanos,
+		UnlockableText:    prevNFTEntry.UnlockableText,
 		// Keep the last accepted bid amount nanos from the previous entry since this
 		// value is only updated when a new bid is accepted.
 		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
