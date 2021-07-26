@@ -5997,7 +5997,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	if nftPostEntry == nil || nftPostEntry.isDeleted {
 		return 0, 0, nil, RuleErrorPostEntryNotFoundForAcceptedNFTBid
 	}
-	if nftPostEntry.HasUnlockable && (txMeta.UnlockableText == nil || len(txMeta.UnlockableText) == 0) {
+	if nftPostEntry.HasUnlockable && len(txMeta.UnlockableText) == 0 {
 		return 0, 0, nil, RuleErrorUnlockableNFTMustProvideUnlockableText
 	}
 
