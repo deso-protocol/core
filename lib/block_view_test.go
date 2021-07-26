@@ -16233,10 +16233,6 @@ func TestNFTBasic(t *testing.T) {
 
 		// Check and make sure the unlockable looks gucci.
 		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 1)
-		priv, _ := btcec.PrivKeyFromBytes(btcec.S256(), _strToPk(t, m3Priv))
-		decryptedBytes, err := DecryptBytesWithPrivateKey(nftEntry.UnlockableText, priv.ToECDSA())
-		require.NoError(err)
-		require.Equal(unencryptedUnlockableText, string(decryptedBytes))
 		require.Equal(nftEntry.IsForSale, false)
 	}
 

@@ -2642,7 +2642,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 			"OperationTypeAcceptNFTBid but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*UpdateNFTMetadata)
+	txMeta := currentTxn.TxnMeta.(*AcceptNFTBidMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
