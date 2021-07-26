@@ -997,7 +997,7 @@ type UtxoOperation struct {
 	PrevDiamondEntry *DiamondEntry
 
 	// For disconnecting NFTs.
-	PrevNFTEntry *NFTEntry
+	PrevNFTEntry              *NFTEntry
 	PrevNFTBidEntry           *NFTBidEntry
 	DeletedNFTBidEntries      []*NFTBidEntry
 	NFTPaymentUtxoKeys        []*UtxoKey
@@ -5921,10 +5921,10 @@ func (bav *UtxoView) _connectUpdateNFT(
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 
-	// Iterate over all the NFTBidEntries for this NFT and delete them.
-	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
+	// If we are going from ForSale->NotForSale, delete all the NFTBidEntries for this NFT.
 	deletedBidEntries := []*NFTBidEntry{}
-	if bidEntries != nil {
+	if prevNFTEntry.IsForSale && !txMeta.IsForSale {
+		bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
 		for _, bidEntry := range bidEntries {
 			deletedBidEntries = append(deletedBidEntries, bidEntry)
 			bav._deleteNFTBidEntryMappings(bidEntry)
