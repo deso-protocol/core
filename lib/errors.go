@@ -215,6 +215,7 @@ const (
 	RuleErrorAcceptNFTBidByNonOwner             RuleError = "RuleErrorAcceptNFTBidByNonOwner"
 	RuleErrorCantCreateNFTWithoutProfileEntry   RuleError = "RuleErrorCantCreateNFTWithoutProfileEntry"
 	RuleErrorNFTRoyaltyHasTooManyBasisPoints    RuleError = "RuleErrorNFTRoyaltyHasTooManyBasisPoints"
+	RuleErrorNFTRoyaltyOverflow                 RuleError = "RuleErrorNFTRoyaltyOverflow"
 	RuleErrorNFTUpdateMustUpdateIsForSaleStatus RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
 
 	// NFT Bids

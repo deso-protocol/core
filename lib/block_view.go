@@ -5742,6 +5742,10 @@ func (bav *UtxoView) _connectCreateNFT(
 	if txMeta.NumCopies == 0 {
 		return 0, 0, nil, RuleErrorNFTMustHaveNonZeroCopies
 	}
+	// Make sure we won't oveflow when we add the royalty basis points.
+	if math.MaxUint64-txMeta.NFTRoyaltyToCreatorBasisPoints < txMeta.NFTRoyaltyToCoinBasisPoints {
+		return 0, 0, nil, RuleErrorNFTRoyaltyOverflow
+	}
 	royaltyBasisPoints := txMeta.NFTRoyaltyToCreatorBasisPoints + txMeta.NFTRoyaltyToCoinBasisPoints
 	if royaltyBasisPoints > bav.Params.MaxNFTRoyaltyBasisPoints {
 		return 0, 0, nil, RuleErrorNFTRoyaltyHasTooManyBasisPoints
