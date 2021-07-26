@@ -202,24 +202,32 @@ var (
 	_PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash = []byte{46}
 	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel      = []byte{47}
 
-	// Prefixes for NFT ownership entries:
+	// Prefixes for NFT ownership:
 	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
 	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
 	//  <prefix, PublicKey [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
 	_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry = []byte{49}
 
 	// Prefixes for NFT bids:
-	_PrefixPostHashSerialNumberBidNanosBidderPKID   = []byte{50}
+	//  <prefix, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
+	_PrefixPostHashSerialNumberBidNanosBidderPKID = []byte{50}
+	//  <BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
 	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{51}
+
+	// Prefix for NFT accepted bid entries:
+	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
+	//     not core to consensus and should not be relied upon as it could get inefficient.
+	//   - Schema: <prefix>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
+	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{54}
 
 	// <prefix, PublicKey [33]byte> -> uint64
 	_PrefixPublicKeyToBitCloutBalanceNanos = []byte{52}
-	// Block reward prefix (used for deducting immature block rewards from bitclout balances):
-	// <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
+	// Block reward prefix:
+	//   - This index is needed because block rewards take N blocks to mature, which means we need
+	//     a way to deduct them from balance calculations until that point. Without this index, it
+	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
+	//   - Schema: <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
 	_PrefixPublicKeyBlockHashToBlockReward = []byte{53}
-
-	// <prefix>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
-	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{54}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
@@ -3192,13 +3200,13 @@ type SwapIdentityTxindexMetadata struct {
 
 type NFTBidTxindexMetadata struct {
 	NFTPostHashHex string
-	SerialNumber uint64
+	SerialNumber   uint64
 	BidAmountNanos uint64
 }
 
 type AcceptNFTBidTxindexMetadata struct {
 	NFTPostHashHex string
-	SerialNumber uint64
+	SerialNumber   uint64
 	BidAmountNanos uint64
 }
 
@@ -3217,18 +3225,18 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*BitCloutOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata `json:",omitempty"`
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata `json:",omitempty"`
+	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
+	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata         `json:",omitempty"`
 	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata `json:",omitempty"`
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata `json:",omitempty"`
-	LikeTxindexMetadata                *LikeTxindexMetadata `json:",omitempty"`
-	FollowTxindexMetadata              *FollowTxindexMetadata `json:",omitempty"`
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata `json:",omitempty"`
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata `json:",omitempty"`
-	NFTBidTxindexMetadata              *NFTBidTxindexMetadata `json:",omitempty"`
-	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata `json:",omitempty"`
+	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
+	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
+	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
+	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
+	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
+	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
+	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
 }
 
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
@@ -4034,7 +4042,7 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialN
 	}
 
 	// When an nftEntry exists, delete the mapping.
-	if err := txn.Delete(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber( nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.MinBidAmountNanos, nftPostHash, serialNumber)); err != nil {
+	if err := txn.Delete(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.MinBidAmountNanos, nftPostHash, serialNumber)); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
 			"nft mapping for pkid %v post hash %v serial number %d", nftEntry.OwnerPKID, nftPostHash, serialNumber)
 	}
@@ -4376,8 +4384,8 @@ func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntr
 		bidderPKIDLength := len(bidderPKID[:])
 		for ii, keyFound := range keysFound {
 
-			postHashStartIdx := 1 + bidderPKIDLength // The length of prefix + length of PKID
-			postHashEndIdx := postHashStartIdx + HashSizeBytes   // Add the length of the bid amount (uint64).
+			postHashStartIdx := 1 + bidderPKIDLength           // The length of prefix + length of PKID
+			postHashEndIdx := postHashStartIdx + HashSizeBytes // Add the length of the bid amount (uint64).
 
 			// Cut the bid amount out of the key and decode.
 			postHashBytes := keyFound[postHashStartIdx:postHashEndIdx]

@@ -997,7 +997,7 @@ type UtxoOperation struct {
 	PrevDiamondEntry *DiamondEntry
 
 	// For disconnecting NFTs.
-	PrevNFTEntry *NFTEntry
+	PrevNFTEntry              *NFTEntry
 	PrevNFTBidEntry           *NFTBidEntry
 	DeletedNFTBidEntries      []*NFTBidEntry
 	NFTPaymentUtxoKeys        []*UtxoKey
@@ -5921,10 +5921,10 @@ func (bav *UtxoView) _connectUpdateNFT(
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 
-	// Iterate over all the NFTBidEntries for this NFT and delete them.
-	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
+	// If we are going from ForSale->NotForSale, delete all the NFTBidEntries for this NFT.
 	deletedBidEntries := []*NFTBidEntry{}
-	if bidEntries != nil {
+	if prevNFTEntry.IsForSale && !txMeta.IsForSale {
+		bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
 		for _, bidEntry := range bidEntries {
 			deletedBidEntries = append(deletedBidEntries, bidEntry)
 			bav._deleteNFTBidEntryMappings(bidEntry)
@@ -5947,7 +5947,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 	// Set the new postEntry.
 	bav._setPostEntryMappings(postEntry)
 
-	// Add an operation to the list at the end indicating we've connected an NFT bid.
+	// Add an operation to the list at the end indicating we've connected an NFT update.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeUpdateNFT,
 		PrevNFTEntry:         prevNFTEntry,
@@ -5997,7 +5997,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	if nftPostEntry == nil || nftPostEntry.isDeleted {
 		return 0, 0, nil, RuleErrorPostEntryNotFoundForAcceptedNFTBid
 	}
-	if nftPostEntry.HasUnlockable && (txMeta.UnlockableText == nil || len(txMeta.UnlockableText) == 0) {
+	if nftPostEntry.HasUnlockable && len(txMeta.UnlockableText) == 0 {
 		return 0, 0, nil, RuleErrorUnlockableNFTMustProvideUnlockableText
 	}
 
