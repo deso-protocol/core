@@ -3585,14 +3585,64 @@ func (bav *UtxoView) GetHighAndLowBidsForNFTCollection(
 	return highBid, lowBid
 }
 
-// This function gets the highest and lowest bids for a specific NFT that
-// have not been deleted in the view.
-func (bav *UtxoView) GetDBHighAndLowBidsForNFT(
-	nftHash *BlockHash, serialNumber uint64,
-) (_highBid uint64, _lowBid uint64) {
-	numPerDBFetch := 5
+func (bav *UtxoView) GetHighAndLowBidsForNFTSerialNumber(nftHash *BlockHash, serialNumber uint64) (_highBid uint64, _lowBid uint64) {
 	highBid := uint64(0)
 	lowBid := uint64(0)
+
+	highBidEntry, lowBidEntry := bav.GetDBHighAndLowBidEntriesForNFT(nftHash, serialNumber)
+
+	if highBidEntry != nil {
+		highBidKey := MakeNFTBidKey(highBidEntry.BidderPKID, highBidEntry.NFTPostHash, highBidEntry.SerialNumber)
+		if _, exists := bav.NFTBidKeyToNFTBidEntry[highBidKey]; !exists {
+			bav._setNFTBidEntryMappings(highBidEntry)
+		}
+		highBid = highBidEntry.BidAmountNanos
+	}
+
+	if lowBidEntry != nil {
+		lowBidKey := MakeNFTBidKey(lowBidEntry.BidderPKID, lowBidEntry.NFTPostHash, lowBidEntry.SerialNumber)
+		if _, exists := bav.NFTBidKeyToNFTBidEntry[lowBidKey]; !exists {
+			bav._setNFTBidEntryMappings(lowBidEntry)
+		}
+		lowBid = lowBidEntry.BidAmountNanos
+	}
+
+	// Then we loop over the view to for anything we missed.
+	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
+		if !nftBidEntry.isDeleted && nftBidEntry.SerialNumber == serialNumber && reflect.DeepEqual(nftBidEntry.NFTPostHash, nftHash) {
+			if nftBidEntry.BidAmountNanos > highBid {
+				highBid = nftBidEntry.BidAmountNanos
+			}
+
+			if nftBidEntry.BidAmountNanos < lowBid {
+				lowBid = nftBidEntry.BidAmountNanos
+			}
+		}
+	}
+	return highBid, lowBid
+}
+
+func (bav *UtxoView) GetDBHighAndLowBidsForNFT(nftHash *BlockHash, serialNumber uint64) (_highBid uint64, _lowBid uint64) {
+	highBidAmount := uint64(0)
+	lowBidAmount := uint64(0)
+	highBidEntry, lowBidEntry := bav.GetDBHighAndLowBidEntriesForNFT(nftHash, serialNumber)
+	if highBidEntry != nil {
+		highBidAmount = highBidEntry.BidAmountNanos
+	}
+	if lowBidEntry != nil {
+		lowBidAmount = lowBidEntry.BidAmountNanos
+	}
+	return highBidAmount, lowBidAmount
+}
+
+// This function gets the highest and lowest bids for a specific NFT that
+// have not been deleted in the view.
+func (bav *UtxoView) GetDBHighAndLowBidEntriesForNFT(
+	nftHash *BlockHash, serialNumber uint64,
+) (_highBidEntry *NFTBidEntry, _lowBidEntry *NFTBidEntry) {
+	numPerDBFetch := 5
+	var highestBidEntry *NFTBidEntry
+	var lowestBidEntry *NFTBidEntry
 
 	// Loop until we find the highest bid in the database that hasn't been deleted in the view.
 	exitLoop := false
@@ -3614,7 +3664,7 @@ func (bav *UtxoView) GetDBHighAndLowBidsForNFT(
 			bidEntry := bav.NFTBidKeyToNFTBidEntry[*bidKey]
 			if !bidEntry.isDeleted && !exitLoop {
 				exitLoop = true
-				highBid = bidEntry.BidAmountNanos
+				highestBidEntry = bidEntry
 			}
 		}
 
@@ -3652,7 +3702,7 @@ func (bav *UtxoView) GetDBHighAndLowBidsForNFT(
 			bidEntry := bav.NFTBidKeyToNFTBidEntry[*bidKey]
 			if !bidEntry.isDeleted && !exitLoop {
 				exitLoop = true
-				lowBid = bidEntry.BidAmountNanos
+				lowestBidEntry = bidEntry
 			}
 		}
 
@@ -3670,7 +3720,7 @@ func (bav *UtxoView) GetDBHighAndLowBidsForNFT(
 		}
 	}
 
-	return highBid, lowBid
+	return highestBidEntry, lowestBidEntry
 }
 
 func (bav *UtxoView) _setAcceptNFTBidHistoryMappings(nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) {
