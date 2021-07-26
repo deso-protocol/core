@@ -1256,7 +1256,6 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
-	//<<<<<<< HEAD
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreatorCoinTxn(
 		updaterPkBytes,
 		profilePkBytes,

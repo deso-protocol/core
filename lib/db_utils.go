@@ -205,11 +205,11 @@ var (
 	// Prefixes for NFT ownership:
 	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
 	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
-	//  <prefix, PublicKey [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
-	_PrefixPublicKeyIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry = []byte{49}
+	//  <prefix, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
+	_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry = []byte{49}
 
 	// Prefixes for NFT bids:
-	//  <prefic, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
+	//  <prefix, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
 	_PrefixPostHashSerialNumberBidNanosBidderPKID = []byte{50}
 	//  <BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
 	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{51}
@@ -3993,8 +3993,8 @@ func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint6
 	return key
 }
 
-func _dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) []byte {
-	prefixCopy := append([]byte{}, _PrefixPublicKeyIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
+func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) []byte {
+	prefixCopy := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	key := append(prefixCopy, pkid[:]...)
 	key = append(key, _boolToByte(isForSale))
 	key = append(key, EncodeUint64(bidAmountNanos)...)
@@ -4042,7 +4042,7 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialN
 	}
 
 	// When an nftEntry exists, delete the mapping.
-	if err := txn.Delete(_dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.MinBidAmountNanos, nftPostHash, serialNumber)); err != nil {
+	if err := txn.Delete(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.MinBidAmountNanos, nftPostHash, serialNumber)); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
 			"nft mapping for pkid %v post hash %v serial number %d", nftEntry.OwnerPKID, nftPostHash, serialNumber)
 	}
@@ -4077,7 +4077,7 @@ func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
 			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
 	}
 
-	if err := txn.Set(_dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(
+	if err := txn.Set(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(
 		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
 		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
 			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
@@ -4116,7 +4116,7 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 func DBGetNFTEntryByNFTOwnershipDetailsWithTxn(
 	txn *badger.Txn, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
 
-	key := _dbKeyForPublicKeyIsForSaleBidAmountNanosNFTPostHashSerialNumber(ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
+	key := _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
 	nftEntryObj := &NFTEntry{}
 	nftEntryItem, err := txn.Get(key)
 	if err != nil {
@@ -4145,7 +4145,7 @@ func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSal
 // DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
 func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
 	nftEntries := []*NFTEntry{}
-	prefix := append([]byte{}, _PrefixPublicKeyIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
+	prefix := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
