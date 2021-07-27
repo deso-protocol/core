@@ -2484,7 +2484,7 @@ func (bav *UtxoView) _disconnectCreateNFT(
 	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	// Verify that the last operation is a CreatorCoinTransfer operation
+	// Verify that the last operation is a CreateNFT operation
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectCreateNFT: utxoOperations are missing")
 	}
@@ -2535,7 +2535,7 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	// Verify that the last operation is a CreatorCoinTransfer operation
+	// Verify that the last operation is an UpdateNFT operation
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectUpdateNFT: utxoOperations are missing")
 	}
