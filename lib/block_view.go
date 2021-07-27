@@ -6341,7 +6341,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	// Creator balance diff (only relevant if creator != seller and creator != bidder):
 	creatorDiff := 0
 	if !reflect.DeepEqual(nftPostEntry.PosterPublicKey, txn.PublicKey) &&
-		!reflect.DeepEqual(txn.PublicKey, bidderPublicKey) {
+		!reflect.DeepEqual(nftPostEntry.PosterPublicKey, bidderPublicKey) {
 		creatorBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf(
