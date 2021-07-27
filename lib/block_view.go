@@ -6051,12 +6051,19 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		return 0, 0, nil, RuleErrorAcceptedNFTBidMustSpecifyBidderInputs
 	}
 	totalBidderInput := uint64(0)
+	bidderPublicKey := bav.GetPublicKeyForPKID(txMeta.BidderPKID)
 	for _, bidderInput := range txMeta.BidderInputs {
 		bidderUtxoKey := UtxoKey(*bidderInput)
 		bidderUtxoEntry := bav.GetUtxoEntryForUtxoKey(&bidderUtxoKey)
 		if bidderUtxoEntry == nil || bidderUtxoEntry.isSpent {
 			return 0, 0, nil, RuleErrorBidderInputForAcceptedNFTBidNoLongerExists
 		}
+
+		// Make sure that the utxo specified is actually from the bidder.
+		if !reflect.DeepEqual(bidderUtxoEntry.PublicKey, bidderPublicKey) {
+			return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
+		}
+
 		// If the utxo is from a block reward txn, make sure enough time has passed to
 		// make it spendable.
 		if _isEntryImmatureBlockReward(bidderUtxoEntry, blockHeight, bav.Params) {
@@ -6212,7 +6219,6 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			Index: nextUtxoIndex,
 		}
 
-		bidderPublicKey := bav.GetPublicKeyForPKID(txMeta.BidderPKID)
 		utxoEntry := UtxoEntry{
 			AmountNanos: bidderChangeNanos,
 			PublicKey:   bidderPublicKey,
