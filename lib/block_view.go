@@ -5686,7 +5686,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// In this case we need to set all the fields using what was passed
 		// into the transaction.
 
-		// If below block height, user transaction public key.
+		// If below block height, use transaction public key.
 		// If above block height, use ProfilePublicKey if available.
 		profileEntryPublicKey := txn.PublicKey
 		if blockHeight > ParamUpdaterProfileUpdateFixBlockHeight {
