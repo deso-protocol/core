@@ -6080,19 +6080,26 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	//
 	// Store starting balances of all the participants to check diff later.
 	//
-	sellerBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey)
+	// We assume the tip is right before the block in which this txn is about to be applied.
+	tipHeight := uint32(0)
+	if blockHeight > 0 {
+		tipHeight = blockHeight-1
+	}
+	sellerBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Problem getting initial balance for seller pubkey: %v",
 			PkToStringBoth(txn.PublicKey))
 	}
-	bidderBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(bidderPublicKey)
+	bidderBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(
+		bidderPublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Problem getting initial balance for bidder pubkey: %v",
 			PkToStringBoth(bidderPublicKey))
 	}
-	creatorBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey)
+	creatorBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(
+		nftPostEntry.PosterPublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Problem getting initial balance for poster pubkey: %v",
@@ -6336,7 +6343,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	//  - Before returning we do one more sanity check that money hasn't been printed.
 	//
 	// Seller balance diff:
-	sellerBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey)
+	sellerBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Problem getting final balance for seller pubkey: %v",
@@ -6346,7 +6353,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	// Bidder balance diff (only relevant if bidder != seller):
 	bidderDiff := int64(0)
 	if !reflect.DeepEqual(bidderPublicKey, txn.PublicKey) {
-		bidderBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(bidderPublicKey)
+		bidderBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(bidderPublicKey, tipHeight)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf(
 				"_connectAcceptNFTBid: Problem getting final balance for bidder pubkey: %v",
@@ -6358,7 +6365,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	creatorDiff := int64(0)
 	if !reflect.DeepEqual(nftPostEntry.PosterPublicKey, txn.PublicKey) &&
 		!reflect.DeepEqual(nftPostEntry.PosterPublicKey, bidderPublicKey) {
-		creatorBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey)
+		creatorBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey, tipHeight)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf(
 				"_connectAcceptNFTBid: Problem getting final balance for poster pubkey: %v",
@@ -6368,8 +6375,11 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	}
 	// Creator coin diff:
 	coinDiff := int64(newCoinEntry.BitCloutLockedNanos) - int64(prevCoinEntry.BitCloutLockedNanos)
-	// Now the actual check.
-	if sellerDiff+bidderDiff+creatorDiff+coinDiff > int64(0) {
+	// Now the actual check. Use bigints to avoid getting fooled by overflow.
+	sellerPlusBidderDiff := big.NewInt(0).Add(big.NewInt(sellerDiff), big.NewInt(bidderDiff))
+	creatorPlusCoinDiff := big.NewInt(0).Add(big.NewInt(creatorDiff), big.NewInt(coinDiff))
+	totalDiff := big.NewInt(0).Add(sellerPlusBidderDiff, creatorPlusCoinDiff)
+	if totalDiff.Cmp(big.NewInt(0)) > 0 {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Sum of participant diffs is >0 (%d, %d, %d, %d)",
 			sellerDiff, bidderDiff, creatorDiff, coinDiff)
@@ -6447,8 +6457,13 @@ func (bav *UtxoView) _connectNFTBid(
 		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: ")
 	}
 
+	// We assume the tip is right before the block in which this txn is about to be applied.
+	tipHeight := uint32(0)
+	if blockHeight > 0 {
+		tipHeight = blockHeight-1
+	}
 	// Verify that the transaction creator has sufficient bitclout to create the bid.
-	spendableBalance, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey)
+	spendableBalance, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: Error getting bidder balance: ")
 
@@ -8662,7 +8677,7 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 }
 
 func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte,
-) (_spendableBalance uint64, _err error) {
+tipHeight uint32) (_spendableBalance uint64, _err error) {
 	// In order to get the spendable balance, we need to account for any immature block rewards.
 	// We get these by starting at the chain tip and iterating backwards until we have collected
 	// all of the immature block rewards for this public key.
@@ -8675,10 +8690,10 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 			break
 		}
 
-		block, err := GetBlock(nextBlockHash, bav.Handle)
-		if err != nil || block == nil {
-			return uint64(0), errors.Wrapf(
-				err, "GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block for blockhash %s",
+		blockNode := GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
+		if blockNode == nil {
+			return uint64(0), fmt.Errorf(
+				"GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 				nextBlockHash.String())
 		}
 		blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
@@ -8688,7 +8703,10 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 					"public key %s blockhash %s", PkToString(pkBytes, bav.Params), nextBlockHash.String())
 		}
 		immatureBlockRewards += blockRewardForPK
-		nextBlockHash = block.Header.PrevBlockHash
+		nextBlockHash = &BlockHash{}
+		if blockNode.Parent != nil {
+			nextBlockHash = blockNode.Parent.Hash
+		}
 	}
 
 	balanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(pkBytes)
