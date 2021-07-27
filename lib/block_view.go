@@ -5807,7 +5807,10 @@ func (bav *UtxoView) _connectCreateNFT(
 	// we charge a fee for each additional copy minted.
 	nftFee := txMeta.NumCopies * bav.GlobalParamsEntry.CreateNFTFeeNanos
 
-	// Ensure that the transaction covers the NFT fee.
+	// Sanity check overflow and then ensure that the transaction covers the NFT fee.
+	if math.MaxUint64-totalOutput < nftFee {
+		return 0, 0, nil, fmt.Errorf("_connectCreateNFTFee: nft Fee overflow")
+	}
 	totalOutput += nftFee
 	if totalInput < totalOutput {
 		return 0, 0, nil, RuleErrorCreateNFTWithInsufficientFunds
