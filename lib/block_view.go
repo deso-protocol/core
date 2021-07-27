@@ -6113,6 +6113,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		big.NewInt(100*100)).Uint64()
 	fmt.Printf("Bid amount: %d, coin basis points: %d, coin royalty: %d",
 		txMeta.BidAmountNanos, nftPostEntry.NFTRoyaltyToCoinBasisPoints, creatorCoinRoyaltyNanos)
+
+	// Sanity check that the royalties are reasonable and won't cause underflow.
+	if txMeta.BidAmountNanos >= (creatorRoyaltyNanos + creatorCoinRoyaltyNanos) {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: sum of royalties (%d, %d) is less than bid amount (%d)",
+			creatorRoyaltyNanos, creatorCoinRoyaltyNanos, txMeta.BidAmountNanos)
+	}
+
 	bidAmountMinusRoyalties := txMeta.BidAmountNanos - creatorRoyaltyNanos - creatorCoinRoyaltyNanos
 
 	// Connect basic txn to get the total input and the total output without
