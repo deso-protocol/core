@@ -6058,6 +6058,30 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		return 0, 0, nil, RuleErrorAcceptedNFTBidAmountDoesNotMatch
 	}
 
+	bidderPublicKey := bav.GetPublicKeyForPKID(txMeta.BidderPKID)
+
+	//
+	// Store starting balances of all the participants to check diff later.
+	//
+	sellerBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: Problem getting initial balance for seller pubkey: %v",
+			PkToStringBoth(txn.PublicKey))
+	}
+	bidderBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(bidderPublicKey)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: Problem getting initial balance for bidder pubkey: %v",
+			PkToStringBoth(bidderPublicKey))
+	}
+	creatorBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: Problem getting initial balance for poster pubkey: %v",
+			PkToStringBoth(nftPostEntry.PosterPublicKey))
+	}
+
 	//
 	// Validate bidder UTXOs.
 	//
@@ -6065,7 +6089,6 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		return 0, 0, nil, RuleErrorAcceptedNFTBidMustSpecifyBidderInputs
 	}
 	totalBidderInput := uint64(0)
-	bidderPublicKey := bav.GetPublicKeyForPKID(txMeta.BidderPKID)
 	spentUtxoEntries := []*UtxoEntry{}
 	for _, bidderInput := range txMeta.BidderInputs {
 		bidderUtxoKey := UtxoKey(*bidderInput)
@@ -6115,7 +6138,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		txMeta.BidAmountNanos, nftPostEntry.NFTRoyaltyToCoinBasisPoints, creatorCoinRoyaltyNanos)
 
 	// Sanity check that the royalties are reasonable and won't cause underflow.
-	if txMeta.BidAmountNanos >= (creatorRoyaltyNanos + creatorCoinRoyaltyNanos) {
+	if txMeta.BidAmountNanos < (creatorRoyaltyNanos + creatorCoinRoyaltyNanos) {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: sum of royalties (%d, %d) is less than bid amount (%d)",
 			creatorRoyaltyNanos, creatorCoinRoyaltyNanos, txMeta.BidAmountNanos)
@@ -6266,9 +6289,9 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// (6) Add creator coin royalties to bitclout locked. If the number of coins in circulation is
 	// less than the "auto sell threshold" we burn the bitclout.
+	newCoinEntry := prevCoinEntry
 	if creatorCoinRoyaltyNanos > 0 && existingProfileEntry.CoinsInCirculationNanos >= bav.Params.CreatorCoinAutoSellThresholdNanos {
 		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
-		newCoinEntry := prevCoinEntry
 		newCoinEntry.BitCloutLockedNanos += creatorCoinRoyaltyNanos
 		existingProfileEntry.CoinEntry = newCoinEntry
 		bav._setProfileEntryMappings(existingProfileEntry)
@@ -6291,6 +6314,50 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		NFTSpentUtxoEntries:       spentUtxoEntries,
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 	})
+
+	//
+	// HARDCORE SANITY CHECK:
+	//  - Before returning we do one more sanity check that money hasn't been printed.
+	//
+	// Seller balance diff:
+	sellerBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: Problem getting final balance for seller pubkey: %v",
+			PkToStringBoth(txn.PublicKey))
+	}
+	sellerDiff := int(sellerBalanceAfter) - int(sellerBalanceBefore)
+	// Bidder balance diff (only relevant if bidder != seller):
+	bidderDiff := 0
+	if !reflect.DeepEqual(bidderPublicKey, txn.PublicKey) {
+		bidderBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(bidderPublicKey)
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf(
+				"_connectAcceptNFTBid: Problem getting final balance for bidder pubkey: %v",
+				PkToStringBoth(bidderPublicKey))
+		}
+		bidderDiff = int(bidderBalanceAfter) - int(bidderBalanceBefore)
+	}
+	// Creator balance diff (only relevant if creator != seller and creator != bidder):
+	creatorDiff := 0
+	if !reflect.DeepEqual(nftPostEntry.PosterPublicKey, txn.PublicKey) &&
+		!reflect.DeepEqual(txn.PublicKey, bidderPublicKey) {
+		creatorBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey)
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf(
+				"_connectAcceptNFTBid: Problem getting final balance for poster pubkey: %v",
+				PkToStringBoth(nftPostEntry.PosterPublicKey))
+		}
+		creatorDiff = int(creatorBalanceAfter) - int(creatorBalanceBefore)
+	}
+	// Creator coin diff:
+	coinDiff := int(newCoinEntry.BitCloutLockedNanos) - int(prevCoinEntry.BitCloutLockedNanos)
+	// Now the actual check.
+	if sellerDiff+bidderDiff+creatorDiff+coinDiff > 0 {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: Sum of participant diffs is >0 (%d, %d, %d, %d)",
+			sellerDiff, bidderDiff, creatorDiff, coinDiff)
+	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
