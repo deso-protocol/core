@@ -111,6 +111,7 @@ const (
 	RuleErrorCreateProfileTxnOutputExceedsInput RuleError = "RuleErrorCreateProfileTxnOutputExceedsInput"
 	RuleErrorProfilePublicKeySize               RuleError = "RuleErrorProfilePublicKeySize"
 	RuleErrorProfileBadPublicKey                RuleError = "RuleErrorProfileBadPublicKey"
+	RuleErrorProfilePubKeyNotAuthorized         RuleError = "RuleErrorProfilePubKeyNotAuthorized"
 	RuleErrorProfileModificationNotAuthorized   RuleError = "RuleErrorProfileModificationNotAuthorized"
 	RuleErrorProfileUsernameCannotContainZeros  RuleError = "RuleErrorProfileUsernameCannotContainZeros"
 

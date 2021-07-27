@@ -3082,6 +3082,7 @@ const (
 func TestUpdateProfile(t *testing.T) {
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
 	ParamUpdaterProfileUpdateFixBlockHeight = 0
+	UpdateProfileFixBlockHeight = 0
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3337,6 +3338,24 @@ func TestUpdateProfile(t *testing.T) {
 			false /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileBadPublicKey)
+	}
+
+	// Profile public key that is not authorized should fail.
+	{
+		_, _, _, err = _updateProfile(
+			t, chain, db, params,
+			1,             /*feeRateNanosPerKB*/
+			m0Pub,         /*updaterPkBase58Check*/
+			m0Priv,        /*updaterPrivBase58Check*/
+			m1PkBytes,     /*profilePubKey*/
+			"m0",          /*newUsername*/
+			"i am the m0", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
 
 	// A simple registration should succeed
@@ -3616,7 +3635,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,     /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileModificationNotAuthorized)
+		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
 
 	// ParamUpdater updating another user's profile should succeed.
