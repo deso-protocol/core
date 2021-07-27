@@ -107,7 +107,7 @@ var (
 
 	// UpdateProfileFixBlockHeight defines the height at which a patch was added to prevent user from
 	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
-	UpdateProfileFixBlockHeight = uint32(46236)
+	UpdateProfileFixBlockHeight = uint32(46165)
 )
 
 func (nt NetworkType) String() string {
