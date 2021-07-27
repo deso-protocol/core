@@ -104,6 +104,10 @@ var (
 	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
 	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
 	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
+
+	// UpdateProfileFixBlockHeight defines the height at which a patch was added to prevent user from
+	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
+	UpdateProfileFixBlockHeight = uint32(46236)
 )
 
 func (nt NetworkType) String() string {

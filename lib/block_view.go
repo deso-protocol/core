@@ -3959,11 +3959,10 @@ func (bav *UtxoView) _connectPrivateMessage(
 		Version:            1,
 	}
 
-
 	//Check if message is encrypted with shared secret
 	extraV, hasExtraV := txn.ExtraData["V"]
 	if hasExtraV {
-		Version,_ := Uvarint(extraV)
+		Version, _ := Uvarint(extraV)
 		messageEntry.Version = uint8(Version)
 	}
 
@@ -4680,6 +4679,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 	}
 
 	profilePublicKey := txn.PublicKey
+	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 	if len(txMeta.ProfilePublicKey) != 0 {
 		if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, errors.Wrapf(RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
@@ -4689,6 +4689,18 @@ func (bav *UtxoView) _connectUpdateProfile(
 			return 0, 0, nil, errors.Wrapf(RuleErrorProfileBadPublicKey, "_connectUpdateProfile: %v", err)
 		}
 		profilePublicKey = txMeta.ProfilePublicKey
+
+		if blockHeight > UpdateProfileFixBlockHeight {
+			// Make sure that either (1) the profile pub key is the txn signer's  public key or
+			// (2) the signer is a param updater
+			if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) && !updaterIsParamUpdater {
+
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorProfilePubKeyNotAuthorized,
+					"_connectUpdateProfile: Profile pub key: %v, signer public key: %v",
+					PkToStringBoth(txn.PublicKey), PkToStringBoth(txMeta.ProfilePublicKey))
+			}
+		}
 	}
 
 	// If a profile with this username exists already AND if that profile
@@ -4754,7 +4766,6 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// Modifying a profile is only allowed if the transaction public key equals
 		// the profile public key or if the public key belongs to a paramUpdater.
-		_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) &&
 			!updaterIsParamUpdater {
 
@@ -5352,7 +5363,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
 	if buyerBalanceEntry == nil ||
-			(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight){
+		(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
@@ -6682,7 +6693,6 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 	dbPrefix := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
-
 
 	diamondPostEntry := bav.GetPostEntryForPostHash(postHash)
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(diamondPostEntry.PosterPublicKey)
