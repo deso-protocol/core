@@ -5561,6 +5561,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 	}
 
 	profilePublicKey := txn.PublicKey
+	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 	if len(txMeta.ProfilePublicKey) != 0 {
 		if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, errors.Wrapf(RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
@@ -5570,6 +5571,18 @@ func (bav *UtxoView) _connectUpdateProfile(
 			return 0, 0, nil, errors.Wrapf(RuleErrorProfileBadPublicKey, "_connectUpdateProfile: %v", err)
 		}
 		profilePublicKey = txMeta.ProfilePublicKey
+
+		if blockHeight > UpdateProfileFixBlockHeight {
+			// Make sure that either (1) the profile pub key is the txn signer's  public key or
+			// (2) the signer is a param updater
+			if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) && !updaterIsParamUpdater {
+
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorProfilePubKeyNotAuthorized,
+					"_connectUpdateProfile: Profile pub key: %v, signer public key: %v",
+					PkToStringBoth(txn.PublicKey), PkToStringBoth(txMeta.ProfilePublicKey))
+			}
+		}
 	}
 
 	// If a profile with this username exists already AND if that profile
@@ -6083,7 +6096,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	// We assume the tip is right before the block in which this txn is about to be applied.
 	tipHeight := uint32(0)
 	if blockHeight > 0 {
-		tipHeight = blockHeight-1
+		tipHeight = blockHeight - 1
 	}
 	sellerBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
 	if err != nil {
@@ -6460,7 +6473,7 @@ func (bav *UtxoView) _connectNFTBid(
 	// We assume the tip is right before the block in which this txn is about to be applied.
 	tipHeight := uint32(0)
 	if blockHeight > 0 {
-		tipHeight = blockHeight-1
+		tipHeight = blockHeight - 1
 	}
 	// Verify that the transaction creator has sufficient bitclout to create the bid.
 	spendableBalance, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
@@ -8677,7 +8690,7 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 }
 
 func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte,
-tipHeight uint32) (_spendableBalance uint64, _err error) {
+	tipHeight uint32) (_spendableBalance uint64, _err error) {
 	// In order to get the spendable balance, we need to account for any immature block rewards.
 	// We get these by starting at the chain tip and iterating backwards until we have collected
 	// all of the immature block rewards for this public key.
