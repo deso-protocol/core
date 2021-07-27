@@ -5809,6 +5809,7 @@ func (bav *UtxoView) _connectCreateNFT(
 
 	// Since issuing N copies of an NFT multiplies the downstream processing overhead by N,
 	// we charge a fee for each additional copy minted.
+	// We do not need to check for overflow as these values are managed by the ParamUpdater.
 	nftFee := txMeta.NumCopies * bav.GlobalParamsEntry.CreateNFTFeeNanos
 
 	// Sanity check overflow and then ensure that the transaction covers the NFT fee.
@@ -5932,7 +5933,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 		// public key.
 	}
 
-	// Now we are ready to update the NFT. Two things must happen:
+	// Now we are ready to update the NFT. Three things must happen:
 	// 	(1) Update the NFT entry.
 	//  (2) If the NFT entry is being updated to "is not for sale", kill all the bids.
 	//  (3) Update the number of NFT copies for sale on the post entry.
