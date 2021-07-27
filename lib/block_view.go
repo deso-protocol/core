@@ -1001,6 +1001,7 @@ type UtxoOperation struct {
 	PrevNFTBidEntry           *NFTBidEntry
 	DeletedNFTBidEntries      []*NFTBidEntry
 	NFTPaymentUtxoKeys        []*UtxoKey
+	NFTSpentUtxoEntries       []*UtxoEntry
 	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
 
 	// Save the previous reclout entry and reclout count when making an update.
@@ -2617,8 +2618,9 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	// 	(1) Revert the NFT entry to the previous one with the previous owner.
 	//  (2) Add back all of the bids that were deleted.
 	//  (3) Disconnect payment UTXOs.
-	//  (4) Revert profileEntry to undo royalties added to BitCloutLockedNanos.
-	//  (5) Revert the postEntry since NumNFTCopiesForSale was decremented.
+	//  (4) Unspend bidder UTXOs.
+	//  (5) Revert profileEntry to undo royalties added to BitCloutLockedNanos.
+	//  (6) Revert the postEntry since NumNFTCopiesForSale was decremented.
 
 	// (1) Set the old NFT entry.
 	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
@@ -2653,7 +2655,18 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		}
 	}
 
-	// (4) Revert the creator's CoinEntry if a previous one exists.
+	// (4) Revert spent bidder UTXOs.
+	if operationData.NFTSpentUtxoEntries == nil || len(operationData.NFTSpentUtxoEntries) == 0 {
+		return fmt.Errorf("_disconnectAcceptNFTBid: NFTSpentUtxoEntries was nil; " +
+			"this should never happen")
+	}
+	for _, spentUtxoEntry := range operationData.NFTSpentUtxoEntries {
+		if err := bav._unSpendUtxo(spentUtxoEntry); err != nil {
+			return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unSpending utxo %v: ", spentUtxoEntry)
+		}
+	}
+
+	// (5) Revert the creator's CoinEntry if a previous one exists.
 	if operationData.PrevCoinEntry != nil {
 		nftPostEntry := bav.GetPostEntryForPostHash(operationData.PrevNFTEntry.NFTPostHash)
 		// We have to get the post entry first so that we have the poster's pub key.
@@ -2670,7 +2683,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
 
-	// (5) Verify a postEntry exists and then revert it since NumNFTCopiesForSale was decremented.
+	// (6) Verify a postEntry exists and then revert it since NumNFTCopiesForSale was decremented.
 
 	// Get the postEntry corresponding to this txn.
 	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
@@ -6053,6 +6066,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	}
 	totalBidderInput := uint64(0)
 	bidderPublicKey := bav.GetPublicKeyForPKID(txMeta.BidderPKID)
+	spentUtxoEntries := []*UtxoEntry{}
 	for _, bidderInput := range txMeta.BidderInputs {
 		bidderUtxoKey := UtxoKey(*bidderInput)
 		bidderUtxoEntry := bav.GetUtxoEntryForUtxoKey(&bidderUtxoKey)
@@ -6071,6 +6085,10 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
 		}
 		totalBidderInput += bidderUtxoEntry.AmountNanos
+
+		// Make sure we spend the utxo so that the bidder can't reuse it.
+		bav._spendUtxo(&bidderUtxoKey)
+		spentUtxoEntries = append(spentUtxoEntries, bidderUtxoEntry)
 	}
 
 	if totalBidderInput < txMeta.BidAmountNanos {
@@ -6262,6 +6280,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		PrevCoinEntry:             &prevCoinEntry,
 		DeletedNFTBidEntries:      deletedBidEntries,
 		NFTPaymentUtxoKeys:        nftPaymentUtxoKeys,
+		NFTSpentUtxoEntries:       spentUtxoEntries,
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 	})
 
