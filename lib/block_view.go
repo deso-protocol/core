@@ -2649,7 +2649,9 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		return fmt.Errorf("_disconnectAcceptNFTBid: NFTPaymentUtxoKeys was nil; " +
 			"this should never happen")
 	}
-	for _, paymentUtxoKey := range operationData.NFTPaymentUtxoKeys {
+	// Note: these UTXOs need to be unadded in reverse order.
+	for ii := len(operationData.NFTPaymentUtxoKeys) - 1; ii >= 0; ii-- {
+		paymentUtxoKey := operationData.NFTPaymentUtxoKeys[ii]
 		if err := bav._unAddUtxo(paymentUtxoKey); err != nil {
 			return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unAdding utxo %v: ", paymentUtxoKey)
 		}
@@ -2660,7 +2662,9 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		return fmt.Errorf("_disconnectAcceptNFTBid: NFTSpentUtxoEntries was nil; " +
 			"this should never happen")
 	}
-	for _, spentUtxoEntry := range operationData.NFTSpentUtxoEntries {
+	// Note: these UTXOs need to be unspent in reverse order.
+	for ii := len(operationData.NFTSpentUtxoEntries) - 1; ii >= 0; ii-- {
+		spentUtxoEntry := operationData.NFTSpentUtxoEntries[ii]
 		if err := bav._unSpendUtxo(spentUtxoEntry); err != nil {
 			return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unSpending utxo %v: ", spentUtxoEntry)
 		}
