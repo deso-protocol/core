@@ -5740,6 +5740,9 @@ func (bav *UtxoView) _connectUpdateProfile(
 func (bav *UtxoView) _connectCreateNFT(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+		return 0, 0, nil, fmt.Errorf("_connectCreateNFT: called with zero MaxCopiesPerNFT")
+	}
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeCreateNFT {
@@ -5855,6 +5858,9 @@ func (bav *UtxoView) _connectCreateNFT(
 func (bav *UtxoView) _connectUpdateNFT(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+		return 0, 0, nil, fmt.Errorf("_connectUpdateNFT: called with zero MaxCopiesPerNFT")
+	}
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeUpdateNFT {
@@ -5979,6 +5985,9 @@ func (bav *UtxoView) _connectUpdateNFT(
 func (bav *UtxoView) _connectAcceptNFTBid(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTBid: called with zero MaxCopiesPerNFT")
+	}
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeAcceptNFTBid {
@@ -6365,6 +6374,9 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 func (bav *UtxoView) _connectNFTBid(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+		return 0, 0, nil, fmt.Errorf("_connectNFTBid: called with zero MaxCopiesPerNFT")
+	}
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeNFTBid {

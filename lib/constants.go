@@ -101,7 +101,6 @@ var (
 	// the database, the user would lose the creator coins they purchased.
 	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(39713)
 
-
 	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
 	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
 	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
@@ -490,7 +489,7 @@ var (
 		MakePkMapKey(MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
 		MakePkMapKey(MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
 		MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
-		MakePkMapKey(MustBase58CheckDecode("tBCKW665XZnvVZcCfcEmyeecSZGKAdaxwV2SH9UFab6PpSRikg4EJ2")): true,
+		MakePkMapKey(MustBase58CheckDecode("tBCKW665XZnvVZcCfcEmyeecSZGKAdaxwV2SH9UFab6PpSRikg4EJ2")):  true,
 	}
 )
 
@@ -1021,7 +1020,7 @@ var (
 		CreateProfileFeeNanos: 0,
 		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
 		CreateNFTFeeNanos: 0,
-		MaxCopiesPerNFT:   InitialMaxCopiesPerNFT,
+		MaxCopiesPerNFT:   0,
 	}
 )
 
@@ -1039,7 +1038,6 @@ const (
 	MinCreateNFTFeeNanos = 0
 	MaxCreateNFTFeeNanos = 100 * NanosPerUnit
 	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
-	MinMaxCopiesPerNFT     = 1
-	MaxMaxCopiesPerNFT     = 10000
-	InitialMaxCopiesPerNFT = 1000 // Initial value when global params are initiated for the chain.
+	MinMaxCopiesPerNFT = 1
+	MaxMaxCopiesPerNFT = 10000
 )
