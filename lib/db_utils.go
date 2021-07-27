@@ -4347,7 +4347,7 @@ func DBDeleteNFTBidMappings(handle *badger.DB, nftBidKey *NFTBidKey) error {
 
 func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, nftBidEntry *NFTBidEntry) error {
 	// We store two indexes for NFT bids. (1) sorted by bid amount nanos in the key and
-	// (2) sorted by the bidder public key. Both come in handy.
+	// (2) sorted by the bidder PKID. Both come in handy.
 
 	// Put the first index --> []byte{} (no data needs to be stored since it all info is in the key)
 	if err := txn.Set(_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), []byte{}); err != nil {

@@ -2907,7 +2907,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a transaction containing the creator coin fields.
+	// Create a transaction containing the NFT bid fields.
 	txn := &MsgBitCloutTxn{
 		PublicKey: UpdaterPublicKey,
 		TxnMeta: &NFTBidMetadata{
@@ -3004,24 +3004,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 			"UTXOs (%d total) to cover BidAmountNanos %d: ", totalBidderInput, BidAmountNanos)
 	}
 
-	// Handle any unlockable text that is passed in.
-	//var encryptedUnlockableText []byte
-	//if len(UnencryptedUnlockableText) != 0 {
-	//	winningBidderPkBytes := utxoView.GetPublicKeyForPKID(BidderPKID)
-	//	winningBidderPk, err := btcec.ParsePubKey(winningBidderPkBytes, btcec.S256())
-	//	if err != nil {
-	//		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem parsing "+
-	//			"recipient public key: ")
-	//	}
-	//	encryptedUnlockableText, err = EncryptBytesWithPublicKey(
-	//		[]byte(UnencryptedUnlockableText), winningBidderPk.ToECDSA())
-	//	if err != nil {
-	//		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem "+
-	//			"encrypting message text: ")
-	//	}
-	//}
-
-	// Create a transaction containing the creator coin fields.
+	// Create a transaction containing the accept nft bid fields.
 	txn := &MsgBitCloutTxn{
 		PublicKey: UpdaterPublicKey,
 		TxnMeta: &AcceptNFTBidMetadata{
@@ -3065,7 +3048,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a transaction containing the creator coin fields.
+	// Create a transaction containing the update NFT fields.
 	txn := &MsgBitCloutTxn{
 		PublicKey: UpdaterPublicKey,
 		TxnMeta: &UpdateNFTMetadata{
