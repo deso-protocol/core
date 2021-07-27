@@ -447,6 +447,9 @@ func (params *BitCloutParams) EnableRegtest() {
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
+
+	// Make bitcoin headers time current immediately
+	params.BitcoinMaxTipAge = 100000 * time.Hour
 }
 
 // GenesisBlock defines the genesis block used for the BitClout maainnet and testnet
