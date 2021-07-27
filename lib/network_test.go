@@ -3,11 +3,12 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/btcsuite/btcd/btcec"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/btcsuite/btcd/btcec"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/bxcodec/faker"
@@ -96,7 +97,7 @@ var expectedBlockHeader = &MsgBitCloutHeader{
 	TstampSecs: uint64(1678943210),
 	Height:     uint64(1321012345),
 	Nonce:      uint64(12345678901234),
-	ExtraNonce:      uint64(101234123456789),
+	ExtraNonce: uint64(101234123456789),
 }
 
 func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
@@ -369,7 +370,7 @@ var expectedBlock = &MsgBitCloutBlock{
 	},
 
 	BlockProducerInfo: &BlockProducerInfo{
-		PublicKey:  []byte{
+		PublicKey: []byte{
 			// random bytes
 			0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x30,
 			0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x10,
@@ -855,13 +856,142 @@ func TestSerializeCreatorCoinTransfer(t *testing.T) {
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-		0x00, 0x01}
+		0x00, 0x01, 0x02}
 	faker.FakeData(&txMeta)
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
 	testMeta, err := NewTxnMetadata(TxnTypeCreatorCoinTransfer)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeCreateNFT(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &CreateNFTMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.NumCopies = uint64(100)
+	txMeta.HasUnlockable = true
+	txMeta.IsForSale = true
+	txMeta.MinBidAmountNanos = 9876
+	txMeta.NFTRoyaltyToCreatorBasisPoints = 1234
+	txMeta.NFTRoyaltyToCoinBasisPoints = 4321
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeCreateNFT)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeUpdateNFT(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &UpdateNFTMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+	txMeta.IsForSale = true
+	txMeta.MinBidAmountNanos = 9876
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeUpdateNFT)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeAcceptNFTBid(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &AcceptNFTBidMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+	txMeta.BidderPKID = PublicKeyToPKID([]byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02})
+	txMeta.BidAmountNanos = 999
+	txMeta.BidderInputs = []*BitCloutInput{
+		{
+			TxID: *CopyBytesIntoBlockHash([]byte{
+				// random bytes
+				0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10,
+				0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20,
+				0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30,
+				0x31, 0x32,
+			}),
+			Index: 111,
+		},
+		{
+			TxID: *CopyBytesIntoBlockHash([]byte{
+				// random bytes
+				0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50,
+				0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x70,
+				0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x90,
+				0x91, 0x92,
+			}),
+			Index: 222,
+		},
+	}
+	txMeta.UnlockableText = []byte("accept nft bid")
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeAcceptNFTBid)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeNFTBid(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &NFTBidMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+	txMeta.BidAmountNanos = uint64(123456789)
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeNFTBid)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)

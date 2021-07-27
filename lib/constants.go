@@ -373,6 +373,7 @@ type BitCloutParams struct {
 	MaxPostSubLengthBytes       uint64
 	MaxStakeMultipleBasisPoints uint64
 	MaxCreatorBasisPoints       uint64
+	MaxNFTRoyaltyBasisPoints    uint64
 	ParamUpdaterPublicKeys      map[PkMapKey]bool
 
 	// A list of transactions to apply when initializing the chain. Useful in
@@ -715,8 +716,9 @@ var BitCloutMainnetParams = BitCloutParams{
 	MaxStakeMultipleBasisPoints: 10 * 100 * 100,
 	// 100% is the max creator percentage. Not sure why you'd buy such a coin
 	// but whatever.
-	MaxCreatorBasisPoints:  100 * 100,
-	ParamUpdaterPublicKeys: ParamUpdaterPublicKeys,
+	MaxCreatorBasisPoints:    100 * 100,
+	MaxNFTRoyaltyBasisPoints: 100 * 100,
+	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
 	SeedTxns: SeedTxns,
@@ -935,8 +937,9 @@ var BitCloutTestnetParams = BitCloutParams{
 	MaxStakeMultipleBasisPoints: 10 * 100 * 100,
 	// 100% is the max creator percentage. Not sure why you'd buy such a coin
 	// but whatever.
-	MaxCreatorBasisPoints:  100 * 100,
-	ParamUpdaterPublicKeys: ParamUpdaterPublicKeys,
+	MaxCreatorBasisPoints:    100 * 100,
+	MaxNFTRoyaltyBasisPoints: 100 * 100,
+	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
 	SeedTxns: TestSeedTxns,
@@ -979,10 +982,12 @@ const (
 	IsQuotedRecloutKey = "IsQuotedReclout"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoin            = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKB       = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanos         = "CreateProfileFeeNanos"
-	ForbiddenBlockSignaturePubKey = "ForbiddenBlockSignaturePubKey"
+	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey       = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey         = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey             = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey               = "MaxCopiesPerNFT"
+	ForbiddenBlockSignaturePubKeyKey = "ForbiddenBlockSignaturePubKey"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1012,6 +1017,9 @@ var (
 		MinimumNetworkFeeNanosPerKB: 0,
 		// We initialize the CreateProfileFeeNanos to 0 so we do not assess a fee to create a profile until specified by ParamUpdater.
 		CreateProfileFeeNanos: 0,
+		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
+		CreateNFTFeeNanos: 0,
+		MaxCopiesPerNFT:   0,
 	}
 )
 
@@ -1025,4 +1033,10 @@ const (
 	MinCreateProfileFeeNanos = 0
 	// MaxCreateProfileFeeNanos - Maximum value to which the create profile fee can be set.
 	MaxCreateProfileFeeNanos = 100 * NanosPerUnit
+	// Min/MaxCreateNFTFeeNanos - Min/max value to which the create NFT fee can be set.
+	MinCreateNFTFeeNanos = 0
+	MaxCreateNFTFeeNanos = 100 * NanosPerUnit
+	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
+	MinMaxCopiesPerNFT = 1
+	MaxMaxCopiesPerNFT = 10000
 )
