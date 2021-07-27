@@ -6327,7 +6327,6 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 	})
 
-	//
 	// HARDCORE SANITY CHECK:
 	//  - Before returning we do one more sanity check that money hasn't been printed.
 	//
@@ -6338,9 +6337,9 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			"_connectAcceptNFTBid: Problem getting final balance for seller pubkey: %v",
 			PkToStringBoth(txn.PublicKey))
 	}
-	sellerDiff := int(sellerBalanceAfter) - int(sellerBalanceBefore)
+	sellerDiff := int64(sellerBalanceAfter) - int64(sellerBalanceBefore)
 	// Bidder balance diff (only relevant if bidder != seller):
-	bidderDiff := 0
+	bidderDiff := int64(0)
 	if !reflect.DeepEqual(bidderPublicKey, txn.PublicKey) {
 		bidderBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(bidderPublicKey)
 		if err != nil {
@@ -6348,10 +6347,10 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 				"_connectAcceptNFTBid: Problem getting final balance for bidder pubkey: %v",
 				PkToStringBoth(bidderPublicKey))
 		}
-		bidderDiff = int(bidderBalanceAfter) - int(bidderBalanceBefore)
+		bidderDiff = int64(bidderBalanceAfter) - int64(bidderBalanceBefore)
 	}
 	// Creator balance diff (only relevant if creator != seller and creator != bidder):
-	creatorDiff := 0
+	creatorDiff := int64(0)
 	if !reflect.DeepEqual(nftPostEntry.PosterPublicKey, txn.PublicKey) &&
 		!reflect.DeepEqual(nftPostEntry.PosterPublicKey, bidderPublicKey) {
 		creatorBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey)
@@ -6360,12 +6359,12 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 				"_connectAcceptNFTBid: Problem getting final balance for poster pubkey: %v",
 				PkToStringBoth(nftPostEntry.PosterPublicKey))
 		}
-		creatorDiff = int(creatorBalanceAfter) - int(creatorBalanceBefore)
+		creatorDiff = int64(creatorBalanceAfter) - int64(creatorBalanceBefore)
 	}
 	// Creator coin diff:
-	coinDiff := int(newCoinEntry.BitCloutLockedNanos) - int(prevCoinEntry.BitCloutLockedNanos)
+	coinDiff := int64(newCoinEntry.BitCloutLockedNanos) - int64(prevCoinEntry.BitCloutLockedNanos)
 	// Now the actual check.
-	if sellerDiff+bidderDiff+creatorDiff+coinDiff > 0 {
+	if sellerDiff+bidderDiff+creatorDiff+coinDiff > int64(0) {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Sum of participant diffs is >0 (%d, %d, %d, %d)",
 			sellerDiff, bidderDiff, creatorDiff, coinDiff)
