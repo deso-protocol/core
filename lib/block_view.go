@@ -8703,7 +8703,7 @@ tipHeight uint32) (_spendableBalance uint64, _err error) {
 					"public key %s blockhash %s", PkToString(pkBytes, bav.Params), nextBlockHash.String())
 		}
 		immatureBlockRewards += blockRewardForPK
-		nextBlockHash = &BlockHash{}
+		nextBlockHash = GenesisBlockHash
 		if blockNode.Parent != nil {
 			nextBlockHash = blockNode.Parent.Hash
 		}
