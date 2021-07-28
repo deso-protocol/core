@@ -108,6 +108,11 @@ var (
 	// UpdateProfileFixBlockHeight defines the height at which a patch was added to prevent user from
 	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
 	UpdateProfileFixBlockHeight = uint32(46165)
+
+	// BrokenNFTBidsFixBlockHeight defines the height at which the bitclout balance index takes effect
+	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
+	// bitclout balance index, allowing bids to be submitted that were greater than the user's bitclout balance.
+	BrokenNFTBidsFixBlockHeight = uint32(46742)
 )
 
 func (nt NetworkType) String() string {
