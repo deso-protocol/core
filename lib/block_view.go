@@ -6171,8 +6171,8 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			big.NewInt(int64(txMeta.BidAmountNanos)),
 			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCoinBasisPoints))),
 		big.NewInt(100*100)).Uint64()
-	fmt.Printf("Bid amount: %d, coin basis points: %d, coin royalty: %d",
-		txMeta.BidAmountNanos, nftPostEntry.NFTRoyaltyToCoinBasisPoints, creatorCoinRoyaltyNanos)
+	//glog.Infof("Bid amount: %d, coin basis points: %d, coin royalty: %d",
+	//	txMeta.BidAmountNanos, nftPostEntry.NFTRoyaltyToCoinBasisPoints, creatorCoinRoyaltyNanos)
 
 	// Sanity check that the royalties are reasonable and won't cause underflow.
 	if txMeta.BidAmountNanos < (creatorRoyaltyNanos + creatorCoinRoyaltyNanos) {
