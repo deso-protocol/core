@@ -3600,7 +3600,7 @@ func (bav *UtxoView) GetDBHighAndLowBidEntriesForNFT(
 	// Loop until we find the highest bid in the database that hasn't been deleted in the view.
 	exitLoop := false
 	highBidEntries := DBGetNFTBidEntriesPaginated(
-		bav.Handle, nftHash, serialNumber, nil, numPerDBFetch, false)
+		bav.Handle, nftHash, serialNumber, nil, numPerDBFetch, true)
 	for _, bidEntry := range highBidEntries {
 		bidEntryKey := MakeNFTBidKey(bidEntry.BidderPKID, bidEntry.NFTPostHash, bidEntry.SerialNumber)
 		if _, exists := bav.NFTBidKeyToNFTBidEntry[bidEntryKey]; !exists {
@@ -3659,15 +3659,15 @@ func (bav *UtxoView) GetDBHighAndLowBidEntriesForNFT(
 			}
 		}
 
-		if len(highBidEntries) < numPerDBFetch {
+		if len(lowBidEntries) < numPerDBFetch {
 			exitLoop = true
 		}
 
 		if exitLoop {
 			break
 		} else {
-			nextStartEntry := highBidEntries[len(highBidEntries)-1]
-			highBidEntries = DBGetNFTBidEntriesPaginated(
+			nextStartEntry := lowBidEntries[len(highBidEntries)-1]
+			lowBidEntries = DBGetNFTBidEntriesPaginated(
 				bav.Handle, nftHash, serialNumber, nextStartEntry, numPerDBFetch, false,
 			)
 		}
