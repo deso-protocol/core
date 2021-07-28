@@ -6480,7 +6480,7 @@ func (bav *UtxoView) _connectNFTBid(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: Error getting bidder balance: ")
 
-	} else if txMeta.BidAmountNanos > spendableBalance {
+	} else if txMeta.BidAmountNanos > spendableBalance && blockHeight > BrokenNFTBidsFixBlockHeight {
 		return 0, 0, nil, RuleErrorInsufficientFundsForNFTBid
 	}
 

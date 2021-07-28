@@ -15500,6 +15500,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 }
 
 func TestNFTBasic(t *testing.T) {
+	BrokenNFTBidsFixBlockHeight = uint32(0)
+
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
