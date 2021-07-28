@@ -263,7 +263,38 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *BitCloutMempool, pkSt
 	for _, utxoEntry := range utxoEntriesFound {
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
+
+	utxoView, err := NewUtxoView(chain.db, chain.params, chain.bitcoinManager)
+	require.NoError(t, err)
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+	}
+
+	balanceNanos, err := utxoView.GetSpendableBitcloutBalanceNanosForPublicKey(
+		pkBytes, chain.headerTip().Height)
+	require.NoError(t, err)
+
+	// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
+	require.Equal(t, balanceForUserNanos, balanceNanos)
+
 	return balanceForUserNanos
+}
+
+func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *BitCloutParams, pkStr string,
+) (_bitCloutLocked uint64, _coinsInCirculation uint64) {
+	pkBytes, _, err := Base58CheckDecode(pkStr)
+	require.NoError(t, err)
+
+	utxoView, _ := NewUtxoView(db, params, nil)
+
+	// Profile fields
+	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)
+	if creatorProfile == nil {
+		return 0, 0
+	}
+
+	return creatorProfile.BitCloutLockedNanos, creatorProfile.CoinsInCirculationNanos
 }
 
 func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {
@@ -1495,7 +1526,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
 	require.NoError(err)
 	txn, _, _, _, err := chain.CreateUpdateGlobalParamsTxn(
-		senderPkBytes, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil)
+		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil)
 	require.NoError(err)
 
 	// Mine a few blocks to give the senderPkString some money.

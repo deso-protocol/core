@@ -188,7 +188,7 @@ var (
 	//  <prefix, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
 	//  <prefix, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
 	_PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash = []byte{41}
-	_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash  = []byte{43}
+	_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash = []byte{43}
 
 	// Public keys that have been restricted from signing blocks.
 	// <prefix, ForbiddenPublicKey [33]byte> -> <>
@@ -202,14 +202,41 @@ var (
 	_PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash = []byte{46}
 	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel      = []byte{47}
 
+	// Prefixes for NFT ownership:
+	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
+	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
+	//  <prefix, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
+	_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry = []byte{49}
+
+	// Prefixes for NFT bids:
+	//  <prefix, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
+	_PrefixPostHashSerialNumberBidNanosBidderPKID = []byte{50}
+	//  <BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
+	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{51}
+
+	// Prefix for NFT accepted bid entries:
+	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
+	//     not core to consensus and should not be relied upon as it could get inefficient.
+	//   - Schema: <prefix>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
+	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{54}
+
+	// <prefix, PublicKey [33]byte> -> uint64
+	_PrefixPublicKeyToBitCloutBalanceNanos = []byte{52}
+	// Block reward prefix:
+	//   - This index is needed because block rewards take N blocks to mature, which means we need
+	//     a way to deduct them from balance calculations until that point. Without this index, it
+	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
+	//   - Schema: <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
+	_PrefixPublicKeyBlockHashToBlockReward = []byte{53}
+
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix, OwnerPublicKey [33]byte> -> <>
-	_PrefixAuthorizeDerivedKey = []byte{48}
+	_PrefixAuthorizeDerivedKey = []byte{54}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 49
+	// NEXT_TAG: 55
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -472,6 +499,97 @@ func _enumerateLimitedKeysReversedForPrefixWithTxn(dbTxn *badger.Txn, dbPrefix [
 		valsFound = append(valsFound, valCopy)
 	}
 	return keysFound, valsFound, nil
+}
+
+// -------------------------------------------------------------------------------------
+// Bitclout balance mapping functions
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPublicKeyToBitCloutBalanceNanos...)
+	key := append(prefixCopy, publicKey...)
+	return key
+}
+
+func DbGetBitcloutBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
+) (_balance uint64, _err error) {
+
+	key := _dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey)
+	bitcloutBalanceItem, err := txn.Get(key)
+	if err != nil {
+		return uint64(0), nil
+	}
+	bitcloutBalanceBytes, err := bitcloutBalanceItem.ValueCopy(nil)
+	if err != nil {
+		return uint64(0), errors.Wrapf(
+			err, "DbGetBitcloutBalanceNanosForPublicKeyWithTxn: Problem getting balance for: %s ",
+			PkToStringBoth(publicKey))
+	}
+
+	bitcloutBalance := DecodeUint64(bitcloutBalanceBytes)
+
+	return bitcloutBalance, nil
+}
+
+func DbGetBitcloutBalanceNanosForPublicKey(db *badger.DB, publicKey []byte,
+) (_balance uint64, _err error) {
+	ret := uint64(0)
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetBitcloutBalanceNanosForPublicKeyWithTxn(txn, publicKey)
+		if err != nil {
+			return fmt.Errorf("DbGetBitcloutBalanceNanosForPublicKey: %v", err)
+		}
+		return nil
+	})
+	if dbErr != nil {
+		return ret, dbErr
+	}
+	return ret, nil
+}
+
+func DbPutBitcloutBalanceForPublicKeyWithTxn(
+	txn *badger.Txn, publicKey []byte, balanceNanos uint64) error {
+
+	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutBitcloutBalanceForPublicKeyWithTxn: Public key "+
+			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	balanceBytes := EncodeUint64(balanceNanos)
+
+	if err := txn.Set(_dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey), balanceBytes); err != nil {
+
+		return errors.Wrapf(
+			err, "DbPutBitcloutBalanceForPublicKey: Problem adding balance mapping of %d for: %s ",
+			balanceNanos, PkToStringBoth(publicKey))
+	}
+
+	return nil
+}
+
+func DbPutBitcloutBalanceForPublicKey(handle *badger.DB, publicKey []byte, balanceNanos uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutBitcloutBalanceForPublicKeyWithTxn(txn, publicKey, balanceNanos)
+	})
+}
+
+func DbDeletePublicKeyToBitcloutBalanceWithTxn(txn *badger.Txn, publicKey []byte) error {
+
+	if err := txn.Delete(_dbKeyForPublicKeyToBitcloutBalanceNanos(publicKey)); err != nil {
+		return errors.Wrapf(err, "DbDeletePublicKeyToBitcloutBalanceWithTxn: Problem deleting "+
+			"balance for public key %s", PkToStringMainnet(publicKey))
+	}
+
+	return nil
+}
+
+func DbDeletePublicKeyToBitcloutBalance(handle *badger.DB, publicKey []byte) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbDeletePublicKeyToBitcloutBalanceWithTxn(txn, publicKey)
+	})
 }
 
 // -------------------------------------------------------------------------------------
@@ -2251,6 +2369,14 @@ func BlockHashToBlockKey(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, _PrefixBlockHashToBlock...), blockHash[:]...)
 }
 
+func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPublicKeyBlockHashToBlockReward...)
+	key := append(prefixCopy, publicKey...)
+	key = append(key, blockHash[:]...)
+	return key
+}
+
 func GetBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) *MsgBitCloutBlock {
 	hashKey := BlockHashToBlockKey(blockHash)
 	var blockRet *MsgBitCloutBlock
@@ -2331,6 +2457,32 @@ func PutBlockWithTxn(txn *badger.Txn, bitcloutBlock *MsgBitCloutBlock) error {
 	if err := txn.Set(blockKey, data); err != nil {
 		return err
 	}
+
+	// Index the block reward. Used for deducting immature block rewards from user balances.
+	if len(bitcloutBlock.Txns) == 0 {
+		return fmt.Errorf("PutBlockWithTxn: Got block without any txns %v", bitcloutBlock)
+	}
+	blockRewardTxn := bitcloutBlock.Txns[0]
+	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return fmt.Errorf("PutBlockWithTxn: Got block without block reward as first txn %v", bitcloutBlock)
+	}
+	// It's possible the block reward is split across multiple public keys.
+	pubKeyToBlockRewardMap := make(map[PkMapKey]uint64)
+	for _, bro := range bitcloutBlock.Txns[0].TxOutputs {
+		pkMapKey := MakePkMapKey(bro.PublicKey)
+		if _, hasKey := pubKeyToBlockRewardMap[pkMapKey]; !hasKey {
+			pubKeyToBlockRewardMap[pkMapKey] = bro.AmountNanos
+		} else {
+			pubKeyToBlockRewardMap[pkMapKey] += bro.AmountNanos
+		}
+	}
+	for pkMapKey, blockReward := range pubKeyToBlockRewardMap {
+		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
+		if err := txn.Set(blockRewardKey, EncodeUint64(blockReward)); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -2343,6 +2495,40 @@ func PutBlock(bitcloutBlock *MsgBitCloutBlock, handle *badger.DB) error {
 	}
 
 	return nil
+}
+
+func DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn *badger.Txn, publicKey []byte, blockHash *BlockHash,
+) (_balance uint64, _err error) {
+	key := PublicKeyBlockHashToBlockRewardKey(publicKey, blockHash)
+	bitcloutBalanceItem, err := txn.Get(key)
+	if err != nil {
+		return uint64(0), nil
+	}
+	bitcloutBalanceBytes, err := bitcloutBalanceItem.ValueCopy(nil)
+	if err != nil {
+		return uint64(0), errors.Wrap(err, "DbGetBlockRewardForPublicKeyBlockHashWithTxn: "+
+			"Problem getting block reward value, this should never happen: ")
+	}
+	bitcloutBalance := DecodeUint64(bitcloutBalanceBytes)
+
+	return bitcloutBalance, nil
+}
+
+func DbGetBlockRewardForPublicKeyBlockHash(db *badger.DB, publicKey []byte, blockHash *BlockHash,
+) (_balance uint64, _err error) {
+	ret := uint64(0)
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn, publicKey, blockHash)
+		if err != nil {
+			return errors.Wrap(err, "DbGetBlockRewardForPublicKeyBlockHash: ")
+		}
+		return nil
+	})
+	if dbErr != nil {
+		return uint64(0), dbErr
+	}
+	return ret, nil
 }
 
 func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
@@ -3016,6 +3202,18 @@ type SwapIdentityTxindexMetadata struct {
 	ToPublicKeyBase58Check string
 }
 
+type NFTBidTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber   uint64
+	BidAmountNanos uint64
+}
+
+type AcceptNFTBidTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber   uint64
+	BidAmountNanos uint64
+}
+
 type TransactionMetadata struct {
 	BlockHashHex    string
 	TxnIndexInBlock uint64
@@ -3031,16 +3229,18 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*BitCloutOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata `json:",omitempty"`
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata `json:",omitempty"`
+	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
+	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata         `json:",omitempty"`
 	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata `json:",omitempty"`
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata `json:",omitempty"`
-	LikeTxindexMetadata                *LikeTxindexMetadata `json:",omitempty"`
-	FollowTxindexMetadata              *FollowTxindexMetadata `json:",omitempty"`
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata `json:",omitempty"`
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata `json:",omitempty"`
+	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
+	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
+	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
+	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
+	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
+	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
+	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
 }
 
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
@@ -3784,6 +3984,525 @@ func DBGetCommentPostHashesForParentStakeID(
 	}
 
 	return tstampsFetched, commentPostHashes, commentEntriesFetched, nil
+}
+
+// =======================================================================================
+// NFTEntry db functions
+// =======================================================================================
+func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
+	key := append(prefixCopy, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) []byte {
+	prefixCopy := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
+	key := append(prefixCopy, pkid[:]...)
+	key = append(key, _boolToByte(isForSale))
+	key = append(key, EncodeUint64(bidAmountNanos)...)
+	key = append(key, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func DBGetNFTEntryByPostHashSerialNumberWithTxn(
+	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+
+	key := _dbKeyForNFTPostHashSerialNumber(postHash, serialNumber)
+	nftEntryObj := &NFTEntry{}
+	nftEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftEntryObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetNFTEntryByPostHashSerialNumberWithTxn: Problem reading "+
+			"NFTEntry for postHash %v", postHash)
+		return nil
+	}
+	return nftEntryObj
+}
+
+func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+	var ret *NFTEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetNFTEntryByPostHashSerialNumberWithTxn(txn, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+
+	// First pull up the mapping that exists for the post / serial # passed in.
+	// If one doesn't exist then there's nothing to do.
+	nftEntry := DBGetNFTEntryByPostHashSerialNumberWithTxn(txn, nftPostHash, serialNumber)
+	if nftEntry == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete the mapping.
+	if err := txn.Delete(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.MinBidAmountNanos, nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
+			"nft mapping for pkid %v post hash %v serial number %d", nftEntry.OwnerPKID, nftPostHash, serialNumber)
+	}
+
+	// When an nftEntry exists, delete the mapping.
+	if err := txn.Delete(_dbKeyForNFTPostHashSerialNumber(nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
+			"nft mapping for post hash %v serial number %d", nftPostHash, serialNumber)
+	}
+
+	return nil
+}
+
+func DBDeleteNFTMappings(
+	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteNFTMappingsWithTxn(txn, postHash, serialNumber)
+	})
+}
+
+func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
+
+	nftDataBuf := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(nftDataBuf).Encode(nftEntry)
+
+	nftEntryBytes := nftDataBuf.Bytes()
+	if err := txn.Set(_dbKeyForNFTPostHashSerialNumber(
+		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+
+		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
+			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	}
+
+	if err := txn.Set(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(
+		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
+			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	}
+
+	return nil
+}
+
+func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutNFTEntryMappingsWithTxn(txn, nftEntry)
+	})
+}
+
+// DBGetNFTEntriesForPostHash gets NFT Entries *from the DB*. Does not include mempool txns.
+func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nftEntries []*NFTEntry) {
+	nftEntries := []*NFTEntry{}
+	prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
+	keyPrefix := append(prefix, nftPostHash[:]...)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	for _, byteString := range entryByteStringsFound {
+		currentEntry := &NFTEntry{}
+		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+		nftEntries = append(nftEntries, currentEntry)
+	}
+	return nftEntries
+}
+
+// =======================================================================================
+// NFTOwnership db functions
+// NOTE: This index is not essential to running the protocol and should be computed
+// outside of the protocol layer once update to the creation of TxIndex are complete.
+// =======================================================================================
+
+func DBGetNFTEntryByNFTOwnershipDetailsWithTxn(
+	txn *badger.Txn, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+
+	key := _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
+	nftEntryObj := &NFTEntry{}
+	nftEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftEntryObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetNFTEntryByNFTOwnershipDetailsWithTxn: Problem reading "+
+			"NFTEntry for postHash %v serial number %d", postHash, serialNumber)
+		return nil
+	}
+	return nftEntryObj
+}
+
+func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+	var ret *NFTEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetNFTEntryByNFTOwnershipDetailsWithTxn(txn, ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+// DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
+func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
+	nftEntries := []*NFTEntry{}
+	prefix := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
+	keyPrefix := append(prefix, ownerPKID[:]...)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	for _, byteString := range entryByteStringsFound {
+		currentEntry := &NFTEntry{}
+		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+		nftEntries = append(nftEntries, currentEntry)
+	}
+	return nftEntries
+}
+
+// =======================================================================================
+// AcceptedNFTBidEntries db functions
+// NOTE: This index is not essential to running the protocol and should be computed
+// outside of the protocol layer once update to the creation of TxIndex are complete.
+// =======================================================================================
+func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToAcceptedBidEntries...)
+	key := append(prefixCopy, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+	nftDataBuf := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(nftDataBuf).Encode(nftBidEntries)
+
+	acceptedNFTBidEntryBytes := nftDataBuf.Bytes()
+	if err := txn.Set(_dbKeyForPostHashSerialNumberToAcceptedBidEntries(
+		&nftKey.NFTPostHash, nftKey.SerialNumber), acceptedNFTBidEntryBytes); err != nil {
+
+		return errors.Wrapf(err, "DBPutAcceptedNFTBidEntriesMappingWithTxn: Problem "+
+			"adding accepted bid mapping for post: %v, serial number: %d", nftKey.NFTPostHash, nftKey.SerialNumber)
+	}
+	return nil
+}
+
+func DBPutAcceptedNFTBidEntriesMapping(handle *badger.DB, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, nftKey, nftBidEntries)
+	})
+}
+
+func DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(
+	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
+
+	key := _dbKeyForPostHashSerialNumberToAcceptedBidEntries(postHash, serialNumber)
+	nftBidEntriesObj := &[]*NFTBidEntry{}
+	nftBidEntriesItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftBidEntriesItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftBidEntriesObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn: Problem reading "+
+			"NFTBidEntries for postHash %v serialNumber %d", postHash, serialNumber)
+		return nil
+	}
+	return nftBidEntriesObj
+}
+
+func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
+	var ret *[]*NFTBidEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+
+	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
+	nftBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, nftPostHash, serialNumber)
+	if nftBidEntries == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete both mapping.
+	if err := txn.Delete(_dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DBDeleteAcceptedNFTBidEntriesMappingsWithTxn: Deleting "+
+			"accepted nft bid mapping for post hash %v serial number %d", nftPostHash, serialNumber)
+	}
+
+	return nil
+}
+
+func DBDeleteAcceptedNFTBidMappings(
+	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, postHash, serialNumber)
+	})
+}
+
+// =======================================================================================
+// NFTBidEntry db functions
+// =======================================================================================
+
+func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *NFTBidEntry) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+	key := append(prefixCopy, bidEntry.NFTPostHash[:]...)
+	key = append(key, EncodeUint64(bidEntry.SerialNumber)...)
+	key = append(key, EncodeUint64(bidEntry.BidAmountNanos)...)
+	key = append(key, bidEntry.BidderPKID[:]...)
+	return key
+}
+
+func _dbKeyForNFTBidderPKIDPostHashSerialNumber(
+	bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
+	key := append(prefixCopy, bidderPKID[:]...)
+	key = append(key, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func _dbSeekKeyForNFTBids(nftHash *BlockHash, serialNumber uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+	key := append(prefixCopy, nftHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func DBGetNFTBidEntryForNFTBidKeyWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) *NFTBidEntry {
+
+	key := _dbKeyForNFTBidderPKIDPostHashSerialNumber(
+		&nftBidKey.BidderPKID, &nftBidKey.NFTPostHash, nftBidKey.SerialNumber)
+
+	nftBidItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+
+	// If we get here then it means we actually had a bid amount for this key in the DB.
+	nftBidBytes, err := nftBidItem.ValueCopy(nil)
+	if err != nil {
+		// If we had a problem reading the mapping then log an error and return nil.
+		glog.Errorf("DBGetNFTBidEntryForNFTBidKeyWithTxn: Problem reading "+
+			"bid bytes for bidKey: %v", nftBidKey)
+		return nil
+	}
+
+	nftBidAmountNanos := DecodeUint64(nftBidBytes)
+
+	nftBidEntry := &NFTBidEntry{
+		BidderPKID:     &nftBidKey.BidderPKID,
+		NFTPostHash:    &nftBidKey.NFTPostHash,
+		SerialNumber:   nftBidKey.SerialNumber,
+		BidAmountNanos: nftBidAmountNanos,
+	}
+
+	return nftBidEntry
+}
+
+func DBGetNFTBidEntryForNFTBidKey(db *badger.DB, nftBidKey *NFTBidKey) *NFTBidEntry {
+	var ret *NFTBidEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetNFTBidEntryForNFTBidKeyWithTxn(txn, nftBidKey)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) error {
+
+	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
+	nftBidEntry := DBGetNFTBidEntryForNFTBidKeyWithTxn(txn, nftBidKey)
+	if nftBidEntry == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete both mapping.
+	if err := txn.Delete(_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTBidMappingsWithTxn: Deleting "+
+			"nft bid mapping for nftBidKey %v", nftBidKey)
+	}
+
+	// When an nftEntry exists, delete both mapping.
+	if err := txn.Delete(_dbKeyForNFTBidderPKIDPostHashSerialNumber(
+		nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTBidMappingsWithTxn: Deleting "+
+			"nft bid mapping for nftBidKey %v", nftBidKey)
+	}
+
+	return nil
+}
+
+func DBDeleteNFTBidMappings(handle *badger.DB, nftBidKey *NFTBidKey) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteNFTBidMappingsWithTxn(txn, nftBidKey)
+	})
+}
+
+func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, nftBidEntry *NFTBidEntry) error {
+	// We store two indexes for NFT bids. (1) sorted by bid amount nanos in the key and
+	// (2) sorted by the bidder PKID. Both come in handy.
+
+	// Put the first index --> []byte{} (no data needs to be stored since it all info is in the key)
+	if err := txn.Set(_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), []byte{}); err != nil {
+
+		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
+			"adding mapping to BidderPKID for bid entry: %v", nftBidEntry)
+	}
+
+	// Put the second index --> BidAmountNanos
+	if err := txn.Set(_dbKeyForNFTBidderPKIDPostHashSerialNumber(
+		nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber,
+	), EncodeUint64(nftBidEntry.BidAmountNanos)); err != nil {
+
+		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
+			"adding mapping to BidAmountNanos for bid entry: %v", nftBidEntry)
+	}
+
+	return nil
+}
+
+func DBPutNFTBidEntryMappings(handle *badger.DB, nftEntry *NFTBidEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutNFTBidEntryMappingsWithTxn(txn, nftEntry)
+	})
+}
+
+func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntries []*NFTBidEntry) {
+	nftBidEntries := []*NFTBidEntry{}
+	{
+		prefix := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
+		keyPrefix := append(prefix, bidderPKID[:]...)
+		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix)
+		bidderPKIDLength := len(bidderPKID[:])
+		for ii, keyFound := range keysFound {
+
+			postHashStartIdx := 1 + bidderPKIDLength           // The length of prefix + length of PKID
+			postHashEndIdx := postHashStartIdx + HashSizeBytes // Add the length of the bid amount (uint64).
+
+			// Cut the bid amount out of the key and decode.
+			postHashBytes := keyFound[postHashStartIdx:postHashEndIdx]
+
+			nftHash := &BlockHash{}
+			copy(nftHash[:], postHashBytes)
+
+			serialNumber := DecodeUint64(keyFound[postHashEndIdx:])
+
+			bidAmountNanos := DecodeUint64(valuesFound[ii])
+
+			currentEntry := &NFTBidEntry{
+				NFTPostHash:    nftHash,
+				SerialNumber:   serialNumber,
+				BidderPKID:     bidderPKID,
+				BidAmountNanos: bidAmountNanos,
+			}
+			nftBidEntries = append(nftBidEntries, currentEntry)
+		}
+	}
+	return nftBidEntries
+}
+
+// Get NFT bid Entries *from the DB*. Does not include mempool txns.
+func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber uint64,
+) (_nftBidEntries []*NFTBidEntry) {
+	nftBidEntries := []*NFTBidEntry{}
+	{
+		prefix := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+		keyPrefix := append(prefix, nftPostHash[:]...)
+		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
+		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix)
+		for _, keyFound := range keysFound {
+			bidAmountStartIdx := 1 + HashSizeBytes + 8 // The length of prefix + the post hash + the serial #.
+			bidAmountEndIdx := bidAmountStartIdx + 8   // Add the length of the bid amount (uint64).
+
+			// Cut the bid amount out of the key and decode.
+			bidAmountBytes := keyFound[bidAmountStartIdx:bidAmountEndIdx]
+			bidAmountNanos := DecodeUint64(bidAmountBytes)
+
+			// Cut the pkid bytes out of the keys
+			bidderPKIDBytes := keyFound[bidAmountEndIdx:]
+
+			// Construct the bidder PKID.
+			bidderPKID := PublicKeyToPKID(bidderPKIDBytes)
+
+			currentEntry := &NFTBidEntry{
+				NFTPostHash:    nftPostHash,
+				SerialNumber:   serialNumber,
+				BidderPKID:     bidderPKID,
+				BidAmountNanos: bidAmountNanos,
+			}
+			nftBidEntries = append(nftBidEntries, currentEntry)
+		}
+	}
+	return nftBidEntries
+}
+
+func DBGetNFTBidEntriesPaginated(
+	handle *badger.DB,
+	nftHash *BlockHash,
+	serialNumber uint64,
+	startEntry *NFTBidEntry,
+	limit int,
+	reverse bool,
+) (_bidEntries []*NFTBidEntry) {
+	seekKey := _dbSeekKeyForNFTBids(nftHash, serialNumber)
+	startKey := seekKey
+	if startEntry != nil {
+		startKey = _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(startEntry)
+	}
+	// The key length consists of: (1 prefix byte) + (BlockHash) + (2 x uint64) + (PKID)
+	maxKeyLen := 1 + HashSizeBytes + 16 + btcec.PubKeyBytesLenCompressed
+	keysBytes, _, _ := DBGetPaginatedKeysAndValuesForPrefix(
+		handle,
+		startKey,
+		seekKey,
+		maxKeyLen,
+		limit,
+		reverse,
+		false)
+	// TODO: We should probably handle the err case for this function.
+
+	// Chop up the keyBytes into bid entries.
+	var bidEntries []*NFTBidEntry
+	for _, keyBytes := range keysBytes {
+		serialNumStartIdx := 1 + HashSizeBytes
+		bidAmountStartIdx := serialNumStartIdx + 8
+		bidderPKIDStartIdx := bidAmountStartIdx + 8
+
+		nftHashBytes := keyBytes[1:serialNumStartIdx]
+		serialNumberBytes := keyBytes[serialNumStartIdx:bidAmountStartIdx]
+		bidAmountBytes := keyBytes[bidAmountStartIdx:bidderPKIDStartIdx]
+		bidderPKIDBytes := keyBytes[bidderPKIDStartIdx:]
+
+		nftHash := &BlockHash{}
+		copy(nftHash[:], nftHashBytes)
+		serialNumber := DecodeUint64(serialNumberBytes)
+		bidAmount := DecodeUint64(bidAmountBytes)
+		bidderPKID := &PKID{}
+		copy(bidderPKID[:], bidderPKIDBytes)
+
+		bidEntry := &NFTBidEntry{
+			NFTPostHash:    nftHash,
+			SerialNumber:   serialNumber,
+			BidAmountNanos: bidAmount,
+			BidderPKID:     bidderPKID,
+		}
+
+		bidEntries = append(bidEntries, bidEntry)
+	}
+
+	return bidEntries
 }
 
 // ======================================================================================

@@ -12,6 +12,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/golang/glog"
 	"github.com/shibukawa/configdir"
 )
 
@@ -100,9 +101,18 @@ var (
 	// the database, the user would lose the creator coins they purchased.
 	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(39713)
 
-  // ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
+	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
 	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
 	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
+
+	// UpdateProfileFixBlockHeight defines the height at which a patch was added to prevent user from
+	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
+	UpdateProfileFixBlockHeight = uint32(46165)
+
+	// BrokenNFTBidsFixBlockHeight defines the height at which the bitclout balance index takes effect
+	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
+	// bitclout balance index, allowing bids to be submitted that were greater than the user's bitclout balance.
+	BrokenNFTBidsFixBlockHeight = uint32(46917)
 )
 
 func (nt NetworkType) String() string {
@@ -372,6 +382,7 @@ type BitCloutParams struct {
 	MaxPostSubLengthBytes       uint64
 	MaxStakeMultipleBasisPoints uint64
 	MaxCreatorBasisPoints       uint64
+	MaxNFTRoyaltyBasisPoints    uint64
 	ParamUpdaterPublicKeys      map[PkMapKey]bool
 
 	// A list of transactions to apply when initializing the chain. Useful in
@@ -422,6 +433,32 @@ type BitCloutParams struct {
 
 	// The most deflationary event in BitClout history has yet to come...
 	DeflationBombBlockHeight uint64
+}
+
+// EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
+// can be spent as soon as they are mined. It also removes the default testnet seeds
+func (params *BitCloutParams) EnableRegtest() {
+	if params.NetworkType != NetworkType_TESTNET {
+		glog.Error("Regtest mode can only be enabled in testnet mode")
+		return
+	}
+
+	// Clear the seeds
+	params.DNSSeeds = []string{}
+
+	// Mine blocks incredibly quickly
+	params.TimeBetweenBlocks = 2 * time.Second
+	params.TimeBetweenDifficultyRetargets = 6 * time.Second
+
+	// Allow block rewards to be spent instantly
+	params.BlockRewardMaturity = 0
+
+	// Make bitcoin headers time current immediately
+	params.BitcoinMaxTipAge = 100000 * time.Hour
+
+	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
+	// Seed: verb find card ship another until version devote guilt strong lemon six
+	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
 }
 
 // GenesisBlock defines the genesis block used for the BitClout maainnet and testnet
@@ -695,8 +732,9 @@ var BitCloutMainnetParams = BitCloutParams{
 	MaxStakeMultipleBasisPoints: 10 * 100 * 100,
 	// 100% is the max creator percentage. Not sure why you'd buy such a coin
 	// but whatever.
-	MaxCreatorBasisPoints:  100 * 100,
-	ParamUpdaterPublicKeys: ParamUpdaterPublicKeys,
+	MaxCreatorBasisPoints:    100 * 100,
+	MaxNFTRoyaltyBasisPoints: 100 * 100,
+	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
 	SeedTxns: SeedTxns,
@@ -752,8 +790,10 @@ var BitCloutTestnetParams = BitCloutParams{
 	ProtocolVersion:    0,
 	MinProtocolVersion: 0,
 	UserAgent:          "Architect",
-	DNSSeeds:           []string{},
-	DNSSeedGenerators:  [][]string{},
+	DNSSeeds: []string{
+		"dorsey.bitclout.com",
+	},
+	DNSSeedGenerators: [][]string{},
 
 	// ===================================================================================
 	// Testnet Bitcoin config
@@ -849,10 +889,10 @@ var BitCloutTestnetParams = BitCloutParams{
 	GenesisBlock:        &GenesisBlock,
 	GenesisBlockHashHex: GenesisBlockHashHex,
 
-	// Use a very fast block time in the testnet.
-	TimeBetweenBlocks: 2 * time.Second,
+	// Use a faster block time in the testnet.
+	TimeBetweenBlocks: 1 * time.Minute,
 	// Use a very short difficulty retarget period in the testnet.
-	TimeBetweenDifficultyRetargets: 6 * time.Second,
+	TimeBetweenDifficultyRetargets: 3 * time.Minute,
 	// This is used as the starting difficulty for the chain.
 	MinDifficultyTargetHex: "0090000000000000000000000000000000000000000000000000000000000000",
 	// Minimum amount of work a valid chain needs to have. Useful for preventing
@@ -868,9 +908,7 @@ var BitCloutTestnetParams = BitCloutParams{
 	// to above 200% of its previous value.
 	MaxDifficultyRetargetFactor: 2,
 	// Miners need to wait some time before spending their block reward.
-	// TODO: Make this 24 hours when we launch the testnet. In the meantime this value
-	// is more useful for local testing.
-	BlockRewardMaturity: 0,
+	BlockRewardMaturity: 5 * time.Minute,
 
 	V1DifficultyAdjustmentFactor: 10,
 
@@ -915,8 +953,9 @@ var BitCloutTestnetParams = BitCloutParams{
 	MaxStakeMultipleBasisPoints: 10 * 100 * 100,
 	// 100% is the max creator percentage. Not sure why you'd buy such a coin
 	// but whatever.
-	MaxCreatorBasisPoints:  100 * 100,
-	ParamUpdaterPublicKeys: ParamUpdaterPublicKeys,
+	MaxCreatorBasisPoints:    100 * 100,
+	MaxNFTRoyaltyBasisPoints: 100 * 100,
+	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
 	SeedTxns: TestSeedTxns,
@@ -959,10 +998,12 @@ const (
 	IsQuotedRecloutKey = "IsQuotedReclout"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoin            = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKB       = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanos         = "CreateProfileFeeNanos"
-	ForbiddenBlockSignaturePubKey = "ForbiddenBlockSignaturePubKey"
+	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey       = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey         = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey             = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey               = "MaxCopiesPerNFT"
+	ForbiddenBlockSignaturePubKeyKey = "ForbiddenBlockSignaturePubKey"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -992,6 +1033,9 @@ var (
 		MinimumNetworkFeeNanosPerKB: 0,
 		// We initialize the CreateProfileFeeNanos to 0 so we do not assess a fee to create a profile until specified by ParamUpdater.
 		CreateProfileFeeNanos: 0,
+		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
+		CreateNFTFeeNanos: 0,
+		MaxCopiesPerNFT:   0,
 	}
 )
 
@@ -1005,4 +1049,10 @@ const (
 	MinCreateProfileFeeNanos = 0
 	// MaxCreateProfileFeeNanos - Maximum value to which the create profile fee can be set.
 	MaxCreateProfileFeeNanos = 100 * NanosPerUnit
+	// Min/MaxCreateNFTFeeNanos - Min/max value to which the create NFT fee can be set.
+	MinCreateNFTFeeNanos = 0
+	MaxCreateNFTFeeNanos = 100 * NanosPerUnit
+	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
+	MinMaxCopiesPerNFT = 1
+	MaxMaxCopiesPerNFT = 10000
 )

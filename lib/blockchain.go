@@ -4,12 +4,6 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
-	"math"
-	"math/big"
-	"runtime/debug"
-	"sort"
-	"strings"
-	"time"
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
@@ -18,6 +12,12 @@ import (
 	merkletree "github.com/laser/go-merkle-tree"
 	"github.com/pkg/errors"
 	"github.com/sasha-s/go-deadlock"
+	"math"
+	"math/big"
+	"runtime/debug"
+	"sort"
+	"strings"
+	"time"
 )
 
 // blockchain.go is the work-horse for validating BitClout blocks and updating the
@@ -2510,6 +2510,8 @@ func (bc *Blockchain) CreateFollowTxn(
 func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	usdCentsPerBitcoin int64,
 	createProfileFeesNanos int64,
+	createNFTFeesNanos int64,
+	maxCopiesPerNFT int64,
 	minimumNetworkFeeNanosPerKb int64,
 	forbiddenPubKey []byte,
 	// Standard transaction fields
@@ -2519,16 +2521,22 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	// Set RecloutedPostHash and IsQuotedReclout on the extra data map as necessary to track reclouting.
 	extraData := make(map[string][]byte)
 	if usdCentsPerBitcoin >= 0 {
-		extraData[USDCentsPerBitcoin] = UintToBuf(uint64(usdCentsPerBitcoin))
+		extraData[USDCentsPerBitcoinKey] = UintToBuf(uint64(usdCentsPerBitcoin))
 	}
 	if createProfileFeesNanos >= 0 {
-		extraData[CreateProfileFeeNanos] = UintToBuf(uint64(createProfileFeesNanos))
+		extraData[CreateProfileFeeNanosKey] = UintToBuf(uint64(createProfileFeesNanos))
+	}
+	if createNFTFeesNanos >= 0 {
+		extraData[CreateNFTFeeNanosKey] = UintToBuf(uint64(createNFTFeesNanos))
+	}
+	if maxCopiesPerNFT >= 0 {
+		extraData[MaxCopiesPerNFTKey] = UintToBuf(uint64(maxCopiesPerNFT))
 	}
 	if minimumNetworkFeeNanosPerKb >= 0 {
-		extraData[MinNetworkFeeNanosPerKB] = UintToBuf(uint64(minimumNetworkFeeNanosPerKb))
+		extraData[MinNetworkFeeNanosPerKBKey] = UintToBuf(uint64(minimumNetworkFeeNanosPerKb))
 	}
 	if len(forbiddenPubKey) > 0 {
-		extraData[ForbiddenBlockSignaturePubKey] = forbiddenPubKey
+		extraData[ForbiddenBlockSignaturePubKeyKey] = forbiddenPubKey
 	}
 
 	txn := &MsgBitCloutTxn{
@@ -2834,6 +2842,238 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 	// goes to change. This ensures that the transaction will not be "replayable."
 	if len(txn.TxInputs) == 0 {
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreatorCoinTransferTxn: CreatorCoinTransfer txn " +
+			"must have at least one input but had zero inputs " +
+			"instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateCreateNFTTxn(
+	UpdaterPublicKey []byte,
+	NFTPostHash *BlockHash,
+	NumCopies uint64,
+	HasUnlockable bool,
+	IsForSale bool,
+	MinBidAmountNanos uint64,
+	NFTFee uint64,
+	NFTRoyaltyToCreatorBasisPoints uint64,
+	NFTRoyaltyToCoinBasisPoints uint64,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a transaction containing the create NFT fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta: &CreateNFTMetadata{
+			NFTPostHash,
+			NumCopies,
+			HasUnlockable,
+			IsForSale,
+			MinBidAmountNanos,
+			NFTRoyaltyToCreatorBasisPoints,
+			NFTRoyaltyToCoinBasisPoints,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
+	totalInput, _, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
+	}
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateCreateNFTTxn: CreateNFT txn " +
+			"must have at least one input but had zero inputs " +
+			"instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateNFTBidTxn(
+	UpdaterPublicKey []byte,
+	NFTPostHash *BlockHash,
+	SerialNumber uint64,
+	BidAmountNanos uint64,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a transaction containing the NFT bid fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta: &NFTBidMetadata{
+			NFTPostHash,
+			SerialNumber,
+			BidAmountNanos,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, _, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTBidTxn: Problem adding inputs: ")
+	}
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateNFTBidTxn: NFTBid txn " +
+			"must have at least one input but had zero inputs " +
+			"instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateAcceptNFTBidTxn(
+	UpdaterPublicKey []byte,
+	NFTPostHash *BlockHash,
+	SerialNumber uint64,
+	BidderPKID *PKID,
+	BidAmountNanos uint64,
+	EncryptedUnlockableTextBytes []byte,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateAcceptNFTBidTxn: Problem getting augmented UtxoView from mempool: ")
+		}
+	}
+
+	// Get the spendable UtxoEntrys.
+	bidderPkBytes := utxoView.GetPublicKeyForPKID(BidderPKID)
+	bidderSpendableUtxos, err := bc.GetSpendableUtxosForPublicKey(bidderPkBytes, nil, utxoView)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAcceptNFTBidTxn: Problem getting spendable UtxoEntrys: ")
+	}
+
+	// Add input utxos to the transaction until we have enough total input to cover
+	// the amount we want to spend plus the maximum fee (or until we've exhausted
+	// all the utxos available).
+	bidderInputs := []*BitCloutInput{}
+	totalBidderInput := uint64(0)
+	for _, utxoEntry := range bidderSpendableUtxos {
+
+		// If the amount of input we have isn't enough to cover the bid amount, add an input and continue.
+		if totalBidderInput < BidAmountNanos {
+			bidderInputs = append(bidderInputs, (*BitCloutInput)(utxoEntry.UtxoKey))
+
+			amountToAdd := utxoEntry.AmountNanos
+			// For Bitcoin burns, we subtract a tiny amount of slippage to the amount we can
+			// spend. This makes reorderings more forgiving.
+			if utxoEntry.UtxoType == UtxoTypeBitcoinBurn {
+				amountToAdd = uint64(float64(amountToAdd) * .999)
+			}
+
+			totalBidderInput += amountToAdd
+			continue
+		}
+
+		// If we get here, we know we have enough input to cover the upper bound
+		// estimate of our amount needed so break.
+		break
+	}
+
+	// If we get here and we don't have sufficient input to cover the bid, error.
+	if totalBidderInput < BidAmountNanos {
+		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateAcceptNFTBidTxn: Bidder has insufficient "+
+			"UTXOs (%d total) to cover BidAmountNanos %d: ", totalBidderInput, BidAmountNanos)
+	}
+
+	// Create a transaction containing the accept nft bid fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta: &AcceptNFTBidMetadata{
+			NFTPostHash,
+			SerialNumber,
+			BidderPKID,
+			BidAmountNanos,
+			EncryptedUnlockableTextBytes,
+			bidderInputs,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, _, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem adding inputs: ")
+	}
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateAcceptNFTBidTxn: AcceptNFTBid txn " +
+			"must have at least one input but had zero inputs " +
+			"instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateUpdateNFTTxn(
+	UpdaterPublicKey []byte,
+	NFTPostHash *BlockHash,
+	SerialNumber uint64,
+	IsForSale bool,
+	MinBidAmountNanos uint64,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a transaction containing the update NFT fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta: &UpdateNFTMetadata{
+			NFTPostHash,
+			SerialNumber,
+			IsForSale,
+			MinBidAmountNanos,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateNFTTxn: Problem adding inputs: ")
+	}
+	_ = spendAmount
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateNFTTxn: AcceptNFTBid txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
 	}

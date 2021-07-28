@@ -74,20 +74,20 @@ const (
 	// the version negotiation.
 	MsgTypeVerack MsgType = 2
 	MsgTypeHeader MsgType = 3
-	MsgTypeBlock MsgType = 4
-	MsgTypeTxn MsgType = 5
+	MsgTypeBlock  MsgType = 4
+	MsgTypeTxn    MsgType = 5
 	// MsgTypeGetHeaders is used to fetch headers from a peer.
 	MsgTypeGetHeaders MsgType = 6
 	// MsgTypeHeaderBundle contains headers from a peer.
-	MsgTypeHeaderBundle MsgType = 7
-	MsgTypePing MsgType = 8
-	MsgTypePong MsgType = 9
-	MsgTypeInv MsgType = 10
-	MsgTypeGetBlocks MsgType = 11
+	MsgTypeHeaderBundle    MsgType = 7
+	MsgTypePing            MsgType = 8
+	MsgTypePong            MsgType = 9
+	MsgTypeInv             MsgType = 10
+	MsgTypeGetBlocks       MsgType = 11
 	MsgTypeGetTransactions MsgType = 12
 	// MsgTypeTransactionBundle contains transactions from a peer.
 	MsgTypeTransactionBundle MsgType = 13
-	MsgTypeMempool MsgType = 14
+	MsgTypeMempool           MsgType = 14
 	// MsgTypeAddr is used by peers to share addresses of nodes they're aware about
 	// with other peers.
 	MsgTypeAddr MsgType = 15
@@ -102,10 +102,10 @@ const (
 	// TODO: Should probably split these out into a separate channel in the server to
 	// make things more parallelized.
 
-	MsgTypeQuit MsgType = ControlMessagesStart
-	MsgTypeNewPeer MsgType = ControlMessagesStart + 1
-	MsgTypeDonePeer MsgType = ControlMessagesStart + 2
-	MsgTypeBlockAccepted MsgType = ControlMessagesStart + 3
+	MsgTypeQuit                 MsgType = ControlMessagesStart
+	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
+	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
+	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
 	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4
 
 	// NEXT_TAG = 7
@@ -202,23 +202,27 @@ type BitCloutMessage interface {
 type TxnType uint64
 
 const (
-	TxnTypeUnset TxnType = 0
-	TxnTypeBlockReward TxnType = 1
-	TxnTypeBasicTransfer TxnType = 2
-	TxnTypeBitcoinExchange TxnType = 3
-	TxnTypePrivateMessage TxnType = 4
-	TxnTypeSubmitPost TxnType = 5
-	TxnTypeUpdateProfile TxnType = 6
+	TxnTypeUnset                        TxnType = 0
+	TxnTypeBlockReward                  TxnType = 1
+	TxnTypeBasicTransfer                TxnType = 2
+	TxnTypeBitcoinExchange              TxnType = 3
+	TxnTypePrivateMessage               TxnType = 4
+	TxnTypeSubmitPost                   TxnType = 5
+	TxnTypeUpdateProfile                TxnType = 6
 	TxnTypeUpdateBitcoinUSDExchangeRate TxnType = 8
-	TxnTypeFollow TxnType = 9
-	TxnTypeLike TxnType = 10
-	TxnTypeCreatorCoin TxnType = 11
-	TxnTypeSwapIdentity TxnType = 12
-	TxnTypeUpdateGlobalParams = 13
-	TxnTypeCreatorCoinTransfer TxnType = 14
-	TxnTypeAuthorizeDerivedKey TxnType = 15
+	TxnTypeFollow                       TxnType = 9
+	TxnTypeLike                         TxnType = 10
+	TxnTypeCreatorCoin                  TxnType = 11
+	TxnTypeSwapIdentity                 TxnType = 12
+	TxnTypeUpdateGlobalParams           TxnType = 13
+	TxnTypeCreatorCoinTransfer          TxnType = 14
+	TxnTypeCreateNFT                    TxnType = 15
+	TxnTypeUpdateNFT                    TxnType = 16
+	TxnTypeAcceptNFTBid                 TxnType = 17
+	TxnTypeNFTBid                       TxnType = 18
+	TxnTypeAuthorizeDerivedKey          TxnType = 19
 
-	// NEXT_ID = 16
+	// NEXT_ID = 20
 )
 
 func (txnType TxnType) String() string {
@@ -251,6 +255,14 @@ func (txnType TxnType) String() string {
 		return "SWAP_IDENTITY"
 	case TxnTypeUpdateGlobalParams:
 		return "UPDATE_GLOBAL_PARAMS"
+	case TxnTypeCreateNFT:
+		return "CREATE_NFT"
+	case TxnTypeUpdateNFT:
+		return "UPDATE_NFT"
+	case TxnTypeAcceptNFTBid:
+		return "ACCEPT_NFT_BID"
+	case TxnTypeNFTBid:
+		return "NFT_BID"
 	case TxnTypeAuthorizeDerivedKey:
 		return "AUTHORIZE_DERIVED_KEY"
 
@@ -296,6 +308,14 @@ func NewTxnMetadata(txType TxnType) (BitCloutTxnMetadata, error) {
 		return (&SwapIdentityMetadataa{}).New(), nil
 	case TxnTypeUpdateGlobalParams:
 		return (&UpdateGlobalParamsMetadata{}).New(), nil
+	case TxnTypeCreateNFT:
+		return (&CreateNFTMetadata{}).New(), nil
+	case TxnTypeUpdateNFT:
+		return (&UpdateNFTMetadata{}).New(), nil
+	case TxnTypeAcceptNFTBid:
+		return (&AcceptNFTBidMetadata{}).New(), nil
+	case TxnTypeNFTBid:
+		return (&NFTBidMetadata{}).New(), nil
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
 
@@ -1838,7 +1858,6 @@ func DecodeHeader(rr io.Reader) (*MsgBitCloutHeader, error) {
 	}
 	headerVersion := binary.BigEndian.Uint32(scratchBytes[:])
 
-
 	var ret *MsgBitCloutHeader
 	if headerVersion == HeaderVersion0 {
 		ret, err = DecodeHeaderVersion0(rr)
@@ -1917,7 +1936,7 @@ func (bpi *BlockProducerInfo) Serialize() []byte {
 	return data
 }
 
-func (bpi *BlockProducerInfo) Deserialize(data []byte) (error) {
+func (bpi *BlockProducerInfo) Deserialize(data []byte) error {
 	ret := &BlockProducerInfo{}
 	rr := bytes.NewReader(data)
 
@@ -2026,7 +2045,7 @@ func (msg *MsgBitCloutBlock) EncodeBlockVersion1(preSignature bool) ([]byte, err
 	// BlockProducerInfo
 	blockProducerInfoBytes := []byte{}
 	if msg.BlockProducerInfo != nil {
-		blockProducerInfoBytes= msg.BlockProducerInfo.Serialize()
+		blockProducerInfoBytes = msg.BlockProducerInfo.Serialize()
 	}
 	data = append(data, UintToBuf(uint64(len(blockProducerInfoBytes)))...)
 	data = append(data, blockProducerInfoBytes...)
@@ -2105,7 +2124,7 @@ func (msg *MsgBitCloutBlock) FromBytes(data []byte) error {
 		var blockProducerInfo *BlockProducerInfo
 		if blockProducerInfoLen > 0 {
 			if blockProducerInfoLen > MaxMessagePayload {
-				return fmt.Errorf("MsgBitCloutBlock.FromBytes: Header length %d longer " +
+				return fmt.Errorf("MsgBitCloutBlock.FromBytes: Header length %d longer "+
 					"than max %d", blockProducerInfoLen, MaxMessagePayload)
 			}
 			blockProducerInfoBytes := make([]byte, blockProducerInfoLen)
@@ -3738,6 +3757,396 @@ func (txnData *CreatorCoinTransferMetadataa) FromBytes(dataa []byte) error {
 
 func (txnData *CreatorCoinTransferMetadataa) New() BitCloutTxnMetadata {
 	return &CreatorCoinTransferMetadataa{}
+}
+
+// ==================================================================
+// CreateNFTMetadata
+// ==================================================================
+
+type CreateNFTMetadata struct {
+	NFTPostHash                    *BlockHash
+	NumCopies                      uint64
+	HasUnlockable                  bool
+	IsForSale                      bool
+	MinBidAmountNanos              uint64
+	NFTRoyaltyToCreatorBasisPoints uint64
+	NFTRoyaltyToCoinBasisPoints    uint64
+}
+
+func (txnData *CreateNFTMetadata) GetTxnType() TxnType {
+	return TxnTypeCreateNFT
+}
+
+func (txnData *CreateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// Validate the metadata before encoding it.
+	//
+	// Post hash must be included and must have the expected length.
+	if len(txnData.NFTPostHash) != HashSizeBytes {
+		return nil, fmt.Errorf("CreateNFTMetadata.ToBytes: NFTPostHash "+
+			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+	}
+
+	data := []byte{}
+
+	// NFTPostHash
+	data = append(data, txnData.NFTPostHash[:]...)
+
+	// NumCopies uint64
+	data = append(data, UintToBuf(txnData.NumCopies)...)
+
+	// HasUnlockable
+	data = append(data, _boolToByte(txnData.HasUnlockable))
+
+	// IsForSale
+	data = append(data, _boolToByte(txnData.IsForSale))
+
+	// MinBidAmountNanos uint64
+	data = append(data, UintToBuf(txnData.MinBidAmountNanos)...)
+
+	// NFTRoyaltyToCreatorBasisPoints uint64
+	data = append(data, UintToBuf(txnData.NFTRoyaltyToCreatorBasisPoints)...)
+
+	// NFTRoyaltyToCoinBasisPoints uint64
+	data = append(data, UintToBuf(txnData.NFTRoyaltyToCoinBasisPoints)...)
+
+	return data, nil
+}
+
+func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
+	ret := CreateNFTMetadata{}
+	rr := bytes.NewReader(dataa)
+
+	// NFTPostHash
+	ret.NFTPostHash = &BlockHash{}
+	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
+	if err != nil {
+		return fmt.Errorf(
+			"CreateNFTMetadata.FromBytes: Error reading NFTPostHash: %v", err)
+	}
+
+	// NumCopies uint64
+	ret.NumCopies, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("CreateNFTMetadata.FromBytes: Error reading NumCopies: %v", err)
+	}
+
+	// HasUnlockable
+	ret.HasUnlockable = _readBoolByte(rr)
+
+	// IsForSale
+	ret.IsForSale = _readBoolByte(rr)
+
+	// MinBidAmountNanos uint64
+	ret.MinBidAmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("CreateNFTMetadata.FromBytes: Error reading MinBidAmountNanos: %v", err)
+	}
+
+	// NFTRoyaltyToCreatorBasisPoints uint64
+	ret.NFTRoyaltyToCreatorBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("CreateNFTMetadata.FromBytes: Error reading NFTRoyaltyToCreatorBasisPoints: %v", err)
+	}
+
+	// NFTRoyaltyToCoinBasisPoints uint64
+	ret.NFTRoyaltyToCoinBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("CreateNFTMetadata.FromBytes: Error reading NFTRoyaltyToCoinBasisPoints: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *CreateNFTMetadata) New() BitCloutTxnMetadata {
+	return &CreateNFTMetadata{}
+}
+
+// ==================================================================
+// UpdateNFTMetadata
+// ==================================================================
+
+type UpdateNFTMetadata struct {
+	NFTPostHash       *BlockHash
+	SerialNumber      uint64
+	IsForSale         bool
+	MinBidAmountNanos uint64
+}
+
+func (txnData *UpdateNFTMetadata) GetTxnType() TxnType {
+	return TxnTypeUpdateNFT
+}
+
+func (txnData *UpdateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// Validate the metadata before encoding it.
+	//
+	// Post hash must be included and must have the expected length.
+	if len(txnData.NFTPostHash) != HashSizeBytes {
+		return nil, fmt.Errorf("UpdateNFTMetadata.ToBytes: NFTPostHash "+
+			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+	}
+
+	data := []byte{}
+
+	// NFTPostHash
+	data = append(data, txnData.NFTPostHash[:]...)
+
+	// SerialNumber uint64
+	data = append(data, UintToBuf(txnData.SerialNumber)...)
+
+	// IsForSale
+	data = append(data, _boolToByte(txnData.IsForSale))
+
+	// MinBidAmountNanos uint64
+	data = append(data, UintToBuf(txnData.MinBidAmountNanos)...)
+
+	return data, nil
+}
+
+func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
+	ret := UpdateNFTMetadata{}
+	rr := bytes.NewReader(dataa)
+
+	// NFTPostHash
+	ret.NFTPostHash = &BlockHash{}
+	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
+	if err != nil {
+		return fmt.Errorf(
+			"UpdateNFTMetadata.FromBytes: Error reading NFTPostHash: %v", err)
+	}
+
+	// SerialNumber uint64
+	ret.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("UpdateNFTMetadata.FromBytes: Error reading SerialNumber: %v", err)
+	}
+
+	// IsForSale
+	ret.IsForSale = _readBoolByte(rr)
+
+	// SerialNumber uint64
+	ret.MinBidAmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("UpdateNFTMetadata.FromBytes: Error reading MinBidAmountNanos: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *UpdateNFTMetadata) New() BitCloutTxnMetadata {
+	return &UpdateNFTMetadata{}
+}
+
+// ==================================================================
+// AcceptNFTBidMetadata
+// ==================================================================
+
+type AcceptNFTBidMetadata struct {
+	NFTPostHash    *BlockHash
+	SerialNumber   uint64
+	BidderPKID     *PKID
+	BidAmountNanos uint64
+	UnlockableText []byte
+
+	// When an NFT owner accepts a bid, they must specify the bidder's UTXO inputs they will lock up
+	// as payment for the purchase. This prevents the transaction from accidentally using UTXOs
+	// that are used by future transactions.
+	BidderInputs []*BitCloutInput
+}
+
+func (txnData *AcceptNFTBidMetadata) GetTxnType() TxnType {
+	return TxnTypeAcceptNFTBid
+}
+
+func (txnData *AcceptNFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// Validate the metadata before encoding it.
+	//
+	// Post hash and pub key must be included and must have the expected length.
+	if len(txnData.NFTPostHash) != HashSizeBytes {
+		return nil, fmt.Errorf("AcceptNFTBidMetadata.ToBytes: NFTPostHash "+
+			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+	}
+	if len(txnData.BidderPKID) != btcec.PubKeyBytesLenCompressed {
+		return nil, fmt.Errorf("AcceptNFTBidMetadata.ToBytes: BidderPublicKey "+
+			"has length %d != %d", len(txnData.BidderPKID), btcec.PubKeyBytesLenCompressed)
+	}
+
+	data := []byte{}
+
+	// NFTPostHash
+	data = append(data, txnData.NFTPostHash[:]...)
+
+	// SerialNumber uint64
+	data = append(data, UintToBuf(txnData.SerialNumber)...)
+
+	// BidderPKID
+	data = append(data, UintToBuf(uint64(len(txnData.BidderPKID)))...)
+	data = append(data, txnData.BidderPKID[:]...)
+
+	// BidAmountNanos uint64
+	data = append(data, UintToBuf(txnData.BidAmountNanos)...)
+
+	// UnlockableText
+	data = append(data, UintToBuf(uint64(len(txnData.UnlockableText)))...)
+	data = append(data, txnData.UnlockableText...)
+
+	// Serialize the bidder inputs
+	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
+	for _, bitcloutInput := range txnData.BidderInputs {
+		data = append(data, bitcloutInput.TxID[:]...)
+		data = append(data, UintToBuf(uint64(bitcloutInput.Index))...)
+	}
+
+	return data, nil
+}
+
+func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
+	ret := AcceptNFTBidMetadata{}
+	rr := bytes.NewReader(dataa)
+
+	// NFTPostHash
+	ret.NFTPostHash = &BlockHash{}
+	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
+	if err != nil {
+		return fmt.Errorf(
+			"AcceptNFTBidMetadata.FromBytes: Error reading NFTPostHash: %v", err)
+	}
+
+	// SerialNumber uint64
+	ret.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading SerialNumber: %v", err)
+	}
+
+	// BidderPKID
+	bidderPKIDBytes, err := ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"AcceptNFTBidMetadata.FromBytes: Error reading BidderPublicKey: %v", err)
+	}
+	ret.BidderPKID = PublicKeyToPKID(bidderPKIDBytes)
+
+	// BidAmountNanos uint64
+	ret.BidAmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading BidAmountNanos: %v", err)
+	}
+
+	// UnlockableText
+	unlockableTextLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem "+
+			"decoding UnlockableText length")
+	}
+	if unlockableTextLen > MaxMessagePayload {
+		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: unlockableTextLen %d "+
+			"exceeds max %d", unlockableTextLen, MaxMessagePayload)
+	}
+	ret.UnlockableText = make([]byte, unlockableTextLen)
+	_, err = io.ReadFull(rr, ret.UnlockableText)
+	if err != nil {
+		return fmt.Errorf("PrivateMessageMetadata.FromBytes: Error reading EncryptedText: %v", err)
+	}
+
+	// De-serialize the inputs
+	numInputs, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem getting length of inputs")
+	}
+	for ii := uint64(0); ii < numInputs; ii++ {
+		currentInput := NewBitCloutInput()
+		_, err = io.ReadFull(rr, currentInput.TxID[:])
+		if err != nil {
+			return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem converting input txid")
+		}
+		inputIndex, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem converting input index")
+		}
+		if inputIndex > uint64(^uint32(0)) {
+			return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Input index (%d) must not exceed (%d)", inputIndex, ^uint32(0))
+		}
+		currentInput.Index = uint32(inputIndex)
+
+		ret.BidderInputs = append(ret.BidderInputs, currentInput)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *AcceptNFTBidMetadata) New() BitCloutTxnMetadata {
+	return &AcceptNFTBidMetadata{}
+}
+
+// ==================================================================
+// NFTBidMetadata
+// ==================================================================
+
+type NFTBidMetadata struct {
+	NFTPostHash    *BlockHash
+	SerialNumber   uint64
+	BidAmountNanos uint64
+}
+
+func (txnData *NFTBidMetadata) GetTxnType() TxnType {
+	return TxnTypeNFTBid
+}
+
+func (txnData *NFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// Validate the metadata before encoding it.
+	//
+	// Post hash must be included and must have the expected length.
+	if len(txnData.NFTPostHash) != HashSizeBytes {
+		return nil, fmt.Errorf("NFTBidMetadata.ToBytes: NFTPostHash "+
+			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+	}
+
+	data := []byte{}
+
+	// NFTPostHash
+	data = append(data, txnData.NFTPostHash[:]...)
+
+	// SerialNumber uint64
+	data = append(data, UintToBuf(txnData.SerialNumber)...)
+
+	// BidAmountNanos uint64
+	data = append(data, UintToBuf(txnData.BidAmountNanos)...)
+
+	return data, nil
+}
+
+func (txnData *NFTBidMetadata) FromBytes(dataa []byte) error {
+	ret := NFTBidMetadata{}
+	rr := bytes.NewReader(dataa)
+
+	// NFTPostHash
+	ret.NFTPostHash = &BlockHash{}
+	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
+	if err != nil {
+		return fmt.Errorf(
+			"NFTBidMetadata.FromBytes: Error reading NFTPostHash: %v", err)
+	}
+
+	// SerialNumber uint64
+	ret.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("NFTBidMetadata.FromBytes: Error reading SerialNumber: %v", err)
+	}
+
+	// BidAmountNanos uint64
+	ret.BidAmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("NFTBidMetadata.FromBytes: Error reading BidAmountNanos: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *NFTBidMetadata) New() BitCloutTxnMetadata {
+	return &NFTBidMetadata{}
 }
 
 // ==================================================================

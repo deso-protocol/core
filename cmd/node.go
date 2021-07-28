@@ -22,11 +22,11 @@ import (
 )
 
 type Node struct {
-	Server     *lib.Server
-	chainDB    *badger.DB
-	TXIndex    *lib.TXIndex
-	Params     *lib.BitCloutParams
-	Config     *Config
+	Server  *lib.Server
+	chainDB *badger.DB
+	TXIndex *lib.TXIndex
+	Params  *lib.BitCloutParams
+	Config  *Config
 }
 
 func NewNode(config *Config) *Node {
@@ -48,6 +48,11 @@ func (node *Node) Start() {
 
 	// Print config
 	node.Config.Print()
+
+	// Check for regtest mode
+	if node.Config.Regtest {
+		node.Params.EnableRegtest()
+	}
 
 	// Validate params
 	validateParams(node.Params)
@@ -162,10 +167,13 @@ func (node *Node) Start() {
 	}
 }
 
-func (node* Node) Stop() {
+func (node *Node) Stop() {
 	node.Server.Stop()
 	node.chainDB.Close()
-	node.TXIndex.Stop()
+
+	if node.TXIndex != nil {
+		node.TXIndex.Stop()
+	}
 }
 
 func validateParams(params *lib.BitCloutParams) {
