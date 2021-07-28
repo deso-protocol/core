@@ -450,6 +450,10 @@ func (params *BitCloutParams) EnableRegtest() {
 
 	// Make bitcoin headers time current immediately
 	params.BitcoinMaxTipAge = 100000 * time.Hour
+
+	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
+	// Seed: verb find card ship another until version devote guilt strong lemon six
+	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
 }
 
 // GenesisBlock defines the genesis block used for the BitClout maainnet and testnet
