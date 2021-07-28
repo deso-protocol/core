@@ -3659,15 +3659,15 @@ func (bav *UtxoView) GetDBHighAndLowBidEntriesForNFT(
 			}
 		}
 
-		if len(highBidEntries) < numPerDBFetch {
+		if len(lowBidEntries) < numPerDBFetch {
 			exitLoop = true
 		}
 
 		if exitLoop {
 			break
 		} else {
-			nextStartEntry := highBidEntries[len(highBidEntries)-1]
-			highBidEntries = DBGetNFTBidEntriesPaginated(
+			nextStartEntry := lowBidEntries[len(lowBidEntries)-1]
+			lowBidEntries = DBGetNFTBidEntriesPaginated(
 				bav.Handle, nftHash, serialNumber, nextStartEntry, numPerDBFetch, false,
 			)
 		}
