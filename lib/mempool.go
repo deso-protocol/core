@@ -1250,7 +1250,7 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 	usdCentsPerBitcoinBefore := mp.backupUniversalUtxoView.GetCurrentUSDCentsPerBitcoin()
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
 	// We can skip verifying the transaction size as related to the minimum fee here.
-	_, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
+	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
 		tx, txHash, 0, bestHeight, verifySignatures,
 		false, /*checkMerkleProof*/
 		0, false /*ignoreUtxos*/)
@@ -1319,7 +1319,7 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 
 	// Calculate metadata
 	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, tx.Hash(), totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0))
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps)
 	if err == nil {
 		mempoolTx.TxMeta = txnMeta
 	}
@@ -1332,7 +1332,7 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 
 func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHash *BlockHash,
 	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64) (*TransactionMetadata, error) {
+	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation) (*TransactionMetadata, error) {
 
 	var err error
 	txnMeta := &TransactionMetadata{
@@ -1351,7 +1351,11 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			FeeNanos:         fees,
 			// TODO: This doesn't add much value, and it makes output hard to read because
 			// it's so long so I'm commenting it out for now.
-			// UtxoOpsDump:      spew.Sdump(utxoOps),
+			//UtxoOpsDump:      spew.Sdump(utxoOps),
+
+			// We need to include the utxoOps because it allows us to compute implicit
+			// outputs.
+			UtxoOps: utxoOps,
 		},
 
 		TxnOutputs: txn.TxOutputs,
@@ -1739,14 +1743,13 @@ func ConnectTxnAndComputeTransactionMetadata(
 		false, /*checkMerkleProof*/
 		0,
 		false /*ignoreUtxos*/)
-	_ = utxoOps
 	if err != nil {
 		return nil, fmt.Errorf(
 			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
 	}
 
 	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock)
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps)
 }
 
 // This is the main function used for adding a new txn to the pool. It will
