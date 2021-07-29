@@ -4042,7 +4042,7 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialN
 	}
 
 	// When an nftEntry exists, delete the mapping.
-	if err := txn.Delete(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.MinBidAmountNanos, nftPostHash, serialNumber)); err != nil {
+	if err := txn.Delete(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftPostHash, serialNumber)); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
 			"nft mapping for pkid %v post hash %v serial number %d", nftEntry.OwnerPKID, nftPostHash, serialNumber)
 	}
