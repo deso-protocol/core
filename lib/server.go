@@ -1733,6 +1733,11 @@ func (srv *Server) Stop() {
 		srv.mempool.Stop()
 	}
 
+	// Stop the block producer
+	if srv.blockProducer != nil {
+		srv.blockProducer.Stop()
+	}
+
 	// This will signal any goroutines to quit. Note that enqueing this after stopping
 	// the ConnectionManager seems like it should cause the Server to process any remaining
 	// messages before calling waitGroup.Done(), which seems like a good thing.
