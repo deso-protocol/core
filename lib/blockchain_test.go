@@ -741,10 +741,31 @@ func _signTxn(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg string) {
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	require.NoError(err)
-	txnSignature, err := txn.Sign(privKey)
+	txnSignature, err := txn.Sign(privKey, false)
 	require.NoError(err)
 	txn.Signature = txnSignature
+}
+
+// Signs a txn with derived key. Returns public key solution iteration,
+// which allows us to recover signer public key from the signature.
+// Iteration is between 1-4.
+func _signTxnWithDerivedKey(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg string) int {
+	require := require.New(t)
+
+	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+	require.NoError(err)
+	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	txnSignatureBytes, err := txn.SignToBytes(privKey, true)
+	require.NoError(err)
+
+	iteration := int(txnSignatureBytes[0] - 48)
+	txnSignatureBytes[0] = 48
+
+	txnSignature, err := btcec.ParseDERSignature(txnSignatureBytes, btcec.S256())
+	require.NoError(err)
+
+	txn.Signature = txnSignature
+	return iteration
 }
 
 func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,

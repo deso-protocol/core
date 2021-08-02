@@ -2591,7 +2591,7 @@ func (msg *MsgBitCloutTxn) Copy() (*MsgBitCloutTxn, error) {
 	return newTxn, nil
 }
 
-func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error) {
+func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey, isDerivedKey bool) (*btcec.Signature, error) {
 	// Serialize the transaction without the signature portion.
 	txnBytes, err := msg.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -2604,7 +2604,45 @@ func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, er
 	if err != nil {
 		return nil, err
 	}
+
+
 	return txnSignature, nil
+}
+
+func (msg *MsgBitCloutTxn) SignToBytes(privKey *btcec.PrivateKey, isDerivedKey bool) ([]byte, error) {
+	// Serialize the transaction without the signature portion.
+	txnBytes, err := msg.ToBytes(true /*preSignature*/)
+	if err != nil {
+		return nil, err
+	}
+	// Compute a hash of the transaction bytes without the signature
+	// portion and sign it with the passed private key.
+	txnSignatureHash := Sha256DoubleHash(txnBytes)
+	txnSignature, err := privKey.Sign(txnSignatureHash[:])
+	if err != nil {
+		return nil, err
+	}
+
+	// If we're signing with a derived key, we will encode recovery byte into
+	// the signature.
+	txnSignatureBytes := txnSignature.Serialize()
+	if isDerivedKey {
+		txnSignatureCompact, err := btcec.SignCompact(btcec.S256(), privKey, txnSignatureHash[:], false)
+		if err != nil {
+			return nil, err
+		}
+
+		// Get the public key solution based on btcsuite/btcd RecoverCompact method.
+		// Iteration is between 1-4.
+		iteration := 1 + int((txnSignatureCompact[0] - 27) & ^byte(4))
+
+		// Encode the public key solution in the first byte of the signature.
+		// Normally DER signatures start with 0x30 or 48 in base-10. We set
+		// the first byte to 0x30 + 0x1-4 depending on the solution.
+		txnSignatureBytes[0] = byte(48 + iteration)
+	}
+
+	return txnSignatureBytes, nil
 }
 
 // MarshalJSON and UnmarshalJSON implement custom JSON marshaling/unmarshaling
@@ -4237,8 +4275,8 @@ type AuthorizeDerivedKeyMetadata struct {
 	// OperationType determines if transaction validates or invalidates derived key
 	OperationType AuthorizeDerivedKeyOperationType
 
-	// AccessSignature is the public key owner's signature of the hash of
-	// (DerivedPublicKey + ExpirationBlock)
+	// AccessSignature is the public key owner's DER signature of the
+	// hash of (DerivedPublicKey + ExpirationBlock)
 	AccessSignature []byte
 }
 
