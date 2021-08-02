@@ -2277,7 +2277,7 @@ func (msg *MsgBitCloutTxn) String() string {
 		}
 	}
 	return fmt.Sprintf("< TxHash: %v, TxnType: %v, PubKey: %v >",
-		msg.Hash(), PkToStringMainnet(pubKey), msg.TxnMeta.GetTxnType())
+		msg.Hash(), msg.TxnMeta.GetTxnType(), PkToStringMainnet(pubKey))
 }
 
 func (msg *MsgBitCloutTxn) ToBytes(preSignature bool) ([]byte, error) {

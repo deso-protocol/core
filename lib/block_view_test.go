@@ -1236,12 +1236,11 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 	// Generate a random derived key pair
 	derivedPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadata: Error generating a derived key pair")
-
-	// Make sure to change this to include network params
 	derivedPublicKey := derivedPrivateKey.PubKey().SerializeCompressed()
 
 	// Create access signature
-	accessBytes := []byte(fmt.Sprintf("%s%v", Base58CheckEncode(derivedPublicKey, false, params), expirationBlock))
+	expirationBlockByte := UintToBuf(expirationBlock)
+	accessBytes := append(derivedPublicKey, expirationBlockByte[:]...)
 	accessSignature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadata: Error creating access signature")
 
@@ -1251,6 +1250,70 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 		AuthorizeDerivedKeyOperationValid,
 		accessSignature.Serialize(),
 	}, derivedPrivateKey
+}
+
+func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *BitCloutParams, feeRateNanosPerKB uint64, ownerPublicKey []byte,
+	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
+	accessSignature []byte) (
+	_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	txn, totalInput, changeAmount, fees, err := chain.CreateAuthorizeDerivedKeyTxn(
+		ownerPublicKey,
+		derivedPublicKey,
+		expirationBlock,
+		accessSignature,
+		feeRateNanosPerKB,
+		nil /*mempool*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInput, changeAmount + fees)
+
+	// Sign the transaction now that its inputs are set up.
+	// We have to set the solution byte because we're signing
+	// the transaction with derived key on behalf of the owner.
+	iter := _signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
+
+	// We're setting the iteration in UtxoView so we can recover
+	// public key while verifying signature.
+	if iter > 0 {
+		err = utxoView._setSignatureToDerivedKeyIteration(txn, iter)
+		require.NoError(err)
+	}
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	// ConnectTransaction should treat the amount locked as contributing to the
+	// output.
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInput)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeUpdateProfile operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeAuthorizeDerivedKey, utxoOps[len(utxoOps)-1].Type)
+
+	return utxoOps, txn, blockHeight, nil
 }
 
 func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -19129,8 +19192,8 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadata(t, senderPriv, params, 4)
 
 	derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
-	derivedPubkey := derivedPriv.PubKey().SerializeCompressed()
-	fmt.Println(hex.EncodeToString(derivedPubkey))
+	derivedPkBytes := derivedPriv.PubKey().SerializeCompressed()
+	fmt.Println(hex.EncodeToString(derivedPkBytes))
 
 	// Basic transfer with a bad signature. Derived key hasn't been
 	// authorized yet. We add iter to utxo view. Should fail.
@@ -19178,10 +19241,23 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 	// Try AuthorizeDerivedKey transaction with expiration at block 4.
 	// Should succeed.
-	// TODO: create _doAuthorizeTxn() that uses authTxnMeta, makes auth txn, and connects it to utxo
 	// TODO: create _doAuthorizeTxnWithViewFlush() that also flushes utxo to DB
 	// TODO: test disconnect logic
 	// TODO: add _setSignatureToDerivedKeyIteration() to network
+	utxoOps, txn, _, err := _doAuthorizeTxn(
+		t,
+		chain,
+		db,
+		params,
+		10,
+		senderPkBytes,
+		authTxnMeta.DerivedPublicKey,
+		derivedPrivBase58Check,
+		authTxnMeta.ExpirationBlock,
+		authTxnMeta.AccessSignature)
+
+	require.NoError(err)
+	fmt.Println(utxoOps, txn)
 
 	fmt.Println(senderPkBytes, recipientPkBytes)
 	fmt.Println(authTxnMeta, derivedPriv)

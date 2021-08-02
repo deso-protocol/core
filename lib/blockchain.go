@@ -3223,19 +3223,18 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-
 	// Verify that the signature is valid
 	valid, err := _verifyAuthorizeSignature(ownerPublicKey, derivedPublicKey,
 		expirationBlock, accessSignature)
 	if !valid || err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(
-			err, "Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying signature: ")
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying signature.")
 	}
 
 	blockHeight := bc.blockTip().Height + 1
 	if expirationBlock <= uint64(blockHeight) {
-		return nil, 0, 0, 0, errors.Wrapf(
-			err, "Blockchain.CreateAuthorizeDerivedKeyTxn: expirationBlock must be a future block: ")
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: Expired access signature.")
 	}
 
 	// Create a transaction containing the authorize derived key fields.

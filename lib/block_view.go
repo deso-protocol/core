@@ -3020,8 +3020,8 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		fmt.Println("_verifySignatureDerived iter exists", iter)
 
 		// Recover public key from the signature
-		signCompact := SignatureSerializeCompactWithIter(txn.Signature, iter, false)
-		derivedPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), signCompact, txHash[:])
+		sigBytes[0] += byte(iter)
+		derivedPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), sigBytes, txHash[:])
 		if err != nil {
 			return errors.Wrapf(err, "_verifySignatureDerived: Problem recovering public key ")
 		}
@@ -3042,7 +3042,6 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 				return nil
 			}
 		}
-
 
 		// We check if there's an entry in UtxoView that authorizes this derived key
 		if entryMap, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID]; ok {
@@ -4309,6 +4308,9 @@ func (bav *UtxoView) _setDerivedKeyMappings(derivedKeyEntry *DerivedKeyEntry) {
 	// Add a mapping for the derived key.
 	ownerPKID := PublicKeyToPKID(derivedKeyEntry.OwnerPublicKey)
 	derivedPKID := PublicKeyToPKID(derivedKeyEntry.DerivedPublicKey)
+	if _, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID][*derivedPKID]; !ok {
+		bav.PKIDToDerivedKeyEntry[*ownerPKID] = make(map[PKID]*DerivedKeyEntry)
+	}
 	bav.PKIDToDerivedKeyEntry[*ownerPKID][*derivedPKID] = derivedKeyEntry
 }
 
@@ -6851,18 +6853,21 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			txn.TxnMeta.GetTxnType().String())
 	}
 
-	// Validate the owner public key
-	// No need to check if key can be parsed, _verifyAuthorizeSignature
-	// already checks for it.
-	// Question: Will public key be in compressed format here?
+	// Make sure transaction hasn't expired
+	// TODO: double-check sharp ineq + add RuleError
+	if txMeta.ExpirationBlock <= uint64(blockHeight) {
+		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: expired derived key in txn")
+	}
+
+	// Validate the owner public key. No need to check if key can
+	// be parsed, _verifyAuthorizeSignature already checks for it.
 	ownerPublicKey := txn.PublicKey
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorFromPublicKeyIsRequired
 	}
 
 	// Validate the derived public key
-	// Question: Will derived key be in compressed format here?
-	derivedPublicKey := txn.PublicKey
+	derivedPublicKey := txMeta.DerivedPublicKey
 	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorFromPublicKeyIsRequired
 	}
@@ -6877,7 +6882,20 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeySignatureIsNotValid, err.Error())
 	}
 
-	// call _connectBasicTransfer to verify signatures
+	// As we verified the signature and concluded derived key
+	// is authorized to sign on behalf of the owner, we add
+	// derived key mapping to utxo.
+	derivedKeyEntry := DerivedKeyEntry {
+		ownerPublicKey,
+		derivedPublicKey,
+		txMeta.ExpirationBlock,
+		false,
+	}
+	bav._setDerivedKeyMappings(&derivedKeyEntry)
+
+	// call _connectBasicTransfer to verify signatures.
+	// bav._setSignatureToDerivedKeyIteration had to be
+	// called before, otherwise verification will fail.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
@@ -6894,15 +6912,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		// signed by the top-level public key, which we take to be the poster's
 		// public key.
 	}
-
-	// Set a new mapping for the owner to derived public key
-	derivedKeyEntry := DerivedKeyEntry {
-		ownerPublicKey,
-		derivedPublicKey,
-		txMeta.ExpirationBlock,
-		false,
-	}
-	bav._setDerivedKeyMappings(&derivedKeyEntry)
 
 	// Add an operation to the list at the end indicating we've authorized a derived key.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
