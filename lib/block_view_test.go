@@ -839,14 +839,14 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
 	numInputs := len(txn.TxInputs)
-	numOutputs := len(txn.TxOutputs)
+	numOps := len(utxoOps)
 	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
-	for ii := numInputs; ii < numInputs+numOutputs; ii++ {
+	for ii := numInputs; ii < numOps; ii++ {
 		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 	}
-	require.Equal(OperationTypeAcceptNFTBid, utxoOps[len(utxoOps)-1].Type)
+	require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1243,7 +1243,8 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	CreatorCoinToSellNanos uint64,
 	BitCloutToAddNanos uint64,
 	MinBitCloutExpectedNanos uint64,
-	MinCreatorCoinExpectedNanos uint64) (
+	MinCreatorCoinExpectedNanos uint64,
+	BitCloutFounderReward bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -1302,14 +1303,22 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeCreatorCoin operation at the end.
 	numInputs := len(txn.TxInputs)
-	numOutputs := len(txn.TxOutputs)
+	numOps := len(utxoOps)
 	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
-	for ii := numInputs; ii < numInputs+numOutputs; ii++ {
+	for ii := numInputs; ii < numOps; ii++ {
 		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 	}
-	require.Equal(OperationTypeCreatorCoin, utxoOps[len(utxoOps)-1].Type)
+	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
+
+	// If we're (buying AND expecting a founder reward AND not the same person)
+	// OR selling we should have one extra utxo
+	if OperationType == CreatorCoinOperationTypeBuy && BitCloutFounderReward &&
+		UpdaterPublicKeyBase58Check != ProfilePublicKeyBase58Check ||
+		OperationType == CreatorCoinOperationTypeSell {
+		require.Equal(numInputs+len(txn.TxOutputs)+2, numOps)
+	}
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1338,7 +1347,7 @@ func _creatorCoinTxnWithTestMeta(
 		feeRateNanosPerKB, UpdaterPublicKeyBase58Check,
 		UpdaterPrivateKeyBase58Check, ProfilePublicKeyBase58Check, OperationType,
 		BitCloutToSellNanos, CreatorCoinToSellNanos, BitCloutToAddNanos,
-		MinBitCloutExpectedNanos, MinCreatorCoinExpectedNanos)
+		MinBitCloutExpectedNanos, MinCreatorCoinExpectedNanos, true)
 
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -10059,7 +10068,8 @@ func _helpTestCreatorCoinBuySell(
 				testData.CreatorCoinToSellNanos,      /*CreatorCoinToSellNanos*/
 				testData.BitCloutToAddNanos,          /*BitCloutToAddNanos*/
 				testData.MinBitCloutExpectedNanos,    /*MinBitCloutExpectedNanos*/
-				testData.MinCreatorCoinExpectedNanos /*MinCreatorCoinExpectedNanos*/)
+				testData.MinCreatorCoinExpectedNanos, /*MinCreatorCoinExpectedNanos*/
+				bitCloutFounderReward)
 			require.NoError(err)
 		}
 
@@ -10574,7 +10584,8 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*BitCloutToAddNanos*/
 			0,                           /*MinBitCloutExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0,                           /*MinCreatorCoinExpectedNanos*/
+			false)
 		require.NoError(err)
 	}
 	// Have m0 buy some m1 as well
@@ -10588,7 +10599,8 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*BitCloutToAddNanos*/
 			0,                           /*MinBitCloutExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0,                           /*MinCreatorCoinExpectedNanos*/
+			true)
 		require.NoError(err)
 	}
 
@@ -11770,7 +11782,8 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		0,                           /*CreatorCoinToSellNanos*/
 		0,                           /*BitCloutToAddNanos*/
 		0,                           /*MinBitCloutExpectedNanos*/
-		0 /*MinCreatorCoinExpectedNanos*/)
+		0,                           /*MinCreatorCoinExpectedNanos*/
+		true)
 	require.NoError(err)
 
 	_, _, _, err = _doCreatorCoinTransferTxn(
