@@ -2172,6 +2172,15 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
+	// We sometimes have some extra AddUtxo operations we need to remove
+	numUtxoAdds := 0
+	for _, utxoOp := range utxoOpsForTxn {
+		if utxoOp.Type == OperationTypeAddUtxo {
+			numUtxoAdds += 1
+		}
+	}
+	operationIndex -= numUtxoAdds - len(currentTxn.TxOutputs)
+
 	// Get the profile corresponding to the creator coin txn.
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
 	// Sanity-check that it exists.
@@ -2614,12 +2623,14 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
-	// We can have up to 3 UTXOs we need to skip
-	for i := 0; i < 3; i++ {
-		if utxoOpsForTxn[operationIndex].Type == OperationTypeAddUtxo {
-			operationIndex--
+	// We sometimes have some extra AddUtxo operations we need to remove
+	numUtxoAdds := 0
+	for _, utxoOp := range utxoOpsForTxn {
+		if utxoOp.Type == OperationTypeAddUtxo {
+			numUtxoAdds += 1
 		}
 	}
+	operationIndex -= numUtxoAdds - len(currentTxn.TxOutputs)
 
 	// In order to disconnect an accepted bid, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one with the previous owner.
