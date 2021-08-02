@@ -6290,14 +6290,18 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		// The position will be set in the call to _addUtxo.
 	}
 
-	utxoOp, err := bav._addUtxo(&utxoEntry)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
-	}
-	nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, sellerOutputKey)
+	// Create a new scope to avoid name collisions
+	{
+		utxoOp, err := bav._addUtxo(&utxoEntry)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(
+				err, "_connectAcceptNFTBid: Problem adding output utxo")
+		}
+		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, sellerOutputKey)
 
-	// Rosetta uses this UtxoOperation to provide INPUT amounts
-	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+		// Rosetta uses this UtxoOperation to provide INPUT amounts
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+	}
 
 	// (4) Pay royalties to the original artist.
 	if creatorRoyaltyNanos > 0 {
