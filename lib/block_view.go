@@ -3069,6 +3069,8 @@ func (bav *UtxoView) _connectBasicTransfer(
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding output utxo")
 		}
+
+		// Rosetta uses this UtxoOperation to provide INPUT amounts
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 	}
 
@@ -4512,10 +4514,8 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectBitcoinExchange: Problem adding output utxo")
 	}
-	// Save a UtxoOperation adding the UTXO so we can roll it back later if needed.
-	//
-	// TODO(DELETEME): I don't think this extra UTXOOperation is actually needed
-	// or used in the disconnect function.
+
+	// Rosetta uses this UtxoOperation to provide INPUT amounts
 	var utxoOpsForTxn []*UtxoOperation
 	utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 
@@ -6266,11 +6266,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		// The position will be set in the call to _addUtxo.
 	}
 
-	_, err = bav._addUtxo(&utxoEntry)
+	utxoOp, err := bav._addUtxo(&utxoEntry)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
 	}
 	nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, sellerOutputKey)
+
+	// Rosetta uses this UtxoOperation to provide INPUT amounts
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 
 	// (4) Pay royalties to the original artist.
 	if creatorRoyaltyNanos > 0 {
@@ -6291,11 +6294,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			// The position will be set in the call to _addUtxo.
 		}
 
-		_, err = bav._addUtxo(&utxoEntry)
+		utxoOp, err := bav._addUtxo(&utxoEntry)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
 		}
 		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, royaltyOutputKey)
+
+		// Rosetta uses this UtxoOperation to provide INPUT amounts
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	}
 
 	// (5) Give any change back to the bidder.
@@ -6317,11 +6323,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			// The position will be set in the call to _addUtxo.
 		}
 
-		_, err = bav._addUtxo(&utxoEntry)
+		utxoOp, err := bav._addUtxo(&utxoEntry)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
 		}
 		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, bidderChangeOutputKey)
+
+		// Rosetta uses this UtxoOperation to provide INPUT amounts
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	}
 
 	// (6) Add creator coin royalties to bitclout locked. If the number of coins in circulation is
@@ -7152,10 +7161,13 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 				// The position will be set in the call to _addUtxo.
 			}
 
-			_, err = bav._addUtxo(&utxoEntry)
+			utxoOp, err := bav._addUtxo(&utxoEntry)
 			if err != nil {
 				return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Problem adding output utxo")
 			}
+
+			// Rosetta uses this UtxoOperation to provide INPUT amounts
+			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 		}
 	}
 
@@ -7419,13 +7431,14 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// If we have a problem adding this utxo return an error but don't
 	// mark this block as invalid since it's not a rule error and the block
 	// could therefore benefit from being processed in the future.
-	_, err = bav._addUtxo(&utxoEntry)
+	utxoOp, err := bav._addUtxo(&utxoEntry)
 	if err != nil {
 		return 0, 0, 0, nil, errors.Wrapf(
 			err, "_connectBitcoinExchange: Problem adding output utxo")
 	}
-	// Note that we don't need to save a UTXOOperation for the added UTXO
-	// because no extra information is needed in order to roll it back.
+
+	// Rosetta uses this UtxoOperation to provide INPUT amounts
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 
 	// Add an operation to the list at the end indicating we've executed a
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
