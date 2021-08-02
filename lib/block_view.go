@@ -2614,6 +2614,13 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
+	// We can have up to 3 UTXOs we need to skip
+	for i := 0; i < 3; i++ {
+		if utxoOpsForTxn[operationIndex].Type == OperationTypeAddUtxo {
+			operationIndex--
+		}
+	}
+
 	// In order to disconnect an accepted bid, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one with the previous owner.
 	//  (2) Add back all of the bids that were deleted.
