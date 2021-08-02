@@ -2888,7 +2888,7 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgBitCloutTxn, txnHash *
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
 		return bav._disconnectAuthorizeDerivedKey(
-		OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -6806,6 +6806,30 @@ func (bav *UtxoView) _connectSwapIdentity(
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func _verifyAuthorizeSignature(
+	ownerPublicKey []byte, derivedPublicKey []byte,
+	expirationBlock uint64, accessSignature []byte) (bool, error) {
+
+	// Compute a hash of derivedPublicKey+expirationBlock
+	expirationBlockByte := UintToBuf(expirationBlock)
+	accessByte := append(derivedPublicKey, expirationBlockByte[:]...)
+	accessHash := Sha256DoubleHash(accessByte)
+
+	// Convert ownerPublicKey to *btcec.PublicKey
+	ownerPk, err := btcec.ParsePubKey(ownerPublicKey, btcec.S256())
+	if err != nil {
+		return false, errors.Wrapf(err, "_verifyAuthorizeSignature: Problem parsing owner public key: ")
+	}
+
+	// Convert accessSignature to *btcec.Signature
+	signature, err := btcec.ParseDERSignature(accessSignature, btcec.S256())
+	if err != nil {
+		return false, errors.Wrapf(err, "_verifyAuthorizeSignature: Problem parsing access signature: ")
+	}
+
+	return signature.Verify(accessHash[:], ownerPk), nil
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(

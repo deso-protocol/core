@@ -3214,62 +3214,38 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
-func _verifyAuthorizeSignature(
-	OwnerPublicKey []byte, DerivedPublicKey []byte,
-	ExpirationBlock uint64, AccessSignature []byte) (bool, error) {
-
-	// Compute a hash of DerivedPublicKey+ExpirationBlock
-	expirationBlockByte := UintToBuf(ExpirationBlock)
-	accessByte := append(DerivedPublicKey, expirationBlockByte[:]...)
-	accessHash := Sha256DoubleHash(accessByte)
-
-	// Convert OwnerPublicKey to *btcec.PublicKey
-	ownerPk, err := btcec.ParsePubKey(OwnerPublicKey, btcec.S256())
-	if err != nil {
-		return false, errors.Wrapf(err, "_verifyAuthorizeSignature: Problem parsing owner public key: ")
-	}
-
-	// Convert AccessSignature to *btcec.Signature
-	signature, err := btcec.ParseDERSignature(AccessSignature, btcec.S256())
-	if err != nil {
-		return false, errors.Wrapf(err, "_verifyAuthorizeSignature: Problem parsing access signature: ")
-	}
-
-	return signature.Verify(accessHash[:], ownerPk), nil
-}
-
 func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
-	OwnerPublicKey []byte,
-	DerivedPublicKey []byte,
-	ExpirationBlock uint64,
-	AccessSignature []byte,
+	ownerPublicKey []byte,
+	derivedPublicKey []byte,
+	expirationBlock uint64,
+	accessSignature []byte,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 
 	// Verify that the signature is valid
-	valid, err := _verifyAuthorizeSignature(OwnerPublicKey, DerivedPublicKey,
-		ExpirationBlock, AccessSignature)
+	valid, err := _verifyAuthorizeSignature(ownerPublicKey, derivedPublicKey,
+		expirationBlock, accessSignature)
 	if !valid || err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying signature: ")
 	}
 
 	blockHeight := bc.blockTip().Height + 1
-	if ExpirationBlock <= uint64(blockHeight) {
+	if expirationBlock <= uint64(blockHeight) {
 		return nil, 0, 0, 0, errors.Wrapf(
-			err, "Blockchain.CreateAuthorizeDerivedKeyTxn: ExpirationBlock must be a future block: ")
+			err, "Blockchain.CreateAuthorizeDerivedKeyTxn: expirationBlock must be a future block: ")
 	}
 
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgBitCloutTxn{
-		PublicKey: OwnerPublicKey,
+		PublicKey: ownerPublicKey,
 		TxnMeta: &AuthorizeDerivedKeyMetadata{
-			DerivedPublicKey,
-			ExpirationBlock,
+			derivedPublicKey,
+			expirationBlock,
 			AuthorizeDerivedKeyOperationValid,
-			AccessSignature,
+			accessSignature,
 		},
 
 		// We wait to compute the signature until we've added all the
