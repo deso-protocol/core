@@ -6171,7 +6171,10 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		totalBidderInput += bidderUtxoEntry.AmountNanos
 
 		// Make sure we spend the utxo so that the bidder can't reuse it.
-		bav._spendUtxo(&bidderUtxoKey)
+		_, err := bav._spendUtxo(&bidderUtxoKey)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem spending bidder utxo")
+		}
 		spentUtxoEntries = append(spentUtxoEntries, bidderUtxoEntry)
 	}
 
