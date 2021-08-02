@@ -2173,6 +2173,9 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 	operationIndex--
 
 	// We sometimes have some extra AddUtxo operations we need to remove
+	// These are "implicit" outputs that always occur at the end of the
+	// list of UtxoOperations. The number of implicit outputs is equal to
+	// the total number of "Add" operations minus the explicit outputs.
 	numUtxoAdds := 0
 	for _, utxoOp := range utxoOpsForTxn {
 		if utxoOp.Type == OperationTypeAddUtxo {
@@ -2624,6 +2627,9 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	operationIndex--
 
 	// We sometimes have some extra AddUtxo operations we need to remove
+	// These are "implicit" outputs that always occur at the end of the
+	// list of UtxoOperations. The number of implicit outputs is equal to
+	// the total number of "Add" operations minus the explicit outputs.
 	numUtxoAdds := 0
 	for _, utxoOp := range utxoOpsForTxn {
 		if utxoOp.Type == OperationTypeAddUtxo {
