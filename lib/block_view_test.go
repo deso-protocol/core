@@ -838,9 +838,13 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+3, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
+	numInputs := len(txn.TxInputs)
+	numOutputs := len(txn.TxOutputs)
+	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	for ii := numInputs; ii < numInputs+numOutputs; ii++ {
+		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 	}
 	require.Equal(OperationTypeAcceptNFTBid, utxoOps[len(utxoOps)-1].Type)
 
