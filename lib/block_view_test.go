@@ -839,14 +839,14 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
 	numInputs := len(txn.TxInputs)
-	numOutputs := len(txn.TxOutputs)
+	numOps := len(utxoOps)
 	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
-	for ii := numInputs; ii < numInputs+numOutputs; ii++ {
+	for ii := numInputs; ii < numOps-1; ii++ {
 		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 	}
-	require.Equal(OperationTypeAcceptNFTBid, utxoOps[len(utxoOps)-1].Type)
+	require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1302,14 +1302,14 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeCreatorCoin operation at the end.
 	numInputs := len(txn.TxInputs)
-	numOutputs := len(txn.TxOutputs)
+	numOps := len(utxoOps)
 	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
-	for ii := numInputs; ii < numInputs+numOutputs; ii++ {
+	for ii := numInputs; ii < numOps-1; ii++ {
 		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 	}
-	require.Equal(OperationTypeCreatorCoin, utxoOps[len(utxoOps)-1].Type)
+	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
