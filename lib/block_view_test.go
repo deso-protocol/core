@@ -1307,7 +1307,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
-	for ii := numInputs; ii < numOps; ii++ {
+	for ii := numInputs; ii < numOps-1; ii++ {
 		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 	}
 	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
