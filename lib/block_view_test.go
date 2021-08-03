@@ -1282,14 +1282,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Sign the transaction now that its inputs are set up.
 	// We have to set the solution byte because we're signing
 	// the transaction with derived key on behalf of the owner.
-	iter := _signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
-
-	// We're setting the iteration in UtxoView so we can recover
-	// public key while verifying signature.
-	if iter > 0 {
-		err = utxoView._setSignatureToDerivedKeyIteration(txn, iter)
-		require.NoError(err)
-	}
+	_signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -19220,16 +19213,16 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 		// Sign the transaction with the derived key that hasn't been
 		// authorized, rather than sender's key.
-		iter := _signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
-		fmt.Println("iter", iter)
+		_signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
+		//fmt.Println("iter", iter)
 		utxoView, _ := NewUtxoView(db, params, nil)
 		txHash := txn.Hash()
 		// We're setting the iteration in UtxoView so we can recover
 		// public key while verifying signature.
-		if iter > 0 {
-			err = utxoView._setSignatureToDerivedKeyIteration(txn, iter)
-			require.NoError(err)
-		}
+		//if iter > 0 {
+		//	err = utxoView._setSignatureToDerivedKeyIteration(txn, iter)
+		//	require.NoError(err)
+		//}
 
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =

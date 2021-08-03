@@ -1059,3 +1059,9 @@ const (
 	MinMaxCopiesPerNFT = 1
 	MaxMaxCopiesPerNFT = 10000
 )
+
+// Signature encoding constants
+const (
+	DERControlByte = 48
+	SIGMaxByte = 52
+)

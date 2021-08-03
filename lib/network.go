@@ -2248,7 +2248,7 @@ type MsgBitCloutTxn struct {
 	// inputs to the transaction. The exception to this rule is that
 	// BLOCK_REWARD and CREATE_bitclout transactions do not require a signature
 	// since they have no inputs.
-	Signature *btcec.Signature
+	Signature []byte
 
 	// (!!) **DO_NOT_USE** (!!)
 	//
@@ -2356,8 +2356,8 @@ func (msg *MsgBitCloutTxn) ToBytes(preSignature bool) ([]byte, error) {
 	// a zero will be encoded for the length and no signature bytes will be added
 	// beyond it.
 	sigBytes := []byte{}
-	if !preSignature && msg.Signature != nil {
-		sigBytes = msg.Signature.Serialize()
+	if !preSignature && len(msg.Signature) != 0 {
+		sigBytes = append([]byte{}, msg.Signature...)
 	}
 	// Note that even though we encode the length as a varint as opposed to a
 	// fixed-width int, it should always take up just one byte since the length
@@ -2522,18 +2522,29 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 	if sigLen > MaxMessagePayload {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
 	}
-	ret.Signature = nil
+
 	if sigLen != 0 {
 		sigBytes := make([]byte, sigLen)
 		_, err = io.ReadFull(rr, sigBytes)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem reading BitCloutTxn.Signature")
 		}
-		sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
+
+		// Copy the signature to keep it read-only. First we verify that the
+		// control byte is within the allowed range.
+		sigBytesCopy := append([]byte{}, sigBytes...)
+		if !(sigBytesCopy[0] >= DERControlByte && sigBytesCopy[0] <= SIGMaxByte) {
+			return nil, fmt.Errorf("_readTransaction: Signature control byte outside of allowed range")
+		}
+		// Check if signature can be parsed. As first byte can include the
+		// solution index, we reset it before parsing the signature.
+		sigBytesCopy[0] = DERControlByte
+		_, err := btcec.ParseDERSignature(sigBytesCopy, btcec.S256())
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing BitCloutTxn.Signature bytes")
 		}
-		ret.Signature = sig
+		// If everything worked, we set the ret signature to the original.
+		ret.Signature = sigBytes
 	}
 
 	return ret, nil
@@ -2704,7 +2715,7 @@ func (msg *MsgBitCloutTxn) UnmarshalJSON(data []byte) error {
 		TxOutputs []*BitCloutOutput
 		TxnMeta   BitCloutTxnMetadata
 		PublicKey []byte
-		Signature *btcec.Signature
+		Signature []byte
 		TxnType   uint64
 	}{
 		TxInputs:  msg.TxInputs,

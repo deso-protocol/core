@@ -1291,7 +1291,6 @@ func (bav *UtxoView) _setUtxoMappings(utxoEntry *UtxoEntry) error {
 	if utxoEntry.UtxoKey == nil {
 		return fmt.Errorf("_setUtxoMappings: utxoKey missing for utxoEntry %+v", utxoEntry)
 	}
-
 	bav.UtxoKeyToUtxoEntry[*utxoEntry.UtxoKey] = utxoEntry
 
 	return nil
@@ -2291,8 +2290,6 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		} else {
 			// We do a simliar sanity-check as above, but in this case we don't need to
 			// reset the creator mappings.
-			deltaBuyerNanos := transactorBalanceEntry.BalanceNanos - operationData.PrevTransactorBalanceEntry.BalanceNanos
-			deltaCoinsInCirculation := existingProfileEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
 			if deltaBuyerNanos != deltaCoinsInCirculation {
 				return fmt.Errorf("_disconnectCreatorCoin: The creator coin nanos "+
 					"the buyer/creator received (%v) does not equal the "+
@@ -2992,41 +2989,50 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 	}
 	txHash := Sha256DoubleHash(txBytes)
 
-	// Get compact encoding of txn signature and set iter
-	sig := SignatureCompact{}
-	sigBytes := SignatureSerializeCompactWithIter(txn.Signature, 0, false)
-	copy(sig[:], sigBytes)
+	// We make a local copy of the signature as it should be read-only
+	sigCopy := append([]byte{}, txn.Signature...)
+	// Verify that the control byte is within the allowed range
+	sigByte := sigCopy[0]
+	if !(sigByte >= DERControlByte && sigByte <= SIGMaxByte) {
+		return fmt.Errorf("_verifySignatureDerived: Signature control byte outside of allowed range")
+	}
+
+	// Reset the control byte to the DER control byte. Verify signature is valid.
+	sigCopy[0] = DERControlByte
+	sig, err := btcec.ParseDERSignature(sigCopy, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, "_verifySignatureDerived: Problem parsing signature: ")
+	}
 
 	// We check for public key solution iter for this transaction. This
 	// allows us to recover public key from the signature.
 	// If the transaction was signed with the owner key, iter is equal to 0.
 	// If the transaction was signed with a derived key, iter is between 1-4.
-	iter, ok := bav.SignatureToDerivedKeyIteration[sig]
-	if !ok || (ok && iter == 0) {
+	iter := sigByte - DERControlByte
+	if iter == 0 {
 		// Convert the txn public key into a *btcec.PublicKey
 		txnPk, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
 		if err != nil {
 			return errors.Wrapf(err, "_verifySignature: Problem parsing public key: ")
 		}
 		// Verify that the transaction is signed by the specified key.
-		if txn.Signature == nil || !txn.Signature.Verify(txHash[:], txnPk) {
-			return RuleErrorInvalidTransactionSignature
+		if sig.Verify(txHash[:], txnPk) {
+			return nil
 		}
-
-		return nil
 	} else {
 		// Subtract 1 from iter because iteration should be between 0-3.
 		iter = iter - 1
 		fmt.Println("_verifySignatureDerived iter exists", iter)
 
 		// Recover public key from the signature
-		sigBytes[0] += byte(iter)
-		derivedPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), sigBytes, txHash[:])
+		//sigCopy[0] += iter
+		sigCompact := SignatureSerializeCompactWithIter(sig, int(iter), false)
+		derivedPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), sigCompact, txHash[:])
 		if err != nil {
 			return errors.Wrapf(err, "_verifySignatureDerived: Problem recovering public key ")
 		}
 
-		fmt.Println(hex.EncodeToString(derivedPublicKey.SerializeCompressed()))
+		fmt.Println("recovered pubkey", hex.EncodeToString(derivedPublicKey.SerializeCompressed()))
 
 		// Get owner PKID
 		ownerPKID := PublicKeyToPKID(txn.PublicKey)
@@ -3038,7 +3044,8 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		expirationBlock := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
 		if expirationBlock > uint64(blockHeight){
 			// Verify that the transaction is signed by the derived key.
-			if txn.Signature.Verify(txHash[:], derivedPublicKey) {
+			// This is most likely redundant since we already recovered the public key.
+			if sig.Verify(txHash[:], derivedPublicKey) {
 				return nil
 			}
 		}
@@ -3049,7 +3056,8 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 				// Check if the key hasn't been revoked
 				if !entry.isDeleted && entry.ExpirationBlock >= uint64(blockHeight){
 					// Verify that the transaction is signed by the derived key.
-					if txn.Signature.Verify(txHash[:], derivedPublicKey) {
+					// This is most likely redundant since we already recovered the public key.
+					if sig.Verify(txHash[:], derivedPublicKey) {
 						return nil
 					}
 				}
@@ -3220,7 +3228,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// also not allowed to have any inputs because they by construction cannot authorize
 		// the spending of any inputs.
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-			if len(txn.PublicKey) != 0 || txn.Signature != nil {
+			if len(txn.PublicKey) != 0 || len(txn.Signature) != 0 {
 				return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveSignature
 			}
 		} else {
@@ -4315,19 +4323,22 @@ func (bav *UtxoView) _setDerivedKeyMappings(derivedKeyEntry *DerivedKeyEntry) {
 }
 
 func (bav *UtxoView) _setSignatureToDerivedKeyIteration(txn *MsgBitCloutTxn, iter int) error {
+	// DELETE THIS
 	// This function shouldn't be called with nil.
 	if txn == nil {
 		return errors.Errorf("_setTxnHashToDerivedKeyIteration: Called with nil txn; " +
 			"this should never happen.")
 	}
 
-	// Get compact encoding of txn signature and set iter
-	sig := SignatureCompact{}
-	sigBytes := SignatureSerializeCompactWithIter(txn.Signature, 0, false)
-	copy(sig[:], sigBytes)
-
-	// Add a mapping for txHash
-	bav.SignatureToDerivedKeyIteration[sig] = iter
+	//sigDER, err := btcec.ParseDERSignature()
+	//
+	//// Get compact encoding of txn signature and set iter
+	//sig := SignatureCompact{}
+	//sigBytes := SignatureSerializeCompactWithIter(txn.Signature, 0, false)
+	//copy(sig[:], sigBytes)
+	//
+	//// Add a mapping for txHash
+	//bav.SignatureToDerivedKeyIteration[sig] = iter
 	return nil
 }
 
@@ -4495,7 +4506,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	if len(txn.PublicKey) != 0 {
 		return 0, 0, nil, RuleErrorBitcoinExchangeShouldNotHavePublicKey
 	}
-	if txn.Signature != nil {
+	if len(txn.Signature) != 0 {
 		return 0, 0, nil, RuleErrorBitcoinExchangeShouldNotHaveSignature
 	}
 
