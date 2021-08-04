@@ -1033,6 +1033,9 @@ type UtxoOperation struct {
 	NFTSpentUtxoEntries       []*UtxoEntry
 	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
 
+	// For disconnecting authorize derived key.
+	PrevExpirationBlock uint64
+
 	// Save the previous reclout entry and reclout count when making an update.
 	PrevRecloutEntry *RecloutEntry
 	PrevRecloutCount uint64
@@ -2798,17 +2801,25 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	}
 	txMeta := currentTxn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 
-	// Question: Do we need to verify signature here?
+	// Previous expiration block
+	prevExpirationBlock := utxoOpsForTxn[operationIndex].PrevExpirationBlock
 
 	// Delete old derived key mapping
 	derivedKeyEntry := DerivedKeyEntry{
 		currentTxn.PublicKey,
 		txMeta.DerivedPublicKey,
-		txMeta.ExpirationBlock,
-		true,
+		prevExpirationBlock,
+		false,
 	}
-	// TODO: We probably should revert to the previous entry
-	bav._deleteDerivedKeyMappings(&derivedKeyEntry)
+	bav._setDerivedKeyMappings(&derivedKeyEntry)
+
+	senderPKID := PublicKeyToPKID(currentTxn.PublicKey)
+	derivedPKID := PublicKeyToPKID(txMeta.DerivedPublicKey)
+	err := DBPutDerivedKeyMapping(bav.Handle, senderPKID, derivedPKID, prevExpirationBlock)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectAuthorizeDerivedKey: Trying to revert " +
+			"error setting prevExpirationBlock:")
+	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
 	// the authorizeDerivedKey operation at the end since we just reverted it.
@@ -6924,9 +6935,17 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		// public key.
 	}
 
+	// Get owner PKID
+	ownerPKID := PublicKeyToPKID(ownerPublicKey)
+	// Get derived PKID
+	derivedPKID := PublicKeyToPKID(derivedPublicKey)
+	// Get previous expiration block. This is helpful when disconnecting.
+	prevExpirationBlock := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
+
 	// Add an operation to the list at the end indicating we've authorized a derived key.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: OperationTypeAuthorizeDerivedKey,
+		Type:                OperationTypeAuthorizeDerivedKey,
+		PrevExpirationBlock: prevExpirationBlock,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -9784,8 +9803,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	for _, derivedKeyEntryOwner := range bav.PKIDToDerivedKeyEntry {
 		for _, derivedKeyEntry := range derivedKeyEntryOwner {
 			// Make a copy of the iterator since we take references to it below.
-			derivedKeyEntryCopy := derivedKeyEntry
-
+			derivedKeyEntryCopy := *derivedKeyEntry
 			if !derivedKeyEntryCopy.isDeleted {
 				// In this case we add the mapping to the db
 				if err := DBPutDerivedKeyMappingWithTxn(txn, PublicKeyToPKID(derivedKeyEntryCopy.OwnerPublicKey),
