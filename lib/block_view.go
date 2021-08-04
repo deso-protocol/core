@@ -865,8 +865,6 @@ type UtxoView struct {
 
 	// Derived Key entries. First index is owner PKID, then derived PKID
 	PKIDToDerivedKeyEntry          map[PKID]map[PKID]*DerivedKeyEntry
-	// Signature bytes always encoded with 0 iteration.
-	SignatureToDerivedKeyIteration map[SignatureCompact]int
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -1111,7 +1109,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Derived Key entries
 	bav.PKIDToDerivedKeyEntry = make(map[PKID]map[PKID]*DerivedKeyEntry)
-	bav.SignatureToDerivedKeyIteration = make(map[SignatureCompact]int)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -1224,6 +1221,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.DiamondKeyToDiamondEntry[diamondKey] = &newDiamondEntry
 	}
 
+	// Copy the NFT data
 	newView.NFTKeyToNFTEntry = make(map[NFTKey]*NFTEntry, len(bav.NFTKeyToNFTEntry))
 	for nftKey, nftEntry := range bav.NFTKeyToNFTEntry {
 		newNFTEntry := *nftEntry
@@ -1240,6 +1238,16 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for nftKey, nftBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
 		newNFTBidEntries := *nftBidEntries
 		newView.NFTKeyToAcceptedNFTBidHistory[nftKey] = &newNFTBidEntries
+	}
+
+	// Copy the Derived Key data
+	newView.PKIDToDerivedKeyEntry = make(map[PKID]map[PKID]*DerivedKeyEntry, len(bav.PKIDToDerivedKeyEntry))
+	for ownerPKID, entryMap := range bav.PKIDToDerivedKeyEntry {
+		newView.PKIDToDerivedKeyEntry[ownerPKID] = make(map[PKID]*DerivedKeyEntry, len(entryMap))
+		for derivedPKID, entry := range entryMap {
+			newEntry := *entry
+			newView.PKIDToDerivedKeyEntry[ownerPKID][derivedPKID] = &newEntry
+		}
 	}
 
 	return newView, nil
@@ -3033,7 +3041,6 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 	} else {
 		// Subtract 1 from iter because iteration should be between 0-3.
 		iter = iter - 1
-		fmt.Println("_verifySignatureDerived iter exists", iter)
 
 		// Recover public key from the signature
 		//sigCopy[0] += iter
@@ -3042,8 +3049,6 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		if err != nil {
 			return errors.Wrapf(err, "_verifySignatureDerived: Problem recovering public key ")
 		}
-
-		fmt.Println("recovered pubkey", hex.EncodeToString(derivedPublicKey.SerializeCompressed()))
 
 		// Get owner PKID
 		ownerPKID := PublicKeyToPKID(txn.PublicKey)
@@ -3054,23 +3059,23 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		// If the key is invalid then expirationBlock = 0
 		expirationBlock := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
 		if expirationBlock > uint64(blockHeight){
-			// Verify that the transaction is signed by the derived key.
-			// This is most likely redundant since we already recovered the public key.
-			if sig.Verify(txHash[:], derivedPublicKey) {
-				return nil
-			}
+			return nil
+			// I'm almost certain this is redundant since we already recovered the public key.
+			//if sig.Verify(txHash[:], derivedPublicKey) {
+			//	return nil
+			//}
 		}
 
 		// We check if there's an entry in UtxoView that authorizes this derived key
 		if entryMap, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID]; ok {
 			if entry, ok := entryMap[*derivedPKID]; ok {
 				// Check if the key hasn't been revoked
-				if !entry.isDeleted && entry.ExpirationBlock >= uint64(blockHeight){
-					// Verify that the transaction is signed by the derived key.
-					// This is most likely redundant since we already recovered the public key.
-					if sig.Verify(txHash[:], derivedPublicKey) {
-						return nil
-					}
+				if !entry.isDeleted && entry.ExpirationBlock > uint64(blockHeight){
+					return nil
+					// I'm almost certain this is redundant since we already recovered the public key.
+					//if sig.Verify(txHash[:], derivedPublicKey) {
+					//	return nil
+					//}
 				}
 			}
 		}
@@ -4316,6 +4321,20 @@ func (bav *UtxoView) _deleteProfileEntryMappings(profileEntry *ProfileEntry) {
 	bav._setProfileEntryMappings(&tombstoneProfileEntry)
 }
 
+func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
+	// Get PKID for owner and derived keys
+	ownerPKID := PublicKeyToPKID(ownerPublicKey)
+	derivedPKID := PublicKeyToPKID(derivedPublicKey)
+
+	// Check if the entry exists
+	if entryMap, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID]; ok {
+		if entry, ok := entryMap[*derivedPKID]; ok {
+			return entry
+		}
+	}
+	return nil
+}
+
 func (bav *UtxoView) _setDerivedKeyMappings(derivedKeyEntry *DerivedKeyEntry) {
 	// This function shouldn't be called with nil.
 	if derivedKeyEntry == nil {
@@ -4327,30 +4346,10 @@ func (bav *UtxoView) _setDerivedKeyMappings(derivedKeyEntry *DerivedKeyEntry) {
 	// Add a mapping for the derived key.
 	ownerPKID := PublicKeyToPKID(derivedKeyEntry.OwnerPublicKey)
 	derivedPKID := PublicKeyToPKID(derivedKeyEntry.DerivedPublicKey)
-	if _, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID][*derivedPKID]; !ok {
+	if _, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID]; !ok {
 		bav.PKIDToDerivedKeyEntry[*ownerPKID] = make(map[PKID]*DerivedKeyEntry)
 	}
 	bav.PKIDToDerivedKeyEntry[*ownerPKID][*derivedPKID] = derivedKeyEntry
-}
-
-func (bav *UtxoView) _setSignatureToDerivedKeyIteration(txn *MsgBitCloutTxn, iter int) error {
-	// DELETE THIS
-	// This function shouldn't be called with nil.
-	if txn == nil {
-		return errors.Errorf("_setTxnHashToDerivedKeyIteration: Called with nil txn; " +
-			"this should never happen.")
-	}
-
-	//sigDER, err := btcec.ParseDERSignature()
-	//
-	//// Get compact encoding of txn signature and set iter
-	//sig := SignatureCompact{}
-	//sigBytes := SignatureSerializeCompactWithIter(txn.Signature, 0, false)
-	//copy(sig[:], sigBytes)
-	//
-	//// Add a mapping for txHash
-	//bav.SignatureToDerivedKeyIteration[sig] = iter
-	return nil
 }
 
 func (bav *UtxoView) _deleteDerivedKeyMappings(derivedKeyEntry *DerivedKeyEntry) {
@@ -6876,7 +6875,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	}
 
 	// Make sure transaction hasn't expired
-	// TODO: double-check sharp ineq + add RuleError
 	if txMeta.ExpirationBlock <= uint64(blockHeight) {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: expired derived key in txn")
 	}

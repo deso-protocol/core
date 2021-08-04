@@ -10386,7 +10386,7 @@ func _helpTestCreatorCoinBuySell(
 		require.NoError(utxoView.FlushToDb())
 	}
 
-	// The BitClout blaances should line up with what they were initially after
+	// The BitClout balances should line up with what they were initially after
 	// disconnecting the blocks.
 	assert.Equalf(int64(m0StartNanos),
 		int64(_getBalance(t, chain, nil, m0Pub)), "m0 BitClout balance after BlockDisconnect is incorrect")
@@ -19185,7 +19185,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 	// Get AuthorizeDerivedKey txn metadata with expiration at block 4
 	senderPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
-	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadata(t, senderPriv, params, 4)
+	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadata(t, senderPriv, params, 6)
 	derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
 	derivedPkBytes := derivedPriv.PubKey().SerializeCompressed()
 	fmt.Println("Derived public key:", hex.EncodeToString(derivedPkBytes))
@@ -19193,7 +19193,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// We create this inline function for attempting a basic transfer.
 	// This helps us test that utxo recognizes a derived key.
 	_basicTransfer := func(senderPk []byte, recipientPk []byte, signerPriv string, utxoView *UtxoView,
-		mempool *BitCloutMempool) ([]*UtxoOperation, *MsgBitCloutTxn, error) {
+		mempool *BitCloutMempool, isSignerSender bool) ([]*UtxoOperation, *MsgBitCloutTxn, error) {
 
 		txn := &MsgBitCloutTxn{
 			// The inputs will be set below.
@@ -19210,13 +19210,18 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+			chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
 		require.NoError(err)
 		require.Equal(totalInput, spendAmount+changeAmount+fees)
 		require.Greater(totalInput, uint64(0))
 
-		// Sign the transaction with the provided derived key
-		_signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
+		if isSignerSender{
+			// Sign the transaction with the provided derived key
+			_signTxn(t, txn, signerPriv)
+		} else {
+			// Sign the transaction with the provided derived key
+			_signTxnWithDerivedKey(t, txn, signerPriv)
+		}
 
 		// Get utxoView if it doesn't exist
 		if mempool != nil {
@@ -19236,6 +19241,29 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		return utxoOps, txn, err
 	}
 
+	// Verify that the balance and expiration block in the db match expectation.
+	_verifyTest := func(expirationBlockExpected uint64, balanceExpected uint64, mempool *BitCloutMempool) {
+		// Verify that expiration block was persisted in the db or is in mempool utxoView
+		if mempool == nil {
+			senderPKID := PublicKeyToPKID(senderPkBytes)
+			derivedPKID := PublicKeyToPKID(authTxnMeta.DerivedPublicKey)
+			expirationBlock := DBGetOwnerToDerivedKeyMapping(db, senderPKID, derivedPKID)
+			assert.Equal(expirationBlock, expirationBlockExpected)
+		} else {
+			utxoView, err := mempool.GetAugmentedUniversalView()
+			require.NoError(err)
+			derivedEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, authTxnMeta.DerivedPublicKey)
+			// If we removed the derivedEntry from utxoView altogether, it'll be nil.
+			// So we will pass if also expirationBlock == 0. Otherwise we do the assert.
+			if !(derivedEntry == nil && expirationBlockExpected == 0) {
+				assert.Equal(derivedEntry.ExpirationBlock, expirationBlockExpected)
+			}
+		}
+
+		// Verify that the balance of recipient is equal to expected balance
+		assert.Equal(_getBalance(t, chain, mempool, recipientPkString), balanceExpected)
+	}
+
 	// We will use these to keep track of added utxo ops and txns
 	testUtxoOps := [][]*UtxoOperation{}
 	testTxns := []*MsgBitCloutTxn{}
@@ -19244,8 +19272,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// derived key. It should fail since blockchain hasn't seen this key yet.
 	{
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
-			derivedPrivBase58Check, nil, nil)
+			derivedPrivBase58Check, nil, nil, false)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(0, 0, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key")
 	}
 	// Attempt sending an AuthorizeDerivedKey txn signed with an invalid private key.
@@ -19266,14 +19296,18 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			authTxnMeta.ExpirationBlock,
 			authTxnMeta.AccessSignature)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(0, 0, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn signed with an unauthorized private key.")
 	}
 	// Check basic transfer signed with still unauthorized derived key.
 	// Should fail.
 	{
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
-			derivedPrivBase58Check, nil, nil)
+			derivedPrivBase58Check, nil, nil, false)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(0, 0, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key")
 	}
 	// Now attempt to send the same transaction but signed with the correct derived key.
@@ -19295,11 +19329,23 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testTxns = append(testTxns, txn)
 
 		// Verify that expiration block was persisted in the db
-		senderPKID := PublicKeyToPKID(senderPkBytes)
-		derivedPKID := PublicKeyToPKID(authTxnMeta.DerivedPublicKey)
-		expirationBlock := DBGetOwnerToDerivedKeyMapping(db, senderPKID, derivedPKID)
-		assert.Equal(expirationBlock, authTxnMeta.ExpirationBlock)
+		_verifyTest(authTxnMeta.ExpirationBlock, 0, nil)
 		fmt.Println("Passed connecting AuthorizeDerivedKey txn signed with an authorized private key. Flushed to Db.")
+	}
+	// Check basic transfer signed by the owner key.
+	// Should succeed. Flush to db.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
+			senderPrivString, utxoView, nil, true)
+		require.NoError(err)
+		require.NoError(utxoView.FlushToDb())
+		testUtxoOps = append(testUtxoOps, utxoOps)
+		testTxns = append(testTxns, txn)
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 1, nil)
+		fmt.Println("Passed basic transfer signed with owner key. Flushed to Db.")
 	}
 	// Check basic transfer signed with now authorized derived key.
 	// Should succeed. Flush to db.
@@ -19307,14 +19353,32 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
-			derivedPrivBase58Check, utxoView, nil)
+			derivedPrivBase58Check, utxoView, nil, false)
 		require.NoError(err)
 		require.NoError(utxoView.FlushToDb())
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
-		fmt.Println("Passed basic transfer signed with authorized derived key")
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, nil)
+		fmt.Println("Passed basic transfer signed with authorized derived key. Flushed to Db.")
 	}
-	// Try disconnecting last two transactions so that key is deauthorized.
+	// Check basic transfer signed with a random key.
+	// Should fail. Well... technically it could pass.
+	{
+		// Generate a random key pair
+		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(err)
+		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
+			randomPrivBase58Check, utxoView, nil, false)
+		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, nil)
+		fmt.Println("Fail basic transfer signed with random key.")
+	}
+	// Try disconnecting all transactions so that key is deauthorized.
 	// Should succeed.
 	{
 		for iterIndex := range testTxns {
@@ -19335,21 +19399,285 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
-		// Verify that expiration block was persisted in the db
-		senderPKID := PublicKeyToPKID(senderPkBytes)
-		derivedPKID := PublicKeyToPKID(authTxnMeta.DerivedPublicKey)
-		expirationBlock := DBGetOwnerToDerivedKeyMapping(db, senderPKID, derivedPKID)
-		assert.Equal(expirationBlock, uint64(0))
+		_verifyTest(0, 0, nil)
+		fmt.Println("Passed disconnecting all txns. Flushed to Db.")
 	}
 	// After disconnecting, check basic transfer signed with unauthorized derived key.
 	// Should fail.
 	{
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
-			derivedPrivBase58Check, nil, nil)
+			derivedPrivBase58Check, nil, nil, false)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(0, 0, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key after disconnecting")
 	}
+	// Connect all txns to a single UtxoView flushing only at the end.
+	{
+		// Create a new UtxoView
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		for testIndex, txn := range testTxns {
+			fmt.Printf("Applying test index: %v\n", testIndex)
+			blockHeight := chain.blockTip().Height + 1
+			txnSize := getTxnSize(*txn)
+			_, _, _, _, err :=
+				utxoView.ConnectTransaction(
+					txn, txn.Hash(), txnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			require.NoError(err)
+		}
 
-	// TODO: Check adding and removing from mempool
-	// TODO: Check expiration with adding/removing blocks
+		// Now flush at the end.
+		require.NoError(utxoView.FlushToDb())
+
+		// Verify that expiration block and balance was persisted in the db
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, nil)
+		fmt.Println("Passed re-connecting all txn to a single utxoView")
+	}
+	// Check basic transfer signed with a random key.
+	// Should fail.
+	{
+		// Generate a random key pair
+		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(err)
+		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
+			randomPrivBase58Check, utxoView, nil, false)
+		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, nil)
+		fmt.Println("Fail basic transfer signed with random key.")
+	}
+	// Disconnect all txns on a single UtxoView flushing only at the end
+	{
+		// Create a new UtxoView
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		for iterIndex := range testTxns {
+			testIndex := len(testTxns) - 1 - iterIndex
+			blockHeight := chain.blockTip().Height + 1
+			fmt.Printf("Disconnecting test index: %v\n", testIndex)
+			txn := testTxns[testIndex]
+			require.NoError(utxoView.DisconnectTransaction(
+				txn, txn.Hash(), testUtxoOps[testIndex], blockHeight))
+		}
+
+		// Now flush at the end.
+		require.NoError(utxoView.FlushToDb())
+
+		// Verify that expiration block and balance was persisted in the db
+		_verifyTest(0, 0, nil)
+		fmt.Println("Passed disconnecting all txn on a single utxoView")
+	}
+	// Connect transactions to a single mempool, should pass.
+	{
+		for ii, currentTxn := range testTxns {
+			mempoolTxsAdded, err := mempool.processTransaction(
+				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
+				true /*verifySignatures*/)
+			require.NoErrorf(err, "mempool index %v", ii)
+			require.Equal(1, len(mempoolTxsAdded))
+		}
+
+		// This will check the expiration block and balances according to the mempool augmented utxoView.
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, mempool)
+		fmt.Println("Passed connecting all txn to the mempool")
+	}
+	// Check basic transfer signed with a random key, when passing mempool.
+	// Should fail.
+	{
+		// Generate a random key pair
+		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(err)
+		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
+			randomPrivBase58Check, nil, mempool, false)
+		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, mempool)
+		fmt.Println("Fail basic transfer signed with random key with mempool.")
+	}
+	// Remove all the transactions from the mempool. Should pass.
+	{
+		for _, burnTxn := range testTxns {
+			mempool.inefficientRemoveTransaction(burnTxn)
+		}
+		// This will check the expiration block and balances according to the mempool augmented utxoView.
+		_verifyTest(0, 0, mempool)
+		fmt.Println("Passed removing all txn from the mempool.")
+	}
+	// After disconnecting, check basic transfer signed with unauthorized derived key.
+	// Should fail.
+	{
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
+			derivedPrivBase58Check, nil, mempool, false)
+		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(0, 0, mempool)
+		fmt.Println("Failed basic transfer signed with unauthorized derived key after disconnecting")
+	}
+	// Re-connect transactions to a single mempool, should pass.
+	{
+		for ii, currentTxn := range testTxns {
+			mempoolTxsAdded, err := mempool.processTransaction(
+				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
+				true /*verifySignatures*/)
+			require.NoErrorf(err, "mempool index %v", ii)
+			require.Equal(1, len(mempoolTxsAdded))
+		}
+
+		// This will check the expiration block and balances according to the mempool augmented utxoView.
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, mempool)
+		fmt.Println("Passed connecting all txn to the mempool.")
+	}
+	// We will be adding some blocks so we define an array to keep track of them.
+	testBlocks := []*MsgBitCloutBlock{}
+	// Mine a block with all the mempool transactions.
+	{
+		// All the txns should be in the mempool already so mining a block should put
+		// all those transactions in it.
+		addedBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+		require.NoError(err)
+		testBlocks = append(testBlocks, addedBlock)
+	}
+	// Reset testUtxoOps and testTxns so we can test more transactions
+	testUtxoOps = [][]*UtxoOperation{}
+	testTxns = []*MsgBitCloutTxn{}
+	// Check basic transfer signed by the owner key.
+	// Should succeed. Flush to db.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
+			senderPrivString, utxoView, nil, true)
+		require.NoError(err)
+		require.NoError(utxoView.FlushToDb())
+		testUtxoOps = append(testUtxoOps, utxoOps)
+		testTxns = append(testTxns, txn)
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 3, nil)
+		fmt.Println("Passed basic transfer signed with owner key. Flushed to Db.")
+	}
+	// Check basic transfer signed with authorized derived key. Now the auth txn is persisted in the db.
+	// Should succeed. Flush to db.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
+			derivedPrivBase58Check, utxoView, nil, false)
+		require.NoError(err)
+		require.NoError(utxoView.FlushToDb())
+		testUtxoOps = append(testUtxoOps, utxoOps)
+		testTxns = append(testTxns, txn)
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 4, nil)
+		fmt.Println("Passed basic transfer signed with authorized derived key. Flushed to Db.")
+	}
+	// Check basic transfer signed with a random key.
+	// Should fail.
+	{
+		// Generate a random key pair
+		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(err)
+		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
+			randomPrivBase58Check, utxoView, nil, false)
+		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 4, nil)
+		fmt.Println("Fail basic transfer signed with random key.")
+	}
+	// Try disconnecting all transactions. Should succeed.
+	{
+		for iterIndex := range testTxns {
+			testIndex := len(testTxns) - 1 - iterIndex
+			currentTxn := testTxns[testIndex]
+			currentUtxoOps := testUtxoOps[testIndex]
+			fmt.Println("currentTxn.String()", currentTxn.String())
+
+			// Disconnect the transaction
+			utxoView, err := NewUtxoView(db, params, nil)
+			require.NoError(err)
+			blockHeight := chain.blockTip().Height + 1
+			fmt.Printf("Disconnecting test index: %v\n", testIndex)
+			require.NoError(utxoView.DisconnectTransaction(
+				currentTxn, currentTxn.Hash(), currentUtxoOps, blockHeight))
+			fmt.Printf("Disconnected test index: %v\n", testIndex)
+
+			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
+		}
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, nil)
+		fmt.Println("Passed disconnecting all txns. Flushed to Db.")
+	}
+	// Mine a few more blocks so that the authorization should expire
+	{
+		for i := uint64(chain.blockTip().Height); i < authTxnMeta.ExpirationBlock; i++ {
+			addedBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+			require.NoError(err)
+			testBlocks = append(testBlocks, addedBlock)
+		}
+		fmt.Println("Added a few more blocks.")
+	}
+	// Check basic transfer signed by the owner key.
+	// Should succeed.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
+			senderPrivString, utxoView, nil, true)
+		require.NoError(err)
+
+		// We're not persisting in the db so balance should remain at 2.
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, nil)
+		fmt.Println("Passed basic transfer signed with owner key.")
+	}
+	// Check basic transfer signed with expired authorized derived key.
+	// Should fail.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
+			derivedPrivBase58Check, utxoView, nil, false)
+		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		_verifyTest(authTxnMeta.ExpirationBlock, 2, nil)
+		fmt.Println("Failed a txn signed with an expired derived key.")
+	}
+	// Roll back the blocks and make sure we don't hit any errors.
+	disconnectSingleBlock := func(blockToDisconnect *MsgBitCloutBlock, utxoView *UtxoView) {
+		// Fetch the utxo operations for the block we're detaching. We need these
+		// in order to be able to detach the block.
+		hash, err := blockToDisconnect.Header.Hash()
+		require.NoError(err)
+		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		require.NoError(err)
+
+		// Compute the hashes for all the transactions.
+		txHashes, err := ComputeTransactionHashes(blockToDisconnect.Txns)
+		require.NoError(err)
+		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps))
+	}
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		for iterIndex := range testBlocks {
+			testIndex := len(testBlocks) - 1 - iterIndex
+			testBlock := testBlocks[testIndex]
+			disconnectSingleBlock(testBlock, utxoView)
+		}
+
+		// Flushing the view after applying and rolling back should work.
+		require.NoError(utxoView.FlushToDb())
+		fmt.Println("Successfully rolled back the blocks.")
+	}
+
+	// After we rolled back the blocks, db should reset
+	_verifyTest(0, 0, nil)
+	fmt.Println("Successfuly run TestAuthorizeDerivedKeyBasic()")
 }
