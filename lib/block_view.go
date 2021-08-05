@@ -259,7 +259,7 @@ type NFTBidEntry struct {
 
 type AuthorizeEntry struct {
 	ExpirationBlock uint64
-	isDeleted       bool
+	OperationType   AuthorizeDerivedKeyOperationType
 }
 
 type DerivedKeyEntry struct {
@@ -274,7 +274,7 @@ type DerivedKeyEntry struct {
 
 	// Whether this entry is deleted in the view
 	// This is used for revoking the authorization
-	isDeleted        bool
+	OperationType    AuthorizeDerivedKeyOperationType
 }
 
 
@@ -2820,7 +2820,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 		currentTxn.PublicKey,
 		txMeta.DerivedPublicKey,
 		authEntry.ExpirationBlock,
-		authEntry.isDeleted,
+		authEntry.OperationType,
 	}
 	bav._setDerivedKeyMappings(currentTxn.PublicKey, txMeta.DerivedPublicKey, &derivedKeyEntry)
 
@@ -3058,31 +3058,35 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		// Get derived PKID
 		derivedPKID := PublicKeyToPKID(derivedPublicKey.SerializeCompressed())
 
-		// We check if the derived key exists in DB and hasn't expired.
-		// If the key is invalid then expirationBlock = 0
-		authEntry := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
-		if !authEntry.isDeleted && authEntry.ExpirationBlock > uint64(blockHeight){
-			return nil
-			// I'm almost certain this is redundant since we already recovered the public key.
-			//if sig.Verify(txHash[:], derivedPublicKey) {
-			//	return nil
-			//}
-		}
-
 		// We check if there's an entry in UtxoView that authorizes this derived key
 		if entryMap, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID]; ok {
 			if entry, ok := entryMap[*derivedPKID]; ok {
 				// Check if the key hasn't been revoked
 				if entry != nil {
-					if !entry.isDeleted && entry.ExpirationBlock > uint64(blockHeight) {
+					if entry.OperationType == AuthorizeDerivedKeyOperationValid && entry.ExpirationBlock > uint64(blockHeight) {
 						return nil
 						// I'm almost certain this is redundant since we already recovered the public key.
 						//if sig.Verify(txHash[:], derivedPublicKey) {
 						//	return nil
 						//}
+					} else if entry.OperationType == AuthorizeDerivedKeyOperationInValid {
+						// If the owner de-authorized a key in this block, we want to immediately prevent any
+						// transactions signed with the derived key. So we return and skip Db check.
+						return RuleErrorInvalidTransactionSignature
 					}
 				}
 			}
+		}
+
+		// We check if the derived key exists in DB and hasn't expired.
+		// If the key is invalid then expirationBlock = 0
+		authEntry := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
+		if authEntry.OperationType == AuthorizeDerivedKeyOperationValid && authEntry.ExpirationBlock > uint64(blockHeight){
+			return nil
+			// I'm almost certain this is redundant since we already recovered the public key.
+			//if sig.Verify(txHash[:], derivedPublicKey) {
+			//	return nil
+			//}
 		}
 	}
 
@@ -6893,14 +6897,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeySignatureIsNotValid, err.Error())
 	}
 
-	// Depending on the operation type we might authorize or de-authorize a key.
-	var isDeleted bool
-	if txMeta.OperationType == AuthorizeDerivedKeyOperationValid {
-		isDeleted = false
-	} else if txMeta.OperationType == AuthorizeDerivedKeyOperationInValid {
-		isDeleted = true
-	}
-
 	// We make sure that the key hasn't been deleted in the past.
 	// If the derivedKey has been deleted in the past we return.
 	// Get owner PKID
@@ -6909,7 +6905,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	derivedPKID := PublicKeyToPKID(derivedPublicKey)
 	// Get previous expiration block. This is helpful when disconnecting.
 	prevAuthEntry := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
-	if prevAuthEntry.isDeleted {
+	if prevAuthEntry.OperationType == AuthorizeDerivedKeyOperationInValid {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: key has already been deleted")
 	}
 	// Get current (previous) derived key entry. We might revert to it later.
@@ -6918,19 +6914,20 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	prevDerivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
 	if prevDerivedKeyEntry != nil {
 		prevDerivedKeyEntryCopy = &(*prevDerivedKeyEntry)
-		if prevDerivedKeyEntry.isDeleted {
+		if prevDerivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationInValid {
 			return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: key has already been deleted")
 		}
 	}
 
 	// As we verified the signature and concluded derived key
 	// is authorized to sign on behalf of the owner, we add
-	// derived key mapping to utxoView.
+	// derived key mapping to utxoView. We temporarily set the
+	// OperationType to Valid so we pass signature verification.
 	derivedKeyEntry := DerivedKeyEntry {
 		ownerPublicKey,
 		derivedPublicKey,
 		txMeta.ExpirationBlock,
-		isDeleted,
+		AuthorizeDerivedKeyOperationValid,
 	}
 	bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, &derivedKeyEntry)
 
@@ -6940,9 +6937,14 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
+		// We revert the utxoView mapping in case we failed.
 		bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, prevDerivedKeyEntryCopy)
 		return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: ")
 	}
+
+	// Now we update OperationType to what it should be.
+	derivedKeyEntry.OperationType = txMeta.OperationType
+	bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, &derivedKeyEntry)
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
@@ -9818,7 +9820,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 			// Make a copy of the iterator since we take references to it below.
 			authEntry := &AuthorizeEntry{
 				ExpirationBlock: derivedKeyEntry.ExpirationBlock,
-				isDeleted: derivedKeyEntry.isDeleted,
+				OperationType:   derivedKeyEntry.OperationType,
 			}
 			// In this case we add the mapping to the db
 			if err := DBPutDerivedKeyMappingWithTxn(txn, PublicKeyToPKID(derivedKeyEntry.OwnerPublicKey),

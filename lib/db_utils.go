@@ -4560,11 +4560,11 @@ func DBGetOwnerToDerivedKeyMappingWithTxn(
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
 	authEntryItem, err := txn.Get(key)
 	if err != nil {
-		return &AuthorizeEntry{0, false}
+		return &AuthorizeEntry{0, AuthorizeDerivedKeyOperationValid}
 	}
 	authEntryBytes, err := authEntryItem.ValueCopy(nil)
 	if err != nil {
-		return &AuthorizeEntry{0, false}
+		return &AuthorizeEntry{0, AuthorizeDerivedKeyOperationValid}
 	}
 	authEntry := &AuthorizeEntry{}
 	err = authEntryItem.Value(func(valBytes []byte) error {
@@ -4594,7 +4594,7 @@ func DBDeleteDerivedKeyMappingWithTxn(
 	// If one doesn't exist then there's nothing to do.
 	authEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
 		txn, ownerPKID, derivedPKID)
-	if authEntry.ExpirationBlock == 0 && !authEntry.isDeleted {
+	if authEntry.ExpirationBlock == 0 && authEntry.OperationType == AuthorizeDerivedKeyOperationValid {
 		return nil
 	}
 
