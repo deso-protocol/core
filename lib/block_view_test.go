@@ -1260,7 +1260,7 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 	}, derivedPrivateKey
 }
 
-// Create a new AuthorizeDerivedKey txn, connect it to new UtxoView and flush to db
+// Create a new AuthorizeDerivedKey txn and connect it to the utxoView
 func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *BitCloutParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
 	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
@@ -19195,7 +19195,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	fmt.Println("Derived public key:", hex.EncodeToString(derivedPkBytes))
 
 	// We create this inline function for attempting a basic transfer.
-	// This helps us test that utxo recognizes a derived key.
+	// This helps us test that the CloutChain recognizes a derived key.
 	_basicTransfer := func(senderPk []byte, recipientPk []byte, signerPriv string, utxoView *UtxoView,
 		mempool *BitCloutMempool, isSignerSender bool) ([]*UtxoOperation, *MsgBitCloutTxn, error) {
 
@@ -19260,7 +19260,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			require.NoError(err)
 			derivedEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
 			// If we removed the derivedEntry from utxoView altogether, it'll be nil.
-			// So we will pass if also expirationBlock == 0. Otherwise we do the assert.
+			// So we pass this test if we set expirationBlockExpected = 0. Otherwise we do the asserts.
 			if !(derivedEntry == nil && expirationBlockExpected == 0) {
 				assert.Equal(derivedEntry.ExpirationBlock, expirationBlockExpected)
 				assert.Equal(derivedEntry.OperationType, operationTypeExpected)
@@ -19278,8 +19278,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Just for the sake of consistency, we run the _basicTransfer on unauthorized
 	// derived key. It should fail since blockchain hasn't seen this key yet.
 	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
-			derivedPrivBase58Check, nil, nil, false)
+			derivedPrivBase58Check, utxoView, nil, false)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
@@ -19311,11 +19313,42 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid,nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn signed with an unauthorized private key.")
 	}
+	// Attempt sending an AuthorizeDerivedKey txn where access signature is signed with
+	// an invalid private key. This must fail.
+	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(err)
+		expirationBlockByte := UintToBuf(authTxnMeta.ExpirationBlock)
+		accessBytes := append(authTxnMeta.DerivedPublicKey, expirationBlockByte[:]...)
+		accessSignatureRandom, err := randomPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
+		require.NoError(err)
+		_, _, _, err = _doAuthorizeTxn(
+			t,
+			chain,
+			db,
+			params,
+			utxoView,
+			10,
+			senderPkBytes,
+			authTxnMeta.DerivedPublicKey,
+			derivedPrivBase58Check,
+			authTxnMeta.ExpirationBlock,
+			accessSignatureRandom.Serialize(),
+			false)
+		require.Error(err)
+
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid,nil)
+		fmt.Println("Failed connecting AuthorizeDerivedKey txn signed with an invalid access signature.")
+	}
 	// Check basic transfer signed with still unauthorized derived key.
 	// Should fail.
 	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
-			derivedPrivBase58Check, nil, nil, false)
+			derivedPrivBase58Check, utxoView, nil, false)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
@@ -19380,7 +19413,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		fmt.Println("Passed basic transfer signed with authorized derived key. Flushed to Db.")
 	}
 	// Check basic transfer signed with a random key.
-	// Should fail. Well... technically it could pass.
+	// Should fail. Well... theoretically, it could pass in a distant future.
 	{
 		// Generate a random key pair
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
@@ -19422,8 +19455,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// After disconnecting, check basic transfer signed with unauthorized derived key.
 	// Should fail.
 	{
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
-			derivedPrivBase58Check, nil, nil, false)
+			derivedPrivBase58Check, utxoView, nil, false)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)

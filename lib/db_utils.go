@@ -4507,7 +4507,7 @@ func DBGetNFTBidEntriesPaginated(
 
 // ======================================================================================
 // Authorize derived key functions
-//  	<prefix, owner pub key [33]byte, derived pub key [33]byte> -> <expiration block []byte>
+//  	<prefix, owner pub key [33]byte, derived pub key [33]byte> -> <AuthorizeEntry>
 // ======================================================================================
 
 func _dbKeyForOwnerToDerivedKeyMapping(
@@ -4632,8 +4632,6 @@ func DBGetDerivedPKIDsForOwner(handle *badger.DB, ownerPKID *PKID) (
 
 	return derivedPKIDs, nil
 }
-
-// Question: should we have a PKIDToPublicKey mapping for derived keys or can we just handle it with btcec?
 
 // ======================================================================================
 // Profile code

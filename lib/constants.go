@@ -1005,9 +1005,6 @@ const (
 	MaxCopiesPerNFTKey               = "MaxCopiesPerNFT"
 	ForbiddenBlockSignaturePubKeyKey = "ForbiddenBlockSignaturePubKey"
 
-	// Key in transaction's extra data map. This key is set for internal signature computation
-	DerivedKeySolution = "DerivedKeySolution"
-
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
 )
@@ -1060,7 +1057,7 @@ const (
 	MaxMaxCopiesPerNFT = 10000
 )
 
-// Signature encoding constants
+// Signature control byte constants.
 const (
 	DERControlByte = 48
 	SIGMaxByte = 52
