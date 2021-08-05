@@ -4528,7 +4528,7 @@ func _dbSeekPrefixForDerivedKeyMappings(
 }
 
 func DBPutDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID, expirationBlock uint64) error {
+	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID, authEntry *AuthorizeEntry) error {
 
 	if len(ownerPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Follower PKID "+
@@ -4540,57 +4540,61 @@ func DBPutDerivedKeyMappingWithTxn(
 	}
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
-	valBuf := UintToBuf(expirationBlock)
-	return txn.Set(key, valBuf)
+
+	authEntryBuffer := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(authEntryBuffer).Encode(authEntry)
+	return txn.Set(key, authEntryBuffer.Bytes())
 }
 
 func DBPutDerivedKeyMapping(
-	handle *badger.DB, ownerPKID *PKID, derivedPKID *PKID, expirationBlock uint64) error {
+	handle *badger.DB, ownerPKID *PKID, derivedPKID *PKID, authEntry *AuthorizeEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID, expirationBlock)
+		return DBPutDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID, authEntry)
 	})
 }
 
 func DBGetOwnerToDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) uint64 {
+	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) *AuthorizeEntry {
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
-	expirationBlockItem, err := txn.Get(key)
+	authEntryItem, err := txn.Get(key)
 	if err != nil {
-		return 0
+		return &AuthorizeEntry{0, false}
 	}
-	expirationBlockBytes, err := expirationBlockItem.ValueCopy(nil)
+	authEntryBytes, err := authEntryItem.ValueCopy(nil)
 	if err != nil {
-		return 0
+		return &AuthorizeEntry{0, false}
 	}
+	authEntry := &AuthorizeEntry{}
+	err = authEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(authEntryBytes)).Decode(authEntry)
+	})
 
-	expirationBlock, _ := Uvarint(expirationBlockBytes)
-	return expirationBlock
+	return authEntry
 }
 
 func DBGetOwnerToDerivedKeyMapping(
-	db *badger.DB, ownerPKID *PKID, derivedPKID *PKID) uint64 {
+	db *badger.DB, ownerPKID *PKID, derivedPKID *PKID) *AuthorizeEntry {
 
-	var ret uint64
+	var authEntry *AuthorizeEntry
 	db.View(func(txn *badger.Txn) error {
-		ret = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
+		authEntry = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
 		return nil
 	})
-	return ret
+	return authEntry
 }
 
 func DBDeleteDerivedKeyMappingWithTxn(
 	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) error {
-	// TODO
-	// We should call DBDeleteDerivedKeyMappingWithTxn whenever access
-	// for a key is revoked.
+	// We could call DBDeleteDerivedKeyMappingWithTxn whenever a key
+	// has expired. This way we would only store active keys in the db.
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
-	existingMapping := DBGetOwnerToDerivedKeyMappingWithTxn(
+	authEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
 		txn, ownerPKID, derivedPKID)
-	if existingMapping == 0 {
+	if authEntry.ExpirationBlock == 0 && !authEntry.isDeleted {
 		return nil
 	}
 

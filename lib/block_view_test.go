@@ -1272,6 +1272,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		derivedPublicKey,
 		expirationBlock,
 		accessSignature,
+		false,
 		feeRateNanosPerKB,
 		nil /*mempool*/)
 	if err != nil {
@@ -19247,8 +19248,8 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		if mempool == nil {
 			senderPKID := PublicKeyToPKID(senderPkBytes)
 			derivedPKID := PublicKeyToPKID(authTxnMeta.DerivedPublicKey)
-			expirationBlock := DBGetOwnerToDerivedKeyMapping(db, senderPKID, derivedPKID)
-			assert.Equal(expirationBlock, expirationBlockExpected)
+			authEntry := DBGetOwnerToDerivedKeyMapping(db, senderPKID, derivedPKID)
+			assert.Equal(authEntry.ExpirationBlock, expirationBlockExpected)
 		} else {
 			utxoView, err := mempool.GetAugmentedUniversalView()
 			require.NoError(err)

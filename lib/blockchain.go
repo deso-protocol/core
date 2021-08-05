@@ -3219,6 +3219,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	derivedPublicKey []byte,
 	expirationBlock uint64,
 	accessSignature []byte,
+	isDeleted bool,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3237,13 +3238,20 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 			"Blockchain.CreateAuthorizeDerivedKeyTxn: Expired access signature.")
 	}
 
+	var operationType AuthorizeDerivedKeyOperationType
+	if isDeleted {
+		operationType = AuthorizeDerivedKeyOperationInValid
+	} else {
+		operationType = AuthorizeDerivedKeyOperationValid
+	}
+
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgBitCloutTxn{
 		PublicKey: ownerPublicKey,
 		TxnMeta: &AuthorizeDerivedKeyMetadata{
 			derivedPublicKey,
 			expirationBlock,
-			AuthorizeDerivedKeyOperationValid,
+			operationType,
 			accessSignature,
 		},
 
