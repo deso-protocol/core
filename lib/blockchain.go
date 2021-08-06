@@ -3228,8 +3228,11 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	valid, err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
 		expirationBlock, accessSignature)
 	if !valid || err != nil {
-		return nil, 0, 0, 0, fmt.Errorf(
-			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying signature.")
+		if err == nil {
+			err = fmt.Errorf("not signed by the owner")
+		}
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature:")
 	}
 
 	// Check that the expiration block is valid.
