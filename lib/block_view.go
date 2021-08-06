@@ -6985,7 +6985,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	if totalInput == 0 {
 		// Since we've failed, we revert the utxoView mapping.
 		bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, prevDerivedKeyEntryCopy)
-		return 0, 0, nil, RuleErrorProfileUpdateRequiresNonZeroInput
+		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput
 	}
 
 	// Now we update OperationType to what it should be

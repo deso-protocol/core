@@ -201,6 +201,7 @@ const (
 	RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked           RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked"
 	RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller              RuleError = "RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller"
 	RuleErrorAuthorizeDerivedKeySignatureIsNotValid                    RuleError = "RuleErrorAuthorizeDerivedKeySignatureIsNotValid"
+	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput                   RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                   RuleError = "RuleErrorTooManyNFTCopies"
