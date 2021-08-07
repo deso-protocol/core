@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"container/list"
 	"encoding/hex"
 	"fmt"
@@ -11,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	btcdchain "github.com/btcsuite/btcd/blockchain"
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -142,6 +145,127 @@ type BlockNode struct {
 	// Status holds the validation state for the block and whether or not
 	// it's stored in the database.
 	Status BlockStatus
+}
+
+func _difficultyBitsToHash(diffBits uint32) (_diffHash *BlockHash) {
+	diffBigint := btcdchain.CompactToBig(diffBits)
+	return BigintToHash(diffBigint)
+}
+
+func ExtractBitcoinBurnTransactionsFromBitcoinBlock(
+	bitcoinBlock *wire.MsgBlock, bitcoinBurnAddress string, params *BitCloutParams) []*wire.MsgTx {
+
+	burnTxns := []*wire.MsgTx{}
+	for _, txn := range bitcoinBlock.Transactions {
+		burnOutput, err := _computeBitcoinBurnOutput(
+			txn, bitcoinBurnAddress, params.BitcoinBtcdParams)
+		if err != nil {
+			glog.Errorf("ExtractBitcoinBurnTransactionsFromBitcoinBlock: Problem "+
+				"extracting Bitcoin transaction: %v", err)
+			continue
+		}
+
+		if burnOutput > 0 {
+			burnTxns = append(burnTxns, txn)
+		}
+	}
+
+	return burnTxns
+}
+
+func ExtractBitcoinBurnTransactionsFromBitcoinBlockWithMerkleProofs(
+	bitcoinBlock *wire.MsgBlock, burnAddress string, params *BitCloutParams) (
+	_txns []*wire.MsgTx, _merkleProofs [][]*merkletree.ProofPart, _err error) {
+
+	// Extract the Bitcoin burn transactions.
+	burnTxns := ExtractBitcoinBurnTransactionsFromBitcoinBlock(
+		bitcoinBlock, burnAddress, params)
+
+	// If there weren't any burn transactions then there's nothing to do.
+	if len(burnTxns) == 0 {
+		return nil, nil, nil
+	}
+
+	// Compute all of the transaction hashes for the block.
+	txHashes := [][]byte{}
+	for _, txn := range bitcoinBlock.Transactions {
+		txnBytes := bytes.Buffer{}
+		err := txn.SerializeNoWitness(&txnBytes)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"ExtractBitcoinBurnTransactionsFromBitcoinBlockWithMerkleProofs: "+
+					"Error computing all the txn hashes for block: %v",
+				err)
+		}
+		txHashes = append(txHashes, txnBytes.Bytes())
+	}
+
+	// Compute a merkle tree for the block.
+	merkleTree := merkletree.NewTree(merkletree.Sha256DoubleHash, txHashes)
+
+	if !reflect.DeepEqual(merkleTree.Root.GetHash(), bitcoinBlock.Header.MerkleRoot[:]) {
+		return nil, nil, fmt.Errorf(
+			"ExtractBitcoinBurnTransactionsFromBitcoinBlockWithMerkleProofs: "+
+				"Merkle proof computed from txns %#v != to Merkle proof in Bitcoin block %#v",
+			merkleTree.Root.GetHash(), bitcoinBlock.Header.MerkleRoot[:])
+	}
+
+	// Use the Merkle tree to compute a Merkle proof for each transaction.
+	burnTxnsWithProofs := []*wire.MsgTx{}
+	merkleProofs := [][]*merkletree.ProofPart{}
+	for _, txn := range burnTxns {
+		txHash := txn.TxHash()
+		proof, err := merkleTree.CreateProof(txHash[:])
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"ExtractBitcoinBurnTransactionsFromBitcoinBlockWithMerkleProofs: Problem "+
+					"computing Merkle proof for txn %v for block %v: %v",
+				txn, bitcoinBlock, err)
+		}
+
+		burnTxnsWithProofs = append(burnTxnsWithProofs, txn)
+		merkleProofs = append(merkleProofs, proof.PathToRoot)
+	}
+
+	return burnTxnsWithProofs, merkleProofs, nil
+}
+
+func ExtractBitcoinExchangeTransactionsFromBitcoinBlock(
+	bitcoinBlock *wire.MsgBlock, burnAddress string, params *BitCloutParams) (
+	_txns []*MsgBitCloutTxn, _err error) {
+
+	bitcoinBurnTxns, merkleProofs, err :=
+		ExtractBitcoinBurnTransactionsFromBitcoinBlockWithMerkleProofs(
+			bitcoinBlock, burnAddress, params)
+	if err != nil {
+		return nil, errors.Wrapf(err, "ExtractBitcoinExchangeTransactionsFromBitcoinBlock: "+
+			"Problem extracting raw Bitcoin burn transactions from Bitcoin Block")
+	}
+
+	bitcoinExchangeTxns := []*MsgBitCloutTxn{}
+	blockHash := (BlockHash)(bitcoinBlock.BlockHash())
+	merkleRoot := (BlockHash)(bitcoinBlock.Header.MerkleRoot)
+	for ii := range bitcoinBurnTxns {
+		bitcoinExchangeMetadata := &BitcoinExchangeMetadata{
+			BitcoinTransaction: bitcoinBurnTxns[ii],
+			BitcoinBlockHash:   &blockHash,
+			BitcoinMerkleRoot:  &merkleRoot,
+			BitcoinMerkleProof: merkleProofs[ii],
+		}
+
+		// The only thing a BitcoinExchange transaction has set is its TxnMeta.
+		// Everything else is left blank because it is not needed. Note that the
+		// recipient of the BitClout that will be created is the first valid input in
+		// the BitcoinTransaction specified. Note also that the
+		// fee is deducted as a percentage of the eventual BitClout that will get
+		// created as a result of this transaction.
+		currentTxn := &MsgBitCloutTxn{
+			TxnMeta: bitcoinExchangeMetadata,
+		}
+		bitcoinExchangeTxns = append(bitcoinExchangeTxns, currentTxn)
+	}
+
+	return bitcoinExchangeTxns, nil
 }
 
 func (nn *BlockNode) String() string {
@@ -276,7 +400,6 @@ type OrphanBlock struct {
 
 type Blockchain struct {
 	db                              *badger.DB
-	bitcoinManager                  *BitcoinManager
 	timeSource                      chainlib.MedianTimeSource
 	trustedBlockProducerPublicKeys  map[PkMapKey]bool
 	trustedBlockProducerStartHeight uint64
@@ -438,7 +561,7 @@ func NewBlockchain(
 	_trustedBlockProducerPublicKeyStrs []string,
 	_trustedBlockProducerStartHeight uint64,
 	_params *BitCloutParams, _timeSource chainlib.MedianTimeSource,
-	_db *badger.DB, _bitcoinManager *BitcoinManager,
+	_db *badger.DB,
 	_server *Server) (*Blockchain, error) {
 
 	_trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
@@ -452,7 +575,6 @@ func NewBlockchain(
 
 	bc := &Blockchain{
 		db:                              _db,
-		bitcoinManager:                  _bitcoinManager,
 		timeSource:                      _timeSource,
 		trustedBlockProducerPublicKeys:  _trustedBlockProducerPublicKeys,
 		trustedBlockProducerStartHeight: _trustedBlockProducerStartHeight,
@@ -1746,7 +1868,7 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output.
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+		utxoView, err := NewUtxoView(bc.db, bc.params)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
 		}
@@ -1884,7 +2006,7 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+		utxoView, err := NewUtxoView(bc.db, bc.params)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "processblock: Problem initializing UtxoView in reorg")
 		}
@@ -2146,13 +2268,11 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 // passed-in transaction in the pool and connect them before trying to connect the
 // passed-in transaction.
 func (bc *Blockchain) ValidateTransaction(
-	txnMsg *MsgBitCloutTxn, blockHeight uint32, verifySignatures bool,
-	checkMerkleProof bool,
-	minBitcoinBurnWorkBlocks int64, mempool *BitCloutMempool) error {
+	txnMsg *MsgBitCloutTxn, blockHeight uint32, verifySignatures bool, mempool *BitCloutMempool) error {
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	utxoView, err := NewUtxoView(bc.db, bc.params)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem Problem creating new utxo view: ")
 	}
@@ -2177,8 +2297,6 @@ func (bc *Blockchain) ValidateTransaction(
 		txnSize,
 		blockHeight,
 		verifySignatures,
-		checkMerkleProof,
-		minBitcoinBurnWorkBlocks,
 		false, /*ignoreUtxos*/
 	)
 	if err != nil {
@@ -2261,7 +2379,7 @@ func ComputeMerkleRoot(txns []*MsgBitCloutTxn) (_merkle *BlockHash, _txHashes []
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *BitCloutMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	utxoView, err := NewUtxoView(bc.db, bc.params)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem initializing UtxoView: ")
 	}
@@ -2945,7 +3063,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	utxoView, err := NewUtxoView(bc.db, bc.params)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
@@ -3142,7 +3260,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	utxoView, err := NewUtxoView(bc.db, bc.params)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
@@ -3568,7 +3686,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// If the block is more than X% full, use the maximum between the min
 	// fee rate and the median fees of all the transactions in the block.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	utxoView, err := NewUtxoView(bc.db, bc.params)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}

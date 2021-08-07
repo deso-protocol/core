@@ -19,7 +19,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
-	merkletree "github.com/laser/go-merkle-tree"
 	"github.com/pkg/errors"
 )
 
@@ -848,9 +847,8 @@ type UtxoView struct {
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
 
-	BitcoinManager *BitcoinManager
-	Handle         *badger.DB
-	Params         *BitCloutParams
+	Handle *badger.DB
+	Params *BitCloutParams
 }
 
 type OperationType uint
@@ -1078,7 +1076,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.BitcoinManager)
+	newView, err := NewUtxoView(bav.Handle, bav.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -1209,12 +1207,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 }
 
 func NewUtxoView(
-	_handle *badger.DB, _params *BitCloutParams, _bitcoinManager *BitcoinManager) (*UtxoView, error) {
+	_handle *badger.DB, _params *BitCloutParams) (*UtxoView, error) {
 
 	view := UtxoView{
-		Handle:         _handle,
-		Params:         _params,
-		BitcoinManager: _bitcoinManager,
+		Handle: _handle,
+		Params: _params,
 		// Note that the TipHash does not get reset as part of
 		// _ResetViewMappingsAfterFlush because it is not something that is affected by a
 		// flush operation. Moreover, its value is consistent with the view regardless of
@@ -4448,8 +4445,7 @@ func _computeBitcoinBurnOutput(bitcoinTransaction *wire.MsgTx, bitcoinBurnAddres
 }
 
 func (bav *UtxoView) _connectBitcoinExchange(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
-	checkMerkleProof bool, minBitcoinBurnWork int64) (
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if bav.Params.DeflationBombBlockHeight != 0 &&
@@ -4457,16 +4453,6 @@ func (bav *UtxoView) _connectBitcoinExchange(
 
 		return 0, 0, nil, RuleErrorDeflationBombForbidsMintingAnyMoreBitClout
 	}
-
-	if bav.BitcoinManager == nil ||
-		!bav.BitcoinManager.IsCurrent(false /*considerCumWork*/) {
-
-		return 0, 0, nil, fmt.Errorf("_connectBitcoinExchange: BitcoinManager "+
-			"must be non-nil and time-current in order to connect "+
-			"BitcoinExchange transactions: %v", bav.BitcoinManager.IsCurrent(false /*considerCumWork*/))
-	}
-	// At this point we are confident that we have a non-nil time-current
-	// BitcoinManager we can refer to for validation purposes.
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange {
@@ -4510,73 +4496,6 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	bitcoinTxHash := (BlockHash)(txMetaa.BitcoinTransaction.TxHash())
 	if bav._existsBitcoinTxIDMapping(&bitcoinTxHash) {
 		return 0, 0, nil, RuleErrorBitcoinExchangeDoubleSpendingBitcoinTransaction
-	}
-
-	// If this is a forgiven BitcoinExchange txn then skip all checks
-	if IsForgivenBitcoinTransaction(txn) {
-		checkMerkleProof = false
-		minBitcoinBurnWork = 0
-	}
-
-	if checkMerkleProof {
-		// Check that the BitcoinBlockHash exists in our main Bitcoin header chain.
-		blockNodeForBlockHash := bav.BitcoinManager.GetBitcoinBlockNode(txMetaa.BitcoinBlockHash)
-		if blockNodeForBlockHash == nil {
-			return 0, 0, nil, errors.Wrapf(
-				RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain,
-				"Bitcoin txn hash: %v",
-				txMetaa.BitcoinTransaction.TxHash(),
-			)
-		}
-
-		// Verify that the BitcoinMerkleRoot lines up with what is present in the Bitcoin
-		// header.
-		if *blockNodeForBlockHash.Header.TransactionMerkleRoot != *txMetaa.BitcoinMerkleRoot {
-			return 0, 0, nil, RuleErrorBitcoinExchangeHasBadMerkleRoot
-		}
-
-		// Check that the BitcoinMerkleProof successfully proves that the
-		// BitcoinTransaction was legitimately included in the mined Bitcoin block. Note
-		// that we verified taht the BitcoinMerkleRoot is the same one that corresponds
-		// to the provided BitcoinBlockHash.
-		if !merkletree.VerifyProof(
-			bitcoinTxHash[:], txMetaa.BitcoinMerkleProof, txMetaa.BitcoinMerkleRoot[:]) {
-
-			return 0, 0, nil, RuleErrorBitcoinExchangeInvalidMerkleProof
-		}
-		// At this point we are sure that the BitcoinTransaction provided was mined into
-		// a Bitcoin and that the BitcoinTransaction has not been used in a
-		// BitcoinExchange transaction in the past.
-	}
-
-	if minBitcoinBurnWork != 0 {
-		// Check that the BitcoinBlockHash exists in our main Bitcoin header chain.
-		blockNodeForBlockHash := bav.BitcoinManager.GetBitcoinBlockNode(txMetaa.BitcoinBlockHash)
-		if blockNodeForBlockHash == nil {
-			return 0, 0, nil, RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain
-		}
-
-		// Check that the Bitcoin block has a sufficient amount of work built on top of it
-		// for us to consider its contents. Note that the amount of work must be determined
-		// based on the oldest time-current block that we have rather than the tip. Note also
-		// that because we verified that the BitcoinManager is time-current that we must have
-		// at least one time-current block in our main chain.
-		bitcoinBurnWorkBlocks :=
-			bav.BitcoinManager.GetBitcoinBurnWorkBlocks(blockNodeForBlockHash.Height)
-		if bitcoinBurnWorkBlocks < minBitcoinBurnWork {
-
-			// Note we opt against returning a RuleError here. This should prevent the block
-			// from being marked as invalid so we can reconsider it if a fork favors it in the
-			// long run which, although unlikely, could theoretically happen
-			return 0, 0, nil, fmt.Errorf("_connectBitcoinExchange: Number of Bitcoin "+
-				"burn work blocks mined on top of transaction %d is below MinBitcoinBurnWork %d",
-				bitcoinBurnWorkBlocks, minBitcoinBurnWork)
-		}
-
-		// At this point we found a node on the main Bitcoin chain corresponding to the block hash
-		// in the txMeta and have verified that this block has a sufficient amount of work built on
-		// top of it to make us want to consider it. Its values should be set according to the
-		// corresponding Bitcoin header.
 	}
 
 	if verifySignatures {
@@ -8055,17 +7974,12 @@ func (bav *UtxoView) ConnectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 	return bav._connectTransaction(txn, txHash,
 		txnSizeBytes,
 		blockHeight, verifySignatures,
-		true, /*checkMerkleProof*/
-		bav.Params.BitcoinMinBurnWorkBlockss,
 		ignoreUtxos)
 
 }
 
 func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
-	txnSizeBytes int64,
-	blockHeight uint32, verifySignatures bool,
-	checkMerkleProof bool,
-	minBitcoinBurnWorkBlocks int64, ignoreUtxos bool) (
+	txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
 	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
 	_fees uint64, _err error) {
 
@@ -8094,8 +8008,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectBitcoinExchange(
-				txn, txHash, blockHeight, verifySignatures,
-				checkMerkleProof, minBitcoinBurnWorkBlocks)
+				txn, txHash, blockHeight, verifySignatures)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
 		totalInput, totalOutput, utxoOpsForTxn, err =

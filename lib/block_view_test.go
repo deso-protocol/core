@@ -126,7 +126,7 @@ func TestBasicTransfer(t *testing.T) {
 		txn.PublicKey = recipientPkBytes
 
 		_signTxn(t, txn, recipientPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -160,7 +160,7 @@ func TestBasicTransfer(t *testing.T) {
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
 		_signTxn(t, txn, recipientPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -187,7 +187,7 @@ func TestBasicTransfer(t *testing.T) {
 			},
 		}
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -222,7 +222,7 @@ func TestBasicTransfer(t *testing.T) {
 		require.Greater(totalInput, uint64(0))
 
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -246,7 +246,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
@@ -262,7 +262,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/)
 		require.NoError(err)
 	}
@@ -280,7 +280,7 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 	txn := _assembleBasicTransferTxnFullySigned(
 		t, chain, amountNanos, feeRateNanosPerKB, pkSenderStr, pkReceiverStr, privStr, nil)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -347,7 +347,7 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txHash := txn.Hash()
@@ -409,7 +409,7 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txHash := txn.Hash()
@@ -490,7 +490,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	body, err := json.Marshal(bodyObj)
@@ -608,7 +608,7 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *BitClout
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreateNFTTxn(
@@ -798,7 +798,7 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateNFTBidTxn(
@@ -882,7 +882,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCl
 	bidderPkBytes, _, err := Base58CheckDecode(bidderPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	bidderPKID := utxoView.GetPKIDForPublicKey(bidderPkBytes)
@@ -976,7 +976,7 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *BitClout
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateNFTTxn(
@@ -1057,7 +1057,7 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 			"Disconnecting transaction with type %v index %d (going backwards)\n",
 			currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params)
 		require.NoError(testMeta.t, err)
 
 		currentHash := currentTxn.Hash()
@@ -1094,7 +1094,7 @@ func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
 
 func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params)
 	require.NoError(testMeta.t, err)
 	for ii, txn := range testMeta.txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -1114,7 +1114,7 @@ func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params)
 	require.NoError(testMeta.t, err)
 	for ii := 0; ii < len(testMeta.txnOps); ii++ {
 		backwardIter := len(testMeta.txnOps) - 1 - ii
@@ -1142,7 +1142,7 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params)
 		require.NoError(testMeta.t, err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
@@ -1175,7 +1175,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateSwapIdentityTxn(
@@ -1235,7 +1235,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
@@ -1339,7 +1339,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	profilePkBytes, _, err := Base58CheckDecode(ProfilePublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreatorCoinTxn(
@@ -1447,7 +1447,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 	receiverPkBytes, _, err := Base58CheckDecode(ReceiverPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -1513,7 +1513,7 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	receiverPkBytes, _, err := Base58CheckDecode(ReceiverPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, _, _, err := chain.CreateCreatorCoinTransferTxn(
@@ -1575,7 +1575,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(UpdaterPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, _, _, err := chain.CreateSubmitPostTxn(
@@ -1641,7 +1641,7 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 	recipientPkBytes, _, err := Base58CheckDecode(recipientPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
@@ -1696,7 +1696,7 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateLikeTxn(
@@ -1754,7 +1754,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	followedPkBytes, _, err := Base58CheckDecode(followedPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateFollowTxn(
@@ -1852,7 +1852,7 @@ func TestSubmitPost(t *testing.T) {
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
 
 	checkPostsDeleted := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		corePosts, commentsByPostHash, err := utxoView.GetAllPosts()
 		require.NoError(err)
@@ -2740,7 +2740,7 @@ func TestSubmitPost(t *testing.T) {
 	}
 
 	checkPostsExist := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		corePosts, commentsByPostHash, err := utxoView.GetAllPosts()
 		require.NoError(err)
@@ -2986,7 +2986,7 @@ func TestSubmitPost(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
@@ -3016,7 +3016,7 @@ func TestSubmitPost(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -3065,7 +3065,7 @@ func TestSubmitPost(t *testing.T) {
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -3120,7 +3120,7 @@ func TestSubmitPost(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
@@ -3843,7 +3843,7 @@ func TestUpdateProfile(t *testing.T) {
 	// user5
 	// m5Pub, m5_paramUpdater, m5 created by paramUpdater, otherShortPic, 11*100, 1.5*100*100, false
 	checkProfilesExist := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -3903,7 +3903,7 @@ func TestUpdateProfile(t *testing.T) {
 	checkProfilesExist()
 
 	checkProfilesDeleted := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -3947,7 +3947,7 @@ func TestUpdateProfile(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
@@ -3978,7 +3978,7 @@ func TestUpdateProfile(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -3999,7 +3999,7 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -4026,7 +4026,7 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
@@ -4283,7 +4283,7 @@ func TestPrivateMessage(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
@@ -4335,7 +4335,7 @@ func TestPrivateMessage(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -4353,7 +4353,7 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -4426,7 +4426,7 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
@@ -4877,7 +4877,7 @@ func TestLikeTxns(t *testing.T) {
 			"Disconnecting transaction with type %v index %d (going backwards)\n",
 			currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
@@ -4962,7 +4962,7 @@ func TestLikeTxns(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -5082,7 +5082,7 @@ func TestLikeTxns(t *testing.T) {
 
 	// Disconnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -5125,7 +5125,7 @@ func TestLikeTxns(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
@@ -5638,7 +5638,7 @@ func TestFollowTxns(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
@@ -5716,7 +5716,7 @@ func TestFollowTxns(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -5735,7 +5735,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Disconnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -5778,7 +5778,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
@@ -5923,17 +5923,12 @@ func (m *FakeTimeSource) Offset() time.Duration {
 	return 0
 }
 
-func GetTestBitcoinManager(
-	t *testing.T, startHeader *wire.BlockHeader, startHeight uint32, db *badger.DB,
-	paramss *BitCloutParams, currentTime time.Time, minBurnBlocks uint32,
-	headersToApply []*wire.BlockHeader, processFull bool) (
-	*BitcoinManager, *FakeTimeSource, *BitCloutParams) {
-
-	require := require.New(t)
-
+func GetTestParamsCopy(
+	startHeader *wire.BlockHeader, startHeight uint32,
+	paramss *BitCloutParams, minBurnBlocks uint32,
+) *BitCloutParams {
 	// Set the BitcoinExchange-related params to canned values.
 	paramsCopy := *paramss
-	paramsCopy.BitcoinMinBurnWorkBlockss = int64(minBurnBlocks)
 	headerHash := (BlockHash)(startHeader.BlockHash())
 	paramsCopy.BitcoinStartBlockNode = NewBlockNode(
 		nil,         /*ParentNode*/
@@ -5951,30 +5946,7 @@ func GetTestBitcoinManager(
 		StatusBitcoinHeaderValidated,
 	)
 
-	bitcoinManagerDir, err := ioutil.TempDir("", "bitcoin_manager")
-	require.NoError(err)
-	fakeTimeSource := NewFakeTimeSource(currentTime)
-	testBitcoinManager, err := NewBitcoinManager(
-		db, &paramsCopy, fakeTimeSource, bitcoinManagerDir,
-		nil /*updateChan*/, "")
-	require.NoError(err)
-	testBitcoinManager.ResetBitcoinHeaderIndex()
-
-	for _, hdr := range headersToApply {
-		if processFull {
-			isMainChain, isOrphan, err := testBitcoinManager.ProcessBitcoinHeaderFull(hdr, &paramsCopy)
-			require.NoError(err)
-			require.False(isOrphan)
-			require.True(isMainChain)
-		} else {
-			isMainChain, isOrphan, err := testBitcoinManager.ProcessBitcoinHeaderQuick(hdr, &paramsCopy)
-			require.NoError(err)
-			require.False(isOrphan)
-			require.True(isMainChain)
-		}
-	}
-
-	return testBitcoinManager, fakeTimeSource, &paramsCopy
+	return &paramsCopy
 }
 
 type MedianTimeSource interface {
@@ -5989,60 +5961,6 @@ type MedianTimeSource interface {
 	// Offset returns the number of seconds to adjust the local clock based
 	// upon the median of the time samples added by AddTimeData.
 	Offset() time.Duration
-}
-
-func TestBitcoinManagerProcessHeadersFull(t *testing.T) {
-	require := require.New(t)
-
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	_, _ = mempool, miner
-	params.BitcoinMaxTipAge = 3 * time.Hour
-	params.BitcoinMinBurnWorkBlockss = int64(60 * int64(time.Minute) / (10 * int64(time.Minute)))
-
-	// Read in the test Bitcoin blocks and headers.
-	bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights := _readBitcoinExchangeTestData(t)
-	firstBitcoinBurnBlock := bitcoinBlocks[1]
-	firstBitcoinBurnBlockHash := firstBitcoinBurnBlock.BlockHash()
-	headerIndexOfFirstBurn := -1
-	for headerIndex := range bitcoinHeaders {
-		if firstBitcoinBurnBlockHash == bitcoinHeaders[headerIndex].BlockHash() {
-			headerIndexOfFirstBurn = headerIndex
-			break
-		}
-	}
-
-	timeJustBeforeBurnBlock := time.Unix(firstBitcoinBurnBlock.Header.Timestamp.Unix()-1, 0)
-	minBurnBlocks := uint32(2)
-	startHeaderIndex := 0
-	headersToApply := bitcoinHeaders[1:headerIndexOfFirstBurn]
-	// Verify that quick processing behaves as expected.
-	{
-		bitcoinManager, fakeTimeSource, paramsCopy := GetTestBitcoinManager(
-			t, bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex], db,
-			params, timeJustBeforeBurnBlock, minBurnBlocks, headersToApply, false /*processFull*/)
-		_, _, _ = bitcoinManager, fakeTimeSource, paramsCopy
-		paramsCopy.BitcoinMinChainWorkHex = "0000000000000000000000000000000000000000000000008e207e217e217e22"
-		require.True(bitcoinManager.IsCurrent(false /*considerCumWork*/))
-		require.False(bitcoinManager.IsCurrent(true /*considerCumWork*/))
-		paramsCopy.BitcoinMinChainWorkHex = "0000000000000000000000000000000000000000000000000000000000000001"
-		require.False(bitcoinManager.IsCurrent(true /*considerCumWork*/))
-	}
-	// Verify that full header processing behaves as expected.
-	{
-		bitcoinManager, fakeTimeSource, paramsCopy := GetTestBitcoinManager(
-			t, bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex], db,
-			params, timeJustBeforeBurnBlock, minBurnBlocks, headersToApply, true /*processFull*/)
-		_, _, _ = bitcoinManager, fakeTimeSource, paramsCopy
-		paramsCopy.BitcoinMinChainWorkHex = "0000000000000000000000000000000000000000000000008e207e217e217e22"
-		require.True(bitcoinManager.IsCurrent(false /*considerCumWork*/))
-		require.False(bitcoinManager.IsCurrent(true /*considerCumWork*/))
-		paramsCopy.BitcoinMinChainWorkHex = "0000000000000000000000000000000000000000000000000000000000000001"
-		require.True(bitcoinManager.IsCurrent(true /*considerCumWork*/))
-		require.Equal(
-			bitcoinManager.bestHeaderChain[len(bitcoinManager.bestHeaderChain)-1].CumWork.Text(16),
-			"7e207e217e217e21")
-	}
 }
 
 func _dumpAndLoadMempool(mempool *BitCloutMempool) {
@@ -6078,8 +5996,6 @@ func TestBitcoinExchange(t *testing.T) {
 	paramsTmp := BitCloutTestnetParams
 	paramsTmp.BitCloutNanosPurchasedAtGenesis = 0
 	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
-	params.BitcoinMaxTipAge = 3 * time.Hour
-	params.BitcoinMinBurnWorkBlockss = int64(60 * int64(time.Minute) / (10 * int64(time.Minute)))
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Read in the test Bitcoin blocks and headers.
@@ -6196,22 +6112,13 @@ func TestBitcoinExchange(t *testing.T) {
 	}
 	require.Greater(headerIndexOfFirstBurn, 0)
 
-	// Create a Bitcoinmanager that is current whose tip corresponds to the block
-	// just before the block containing the first Bitcoin burn transaction.
-	timeJustBeforeBurnBlock := time.Unix(firstBitcoinBurnBlock.Header.Timestamp.Unix()-1, 0)
 	minBurnBlocks := uint32(2)
 	startHeaderIndex := 0
-	headersToApply := bitcoinHeaders[1:headerIndexOfFirstBurn]
-	bitcoinManager, fakeTimeSource, paramsCopy := GetTestBitcoinManager(
-		t, bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex], db,
-		params, timeJustBeforeBurnBlock, minBurnBlocks, headersToApply, false /*processFull*/)
-	_, _, _ = bitcoinManager, fakeTimeSource, paramsCopy
-	require.True(bitcoinManager.IsCurrent(false /*considerCumWork*/))
-
-	// Update some of the params to make them reflect what we've hacked into
-	// the bitcoinManager.
+	paramsCopy := GetTestParamsCopy(
+		bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex],
+		params, minBurnBlocks,
+	)
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
-	chain.bitcoinManager = bitcoinManager
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewBitCloutMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
@@ -6222,94 +6129,9 @@ func TestBitcoinExchange(t *testing.T) {
 	// Validating the first Bitcoin burn transaction via a UtxoView should
 	// fail because the block corresponding to it is not yet in the BitcoinManager.
 	burnTxn1 := bitcoinExchangeTxns[0]
-	burnTxn1Size := getTxnSize(*burnTxn1)
-	txHash1 := burnTxn1.Hash()
 	burnTxn2 := bitcoinExchangeTxns[1]
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain)
-	}
 
-	// The mempool should reject a BitcoinExchange transaction with a merkle
-	// proof if the block corresponding to the merkle proof has not yet been
-	// mined.
-	{
-		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.Error(err)
-		require.Contains(
-			err.Error(),
-			RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain)
-		require.Equal(0, len(mempoolTxs))
-		require.Equal(0, len(mempool.poolMap))
-	}
-
-	// The mempool should accept a BitcoinExchange transaction if its merkle proof
-	// is empty, since it skips the merkle proof checks in this case.
-	{
-		txnCopy := *burnTxn1
-		txnCopy.TxnMeta = &BitcoinExchangeMetadata{
-			BitcoinTransaction: txnCopy.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction,
-			BitcoinBlockHash:   &BlockHash{},
-			BitcoinMerkleRoot:  &BlockHash{},
-			BitcoinMerkleProof: []*merkletree.ProofPart{},
-		}
-		mempoolTxs, err := mempool.processTransaction(
-			&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.NoError(err)
-		require.Equal(1, len(mempoolTxs))
-		require.Equal(1, len(mempool.poolMap))
-	}
-
-	// Trying to add the BitcoinExchange transaction a second time should fail.
-	{
-		oldMerkleRoot := burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleRoot
-		burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleRoot = &BlockHash{}
-		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.Error(err)
-		require.Contains(err.Error(), "RuleErrorBitcoinExchangeDoubleSpendingBitcoinTransaction")
-		require.Equal(0, len(mempoolTxs))
-		require.Equal(1, len(mempool.poolMap))
-		burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleRoot = oldMerkleRoot
-	}
-
-	// The user we just applied this transaction for should have a balance now.
-	pkBytes1, _ := hex.DecodeString(BitcoinTestnetPub1)
-	{
-		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
-		require.NoError(err)
-
-		require.Equal(1, len(utxoEntries))
-		assert.Equal(int64(2697810060), int64(utxoEntries[0].AmountNanos))
-	}
-
-	// Process the Bitcoin block containing the first set of burn transactions.
-	bitcoinManager.ProcessBitcoinHeaderQuick(
-		bitcoinHeaders[headerIndexOfFirstBurn], paramsCopy)
-	require.Equal(bitcoinManager.HeaderTip().Hash[:], firstBitcoinBurnBlockHash[:])
-	firstBitcoinBurnNode := bitcoinManager.HeaderTip()
-
-	// Validating the first Bitcoin burn transaction should fail because there is not
-	// enough work built on it yet. Note that it is not a RuleError because we don't
-	// want to mark the block this transaction appears in as invalid when this happens.
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(
-				burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: We are bad people for using string matching. Fix this later.
-		require.Contains(err.Error(), "MinBitcoinBurnWork")
-	}
-
-	// Applying the full transaction with its merkle proof to the mempool should
-	// replace the existing "unmined" version that we added previously.
+	// Applying the full transaction with its merkle proof should work.
 	{
 		mempoolTxs, err := mempool.processTransaction(
 			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
@@ -6322,21 +6144,9 @@ func TestBitcoinExchange(t *testing.T) {
 			burnTxn1.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// Applying the full txns a second time should fail.
-	{
-		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.Error(err)
-		require.Equal(0, len(mempoolTxs))
-		require.Equal(1, len(mempool.poolMap))
-		mempoolTxRet := mempool.poolMap[*burnTxn1.Hash()]
-		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*BitcoinExchangeMetadata),
-			burnTxn1.TxnMeta.(*BitcoinExchangeMetadata))
-	}
-
 	// According to the mempool, the balance of the user whose public key created
 	// the Bitcoin burn transaction should now have some BitClout.
+	pkBytes1, _ := hex.DecodeString(BitcoinTestnetPub1)
 	pkBytes2, _ := hex.DecodeString(BitcoinTestnetPub2)
 	pkBytes3, _ := hex.DecodeString(BitcoinTestnetPub3)
 	{
@@ -6377,84 +6187,6 @@ func TestBitcoinExchange(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// The amount of work on the first burn transaction should be zero.
-	require.Equal(int64(0), bitcoinManager.GetBitcoinBurnWorkBlocks(firstBitcoinBurnNode.Height))
-
-	// Verify that adding the transaction to the UtxoView fails because there is
-	// not enough work on the burn block yet.
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: I know I'm a bad person for using string matching. Fix this later.
-		require.Contains(err.Error(), "MinBitcoinBurnWork")
-	}
-
-	// Now mine a Bitcoin block.
-	nextHeaderIndex := headerIndexOfFirstBurn + 1
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
-	// Verify that the amount of work on a transaction that is in the first burn
-	// block is equal to one because it is now mined
-	require.Equal(int64(1), bitcoinManager.GetBitcoinBurnWorkBlocks(firstBitcoinBurnNode.Height))
-
-	// Should still fail since min burn work is 2
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: I know I'm a bad person for using string matching. Fix this later.
-		require.Contains(err.Error(), "MinBitcoinBurnWork")
-	}
-
-	// Mine one more Bitcoin blocks
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
-	// The transaction should pass now
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.NoError(err)
-	}
-
-	// Mine a few more Bitcoin blocks
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
 	// The UtxoView should accept all of the burn transactions now that their blocks
 	// have enough work built on them.
 
@@ -6475,7 +6207,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -6625,7 +6357,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -6661,7 +6393,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -6801,15 +6533,9 @@ func TestBitcoinExchange(t *testing.T) {
 	_dumpAndLoadMempool(mempool)
 
 	// Mine a block with all the mempool transactions.
-	//
-	// Set the BitcoinManager to be time-current.
-	bitcoinManager.timeSource = NewFakeTimeSource(
-		time.Unix(int64(bitcoinManager.HeaderTip().Header.TstampSecs), 0))
-	miner.BlockProducer.bitcoinManager = bitcoinManager
-	params.BitcoinMinBurnWorkBlockss = 0
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
-
+	//
 	// All the txns should be in the mempool already but only some of them have enough
 	// burn work to satisfy the miner. Note we need to mine two blocks since the first
 	// one just makes the BitClout chain time-current.
@@ -6827,15 +6553,6 @@ func TestBitcoinExchange(t *testing.T) {
 	require.NoError(err)
 	_dumpAndLoadMempool(mempool)
 
-	// Mine a Bitcoin block to unlock the rest of the transactions
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
 	finalBlock4, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	_dumpAndLoadMempool(mempool)
@@ -6844,13 +6561,9 @@ func TestBitcoinExchange(t *testing.T) {
 	assert.Equal(len(finalBlock1.Txns), 1)
 	// The first block should only have some of the Bitcoin txns since
 	// the MinerBitcoinBurnWorkBlocks is higher than the regular burn work.
-	assert.Equal(len(finalBlock2.Txns), 9)
+	assert.Equal(len(finalBlock2.Txns), 14)
 	assert.Equal(len(finalBlock3.Txns), 1)
-	require.Equal(len(finalBlock4.Txns), 6)
-
-	// Reset the min burn work.
-	params.BitcoinMinBurnWorkBlockss = int64(minBurnBlocks)
-	params.MinerBitcoinMinBurnWorkBlockss = int64(minBurnBlocks + 1)
+	require.Equal(len(finalBlock4.Txns), 1)
 
 	// The balances after mining the block should line up.
 	{
@@ -6879,7 +6592,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 
 		{
@@ -6981,8 +6694,6 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	paramsTmp := BitCloutTestnetParams
 	paramsTmp.BitCloutNanosPurchasedAtGenesis = 0
 	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
-	params.BitcoinMaxTipAge = 3 * time.Hour
-	params.BitcoinMinBurnWorkBlockss = int64(60 * int64(time.Minute) / (10 * int64(time.Minute)))
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Read in the test Bitcoin blocks and headers.
@@ -7101,20 +6812,14 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	// Create a Bitcoinmanager that is current whose tip corresponds to the block
 	// just before the block containing the first Bitcoin burn transaction.
-	timeJustBeforeBurnBlock := time.Unix(firstBitcoinBurnBlock.Header.Timestamp.Unix()-1, 0)
 	minBurnBlocks := uint32(2)
 	startHeaderIndex := 0
-	headersToApply := bitcoinHeaders[1:headerIndexOfFirstBurn]
-	bitcoinManager, fakeTimeSource, paramsCopy := GetTestBitcoinManager(
-		t, bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex], db,
-		params, timeJustBeforeBurnBlock, minBurnBlocks, headersToApply, false /*processFull*/)
-	_, _, _ = bitcoinManager, fakeTimeSource, paramsCopy
-	require.True(bitcoinManager.IsCurrent(false /*considerCumWork*/))
+	paramsCopy := GetTestParamsCopy(bitcoinHeaders[startHeaderIndex],
+		bitcoinHeaderHeights[startHeaderIndex], params, minBurnBlocks)
 
 	// Update some of the params to make them reflect what we've hacked into
 	// the bitcoinManager.
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
-	chain.bitcoinManager = bitcoinManager
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewBitCloutMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
@@ -7122,94 +6827,15 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
 
-	// Validating the first Bitcoin burn transaction via a UtxoView should
-	// fail because the block corresponding to it is not yet in the BitcoinManager.
+	//// Validating the first Bitcoin burn transaction via a UtxoView should
+	//// fail because the block corresponding to it is not yet in the BitcoinManager.
 	burnTxn1 := bitcoinExchangeTxns[0]
 	burnTxn1Size := getTxnSize(*burnTxn1)
 	txHash1 := burnTxn1.Hash()
 	burnTxn2 := bitcoinExchangeTxns[1]
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain)
-	}
-
-	// The mempool should reject a BitcoinExchange transaction with a merkle
-	// proof if the block corresponding to the merkle proof has not yet been
-	// mined.
-	{
-		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.Error(err)
-		require.Contains(
-			err.Error(),
-			RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain)
-		require.Equal(0, len(mempoolTxs))
-		require.Equal(0, len(mempool.poolMap))
-	}
-
-	// The mempool should accept a BitcoinExchange transaction if its merkle proof
-	// is empty, since it skips the merkle proof checks in this case.
-	{
-		txnCopy := *burnTxn1
-		txnCopy.TxnMeta = &BitcoinExchangeMetadata{
-			BitcoinTransaction: txnCopy.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction,
-			BitcoinBlockHash:   &BlockHash{},
-			BitcoinMerkleRoot:  &BlockHash{},
-			BitcoinMerkleProof: []*merkletree.ProofPart{},
-		}
-		mempoolTxs, err := mempool.processTransaction(
-			&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.NoError(err)
-		require.Equal(1, len(mempoolTxs))
-		require.Equal(1, len(mempool.poolMap))
-	}
-
-	// Trying to add the BitcoinExchange transaction a second time should fail.
-	{
-		oldMerkleRoot := burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleRoot
-		burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleRoot = &BlockHash{}
-		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.Error(err)
-		require.Contains(err.Error(), "RuleErrorBitcoinExchangeDoubleSpendingBitcoinTransaction")
-		require.Equal(0, len(mempoolTxs))
-		require.Equal(1, len(mempool.poolMap))
-		burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleRoot = oldMerkleRoot
-	}
 
 	// The user we just applied this transaction for should have a balance now.
 	pkBytes1, _ := hex.DecodeString(BitcoinTestnetPub1)
-	{
-		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
-		require.NoError(err)
-
-		require.Equal(1, len(utxoEntries))
-		assert.Equal(int64(2697810060), int64(utxoEntries[0].AmountNanos))
-	}
-
-	// Process the Bitcoin block containing the first set of burn transactions.
-	bitcoinManager.ProcessBitcoinHeaderQuick(
-		bitcoinHeaders[headerIndexOfFirstBurn], paramsCopy)
-	require.Equal(bitcoinManager.HeaderTip().Hash[:], firstBitcoinBurnBlockHash[:])
-	firstBitcoinBurnNode := bitcoinManager.HeaderTip()
-
-	// Validating the first Bitcoin burn transaction should fail because there is not
-	// enough work built on it yet. Note that it is not a RuleError because we don't
-	// want to mark the block this transaction appears in as invalid when this happens.
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(
-				burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: We are bad people for using string matching. Fix this later.
-		require.Contains(err.Error(), "MinBitcoinBurnWork")
-	}
 
 	// Applying the full transaction with its merkle proof to the mempool should
 	// replace the existing "unmined" version that we added previously.
@@ -7280,94 +6906,28 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// The amount of work on the first burn transaction should be zero.
-	require.Equal(int64(0), bitcoinManager.GetBitcoinBurnWorkBlocks(firstBitcoinBurnNode.Height))
-
 	// Verify that adding the transaction to the UtxoView fails because there is
 	// not enough work on the burn block yet.
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, _ := NewUtxoView(db, paramsCopy)
 		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: I know I'm a bad person for using string matching. Fix this later.
-		require.Contains(err.Error(), "MinBitcoinBurnWork")
+		utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	}
 
-	// Now mine a Bitcoin block.
-	nextHeaderIndex := headerIndexOfFirstBurn + 1
 	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
-	// Verify that the amount of work on a transaction that is in the first burn
-	// block is equal to one because it is now mined
-	require.Equal(int64(1), bitcoinManager.GetBitcoinBurnWorkBlocks(firstBitcoinBurnNode.Height))
-
-	// Should still fail since min burn work is 2
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, _ := NewUtxoView(db, paramsCopy)
 		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: I know I'm a bad person for using string matching. Fix this later.
-		require.Contains(err.Error(), "MinBitcoinBurnWork")
-	}
-
-	// Mine one more Bitcoin blocks
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
+		utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	}
 
 	// The transaction should pass now
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, _ := NewUtxoView(db, paramsCopy)
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err :=
 			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.NoError(err)
 	}
-
-	// Mine a few more Bitcoin blocks
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
-	// The UtxoView should accept all of the burn transactions now that their blocks
-	// have enough work built on them.
-
-	// Set the founder public key to something else for the remainder of the test.
-	// Give this public key a bit of money to play with.
-	//oldFounderRewardPubKey := FounderRewardPubKeyBase58Check
-	//FounderRewardPubKeyBase58Check = moneyPkString
-	//defer func() {
-	//FounderRewardPubKeyBase58Check = oldFounderRewardPubKey
-	//}()
 
 	// Make the moneyPkString the paramUpdater so they can update the exchange rate.
 	params.ParamUpdaterPublicKeys = make(map[PkMapKey]bool)
@@ -7378,7 +6938,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -7526,7 +7086,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -7562,7 +7122,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -7701,13 +7261,6 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// Check the db one more time after adding back all the txns.
 	_dumpAndLoadMempool(mempool)
 
-	// Mine a block with all the mempool transactions.
-	//
-	// Set the BitcoinManager to be time-current.
-	bitcoinManager.timeSource = NewFakeTimeSource(
-		time.Unix(int64(bitcoinManager.HeaderTip().Header.TstampSecs), 0))
-	miner.BlockProducer.bitcoinManager = bitcoinManager
-	params.BitcoinMinBurnWorkBlockss = 0
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
 
@@ -7728,15 +7281,6 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	require.NoError(err)
 	_dumpAndLoadMempool(mempool)
 
-	// Mine a Bitcoin block to unlock the rest of the transactions
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
 	finalBlock4, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	_dumpAndLoadMempool(mempool)
@@ -7745,13 +7289,9 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	assert.Equal(len(finalBlock1.Txns), 1)
 	// The first block should only have some of the Bitcoin txns since
 	// the MinerBitcoinBurnWorkBlocks is higher than the regular burn work.
-	assert.Equal(len(finalBlock2.Txns), 9)
+	assert.Equal(len(finalBlock2.Txns), 14)
 	assert.Equal(len(finalBlock3.Txns), 1)
-	require.Equal(len(finalBlock4.Txns), 6)
-
-	// Reset the min burn work.
-	params.BitcoinMinBurnWorkBlockss = int64(minBurnBlocks)
-	params.MinerBitcoinMinBurnWorkBlockss = int64(minBurnBlocks + 1)
+	require.Equal(len(finalBlock4.Txns), 1)
 
 	// The balances after mining the block should line up.
 	{
@@ -7780,7 +7320,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 
 		{
@@ -7878,8 +7418,6 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	paramsTmp.BitCloutNanosPurchasedAtGenesis = 0
 	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	params.BitcoinMaxTipAge = 3 * time.Hour
-	params.BitcoinMinBurnWorkBlockss = int64(60 * int64(time.Minute) / (10 * int64(time.Minute)))
 
 	// Read in the test Bitcoin blocks and headers.
 	bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights := _readBitcoinExchangeTestData(t)
@@ -7999,20 +7537,16 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 
 	// Create a Bitcoinmanager that is current whose tip corresponds to the block
 	// just before the block containing the first Bitcoin burn transaction.
-	timeJustBeforeBurnBlock := time.Unix(firstBitcoinBurnBlock.Header.Timestamp.Unix()-1, 0)
 	minBurnBlocks := uint32(2)
 	startHeaderIndex := 0
-	headersToApply := bitcoinHeaders[1:headerIndexOfFirstBurn]
-	bitcoinManager, fakeTimeSource, paramsCopy := GetTestBitcoinManager(
-		t, bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex], db,
-		params, timeJustBeforeBurnBlock, minBurnBlocks, headersToApply, false /*processFull*/)
-	_, _, _ = bitcoinManager, fakeTimeSource, paramsCopy
-	require.True(bitcoinManager.IsCurrent(false /*considerCumWork*/))
+	paramsCopy := GetTestParamsCopy(
+		bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex],
+		params, minBurnBlocks,
+	)
 
 	// Update some of the params to make them reflect what we've hacked into
 	// the bitcoinManager.
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
-	chain.bitcoinManager = bitcoinManager
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewBitCloutMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
@@ -8025,20 +7559,6 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	burnTxn1Size := getTxnSize(*burnTxn1)
 	burnTxn2 := bitcoinExchangeTxns[1]
 	txHash1 := burnTxn1.Hash()
-	firstBitcoinBurnHeight := bitcoinHeaderHeights[headerIndexOfFirstBurn]
-	require.Equal(int64(-1), bitcoinManager.GetBitcoinBurnWorkBlocks(firstBitcoinBurnHeight))
-
-	// Verify that adding the transaction to the UtxoView fails because there is
-	// not enough work on the burn block yet.
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: I know I'm a bad person for using string matching. Fix this later.
-		require.Contains(err.Error(), "RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain")
-	}
 
 	// The mempool should accept a BitcoinExchange transaction if its merkle proof
 	// is empty, since it skips the merkle proof checks in this case.
@@ -8275,54 +7795,9 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	}
 	prevMempoolSize := len(mempool.poolMap)
 
-	// Process the Bitcoin block containing the first set of burn transactions.
-	nextHeaderIndex := headerIndexOfFirstBurn
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	require.Equal(bitcoinManager.HeaderTip().Hash[:], firstBitcoinBurnBlockHash[:])
-
-	// Verify that the amount of work on a transaction that is in the first burn
-	// block is equal to one because it is now mined
-	require.Equal(int64(0), bitcoinManager.GetBitcoinBurnWorkBlocks(firstBitcoinBurnHeight))
-
-	// Should still fail since min burn work is 2
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: I know I'm a bad person for using string matching. Fix this later.
-		require.Contains(err.Error(), "MinBitcoinBurnWork")
-	}
-
-	// Mine two more Bitcoin blocks
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
 	// The transaction should pass now
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, _ := NewUtxoView(db, paramsCopy)
 		blockHeight := chain.blockTip().Height + 1
 
 		_, _, _, _, err :=
@@ -8330,88 +7805,9 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		require.NoError(err)
 	}
 
-	// Mine a few more Bitcoin blocks
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
-	// Set the BitcoinManager to be time-current.
-	bitcoinManager.timeSource = NewFakeTimeSource(
-		time.Unix(int64(bitcoinManager.HeaderTip().Header.TstampSecs), 0))
-	miner.BlockProducer.bitcoinManager = bitcoinManager
-	params.BitcoinMinBurnWorkBlockss = 0
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
 
-	// Mining two blocks would normally result in the burn txns being mined.
-	// However, since the mempool txns don't have merkle proofs, the blocks
-	// should be empty. Note we have to mine two blocks to get the chain to
-	// be time-current.
-	{
-		finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-		require.NoError(err)
-		_ = finalBlock1
-		finalBlock2, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-		require.NoError(err)
-		finalBlock3, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-		require.NoError(err)
-		finalBlock4, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-		require.NoError(err)
-
-		// The blocks should be empty except for a block reward
-		require.Equal(len(finalBlock1.Txns), 1)
-		require.Equal(len(finalBlock2.Txns), 1)
-		require.Equal(len(finalBlock3.Txns), 1)
-		require.Equal(len(finalBlock4.Txns), 1)
-
-		require.Equal(prevMempoolSize, len(mempool.poolMap))
-	}
-
-	// Now apply the *full* BitcoinExchange txns to the mempool, but do it in
-	// reverse order just to really mess with things. The mempool should preserve
-	// the original order of the BitcoinExchange transactions even though we're
-	// applying them out of order.
-	{
-		for fakeIndex := range bitcoinExchangeTxns {
-			reverseIndex := len(bitcoinExchangeTxns) - 1 - fakeIndex
-			if reverseIndex == 4 || reverseIndex == 12 ||
-				reverseIndex == 11 || reverseIndex == 10 {
-				continue
-			}
-			burnTxn := bitcoinExchangeTxns[reverseIndex]
-			fmt.Println(reverseIndex, burnTxn.TxnMeta.GetTxnType())
-
-			mempoolTxsAdded, err := mempool.processTransaction(
-				burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
-			require.NoErrorf(err, "on index: %v", reverseIndex)
-			require.Equal(1, len(mempoolTxsAdded))
-			require.NotEqual(
-				BlockHash{},
-				mempoolTxsAdded[0].Tx.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleRoot)
-		}
-	}
 	// At this point, the mempool should contain *mined* BitcoinExchange
 	// transactions with fully proper merkle proofs.
 
@@ -8429,8 +7825,8 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 
 	// The first block should contain the txns because we mined a
 	// block to get the chain current previously.
-	require.Equal(len(finalBlock1.Txns), 14)
-	require.Equal(len(finalBlock2.Txns), 1)
+	require.Equal(len(finalBlock1.Txns), 1)
+	require.Equal(len(finalBlock2.Txns), 14)
 	require.Equal(len(finalBlock3.Txns), 1)
 	require.Equal(len(finalBlock4.Txns), 1)
 
@@ -8492,7 +7888,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// the mempool's disconnect function to make sure we get the txns
 	// back during a reorg.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 
 		{
@@ -8627,8 +8023,6 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	paramsTmp.BitCloutNanosPurchasedAtGenesis = 500000123456789
 	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	params.BitcoinMaxTipAge = 3 * time.Hour
-	params.BitcoinMinBurnWorkBlockss = int64(60 * int64(time.Minute) / (10 * int64(time.Minute)))
 
 	// Read in the test Bitcoin blocks and headers.
 	bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights := _readBitcoinExchangeTestData(t)
@@ -8746,20 +8140,16 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	// Create a Bitcoinmanager that is current whose tip corresponds to the block
 	// just before the block containing the first Bitcoin burn transaction.
-	timeJustBeforeBurnBlock := time.Unix(firstBitcoinBurnBlock.Header.Timestamp.Unix()-1, 0)
 	minBurnBlocks := uint32(2)
 	startHeaderIndex := 0
-	headersToApply := bitcoinHeaders[1:headerIndexOfFirstBurn]
-	bitcoinManager, fakeTimeSource, paramsCopy := GetTestBitcoinManager(
-		t, bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex], db,
-		params, timeJustBeforeBurnBlock, minBurnBlocks, headersToApply, false /*processFull*/)
-	_, _, _ = bitcoinManager, fakeTimeSource, paramsCopy
-	require.True(bitcoinManager.IsCurrent(false /*considerCumWork*/))
+	paramsCopy := GetTestParamsCopy(
+		bitcoinHeaders[startHeaderIndex], bitcoinHeaderHeights[startHeaderIndex],
+		params, minBurnBlocks,
+	)
 
 	// Update some of the params to make them reflect what we've hacked into
 	// the bitcoinManager.
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
-	chain.bitcoinManager = bitcoinManager
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewBitCloutMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
@@ -8769,90 +8159,9 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	// The amount of work on the first burn transaction should be zero.
 	burnTxn1 := bitcoinExchangeTxns[0]
-	burnTxn1Size := getTxnSize(*burnTxn1)
 	burnTxn2 := bitcoinExchangeTxns[1]
-	txHash1 := burnTxn1.Hash()
-	firstBitcoinBurnHeight := bitcoinHeaderHeights[headerIndexOfFirstBurn]
-	require.Equal(int64(-1), bitcoinManager.GetBitcoinBurnWorkBlocks(firstBitcoinBurnHeight))
 
-	// Verify that adding the transaction to the UtxoView fails because the header
-	// hash is not present yet.
-	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, bitcoinManager)
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
-		require.Error(err)
-		// TODO: I know I'm a bad person for using string matching. Fix this later.
-		require.Contains(err.Error(), "RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain")
-	}
-
-	// The mempool should reject a BitcoinExchange transaction with a merkle
-	// proof if the block corresponding to the merkle proof has not yet been
-	// mined.
-	{
-		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.Error(err)
-		require.Contains(
-			err.Error(),
-			RuleErrorBitcoinExchangeBlockHashNotFoundInMainBitcoinChain)
-		require.Equal(0, len(mempoolTxs))
-		require.Equal(0, len(mempool.poolMap))
-	}
-
-	// The mempool should accept a BitcoinExchange transaction if its merkle proof
-	// is empty, since it skips the merkle proof checks in this case.
-	{
-		txnCopy := *burnTxn1
-		txnCopy.TxnMeta = &BitcoinExchangeMetadata{
-			BitcoinTransaction: txnCopy.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction,
-			BitcoinBlockHash:   &BlockHash{},
-			BitcoinMerkleRoot:  &BlockHash{},
-			BitcoinMerkleProof: []*merkletree.ProofPart{},
-		}
-		mempoolTxs, err := mempool.processTransaction(
-			&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.NoError(err)
-		require.Equal(1, len(mempoolTxs))
-		require.Equal(1, len(mempool.poolMap))
-	}
-
-	// Trying to add the BitcoinExchange transaction a second time should fail.
-	{
-		oldMerkleProof := burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleProof
-		burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleProof = []*merkletree.ProofPart{}
-		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.Error(err)
-		require.Equal(0, len(mempoolTxs))
-		require.Equal(1, len(mempool.poolMap))
-		burnTxn1.TxnMeta.(*BitcoinExchangeMetadata).BitcoinMerkleProof = oldMerkleProof
-	}
-
-	// The user we just applied this transaction for should have a balance now.
-	pkBytes1, _ := hex.DecodeString(BitcoinTestnetPub1)
-	{
-		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
-		require.NoError(err)
-
-		require.Equal(1, len(utxoEntries))
-		assert.Equal(int64(1907640147), int64(utxoEntries[0].AmountNanos))
-	}
-
-	// Mine a Bitcoin block
-	nextHeaderIndex := headerIndexOfFirstBurn
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
-	// Applying the full transaction with its merkle proof to the mempool should
-	// replace the existing "unmined" version that we added previously.
+	// Applying the full transaction with its merkle proof to the mempool should work
 	{
 		mempoolTxs, err := mempool.processTransaction(
 			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
@@ -8865,21 +8174,9 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			burnTxn1.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// Applying the full txns a second time should fail.
-	{
-		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
-		require.Error(err)
-		require.Equal(0, len(mempoolTxs))
-		require.Equal(1, len(mempool.poolMap))
-		mempoolTxRet := mempool.poolMap[*burnTxn1.Hash()]
-		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*BitcoinExchangeMetadata),
-			burnTxn1.TxnMeta.(*BitcoinExchangeMetadata))
-	}
-
 	// According to the mempool, the balance of the user whose public key created
 	// the Bitcoin burn transaction should now have some BitClout.
+	pkBytes1, _ := hex.DecodeString(BitcoinTestnetPub1)
 	pkBytes2, _ := hex.DecodeString(BitcoinTestnetPub2)
 	pkBytes3, _ := hex.DecodeString(BitcoinTestnetPub3)
 	{
@@ -8920,48 +8217,6 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// Process the Bitcoin block containing the first set of burn transactions.
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-	{
-		isMainChain, isOrphan, err := bitcoinManager.ProcessBitcoinHeaderQuick(
-			bitcoinHeaders[nextHeaderIndex], paramsCopy)
-		require.NoError(err)
-		require.True(isMainChain)
-		require.False(isOrphan)
-		nextHeaderIndex++
-	}
-
 	// Make the moneyPkString the paramUpdater so they can update the exchange rate.
 	params.ParamUpdaterPublicKeys = make(map[PkMapKey]bool)
 	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
@@ -8971,7 +8226,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -9119,7 +8374,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -9155,7 +8410,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -9283,13 +8538,6 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		}
 	}
 
-	// Mine a block with all the mempool transactions.
-	//
-	// Set the BitcoinManager to be time-current.
-	bitcoinManager.timeSource = NewFakeTimeSource(
-		time.Unix(int64(bitcoinManager.HeaderTip().Header.TstampSecs), 0))
-	miner.BlockProducer.bitcoinManager = bitcoinManager
-	params.BitcoinMinBurnWorkBlockss = 0
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
 	// All the txns should be in the mempool already so mining a block should put
@@ -9312,9 +8560,6 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	assert.Equal(len(finalBlock2.Txns), 14)
 	assert.Equal(len(finalBlock3.Txns), 1)
 	require.Equal(len(finalBlock4.Txns), 1)
-
-	// Reset the min burn work.
-	params.BitcoinMinBurnWorkBlockss = int64(minBurnBlocks)
 
 	// The balances after mining the block should line up.
 	{
@@ -9343,7 +8588,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, bitcoinManager)
+		utxoView, err := NewUtxoView(db, paramsCopy)
 		require.NoError(err)
 
 		{
@@ -9467,7 +8712,7 @@ func TestUpdateExchangeRate(t *testing.T) {
 			newUSDCentsPerBitcoin)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		txnSize := getTxnSize(*updateExchangeRateTxn)
 		blockHeight := chain.blockTip().Height + 1
@@ -9544,7 +8789,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			false)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		txnSize := getTxnSize(*updateGlobalParamsTxn)
 		blockHeight := chain.blockTip().Height + 1
@@ -9607,7 +8852,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		require.Equal(DbGetGlobalParamsEntry(db), expectedGlobalParams)
 
 		// Now let's do a disconnect and make sure the values reflect the previous entry.
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		blockHeight := chain.blockTip().Height + 1
 		utxoView.DisconnectTransaction(
@@ -9826,7 +9071,7 @@ func _helpTestCreatorCoinBuySell(
 		// If no UtxoView is passed, use a new one to run our checks.
 		if utxoView == nil {
 			var err error
-			utxoView, err = NewUtxoView(db, params, nil)
+			utxoView, err = NewUtxoView(db, params)
 			require.NoError(err)
 		}
 
@@ -10173,7 +9418,7 @@ func _helpTestCreatorCoinBuySell(
 		_checkTestData(testData, fmt.Sprintf("SimpleDisconnect: Index: %v", testIndex), nil, nil)
 
 		// Disconnect the transaction
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		blockHeight := chain.blockTip().Height + 1
 		fmt.Printf("Disconnecting test index: %v\n", testIndex)
@@ -10202,7 +9447,7 @@ func _helpTestCreatorCoinBuySell(
 	// Connect all the txns to a single UtxoView without flushing
 	{
 		// Create a new UtxoView to check on the state of things
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		for testIndex, testData := range creatorCoinTests {
 			fmt.Printf("Applying test index: %v\n", testIndex)
@@ -10228,7 +9473,7 @@ func _helpTestCreatorCoinBuySell(
 	// Disconnect all the txns on a single view and flush at the end
 	{
 		// Create a new UtxoView to check on the state of things
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 		blockHeight := chain.blockTip().Height + 1
 		for iterIndex := range creatorCoinTests {
@@ -10380,7 +9625,7 @@ func _helpTestCreatorCoinBuySell(
 		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps))
 	}
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		disconnectSingleBlock(finalBlock2, utxoView)
@@ -10682,7 +9927,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -10716,7 +9961,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -10749,7 +9994,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -10782,7 +10027,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -10815,7 +10060,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -10848,7 +10093,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -10882,7 +10127,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -10909,7 +10154,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	}
 	// You can't apply the same number of Diamonds to a post twice
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		// Let's have a successful transaction
@@ -16059,7 +15304,7 @@ func TestNFTBasic(t *testing.T) {
 	// Creating an NFT with the correct NFT fee should succeed.
 	// This time set HasUnlockable to 'true'.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		numCopies := uint64(10)

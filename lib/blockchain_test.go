@@ -144,7 +144,7 @@ func NewTestBlockchain() (*Blockchain, *BitCloutParams, *badger.DB) {
 	paramsCopy := BitCloutTestnetParams
 
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, &paramsCopy,
-		timesource, db, nil, nil)
+		timesource, db, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func NewLowDifficultyBlockchainWithParams(params *BitCloutParams) (
 	// Temporarily modify the seed balances to make a specific public
 	// key have some BitClout
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0,
-		&paramsCopy, timesource, db, nil, nil)
+		&paramsCopy, timesource, db, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *BitCloutParams, isSen
 		0, 1,
 		blockSignerSeed,
 		mempool, chain,
-		nil, params)
+		params)
 	require.NoError(err)
 
 	newMiner, err := NewBitCloutMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
@@ -264,7 +264,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *BitCloutMempool, pkSt
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
 
-	utxoView, err := NewUtxoView(chain.db, chain.params, chain.bitcoinManager)
+	utxoView, err := NewUtxoView(chain.db, chain.params)
 	require.NoError(t, err)
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
@@ -286,7 +286,7 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *BitCloutParams, pk
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoView, _ := NewUtxoView(db, params, nil)
+	utxoView, _ := NewUtxoView(db, params)
 
 	// Profile fields
 	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)
@@ -933,8 +933,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 		txn := _assembleBasicTransferTxnFullySigned(t, chain, spendAmount, feeRateNanosPerKB,
 			senderPkString, recipientPkString, senderPrivString, nil)
 		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1,
-			true /*verifySignatures*/, false, /*checkMerkleProof*/
-			0, nil)
+			true /*verifySignatures*/, nil)
 		require.NoError(err)
 	}
 
@@ -956,10 +955,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 			_signTxn(t, txn, senderPrivString)
 		}
 
-		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1,
-			true,  /*verifySignatures*/
-			false, /*checkMerkleProof*/
-			0, nil)
+		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnOutputExceedsInput)
 	}
@@ -980,10 +976,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 		})
 		// Re-sign the transaction.
 		_signTxn(t, txn, senderPrivString)
-		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1,
-			true,  /*verifySignatures*/
-			false, /*checkMerkleProof*/
-			0, nil)
+		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInputSpendsImmatureBlockReward)
 	}

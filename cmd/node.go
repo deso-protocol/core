@@ -143,8 +143,6 @@ func (node *Node) Start() {
 		node.Config.DisableNetworking,
 		node.Config.ReadOnlyMode,
 		node.Config.IgnoreInboundInvs,
-		node.Config.BitcoinConnectPeer,
-		node.Config.IgnoreUnminedBitcoin,
 		statsdClient,
 		node.Config.BlockProducerSeed,
 		node.Config.TrustedBlockProducerPublicKeys,
@@ -158,7 +156,7 @@ func (node *Node) Start() {
 
 	// Setup TXIndex
 	if node.Config.TXIndex {
-		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Server.GetBitcoinManager(), node.Params, node.Config.DataDirectory)
+		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
 		if err != nil {
 			glog.Fatal(err)
 		}

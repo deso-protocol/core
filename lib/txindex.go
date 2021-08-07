@@ -25,7 +25,6 @@ type TXIndex struct {
 
 	// Core objects from Server
 	CoreChain      *Blockchain
-	BitcoinManager *BitcoinManager
 
 	// Core params object
 	Params *BitCloutParams
@@ -37,7 +36,7 @@ type TXIndex struct {
 	stopUpdateChannel chan struct{}
 }
 
-func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
+func NewTXIndex(coreChain *Blockchain, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
 	txIndexOpts := badger.DefaultOptions(txIndexDir)
@@ -133,7 +132,7 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 	txIndexChain, err := NewBlockchain(
 		[]string{}, 0,
 		params, chainlib.NewMedianTime(), txIndexDb,
-		bitcoinManager, nil)
+		nil)
 	if err != nil {
 		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err)
 	}
@@ -146,7 +145,6 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 	return &TXIndex{
 		TXIndexChain:      txIndexChain,
 		CoreChain:         coreChain,
-		BitcoinManager:    bitcoinManager,
 		Params:            params,
 		stopUpdateChannel: make(chan struct{}),
 	}, nil
@@ -302,7 +300,7 @@ func (txi *TXIndex) Update() error {
 		// Now that all the transactions have been deleted from our txindex,
 		// it's safe to disconnect the block from our txindex chain.
 		utxoView, err := NewUtxoView(
-			txi.TXIndexChain.DB(), txi.Params, txi.BitcoinManager)
+			txi.TXIndexChain.DB(), txi.Params)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
@@ -381,7 +379,7 @@ func (txi *TXIndex) Update() error {
 		// us to extract custom metadata fields that we can show in our block explorer.
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, txi.BitcoinManager)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
