@@ -3027,7 +3027,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
-		return errors.Wrapf(err, "_verifySignatureDerived: Problem serializing txn without signature: ")
+		return errors.Wrapf(err, "_verifySignature: Problem serializing txn without signature: ")
 	}
 	txHash := Sha256DoubleHash(txBytes)
 
@@ -3039,14 +3039,14 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 	// to recover the public key from the signature.
 	sigByte := sigCopy[0]
 	if !(sigByte >= DERControlByte && sigByte <= SIGMaxByte) {
-		return fmt.Errorf("_verifySignatureDerived: Signature control byte outside of allowed range")
+		return fmt.Errorf("_verifySignature: Signature control byte outside of allowed range")
 	}
 
 	// Reset the control byte to the DER control byte. Verify signature encoding.
 	sigCopy[0] = DERControlByte
 	sig, err := btcec.ParseDERSignature(sigCopy, btcec.S256())
 	if err != nil {
-		return errors.Wrapf(err, "_verifySignatureDerived: Problem parsing signature: ")
+		return errors.Wrapf(err, "_verifySignature: Problem parsing signature: ")
 	}
 
 	// We check for public key solution iter for this transaction. This
@@ -3072,7 +3072,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		sigCompact := SignatureSerializeCompactWithIter(sig, int(iter), false)
 		derivedPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), sigCompact, txHash[:])
 		if err != nil {
-			return errors.Wrapf(err, "_verifySignatureDerived: Problem recovering public key ")
+			return errors.Wrapf(err, "_verifySignature: Problem recovering public key ")
 		}
 
 		// Get owner PKID
