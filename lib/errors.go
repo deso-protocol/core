@@ -163,6 +163,15 @@ const (
 	RuleErrorUserNotAuthorizedToUpdateGlobalParams RuleError = "RuleErrorUserNotAuthorizedToUpdateGlobalParams"
 	RuleErrorUserOutputMustBeNonzero               RuleError = "RuleErrorUserOutputMustBeNonzero"
 
+	// BitClout Diamonds
+	RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel"
+	RuleErrorBasicTransferHasInvalidDiamondLevel                  RuleError = "RuleErrorBasicTransferHasInvalidDiamondLevel"
+	RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes    RuleError = "RuleErrorBasicTransferInvalidLengthForPostHashBytes"
+	RuleErrorBasicTransferDiamondPostEntryDoesNotExist            RuleError = "RuleErrorBasicTransferDiamondPostEntryDoesNotExist"
+	RuleErrorBasicTransferInsufficientCreatorCoinsForDiamondLevel RuleError = "RuleErrorBasicTransferInsufficientCreatorCoinsForDiamondLevel"
+	RuleErrorBasicTransferDiamondCannotTransferToSelf             RuleError = "RuleErrorBasicTransferDiamondCannotTransferToSelf"
+	RuleErrorBasicTransferInsufficientBitCloutForDiamondLevel     RuleError = "RuleErrorBasicTransferInsufficientBitCloutForDiamondLevel"
+
 	RuleErrorCreatorCoinTransferRequiresNonZeroInput                    RuleError = "RuleErrorCreatorCoinTransferRequiresNonZeroInput"
 	RuleErrorCreatorCoinTransferInvalidProfilePubKeySize                RuleError = "RuleErrorCreatorCoinTransferInvalidProfilePubKeySize"
 	RuleErrorCreatorCoinTransferInvalidReceiverPubKeySize               RuleError = "RuleErrorCreatorCoinTransferInvalidReceiverPubKeySize"
@@ -177,6 +186,7 @@ const (
 	RuleErrorCreatorCoinTransferInvalidLengthForPostHashBytes           RuleError = "RuleErrorCreatorCoinTransferInvalidLengthForPostHashBytes"
 	RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel RuleError = "RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel"
 	RuleErrorCreatorCoinTransferHasInvalidDiamondLevel                  RuleError = "RuleErrorCreatorCoinTransferHasInvalidDiamondLevel"
+	RuleErrorCreatorCoinTransferHasDiamondsAfterBitCloutBlockHeight     RuleError = "RuleErrorCreatorCoinTransferHasDiamondsAfterBitCloutBlockHeight"
 	RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds        RuleError = "RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds"
 	RuleErrorCreatorCoinTransferDiamondsCantHaveNegativeNanos           RuleError = "RuleErrorCreatorCoinTransferDiamondsCantHaveNegativeNanos"
 	RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist            RuleError = "RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist"

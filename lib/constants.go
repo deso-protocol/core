@@ -113,6 +113,8 @@ var (
 	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
 	// bitclout balance index, allowing bids to be submitted that were greater than the user's bitclout balance.
 	BrokenNFTBidsFixBlockHeight = uint32(46917)
+
+	BitCloutDiamondsBlockHeight = uint32(50000)
 )
 
 func (nt NetworkType) String() string {

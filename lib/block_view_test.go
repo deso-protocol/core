@@ -23,6 +23,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	merkletree "github.com/laser/go-merkle-tree"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -698,6 +699,87 @@ func _createNFTWithTestMeta(
 
 	// Sanity check that the first entry has serial number 1.
 	require.Equal(testMeta.t, uint64(1), dbNFTEntries[0].SerialNumber)
+
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _giveBitCloutDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCloutParams,
+	feeRateNanosPerKB uint64, senderPkBase58Check string, senderPrivBase58Check string,
+	diamondPostHash *BlockHash, diamondLevel int64, deleteDiamondLevel bool,
+) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
+	require.NoError(t, err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(t, err)
+
+	txn, totalInputMake, spendAmount, changeAmountMake, feesMake, err := chain.CreateBasicTransferTxnWithDiamonds(
+		senderPkBytes,
+		diamondPostHash,
+		diamondLevel,
+		feeRateNanosPerKB,
+		nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(t, totalInputMake, spendAmount+changeAmountMake+feesMake)
+
+	// For testing purposes.
+	if deleteDiamondLevel {
+		delete(txn.ExtraData, DiamondLevelKey)
+	}
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, senderPrivBase58Check)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(t, totalInput, totalOutput+fees)
+	require.Equal(t, totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeBitCloutDiamond operation at the end.
+	require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(t, OperationTypeBitCloutDiamond, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(t, utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
+func _giveBitCloutDiamondsWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	senderPkBase58Check string,
+	senderPrivBase58Check string,
+	postHashToModify *BlockHash,
+	diamondLevel int64,
+) {
+
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check))
+	currentOps, currentTxn, _, err := _giveBitCloutDiamonds(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		senderPkBase58Check,
+		senderPrivBase58Check,
+		postHashToModify,
+		diamondLevel,
+		false,
+	)
+	require.NoError(testMeta.t, err)
 
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
 	testMeta.txns = append(testMeta.txns, currentTxn)
@@ -10892,6 +10974,136 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	}
 }
 
+func TestCreatorCoinDiamondAfterBitCloutDiamondsBlockHeight(t *testing.T) {
+	// Set the BitCloutDiamondsBlockHeight so that it is immediately hit.
+	BitCloutDiamondsBlockHeight = uint32(0)
+
+	// Set up a blockchain.
+	assert := assert.New(t)
+	require := require.New(t)
+	_, _ = assert, require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	feeRateNanosPerKB := uint64(11)
+	_, _ = mempool, miner
+
+	// Create a paramUpdater for this test.
+	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+
+	// Give paramUpdater some mony.
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, paramUpdaterPub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+
+	// Send money to people from moneyPk.
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m0Pub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m1Pub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m2Pub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+
+	// Create a post for m0.
+	_, postTxn, _, err := _doSubmitPostTxn(
+		t, chain, db, params, feeRateNanosPerKB,
+		m0Pub, m0Priv,
+		nil,
+		nil,
+		"a post from m0",
+		make(map[string][]byte),
+		false)
+	require.NoError(err)
+
+	// Create a profile for m0.
+	{
+		_, _, _, err = _updateProfile(
+			t, chain, db, params,
+			feeRateNanosPerKB /*feerate*/, m0Pub,
+			m0Priv, nil, "m0",
+			"m0 profile", "",
+			2500, /*CreatorBasisPoints*/
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+		require.NoError(err)
+	}
+	// Create a profile for m1.
+	{
+		_, _, _, err = _updateProfile(
+			t, chain, db, params,
+			feeRateNanosPerKB /*feerate*/, m1Pub,
+			m1Priv, nil, "m1",
+			"m1 profile", "",
+			2500, /*CreatorBasisPoints*/
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+		require.NoError(err)
+	}
+
+	// Have m0 buy some of their own coin.
+	{
+		_, _, _, err = _creatorCoinTxn(
+			t, chain, db, params, feeRateNanosPerKB,
+			m0Pub, m0Priv, /*updater*/
+			m0Pub,                       /*profile*/
+			CreatorCoinOperationTypeBuy, /*buy/sell*/
+			1000000000,                  /*BitCloutToSellNanos*/
+			0,                           /*CreatorCoinToSellNanos*/
+			0,                           /*BitCloutToAddNanos*/
+			0,                           /*MinBitCloutExpectedNanos*/
+			0 /*MinCreatorCoinExpectedNanos*/)
+		require.NoError(err)
+	}
+	// Have m0 buy some m1 as well.
+	{
+		_, _, _, err = _creatorCoinTxn(
+			t, chain, db, params, feeRateNanosPerKB,
+			m0Pub, m0Priv, /*updater*/
+			m1Pub,                       /*profile*/
+			CreatorCoinOperationTypeBuy, /*buy/sell*/
+			1000000000,                  /*BitCloutToSellNanos*/
+			0,                           /*CreatorCoinToSellNanos*/
+			0,                           /*BitCloutToAddNanos*/
+			0,                           /*MinBitCloutExpectedNanos*/
+			0 /*MinCreatorCoinExpectedNanos*/)
+		require.NoError(err)
+	}
+
+	// Adding diamonds after the BitClout Diamonds block height should fail.
+	{
+		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		require.NoError(err)
+
+		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		require.NoError(err)
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		// Attempt to give two diamonds.
+		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
+			senderPkBytes,
+			receiverPkBytes,
+			postTxn.Hash(),
+			2,
+			feeRateNanosPerKB, nil)
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m0Priv)
+
+		txHash := txn.Hash()
+		// Always use height+1 for validation since it's assumed the transaction will
+		// get mined into the next block.
+		blockHeight := chain.blockTip().Height + 1
+		_, _, _, _, err =
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCreatorCoinTransferHasDiamondsAfterBitCloutBlockHeight)
+	}
+}
+
 func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -19081,4 +19293,437 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}
+
+func TestBitCloutDiamonds(t *testing.T) {
+	BitCloutDiamondsBlockHeight = 0
+	diamondValueMap := GetBitCloutNanosDiamondLevelMapAtBlockHeight(0)
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3, m4 a paramUpdater for this test
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund all the keys.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000000000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000000000)
+
+	// Get PKIDs for looking up diamond entries.
+	m0PkBytes, _, err := Base58CheckDecode(m0Pub)
+	require.NoError(err)
+	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
+
+	m1PkBytes, _, err := Base58CheckDecode(m1Pub)
+	require.NoError(err)
+	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+
+	m2PkBytes, _, err := Base58CheckDecode(m2Pub)
+	require.NoError(err)
+	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+	_ = m2PKID
+
+	validateDiamondEntry := func(
+		senderPKID *PKID, receiverPKID *PKID, diamondPostHash *BlockHash, diamondLevel int64) {
+
+		diamondEntry := DbGetDiamondMappings(db, receiverPKID, senderPKID, diamondPostHash)
+
+		if diamondEntry == nil && diamondLevel > 0 {
+			t.Errorf("validateDiamondEntry: couldn't find diamond entry for diamondLevel %d", diamondLevel)
+		} else if diamondEntry == nil && diamondLevel == 0 {
+			// If diamondLevel is set to zero, we are checking that diamondEntry is nil.
+			return
+		}
+
+		require.Equal(diamondEntry.DiamondLevel, diamondLevel)
+	}
+
+	// Create a post for testing.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 1"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+	_ = post1Hash
+
+	// Have m1 give the post a diamond.
+	{
+		// Balances before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998), m0BalBeforeNFT)
+		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9), m1BalBeforeNFT)
+
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 0)
+		_giveBitCloutDiamondsWithTestMeta(testMeta, 10, m1Pub, m1Priv, post1Hash, 1)
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 1)
+
+		// Balances after.
+		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[1]), m0BalAfterNFT)
+		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[1]-2), m1BalAfterNFT)
+	}
+
+	// Upgrade the post from 1 -> 2 diamonds.
+	{
+		// Balances before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[1]), m0BalBeforeNFT)
+		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[1]-2), m1BalBeforeNFT)
+
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 1)
+		_giveBitCloutDiamondsWithTestMeta(testMeta, 10, m1Pub, m1Priv, post1Hash, 2)
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 2)
+
+		// Balances after.
+		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[2]), m0BalAfterNFT)
+		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[2]-4), m1BalAfterNFT)
+	}
+
+	// Upgrade the post from 2 -> 3 diamonds.
+	{
+		// Balances before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[2]), m0BalBeforeNFT)
+		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[2]-4), m1BalBeforeNFT)
+
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 2)
+		_giveBitCloutDiamondsWithTestMeta(testMeta, 10, m1Pub, m1Priv, post1Hash, 3)
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 3)
+
+		// Balances after.
+		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[3]), m0BalAfterNFT)
+		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[3]-6), m1BalAfterNFT)
+	}
+
+	// Upgrade the post from 3 -> 4 diamonds.
+	{
+		// Balances before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[3]), m0BalBeforeNFT)
+		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[3]-6), m1BalBeforeNFT)
+
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 3)
+		_giveBitCloutDiamondsWithTestMeta(testMeta, 10, m1Pub, m1Priv, post1Hash, 4)
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 4)
+
+		// Balances after.
+		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[4]), m0BalAfterNFT)
+		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[4]-8), m1BalAfterNFT)
+	}
+
+	// Upgrade the post from 4 -> 5 diamonds.
+	{
+		// Balances before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[4]), m0BalBeforeNFT)
+		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[4]-8), m1BalBeforeNFT)
+
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 4)
+		_giveBitCloutDiamondsWithTestMeta(testMeta, 10, m1Pub, m1Priv, post1Hash, 5)
+		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 5)
+
+		// Balances after.
+		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[5]), m0BalAfterNFT)
+		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		require.Equal(uint64(1e9-diamondValueMap[5]-10), m1BalAfterNFT)
+	}
+
+	// Have m2 give the post 5 diamonds right off the bat.
+	{
+		// Balances before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[5]), m0BalBeforeNFT)
+		m2BalBeforeNFT := _getBalance(t, chain, nil, m2Pub)
+		require.Equal(uint64(1e9), m2BalBeforeNFT)
+
+		validateDiamondEntry(m2PKID.PKID, m0PKID.PKID, post1Hash, 0)
+		_giveBitCloutDiamondsWithTestMeta(testMeta, 10, m2Pub, m2Priv, post1Hash, 5)
+		validateDiamondEntry(m2PKID.PKID, m0PKID.PKID, post1Hash, 5)
+
+		// Balances after.
+		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(998+diamondValueMap[5]+diamondValueMap[5]), m0BalAfterNFT)
+		m2BalAfterNFT := _getBalance(t, chain, nil, m2Pub)
+		require.Equal(uint64(1e9-diamondValueMap[5]-2), m2BalAfterNFT)
+	}
+
+	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}
+
+func TestBitCloutDiamondErrorCases(t *testing.T) {
+	BitCloutDiamondsBlockHeight = 0
+	diamondValueMap := GetBitCloutNanosDiamondLevelMapAtBlockHeight(0)
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3, m4 a paramUpdater for this test
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund all the keys.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000000000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000000000)
+
+	// Since the "CreateBasicTransferTxnWithDiamonds()" function in blockchain.go won't let us
+	// trigger most errors that we want to check, we create another version of the function here
+	// that allows us to put together whatever type of broken txn we want.
+	_giveCustomBitCloutDiamondTxn := func(
+		senderPkBase58Check string, senderPrivBase58Check string, receiverPkBase58Check string,
+		diamondPostHashBytes []byte, diamondLevel int64, amountNanos uint64) (_err error) {
+
+		senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
+		require.NoError(err)
+
+		receiverPkBytes, _, err := Base58CheckDecode(receiverPkBase58Check)
+		require.NoError(err)
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		// Build the basic transfer txn.
+		txn := &MsgBitCloutTxn{
+			PublicKey: senderPkBytes,
+			TxnMeta:   &BasicTransferMetadata{},
+			TxOutputs: []*BitCloutOutput{
+				{
+					PublicKey:   receiverPkBytes,
+					AmountNanos: amountNanos,
+				},
+			},
+			// TxInputs and TxOutputs will be set below.
+			// This function does not compute a signature.
+		}
+
+		// Make a map for the diamond extra data and add it.
+		diamondsExtraData := make(map[string][]byte)
+		diamondsExtraData[DiamondLevelKey] = IntToBuf(diamondLevel)
+		diamondsExtraData[DiamondPostHashKey] = diamondPostHashBytes
+		txn.ExtraData = diamondsExtraData
+
+		// We don't need to make any tweaks to the amount because it's basically
+		// a standard "pay per kilobyte" transaction.
+		totalInput, _, _, fees, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
+		if err != nil {
+			return errors.Wrapf(
+				err, "giveCustomBitCloutDiamondTxn: Problem adding inputs: ")
+		}
+
+		// We want our transaction to have at least one input, even if it all
+		// goes to change. This ensures that the transaction will not be "replayable."
+		if len(txn.TxInputs) == 0 {
+			return fmt.Errorf(
+				"giveCustomBitCloutDiamondTxn: BasicTransfer txn must have at" +
+					" least one input but had zero inputs instead. Try increasing the fee rate.")
+		}
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, senderPrivBase58Check)
+
+		txHash := txn.Hash()
+		// Always use height+1 for validation since it's assumed the transaction will
+		// get mined into the next block.
+		blockHeight := chain.blockTip().Height + 1
+		utxoOps, totalInput, totalOutput, fees, err :=
+			utxoView.ConnectTransaction(
+				txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		if err != nil {
+			return err
+		}
+		require.Equal(t, totalInput, totalOutput+fees)
+
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeBitCloutDiamond operation at the end.
+		require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeBitCloutDiamond, utxoOps[len(utxoOps)-1].Type)
+
+		require.NoError(utxoView.FlushToDb())
+
+		return nil
+	}
+
+	// Error case: PostHash with bad length.
+	{
+		err := _giveCustomBitCloutDiamondTxn(
+			m0Pub,
+			m0Priv,
+			m1Pub,
+			RandomBytes(HashSizeBytes-1),
+			1,
+			diamondValueMap[1],
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes)
+	}
+
+	// Error case: non-existent post.
+	{
+		err := _giveCustomBitCloutDiamondTxn(
+			m0Pub,
+			m0Priv,
+			m1Pub,
+			RandomBytes(HashSizeBytes),
+			1,
+			diamondValueMap[1],
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorBasicTransferDiamondPostEntryDoesNotExist)
+	}
+
+	// Create a post for testing.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 1"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+	_ = post1Hash
+
+	// Error case: cannot diamond yourself.
+	{
+		err := _giveCustomBitCloutDiamondTxn(
+			m0Pub,
+			m0Priv,
+			m1Pub,
+			post1Hash[:],
+			1,
+			diamondValueMap[1],
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorBasicTransferDiamondCannotTransferToSelf)
+	}
+
+	// Error case: don't include diamond level.
+	{
+		_, _, _, err := _giveBitCloutDiamonds(
+			t, chain, db, params,
+			10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,
+			true, /*deleteDiamondLevel*/
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel)
+	}
+
+	// Error case: invalid diamond level.
+	{
+		err := _giveCustomBitCloutDiamondTxn(
+			m1Pub,
+			m1Priv,
+			m0Pub,
+			post1Hash[:],
+			-1,
+			diamondValueMap[1],
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorBasicTransferHasInvalidDiamondLevel)
+	}
+
+	// Error case: insufficient bitclout.
+	{
+		err := _giveCustomBitCloutDiamondTxn(
+			m1Pub,
+			m1Priv,
+			m0Pub,
+			post1Hash[:],
+			2,
+			diamondValueMap[1],
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorBasicTransferInsufficientBitCloutForDiamondLevel)
+	}
 }
