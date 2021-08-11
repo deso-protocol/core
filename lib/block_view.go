@@ -3097,45 +3097,11 @@ func (bav *UtxoView) _connectBasicTransfer(
 		return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveInputs
 	}
 
-	// Before we check the outputs, we check to see if diamonds are given with the transaction.
-	// If diamonds are given with the transaction, we need to figure out which public key is
-	// receiving the diamonds so we can ensure enough clout is given to them in the outputs.
-	// NOTE: We have to check the txn type here since creator coin transfers (and most other
-	// transactions) first do a basic transfer and could have conflicting extra data.
-	diamondPostHashBytes, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
-	diamondPostHash := &BlockHash{}
-	var diamondRecipientPubKey []byte
-	var previousDiamondPostEntry *PostEntry
-	if hasDiamondPostHash && blockHeight > BitCloutDiamondsBlockHeight &&
-		txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
-
-		// Get the post that is being diamonded.
-		if len(diamondPostHashBytes) != HashSizeBytes {
-			return 0, 0, nil, errors.Wrapf(
-				RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes,
-				"_connectBasicTransfer: DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
-		}
-		copy(diamondPostHash[:], diamondPostHashBytes[:])
-
-		previousDiamondPostEntry = bav.GetPostEntryForPostHash(diamondPostHash)
-		if previousDiamondPostEntry == nil || previousDiamondPostEntry.isDeleted {
-			return 0, 0, nil, RuleErrorBasicTransferDiamondPostEntryDoesNotExist
-		}
-
-		// Store the diamond recipient pub key so we can figure out how much they are paid.
-		diamondRecipientPubKey = previousDiamondPostEntry.PosterPublicKey
-
-		// Check that the diamond sender and receiver public keys are different.
-		if reflect.DeepEqual(txn.PublicKey, diamondRecipientPubKey) {
-			return 0, 0, nil, RuleErrorBasicTransferDiamondCannotTransferToSelf
-		}
-	}
-
 	// At this point, all of the utxos corresponding to inputs of this txn
 	// should be marked as spent in the view. Now we go through and process
 	// the outputs.
 	var totalOutput uint64
-	var diamondRecipientTotal uint64
+	amountsByPublicKey := make(map[PkMapKey]uint64)
 	for outputIndex, bitcloutOutput := range txn.TxOutputs {
 		// Sanity check the amount of the output. Mark the block as invalid and
 		// return an error if it isn't sane.
@@ -3149,13 +3115,13 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// Since the amount is sane, add it to the total.
 		totalOutput += bitcloutOutput.AmountNanos
 
-		// Add the amount to the diamondRecipientTotal if need be.
-		if hasDiamondPostHash && blockHeight > BitCloutDiamondsBlockHeight &&
-			txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
-			if reflect.DeepEqual(diamondRecipientPubKey, bitcloutOutput.PublicKey) {
-				diamondRecipientTotal += bitcloutOutput.AmountNanos
-			}
-		}
+		// Create a map of total output by public key. This is used to check diamond
+		// amounts below.
+		//
+		// Note that we don't need to check overflow here because overflow is checked
+		// directly above when adding to totalOutput.
+		currentAmount, _ := amountsByPublicKey[MakePkMapKey(bitcloutOutput.PublicKey)]
+		amountsByPublicKey[MakePkMapKey(bitcloutOutput.PublicKey)] = currentAmount+bitcloutOutput.AmountNanos
 
 		// Create a new entry for this output and add it to the view. It should be
 		// added at the end of the utxo list.
@@ -3193,9 +3159,13 @@ func (bav *UtxoView) _connectBasicTransfer(
 	}
 
 	// Now that we have computed the outputs, we can finish processing diamonds if need be.
+	diamondPostHashBytes, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
+	diamondPostHash := &BlockHash{}
+	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
+	var previousDiamondPostEntry *PostEntry
+	var previousDiamondEntry *DiamondEntry
 	if hasDiamondPostHash && blockHeight > BitCloutDiamondsBlockHeight &&
 		txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
-		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 		if !hasDiamondLevel {
 			return 0, 0, nil, RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel
 		}
@@ -3206,11 +3176,33 @@ func (bav *UtxoView) _connectBasicTransfer(
 			return 0, 0, nil, RuleErrorBasicTransferHasInvalidDiamondLevel
 		}
 
+		// Get the post that is being diamonded.
+		if len(diamondPostHashBytes) != HashSizeBytes {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes,
+				"_connectBasicTransfer: DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
+		}
+		copy(diamondPostHash[:], diamondPostHashBytes[:])
+
+		previousDiamondPostEntry = bav.GetPostEntryForPostHash(diamondPostHash)
+		if previousDiamondPostEntry == nil || previousDiamondPostEntry.isDeleted {
+			return 0, 0, nil, RuleErrorBasicTransferDiamondPostEntryDoesNotExist
+		}
+
+		// Store the diamond recipient pub key so we can figure out how much they are paid.
+		diamondRecipientPubKey := previousDiamondPostEntry.PosterPublicKey
+
+		// Check that the diamond sender and receiver public keys are different.
+		if reflect.DeepEqual(txn.PublicKey, diamondRecipientPubKey) {
+			return 0, 0, nil, RuleErrorBasicTransferDiamondCannotTransferToSelf
+		}
+
 		expectedBitCloutNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumBitCloutNanos(
 			txn.PublicKey, diamondRecipientPubKey, diamondPostHash, diamondLevel, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: ")
 		}
+		diamondRecipientTotal, _ := amountsByPublicKey[MakePkMapKey(diamondRecipientPubKey)]
 
 		if diamondRecipientTotal < expectedBitCloutNanosToTransfer {
 			return 0, 0, nil, RuleErrorBasicTransferInsufficientBitCloutForDiamondLevel
@@ -3239,7 +3231,6 @@ func (bav *UtxoView) _connectBasicTransfer(
 		diamondKey := MakeDiamondKey(senderPKID.PKID, receiverPKID.PKID, diamondPostHash)
 		existingDiamondEntry := bav.GetDiamondEntryForDiamondKey(&diamondKey)
 		// Save the existing DiamondEntry, if it exists, so we can disconnect
-		var previousDiamondEntry *DiamondEntry
 		if existingDiamondEntry != nil {
 			dd := &DiamondEntry{}
 			*dd = *existingDiamondEntry
