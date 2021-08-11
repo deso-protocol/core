@@ -1571,13 +1571,6 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 
 	// See if a node for the block exists in our node index.
 	nodeToValidate, nodeExists := bc.blockIndex[*blockHash]
-	// If the node exists and it has its block status set to StatusBlockProcessed, then it
-	// means this block has already been successfully processed before. Return
-	// an error in this case so we don't redundantly reprocess it.
-	if nodeExists && (nodeToValidate.Status&StatusBlockProcessed) != 0 {
-		glog.Debugf("ProcessBlock: Node exists with StatusBlockProcessed (%v)", nodeToValidate)
-		return false, false, RuleErrorDuplicateBlock
-	}
 	// If no node exists for this block at all, then process the header
 	// first before we do anything. This should create a node and set
 	// the header validation status for it.
