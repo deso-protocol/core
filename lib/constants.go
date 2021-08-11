@@ -114,7 +114,10 @@ var (
 	// bitclout balance index, allowing bids to be submitted that were greater than the user's bitclout balance.
 	BrokenNFTBidsFixBlockHeight = uint32(46917)
 
-	BitCloutDiamondsBlockHeight = uint32(50000)
+	// BitCloutDiamondsBlockHeight defines the height at which diamonds will be given in CLOUT
+	// rather than in creator coin.
+	// Triggers: 3pm PT on 8/11/2021
+	BitCloutDiamondsBlockHeight = uint32(50708)
 )
 
 func (nt NetworkType) String() string {
