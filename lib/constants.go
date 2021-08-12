@@ -113,6 +113,11 @@ var (
 	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
 	// bitclout balance index, allowing bids to be submitted that were greater than the user's bitclout balance.
 	BrokenNFTBidsFixBlockHeight = uint32(46917)
+
+	// BitCloutDiamondsBlockHeight defines the height at which diamonds will be given in CLOUT
+	// rather than in creator coin.
+	// Triggers: 3pm PT on 8/16/2021
+	BitCloutDiamondsBlockHeight = uint32(52112)
 )
 
 func (nt NetworkType) String() string {
