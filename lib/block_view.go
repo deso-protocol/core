@@ -3200,7 +3200,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		expectedBitCloutNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumBitCloutNanos(
 			txn.PublicKey, diamondRecipientPubKey, diamondPostHash, diamondLevel, blockHeight)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: ")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: ")
 		}
 		diamondRecipientTotal, _ := amountsByPublicKey[MakePkMapKey(diamondRecipientPubKey)]
 
