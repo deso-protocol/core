@@ -741,7 +741,7 @@ func _signTxn(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg string) {
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	txnSignature, err := txn.Sign(privKey, false)
+	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
 	txn.Signature = txnSignature.Serialize()
 }

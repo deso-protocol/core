@@ -1072,4 +1072,6 @@ const (
 	DERControlByte = 48
 	// Note that 0x34 is 52 in base 10
 	SIGMaxByte = 52
+	// Compact signature encoding control byte
+	CompactControlByte = 27
 )

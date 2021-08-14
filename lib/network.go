@@ -2602,7 +2602,7 @@ func (msg *MsgBitCloutTxn) Copy() (*MsgBitCloutTxn, error) {
 	return newTxn, nil
 }
 
-func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey, isDerivedKey bool) (*btcec.Signature, error) {
+func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error) {
 	// Serialize the transaction without the signature portion.
 	txnBytes, err := msg.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -2645,12 +2645,12 @@ func (msg *MsgBitCloutTxn) SignToBytes(privKey *btcec.PrivateKey, isDerivedKey b
 
 		// Get the public key solution based on btcsuite/btcd RecoverCompact method.
 		// Iteration is between 1-4.
-		iteration := 1 + int((txnSignatureCompact[0] - 27) & ^byte(4))
+		iteration := 1 + int((txnSignatureCompact[0] - CompactControlByte) & ^byte(4))
 
 		// Encode the public key solution in the first byte of the signature.
 		// Normally DER signatures start with 0x30 or 48 in base-10. We set
 		// the first byte to 0x30 + 0x1-4 depending on the solution.
-		txnSignatureBytes[0] = byte(48 + iteration)
+		txnSignatureBytes[0] = byte(DERControlByte + iteration)
 	}
 
 	return txnSignatureBytes, nil
