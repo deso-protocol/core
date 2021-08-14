@@ -257,17 +257,12 @@ type NFTBidEntry struct {
 	isDeleted bool
 }
 
-type AuthorizeEntry struct {
-	ExpirationBlock uint64
-	OperationType   AuthorizeDerivedKeyOperationType
-}
-
 type DerivedKeyEntry struct {
-	// Owner public key uncompressed
-	OwnerPublicKey   []byte
+	// Owner PKID
+	OwnerPKID   *PKID
 
-	// Derived public key uncompressed
-	DerivedPublicKey []byte
+	// Derived PKID
+	DerivedPKID *PKID
 
 	// Expiration Block
 	ExpirationBlock  uint64
@@ -1034,7 +1029,7 @@ type UtxoOperation struct {
 	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
 
 	// For disconnecting authorize derived key.
-	AuthEntry *AuthorizeEntry
+	PrevDerivedKeyEntry *DerivedKeyEntry
 
 	// Save the previous reclout entry and reclout count when making an update.
 	PrevRecloutEntry *RecloutEntry
@@ -2313,6 +2308,8 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		} else {
 			// We do a simliar sanity-check as above, but in this case we don't need to
 			// reset the creator mappings.
+			deltaBuyerNanos := transactorBalanceEntry.BalanceNanos - operationData.PrevTransactorBalanceEntry.BalanceNanos
+			deltaCoinsInCirculation := existingProfileEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
 			if deltaBuyerNanos != deltaCoinsInCirculation {
 				return fmt.Errorf("_disconnectCreatorCoin: The creator coin nanos "+
 					"the buyer/creator received (%v) does not equal the "+
@@ -2833,24 +2830,9 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	}
 	txMeta := currentTxn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 
-	// Revert the Db to the previous authorize entry from utxoOps
-	authEntry := utxoOpsForTxn[operationIndex].AuthEntry
-	senderPKID := PublicKeyToPKID(currentTxn.PublicKey)
-	derivedPKID := PublicKeyToPKID(txMeta.DerivedPublicKey)
-	err := DBPutDerivedKeyMapping(bav.Handle, senderPKID, derivedPKID, authEntry)
-	if err != nil {
-		return errors.Wrapf(err, "_disconnectAuthorizeDerivedKey: Trying to revert " +
-			"error setting prevExpirationBlock:")
-	}
-
 	// Set the old derived key mapping in utxoView
-	derivedKeyEntry := DerivedKeyEntry{
-		currentTxn.PublicKey,
-		txMeta.DerivedPublicKey,
-		authEntry.ExpirationBlock,
-		authEntry.OperationType,
-	}
-	bav._setDerivedKeyMappings(currentTxn.PublicKey, txMeta.DerivedPublicKey, &derivedKeyEntry)
+	derivedKeyEntry := utxoOpsForTxn[operationIndex].PrevDerivedKeyEntry
+	bav._setDerivedKeyMappings(currentTxn.PublicKey, txMeta.DerivedPublicKey, derivedKeyEntry)
 
 	// Now revert the basic transfer with the remaining operations. Cut off
 	// the authorizeDerivedKey operation at the end since we just reverted it.
@@ -3049,12 +3031,12 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		return errors.Wrapf(err, "_verifySignature: Problem parsing signature: ")
 	}
 
-	// We check for public key solution iter for this transaction. This
+	// We check for public key solution iteration for this transaction. This
 	// allows us to recover public key from the signature.
-	// If the transaction was signed with the owner key, iter is equal to 0.
-	// If the transaction was signed with a derived key, iter is between 1-4.
-	iter := sigByte - DERControlByte
-	if iter == 0 {
+	// If the transaction was signed with the owner key, iteration is equal to 0.
+	// If the transaction was signed with a derived key, iteration is between 1-4.
+	iteration := sigByte - DERControlByte
+	if iteration == 0 {
 		// Convert the txn public key into a *btcec.PublicKey
 		txnPk, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
 		if err != nil {
@@ -3065,49 +3047,26 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 			return nil
 		}
 	} else {
-		// Subtract 1 from iter because iteration should be between 0-3.
-		iter = iter - 1
+		// Subtract 1 from iteration as it should be between 0-3.
+		iteration = iteration - 1
 
 		// Recover public key from the signature
-		sigCompact := SignatureSerializeCompactWithIter(sig, int(iter), false)
-		derivedPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), sigCompact, txHash[:])
+		sigCompact := SignatureSerializeCompactWithIter(sig, int(iteration), false)
+		derivedPk, _, err := btcec.RecoverCompact(btcec.S256(), sigCompact, txHash[:])
 		if err != nil {
-			return errors.Wrapf(err, "_verifySignature: Problem recovering public key ")
+			return errors.Wrapf(err, "_verifySignature: Problem recovering public key: ")
 		}
 
-		// Get owner PKID
-		ownerPKID := PublicKeyToPKID(txn.PublicKey)
-		// Get derived PKID
-		derivedPKID := PublicKeyToPKID(derivedPublicKey.SerializeCompressed())
+		ownerPublicKey := txn.PublicKey
+		derivedPublicKey := derivedPk.SerializeCompressed()
 
-		// We check if there's an entry in UtxoView that authorizes this derived key
-		if entryMap, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID]; ok {
-			if entry, ok := entryMap[*derivedPKID]; ok {
-				// Check if the key hasn't been revoked
-				if entry != nil {
-					if entry.OperationType == AuthorizeDerivedKeyOperationValid && entry.ExpirationBlock > uint64(blockHeight) {
-						return nil
-						// I'm almost certain this is redundant since we've already recovered the public key.
-						//if sig.Verify(txHash[:], derivedPublicKey) {
-						//	return nil
-						//}
-					} else if entry.OperationType == AuthorizeDerivedKeyOperationInValid {
-						// If the owner de-authorized a key in this block, we want to immediately prevent any
-						// transactions signed with the derived key. So we return and skip Db check.
-						return RuleErrorInvalidTransactionSignature
-					}
-				}
+		// Look for a derived key entry and check if it's valid.
+		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
+		if derivedKeyEntry != nil {
+			if derivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationValid && derivedKeyEntry.ExpirationBlock > uint64(blockHeight) {
+				// Key is valid and non-expired.
+				return nil
 			}
-		}
-
-		// We check if the derived key exists in DB and hasn't expired.
-		authEntry := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
-		if authEntry.OperationType == AuthorizeDerivedKeyOperationValid && authEntry.ExpirationBlock > uint64(blockHeight){
-			return nil
-			// I'm almost certain this is redundant since we already recovered the public key.
-			//if sig.Verify(txHash[:], derivedPublicKey) {
-			//	return nil
-			//}
 		}
 	}
 
@@ -4358,11 +4317,18 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 	ownerPKID := PublicKeyToPKID(ownerPublicKey)
 	derivedPKID := PublicKeyToPKID(derivedPublicKey)
 
-	// Check if the entry exists
+	// Check if the entry exists in utxoView
 	if entryMap, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID]; ok {
 		if entry, ok := entryMap[*derivedPKID]; ok {
 			return entry
 		}
+	}
+
+	// Check if the entry exists in the Db
+	entry := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
+	if entry != nil {
+		bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, entry)
+		return entry
 	}
 	return nil
 }
@@ -4370,7 +4336,6 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 // _setDerivedKeyMappings sets a derived key mapping in the utxoView
 func (bav *UtxoView) _setDerivedKeyMappings(ownerPublicKey []byte, derivedPublicKey []byte,
 	derivedKeyEntry *DerivedKeyEntry) {
-
 	// Add a mapping for the derived key.
 	ownerPKID := PublicKeyToPKID(ownerPublicKey)
 	derivedPKID := PublicKeyToPKID(derivedPublicKey)
@@ -6865,6 +6830,8 @@ func (bav *UtxoView) _connectSwapIdentity(
 }
 
 // _verifyAccessSignature verifies if the accessSignature is valid.
+// Valid AccessSignature is the signed hash of (derivedPublicKey + expirationBlock)
+// made with the ownerPublicKey. Signature is in the DER format.
 func _verifyAccessSignature(
 	ownerPublicKey []byte, derivedPublicKey []byte,
 	expirationBlock uint64, accessSignature []byte) (bool, error) {
@@ -6931,42 +6898,30 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		return 0, 0, nil, errors.Wrap(RuleErrorInvalidFromPublicKey, err.Error())
 	}
 
-	// Verify that the access signature is valid
+	// Verify that the access signature is valid. This means the derived key is authorized.
 	valid, err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
 		txMeta.ExpirationBlock, txMeta.AccessSignature)
 	if !valid || err != nil {
 		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeySignatureIsNotValid, err.Error())
 	}
 
-	// We make sure that the key hasn't been deleted in the past.
-	// If the derivedKey has been deleted in the past we return.
-	// Get owner PKID
-	ownerPKID := PublicKeyToPKID(ownerPublicKey)
-	// Get derived PKID
-	derivedPKID := PublicKeyToPKID(derivedPublicKey)
-	// Get previous authorize entry from the Db. This is helpful when disconnecting.
-	prevAuthEntry := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
-	if prevAuthEntry.OperationType == AuthorizeDerivedKeyOperationInValid {
+	// Get current (previous) derived key entry. We might revert to it later so we copy it.
+	prevDerivedKeyEntry := &(*bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey))
+
+	// We make sure that the key hasn't been invalidated in the past.
+	// If it's the case, we return.
+	if prevDerivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationInValid {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: key has already been deleted")
 	}
-	// Get current (previous) derived key entry.
-	// We might revert to it later so we copy it.
-	var prevDerivedKeyEntryCopy *DerivedKeyEntry
-	prevDerivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
-	if prevDerivedKeyEntry != nil {
-		prevDerivedKeyEntryCopy = &(*prevDerivedKeyEntry)
-		if prevDerivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationInValid {
-			return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: key has already been deleted")
-		}
-	}
 
-	// As we verified the signature and concluded derived key
-	// is authorized to sign on behalf of the owner, we add
-	// derived key mapping to utxoView. We temporarily set the
-	// OperationType to Valid so we pass signature verification.
+	// At this point we've verified the access signature, which means the derived key is
+	// authorized to sign on behalf of the owner. We now add derived key to utxoView with
+	// OperationType set to Valid so we pass txn signature verification in _connectBasicTransfer.
+	ownerPKID := PublicKeyToPKID(ownerPublicKey)
+	derivedPKID := PublicKeyToPKID(derivedPublicKey)
 	derivedKeyEntry := DerivedKeyEntry {
-		ownerPublicKey,
-		derivedPublicKey,
+		ownerPKID,
+		derivedPKID,
 		txMeta.ExpirationBlock,
 		AuthorizeDerivedKeyOperationValid,
 	}
@@ -6976,20 +6931,19 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
-		// Since we've failed, we revert the utxoView mapping.
-		bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, prevDerivedKeyEntryCopy)
+		// Since we've failed, we revert the utxoView mapping to what it was previously.
+		bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, prevDerivedKeyEntry)
 		return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: ")
 	}
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
-		// Since we've failed, we revert the utxoView mapping.
-		bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, prevDerivedKeyEntryCopy)
+		// Since we've failed, we revert the utxoView mapping to what it was previously.
+		bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, prevDerivedKeyEntry)
 		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput
 	}
 
-	// Now we update OperationType to what it should be
-	// and set the derived key mapping.
+	// Now we update OperationType to what it's supposed to be.
 	derivedKeyEntry.OperationType = txMeta.OperationType
 	bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, &derivedKeyEntry)
 
@@ -7001,8 +6955,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 
 	// Add an operation to the list at the end indicating we've authorized a derived key.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:      OperationTypeAuthorizeDerivedKey,
-		AuthEntry: prevAuthEntry,
+		Type:                OperationTypeAuthorizeDerivedKey,
+		PrevDerivedKeyEntry: prevDerivedKeyEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -9860,13 +9814,9 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	// Go through all entries in the PKIDToDerivedKeyEntry map and add them to the Db.
 	for _, derivedKeyEntryOwner := range bav.PKIDToDerivedKeyEntry {
 		for _, derivedKeyEntry := range derivedKeyEntryOwner {
-			authEntry := &AuthorizeEntry{
-				ExpirationBlock: derivedKeyEntry.ExpirationBlock,
-				OperationType:   derivedKeyEntry.OperationType,
-			}
 			// In this case we add the mapping to the db
-			if err := DBPutDerivedKeyMappingWithTxn(txn, PublicKeyToPKID(derivedKeyEntry.OwnerPublicKey),
-				PublicKeyToPKID(derivedKeyEntry.DerivedPublicKey), authEntry); err != nil {
+			if err := DBPutDerivedKeyMappingWithTxn(txn, derivedKeyEntry.OwnerPKID,
+				derivedKeyEntry.DerivedPKID, derivedKeyEntry); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 					"Problem putting DerivedKeyEntry %v to db", *derivedKeyEntry)
 			}

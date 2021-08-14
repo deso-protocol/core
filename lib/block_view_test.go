@@ -19260,9 +19260,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		if mempool == nil {
 			senderPKID := PublicKeyToPKID(senderPkBytes)
 			derivedPKID := PublicKeyToPKID(derivedPublicKey)
-			authEntry := DBGetOwnerToDerivedKeyMapping(db, senderPKID, derivedPKID)
-			assert.Equal(authEntry.ExpirationBlock, expirationBlockExpected)
-			assert.Equal(authEntry.OperationType, operationTypeExpected)
+			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, senderPKID, derivedPKID)
+			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
+			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
 		} else {
 			utxoView, err := mempool.GetAugmentedUniversalView()
 			require.NoError(err)

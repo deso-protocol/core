@@ -4508,7 +4508,7 @@ func DBGetNFTBidEntriesPaginated(
 
 // ======================================================================================
 // Authorize derived key functions
-//  	<prefix, owner pub key [33]byte, derived pub key [33]byte> -> <AuthorizeEntry>
+//  	<prefix, owner pub key [33]byte, derived pub key [33]byte> -> <DerivedKeyEntry>
 // ======================================================================================
 
 func _dbKeyForOwnerToDerivedKeyMapping(
@@ -4529,7 +4529,7 @@ func _dbSeekPrefixForDerivedKeyMappings(
 }
 
 func DBPutDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID, authEntry *AuthorizeEntry) error {
+	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID, derivedKeyEntry *DerivedKeyEntry) error {
 
 	if len(ownerPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Follower PKID "+
@@ -4542,48 +4542,48 @@ func DBPutDerivedKeyMappingWithTxn(
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
 
-	authEntryBuffer := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(authEntryBuffer).Encode(authEntry)
-	return txn.Set(key, authEntryBuffer.Bytes())
+	derivedKeyEntryBuffer := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(derivedKeyEntryBuffer).Encode(derivedKeyEntry)
+	return txn.Set(key, derivedKeyEntryBuffer.Bytes())
 }
 
 func DBPutDerivedKeyMapping(
-	handle *badger.DB, ownerPKID *PKID, derivedPKID *PKID, authEntry *AuthorizeEntry) error {
+	handle *badger.DB, ownerPKID *PKID, derivedPKID *PKID, derivedKeyEntry *DerivedKeyEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID, authEntry)
+		return DBPutDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID, derivedKeyEntry)
 	})
 }
 
 func DBGetOwnerToDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) *AuthorizeEntry {
+	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) *DerivedKeyEntry {
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
-	authEntryItem, err := txn.Get(key)
+	derivedKeyEntryItem, err := txn.Get(key)
 	if err != nil {
-		return &AuthorizeEntry{0, AuthorizeDerivedKeyOperationValid}
+		return &DerivedKeyEntry{ownerPKID, derivedPKID, 0, AuthorizeDerivedKeyOperationValid}
 	}
-	authEntryBytes, err := authEntryItem.ValueCopy(nil)
+	derivedKeyEntryBytes, err := derivedKeyEntryItem.ValueCopy(nil)
 	if err != nil {
-		return &AuthorizeEntry{0, AuthorizeDerivedKeyOperationValid}
+		return &DerivedKeyEntry{ownerPKID, derivedPKID, 0, AuthorizeDerivedKeyOperationValid}
 	}
-	authEntry := &AuthorizeEntry{}
-	err = authEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(authEntryBytes)).Decode(authEntry)
+	derivedKeyEntry := &DerivedKeyEntry{}
+	err = derivedKeyEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(derivedKeyEntryBytes)).Decode(derivedKeyEntry)
 	})
 
-	return authEntry
+	return derivedKeyEntry
 }
 
 func DBGetOwnerToDerivedKeyMapping(
-	db *badger.DB, ownerPKID *PKID, derivedPKID *PKID) *AuthorizeEntry {
+	db *badger.DB, ownerPKID *PKID, derivedPKID *PKID) *DerivedKeyEntry {
 
-	var authEntry *AuthorizeEntry
+	var derivedKeyEntry *DerivedKeyEntry
 	db.View(func(txn *badger.Txn) error {
-		authEntry = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
+		derivedKeyEntry = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
 		return nil
 	})
-	return authEntry
+	return derivedKeyEntry
 }
 
 func DBDeleteDerivedKeyMappingWithTxn(
@@ -4593,9 +4593,9 @@ func DBDeleteDerivedKeyMappingWithTxn(
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
-	authEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
+	derivedKeyEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
 		txn, ownerPKID, derivedPKID)
-	if authEntry.ExpirationBlock == 0 && authEntry.OperationType == AuthorizeDerivedKeyOperationValid {
+	if derivedKeyEntry.ExpirationBlock == 0 && derivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationValid {
 		return nil
 	}
 

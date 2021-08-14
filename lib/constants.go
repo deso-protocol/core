@@ -1058,7 +1058,18 @@ const (
 )
 
 // Signature control byte constants.
+// We use a custom signature encoding which allows us to support derived keys.
+// Standard BitClout transaction signatures are stored in a DER format:
+// 0x30 <length of whole message> <0x02> <length of R> <R> 0x2 <length of S> <S>.
+// The first byte, 0x30, is called the DER control byte.
+// For transactions signed with a derived key, we use a different control byte ranging
+// from 0x31 to 0x34. This encodes a public key iteration. The iteration allows us to
+// recover the derived public key from the signature. This way we don't need to transmit
+// the derived key every time we want to sign a transaction on behalf of the owner.
+// More information can be found in section 4.1.6 of SEC 1 Ver 2.0, page 47-48 (53 and 54 in the pdf).
 const (
+	// Note that 0x30 is 48 in base 10
 	DERControlByte = 48
+	// Note that 0x34 is 52 in base 10
 	SIGMaxByte = 52
 )

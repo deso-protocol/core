@@ -4286,8 +4286,8 @@ type AuthorizeDerivedKeyMetadata struct {
 	// OperationType determines if transaction validates or invalidates derived key
 	OperationType AuthorizeDerivedKeyOperationType
 
-	// AccessSignature is the public key owner's DER signature of the
-	// hash of (DerivedPublicKey + ExpirationBlock)
+	// AccessSignature is the signed hash of (derivedPublicKey + expirationBlock)
+	// made with the ownerPublicKey. Signature is in the DER format.
 	AccessSignature []byte
 }
 
