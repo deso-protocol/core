@@ -4,6 +4,13 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"math"
+	"math/big"
+	"runtime/debug"
+	"sort"
+	"strings"
+	"time"
+
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
@@ -12,12 +19,6 @@ import (
 	merkletree "github.com/laser/go-merkle-tree"
 	"github.com/pkg/errors"
 	"github.com/sasha-s/go-deadlock"
-	"math"
-	"math/big"
-	"runtime/debug"
-	"sort"
-	"strings"
-	"time"
 )
 
 // blockchain.go is the work-horse for validating BitClout blocks and updating the
@@ -1571,13 +1572,6 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 
 	// See if a node for the block exists in our node index.
 	nodeToValidate, nodeExists := bc.blockIndex[*blockHash]
-	// If the node exists and it has its block status set to StatusBlockProcessed, then it
-	// means this block has already been successfully processed before. Return
-	// an error in this case so we don't redundantly reprocess it.
-	if nodeExists && (nodeToValidate.Status&StatusBlockProcessed) != 0 {
-		glog.Debugf("ProcessBlock: Node exists with StatusBlockProcessed (%v)", nodeToValidate)
-		return false, false, RuleErrorDuplicateBlock
-	}
 	// If no node exists for this block at all, then process the header
 	// first before we do anything. This should create a node and set
 	// the header validation status for it.
@@ -3281,6 +3275,88 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
+	SenderPublicKey []byte,
+	DiamondPostHash *BlockHash,
+	DiamondLevel int64,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _spendAmount uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	if err != nil {
+		return nil, 0, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
+				"Problem creating new utxo view: ")
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
+					"Problem getting augmented UtxoView from mempool: ")
+		}
+	}
+
+	// Get the post that we are trying to diamond so that we have the receiver public key.
+	diamondPostEntry := utxoView.GetPostEntryForPostHash(DiamondPostHash)
+	if diamondPostEntry == nil || diamondPostEntry.isDeleted {
+		return nil, 0, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateBasicTransferTxnWithDiamonds: " +
+				"Problem getting post entry for post hash")
+	}
+
+	blockHeight := bc.blockTip().Height + 1
+	bitcloutToTransferNanos, _, err := utxoView.ValidateDiamondsAndGetNumBitCloutNanos(
+		SenderPublicKey, diamondPostEntry.PosterPublicKey, DiamondPostHash, DiamondLevel, blockHeight)
+	if err != nil {
+		return nil, 0, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateBasicTransferTxnWithDiamonds: Problem getting bitclout nanos: ")
+	}
+
+	// Build the basic transfer txn.
+	txn := &MsgBitCloutTxn{
+		PublicKey: SenderPublicKey,
+		TxnMeta:   &BasicTransferMetadata{},
+		TxOutputs: []*BitCloutOutput{
+			{
+				PublicKey:   diamondPostEntry.PosterPublicKey,
+				AmountNanos: bitcloutToTransferNanos,
+			},
+		},
+		// TxInputs and TxOutputs will be set below.
+		// This function does not compute a signature.
+	}
+
+	// Make a map for the diamond extra data and add it.
+	diamondsExtraData := make(map[string][]byte)
+	diamondsExtraData[DiamondLevelKey] = IntToBuf(DiamondLevel)
+	diamondsExtraData[DiamondPostHashKey] = DiamondPostHash[:]
+	txn.ExtraData = diamondsExtraData
+
+	// We don't need to make any tweaks to the amount because it's basically
+	// a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, 0, errors.Wrapf(
+			err, "CreateBasicTransferTxnWithDiamonds: Problem adding inputs: ")
+	}
+	_ = spendAmount
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, 0, fmt.Errorf(
+			"CreateBasicTransferTxnWithDiamonds: CreatorCoinTransfer txn must have at" +
+				" least one input but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, spendAmount, changeAmount, fees, nil
+}
+
 func (bc *Blockchain) CreateMaxSpend(
 	senderPkBytes []byte, recipientPkBytes []byte, minFeeRateNanosPerKB uint64,
 	mempool *BitCloutMempool) (
@@ -3292,10 +3368,12 @@ func (bc *Blockchain) CreateMaxSpend(
 		// Set a single output with the maximum possible size to ensure we don't
 		// underestimate the fee. Note it must be a max size output because outputs
 		// are encoded as uvarints.
-		TxOutputs: []*BitCloutOutput{&BitCloutOutput{
-			PublicKey:   recipientPkBytes,
-			AmountNanos: math.MaxUint64,
-		}},
+		TxOutputs: []*BitCloutOutput{
+			{
+				PublicKey:   recipientPkBytes,
+				AmountNanos: math.MaxUint64,
+			},
+		},
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
 	}
