@@ -132,7 +132,7 @@ func ComputeKeysFromSeedWithNet(seedBytes []byte, index uint32, isTestnet bool) 
 // https://github.com/btcsuite/btcd/blob/f5a1fb9/btcec/signature.go#L383
 func SignatureSerializeCompactWithIter(sig *btcec.Signature, iter int, isCompressedKey bool) []byte {
 	result := make([]byte, 1, 2 * (btcec.S256().BitSize / 8) + 1)
-	result[0] = 27 + byte(iter)
+	result[0] = CompactControlByte + byte(iter)
 	if isCompressedKey {
 		result[0] += 4
 	}
