@@ -4556,16 +4556,19 @@ func DBPutDerivedKeyMapping(
 }
 
 func DBGetOwnerToDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) *DerivedKeyEntry {
+	txn *badger.Txn, ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
+
+	ownerPKID := PublicKeyToPKID(ownerPublicKey)
+	derivedPKID := PublicKeyToPKID(derivedPublicKey)
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
 	derivedKeyEntryItem, err := txn.Get(key)
 	if err != nil {
-		return &DerivedKeyEntry{ownerPKID, derivedPKID, 0, AuthorizeDerivedKeyOperationValid}
+		return &DerivedKeyEntry{ownerPublicKey, derivedPublicKey, 0, AuthorizeDerivedKeyOperationValid}
 	}
 	derivedKeyEntryBytes, err := derivedKeyEntryItem.ValueCopy(nil)
 	if err != nil {
-		return &DerivedKeyEntry{ownerPKID, derivedPKID, 0, AuthorizeDerivedKeyOperationValid}
+		return &DerivedKeyEntry{ownerPublicKey, derivedPublicKey, 0, AuthorizeDerivedKeyOperationValid}
 	}
 	derivedKeyEntry := &DerivedKeyEntry{}
 	err = derivedKeyEntryItem.Value(func(valBytes []byte) error {
@@ -4576,28 +4579,31 @@ func DBGetOwnerToDerivedKeyMappingWithTxn(
 }
 
 func DBGetOwnerToDerivedKeyMapping(
-	db *badger.DB, ownerPKID *PKID, derivedPKID *PKID) *DerivedKeyEntry {
+	db *badger.DB, ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
 
 	var derivedKeyEntry *DerivedKeyEntry
 	db.View(func(txn *badger.Txn) error {
-		derivedKeyEntry = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
+		derivedKeyEntry = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
 		return nil
 	})
 	return derivedKeyEntry
 }
 
 func DBDeleteDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID) error {
+	txn *badger.Txn, ownerPublicKey []byte, derivedPublicKey []byte) error {
 	// We could call DBDeleteDerivedKeyMappingWithTxn whenever a key
 	// has expired. This way we would only store active keys in the db.
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
 	derivedKeyEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
-		txn, ownerPKID, derivedPKID)
+		txn, ownerPublicKey, derivedPublicKey)
 	if derivedKeyEntry.ExpirationBlock == 0 && derivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationValid {
 		return nil
 	}
+
+	ownerPKID := PublicKeyToPKID(ownerPublicKey)
+	derivedPKID := PublicKeyToPKID(derivedPublicKey)
 
 	// When a mapping exists, delete it.
 	if err := txn.Delete(_dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)); err != nil {
@@ -4610,28 +4616,30 @@ func DBDeleteDerivedKeyMappingWithTxn(
 }
 
 func DBDeleteDerivedKeyMapping(
-	handle *badger.DB, ownerPKID *PKID, derivedPKID *PKID) error {
+	handle *badger.DB, ownerPublicKey []byte, derivedPublicKey []byte) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID)
+		return DBDeleteDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
 	})
 }
 
-func DBGetDerivedPKIDsForOwner(handle *badger.DB, ownerPKID *PKID) (
-	_pkids []*PKID, _err error) {
+func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey []byte) (
+	_entries []*DerivedKeyEntry, _err error) {
 
+	ownerPKID := PublicKeyToPKID(ownerPublicKey)
 	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPKID)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefix)
 
-	derivedPKIDs := []*PKID{}
-	for _, keyBytes := range keysFound {
-		// We must slice off the first byte and followerPKID to get the followedPKID.
-		derivedPKIDBytes := keyBytes[1+btcec.PubKeyBytesLenCompressed:]
-		derivedPKID := &PKID{}
-		copy(derivedPKID[:], derivedPKIDBytes)
-		derivedPKIDs = append(derivedPKIDs, derivedPKID)
+	var derivedEntries []*DerivedKeyEntry
+	for _, keyBytes := range valsFound {
+		derivedKeyEntry := &DerivedKeyEntry{}
+		err := gob.NewDecoder(bytes.NewReader(keyBytes)).Decode(derivedKeyEntry)
+		if err != nil {
+			return nil, err
+		}
+		derivedEntries = append(derivedEntries, derivedKeyEntry)
 	}
 
-	return derivedPKIDs, nil
+	return derivedEntries, nil
 }
 
 // ======================================================================================

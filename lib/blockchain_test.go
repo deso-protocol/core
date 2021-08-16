@@ -753,8 +753,10 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg str
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
-	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	txnSignatureBytes, err := txn.SignToBytes(privKey, true)
+	txnBytes, err := txn.ToBytes(true /*preSignature*/)
+	require.NoError(err)
+	privateKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	txnSignatureBytes, err := SignTransactionWithDerivedKey(txnBytes, privateKey)
 	require.NoError(err)
 
 	txn.Signature = txnSignatureBytes

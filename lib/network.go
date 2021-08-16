@@ -2619,16 +2619,13 @@ func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, er
 	return txnSignature, nil
 }
 
-func (msg *MsgBitCloutTxn) SignToBytes(privKey *btcec.PrivateKey, isDerivedKey bool) ([]byte, error) {
-	// Serialize the transaction without the signature portion.
-	txnBytes, err := msg.ToBytes(true /*preSignature*/)
-	if err != nil {
-		return nil, err
-	}
+// SignTransactionWithDerivedKey the signature contains solution iteration,
+// which allows us to recover signer public key from the signature.
+func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, error){
 	// Compute a hash of the transaction bytes without the signature
 	// portion and sign it with the passed private key.
 	txnSignatureHash := Sha256DoubleHash(txnBytes)
-	txnSignature, err := privKey.Sign(txnSignatureHash[:])
+	txnSignature, err := privateKey.Sign(txnSignatureHash[:])
 	if err != nil {
 		return nil, err
 	}
@@ -2636,21 +2633,19 @@ func (msg *MsgBitCloutTxn) SignToBytes(privKey *btcec.PrivateKey, isDerivedKey b
 	// If we're signing with a derived key, we will encode recovery byte into
 	// the signature.
 	txnSignatureBytes := txnSignature.Serialize()
-	if isDerivedKey {
-		txnSignatureCompact, err := btcec.SignCompact(btcec.S256(), privKey, txnSignatureHash[:], false)
-		if err != nil {
-			return nil, err
-		}
-
-		// Get the public key solution based on btcsuite/btcd RecoverCompact method.
-		// Iteration is between 1-4.
-		iteration := 1 + int((txnSignatureCompact[0] - CompactControlByte) & ^byte(4))
-
-		// Encode the public key solution in the first byte of the signature.
-		// Normally DER signatures start with 0x30 or 48 in base-10. We set
-		// the first byte to 0x30 + 0x1-4 depending on the solution.
-		txnSignatureBytes[0] = byte(DERControlByte + iteration)
+	txnSignatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, txnSignatureHash[:], false)
+	if err != nil {
+		return nil, err
 	}
+
+	// Get the public key solution based on btcsuite/btcd RecoverCompact method.
+	// Iteration is between 1-4.
+	iteration := 1 + int((txnSignatureCompact[0] - CompactControlByte) & ^byte(4))
+
+	// Encode the public key solution in the first byte of the signature.
+	// Normally DER signatures start with 0x30 or 48 in base-10. We set
+	// the first byte to 0x30 + 0x1-4 depending on the solution.
+	txnSignatureBytes[0] = byte(DERControlByte + iteration)
 
 	return txnSignatureBytes, nil
 }

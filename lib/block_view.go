@@ -258,11 +258,11 @@ type NFTBidEntry struct {
 }
 
 type DerivedKeyEntry struct {
-	// Owner PKID
-	OwnerPKID   *PKID
+	// Owner public key
+	OwnerPublicKey   []byte
 
-	// Derived PKID
-	DerivedPKID *PKID
+	// Derived public key
+	DerivedPublicKey []byte
 
 	// Expiration Block
 	ExpirationBlock  uint64
@@ -2884,15 +2884,13 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	derivedKeyEntry := utxoOpsForTxn[operationIndex].PrevDerivedKeyEntry
 
 	// Sanity check public keys.
-	ownerPKID := PublicKeyToPKID(currentTxn.PublicKey)
-	derivedPKID := PublicKeyToPKID(txMeta.DerivedPublicKey)
-	if !reflect.DeepEqual(ownerPKID, derivedKeyEntry.OwnerPKID) {
+	if !reflect.DeepEqual(currentTxn.PublicKey, derivedKeyEntry.OwnerPublicKey) {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey: Owner public key in txn "+
-			"differs from that in previous derivedKeyEntry (%v %v)", ownerPKID, derivedKeyEntry.OwnerPKID)
+			"differs from that in previous derivedKeyEntry (%v %v)", currentTxn.PublicKey, derivedKeyEntry.OwnerPublicKey)
 	}
-	if !reflect.DeepEqual(derivedPKID, derivedKeyEntry.DerivedPKID) {
+	if !reflect.DeepEqual(txMeta.DerivedPublicKey, derivedKeyEntry.DerivedPublicKey) {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey: Derived public key in txn "+
-			"differs from that in existing derivedKeyEntry (%v %v)", derivedPKID, derivedKeyEntry.DerivedPKID)
+			"differs from that in existing derivedKeyEntry (%v %v)", txMeta.DerivedPublicKey, derivedKeyEntry.DerivedPublicKey)
 	}
 
 	// Revert derivedKeyEntry in utxoView.
@@ -4488,12 +4486,43 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 	}
 
 	// Check if the entry exists in the Db
-	entry := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPKID, derivedPKID)
+	entry := DBGetOwnerToDerivedKeyMapping(bav.Handle, ownerPublicKey, derivedPublicKey)
 	if entry != nil {
 		bav._setDerivedKeyMappings(ownerPublicKey, derivedPublicKey, entry)
 		return entry
 	}
 	return nil
+}
+
+// GetAllDerivedKeyMappingsForOwner fetches all derived key mappings belonging to an owner.
+func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
+	map[PKID]*DerivedKeyEntry, error) {
+	// Get PKID for owner and derived keys
+	ownerPKID := PublicKeyToPKID(ownerPublicKey)
+
+	derivedKeyMappings := make(map[PKID]*DerivedKeyEntry)
+
+	// Check for entries in utxoView.
+	if viewMappings, ok := bav.PKIDToDerivedKeyEntry[*ownerPKID]; ok {
+		derivedKeyMappings = viewMappings
+	}
+
+	// Check for entries in DB.
+	dbMappings, err := DBGetAllOwnerToDerivedKeyMappings(bav.Handle, ownerPublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAllDerivedKeyMappingsForOwner: problem looking up" +
+			"entries in the DB.")
+	}
+
+	// Add entries from the DB that aren't already present.
+	for _, entry := range dbMappings {
+		derivedPKID := PublicKeyToPKID(entry.DerivedPublicKey)
+		if _, ok := derivedKeyMappings[*derivedPKID]; !ok {
+			derivedKeyMappings[*derivedPKID] = entry
+		}
+	}
+
+	return derivedKeyMappings, nil
 }
 
 // _setDerivedKeyMappings sets a derived key mapping in the utxoView
@@ -7085,11 +7114,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// At this point we've verified the access signature, which means the derived key is
 	// authorized to sign on behalf of the owner. We now add derived key to utxoView with
 	// OperationType set to Valid so we pass txn signature verification in _connectBasicTransfer.
-	ownerPKID := PublicKeyToPKID(ownerPublicKey)
-	derivedPKID := PublicKeyToPKID(derivedPublicKey)
 	derivedKeyEntry := DerivedKeyEntry {
-		ownerPKID,
-		derivedPKID,
+		ownerPublicKey,
+		derivedPublicKey,
 		txMeta.ExpirationBlock,
 		AuthorizeDerivedKeyOperationValid,
 	}
@@ -10036,8 +10063,10 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	for _, derivedKeyEntryOwner := range bav.PKIDToDerivedKeyEntry {
 		for _, derivedKeyEntry := range derivedKeyEntryOwner {
 			// In this case we add the mapping to the db
-			if err := DBPutDerivedKeyMappingWithTxn(txn, derivedKeyEntry.OwnerPKID,
-				derivedKeyEntry.DerivedPKID, derivedKeyEntry); err != nil {
+			ownerPKID := PublicKeyToPKID(derivedKeyEntry.OwnerPublicKey)
+			derivedPKID := PublicKeyToPKID(derivedKeyEntry.DerivedPublicKey)
+			if err := DBPutDerivedKeyMappingWithTxn(txn, ownerPKID,
+				derivedPKID, derivedKeyEntry); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 					"Problem putting DerivedKeyEntry %v to db", *derivedKeyEntry)
 			}

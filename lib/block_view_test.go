@@ -19470,9 +19470,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *BitCloutMempool) {
 		// Verify that expiration block was persisted in the db or is in mempool utxoView
 		if mempool == nil {
-			senderPKID := PublicKeyToPKID(senderPkBytes)
-			derivedPKID := PublicKeyToPKID(derivedPublicKey)
-			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, senderPKID, derivedPKID)
+			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, senderPkBytes, derivedPublicKey)
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
 		} else {
