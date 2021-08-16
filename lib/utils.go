@@ -123,14 +123,13 @@ func ComputeKeysFromSeedWithNet(seedBytes []byte, index uint32, isTestnet bool) 
 	return pubKey, privKey, btcDepositAddress, nil
 }
 
-
-// SignatureSerializeCompactWithIter turns a btcec.Signature on S256 into a compact encoding. The isCompressed
+// SignatureSerializeCompactWithIteration turns a btcec.Signature on S256 into a compact encoding. The isCompressed
 // parameter should be used if the given signature should reference a compressed public key or not.
 // If successful, the bytes of the compact signature will be returned in the format:
 // <(byte of 27+public key solution)+4 if compressed >< padded bytes for signature R><padded bytes for signature S>
 // where the R and S parameters are padded up to the bitlengh. Based on btcsuite/btcd implementation
 // https://github.com/btcsuite/btcd/blob/f5a1fb9/btcec/signature.go#L383
-func SignatureSerializeCompactWithIter(sig *btcec.Signature, iter int, isCompressedKey bool) []byte {
+func SignatureSerializeCompactWithIteration(sig *btcec.Signature, iter int, isCompressedKey bool) []byte {
 	result := make([]byte, 1, 2 * (btcec.S256().BitSize / 8) + 1)
 	result[0] = CompactControlByte + byte(iter)
 	if isCompressedKey {

@@ -1333,7 +1333,7 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 	// Determine operation type
 	var operationType AuthorizeDerivedKeyOperationType
 	if isDeleted {
-		operationType = AuthorizeDerivedKeyOperationInValid
+		operationType = AuthorizeDerivedKeyOperationNotValid
 	} else {
 		operationType = AuthorizeDerivedKeyOperationValid
 	}
@@ -1350,7 +1350,7 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *BitCloutParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
 	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
-	accessSignature []byte, isDeleted bool) (_utxoOps []*UtxoOperation,
+	accessSignature []byte, deleteKey bool) (_utxoOps []*UtxoOperation,
 	_txn *MsgBitCloutTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -1363,7 +1363,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		derivedPublicKey,
 		expirationBlock,
 		accessSignature,
-		isDeleted,
+		deleteKey,
 		feeRateNanosPerKB,
 		nil /*mempool*/)
 	if err != nil {
@@ -20020,7 +20020,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 		// Verify the expiration block in the db
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, AuthorizeDerivedKeyOperationInValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Passed connecting AuthorizeDerivedKey txn with isDeleted signed with an authorized private key.")
 	}
 	// Check basic transfer signed with new authorized derived key.
@@ -20033,7 +20033,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 
 		// Since this should fail, balance wouldn't change.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, AuthorizeDerivedKeyOperationInValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Failed basic transfer signed with de-authorized derived key.")
 	}
 	// Sanity check basic transfer signed by the owner key.
@@ -20049,7 +20049,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testTxns = append(testTxns, txn)
 
 		// Balance should change to 4
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationInValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Passed basic transfer signed with owner key.")
 	}
 	// Send an authorize transaction signed with a derived key.
@@ -20070,9 +20070,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			10,
 			authTxnMetaDeAuth.AccessSignature,
 			false)
-		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
 
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationInValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn with de-authorized private key.")
 	}
 	// Try disconnecting all transactions. Should succeed.
@@ -20109,7 +20109,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		// This will check the expiration block and balances according to the mempool augmented utxoView.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationInValid, mempool)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
 		fmt.Println("Passed connecting all txn to the mempool")
 	}
 	// Check adding basic transfer to mempool signed with new authorized derived key.
@@ -20120,7 +20120,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 
 		// Since this should fail, balance wouldn't change.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationInValid, mempool)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
 		fmt.Println("Failed basic transfer signed with de-authorized derived key in mempool.")
 	}
 	// Attempt re-authorizing a previously de-authorized derived key.
@@ -20141,9 +20141,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			10,
 			authTxnMetaDeAuth.AccessSignature,
 			false)
-		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
 
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationInValid, mempool)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn with de-authorized private key.")
 	}
 	// Mine a block so that mempool gets flushed to db
@@ -20163,7 +20163,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 
 		// Since this should fail, balance wouldn't change.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationInValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Failed basic transfer signed with de-authorized derived key.")
 	}
 	// Attempt re-authorizing a previously de-authorized derived key.
@@ -20184,9 +20184,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			10,
 			authTxnMetaDeAuth.AccessSignature,
 			false)
-		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
 
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationInValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn with de-authorized private key.")
 	}
 	// Sanity check basic transfer signed by the owner key.
@@ -20199,7 +20199,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 
 		// Balance should change to 4
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationInValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Passed basic transfer signed with owner key.")
 	}
 	// Roll back the blocks and make sure we don't hit any errors.

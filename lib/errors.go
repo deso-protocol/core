@@ -210,8 +210,14 @@ const (
 	RuleErrorCreatorCoinSellInsufficientCoins                          RuleError = "RuleErrorCreatorCoinSellInsufficientCoins"
 	RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked           RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked"
 	RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller              RuleError = "RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller"
-	RuleErrorAuthorizeDerivedKeySignatureIsNotValid                    RuleError = "RuleErrorAuthorizeDerivedKeySignatureIsNotValid"
-	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput                   RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
+
+	// Derived Keys
+	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
+	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput    RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
+	RuleErrorAuthorizeDerivedKeyExpiredDerivedPublicKey RuleError = "RuleErrorAuthorizeDerivedKeyExpired"
+	RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey RuleError = "RuleErrorAuthorizeDerivedKeyInvalidDerivedKey"
+	RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey RuleError = "RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey"
+	RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey   RuleError = "RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                   RuleError = "RuleErrorTooManyNFTCopies"

@@ -3213,33 +3213,30 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	derivedPublicKey []byte,
 	expirationBlock uint64,
 	accessSignature []byte,
-	isDeleted bool,
+	deleteKey bool,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Verify that the signature is valid.
-	valid, err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
+	err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
 		expirationBlock, accessSignature)
-	if !valid || err != nil {
-		if err == nil {
-			err = fmt.Errorf("not signed by the owner")
-		}
+	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature:")
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
 	}
 
 	// Check that the expiration block is valid.
 	blockHeight := bc.blockTip().Height + 1
 	if expirationBlock <= uint64(blockHeight) {
 		return nil, 0, 0, 0, fmt.Errorf(
-			"Blockchain.CreateAuthorizeDerivedKeyTxn: Expired access signature.")
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: Expired access signature")
 	}
 
 	// Get the appropriate operation type.
 	var operationType AuthorizeDerivedKeyOperationType
-	if isDeleted {
-		operationType = AuthorizeDerivedKeyOperationInValid
+	if deleteKey {
+		operationType = AuthorizeDerivedKeyOperationNotValid
 	} else {
 		operationType = AuthorizeDerivedKeyOperationValid
 	}

@@ -2616,7 +2616,6 @@ func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, er
 		return nil, err
 	}
 
-
 	return txnSignature, nil
 }
 
@@ -4271,8 +4270,8 @@ func (txnData *SwapIdentityMetadataa) New() BitCloutTxnMetadata {
 type AuthorizeDerivedKeyOperationType uint8
 
 const (
-	AuthorizeDerivedKeyOperationInValid AuthorizeDerivedKeyOperationType = 0
-	AuthorizeDerivedKeyOperationValid   AuthorizeDerivedKeyOperationType = 1
+	AuthorizeDerivedKeyOperationNotValid AuthorizeDerivedKeyOperationType = 0
+	AuthorizeDerivedKeyOperationValid    AuthorizeDerivedKeyOperationType = 1
 )
 
 type AuthorizeDerivedKeyMetadata struct {

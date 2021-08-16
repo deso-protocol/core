@@ -267,7 +267,7 @@ type DerivedKeyEntry struct {
 	// Expiration Block
 	ExpirationBlock  uint64
 
-	// Operation type determines if the derived key should be
+	// Operation type determines if the derived key is
 	// authorized or de-authorized.
 	OperationType    AuthorizeDerivedKeyOperationType
 }
@@ -2869,7 +2869,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	// Verify that the last operation is a AuthorizeDerivedKey operation
+	// Verify that the last operation is a AuthorizeDerivedKey operation.
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey: utxoOperations are missing")
 	}
@@ -2879,10 +2879,23 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 			"OperationTypeAuthorizeDerivedKey but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 
-	// Set the old derived key mapping in utxoView
+	txMeta := currentTxn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 	derivedKeyEntry := utxoOpsForTxn[operationIndex].PrevDerivedKeyEntry
+
+	// Sanity check public keys.
+	ownerPKID := PublicKeyToPKID(currentTxn.PublicKey)
+	derivedPKID := PublicKeyToPKID(txMeta.DerivedPublicKey)
+	if !reflect.DeepEqual(ownerPKID, derivedKeyEntry.OwnerPKID) {
+		return fmt.Errorf("_disconnectAuthorizeDerivedKey: Owner public key in txn "+
+			"differs from that in previous derivedKeyEntry (%v %v)", ownerPKID, derivedKeyEntry.OwnerPKID)
+	}
+	if !reflect.DeepEqual(derivedPKID, derivedKeyEntry.DerivedPKID) {
+		return fmt.Errorf("_disconnectAuthorizeDerivedKey: Derived public key in txn "+
+			"differs from that in existing derivedKeyEntry (%v %v)", derivedPKID, derivedKeyEntry.DerivedPKID)
+	}
+
+	// Revert derivedKeyEntry in utxoView.
 	bav._setDerivedKeyMappings(currentTxn.PublicKey, txMeta.DerivedPublicKey, derivedKeyEntry)
 
 	// Now revert the basic transfer with the remaining operations. Cut off
@@ -3102,7 +3115,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		iteration = iteration - 1
 
 		// Recover public key from the signature
-		sigCompact := SignatureSerializeCompactWithIter(sig, int(iteration), false)
+		sigCompact := SignatureSerializeCompactWithIteration(sig, int(iteration), false)
 		derivedPk, _, err := btcec.RecoverCompact(btcec.S256(), sigCompact, txHash[:])
 		if err != nil {
 			return errors.Wrapf(err, "_verifySignature: Problem recovering public key: ")
@@ -6980,11 +6993,11 @@ func (bav *UtxoView) _connectSwapIdentity(
 }
 
 // _verifyAccessSignature verifies if the accessSignature is valid.
-// Valid AccessSignature is the signed hash of (derivedPublicKey + expirationBlock)
-// made with the ownerPublicKey. Signature is in the DER format.
+// Valid accessSignature is the signed hash of (derivedPublicKey + expirationBlock)
+// in DER format, made with the ownerPublicKey.
 func _verifyAccessSignature(
 	ownerPublicKey []byte, derivedPublicKey []byte,
-	expirationBlock uint64, accessSignature []byte) (bool, error) {
+	expirationBlock uint64, accessSignature []byte) error {
 
 	// Compute a hash of derivedPublicKey+expirationBlock
 	expirationBlockByte := UintToBuf(expirationBlock)
@@ -6994,16 +7007,21 @@ func _verifyAccessSignature(
 	// Convert ownerPublicKey to *btcec.PublicKey
 	ownerPk, err := btcec.ParsePubKey(ownerPublicKey, btcec.S256())
 	if err != nil {
-		return false, errors.Wrapf(err, "_verifyAccessSignature: Problem parsing owner public key: ")
+		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing owner public key: ")
 	}
 
 	// Convert accessSignature to *btcec.Signature
 	signature, err := btcec.ParseDERSignature(accessSignature, btcec.S256())
 	if err != nil {
-		return false, errors.Wrapf(err, "_verifyAccessSignature: Problem parsing access signature: ")
+		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing access signature: ")
 	}
 
-	return signature.Verify(accessHash[:], ownerPk), nil
+	// Verify signature
+	if !signature.Verify(accessHash[:], ownerPk) {
+		return fmt.Errorf("_verifyAccessSignature: Invalid signature")
+	}
+
+	return nil
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(
@@ -7020,48 +7038,48 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 
 	// Validate the operation type
 	if txMeta.OperationType != AuthorizeDerivedKeyOperationValid &&
-		txMeta.OperationType != AuthorizeDerivedKeyOperationInValid {
+		txMeta.OperationType != AuthorizeDerivedKeyOperationNotValid {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: called with bad OperationType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
 
 	// Make sure transaction hasn't expired
 	if txMeta.ExpirationBlock <= uint64(blockHeight) {
-		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: expired derived key in txn")
+		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyExpiredDerivedPublicKey
 	}
 
 	// Validate the owner public key.
 	ownerPublicKey := txn.PublicKey
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorFromPublicKeyIsRequired
+		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey
 	}
 	if _, err := btcec.ParsePubKey(ownerPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(RuleErrorInvalidFromPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey, err.Error())
 	}
 
 	// Validate the derived public key
 	derivedPublicKey := txMeta.DerivedPublicKey
 	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorFromPublicKeyIsRequired
+		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey
 	}
 	if _, err := btcec.ParsePubKey(derivedPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(RuleErrorInvalidFromPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey, err.Error())
 	}
 
 	// Verify that the access signature is valid. This means the derived key is authorized.
-	valid, err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
+	err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
 		txMeta.ExpirationBlock, txMeta.AccessSignature)
-	if !valid || err != nil {
-		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeySignatureIsNotValid, err.Error())
+	if err != nil {
+		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 	}
 
 	// Get current (previous) derived key entry. We might revert to it later so we copy it.
 	prevDerivedKeyEntry := &(*bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey))
 
 	// We make sure that the key hasn't been invalidated in the past.
-	// If it's the case, we return.
-	if prevDerivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationInValid {
-		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: key has already been deleted")
+	// If that's the case, we return.
+	if prevDerivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationNotValid {
+		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey
 	}
 
 	// At this point we've verified the access signature, which means the derived key is
