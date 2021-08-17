@@ -3244,6 +3244,24 @@ type TransactionMetadata struct {
 	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
 }
 
+func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
+	key := DbTxindexTxIDKey(txID)
+	_, err := txn.Get(key)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+func DbCheckTxnExistence(handle *badger.DB, txID *BlockHash) bool {
+	var exists bool
+	handle.View(func(txn *badger.Txn) error {
+		exists = DBCheckTxnExistenceWithTxn(txn, txID)
+		return nil
+	})
+	return exists
+}
+
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
 	key := DbTxindexTxIDKey(txID)
 	valObj := TransactionMetadata{}
