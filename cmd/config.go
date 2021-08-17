@@ -128,6 +128,18 @@ func LoadConfig() *Config {
 	config.LogDBSummarySnapshots = viper.GetBool("log-db-summary-snapshots")
 	config.DatadogProfiler = viper.GetBool("datadog-profiler")
 
+	if testnet {
+		// TODO: Only apply these if the param exists
+		lib.BitCloutDiamondsBlockHeight = viper.GetUint32("bitclout-diamonds-block-height")
+		lib.BrokenNFTBidsFixBlockHeight = viper.GetUint32("broken-nft-bids-fix-block-height")
+		lib.UpdateProfileFixBlockHeight = viper.GetUint32("update-profile-fix-block-height")
+		lib.ParamUpdaterProfileUpdateFixBlockHeight = viper.GetUint32("param-updater-profile-fix-block-height")
+		lib.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = viper.GetUint32("buy-creator-coin-after-deleted-balance-fix-block-height")
+		lib.BitCloutFounderRewardBlockHeight = viper.GetUint32("founder-reward-block-height")
+		lib.SalomonFixBlockHeight = viper.GetUint32("salmon-fix-block-height")
+
+	}
+
 	return &config
 }
 

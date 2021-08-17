@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+	"github.com/bitclout/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -25,6 +27,7 @@ func init() {
 func Run(cmd *cobra.Command, args []string) {
 	// Parse the configuration (can use CLI flags, environment variables, or config file)
 	config := LoadConfig()
+	fmt.Printf("HERE IS THE CONFIG (%v )", lib.BitCloutDiamondsBlockHeight)
 
 	// Start the bitclout node
 	node := NewNode(config)
