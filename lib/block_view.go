@@ -3125,9 +3125,11 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		// Look for a derived key entry and check if it's valid.
 		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
 		if derivedKeyEntry != nil {
-			if derivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationValid && derivedKeyEntry.ExpirationBlock > uint64(blockHeight) {
-				// Key is valid and non-expired.
-				return nil
+			if reflect.DeepEqual(ownerPublicKey, derivedKeyEntry.OwnerPublicKey) && reflect.DeepEqual(derivedPublicKey, derivedKeyEntry.DerivedPublicKey) {
+				if derivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationValid && derivedKeyEntry.ExpirationBlock > uint64(blockHeight) {
+					// Key is valid and non-expired.
+					return nil
+				}
 			}
 		}
 	}
