@@ -712,7 +712,7 @@ func _giveBitCloutDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, param
 	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
 	require.NoError(t, err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params)
 	require.NoError(t, err)
 
 	txn, totalInputMake, spendAmount, changeAmountMake, feesMake, err := chain.CreateBasicTransferTxnWithDiamonds(
@@ -10323,7 +10323,7 @@ func TestCreatorCoinDiamondAfterBitCloutDiamondsBlockHeight(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		// Attempt to give two diamonds.
@@ -18802,7 +18802,7 @@ func TestBitCloutDiamondErrorCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(receiverPkBase58Check)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params)
 		require.NoError(err)
 
 		// Build the basic transfer txn.
