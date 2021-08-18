@@ -22,16 +22,14 @@ type Config struct {
 	AddSeeds            []string
 	TargetOutboundPeers uint32
 	StallTimeoutSeconds uint64
-	BitcoinConnectPeer  string
 
 	// Peer Restrictions
-	PrivateMode          bool
-	ReadOnlyMode         bool
-	DisableNetworking    bool
-	IgnoreInboundInvs    bool
-	IgnoreUnminedBitcoin bool
-	MaxInboundPeers      uint32
-	OneInboundPerIp      bool
+	PrivateMode       bool
+	ReadOnlyMode      bool
+	DisableNetworking bool
+	IgnoreInboundInvs bool
+	MaxInboundPeers   uint32
+	OneInboundPerIp   bool
 
 	// Mining
 	MinerPublicKeys  []string
@@ -91,14 +89,12 @@ func LoadConfig() *Config {
 	config.AddSeeds = viper.GetStringSlice("add-seeds")
 	config.TargetOutboundPeers = viper.GetUint32("target-outbound-peers")
 	config.StallTimeoutSeconds = viper.GetUint64("stall-timeout-seconds")
-	config.BitcoinConnectPeer = viper.GetString("bitcoin-connect-peer")
 
 	// Peer Restrictions
 	config.PrivateMode = viper.GetBool("private-mode")
 	config.ReadOnlyMode = viper.GetBool("read-only-mode")
 	config.DisableNetworking = viper.GetBool("disable-networking")
 	config.IgnoreInboundInvs = viper.GetBool("ignore-inbound-invs")
-	config.IgnoreUnminedBitcoin = viper.GetBool("ignore-unmined-bitcoin")
 	config.MaxInboundPeers = viper.GetUint32("max-inbound-peers")
 	config.OneInboundPerIp = viper.GetBool("one-inbound-per-ip")
 
@@ -162,10 +158,6 @@ func (config *Config) Print() {
 
 	if config.IgnoreInboundInvs {
 		glog.Infof("IGNORING INBOUND INVS")
-	}
-
-	if config.IgnoreUnminedBitcoin {
-		glog.Infof("IGNORING UNMINED BITCOIN")
 	}
 
 	glog.Infof("Max Inbound Peers: %d", config.MaxInboundPeers)
