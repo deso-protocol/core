@@ -3218,10 +3218,14 @@ func GetBitCloutNanosForDiamondLevelAtBlockHeight(
 	bitcloutNanosMap := GetBitCloutNanosDiamondLevelMapAtBlockHeight(blockHeight)
 	bitcloutNanosForLevel, levelExists := bitcloutNanosMap[diamondLevel]
 	if !levelExists {
-		// If a non-existent level is requested, return zero
-		glog.Errorf("GetBitCloutNanosForDiamondLevelAtBlockHeight: "+
-			"Diamond level %v does not exist in map %v; this should never happen",
-			diamondLevel, bitcloutNanosMap)
+		// We allow a special case for diamondLevel zero, in which case we
+		// know that the value should also be zero.
+		if diamondLevel != 0 {
+			// If a non-existent level is requested, return zero
+			glog.Errorf("GetBitCloutNanosForDiamondLevelAtBlockHeight: "+
+				"Diamond level %v does not exist in map %v; this should never happen",
+				diamondLevel, bitcloutNanosMap)
+		}
 		return 0
 	}
 
