@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"reflect"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -3336,7 +3337,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.bitcoinManager)
+	utxoView, err := NewUtxoView(bc.db, bc.params)
 	if err != nil {
 		return nil, 0, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
