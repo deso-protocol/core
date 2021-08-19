@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/bitclout/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -182,21 +181,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"level to 3 in all Go files whose names begin \"gopher\".")
 	cmd.PersistentFlags().Bool("log-db-summary-snapshots", false, "The node will log a snapshot of all DB keys every 30s.")
 	cmd.PersistentFlags().Bool("datadog-profiler", false, "Enable the DataDog profiler for performance testing")
-
-	// Block heights
-	cmd.PersistentFlags().Uint64("bitclout-diamonds-block-height", uint64(lib.BitCloutDiamondsBlockHeight),
-		"Block height at which diamonds will be given in CLOUT rather than in creator coin.")
-	cmd.PersistentFlags().Uint64("broken-nft-bids-fix-block-height", uint64(lib.BrokenNFTBidsFixBlockHeight),
-		"Block height at which the bitclout balance index takes effect for accepting NFT bids.")
-	cmd.PersistentFlags().Uint64("update-profile-fix-block-height", uint64(lib.UpdateProfileFixBlockHeight),
-		"Block height at which a patch was added to prevent user from updating the profile entry for arbitrary public keys that do not have existing profile entries.")
-	cmd.PersistentFlags().Uint64("param-updater-profile-fix-block-height", uint64(lib.ParamUpdaterProfileUpdateFixBlockHeight), "Block height for bitclout diamonds update")
-	cmd.PersistentFlags().Uint64("buy-creator-coin-after-deleted-balance-fix-block-height", uint64(lib.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight),
-		"Block height after which the protocol will create a new BalanceEntry when a user purchases a Creator Coin and their current BalanceEntry is deleted.")
-	cmd.PersistentFlags().Uint64("founder-reward-block-height", uint64(lib.BitCloutFounderRewardBlockHeight),
-		"Block height where the protocol switches from paying the founder reward in the founder's own creator coin to paying in BitClout instead.")
-	cmd.PersistentFlags().Uint64("salmon-fix-block-height", uint64(lib.SalomonFixBlockHeight), "Block height for salmon fix")
-	cmd.PersistentFlags().Uint64("deflation-bomb-block-height", lib.BitCloutTestnetParams.DeflationBombBlockHeight, "Block height for bitclout deflation bomb")
 
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)

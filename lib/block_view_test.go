@@ -3171,8 +3171,6 @@ const (
 
 func TestUpdateProfile(t *testing.T) {
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
-	ParamUpdaterProfileUpdateFixBlockHeight = 0
-	UpdateProfileFixBlockHeight = 0
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3183,6 +3181,8 @@ func TestUpdateProfile(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ParamUpdaterProfileUpdateFixBlockHeight = 0
+	params.UpdateProfileFixBlockHeight = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -9722,12 +9722,6 @@ func _helpTestCreatorCoinBuySell(
 	bitCloutFounderReward bool) {
 
 	// These are block heights where bitclout forked.
-	SalomonFixBlockHeight = 0
-	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
-	BitCloutFounderRewardBlockHeight = 0
-	if !bitCloutFounderReward {
-		BitCloutFounderRewardBlockHeight = 1e9
-	}
 
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -9741,6 +9735,13 @@ func _helpTestCreatorCoinBuySell(
 
 	// Create a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.SalomonFixBlockHeight = 0
+	params.BitCloutDiamondsBlockHeight = 5000
+	params.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
+	params.BitCloutFounderRewardBlockHeight = 0
+	if !bitCloutFounderReward {
+		params.BitCloutFounderRewardBlockHeight = 1e9
+	}
 
 	// Give paramUpdater some mony
 	_, _, _ = _doBasicTransferWithViewFlush(
@@ -10594,7 +10595,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 
 	// Create a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-
+	params.BitCloutDiamondsBlockHeight = 5000
 	// Give paramUpdater some mony
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, moneyPkString, paramUpdaterPub,
@@ -10905,7 +10906,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel)
+		require.Contains(err.Error(), RuleErrorCreatorCoinTransferInsufficientCoins)
 	}
 	// You can't apply the same number of Diamonds to a post twice
 	{
@@ -10975,8 +10976,6 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 }
 
 func TestCreatorCoinDiamondAfterBitCloutDiamondsBlockHeight(t *testing.T) {
-	// Set the BitCloutDiamondsBlockHeight so that it is immediately hit.
-	BitCloutDiamondsBlockHeight = uint32(0)
 
 	// Set up a blockchain.
 	assert := assert.New(t)
@@ -10987,6 +10986,9 @@ func TestCreatorCoinDiamondAfterBitCloutDiamondsBlockHeight(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
+
+	// Set the BitCloutDiamondsBlockHeight so that it is immediately hit.
+	params.BitCloutDiamondsBlockHeight = uint32(0)
 
 	// Create a paramUpdater for this test.
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -15720,7 +15722,6 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 }
 
 func TestNFTBasic(t *testing.T) {
-	BrokenNFTBidsFixBlockHeight = uint32(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -15732,6 +15733,8 @@ func TestNFTBasic(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+
+	params.BrokenNFTBidsFixBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -19296,7 +19299,6 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 }
 
 func TestBitCloutDiamonds(t *testing.T) {
-	BitCloutDiamondsBlockHeight = 0
 	diamondValueMap := GetBitCloutNanosDiamondLevelMapAtBlockHeight(0)
 
 	assert := assert.New(t)
@@ -19309,6 +19311,7 @@ func TestBitCloutDiamonds(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BitCloutDiamondsBlockHeight = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -19505,7 +19508,6 @@ func TestBitCloutDiamonds(t *testing.T) {
 }
 
 func TestBitCloutDiamondErrorCases(t *testing.T) {
-	BitCloutDiamondsBlockHeight = 0
 	diamondValueMap := GetBitCloutNanosDiamondLevelMapAtBlockHeight(0)
 
 	assert := assert.New(t)
@@ -19518,6 +19520,7 @@ func TestBitCloutDiamondErrorCases(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BitCloutDiamondsBlockHeight = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

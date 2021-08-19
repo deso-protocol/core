@@ -66,60 +66,6 @@ const (
 	CurrentHeaderVersion = HeaderVersion1
 )
 
-var (
-	// The block height at which various forks occurred including an
-	// explanation as to why they're necessary.
-
-	// SalomonFixBlockHeight defines a block height where the protocol implements
-	// two changes:
-	// 	(1) The protocol now prints founder reward for all buy transactions instead
-	//		of just when creators reach a new all time high.
-	//		This was decided in order to provide lasting incentive for creators
-	//		to utilize the protocol.
-	//	(2) A fix was created to deal with a bug accidentally triggered by @salomon.
-	//		After a series of buys and sells @salomon was left with a single creator coin
-	//		nano in circulation and a single BitClout nano locked. This caused a detach
-	//		between @salomon's bonding curve and others on the protocol. As more buys and sells
-	//		continued, @salomon's bonding curve continued to detach further and further from its peers.
-	// 		At its core, @salomon had too few creator coins in circulation. This fix introduces
-	//		this missing supply back into circulation as well as prevented detached Bancor bonding
-	//		curves from coming into existence.
-	//		^ It was later decided to leave Salomon's coin circulation alone. A fix was introduced
-	//		to prevent similar cases from occurring again, but @salomon is left alone.
-	SalomonFixBlockHeight = uint32(15270)
-
-	// BitCloutFounderRewardBlockHeight defines a block height where the protocol switches from
-	// paying the founder reward in the founder's own creator coin to paying in BitClout instead.
-	BitCloutFounderRewardBlockHeight = uint32(21869)
-
-	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight defines a block height after which the protocol will create
-	// a new BalanceEntry when a user purchases a Creator Coin and their current BalanceEntry is deleted.
-	// The situation in which a BalanceEntry reaches a deleted state occurs when a user transfers all their holdings
-	// of a certain creator to another public key and subsequently purchases that same creator within the same block.
-	// This resolves a bug in which users would purchase creator coins after transferring all holdings within the same
-	// block and then the creator coins would be added to a deleted balance.  When the Balance Entries are flushed to
-	// the database, the user would lose the creator coins they purchased.
-	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(39713)
-
-	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
-	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
-	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
-
-	// UpdateProfileFixBlockHeight defines the height at which a patch was added to prevent user from
-	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
-	UpdateProfileFixBlockHeight = uint32(46165)
-
-	// BrokenNFTBidsFixBlockHeight defines the height at which the bitclout balance index takes effect
-	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
-	// bitclout balance index, allowing bids to be submitted that were greater than the user's bitclout balance.
-	BrokenNFTBidsFixBlockHeight = uint32(46917)
-
-	// BitCloutDiamondsBlockHeight defines the height at which diamonds will be given in CLOUT
-	// rather than in creator coin.
-	// Triggers: 3pm PT on 8/16/2021
-	BitCloutDiamondsBlockHeight = uint32(52112)
-)
-
 func (nt NetworkType) String() string {
 	switch nt {
 	case NetworkType_UNSET:
@@ -436,8 +382,61 @@ type BitCloutParams struct {
 	// attack the bancor curve to any meaningful measure.
 	CreatorCoinAutoSellThresholdNanos uint64
 
+	// Global Block Heights:
+	// The block height at which various forks occurred including an
+	// explanation as to why they're necessary.
+
 	// The most deflationary event in BitClout history has yet to come...
 	DeflationBombBlockHeight uint64
+
+	// SalomonFixBlockHeight defines a block height where the protocol implements
+	// two changes:
+	// 	(1) The protocol now prints founder reward for all buy transactions instead
+	//		of just when creators reach a new all time high.
+	//		This was decided in order to provide lasting incentive for creators
+	//		to utilize the protocol.
+	//	(2) A fix was created to deal with a bug accidentally triggered by @salomon.
+	//		After a series of buys and sells @salomon was left with a single creator coin
+	//		nano in circulation and a single BitClout nano locked. This caused a detach
+	//		between @salomon's bonding curve and others on the protocol. As more buys and sells
+	//		continued, @salomon's bonding curve continued to detach further and further from its peers.
+	// 		At its core, @salomon had too few creator coins in circulation. This fix introduces
+	//		this missing supply back into circulation as well as prevented detached Bancor bonding
+	//		curves from coming into existence.
+	//		^ It was later decided to leave Salomon's coin circulation alone. A fix was introduced
+	//		to prevent similar cases from occurring again, but @salomon is left alone.
+	SalomonFixBlockHeight uint32
+
+	// BitCloutFounderRewardBlockHeight defines a block height where the protocol switches from
+	// paying the founder reward in the founder's own creator coin to paying in BitClout instead.
+	BitCloutFounderRewardBlockHeight uint32
+
+	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight defines a block height after which the protocol will create
+	// a new BalanceEntry when a user purchases a Creator Coin and their current BalanceEntry is deleted.
+	// The situation in which a BalanceEntry reaches a deleted state occurs when a user transfers all their holdings
+	// of a certain creator to another public key and subsequently purchases that same creator within the same block.
+	// This resolves a bug in which users would purchase creator coins after transferring all holdings within the same
+	// block and then the creator coins would be added to a deleted balance.  When the Balance Entries are flushed to
+	// the database, the user would lose the creator coins they purchased.
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight uint32
+
+	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
+	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
+	ParamUpdaterProfileUpdateFixBlockHeight uint32
+
+	// UpdateProfileFixBlockHeight defines the height at which a patch was added to prevent user from
+	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
+	UpdateProfileFixBlockHeight uint32
+
+	// BrokenNFTBidsFixBlockHeight defines the height at which the bitclout balance index takes effect
+	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
+	// bitclout balance index, allowing bids to be submitted that were greater than the user's bitclout balance.
+	BrokenNFTBidsFixBlockHeight uint32
+
+	// BitCloutDiamondsBlockHeight defines the height at which diamonds will be given in CLOUT
+	// rather than in creator coin.
+	// Triggers: 3pm PT on 8/16/2021
+	BitCloutDiamondsBlockHeight uint32
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
@@ -762,6 +761,13 @@ var BitCloutMainnetParams = BitCloutParams{
 
 	// Triggers approximately Saturday June 12th at 8pm PT
 	DeflationBombBlockHeight: 33783,
+	SalomonFixBlockHeight: uint32(15270),
+	BitCloutFounderRewardBlockHeight: uint32(21869),
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
+	ParamUpdaterProfileUpdateFixBlockHeight: uint32(39713),
+	UpdateProfileFixBlockHeight: uint32(46165),
+	BrokenNFTBidsFixBlockHeight: uint32(46917),
+	BitCloutDiamondsBlockHeight: uint32(52112),
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -981,7 +987,14 @@ var BitCloutTestnetParams = BitCloutParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
-	DeflationBombBlockHeight: 33783,
+	DeflationBombBlockHeight: 0,
+	SalomonFixBlockHeight: uint32(0),
+	BitCloutFounderRewardBlockHeight: uint32(0),
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
+	ParamUpdaterProfileUpdateFixBlockHeight: uint32(0),
+	UpdateProfileFixBlockHeight: uint32(0),
+	BrokenNFTBidsFixBlockHeight: uint32(0),
+	BitCloutDiamondsBlockHeight: uint32(0),
 }
 
 // GetDataDir gets the user data directory where we store files
