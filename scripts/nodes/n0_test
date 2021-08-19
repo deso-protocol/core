@@ -27,7 +27,7 @@ rm /tmp/main.*.log
   --protocol-port=18000 \
   --txindex \
   --num-mining-threads=1 \
-  --miner-public-keys=BC1YLg7Bk5sq9iNY17bAwoAYiChLYpmWEi6nY6q5gnA1UQV6xixHjfV \
+  --miner-public-keys=BC1YLjJ3FNgo1Q8NU9sEzK3B2obeuq9GvzYr1GnAJgpsVnYCuczcYBe \
   --block-producer-seed='essence camp ghost remove document vault ladder swim pupil index apart ring' \
   --starter-bitclout-seed='road congress client market couple bid risk escape artwork rookie artwork food' \
   --data-dir=/tmp/n0_test \
