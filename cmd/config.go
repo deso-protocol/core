@@ -128,16 +128,16 @@ func LoadConfig() *Config {
 	config.LogDBSummarySnapshots = viper.GetBool("log-db-summary-snapshots")
 	config.DatadogProfiler = viper.GetBool("datadog-profiler")
 
+	// If in testnet mode, set global block heights based on params.
 	if testnet {
-		// TODO: Only apply these if the param exists
-		lib.BitCloutDiamondsBlockHeight = viper.GetUint32("bitclout-diamonds-block-height")
-		lib.BrokenNFTBidsFixBlockHeight = viper.GetUint32("broken-nft-bids-fix-block-height")
-		lib.UpdateProfileFixBlockHeight = viper.GetUint32("update-profile-fix-block-height")
-		lib.ParamUpdaterProfileUpdateFixBlockHeight = viper.GetUint32("param-updater-profile-fix-block-height")
-		lib.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = viper.GetUint32("buy-creator-coin-after-deleted-balance-fix-block-height")
-		lib.BitCloutFounderRewardBlockHeight = viper.GetUint32("founder-reward-block-height")
-		lib.SalomonFixBlockHeight = viper.GetUint32("salmon-fix-block-height")
-
+		lib.BitCloutDiamondsBlockHeight = uint32(viper.GetUint64("bitclout-diamonds-block-height"))
+		lib.BrokenNFTBidsFixBlockHeight = uint32(viper.GetUint64("broken-nft-bids-fix-block-height"))
+		lib.UpdateProfileFixBlockHeight = uint32(viper.GetUint64("update-profile-fix-block-height"))
+		lib.ParamUpdaterProfileUpdateFixBlockHeight = uint32(viper.GetUint64("param-updater-profile-fix-block-height"))
+		lib.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(viper.GetUint64("buy-creator-coin-after-deleted-balance-fix-block-height"))
+		lib.BitCloutFounderRewardBlockHeight = uint32(viper.GetUint64("founder-reward-block-height"))
+		lib.SalomonFixBlockHeight = uint32(viper.GetUint64("salmon-fix-block-height"))
+		lib.BitCloutTestnetParams.DeflationBombBlockHeight = viper.GetUint64("deflation-bomb-block-height")
 	}
 
 	return &config

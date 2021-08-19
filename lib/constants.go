@@ -980,6 +980,8 @@ var BitCloutTestnetParams = BitCloutParams{
 	// It's just high enough where you avoid drifting creating coin
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
+
+	DeflationBombBlockHeight: 33783,
 }
 
 // GetDataDir gets the user data directory where we store files
