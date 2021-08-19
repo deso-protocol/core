@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/btcsuite/btcd/addrmgr"
 	"log"
 	"net"
 	"os"
@@ -52,7 +53,7 @@ func main() {
 	}
 
 	// Set up the to node as a peer
-	netAddrss, err := lib.IPToNetAddr(*flagNode, &lib.BitCloutMainnetParams)
+	netAddrss, err := lib.IPToNetAddr(*flagNode, addrmgr.New("", net.LookupIP), &lib.BitCloutMainnetParams)
 	if err != nil {
 		panic(err)
 	}
@@ -68,10 +69,8 @@ func main() {
 
 	messagesFromPeer := make(chan *lib.ServerMessage)
 	peer := lib.NewPeer(conn, true, netAddrss, true,
-		10000, false, "",
-		1000,
-		&lib.BitCloutMainnetParams, 17001, messagesFromPeer,
-		nil, nil)
+		10000, 0, &lib.BitCloutMainnetParams,
+		messagesFromPeer, nil, nil)
 	time.Sleep(1 * time.Second)
 	if err := peer.NegotiateVersion(lib.BitCloutMainnetParams.VersionNegotiationTimeout); err != nil {
 		panic(err)
