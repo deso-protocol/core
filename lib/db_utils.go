@@ -4530,35 +4530,35 @@ func DBGetNFTBidEntriesPaginated(
 // ======================================================================================
 
 func _dbKeyForOwnerToDerivedKeyMapping(
-	ownerPKID *PKID, derivedPKID *PKID) []byte {
+	ownerPublicKey []byte, derivedPublicKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
-	key := append(prefixCopy, ownerPKID[:]...)
-	key = append(key, derivedPKID[:]...)
+	key := append(prefixCopy, ownerPublicKey...)
+	key = append(key, derivedPublicKey...)
 	return key
 }
 
 func _dbSeekPrefixForDerivedKeyMappings(
-	ownerPKID *PKID) []byte {
+	ownerPublicKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
-	key := append(prefixCopy, ownerPKID[:]...)
+	key := append(prefixCopy, ownerPublicKey...)
 	return key
 }
 
 func DBPutDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, derivedPKID *PKID, derivedKeyEntry *DerivedKeyEntry) error {
+	txn *badger.Txn, ownerPublicKey []byte, derivedPublicKey []byte, derivedKeyEntry *DerivedKeyEntry) error {
 
-	if len(ownerPKID) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Follower PKID "+
-			"length %d != %d", len(ownerPKID), btcec.PubKeyBytesLenCompressed)
+	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Owner Public Key "+
+			"length %d != %d", len(ownerPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
-	if len(derivedPKID) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Followed PKID "+
-			"length %d != %d", len(derivedPKID), btcec.PubKeyBytesLenCompressed)
+	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Derived Public Key "+
+			"length %d != %d", len(derivedPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
+	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
 
 	derivedKeyEntryBuffer := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(derivedKeyEntryBuffer).Encode(derivedKeyEntry)
@@ -4566,20 +4566,17 @@ func DBPutDerivedKeyMappingWithTxn(
 }
 
 func DBPutDerivedKeyMapping(
-	handle *badger.DB, ownerPKID *PKID, derivedPKID *PKID, derivedKeyEntry *DerivedKeyEntry) error {
+	handle *badger.DB, ownerPublicKey []byte, derivedPublicKey []byte, derivedKeyEntry *DerivedKeyEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutDerivedKeyMappingWithTxn(txn, ownerPKID, derivedPKID, derivedKeyEntry)
+		return DBPutDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey, derivedKeyEntry)
 	})
 }
 
 func DBGetOwnerToDerivedKeyMappingWithTxn(
 	txn *badger.Txn, ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
 
-	ownerPKID := PublicKeyToPKID(ownerPublicKey)
-	derivedPKID := PublicKeyToPKID(derivedPublicKey)
-
-	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)
+	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
 	derivedKeyEntryItem, err := txn.Get(key)
 	if err != nil {
 		return &DerivedKeyEntry{ownerPublicKey, derivedPublicKey, 0, AuthorizeDerivedKeyOperationValid}
@@ -4620,14 +4617,11 @@ func DBDeleteDerivedKeyMappingWithTxn(
 		return nil
 	}
 
-	ownerPKID := PublicKeyToPKID(ownerPublicKey)
-	derivedPKID := PublicKeyToPKID(derivedPublicKey)
-
 	// When a mapping exists, delete it.
-	if err := txn.Delete(_dbKeyForOwnerToDerivedKeyMapping(ownerPKID, derivedPKID)); err != nil {
+	if err := txn.Delete(_dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)); err != nil {
 		return errors.Wrapf(err, "DBDeleteDerivedKeyMappingWithTxn: Deleting "+
-			"ownerPKID %s and derivedPKID %s failed",
-			PkToStringMainnet(ownerPKID[:]), PkToStringMainnet(derivedPKID[:]))
+			"ownerPublicKey %s and derivedPublicKey %s failed",
+			PkToStringMainnet(ownerPublicKey[:]), PkToStringMainnet(derivedPublicKey[:]))
 	}
 
 	return nil
@@ -4643,8 +4637,7 @@ func DBDeleteDerivedKeyMapping(
 func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey []byte) (
 	_entries []*DerivedKeyEntry, _err error) {
 
-	ownerPKID := PublicKeyToPKID(ownerPublicKey)
-	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPKID)
+	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPublicKey)
 	_, valsFound := _enumerateKeysForPrefix(handle, prefix)
 
 	var derivedEntries []*DerivedKeyEntry

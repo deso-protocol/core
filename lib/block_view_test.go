@@ -19500,7 +19500,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key")
@@ -19526,7 +19526,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			authTxnMeta.ExpirationBlock,
 			authTxnMeta.AccessSignature,
 			false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid,nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn signed with an unauthorized private key.")
@@ -19567,7 +19567,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key")
@@ -19641,7 +19641,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Fail basic transfer signed with random key.")
@@ -19677,7 +19677,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key after disconnecting")
@@ -19715,7 +19715,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Fail basic transfer signed with random key.")
@@ -19764,7 +19764,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, nil, mempool, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Fail basic transfer signed with random key with mempool.")
@@ -19783,7 +19783,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	{
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, nil, mempool, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key after disconnecting")
@@ -19856,7 +19856,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 4, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Fail basic transfer signed with random key.")
@@ -19913,7 +19913,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed a txn signed with an expired derived key.")
@@ -20028,7 +20028,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		// Since this should fail, balance wouldn't change.
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, AuthorizeDerivedKeyOperationNotValid, nil)
@@ -20115,7 +20115,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	{
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, nil, mempool, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		// Since this should fail, balance wouldn't change.
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
@@ -20158,7 +20158,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		// Since this should fail, balance wouldn't change.
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
