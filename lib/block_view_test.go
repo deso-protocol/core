@@ -18797,7 +18797,7 @@ func TestBitCloutDiamondErrorCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(receiverPkBase58Check)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params)
+		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 
 		// Build the basic transfer txn.
