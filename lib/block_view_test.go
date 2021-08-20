@@ -10318,7 +10318,7 @@ func TestCreatorCoinDiamondAfterBitCloutDiamondsBlockHeight(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params)
+		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 
 		// Attempt to give two diamonds.
