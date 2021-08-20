@@ -931,7 +931,7 @@ func (mp *BitCloutMempool) _quickCheckBitcoinExchangeTxn(
 	// Note that it is safe to use this because we expect that the blockchain
 	// lock is held for the duration of this function call so there shouldn't
 	// be any shifting of the db happening beneath our fee.
-	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params)
+	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres)
 	if err != nil {
 		return 0, errors.Wrapf(err,
 			"_helpConnectDepsAndFinalTxn: Problem initializing UtxoView")
@@ -2047,9 +2047,9 @@ func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *BitCloutMempool {
 
-	utxoView, _ := NewUtxoView(_bc.db, _bc.params)
-	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params)
-	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params)
+	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
 	newPool := &BitCloutMempool{
 		quit:                            make(chan struct{}),
 		bc:                              _bc,

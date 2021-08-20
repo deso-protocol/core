@@ -401,6 +401,7 @@ type OrphanBlock struct {
 
 type Blockchain struct {
 	db                              *badger.DB
+	postgres                        *Postgres
 	timeSource                      chainlib.MedianTimeSource
 	trustedBlockProducerPublicKeys  map[PkMapKey]bool
 	trustedBlockProducerStartHeight uint64
@@ -474,7 +475,15 @@ func (bc *Blockchain) CopyBestHeaderChain() ([]*BlockNode, map[BlockHash]*BlockN
 // proceeding to read from it.
 func (bc *Blockchain) _initChain() error {
 	// See if we have a best chain hash stored in the db.
-	bestBlockHash := DbGetBestHash(bc.db, ChainTypeBitCloutBlock)
+	var bestBlockHash *BlockHash
+	if bc.postgres != nil {
+		chain := bc.postgres.GetChain(MAIN_CHAIN)
+		if chain != nil {
+			bestBlockHash = chain.TipHash
+		}
+	} else {
+		bestBlockHash = DbGetBestHash(bc.db, ChainTypeBitCloutBlock)
+	}
 	// When we load up initially, the best header hash is just the tip of the best
 	// block chain, since we don't store headers for which we don't have corresponding
 	// blocks.
@@ -483,14 +492,20 @@ func (bc *Blockchain) _initChain() error {
 	// If there is no best chain hash in the db then it means we've never
 	// initialized anything so take the time to do it now.
 	if bestBlockHash == nil || bestHeaderHash == nil {
-		err := InitDbWithBitCloutGenesisBlock(bc.params, bc.db)
+		var err error
+
+		if bc.postgres != nil {
+			err = bc.postgres.InitGenesisBlock(bc.params, bc.db)
+		} else {
+			err = InitDbWithBitCloutGenesisBlock(bc.params, bc.db)
+		}
 		if err != nil {
 			return errors.Wrapf(err, "_initChain: Problem initializing db with genesis block")
 		}
 
 		// After initializing the db to contain only the genesis block,
 		// set the best hash we're aware of equal to it.
-		bestBlockHash = NewBlockHash(bc.params.GenesisBlockHashHex)
+		bestBlockHash = MustDecodeHexBlockHash(bc.params.GenesisBlockHashHex)
 		bestHeaderHash = bestBlockHash
 	}
 
@@ -505,14 +520,17 @@ func (bc *Blockchain) _initChain() error {
 	// reading blocks in height order as we do here ensures that we'll always
 	// add a block's parents, if they exist, before adding the block itself.
 	var err error
-	bc.blockIndex, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/)
+	if bc.postgres != nil {
+		bc.blockIndex, err = bc.postgres.GetBlockIndex()
+	} else {
+		bc.blockIndex, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/)
+	}
 	if err != nil {
 		return errors.Wrapf(err, "_initChain: Problem reading block index from db")
 	}
 
 	// At this point the blockIndex should contain a full node tree with all
 	// nodes pointing to valid parent nodes.
-
 	{
 		// Find the tip node with the best node hash.
 		tipNode := bc.blockIndex[*bestBlockHash]
@@ -559,28 +577,32 @@ func (bc *Blockchain) _initChain() error {
 // db, and one should never run two blockhain objects over the same db at the same
 // time as they will likely step on each other and become inconsistent.
 func NewBlockchain(
-	_trustedBlockProducerPublicKeyStrs []string,
-	_trustedBlockProducerStartHeight uint64,
-	_params *BitCloutParams, _timeSource chainlib.MedianTimeSource,
-	_db *badger.DB,
-	_server *Server) (*Blockchain, error) {
+	trustedBlockProducerPublicKeyStrs []string,
+	trustedBlockProducerStartHeight uint64,
+	params *BitCloutParams,
+	timeSource chainlib.MedianTimeSource,
+	db *badger.DB,
+	postgres *Postgres,
+	server *Server,
+) (*Blockchain, error) {
 
-	_trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
-	for _, keyStr := range _trustedBlockProducerPublicKeyStrs {
+	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
+	for _, keyStr := range trustedBlockProducerPublicKeyStrs {
 		pkBytes, _, err := Base58CheckDecode(keyStr)
 		if err != nil {
 			return nil, fmt.Errorf("Error decoding trusted block producer public key: %v", err)
 		}
-		_trustedBlockProducerPublicKeys[MakePkMapKey(pkBytes)] = true
+		trustedBlockProducerPublicKeys[MakePkMapKey(pkBytes)] = true
 	}
 
 	bc := &Blockchain{
-		db:                              _db,
-		timeSource:                      _timeSource,
-		trustedBlockProducerPublicKeys:  _trustedBlockProducerPublicKeys,
-		trustedBlockProducerStartHeight: _trustedBlockProducerStartHeight,
-		params:                          _params,
-		server:                          _server,
+		db:                              db,
+		postgres:                        postgres,
+		timeSource:                      timeSource,
+		trustedBlockProducerPublicKeys:  trustedBlockProducerPublicKeys,
+		trustedBlockProducerStartHeight: trustedBlockProducerStartHeight,
+		params:                          params,
+		server:                          server,
 
 		blockIndex:   make(map[BlockHash]*BlockNode),
 		bestChainMap: make(map[BlockHash]*BlockNode),
@@ -1204,6 +1226,8 @@ func (bc *Blockchain) MarkBlockInvalid(node *BlockNode, errOccurred RuleError) {
 	// not reprocessed.
 	glog.Error("MarkBlockInvalid: Not marking blocks invalid for now because it makes debugging easier")
 
+	//panic(errOccurred)
+
 	// Mark the node's block as invalid.
 	//node.Status |= StatusBlockValidateFailed
 	//
@@ -1745,9 +1769,17 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 	// it as invalid (which would be a bug but this behavior allows us to handle
 	// it more gracefully).
 	nodeToValidate.Status |= StatusBlockProcessed
-	if err := PutHeightHashToNodeInfo(nodeToValidate, bc.db, false /*bitcoinNodes*/); err != nil {
-		return false, false, errors.Wrapf(
-			err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo with StatusBlockProcessed")
+
+	if bc.postgres != nil {
+		if err := bc.postgres.UpsertBlock(nodeToValidate); err != nil {
+			return false, false, errors.Wrapf(err,
+				"ProcessBlock: Problem saving block with StatusBlockProcessed")
+		}
+	} else {
+		if err := PutHeightHashToNodeInfo(nodeToValidate, bc.db, false /*bitcoinNodes*/); err != nil {
+			return false, false, errors.Wrapf(
+				err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo with StatusBlockProcessed")
+		}
 	}
 
 	// Reject the block if any of the following apply to the parent:
@@ -1830,27 +1862,33 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 	// Try and store the block and its corresponding node info since it has passed
 	// basic validation.
 	nodeToValidate.Status |= StatusBlockStored
-	err = bc.db.Update(func(txn *badger.Txn) error {
-		// Store the new block in the db under the
-		//   <blockHash> -> <serialized block>
-		// index.
-		if err := PutBlockWithTxn(txn, bitcloutBlock); err != nil {
-			return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
-		}
 
-		// Store the new block's node in our node index in the db under the
-		//   <height uin32, blockhash BlockHash> -> <node info>
-		// index.
-		if err := PutHeightHashToNodeInfoWithTxn(txn, nodeToValidate, false /*bitcoinNodes*/); err != nil {
-			return errors.Wrapf(err,
-				"ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
+	if bc.postgres != nil {
+		if err = bc.postgres.UpsertBlock(nodeToValidate); err != nil {
+			err = errors.Wrapf(err, "ProcessBlock: Problem saving block with StatusBlockStored")
 		}
+	} else {
+		err = bc.db.Update(func(txn *badger.Txn) error {
+			// Store the new block in the db under the
+			//   <blockHash> -> <serialized block>
+			// index.
+			if err := PutBlockWithTxn(txn, bitcloutBlock); err != nil {
+				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
+			}
 
-		return nil
-	})
+			// Store the new block's node in our node index in the db under the
+			//   <height uin32, blockhash BlockHash> -> <node info>
+			// index.
+			if err := PutHeightHashToNodeInfoWithTxn(txn, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+				return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
+			}
+
+			return nil
+		})
+	}
+
 	if err != nil {
-		return false, false, errors.Wrapf(
-			err, "ProcessBlock: Problem storing block after basic validation")
+		return false, false, errors.Wrapf(err, "ProcessBlock: Problem storing block after basic validation")
 	}
 
 	// Now we try and add the block to the main block chain (note that it should
@@ -1861,6 +1899,7 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 
 	// See if the current tip is equal to the block's parent.
 	isMainChain := false
+
 	if *parentNode.Hash == *currentTip.Hash {
 		// Create a new UtxoView representing the current tip.
 		//
@@ -1869,18 +1908,26 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output.
-		utxoView, err := NewUtxoView(bc.db, bc.params)
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
 		}
-		// Verify that the utxo view is pointing to the current tip.
-		if *utxoView.TipHash != *currentTip.Hash {
-			return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
-				"not the current tip hash (%v)", *utxoView.TipHash, *currentTip)
+
+		// Preload the view with almost all of the data it will need to connect the block
+		err = utxoView.Preload(bitcloutBlock)
+		if err != nil {
+			glog.Errorf("ProcessBlock: Problem preloading the view: %v", err)
 		}
 
-		utxoOpsForBlock, err := utxoView.ConnectBlock(
-			bitcloutBlock, txHashes, verifySignatures)
+		// Verify that the utxo view is pointing to the current tip.
+		if *utxoView.TipHash != *currentTip.Hash {
+			//return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
+			//	"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
+			glog.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
+				"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
+		}
+
+		utxoOpsForBlock, err := utxoView.ConnectBlock(bitcloutBlock, txHashes, verifySignatures)
 		if err != nil {
 			if IsRuleError(err) {
 				// If we have a RuleError, mark the block as invalid before
@@ -1902,32 +1949,43 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 		// Now that we have a valid block that we know is connecting to the tip,
 		// update our data structures to actually make this connection. Do this
 		// in a transaction so that it is atomic.
-		err = bc.db.Update(func(txn *badger.Txn) error {
-			// This will update the node's status.
-			if err := PutHeightHashToNodeInfoWithTxn(txn, nodeToValidate, false /*bitcoinNodes*/); err != nil {
-				return errors.Wrapf(
-					err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
-			}
-
-			// Set the best node hash to this one. Note the header chain should already
-			// be fully aware of this block so we shouldn't update it here.
-			if err := PutBestHashWithTxn(txn, blockHash, ChainTypeBitCloutBlock); err != nil {
-				return err
+		if bc.postgres != nil {
+			if err = bc.postgres.UpsertBlockAndTransactions(nodeToValidate, bitcloutBlock); err != nil {
+				return false, false, errors.Wrapf(err, "ProcessBlock: Problem upserting block and transactions")
 			}
 
 			// Write the modified utxo set to the view.
-			if err := utxoView.FlushToDbWithTxn(txn); err != nil {
-				return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+			if err := utxoView.FlushToDb(); err != nil {
+				return false, false, errors.Wrapf(err, "ProcessBlock: Problem flushing view to db")
 			}
+		} else {
+			err = bc.db.Update(func(txn *badger.Txn) error {
+				// This will update the node's status.
+				if err := PutHeightHashToNodeInfoWithTxn(txn, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+					return errors.Wrapf(
+						err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
+				}
 
-			// Write the utxo operations for this block to the db so we can have the
-			// ability to roll it back in the future.
-			if err := PutUtxoOperationsForBlockWithTxn(txn, blockHash, utxoOpsForBlock); err != nil {
-				return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
-			}
+				// Set the best node hash to this one. Note the header chain should already
+				// be fully aware of this block so we shouldn't update it here.
+				if err := PutBestHashWithTxn(txn, blockHash, ChainTypeBitCloutBlock); err != nil {
+					return err
+				}
 
-			return nil
-		})
+				// Write the modified utxo set to the view.
+				if err := utxoView.FlushToDbWithTxn(txn); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+				}
+
+				// Write the utxo operations for this block to the db so we can have the
+				// ability to roll it back in the future.
+				if err := PutUtxoOperationsForBlockWithTxn(txn, blockHash, utxoOpsForBlock); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				}
+
+				return nil
+			})
+		}
 
 		if err != nil {
 			return false, false, errors.Wrapf(err, "ProcessBlock: Problem writing block info to db on simple add to tip")
@@ -2007,7 +2065,7 @@ func (bc *Blockchain) ProcessBlock(bitcloutBlock *MsgBitCloutBlock, verifySignat
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output
-		utxoView, err := NewUtxoView(bc.db, bc.params)
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "processblock: Problem initializing UtxoView in reorg")
 		}
@@ -2273,7 +2331,7 @@ func (bc *Blockchain) ValidateTransaction(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem Problem creating new utxo view: ")
 	}
@@ -2380,7 +2438,7 @@ func ComputeMerkleRoot(txns []*MsgBitCloutTxn) (_merkle *BlockHash, _txHashes []
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *BitCloutMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
-	utxoView, err := NewUtxoView(bc.db, bc.params)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem initializing UtxoView: ")
 	}
@@ -3064,7 +3122,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
@@ -3265,7 +3323,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
@@ -3341,7 +3399,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return nil, 0, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
@@ -3691,7 +3749,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// If the block is more than X% full, use the maximum between the min
 	// fee rate and the median fees of all the transactions in the block.
-	utxoView, err := NewUtxoView(bc.db, bc.params)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}

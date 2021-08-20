@@ -45,6 +45,8 @@ type BitCloutBlockProducer struct {
 
 	producerWaitGroup   sync.WaitGroup
 	stopProducerChannel chan struct{}
+
+	postgres *Postgres
 }
 
 type BlockTemplateStats struct {
@@ -62,19 +64,23 @@ type BlockTemplateStats struct {
 }
 
 func NewBitCloutBlockProducer(
-	_minBlockUpdateIntervalSeconds uint64, _maxBlockTemplatesToCache uint64,
-	_blockProducerSeed string,
-	_mempool *BitCloutMempool, _chain *Blockchain,
-	_params *BitCloutParams) (*BitCloutBlockProducer, error) {
+	minBlockUpdateIntervalSeconds uint64,
+	maxBlockTemplatesToCache uint64,
+	blockProducerSeed string,
+	mempool *BitCloutMempool,
+	chain *Blockchain,
+	params *BitCloutParams,
+	postgres *Postgres,
+) (*BitCloutBlockProducer, error) {
 
-	var _privKey *btcec.PrivateKey
-	if _blockProducerSeed != "" {
-		seedBytes, err := bip39.NewSeedWithErrorChecking(_blockProducerSeed, "")
+	var privKey *btcec.PrivateKey
+	if blockProducerSeed != "" {
+		seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
 		if err != nil {
 			return nil, fmt.Errorf("NewBitCloutBlockProducer: Error converting mnemonic: %+v", err)
 		}
 
-		_, _privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, _params)
+		_, privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, params)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"NewBitCloutBlockProducer: Error computing keys from seed: %+v", err)
@@ -82,15 +88,16 @@ func NewBitCloutBlockProducer(
 	}
 
 	return &BitCloutBlockProducer{
-		minBlockUpdateIntervalSeconds: _minBlockUpdateIntervalSeconds,
-		maxBlockTemplatesToCache:      _maxBlockTemplatesToCache,
-		blockProducerPrivateKey:       _privKey,
+		minBlockUpdateIntervalSeconds: minBlockUpdateIntervalSeconds,
+		maxBlockTemplatesToCache:      maxBlockTemplatesToCache,
+		blockProducerPrivateKey:       privKey,
 		recentBlockTemplatesProduced:  make(map[BlockHash]*MsgBitCloutBlock),
 
-		mempool:             _mempool,
-		chain:               _chain,
-		params:              _params,
+		mempool:             mempool,
+		chain:               chain,
+		params:              params,
 		stopProducerChannel: make(chan struct{}),
+		postgres:            postgres,
 	}, nil
 }
 
@@ -191,7 +198,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 		currentBlockSize := uint64(len(blockBytes) + MaxVarintLen64)
 
 		// Create a new view object.
-		utxoView, err := NewUtxoView(bitcloutBlockProducer.chain.db, bitcloutBlockProducer.params)
+		utxoView, err := NewUtxoView(bitcloutBlockProducer.chain.db, bitcloutBlockProducer.params, bitcloutBlockProducer.postgres)
 		if err != nil {
 			return nil, nil, nil, errors.Wrapf(err,
 				"BitCloutBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
@@ -276,7 +283,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 
 	// Compute the total fee the BlockProducer should get.
 	totalFeeNanos := uint64(0)
-	feesUtxoView, err := NewUtxoView(bitcloutBlockProducer.chain.db, bitcloutBlockProducer.params)
+	feesUtxoView, err := NewUtxoView(bitcloutBlockProducer.chain.db, bitcloutBlockProducer.params, bitcloutBlockProducer.postgres)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf(
 			"BitCloutBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)

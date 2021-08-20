@@ -144,7 +144,7 @@ func NewTestBlockchain() (*Blockchain, *BitCloutParams, *badger.DB) {
 	paramsCopy := BitCloutTestnetParams
 
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, &paramsCopy,
-		timesource, db, nil)
+		timesource, db, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func NewLowDifficultyBlockchainWithParams(params *BitCloutParams) (
 	// Temporarily modify the seed balances to make a specific public
 	// key have some BitClout
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0,
-		&paramsCopy, timesource, db, nil)
+		&paramsCopy, timesource, db, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *BitCloutParams, isSen
 		0, 1,
 		blockSignerSeed,
 		mempool, chain,
-		params)
+		params, nil)
 	require.NoError(err)
 
 	newMiner, err := NewBitCloutMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
@@ -264,7 +264,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *BitCloutMempool, pkSt
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
 
-	utxoView, err := NewUtxoView(chain.db, chain.params)
+	utxoView, err := NewUtxoView(chain.db, chain.params, nil)
 	require.NoError(t, err)
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
@@ -286,7 +286,7 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *BitCloutParams, pk
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoView, _ := NewUtxoView(db, params)
+	utxoView, _ := NewUtxoView(db, params, nil)
 
 	// Profile fields
 	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)

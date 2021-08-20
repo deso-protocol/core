@@ -15,6 +15,7 @@ type Config struct {
 	MempoolDumpDirectory string
 	TXIndex              bool
 	Regtest              bool
+	PostgresURI          string
 
 	// Peers
 	ConnectIPs          []string
@@ -82,6 +83,7 @@ func LoadConfig() *Config {
 	config.MempoolDumpDirectory = viper.GetString("mempool-dump-dir")
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
+	config.PostgresURI = viper.GetString("postgres-uri")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
@@ -134,6 +136,10 @@ func (config *Config) Print() {
 
 	if config.MempoolDumpDirectory != "" {
 		glog.Infof("Mempool Dump Directory: %s", config.MempoolDumpDirectory)
+	}
+
+	if config.PostgresURI != "" {
+		glog.Infof("Postgres URI: %s", config.PostgresURI)
 	}
 
 	if len(config.ConnectIPs) > 0 {
