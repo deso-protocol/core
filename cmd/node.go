@@ -4,29 +4,33 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/DataDog/datadog-go/statsd"
-	"github.com/bitclout/core/lib"
 	"net"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/DataDog/datadog-go/statsd"
+	"github.com/bitclout/core/lib"
+	"github.com/bitclout/core/migrate"
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
+	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/sasha-s/go-deadlock"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
 type Node struct {
-	Server  *lib.Server
-	chainDB *badger.DB
-	TXIndex *lib.TXIndex
-	Params  *lib.BitCloutParams
-	Config  *Config
+	Server   *lib.Server
+	chainDB  *badger.DB
+	TXIndex  *lib.TXIndex
+	Params   *lib.BitCloutParams
+	Config   *Config
+	Postgres *lib.Postgres
 }
 
 func NewNode(config *Config) *Node {
@@ -118,6 +122,32 @@ func (node *Node) Start() {
 		lib.StartDBSummarySnapshots(node.chainDB)
 	}
 
+	// Setup postgres using a remote URI
+	var db *pg.DB
+	if node.Config.PostgresURI != "" {
+		options, err := pg.ParseURL(node.Config.PostgresURI)
+		if err != nil {
+			panic(err)
+		}
+
+		db = pg.Connect(options)
+	}
+
+	if db != nil {
+		node.Postgres = lib.NewPostgres(db)
+
+		// LoadMigrations registers all the migration files in the migrate package.
+		// See LoadMigrations for more info.
+		migrate.LoadMigrations()
+
+		// Migrate the database after loading all the migrations. This is equivalent
+		// to running "go run migrate.go migrate". See migrate.go for a migrations CLI tool
+		err := migrations.Run(db, "migrate", []string{"", "migrate"})
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	// Setup the server
 	node.Server, err = lib.NewServer(
 		node.Params,
@@ -125,6 +155,7 @@ func (node *Node) Start() {
 		bitcloutAddrMgr,
 		node.Config.ConnectIPs,
 		node.chainDB,
+		node.Postgres,
 		node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers,
 		node.Config.MinerPublicKeys,
@@ -143,8 +174,6 @@ func (node *Node) Start() {
 		node.Config.DisableNetworking,
 		node.Config.ReadOnlyMode,
 		node.Config.IgnoreInboundInvs,
-		node.Config.BitcoinConnectPeer,
-		node.Config.IgnoreUnminedBitcoin,
 		statsdClient,
 		node.Config.BlockProducerSeed,
 		node.Config.TrustedBlockProducerPublicKeys,
@@ -158,7 +187,7 @@ func (node *Node) Start() {
 
 	// Setup TXIndex
 	if node.Config.TXIndex {
-		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Server.GetBitcoinManager(), node.Params, node.Config.DataDirectory)
+		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
 		if err != nil {
 			glog.Fatal(err)
 		}

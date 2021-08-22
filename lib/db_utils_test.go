@@ -181,7 +181,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
 	require.NoError(err)
 	require.Len(blockIndex, 1)
-	genesisHash := *NewBlockHash(BitCloutTestnetParams.GenesisBlockHashHex)
+	genesisHash := *MustDecodeHexBlockHash(BitCloutTestnetParams.GenesisBlockHashHex)
 	genesis, exists := blockIndex[genesisHash]
 	require.True(exists, "genesis block not found in index")
 	require.NotNil(genesis)

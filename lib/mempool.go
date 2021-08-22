@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"bytes"
 	"container/heap"
 	"container/list"
 	"encoding/hex"
@@ -22,8 +21,6 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/sasha-s/go-deadlock"
@@ -206,16 +203,11 @@ type BitCloutMempool struct {
 	// key has available to spend.
 	pubKeyToTxnMap map[PkMapKey]map[BlockHash]*MempoolTx
 
-	// BitcoinExchange transactions that contain Bitcoin transactions that have not
-	// yet been mined into a block, and therefore would fail a merkle root check.
-	unminedBitcoinTxns map[BlockHash]*MempoolTx
-
 	// The next time the unconnectTxn pool will be scanned for expired unconnectedTxns.
 	nextExpireScan time.Time
 
 	// Optional. When set, we use the BlockCypher API to detect double-spends.
-	blockCypherAPIKey               string
-	blockCypherCheckDoubleSpendChan chan *MsgBitCloutTxn
+	blockCypherAPIKey string
 
 	// These two views are used to check whether a transaction is valid before
 	// adding it to the mempool. This is done by applying the transaction to the
@@ -324,7 +316,6 @@ func (mp *BitCloutMempool) resetPool(newPool *BitCloutMempool) {
 	mp.pubKeyToTxnMap = newPool.pubKeyToTxnMap
 	mp.unconnectedTxns = newPool.unconnectedTxns
 	mp.unconnectedTxnsByPrev = newPool.unconnectedTxnsByPrev
-	mp.unminedBitcoinTxns = newPool.unminedBitcoinTxns
 	mp.nextExpireScan = newPool.nextExpireScan
 	mp.backupUniversalUtxoView = newPool.backupUniversalUtxoView
 	mp.universalUtxoView = newPool.universalUtxoView
@@ -868,27 +859,10 @@ func (mp *BitCloutMempool) addTransaction(
 	// to know her balance while factoring in mempool transactions.
 	mp._addMempoolTxToPubKeyOutputMap(mempoolTx)
 
-	if mp.blockCypherAPIKey != "" && tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange &&
-		IsUnminedBitcoinExchange(tx.TxnMeta.(*BitcoinExchangeMetadata)) &&
-		!IsForgivenBitcoinTransaction(tx) {
-
-		go func(txnToCheck *MsgBitCloutTxn) {
-			// Ten seconds is roughly how long it takes a Bitcoin transaction to fully
-			// propagate through the network. See post from Satoshi in this thread:
-			// https://bitcointalk.org/index.php?topic=423.20
-			time.Sleep(30 * time.Second)
-
-			// Adding the txn to this channel will trigger a double spend check.
-			mp.blockCypherCheckDoubleSpendChan <- txnToCheck
-		}(tx)
-	}
-
 	// Add it to the universal view. We assume the txn was already added to the
 	// backup view.
 	_, _, _, _, err = mp.universalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
-		false /*verifySignatures*/, false, /*checkMerkleProof*/
-		0,
-		false /*ignoreUtxos*/)
+		false /*verifySignatures*/, false /*ignoreUtxos*/)
 	if err != nil {
 		return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
 			"failed on universalUtxoView; this is a HUGE problem and should never happen")
@@ -897,9 +871,7 @@ func (mp *BitCloutMempool) addTransaction(
 	mp.universalTransactionList = append(mp.universalTransactionList, mempoolTx)
 	if updateBackupView {
 		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
-			false /*verifySignatures*/, false, /*checkMerkleProof*/
-			0,
-			false /*ignoreUtxos*/)
+			false /*verifySignatures*/, false /*ignoreUtxos*/)
 		if err != nil {
 			return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
 				"failed on backupUniversalUtxoView; this is a HUGE problem and should never happen")
@@ -959,7 +931,7 @@ func (mp *BitCloutMempool) _quickCheckBitcoinExchangeTxn(
 	// Note that it is safe to use this because we expect that the blockchain
 	// lock is held for the duration of this function call so there shouldn't
 	// be any shifting of the db happening beneath our fee.
-	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.bitcoinManager)
+	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres)
 	if err != nil {
 		return 0, errors.Wrapf(err,
 			"_helpConnectDepsAndFinalTxn: Problem initializing UtxoView")
@@ -977,9 +949,7 @@ func (mp *BitCloutMempool) _quickCheckBitcoinExchangeTxn(
 	// has the block corresponding to the transaction.
 	// We skip verifying txn size for bitcoin exchange transactions.
 	_, _, _, txFee, err := utxoView._connectTransaction(
-		tx, txHash, 0, bestHeight, false,
-		checkMerkleProof, /*checkMerkleProof*/
-		0, false /*ignoreUtxos*/)
+		tx, txHash, 0, bestHeight, false, false)
 	if err != nil {
 		// Note this can happen in odd cases where a transaction's dependency was removed
 		// but the transaction depending on it was not. See the comment on
@@ -990,192 +960,6 @@ func (mp *BitCloutMempool) _quickCheckBitcoinExchangeTxn(
 	}
 
 	return txFee, nil
-}
-
-func IsUnminedBitcoinExchange(txnMeta *BitcoinExchangeMetadata) bool {
-	zeroBlockHash := BlockHash{}
-	return *txnMeta.BitcoinMerkleRoot == zeroBlockHash
-}
-
-func (mp *BitCloutMempool) tryAcceptBitcoinExchangeTxn(tx *MsgBitCloutTxn) (
-	_missingParents []*BlockHash, _mempoolTx *MempoolTx, _err error) {
-
-	if IsNukedBitcoinTransaction(tx) {
-		nukeErr := fmt.Errorf("tryAcceptBitcoinExchangeTxn: BitcoinExchange txn %v is "+
-			"being rejected because it is in the nuked list", tx.Hash())
-		glog.Error(nukeErr)
-		return nil, nil, nukeErr
-	}
-
-	if tx.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange {
-		return nil, nil, fmt.Errorf(
-			"tryAcceptBitcoinExchangeTxn: Wrong txn type: %v", tx.TxnMeta.GetTxnType())
-	}
-
-	txMeta := tx.TxnMeta.(*BitcoinExchangeMetadata)
-
-	// Verify that the txn does not have any duplicate inputs.
-	//
-	// TODO: This is a monkey-patch to fix a case where a clearly flawed txn made it
-	// through our initial validation somehow.
-	type txHashAndIndex struct {
-		Hash  chainhash.Hash
-		Index uint32
-	}
-	txInputHashes := make(map[txHashAndIndex]bool)
-	for _, txIn := range txMeta.BitcoinTransaction.TxIn {
-		key := txHashAndIndex{
-			Hash:  txIn.PreviousOutPoint.Hash,
-			Index: txIn.PreviousOutPoint.Index,
-		}
-		if _, exists := txInputHashes[key]; exists {
-			txnBytes := bytes.Buffer{}
-			txMeta.BitcoinTransaction.SerializeNoWitness(&txnBytes)
-
-			// Return a detailed error so we can debug when this happends
-			return nil, nil, fmt.Errorf(
-				"tryAcceptBitcoinExchangeTxn: Error: BitcoinExchange txn "+
-					"has duplicate inputs PrevHash: %v PrevIndex: %v. BitClout "+
-					"hash: %v, Bitcoin hash: %v, Bitcoin txn hex: %v",
-				txIn.PreviousOutPoint.Hash,
-				txIn.PreviousOutPoint.Index,
-				tx.Hash(), txMeta.BitcoinTransaction.TxHash(),
-				hex.EncodeToString(txnBytes.Bytes()))
-		}
-
-		txInputHashes[key] = true
-	}
-
-	// Verify that the BitcoinExchange txn is not a dust transaction.
-	// TODO: Is 1,000 enough for the dust threshold?
-	dustOutputSatoshis := int64(1000)
-	for _, txOut := range txMeta.BitcoinTransaction.TxOut {
-		if txOut.Value < dustOutputSatoshis {
-			// Get the Bitcoin txn bytes
-			txnBytes := bytes.Buffer{}
-			txMeta.BitcoinTransaction.SerializeNoWitness(&txnBytes)
-
-			// Return a detailed error so we can debug when this happends
-			return nil, nil, fmt.Errorf(
-				"tryAcceptBitcoinExchangeTxn: Error: BitcoinExchange txn "+
-					"output value %v is below the dust threshold %v. BitClout "+
-					"hash: %v, Bitcoin hash: %v, Bitcoin txn hex: %v", txOut.Value,
-				dustOutputSatoshis, tx.Hash(), txMeta.BitcoinTransaction.TxHash(),
-				hex.EncodeToString(txnBytes.Bytes()))
-		}
-	}
-
-	txnBytes, err := tx.ToBytes(false)
-	if err != nil {
-		return nil, nil, fmt.Errorf(
-			"tryAcceptBitcoinExchangeTxn: Error serializing txn: %v", err)
-	}
-	txnSize := int64(len(txnBytes))
-	// If the transaction does not have a merkle proof then we are dealing with
-	// a BitcoinExchange transaction whose corresponding Bitcoin transaction
-	// has not yet been mined into a block.
-	bestHeight := uint32(mp.bc.blockTip().Height + 1)
-	if IsUnminedBitcoinExchange(txMeta) {
-		// Just do a vanilla check and a vanilla add using the backup view.
-		// Don't check merkle proofs yet.
-		bestHeight = uint32(mp.bc.blockTip().Height + 1)
-		_, _, _, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
-			tx, tx.Hash(), txnSize, bestHeight, false, /*verifySignatures*/
-			false, /*checkMerkleProof*/
-			0, false /*ignoreUtxos*/)
-		if err != nil {
-			// We need to rebuild the backup view since the _connectTransaction broke it.
-			mp.rebuildBackupView()
-			return nil, nil, errors.Wrapf(err, "tryAcceptBitcoinTransaction: Problem "+
-				"connecting transaction after connecting dependencies: ")
-		}
-
-		// At this point we have validated that the BitcoinExchange txn can be
-		// added to the mempool.
-
-		// Add to transaction pool. We don't need to update the backup view since the call
-		// above will have done this.
-		mempoolTx, err := mp.addTransaction(
-			tx, bestHeight, txFee, false /*updateBackupView*/)
-		if err != nil {
-			// We need to rebuild the backup view since the _connectTransaction broke it.
-			mp.rebuildBackupView()
-			return nil, nil, errors.Wrapf(err, "tryAcceptBitcoinExchangeTxn: ")
-		}
-
-		glog.Tracef("tryAcceptBitcoinExchangeTxn: Accepted unmined "+
-			"transaction %v bitcoin hash: %v (pool size: %v)",
-			tx.Hash(), txMeta.BitcoinTransaction.TxHash(), len(mp.poolMap))
-
-		return nil, mempoolTx, nil
-	}
-
-	// If we get here then we are processing a BitcoinExchange transaction that
-	// actually has a merkle proof on it.
-
-	// Check to see if any of the other BitcoinExchange transactions have the
-	// same hash as this transaction.
-	txHash := tx.Hash()
-	existingMempoolTx, hasTransaction := mp.poolMap[*txHash]
-
-	// In this case we have a previous transaction that we need to potentially
-	// replace with this one.
-	if hasTransaction {
-		// If the preexisting txn is a mined BitcoinExchange then don't replace it.
-		if !IsUnminedBitcoinExchange(existingMempoolTx.Tx.TxnMeta.(*BitcoinExchangeMetadata)) {
-			return nil, nil, TxErrorDuplicateBitcoinExchangeTxn
-		}
-
-		// Check the validity of the txn
-		_, err := mp._quickCheckBitcoinExchangeTxn(
-			tx, txHash, true /*checkFinalMerkleProof*/)
-		if err != nil {
-			return nil, nil, errors.Wrapf(
-				err, "tryAcceptBitcoinExchangeTxn: "+
-					"Problem connecting deps and txn: ")
-		}
-
-		// At this point we are confident that this new transaction is valid and
-		// can replace the pre-existing transaction. Replace the pre-existing
-		// transaction with it. This will cause it to be mined once its time has
-		// come.
-		existingMempoolTx.Tx = tx
-
-		glog.Tracef("tryAcceptBitcoinExchangeTxn: Accepted REPLACEMENT "+
-			"*mined* transaction %v bitcoin txhash: %v (pool size: %v)",
-			tx.Hash(), txMeta.BitcoinTransaction.TxHash(), len(mp.poolMap))
-
-		return nil, existingMempoolTx, nil
-	}
-
-	// If we get here then we don't have a pre-existing transaction so just
-	// process this normally but with checkMerkleProof=true.
-	// Just do a vanilla check and a vanilla add using the backup view.
-	_, _, _, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
-		tx, tx.Hash(), txnSize, bestHeight, false, /*verifySignatures*/
-		true, /*checkMerkleProof*/
-		0, false /*ignoreUtxos*/)
-	if err != nil {
-		// We need to rebuild the backup view since the _connectTransaction broke it.
-		mp.rebuildBackupView()
-		return nil, nil, errors.Wrapf(err, "tryAcceptBitcoinTransaction: Problem "+
-			"connecting transaction after connecting dependencies: ")
-	}
-
-	// Add to transaction pool. Don't update the backup view, since the call above
-	// will have done this.
-	mempoolTx, err := mp.addTransaction(tx, bestHeight, txFee, false /*updateBackupView*/)
-	if err != nil {
-		// We need to rebuild the backup view since the _connectTransaction broke it.
-		mp.rebuildBackupView()
-		return nil, nil, errors.Wrapf(err, "tryAcceptBitcoinExchangeTxn: ")
-	}
-
-	glog.Tracef("tryAcceptBitcoinExchangeTxn: Accepted *mined* "+
-		"transaction %v bitcoin txhash: %v(pool size: %v)",
-		tx.Hash(), txMeta.BitcoinTransaction.TxHash(), len(mp.poolMap))
-
-	return nil, mempoolTx, nil
 }
 
 func (mp *BitCloutMempool) rebuildBackupView() {
@@ -1198,13 +982,6 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 	// Block reward transactions shouldn't appear individually
 	if tx.TxnMeta != nil && tx.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil, nil, TxErrorIndividualBlockReward
-	}
-
-	// The BitcoinExchange logic is so customized that we break it out into its
-	// own function. We do this in order to support "fast" BitClout purchases
-	// in the UI that feel virtually instant without compromising on security.
-	if tx.TxnMeta != nil && tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
-		return mp.tryAcceptBitcoinExchangeTxn(tx)
 	}
 
 	// Compute the hash of the transaction.
@@ -1251,9 +1028,7 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
 	// We can skip verifying the transaction size as related to the minimum fee here.
 	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
-		tx, txHash, 0, bestHeight, verifySignatures,
-		false, /*checkMerkleProof*/
-		0, false /*ignoreUtxos*/)
+		tx, txHash, 0, bestHeight, verifySignatures, false)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: Problem "+
@@ -1639,7 +1414,7 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 
 		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber: realTxMeta.SerialNumber,
+			SerialNumber:   realTxMeta.SerialNumber,
 			BidAmountNanos: realTxMeta.BidAmountNanos,
 		}
 
@@ -1649,7 +1424,7 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(nftEntry.OwnerPKID), utxoView.Params),
-				Metadata: "NFTOwnerPublicKeyBase58Check",
+				Metadata:             "NFTOwnerPublicKeyBase58Check",
 			})
 		}
 	}
@@ -1659,13 +1434,13 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber: realTxMeta.SerialNumber,
+			SerialNumber:   realTxMeta.SerialNumber,
 			BidAmountNanos: realTxMeta.BidAmountNanos,
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 			PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(realTxMeta.BidderPKID), utxoView.Params),
-			Metadata: "NFTBidderPublicKeyBase58Check",
+			Metadata:             "NFTBidderPublicKeyBase58Check",
 		})
 	}
 
@@ -1739,10 +1514,7 @@ func ConnectTxnAndComputeTransactionMetadata(
 	totalNanosPurchasedBefore := utxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
 	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(
-		txn, txn.Hash(), 0, blockHeight, false, /*verifySignatures*/
-		false, /*checkMerkleProof*/
-		0,
-		false /*ignoreUtxos*/)
+		txn, txn.Hash(), 0, blockHeight, false, false)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
@@ -2116,69 +1888,6 @@ func (mp *BitCloutMempool) InefficientRemoveTransaction(tx *MsgBitCloutTxn) {
 	mp.inefficientRemoveTransaction(tx)
 }
 
-func (mp *BitCloutMempool) EvictUnminedBitcoinTransactions(bitcoinTxnHashes []string, dryRun bool) (int64, map[string]int64, []string, []string) {
-	var mempoolTxns []*MempoolTx
-
-	if !dryRun {
-		mp.mtx.Lock()
-		defer mp.mtx.Unlock()
-
-		mempoolTxns = mp.universalTransactionList
-	} else {
-		mempoolTxns = mp.readOnlyUniversalTransactionList
-	}
-
-	// Create a new pool to apply them to.
-	newPool := NewBitCloutMempool(mp.bc, 0, 0, "", false, "", "")
-
-	isHashToEvict := func(evictHash string) bool {
-		for _, txnHash := range bitcoinTxnHashes {
-			if txnHash == evictHash {
-				return true
-			}
-		}
-		return false
-	}
-
-	evictedTxnsMap := make(map[string]int64)
-	evictedTxnsList := []string{}
-	unminedBitcoinExchangeTxns := []string{}
-	for ii, mempoolTx := range mempoolTxns {
-		if mempoolTx.Tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange && IsUnminedBitcoinExchange(mempoolTx.Tx.TxnMeta.(*BitcoinExchangeMetadata)) {
-			evictHash := mempoolTx.Tx.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction.TxHash().String()
-			unminedBitcoinExchangeTxns = append(unminedBitcoinExchangeTxns, fmt.Sprintf("%s:%d", evictHash, ii))
-
-			// Don't add transactions if they're in our list of txns to evict
-			if isHashToEvict(evictHash) {
-				evictedTxnsMap[mempoolTx.Tx.TxnMeta.GetTxnType().String()] += 1
-				evictedTxnsList = append(evictedTxnsList, mempoolTx.Tx.Hash().String()+":"+PkToStringMainnet(mempoolTx.Tx.Hash()[:]))
-				continue
-			}
-		}
-
-		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
-		txnsAccepted, err := newPool.ProcessTransaction(
-			mempoolTx.Tx, true /*allowUnconnectedTxn*/, false, /*rateLimit*/
-			0 /*peerID*/, false /*verifySignatures*/)
-		if err != nil {
-			glog.Warning(errors.Wrapf(err, "EvictUnminedBitcoinTxns: "))
-		}
-		if len(txnsAccepted) == 0 {
-			evictedTxnsMap[mempoolTx.Tx.TxnMeta.GetTxnType().String()] += 1
-			evictedTxnsList = append(evictedTxnsList, mempoolTx.Tx.Hash().String()+":"+PkToStringMainnet(mempoolTx.Tx.Hash()[:]))
-		}
-	}
-
-	newPoolTxnCount := int64(len(newPool.poolMap))
-
-	if !dryRun {
-		// Replace the existing mempool with the new pool.
-		mp.resetPool(newPool)
-	}
-
-	return newPoolTxnCount, evictedTxnsMap, evictedTxnsList, unminedBitcoinExchangeTxns
-}
-
 func (mp *BitCloutMempool) StartReadOnlyUtxoViewRegenerator() {
 	glog.Info("Calling StartReadOnlyUtxoViewRegenerator...")
 
@@ -2338,9 +2047,9 @@ func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *BitCloutMempool {
 
-	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
-	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
-	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
+	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
 	newPool := &BitCloutMempool{
 		quit:                            make(chan struct{}),
 		bc:                              _bc,
@@ -2351,9 +2060,7 @@ func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		unconnectedTxnsByPrev:           make(map[UtxoKey]map[BlockHash]*MsgBitCloutTxn),
 		outpoints:                       make(map[UtxoKey]*MsgBitCloutTxn),
 		pubKeyToTxnMap:                  make(map[PkMapKey]map[BlockHash]*MempoolTx),
-		unminedBitcoinTxns:              make(map[BlockHash]*MempoolTx),
 		blockCypherAPIKey:               _blockCypherAPIKey,
-		blockCypherCheckDoubleSpendChan: make(chan *MsgBitCloutTxn),
 		backupUniversalUtxoView:         backupUtxoView,
 		universalUtxoView:               utxoView,
 		mempoolDir:                      _mempoolDumpDir,
@@ -2363,15 +2070,6 @@ func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		readOnlyOutpoints:               make(map[UtxoKey]*MsgBitCloutTxn),
 		dataDir:                         _dataDir,
 	}
-
-	// TODO: DELETEME: This code is no longer needed because we check for double-spends up-front.
-	// It also causes sync issues between read nodes.
-	//
-	// If we were passed an API key, start a process to check for BitcoinExchange
-	// double-spends and evict them from the mempool.
-	//if newPool.blockCypherAPIKey != "" {
-	//	newPool.StartBitcoinExchangeDoubleSpendChecker()
-	//}
 
 	if newPool.mempoolDir != "" {
 		newPool.LoadTxnsFromDB()

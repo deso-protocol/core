@@ -53,8 +53,6 @@ type ConnectionManager struct {
 	// When true, only one connection per IP is allowed. Prevents eclipse attacks
 	// among other things.
 	limitOneInboundConnectionPerIP bool
-	ignoreUnminedBitcoinTxnsFromPeers bool
-	blockCypherAPIKey string
 
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
@@ -122,8 +120,6 @@ func NewConnectionManager(
 	_connectIps []string, _timeSource chainlib.MedianTimeSource,
 	_targetOutboundPeers uint32, _maxInboundPeers uint32,
 	_limitOneInboundConnectionPerIP bool,
-	_ignoreUnminedBitcoinTxnsFromPeers bool,
-	_blockCypherAPIKey string,
 	_stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
 	_serverMessageQueue chan *ServerMessage,
@@ -156,8 +152,6 @@ func NewConnectionManager(
 		targetOutboundPeers:            _targetOutboundPeers,
 		maxInboundPeers:                _maxInboundPeers,
 		limitOneInboundConnectionPerIP: _limitOneInboundConnectionPerIP,
-		ignoreUnminedBitcoinTxnsFromPeers: 	_ignoreUnminedBitcoinTxnsFromPeers,
-		blockCypherAPIKey: _blockCypherAPIKey,
 		serverMessageQueue:             _serverMessageQueue,
 		stallTimeoutSeconds:            _stallTimeoutSeconds,
 		minFeeRateNanosPerKB:           _minFeeRateNanosPerKB,
@@ -421,8 +415,6 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.N
 		}
 		peer := NewPeer(conn, isOutbound, na, isPersistent,
 			cmgr.stallTimeoutSeconds,
-			cmgr.ignoreUnminedBitcoinTxnsFromPeers,
-			cmgr.blockCypherAPIKey,
 			cmgr.minFeeRateNanosPerKB,
 			cmgr.params,
 			cmgr.srv.incomingMessages, cmgr, cmgr.srv)
@@ -506,7 +498,7 @@ func (cmgr *ConnectionManager) _isFromRedundantInboundIPAddress(addrToCheck net.
 	// Loop through all the peers to see if any have the same IP
 	// address. This map is normally pretty small so doing this
 	// every time a Peer connects should be fine.
-	netAddr, err := IPToNetAddr(addrToCheck.String(),  cmgr.addrMgr, cmgr.params)
+	netAddr, err := IPToNetAddr(addrToCheck.String(), cmgr.addrMgr, cmgr.params)
 	if err != nil {
 		// Return true in case we have an error. We do this because it
 		// will result in the peer connection not being accepted, which

@@ -277,8 +277,6 @@ const (
 
 	TxErrorTooLarge                                                 RuleError = "TxErrorTooLarge"
 	TxErrorDuplicate                                                RuleError = "TxErrorDuplicate"
-	TxErrorDuplicateBitcoinExchangeTxn                              RuleError = "TxErrorDuplicateBitcoinExchangeTxn"
-	TxErrorDoubleSpend                                              RuleError = "TxErrorDoubleSpend"
 	TxErrorIndividualBlockReward                                    RuleError = "TxErrorIndividualBlockReward"
 	TxErrorInsufficientFeeMinFee                                    RuleError = "TxErrorInsufficientFeeMinFee"
 	TxErrorInsufficientFeeRateLimit                                 RuleError = "TxErrorInsufficientFeeRateLimit"
