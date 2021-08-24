@@ -242,6 +242,15 @@ var (
 type PKID [33]byte
 type PublicKey [33]byte
 
+func NewPKID(pkidBytes []byte) *PKID {
+	if len(pkidBytes) == 0 {
+		return nil
+	}
+	pkid := &PKID{}
+	copy(pkid[:], pkidBytes)
+	return pkid
+}
+
 func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
 }
