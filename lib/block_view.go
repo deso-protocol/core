@@ -1191,20 +1191,25 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	return utxoEntry
 }
 
-func (bav *UtxoView) GetBitcloutBalanceNanosForPublicKey(publicKey []byte,
-) (_balance uint64, _err error) {
-	balanceNanos, ok := bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)]
+func (bav *UtxoView) GetBitcloutBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
+	balanceNanos, hasBalance := bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)]
+	if hasBalance {
+		return balanceNanos, nil
+	}
+
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the db.
-	if !ok {
+	if bav.Postgres != nil {
+		balanceNanos = bav.Postgres.GetBalance(NewPublicKey(publicKey))
+	} else {
 		var err error
 		balanceNanos, err = DbGetBitcloutBalanceNanosForPublicKey(bav.Handle, publicKey)
 		if err != nil {
 			return uint64(0), errors.Wrap(err, "GetBitcloutBalanceNanosForPublicKey: ")
 		}
-
-		// Add the balance to memory for future references.
-		bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)] = balanceNanos
 	}
+
+	// Add the balance to memory for future references.
+	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)] = balanceNanos
 
 	return balanceNanos, nil
 }
@@ -8811,8 +8816,6 @@ func (bav *UtxoView) GetCommentEntriesForParentStakeID(parentStakeID []byte) ([]
 		}
 
 		if len(postEntry.ParentStakeID) == 0 || !reflect.DeepEqual(postEntry.ParentStakeID, parentStakeID) {
-			glog.Info(postEntry.ParentStakeID)
-			glog.Info(parentStakeID)
 			continue // Skip posts that are not comments on the given parentStakeID.
 		} else {
 			// Add the comment to our map.
