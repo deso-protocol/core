@@ -1911,6 +1911,21 @@ func (postgres *Postgres) GetNFTBid(nftPostHash *BlockHash, bidderPKID *PKID, se
 }
 
 //
+// Balances
+//
+
+func (postgres *Postgres) GetBalance(publicKey *PublicKey) uint64 {
+	balance := PGBalance{
+		PublicKey: publicKey,
+	}
+	err := postgres.db.Model(&balance).WherePK().First()
+	if err != nil {
+		return 0
+	}
+	return balance.BalanceNanos
+}
+
+//
 // PGChain Init
 //
 
