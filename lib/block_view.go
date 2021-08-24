@@ -8816,8 +8816,6 @@ func (bav *UtxoView) GetCommentEntriesForParentStakeID(parentStakeID []byte) ([]
 		}
 
 		if len(postEntry.ParentStakeID) == 0 || !reflect.DeepEqual(postEntry.ParentStakeID, parentStakeID) {
-			glog.Info(postEntry.ParentStakeID)
-			glog.Info(parentStakeID)
 			continue // Skip posts that are not comments on the given parentStakeID.
 		} else {
 			// Add the comment to our map.
