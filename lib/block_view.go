@@ -274,16 +274,16 @@ type DerivedKeyEntry struct {
 
 type DerivedKeyMapKey struct {
 	// Owner public key
-	OwnerPublicKey   PkMapKey
+	OwnerPublicKey   PublicKey
 
 	// Derived public key
-	DerivedPublicKey PkMapKey
+	DerivedPublicKey PublicKey
 }
 
 func MakeDerivedKeyMapKey(ownerPublicKey []byte, derivedPublicKey []byte) DerivedKeyMapKey {
 	return DerivedKeyMapKey{
-		OwnerPublicKey:   MakePkMapKey(ownerPublicKey),
-		DerivedPublicKey: MakePkMapKey(derivedPublicKey),
+		OwnerPublicKey:   *NewPublicKey(ownerPublicKey),
+		DerivedPublicKey: *NewPublicKey(derivedPublicKey),
 	}
 }
 
@@ -4715,8 +4715,8 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 
 // GetAllDerivedKeyMappingsForOwner fetches all derived key mappings belonging to an owner.
 func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
-	map[PkMapKey]*DerivedKeyEntry, error) {
-	derivedKeyMappings := make(map[PkMapKey]*DerivedKeyEntry)
+	map[PublicKey]*DerivedKeyEntry, error) {
+	derivedKeyMappings := make(map[PublicKey]*DerivedKeyEntry)
 
 	// Check for entries in utxoView.
 	for entryKey, entry := range bav.DerivedKeyToDerivedEntry {
@@ -4734,9 +4734,9 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 
 	// Add entries from the DB that aren't already present.
 	for _, entry := range dbMappings {
-		mapKey := MakePkMapKey(entry.DerivedPublicKey)
-		if _, ok := derivedKeyMappings[mapKey]; !ok {
-			derivedKeyMappings[mapKey] = entry
+		mapKey := NewPublicKey(entry.DerivedPublicKey)
+		if _, ok := derivedKeyMappings[*mapKey]; !ok {
+			derivedKeyMappings[*mapKey] = entry
 		}
 	}
 
