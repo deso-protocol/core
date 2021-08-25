@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -101,12 +100,6 @@ func (node *Node) Start() {
 		}
 	}
 
-	bitcoinDataDir := filepath.Join(node.Config.DataDirectory, "bitcoin_manager")
-	if err := os.MkdirAll(bitcoinDataDir, os.ModePerm); err != nil {
-		fmt.Errorf("Could not create Bitcoin datadir (%s): %v", node.Config.DataDirectory, err)
-		panic(err)
-	}
-
 	// Setup chain database
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
 	opts := badger.DefaultOptions(dbDir)
@@ -161,7 +154,6 @@ func (node *Node) Start() {
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,
 		node.Config.StallTimeoutSeconds,
-		bitcoinDataDir,
 		node.Config.MaxBlockTemplatesCache,
 		node.Config.MinBlockUpdateInterval,
 		node.Config.BlockCypherAPIKey,

@@ -281,7 +281,6 @@ func NewServer(
 	_rateLimitFeerateNanosPerKB uint64,
 	_minFeeRateNanosPerKB uint64,
 	_stallTimeoutSeconds uint64,
-	_bitcoinDataDir string,
 	_maxBlockTemplatesToCache uint64,
 	_minBlockUpdateIntervalSeconds uint64,
 	_blockCypherAPIKey string,
