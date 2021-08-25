@@ -990,6 +990,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the post data
 	newView.PostHashToPostEntry = make(map[BlockHash]*PostEntry, len(bav.PostHashToPostEntry))
 	for postHash, postEntry := range bav.PostHashToPostEntry {
+		if postEntry == nil {
+			continue
+		}
+
 		newPostEntry := *postEntry
 		newView.PostHashToPostEntry[postHash] = &newPostEntry
 	}
@@ -1010,11 +1014,19 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the profile data
 	newView.ProfilePKIDToProfileEntry = make(map[PKID]*ProfileEntry, len(bav.ProfilePKIDToProfileEntry))
 	for profilePKID, profileEntry := range bav.ProfilePKIDToProfileEntry {
+		if profileEntry == nil {
+			continue
+		}
+
 		newProfileEntry := *profileEntry
 		newView.ProfilePKIDToProfileEntry[profilePKID] = &newProfileEntry
 	}
 	newView.ProfileUsernameToProfileEntry = make(map[UsernameMapKey]*ProfileEntry, len(bav.ProfileUsernameToProfileEntry))
 	for profilePKID, profileEntry := range bav.ProfileUsernameToProfileEntry {
+		if profileEntry == nil {
+			continue
+		}
+
 		newProfileEntry := *profileEntry
 		newView.ProfileUsernameToProfileEntry[profilePKID] = &newProfileEntry
 	}
@@ -1035,6 +1047,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the follow data
 	newView.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry, len(bav.FollowKeyToFollowEntry))
 	for followKey, followEntry := range bav.FollowKeyToFollowEntry {
+		if followEntry == nil {
+			continue
+		}
+
 		newFollowEntry := *followEntry
 		newView.FollowKeyToFollowEntry[followKey] = &newFollowEntry
 	}
@@ -1042,6 +1058,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the like data
 	newView.LikeKeyToLikeEntry = make(map[LikeKey]*LikeEntry, len(bav.LikeKeyToLikeEntry))
 	for likeKey, likeEntry := range bav.LikeKeyToLikeEntry {
+		if likeEntry == nil {
+			continue
+		}
+
 		newLikeEntry := *likeEntry
 		newView.LikeKeyToLikeEntry[likeKey] = &newLikeEntry
 	}
@@ -1057,6 +1077,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.HODLerPKIDCreatorPKIDToBalanceEntry = make(
 		map[BalanceEntryMapKey]*BalanceEntry, len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 	for balanceEntryMapKey, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
+		if balanceEntry == nil {
+			continue
+		}
+
 		newBalanceEntry := *balanceEntry
 		newView.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryMapKey] = &newBalanceEntry
 	}

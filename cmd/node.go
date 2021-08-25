@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -101,12 +100,6 @@ func (node *Node) Start() {
 		}
 	}
 
-	bitcoinDataDir := filepath.Join(node.Config.DataDirectory, "bitcoin_manager")
-	if err := os.MkdirAll(bitcoinDataDir, os.ModePerm); err != nil {
-		fmt.Errorf("Could not create Bitcoin datadir (%s): %v", node.Config.DataDirectory, err)
-		panic(err)
-	}
-
 	// Setup chain database
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
 	opts := badger.DefaultOptions(dbDir)
@@ -131,9 +124,6 @@ func (node *Node) Start() {
 		}
 
 		db = pg.Connect(options)
-	}
-
-	if db != nil {
 		node.Postgres = lib.NewPostgres(db)
 
 		// LoadMigrations registers all the migration files in the migrate package.
@@ -142,7 +132,7 @@ func (node *Node) Start() {
 
 		// Migrate the database after loading all the migrations. This is equivalent
 		// to running "go run migrate.go migrate". See migrate.go for a migrations CLI tool
-		err := migrations.Run(db, "migrate", []string{"", "migrate"})
+		err = migrations.Run(db, "migrate", []string{"", "migrate"})
 		if err != nil {
 			panic(err)
 		}
@@ -164,7 +154,6 @@ func (node *Node) Start() {
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,
 		node.Config.StallTimeoutSeconds,
-		bitcoinDataDir,
 		node.Config.MaxBlockTemplatesCache,
 		node.Config.MinBlockUpdateInterval,
 		node.Config.BlockCypherAPIKey,
@@ -185,8 +174,8 @@ func (node *Node) Start() {
 
 	node.Server.Start()
 
-	// Setup TXIndex
-	if node.Config.TXIndex {
+	// Setup TXIndex - not compatible with postgres
+	if node.Config.TXIndex && node.Postgres == nil {
 		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
 		if err != nil {
 			glog.Fatal(err)
