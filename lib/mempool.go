@@ -1202,13 +1202,15 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 		}
 
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
-		if hasDiamondLevel {
+		diamondPostHash, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
+		if hasDiamondLevel && hasDiamondPostHash {
 			diamondLevel, bytesRead := Varint(diamondLevelBytes)
-			if bytesRead < 0 {
-				return nil, fmt.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
+			if bytesRead <= 0 {
+				glog.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
+			} else {
+				txnMeta.CreatorCoinTransferTxindexMetadata.DiamondLevel = diamondLevel
+				txnMeta.CreatorCoinTransferTxindexMetadata.PostHashHex = hex.EncodeToString(diamondPostHash)
 			}
-			txnMeta.CreatorCoinTransferTxindexMetadata.DiamondLevel = diamondLevel
-			txnMeta.CreatorCoinTransferTxindexMetadata.PostHashHex = hex.EncodeToString(txn.ExtraData[DiamondPostHashKey])
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
@@ -1445,13 +1447,15 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
-		if hasDiamondLevel {
+		diamondPostHash, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
+		if hasDiamondLevel && hasDiamondPostHash {
 			diamondLevel, bytesRead := Varint(diamondLevelBytes)
-			if bytesRead < 0 {
-				return nil, fmt.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
+			if bytesRead <= 0 {
+				glog.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
+			} else {
+				txnMeta.BasicTransferTxindexMetadata.DiamondLevel = diamondLevel
+				txnMeta.BasicTransferTxindexMetadata.PostHashHex = hex.EncodeToString(diamondPostHash)
 			}
-			txnMeta.BasicTransferTxindexMetadata.DiamondLevel = diamondLevel
-			txnMeta.BasicTransferTxindexMetadata.PostHashHex = hex.EncodeToString(txn.ExtraData[DiamondPostHashKey])
 		}
 	}
 
