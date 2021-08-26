@@ -1450,8 +1450,8 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			if bytesRead < 0 {
 				return nil, fmt.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
 			}
-			txnMeta.CreatorCoinTransferTxindexMetadata.DiamondLevel = diamondLevel
-			txnMeta.CreatorCoinTransferTxindexMetadata.PostHashHex = hex.EncodeToString(txn.ExtraData[DiamondPostHashKey])
+			txnMeta.BasicTransferTxindexMetadata.DiamondLevel = diamondLevel
+			txnMeta.BasicTransferTxindexMetadata.PostHashHex = hex.EncodeToString(txn.ExtraData[DiamondPostHashKey])
 		}
 	}
 
