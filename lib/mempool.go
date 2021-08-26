@@ -1443,6 +1443,17 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			Metadata:             "NFTBidderPublicKeyBase58Check",
 		})
 	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
+		if hasDiamondLevel {
+			diamondLevel, bytesRead := Varint(diamondLevelBytes)
+			if bytesRead < 0 {
+				return nil, fmt.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
+			}
+			txnMeta.CreatorCoinTransferTxindexMetadata.DiamondLevel = diamondLevel
+			txnMeta.CreatorCoinTransferTxindexMetadata.PostHashHex = hex.EncodeToString(txn.ExtraData[DiamondPostHashKey])
+		}
+	}
 
 	return txnMeta, nil
 }
