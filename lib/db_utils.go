@@ -3151,6 +3151,8 @@ type BasicTransferTxindexMetadata struct {
 	FeeNanos         uint64
 	UtxoOpsDump      string
 	UtxoOps          []*UtxoOperation
+	DiamondLevel     int64
+	PostHashHex      string
 }
 type BitcoinExchangeTxindexMetadata struct {
 	BitcoinSpendAddress string
