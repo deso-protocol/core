@@ -240,6 +240,39 @@ var (
 // create one layer of indirection between the public key and the user's data. This
 // makes it easy for the user to transfer certain data to a new public key.
 type PKID [33]byte
+type PublicKey [33]byte
+
+func NewPKID(pkidBytes []byte) *PKID {
+	if len(pkidBytes) == 0 {
+		return nil
+	}
+	pkid := &PKID{}
+	copy(pkid[:], pkidBytes)
+	return pkid
+}
+
+func (pkid *PKID) ToBytes() []byte {
+	return pkid[:]
+}
+
+func (pkid *PKID) NewPKID() *PKID {
+	newPkid := &PKID{}
+	copy(newPkid[:], pkid[:])
+	return newPkid
+}
+
+func NewPublicKey(publicKeyBytes []byte) *PublicKey {
+	if len(publicKeyBytes) == 0 {
+		return nil
+	}
+	publicKey := &PublicKey{}
+	copy(publicKey[:], publicKeyBytes)
+	return publicKey
+}
+
+func (publicKey *PublicKey) ToBytes() []byte {
+	return publicKey[:]
+}
 
 func PublicKeyToPKID(publicKey []byte) *PKID {
 	if len(publicKey) == 0 {
@@ -2639,8 +2672,8 @@ func InitDbWithBitCloutGenesisBlock(params *BitCloutParams, handle *badger.DB) e
 	// difficulty specified in the parameters and it should be assumed to be
 	// valid and stored by the end of this function.
 	genesisBlock := params.GenesisBlock
-	diffTarget := NewBlockHash(params.MinDifficultyTargetHex)
-	blockHash := NewBlockHash(params.GenesisBlockHashHex)
+	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
+	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
 	genesisNode := NewBlockNode(
 		nil, // Parent
 		blockHash,
@@ -3118,6 +3151,8 @@ type BasicTransferTxindexMetadata struct {
 	FeeNanos         uint64
 	UtxoOpsDump      string
 	UtxoOps          []*UtxoOperation
+	DiamondLevel     int64
+	PostHashHex      string
 }
 type BitcoinExchangeTxindexMetadata struct {
 	BitcoinSpendAddress string
@@ -3532,30 +3567,6 @@ func DBGetPostEntryByPostHash(db *badger.DB, postHash *BlockHash) *PostEntry {
 	return ret
 }
 
-func _dbGetStakeIDPostDBKey(postHash *BlockHash, totalAmountStakedNanos uint64) []byte {
-	// <prefix, StakeIDType | AmountNanos uint64 | PostHash BlockHash> -> <>
-	key := append(_PrefixStakeIDTypeAmountStakeIDIndex, []byte{byte(StakeIDTypePost)}...)
-	key = append(key, EncodeUint64(totalAmountStakedNanos)...)
-	key = append(key, postHash[:]...)
-	return key
-}
-
-func HashToStakeID(hash *BlockHash) []byte {
-	stakeID := make([]byte, btcec.PubKeyBytesLenCompressed)
-	// We need to make the post hash into a uniform 33-byte thing so that
-	// it doesn't conflict with public key stake ids.
-	copy(stakeID, hash[:])
-	stakeID[btcec.PubKeyBytesLenCompressed-1] = 0x00
-
-	return stakeID
-}
-
-func StakeIDToHash(stakeID []byte) *BlockHash {
-	hash := &BlockHash{}
-	copy(hash[:], stakeID[:HashSizeBytes])
-	return hash
-}
-
 func DBDeletePostEntryMappingsWithTxn(
 	txn *badger.Txn, postHash *BlockHash, params *BitCloutParams) error {
 
@@ -3614,15 +3625,6 @@ func DBDeletePostEntryMappingsWithTxn(
 
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
 				"stakeMultiple mapping for post hash %v: %v", postHash, err)
-		}
-
-		// Delete the stats for the post.
-		stakeStats := GetStakeEntryStats(postEntry.StakeEntry, params)
-		if err := txn.Delete(_dbGetStakeIDPostDBKey(
-			postEntry.PostHash, stakeStats.TotalStakeNanos)); err != nil {
-
-			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
-				"StakeAmountNanos mapping for post hash %v", postHash)
 		}
 	}
 
@@ -3719,17 +3721,6 @@ func DBPutPostEntryMappingsWithTxn(
 		}
 		if err := txn.Set(_dbKeyForStakeMultipleBpsPostHash(
 			postEntry.StakeMultipleBasisPoints, postEntry.PostHash), []byte{}); err != nil {
-
-			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
-				"adding mapping for stakeMultipleBps: %v", postEntry)
-		}
-
-		// Get stats for the post.
-		// <prefix | PostType | AmountStaked | PostHash> -> <>
-		stakeStats := GetStakeEntryStats(postEntry.StakeEntry, params)
-		if err := txn.Set(
-			_dbGetStakeIDPostDBKey(
-				postEntry.PostHash, stakeStats.TotalStakeNanos), []byte{}); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for stakeMultipleBps: %v", postEntry)
@@ -4989,19 +4980,14 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, holder *PK
 	return balanceEntryObj
 }
 
-// DbGetBalanceEntriesHodlingYou fetchs the BalanceEntries that the passed in pkid hodls.
-func DbGetBalanceEntriesYouHodl(pkid *PKIDEntry, fetchProfiles bool, filterOutZeroBalances bool, utxoView *UtxoView) (
-	_entriesYouHodl []*BalanceEntry,
-	_profilesYouHodl []*ProfileEntry,
-	_err error) {
-	handle := utxoView.Handle
-	// Get the balance entries for the coins that *you hodl*
+// DbGetBalanceEntriesHodlingYou fetchs the BalanceEntries that the passed in pkid holds.
+func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances bool) ([]*BalanceEntry, error) {
+	// Get the balance entries for the coins that *you hold*
 	balanceEntriesYouHodl := []*BalanceEntry{}
 	{
 		prefix := append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
-		keyPrefix := append(prefix, pkid.PKID[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(
-			handle, keyPrefix)
+		keyPrefix := append(prefix, pkid[:]...)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
@@ -5011,32 +4997,18 @@ func DbGetBalanceEntriesYouHodl(pkid *PKIDEntry, fetchProfiles bool, filterOutZe
 			balanceEntriesYouHodl = append(balanceEntriesYouHodl, currentEntry)
 		}
 	}
-	// Optionally fetch all the profile entries as well.
-	profilesYouHodl := []*ProfileEntry{}
-	if fetchProfiles {
-		for _, balanceEntry := range balanceEntriesYouHodl {
-			// In this case you're the hodler so the creator is the one whose
-			// profile we need to fetch.
-			currentProfileEntry := utxoView.GetProfileEntryForPKID(balanceEntry.CreatorPKID)
-			profilesYouHodl = append(profilesYouHodl, currentProfileEntry)
-		}
-	}
-	return balanceEntriesYouHodl, profilesYouHodl, nil
+
+	return balanceEntriesYouHodl, nil
 }
 
-// DbGetBalanceEntriesHodlingYou fetchs the BalanceEntries that hodl the pkid passed in.
-func DbGetBalanceEntriesHodlingYou(pkid *PKIDEntry, fetchProfiles bool, filterOutZeroBalances bool, utxoView *UtxoView) (
-	_entriesHodlingYou []*BalanceEntry,
-	_profilesHodlingYou []*ProfileEntry,
-	_err error) {
-	handle := utxoView.Handle
-	// Get the balance entries for the coins that *hodl you*
+// DbGetBalanceEntriesHodlingYou fetches the BalanceEntries that hold the pkid passed in.
+func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalances bool) ([]*BalanceEntry, error) {
+	// Get the balance entries for the coins that *hold you*
 	balanceEntriesThatHodlYou := []*BalanceEntry{}
 	{
 		prefix := append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
-		keyPrefix := append(prefix, pkid.PKID[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(
-			handle, keyPrefix)
+		keyPrefix := append(prefix, pkid[:]...)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
@@ -5046,39 +5018,8 @@ func DbGetBalanceEntriesHodlingYou(pkid *PKIDEntry, fetchProfiles bool, filterOu
 			balanceEntriesThatHodlYou = append(balanceEntriesThatHodlYou, currentEntry)
 		}
 	}
-	// Optionally fetch all the profile entries as well.
-	profilesThatHodlYou := []*ProfileEntry{}
-	if fetchProfiles {
-		for _, balanceEntry := range balanceEntriesThatHodlYou {
-			// In this case you're the creator and the hodler is the one whose
-			// profile we need to fetch.
-			currentProfileEntry := utxoView.GetProfileEntryForPKID(balanceEntry.HODLerPKID)
-			profilesThatHodlYou = append(profilesThatHodlYou, currentProfileEntry)
-		}
-	}
-	return balanceEntriesThatHodlYou, profilesThatHodlYou, nil
-}
 
-// DbGetCreatorCoinBalanceEntriesForPubKeyWithTxn finds the BalanceEntries corresponding
-// to the public key passed in. It fetched both the entries corresponding to the
-// profiles that *you HODL* and the entries corresponding to the profiles that
-// *HODL you*.
-func DbGetCreatorCoinBalanceEntriesForPubKey(
-	pkid *PKIDEntry, fetchProfiles bool, filterOutZeroBalances bool, utxoView *UtxoView) (
-	_entriesYouHodl []*BalanceEntry, _entriesThatHodlYou []*BalanceEntry,
-	_profilesYouHodl []*ProfileEntry, _profilesThatHodlYou []*ProfileEntry,
-	_err error) {
-
-	balanceEntriesYouHodl, profilesYouHodl, err := DbGetBalanceEntriesYouHodl(pkid, fetchProfiles, filterOutZeroBalances, utxoView)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	balanceEntriesThatHodlYou, profilesThatHodlYou, err := DbGetBalanceEntriesHodlingYou(pkid, fetchProfiles, filterOutZeroBalances, utxoView)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	// If there are no errors, return everything we found.
-	return balanceEntriesYouHodl, balanceEntriesThatHodlYou, profilesYouHodl, profilesThatHodlYou, nil
+	return balanceEntriesThatHodlYou, nil
 }
 
 // =====================================================================================

@@ -6,7 +6,6 @@ import (
 	"math"
 	"net"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -57,15 +56,13 @@ type Peer struct {
 	LastPingMicros int64
 
 	// Connection info.
-	cmgr                              *ConnectionManager
-	conn                              net.Conn
-	isOutbound                        bool
-	isPersistent                      bool
-	stallTimeoutSeconds               uint64
-	ignoreUnminedBitcoinTxnsFromPeers bool
-	blockCypherAPIKey                 string
-	Params                            *BitCloutParams
-	MessageChan                       chan *ServerMessage
+	cmgr                *ConnectionManager
+	conn                net.Conn
+	isOutbound          bool
+	isPersistent        bool
+	stallTimeoutSeconds uint64
+	Params              *BitCloutParams
+	MessageChan         chan *ServerMessage
 	// A hack to make it so that we can allow an API endpoint to manually
 	// delete a peer.
 	PeerManuallyRemovedFromConnectionManager bool
@@ -222,123 +219,6 @@ func (pp *Peer) HandleTransactionBundleMessage(msg *MsgBitCloutTransactionBundle
 
 	glog.Debugf("Received TransactionBundle "+
 		"message of size %v from Peer %v", len(msg.Transactions), pp)
-
-	// Potentially ignore BitcoinExchange transactions from peers until they're properly
-	// mined. Note this can be disruptive because it could cause cancellations of
-	// transactions that are built on top of the BitcoinExchange.
-	if pp.ignoreUnminedBitcoinTxnsFromPeers {
-		glog.Debugf("Server._handleTransactionBundle: Checking "+
-			"IsUnminedBitcoinExchange for txns from "+
-			"message of size %v from Peer %v", len(msg.Transactions), pp)
-		newTxnList := []*MsgBitCloutTxn{}
-		for _, txn := range msg.Transactions {
-			if txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange &&
-				IsUnminedBitcoinExchange(txn.TxnMeta.(*BitcoinExchangeMetadata)) {
-				txnMeta := txn.TxnMeta.(*BitcoinExchangeMetadata)
-
-				glog.Debugf("Server._handleTransactionBundle: Dropping txn with hash %v "+
-					"because it is an unmined BitcoinExchange txn", txnMeta.BitcoinTransaction.TxHash())
-				continue
-			}
-
-			newTxnList = append(newTxnList, txn)
-		}
-
-		msg.Transactions = newTxnList
-		glog.Debugf("Server._handleTransactionBundle: Eliminated "+
-			"unmined BitcoinExchange txns. Now processing "+
-			"message of size %v from Peer %v", len(msg.Transactions), pp)
-	} else if pp.blockCypherAPIKey != "" {
-		// If we're not ignoring inbound peer INV messages, and if we have a BlockCypher API
-		// key set, then check unmined transactions with BlockCypher.
-		glog.Debugf("Server._handleTransactionBundle: Checking "+
-			"Double-Spend for unmined BitcoinExchange txns from "+
-			"message of size %v from Peer %v", len(msg.Transactions), pp)
-
-		// Run through all the transactions and check all the unmined BitcoinExchanges.
-		badBitcoinExchangeTxnHashesLock := sync.RWMutex{}
-		badBitcoinExchangeTxnHashes := make(map[BlockHash]bool)
-		wg := sync.WaitGroup{}
-		for _, txnIter := range msg.Transactions {
-			if txnIter.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange ||
-				!IsUnminedBitcoinExchange(txnIter.TxnMeta.(*BitcoinExchangeMetadata)) {
-
-				continue
-			}
-			// If we get here, then we know we're dealing with a BitcoinExchagne txn
-
-			wg.Add(1)
-			go func(txn *MsgBitCloutTxn) {
-				txnMeta := txnIter.TxnMeta.(*BitcoinExchangeMetadata)
-
-				// Wait a few seconds before checking for the double-spend. This gives the Bitcoin
-				// transaction time to propagate throughout the Bitcoin network.
-				glog.Debugf("Server._handleTransactionBundle: Waiting %v seconds to check "+
-					"double-spend on BitcoinExchange txn with hash %v",
-					pp.Params.BitcoinDoubleSpendWaitSeconds, txnMeta.BitcoinTransaction.TxHash())
-				time.Sleep(time.Duration(pp.Params.BitcoinDoubleSpendWaitSeconds) * time.Second)
-
-				glog.Debugf("Server._handleTransactionBundle: Checking double-spend on txn "+
-					"with hash %v because it is an unmined BitcoinExchange txn",
-					txnMeta.BitcoinTransaction.TxHash())
-
-				txHash := txnMeta.BitcoinTransaction.TxHash()
-				isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(
-					&txHash,
-					pp.blockCypherAPIKey,
-					pp.Params)
-				if err != nil {
-					// If there's an error then reject this transaction and log it.
-					glog.Errorf("Server._handleTransactionBundle: ERROR checking double-spend on txn "+
-						"with hash %v: %v",
-						txnMeta.BitcoinTransaction.TxHash(), err)
-					badBitcoinExchangeTxnHashesLock.Lock()
-					badBitcoinExchangeTxnHashes[*txn.Hash()] = true
-					badBitcoinExchangeTxnHashesLock.Unlock()
-				}
-				if isDoubleSpend {
-					// If this is a double-spend then reject this transaction and log it.
-					glog.Errorf("Server._handleTransactionBundle: ERROR BitcoinExchange txn with hash "+
-						"%v is a double-spend",
-						txnMeta.BitcoinTransaction.TxHash())
-					badBitcoinExchangeTxnHashesLock.Lock()
-					badBitcoinExchangeTxnHashes[*txn.Hash()] = true
-					badBitcoinExchangeTxnHashesLock.Unlock()
-				}
-
-				wg.Done()
-			}(txnIter)
-
-			// Don't kick off more than five goroutines a second to avoid
-			// overwhelming BlockCypher
-			time.Sleep(200 * time.Millisecond)
-		}
-		// Wait for all of the goroutines that are checking BlockCypher to finish.
-		glog.Debugf("Server._handleTransactionBundle: Waiting for BitcoinExchange " +
-			"double-spend checks to complete...")
-		wg.Wait()
-
-		glog.Debugf("Server._handleTransactionBundle: Found %v BitcoinExchange "+
-			"txns that were double-spends!", len(badBitcoinExchangeTxnHashes))
-
-		// Remove bad BitcoinExchange txns if needed.
-		if len(badBitcoinExchangeTxnHashes) > 0 {
-			glog.Debugf("Server._handleTransactionBundle: Removing %v bad BitcoinExchange "+
-				"txns", len(badBitcoinExchangeTxnHashes))
-
-			newTxnList := []*MsgBitCloutTxn{}
-			for _, txn := range msg.Transactions {
-				if _, isBad := badBitcoinExchangeTxnHashes[*txn.Hash()]; isBad {
-					continue
-				}
-				newTxnList = append(newTxnList, txn)
-			}
-			msg.Transactions = newTxnList
-
-			glog.Debugf("Server._handleTransactionBundle: Have %v txns after "+
-				"removing %v bad BitcoinExchange txn", len(msg.Transactions), len(badBitcoinExchangeTxnHashes))
-		}
-	}
 
 	transactionsToRelay := pp.srv._processTransactions(pp, msg)
 	glog.Debugf("Server._handleTransactionBundle: Accepted %v txns from Peer %v",
@@ -582,33 +462,29 @@ func (pp *Peer) StartBitCloutMessageProcessor() {
 // NewPeer creates a new Peer object.
 func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 	_isPersistent bool, _stallTimeoutSeconds uint64,
-	_ignoreUnminedBitcoinTxnsFromPeers bool,
-	_blockCypherAPIKey string,
 	_minFeeRateNanosPerKB uint64,
 	params *BitCloutParams,
 	messageChan chan *ServerMessage,
 	_cmgr *ConnectionManager, _srv *Server) *Peer {
 
 	pp := Peer{
-		cmgr:                              _cmgr,
-		srv:                               _srv,
-		conn:                              _conn,
-		addrStr:                           _conn.RemoteAddr().String(),
-		netAddr:                           _netAddr,
-		isOutbound:                        _isOutbound,
-		isPersistent:                      _isPersistent,
-		outputQueueChan:                   make(chan BitCloutMessage),
-		quit:                              make(chan interface{}),
-		knownInventory:                    lru.NewCache(maxKnownInventory),
-		blocksToSend:                      make(map[BlockHash]bool),
-		stallTimeoutSeconds:               _stallTimeoutSeconds,
-		ignoreUnminedBitcoinTxnsFromPeers: _ignoreUnminedBitcoinTxnsFromPeers,
-		blockCypherAPIKey:                 _blockCypherAPIKey,
-		minTxFeeRateNanosPerKB:            _minFeeRateNanosPerKB,
-		knownAddressesmap:                 make(map[string]bool),
-		Params:                            params,
-		MessageChan:                       messageChan,
-		requestedBlocks:                   make(map[BlockHash]bool),
+		cmgr:                   _cmgr,
+		srv:                    _srv,
+		conn:                   _conn,
+		addrStr:                _conn.RemoteAddr().String(),
+		netAddr:                _netAddr,
+		isOutbound:             _isOutbound,
+		isPersistent:           _isPersistent,
+		outputQueueChan:        make(chan BitCloutMessage),
+		quit:                   make(chan interface{}),
+		knownInventory:         lru.NewCache(maxKnownInventory),
+		blocksToSend:           make(map[BlockHash]bool),
+		stallTimeoutSeconds:    _stallTimeoutSeconds,
+		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
+		knownAddressesmap:      make(map[string]bool),
+		Params:                 params,
+		MessageChan:            messageChan,
+		requestedBlocks:        make(map[BlockHash]bool),
 	}
 	if _cmgr != nil {
 		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)

@@ -47,12 +47,11 @@ type ServerReply struct {
 // accordingly. Probably the best place to start looking is the messageHandler
 // function.
 type Server struct {
-	cmgr           *ConnectionManager
-	blockchain     *Blockchain
-	bitcoinManager *BitcoinManager
-	mempool        *BitCloutMempool
-	miner          *BitCloutMiner
-	blockProducer  *BitCloutBlockProducer
+	cmgr          *ConnectionManager
+	blockchain    *Blockchain
+	mempool       *BitCloutMempool
+	miner         *BitCloutMiner
+	blockProducer *BitCloutBlockProducer
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -124,6 +123,8 @@ type Server struct {
 	hasProcessedFirstTransactionBundle bool
 
 	statsdClient *statsd.Client
+
+	Notifier *Notifier
 }
 
 func (srv *Server) HasProcessedFirstTransactionBundle() bool {
@@ -199,11 +200,6 @@ func (srv *Server) GetConnectionManager() *ConnectionManager {
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
-func (srv *Server) GetBitcoinManager() *BitcoinManager {
-	return srv.bitcoinManager
-}
-
-// TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetMiner() *BitCloutMiner {
 	return srv.miner
 }
@@ -234,8 +230,6 @@ func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgBitCloutTxn) error {
 		// transaction will be mined at the earliest.
 		blockHeight+1,
 		true,
-		false,
-		0,
 		srv.mempool)
 	if err != nil {
 		return fmt.Errorf("VerifyAndBroadcastTransaction: Problem validating txn: %v", err)
@@ -278,6 +272,7 @@ func NewServer(
 	_bitcloutAddrMgr *addrmgr.AddrManager,
 	_connectIps []string,
 	_db *badger.DB,
+	postgres *Postgres,
 	_targetOutboundPeers uint32,
 	_maxInboundPeers uint32,
 	_minerPublicKeys []string,
@@ -286,7 +281,6 @@ func NewServer(
 	_rateLimitFeerateNanosPerKB uint64,
 	_minFeeRateNanosPerKB uint64,
 	_stallTimeoutSeconds uint64,
-	_bitcoinDataDir string,
 	_maxBlockTemplatesToCache uint64,
 	_minBlockUpdateIntervalSeconds uint64,
 	_blockCypherAPIKey string,
@@ -296,8 +290,6 @@ func NewServer(
 	_disableNetworking bool,
 	_readOnlyMode bool,
 	_ignoreInboundPeerInvMessages bool,
-	_bitcoinConnectPeer string,
-	_ignoreUnminedBitcoinTxnsFromPeers bool,
 	statsd *statsd.Client,
 	_blockProducerSeed string,
 	_trustedBlockProducerPublicKeys []string,
@@ -322,19 +314,8 @@ func NewServer(
 	_cmgr := NewConnectionManager(
 		_params, _bitcloutAddrMgr, _listeners, _connectIps, timesource,
 		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
-		_ignoreUnminedBitcoinTxnsFromPeers,
-		_blockCypherAPIKey,
 		_stallTimeoutSeconds, _minFeeRateNanosPerKB,
 		_incomingMessages, srv)
-
-	// Create a BitcoinManager so that transactions that exchange BitClout for Bitcoin
-	// can be properly validated.
-	_bitcoinManager, err := NewBitcoinManager(
-		_db, _params, timesource, _bitcoinDataDir, _incomingMessages,
-		_bitcoinConnectPeer)
-	if err != nil {
-		return nil, errors.Wrapf(err, "NewServer: Problem initializing BitcoinManager")
-	}
 
 	// Set up the blockchain data structure. This is responsible for accepting new
 	// blocks, keeping track of the best chain, and keeping all of that state up
@@ -350,7 +331,7 @@ func NewServer(
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys,
 		_trustedBlockProducerStartHeight,
-		_params, timesource, _db, _bitcoinManager, srv)
+		_params, timesource, _db, postgres, srv)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain")
 	}
@@ -398,7 +379,7 @@ func NewServer(
 			_minBlockUpdateIntervalSeconds, _maxBlockTemplatesToCache,
 			_blockProducerSeed,
 			_mempool, _chain,
-			_bitcoinManager, _params)
+			_params, postgres)
 		if err != nil {
 			panic(err)
 		}
@@ -420,7 +401,6 @@ func NewServer(
 	// Set all the fields on the Server object.
 	srv.cmgr = _cmgr
 	srv.blockchain = _chain
-	srv.bitcoinManager = _bitcoinManager
 	srv.mempool = _mempool
 	srv.miner = _miner
 	srv.blockProducer = _blockProducer
@@ -430,6 +410,10 @@ func NewServer(
 	srv.requestTimeoutSeconds = 10
 
 	srv.statsdClient = statsd
+
+	// TODO: Make this configurable
+	//srv.Notifier = NewNotifier(_chain, postgres)
+	//srv.Notifier.Start()
 
 	// Start statsd reporter
 	if srv.statsdClient != nil {
@@ -487,23 +471,6 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgBitCloutGetHeaders) {
 // corresponding peer. It is typically called after we have exited
 // SyncStateSyncingHeaders.
 func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
-	// Do not fetch blocks if the BitcoinManager is not time-synced. Getting blocks
-	// before the BitcoinManager is synced is a waste of time since we will generally
-	// not be able to validate them before this point. Note that when BitcoinManager
-	// eventually does become time-synced it will signal the Server with a
-	// BitcoinManagerUpdate message. This will trigger a getheaders message to be sent
-	// to one of our Peers, which will eventually trigger GetBlocks again (most likely
-	// via a HeaderBundle response from the Peer).
-	//
-	// Note this check is not strictly necessary since messageHandler will ultimately
-	// not allow blocks to be processed if the BitcoinManager is not synced, but checking
-	// this here allows for the optimization of not requesting them in the first place.
-	if !srv.bitcoinManager.IsCurrent(false /*considerCumWork*/) {
-		glog.Debugf("Server.GetBlocks: Not calling GetBlocks on Peer %v because "+
-			"BitcoinManager is not time-current", pp)
-		return
-	}
-
 	// Fetch as many blocks as we can from this peer.
 	numBlocksToFetch := MaxBlocksInFlight - len(pp.requestedBlocks)
 	blockNodesToFetch := srv.blockchain.GetBlockNodesToFetch(
@@ -883,8 +850,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgBitCloutBitcoinManag
 			for _, burnTxn := range bmUpdate.TransactionsFound {
 				err := srv.blockchain.ValidateTransaction(
 					burnTxn, srv.blockchain.blockTip().Height+1, true, /*verifySignatures*/
-					false, /*checkMerkleProof*/
-					0, nil /*mempool*/)
+					nil /*mempool*/)
 				if err == nil {
 					validTransactions = append(validTransactions, burnTxn)
 				} else {
@@ -933,23 +899,12 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgBitCloutBitcoinManag
 		return
 	}
 
-	// If we get here it means we have a SyncPeer set. If the BitcoinManager is
-	// time-current and we're done with the BitClout sync, shoot them a getheaders just
-	// for good measure in case there's anything to update. This will be the case
-	// if it took longer to download Bitcoin
-	// headers than to download BitClout headers, and in this case this GetHeaders request
-	// will initiate the download of BitClout blocks to match the corresponding headers.
-	//
-	// Note that if we're in the middle of an BitClout header sync and if the SyncPeer
-	// is set then we don't send the GetHeaders since the node is presumably already
-	// in the middle of processing them. Once the BitClout header sync is complete, assuming the
-	// Bitcoin header chain is also still in-sync, the rest of the BitClout sync, including
-	// block download, will proceed.
-	if srv.bitcoinManager.IsCurrent(false /*considerCumWork*/) &&
-		!srv.blockchain.isSyncing() {
+	if !srv.blockchain.isSyncing() {
 
-		glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil and " +
-			"BitcoinManager is time-current; sending " +
+		//glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil and " +
+		//	"BitcoinManager is time-current; sending " +
+		//	"BitClout getheaders for good measure")
+		glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil; sending " +
 			"BitClout getheaders for good measure")
 		locator := srv.blockchain.LatestHeaderLocator()
 		srv.SyncPeer.AddBitCloutMessage(&MsgBitCloutGetHeaders{
@@ -1039,8 +994,7 @@ func (srv *Server) _addNewTxn(
 		return nil, err
 	}
 
-	if srv.blockchain.chainState() != SyncStateFullyCurrent ||
-		!srv.bitcoinManager.IsCurrent(true) {
+	if srv.blockchain.chainState() != SyncStateFullyCurrent {
 
 		err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
 			"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
@@ -1116,9 +1070,7 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(blk *MsgBitCloutBlock) {
 
 func (srv *Server) _maybeRequestSync(pp *Peer) {
 	// Send the mempool message if BitClout and Bitcoin are fully current
-	if srv.blockchain.chainState() == SyncStateFullyCurrent &&
-		srv.bitcoinManager.IsCurrent(true /*considerCumWork*/) {
-
+	if srv.blockchain.chainState() == SyncStateFullyCurrent {
 		if pp != nil {
 			glog.Debugf("Server._maybeRequestSync: Sending mempool message: %v", pp)
 			pp.AddBitCloutMessage(&MsgBitCloutMempool{}, false)
@@ -1126,9 +1078,8 @@ func (srv *Server) _maybeRequestSync(pp *Peer) {
 			glog.Debugf("Server._maybeRequestSync: NOT sending mempool message because peer is nil: %v", pp)
 		}
 	} else {
-		glog.Debugf("Server._maybeRequestSync: NOT sending mempool message because not current: %v, %v, %v",
+		glog.Debugf("Server._maybeRequestSync: NOT sending mempool message because not current: %v, %v",
 			srv.blockchain.chainState(),
-			srv.bitcoinManager.IsCurrent(true /*considerCumWork*/),
 			pp)
 	}
 }
@@ -1566,31 +1517,7 @@ func (srv *Server) messageHandler() {
 			continue
 		}
 
-		// The Server behaves differently before and after the BitcoinManager has
-		// reached a time-synced state. Before the BitcoinManager is time-synced,
-		// the Server will only react to control messages and HeaderBundle messages.
-		// After the BitcoinManager is synced, it handles all messages.
-		if srv.bitcoinManager.IsCurrent(false /*considerCumWork*/) {
-			glog.Tracef("Server.messageHandler: BitcoinManager is time-current")
-
-			// If the BitcoinManager is synced, handle non-control messages.
-			srv._handlePeerMessages(serverMessage)
-
-		} else {
-			glog.Tracef("Server.messageHandler: BitcoinManager is NOT time-current")
-
-			// When the BitcoinManager is not time-current, make sure all of the request
-			// queues are cleared.
-			srv.ResetRequestQueues()
-
-			// Handle header bundle message if applicable. We handle HeaderBundle messages
-			// before the Server is time-synced because we can process and validate headers
-			// without relying on the Bitcoin chain.
-			if serverMessage.Msg.GetMsgType() == MsgTypeHeaderBundle {
-				srv._handleHeaderBundle(
-					serverMessage.Peer, serverMessage.Msg.(*MsgBitCloutHeaderBundle))
-			}
-		}
+		srv._handlePeerMessages(serverMessage)
 
 		// Always check for and handle control messages regardless of whether the
 		// BitcoinManager is synced. Note that we filter control messages out in a
@@ -1781,6 +1708,4 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
-
-	go srv.bitcoinManager.Start()
 }
