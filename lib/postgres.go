@@ -2,27 +2,26 @@ package lib
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/uptrace/bun"
 	"strings"
 )
 
 type Postgres struct {
-	db  *bun.DB
-	ctx context.Context
+	db     *bun.DB
+	ctx    context.Context
+	trends bool
 }
 
-func NewPostgres(db *bun.DB) *Postgres {
-	// Uncomment to print all queries.
-	//db.AddQueryHook(pgdebug.DebugHook{
-	//	Verbose: true,
-	//})
-
+func NewPostgres(db *bun.DB, trends bool) *Postgres {
 	return &Postgres{
-		db:  db,
-		ctx: context.Background(),
+		db:     db,
+		ctx:    context.Background(),
+		trends: trends,
 	}
 }
 
@@ -697,6 +696,31 @@ func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
 }
 
 //
+// Trends
+//
+
+type PGTrend struct {
+	bun.BaseModel `bun:"pg_trends"`
+	ID            uint64
+
+	PKID        *PKID `bun:"type:binary"`
+	BlockHeight uint32
+
+	// One bucket every 288 blocks
+	FounderRewardNanos uint64
+	DiamondNanos       uint64
+	NFTSellerNanos     uint64
+	NFTRoyaltyNanos    uint64
+
+	// One snapshot every 288 blocks
+	NumHolders         uint64
+	CoinsInCirculation uint64
+	LockedNanos        uint64
+	BalanceNanos       uint64
+	HoldingNanos       uint64
+}
+
+//
 // Blockchain and Transactions
 //
 
@@ -1262,6 +1286,9 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 		if err := postgres.flushDerivedKeys(tx, view); err != nil {
 			return err
 		}
+		if err := postgres.flushTrends(tx, view); err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -1709,6 +1736,27 @@ func (postgres *Postgres) flushNFTBids(tx bun.Tx, view *UtxoView) error {
 	return nil
 }
 
+func (postgres *Postgres) flushTrends(tx bun.Tx, view *UtxoView) error {
+	// Only flush trends if enabled
+	if !postgres.trends {
+		return nil
+	}
+
+	var insertTrends []*PGTrend
+	for _, trend := range view.TrendsMap {
+		insertTrends = append(insertTrends, trend)
+	}
+
+	if len(insertTrends) > 0 {
+		_, err := tx.NewInsert().Model(&insertTrends).On("DUPLATE KEY UPDATE").Returning("NULL").Exec(postgres.ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (postgres *Postgres) flushDerivedKeys(tx bun.Tx, view *UtxoView) error {
 	var insertKeys []*PGDerivedKey
 	var deleteKeys []*PGDerivedKey
@@ -1871,6 +1919,13 @@ func (postgres *Postgres) GetProfilesForUsername(usernames []string) []*PGProfil
 		LogError(err)
 		return nil
 	}
+	return profiles
+}
+
+// TODO: This is not performant, should be deleted
+func (postgres *Postgres) GetProfilesBatch() []*PGProfile {
+	var profiles []*PGProfile
+	_ = postgres.db.NewSelect().Model(&profiles).Scan(postgres.ctx)
 	return profiles
 }
 
@@ -2068,6 +2123,16 @@ func (postgres *Postgres) GetHolders(pkid *PKID) []*PGCreatorCoinBalance {
 	return holdings
 }
 
+func (postgres *Postgres) GetCreatorCoinBalancesBatch(pkids []*PKID) []*PGCreatorCoinBalance {
+	var balances []*PGCreatorCoinBalance
+	inPkids := bun.In(pkids)
+	err := postgres.db.NewSelect().Model(&balances).Where("holder_pkid IN (?), pkids) OR creator_pkid IN (?)", inPkids, inPkids).Scan(postgres.ctx)
+	if err != nil {
+		return nil
+	}
+	return balances
+}
+
 //
 // NFTS
 //
@@ -2174,11 +2239,50 @@ func (postgres *Postgres) GetBalance(publicKey *PublicKey) uint64 {
 	return balance.BalanceNanos
 }
 
+func (postgres *Postgres) GetBalancesBatch(publicKeys []*PublicKey) []*PGBalance {
+	var balances []*PGBalance
+	err := postgres.db.NewSelect().Model(&balances).Where("public_key IN (?)", bun.In(publicKeys)).Scan(postgres.ctx)
+	if err != nil {
+		return nil
+	}
+	return balances
+}
+
+//
+// Trends
+//
+
+func (postgres *Postgres) GetTrend(pkid *PKID, blockHeight uint32) *PGTrend {
+	trend := PGTrend{
+		PKID:        pkid,
+		BlockHeight: blockHeight,
+	}
+	err := postgres.db.NewSelect().Model(&trend).WherePK().Limit(1).Scan(postgres.ctx)
+	if err != nil {
+		return nil
+	}
+	return &trend
+}
+
+func (postgres *Postgres) UpsertTrends(trends []*PGTrend) error {
+	_, err := postgres.db.NewInsert().Model(&trends).On("DUPLICATE KEY UPDATE").Exec(postgres.ctx)
+	return err
+}
+
+func (postgres *Postgres) GetTrendsBatch(pkids []*PKID, blockHeight uint32) []*PGTrend {
+	var trends []*PGTrend
+	err := postgres.db.NewSelect().Model(&trends).Where("pkid IN (?) AND block_height = ?", bun.In(pkids), blockHeight).Scan(postgres.ctx)
+	if err != nil {
+		return nil
+	}
+	return trends
+}
+
 //
 // PGChain Init
 //
 
-func (postgres *Postgres) InitGenesisBlock(params *DeSoParams) error {
+func (postgres *Postgres) InitGenesisBlock(params *DeSoParams, db *badger.DB) error {
 	// Construct a node for the genesis block. Its height is zero and it has no parents. Its difficulty should be
 	// set to the initial difficulty specified in the parameters and it should be assumed to be
 	// valid and stored by the end of this function.
@@ -2222,6 +2326,39 @@ func (postgres *Postgres) InitGenesisBlock(params *DeSoParams) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Add seed transactions
+	utxoView, err := NewUtxoView(db, params, postgres)
+	if err != nil {
+		return fmt.Errorf("InitGenesisBlock: Error initializing UtxoView")
+	}
+
+	for txnIndex, txnHex := range params.SeedTxns {
+		txnBytes, err := hex.DecodeString(txnHex)
+		if err != nil {
+			return fmt.Errorf("InitGenesisBlock: Error decoding txn HEX: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
+		}
+
+		txn := &MsgDeSoTxn{}
+		if err := txn.FromBytes(txnBytes); err != nil {
+			return fmt.Errorf(
+				"InitGenesisBlock: Error decoding txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
+		}
+
+		// Important: ignoreUtxos makes it so that the inputs/outputs aren't processed, which is important.
+		// Set txnSizeBytes to 0 here as the minimum network fee is 0 at genesis block, so there is no need to serialize
+		// these transactions to check if they meet the minimum network fee requirement.
+		_, _, _, _, err = utxoView.ConnectTransaction(txn, txn.Hash(), 0, 0, false, true)
+		if err != nil {
+			return fmt.Errorf("InitGenesisBlock: Error connecting transaction: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
+		}
+	}
+
+	// Flush all the data in the view.
+	err = utxoView.FlushToDb()
+	if err != nil {
+		return fmt.Errorf("InitGenesisBlock: Error flushing seed txns to DB: %v", err)
 	}
 
 	return nil
