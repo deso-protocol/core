@@ -1101,7 +1101,7 @@ func (msg *MsgBitCloutInv) ToBytes(preSignature bool) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgBitCloutGetInv: ")
 	}
-	data = append(data, _boolToByte(msg.IsSyncResponse))
+	data = append(data, BoolToByte(msg.IsSyncResponse))
 
 	return data, nil
 }
@@ -1112,7 +1112,7 @@ func (msg *MsgBitCloutInv) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgBitCloutInv: ")
 	}
-	isSyncResponse := _readBoolByte(rr)
+	isSyncResponse := ReadBoolByte(rr)
 
 	*msg = MsgBitCloutInv{
 		InvList:        invList,
@@ -3081,7 +3081,7 @@ func (txnData *LikeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, txnData.LikedPostHash[:]...)
 
 	// Add IsUnlike bool.
-	data = append(data, _boolToByte(txnData.IsUnlike))
+	data = append(data, BoolToByte(txnData.IsUnlike))
 
 	return data, nil
 }
@@ -3099,7 +3099,7 @@ func (txnData *LikeMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnlike
-	ret.IsUnlike = _readBoolByte(rr)
+	ret.IsUnlike = ReadBoolByte(rr)
 
 	*txnData = ret
 
@@ -3153,7 +3153,7 @@ func (txnData *FollowMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, txnData.FollowedPublicKey...)
 
 	// Add IsUnfollow bool.
-	data = append(data, _boolToByte(txnData.IsUnfollow))
+	data = append(data, BoolToByte(txnData.IsUnfollow))
 
 	return data, nil
 }
@@ -3171,7 +3171,7 @@ func (txnData *FollowMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnfollow
-	ret.IsUnfollow = _readBoolByte(rr)
+	ret.IsUnfollow = ReadBoolByte(rr)
 
 	*txnData = ret
 
@@ -3190,7 +3190,7 @@ func (txnData *FollowMetadata) New() BitCloutTxnMetadata {
 // SubmitPostMetadata
 // ==================================================================
 
-func _readBoolByte(rr *bytes.Reader) bool {
+func ReadBoolByte(rr *bytes.Reader) bool {
 	boolByte, err := rr.ReadByte()
 	if err != nil {
 		return false
@@ -3201,7 +3201,7 @@ func _readBoolByte(rr *bytes.Reader) bool {
 	return false
 }
 
-func _boolToByte(val bool) byte {
+func BoolToByte(val bool) byte {
 	if val {
 		return 1
 	}
@@ -3279,7 +3279,7 @@ func (txnData *SubmitPostMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, UintToBuf(txnData.TimestampNanos)...)
 
 	// IsHidden
-	data = append(data, _boolToByte(txnData.IsHidden))
+	data = append(data, BoolToByte(txnData.IsHidden))
 
 	return data, nil
 }
@@ -3346,7 +3346,7 @@ func (txnData *SubmitPostMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = _readBoolByte(rr)
+	ret.IsHidden = ReadBoolByte(rr)
 
 	*txnData = ret
 
@@ -3426,7 +3426,7 @@ func (txnData *UpdateProfileMetadata) ToBytes(preSignature bool) ([]byte, error)
 	data = append(data, UintToBuf(txnData.NewStakeMultipleBasisPoints)...)
 
 	// IsHidden
-	data = append(data, _boolToByte(txnData.IsHidden))
+	data = append(data, BoolToByte(txnData.IsHidden))
 
 	return data, nil
 }
@@ -3481,7 +3481,7 @@ func (txnData *UpdateProfileMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = _readBoolByte(rr)
+	ret.IsHidden = ReadBoolByte(rr)
 
 	*txnData = ret
 
@@ -3793,10 +3793,10 @@ func (txnData *CreateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, UintToBuf(txnData.NumCopies)...)
 
 	// HasUnlockable
-	data = append(data, _boolToByte(txnData.HasUnlockable))
+	data = append(data, BoolToByte(txnData.HasUnlockable))
 
 	// IsForSale
-	data = append(data, _boolToByte(txnData.IsForSale))
+	data = append(data, BoolToByte(txnData.IsForSale))
 
 	// MinBidAmountNanos uint64
 	data = append(data, UintToBuf(txnData.MinBidAmountNanos)...)
@@ -3829,10 +3829,10 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// HasUnlockable
-	ret.HasUnlockable = _readBoolByte(rr)
+	ret.HasUnlockable = ReadBoolByte(rr)
 
 	// IsForSale
-	ret.IsForSale = _readBoolByte(rr)
+	ret.IsForSale = ReadBoolByte(rr)
 
 	// MinBidAmountNanos uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)
@@ -3893,7 +3893,7 @@ func (txnData *UpdateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, UintToBuf(txnData.SerialNumber)...)
 
 	// IsForSale
-	data = append(data, _boolToByte(txnData.IsForSale))
+	data = append(data, BoolToByte(txnData.IsForSale))
 
 	// MinBidAmountNanos uint64
 	data = append(data, UintToBuf(txnData.MinBidAmountNanos)...)
@@ -3920,7 +3920,7 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// IsForSale
-	ret.IsForSale = _readBoolByte(rr)
+	ret.IsForSale = ReadBoolByte(rr)
 
 	// SerialNumber uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)

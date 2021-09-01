@@ -4006,7 +4006,7 @@ func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint6
 func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) []byte {
 	prefixCopy := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	key := append(prefixCopy, pkid[:]...)
-	key = append(key, _boolToByte(isForSale))
+	key = append(key, BoolToByte(isForSale))
 	key = append(key, EncodeUint64(bidAmountNanos)...)
 	key = append(key, nftPostHash[:]...)
 	key = append(key, EncodeUint64(serialNumber)...)
