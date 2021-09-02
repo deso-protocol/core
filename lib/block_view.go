@@ -6050,10 +6050,9 @@ func (bav *UtxoView) _connectUpdateProfile(
 		newProfileEntry = *existingProfileEntry
 
 		// Modifying a profile is only allowed if the transaction public key equals
-		// the profile public key or if the public key belongs to a paramUpdater.
+		// the profile public key
 		_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
-		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) &&
-			!updaterIsParamUpdater {
+		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) {
 
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorProfileModificationNotAuthorized,
@@ -6942,12 +6941,6 @@ func (bav *UtxoView) _connectSwapIdentity(
 	}
 	txMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 
-	// The txn.PublicKey must be paramUpdater
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
-	if !updaterIsParamUpdater {
-		return 0, 0, nil, RuleErrorSwapIdentityIsParamUpdaterOnly
-	}
-
 	// call _connectBasicTransfer to verify signatures
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
@@ -6967,6 +6960,11 @@ func (bav *UtxoView) _connectSwapIdentity(
 	}
 	if _, err := btcec.ParsePubKey(fromPublicKey, btcec.S256()); err != nil {
 		return 0, 0, nil, errors.Wrap(RuleErrorInvalidFromPublicKey, err.Error())
+	}
+	
+	// Only the private key holder can transfer the profile to another user
+	if fromPublicKey != txn.PublicKey {
+		return 0, 0, nil, RuleErrorFromPublicKeyIsRequired
 	}
 
 	// The "to" public key must be set and valid.
