@@ -2532,16 +2532,8 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem reading BitCloutTxn.Signature")
 		}
 
-		// Copy the signature to keep it read-only. First we verify that the
-		// control byte is within the allowed range.
-		sigBytesCopy := append([]byte{}, sigBytes...)
-		if !(sigBytesCopy[0] >= DERControlByte && sigBytesCopy[0] <= SIGMaxByte) {
-			return nil, fmt.Errorf("_readTransaction: Signature control byte outside of allowed range")
-		}
-		// Check if signature can be parsed. As first byte can include the
-		// solution index, we reset it before parsing the signature.
-		sigBytesCopy[0] = DERControlByte
-		_, err := btcec.ParseDERSignature(sigBytesCopy, btcec.S256())
+		// Verify that the signature is valid.
+		_, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing BitCloutTxn.Signature bytes")
 		}
@@ -2617,7 +2609,6 @@ func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, er
 	if err != nil {
 		return nil, err
 	}
-
 	return txnSignature, nil
 }
 

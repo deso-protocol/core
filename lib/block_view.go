@@ -3042,9 +3042,8 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 	txHash := Sha256DoubleHash(txBytes)
 	sig, err := btcec.ParseDERSignature(txn.Signature, btcec.S256())
 
-	// Look for the derived key in transaction ExtraData. Sanity-check the key.
-	// For transactions signed using a derived key, the derived public key is
-	// passed to ExtraData.
+	// Look for the derived key in transaction ExtraData and validate it. For transactions
+	// signed using a derived key, the derived public key is passed to ExtraData.
 	var derivedPk *btcec.PublicKey
 	var derivedPkBytes []byte
 	isDerived := false
@@ -3358,7 +3357,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// all.
 		//
 		// UPDATE: Transaction can be signed by a different key, called a derived key.
-		// The first byte of the signature, the control byte, tells us which key was used.
+		// The derived key is passed in ExtraData and we use it to verify the signature.
 		//
 		// We treat block rewards as a special case in that we actually require that they
 		// not have a transaction-level public key and that they not be signed. Doing this
@@ -10693,18 +10692,6 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		return err
 	}
 	if err := bav._flushRecloutEntriesToDbWithTxn(txn); err != nil {
-		return err
-	}
-	if err := bav._flushPostEntriesToDbWithTxn(txn); err != nil {
-		return err
-	}
-	if err := bav._flushProfileEntriesToDbWithTxn(txn); err != nil {
-		return err
-	}
-	if err := bav._flushBalanceEntriesToDbWithTxn(txn); err != nil {
-		return err
-	}
-	if err := bav._flushPKIDEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 
