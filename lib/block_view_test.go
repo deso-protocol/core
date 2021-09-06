@@ -18710,19 +18710,25 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *BitCloutMempool) {
 		// Verify that expiration block was persisted in the db or is in mempool utxoView
 		if mempool == nil {
-			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, senderPkBytes, derivedPublicKey)
+			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
+			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
+			// To pass the tests, we initialize it to a default struct.
+			if derivedKeyEntry == nil {
+				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, false}
+			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
 		} else {
 			utxoView, err := mempool.GetAugmentedUniversalView()
 			require.NoError(err)
-			derivedEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
-			// If we removed the derivedEntry from utxoView altogether, it'll be nil.
-			// So we pass this test if we set expirationBlockExpected = 0. Otherwise we do the asserts.
-			if !(derivedEntry == nil && expirationBlockExpected == 0) {
-				assert.Equal(derivedEntry.ExpirationBlock, expirationBlockExpected)
-				assert.Equal(derivedEntry.OperationType, operationTypeExpected)
+			derivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
+			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
+			// To pass the tests, we initialize it to a default struct.
+			if derivedKeyEntry == nil {
+				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, false}
 			}
+			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
+			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
 		}
 
 		// Verify that the balance of recipient is equal to expected balance

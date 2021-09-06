@@ -44,8 +44,7 @@ func init() {
 				type       SMALLINT NOT NULL,
 				public_key BYTEA,
 				extra_data JSONB,
-				r          BYTEA,
-				s          BYTEA
+				signature  BYTEA,
 			);
 		`)
 		if err != nil {
@@ -274,6 +273,19 @@ func init() {
 		}
 
 		_, err = db.Exec(`
+			CREATE TABLE pg_metadata_derived_keys (
+				transaction_hash   BYTEA PRIMARY KEY,
+				derived_public_key BYTEA NOT NULL,
+				expiration_block   BIGINT NOT NULL,
+				operation_type     SMALLINT NOT NULL,
+				access_signature   BYTEA NOT NULL
+			);
+		`)
+		if err != nil {
+			return err
+		}
+
+		_, err = db.Exec(`
 			CREATE TABLE pg_notifications (
 				transaction_hash BYTEA PRIMARY KEY,
 				mined            BOOL NOT NULL,
@@ -484,6 +496,17 @@ func init() {
 			return err
 		}
 
+		_, err = db.Exec(`
+			CREATE TABLE pg_derived_keys (
+				owner_public_key   BYTEA NOT NULL,
+				derived_public_key BYTEA NOT NULL,
+				expiration_block   BIGINT NOT NULL,
+				operation_type     SMALLINT NOT NULL,
+
+				PRIMARY KEY (owner_public_key, derived_public_key)
+			);
+		`)
+
 		return nil
 	}
 
@@ -509,6 +532,7 @@ func init() {
 			DROP TABLE pg_metadata_accept_nft_bids;
 			DROP TABLE pg_metadata_bid_inputs;
 			DROP TABLE pg_metadata_nft_bids;
+			DROP TABLE pg_metadata_derived_keys;
 			DROP TABLE pg_notifications;
 			DROP TABLE pg_profiles;
 			DROP TABLE pg_posts;
@@ -523,6 +547,7 @@ func init() {
 			DROP TABLE pg_forbidden_keys;
 			DROP TABLE pg_nfts;
 			DROP TABLE pg_nft_bids;
+			DROP TABLE pg_derived_keys;
 		`)
 		return err
 	}

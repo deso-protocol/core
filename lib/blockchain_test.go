@@ -753,13 +753,15 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg str
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
-	txnBytes, err := txn.ToBytes(true /*preSignature*/)
-	require.NoError(err)
-	privateKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	txnSignatureBytes, err := SignTransactionWithDerivedKey(txnBytes, privateKey)
+	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	if txn.ExtraData == nil {
+		txn.ExtraData = make(map[string][]byte)
+	}
+	txn.ExtraData["DerivedPublicKey"] = publicKey.SerializeCompressed()
+	txnSignature, err := txn.Sign(privateKey)
 	require.NoError(err)
 
-	txn.Signature = txnSignatureBytes
+	txn.Signature = txnSignature.Serialize()
 }
 
 func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,

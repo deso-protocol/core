@@ -4519,24 +4519,24 @@ func DBGetNFTBidEntriesPaginated(
 // ======================================================================================
 
 func _dbKeyForOwnerToDerivedKeyMapping(
-	ownerPublicKey []byte, derivedPublicKey []byte) []byte {
+	ownerPublicKey PublicKey, derivedPublicKey PublicKey) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
-	key := append(prefixCopy, ownerPublicKey...)
-	key = append(key, derivedPublicKey...)
+	key := append(prefixCopy, ownerPublicKey[:]...)
+	key = append(key, derivedPublicKey[:]...)
 	return key
 }
 
 func _dbSeekPrefixForDerivedKeyMappings(
-	ownerPublicKey []byte) []byte {
+	ownerPublicKey PublicKey) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
-	key := append(prefixCopy, ownerPublicKey...)
+	key := append(prefixCopy, ownerPublicKey[:]...)
 	return key
 }
 
 func DBPutDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPublicKey []byte, derivedPublicKey []byte, derivedKeyEntry *DerivedKeyEntry) error {
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
 
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Owner Public Key "+
@@ -4555,7 +4555,7 @@ func DBPutDerivedKeyMappingWithTxn(
 }
 
 func DBPutDerivedKeyMapping(
-	handle *badger.DB, ownerPublicKey []byte, derivedPublicKey []byte, derivedKeyEntry *DerivedKeyEntry) error {
+	handle *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey, derivedKeyEntry)
@@ -4563,16 +4563,16 @@ func DBPutDerivedKeyMapping(
 }
 
 func DBGetOwnerToDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
 	derivedKeyEntryItem, err := txn.Get(key)
 	if err != nil {
-		return &DerivedKeyEntry{ownerPublicKey, derivedPublicKey, 0, AuthorizeDerivedKeyOperationValid}
+		return nil
 	}
 	derivedKeyEntryBytes, err := derivedKeyEntryItem.ValueCopy(nil)
 	if err != nil {
-		return &DerivedKeyEntry{ownerPublicKey, derivedPublicKey, 0, AuthorizeDerivedKeyOperationValid}
+		return nil
 	}
 	derivedKeyEntry := &DerivedKeyEntry{}
 	err = derivedKeyEntryItem.Value(func(valBytes []byte) error {
@@ -4583,7 +4583,7 @@ func DBGetOwnerToDerivedKeyMappingWithTxn(
 }
 
 func DBGetOwnerToDerivedKeyMapping(
-	db *badger.DB, ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
+	db *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
 
 	var derivedKeyEntry *DerivedKeyEntry
 	db.View(func(txn *badger.Txn) error {
@@ -4594,7 +4594,7 @@ func DBGetOwnerToDerivedKeyMapping(
 }
 
 func DBDeleteDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPublicKey []byte, derivedPublicKey []byte) error {
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
 	// We could call DBDeleteDerivedKeyMappingWithTxn whenever a key
 	// has expired. This way we would only store active keys in the db.
 
@@ -4602,7 +4602,7 @@ func DBDeleteDerivedKeyMappingWithTxn(
 	// If one doesn't exist then there's nothing to do.
 	derivedKeyEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
 		txn, ownerPublicKey, derivedPublicKey)
-	if derivedKeyEntry.ExpirationBlock == 0 && derivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationValid {
+	if derivedKeyEntry == nil {
 		return nil
 	}
 
@@ -4617,13 +4617,13 @@ func DBDeleteDerivedKeyMappingWithTxn(
 }
 
 func DBDeleteDerivedKeyMapping(
-	handle *badger.DB, ownerPublicKey []byte, derivedPublicKey []byte) error {
+	handle *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
 	})
 }
 
-func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey []byte) (
+func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicKey) (
 	_entries []*DerivedKeyEntry, _err error) {
 
 	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPublicKey)
