@@ -10633,7 +10633,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
 
-	// Go through all entries in the PKIDToDerivedKeyEntry map and add them to the Db.
+	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the Db.
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false.
