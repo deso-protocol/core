@@ -57,9 +57,10 @@ func (notifier *Notifier) Update() error {
 
 		for _, transaction := range transactions {
 			if transaction.Type == TxnTypeBasicTransfer {
+				extraData := transaction.ExtraData
 				for _, output := range transaction.Outputs {
 					if !reflect.DeepEqual(output.PublicKey, transaction.PublicKey) {
-						notifications = append(notifications, &PGNotification{
+						notification := &PGNotification{
 							TransactionHash: transaction.Hash,
 							Mined:           true,
 							ToUser:          output.PublicKey,
@@ -67,7 +68,19 @@ func (notifier *Notifier) Update() error {
 							Type:            NotificationSendClout,
 							Amount:          output.AmountNanos,
 							Timestamp:       block.Timestamp,
-						})
+						}
+						diamondLevelBytes, hasDiamondLevel := extraData[DiamondLevelKey]
+						diamondPostBytes, hasDiamondPost := extraData[DiamondPostHashKey]
+						if hasDiamondLevel && hasDiamondPost {
+							diamondLevel, bytesRead := Varint(diamondLevelBytes)
+							if bytesRead > 0 {
+								notification.Type = NotificationCloutDiamond
+								notification.Amount = uint64(diamondLevel)
+								notification.PostHash = &BlockHash{}
+								copy(notification.PostHash[:], diamondPostBytes)
+							}
+						}
+						notifications = append(notifications, notification)
 					}
 				}
 			} else if transaction.Type == TxnTypeLike {

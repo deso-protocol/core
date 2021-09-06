@@ -357,6 +357,7 @@ const (
 	NotificationPostMention
 	NotificationPostReply
 	NotificationPostReclout
+	NotificationCloutDiamond
 )
 
 type PGProfile struct {
