@@ -3072,7 +3072,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 	var derivedPkBytes []byte
 	isDerived := false
 	if txn.ExtraData != nil {
-		derivedPkBytes, isDerived = txn.ExtraData["DerivedPublicKey"]
+		derivedPkBytes, isDerived = txn.ExtraData[DerivedPublicKey]
 		if isDerived {
 			derivedPk, err = btcec.ParsePubKey(derivedPkBytes, btcec.S256())
 			if err != nil {
@@ -4768,7 +4768,12 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 	ownerPk := NewPublicKey(ownerPublicKey)
 	derivedPk := NewPublicKey(derivedPublicKey)
 	if bav.Postgres != nil {
-		entry = bav.Postgres.GetDerivedKey(ownerPk, derivedPk).NewDerivedKeyEntry()
+		entryPG := bav.Postgres.GetDerivedKey(ownerPk, derivedPk)
+		if entryPG != nil {
+			entry = entryPG.NewDerivedKeyEntry()
+		} else {
+			entry = nil
+		}
 	} else {
 		entry = DBGetOwnerToDerivedKeyMapping(bav.Handle, *ownerPk, *derivedPk)
 	}

@@ -44,7 +44,7 @@ func init() {
 				type       SMALLINT NOT NULL,
 				public_key BYTEA,
 				extra_data JSONB,
-				signature  BYTEA,
+				signature  BYTEA
 			);
 		`)
 		if err != nil {
@@ -506,6 +506,9 @@ func init() {
 				PRIMARY KEY (owner_public_key, derived_public_key)
 			);
 		`)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	}

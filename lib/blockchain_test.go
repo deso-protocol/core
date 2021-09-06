@@ -757,7 +757,7 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg str
 	if txn.ExtraData == nil {
 		txn.ExtraData = make(map[string][]byte)
 	}
-	txn.ExtraData["DerivedPublicKey"] = publicKey.SerializeCompressed()
+	txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
 	txnSignature, err := txn.Sign(privateKey)
 	require.NoError(err)
 

@@ -2614,33 +2614,32 @@ func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, er
 
 // SignTransactionWithDerivedKey the signature contains solution iteration,
 // which allows us to recover signer public key from the signature.
-func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, error){
-	// Compute a hash of the transaction bytes without the signature
-	// portion and sign it with the passed private key.
-	txnSignatureHash := Sha256DoubleHash(txnBytes)
-	txnSignature, err := privateKey.Sign(txnSignatureHash[:])
+// Returns (new txn bytes, txn signature, error)
+func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error){
+	// As we're signing the transaction using a derived key, we
+	// pass the key to extraData.
+	rr := bytes.NewReader(txnBytes)
+	txn, err := _readTransaction(rr)
 	if err != nil {
-		return nil, err
+		return nil, nil, errors.Wrapf(err, "SignTransactionWithDerivedKey: Problem reading txn: ")
+	}
+	if txn.ExtraData == nil {
+		txn.ExtraData = make(map[string][]byte)
+	}
+	txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
+
+	// Sign the transaction with the passed private key.
+	txnSignature, err := txn.Sign(privateKey)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	// If we're signing with a derived key, we will encode recovery byte into
-	// the signature.
-	txnSignatureBytes := txnSignature.Serialize()
-	txnSignatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, txnSignatureHash[:], false)
+	newTxnBytes, err := txn.ToBytes(true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Get the public key solution based on btcsuite/btcd RecoverCompact method.
-	// Iteration is between 1-4.
-	iteration := 1 + int((txnSignatureCompact[0] - CompactControlByte) & ^byte(4))
-
-	// Encode the public key solution in the first byte of the signature.
-	// Normally DER signatures start with 0x30 or 48 in base-10. We set
-	// the first byte to 0x30 + 0x1-4 depending on the solution.
-	txnSignatureBytes[0] = byte(DERControlByte + iteration)
-
-	return txnSignatureBytes, nil
+	return newTxnBytes, txnSignature.Serialize(), nil
 }
 
 // MarshalJSON and UnmarshalJSON implement custom JSON marshaling/unmarshaling
