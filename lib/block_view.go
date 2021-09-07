@@ -2551,7 +2551,7 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
-	// In order to disconnect an updated bid, we need to do the following:
+	// In order to disconnect an updated NFT, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one.
 	//  (2) Add back all of the bids that were deleted (if any).
 	//  (3) Revert the post entry since we updated num NFT copies for sale.
@@ -2758,6 +2758,199 @@ func (bav *UtxoView) _disconnectNFTBid(
 	if operationData.PrevNFTBidEntry != nil {
 		bav._setNFTBidEntryMappings(operationData.PrevNFTBidEntry)
 	}
+
+	// Now revert the basic transfer with the remaining operations.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+}
+
+func (bav *UtxoView) _disconnectNFTTransfer(
+	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is an NFTTransfer operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectNFTTransfer: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeNFTTransfer {
+		return fmt.Errorf("_disconnectNFTTransfer: Trying to revert "+
+			"OperationTypeNFTTransfer but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+	txMeta := currentTxn.TxnMeta.(*NFTTransferMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+
+	// Make sure that there is a prev NFT entry.
+	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
+		return fmt.Errorf("_disconnectNFTTransfer: prev NFT entry doesn't exist; " +
+			"this should never happen.")
+	}
+
+	// Sanity check the old NFT entry PKID / PostHash / SerialNumber.
+	updaterPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if updaterPKID == nil || updaterPKID.isDeleted {
+		return fmt.Errorf("_disconnectNFTTransfer: non-existent updaterPKID: %s",
+			PkToString(currentTxn.PublicKey, bav.Params))
+	}
+	if !reflect.DeepEqual(operationData.PrevNFTEntry.OwnerPKID, updaterPKID.PKID) {
+		return fmt.Errorf(
+			"_disconnectNFTTransfer: updaterPKID does not match NFT owner: %s, %s",
+			PkToString(updaterPKID.PKID[:], bav.Params),
+			PkToString(operationData.PrevNFTEntry.OwnerPKID[:], bav.Params))
+	}
+	if !reflect.DeepEqual(txMeta.NFTPostHash, operationData.PrevNFTEntry.NFTPostHash) ||
+		txMeta.SerialNumber != operationData.PrevNFTEntry.SerialNumber {
+		return fmt.Errorf("_disconnectNFTTransfer: txMeta post hash and serial number do "+
+			"not match previous NFT entry; this should never happen (%v, %v).",
+			txMeta, operationData.PrevNFTEntry)
+	}
+
+	// Sanity check that the old NFT entry was not for sale.
+	if operationData.PrevNFTEntry.IsForSale {
+		return fmt.Errorf("_disconnecttNFTTransfer: prevNFT Entry was either not "+
+			"pending or for sale (%v); this should never happen.", operationData.PrevNFTEntry)
+	}
+
+	// Set the old NFT entry.
+	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
+
+	// Now revert the basic transfer with the remaining operations.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+}
+
+func (bav *UtxoView) _disconnectAcceptNFTTransfer(
+	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is an AcceptNFTTransfer operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectAcceptNFTTransfer: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeAcceptNFTTransfer {
+		return fmt.Errorf("_disconnectAcceptNFTTransfer: Trying to revert "+
+			"OperationTypeAcceptNFTTransfer but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+	txMeta := currentTxn.TxnMeta.(*AcceptNFTTransferMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+
+	// Make sure that there is a prev NFT entry.
+	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
+		return fmt.Errorf("_disconnectAcceptNFTTransfer: prev NFT entry doesn't exist; " +
+			"this should never happen.")
+	}
+
+	// Sanity check the old NFT entry PKID / PostHash / SerialNumber.
+	updaterPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if updaterPKID == nil || updaterPKID.isDeleted {
+		return fmt.Errorf("_disconnectAcceptNFTTransfer: non-existent updaterPKID: %s",
+			PkToString(currentTxn.PublicKey, bav.Params))
+	}
+	if !reflect.DeepEqual(operationData.PrevNFTEntry.OwnerPKID, updaterPKID.PKID) {
+		return fmt.Errorf(
+			"_disconnectAcceptNFTTransfer: updaterPKID does not match NFT owner: %s, %s",
+			PkToString(updaterPKID.PKID[:], bav.Params),
+			PkToString(operationData.PrevNFTEntry.OwnerPKID[:], bav.Params))
+	}
+	if !reflect.DeepEqual(txMeta.NFTPostHash, operationData.PrevNFTEntry.NFTPostHash) ||
+		txMeta.SerialNumber != operationData.PrevNFTEntry.SerialNumber {
+		return fmt.Errorf("_disconnectAcceptNFTTransfer: txMeta post hash and serial number"+
+			" do not match previous NFT entry; this should never happen (%v, %v).",
+			txMeta, operationData.PrevNFTEntry)
+	}
+
+	// Sanity check that the old NFT entry was pending and not for sale.
+	if !operationData.PrevNFTEntry.IsPending || operationData.PrevNFTEntry.IsForSale {
+		return fmt.Errorf("_disconnectAcceptNFTTransfer: prevNFT Entry was either not "+
+			"pending or for sale (%v); this should never happen.", operationData.PrevNFTEntry)
+	}
+
+	// Set the old NFT entry.
+	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
+
+	// Now revert the basic transfer with the remaining operations.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+}
+
+func (bav *UtxoView) _disconnectBurnNFT(
+	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is an BurnNFT operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectBurnNFT: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeBurnNFT {
+		return fmt.Errorf("_disconnectBurnNFT: Trying to revert "+
+			"OperationTypeBurnNFT but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+	txMeta := currentTxn.TxnMeta.(*BurnNFTMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+
+	// Make sure that there is a prev NFT entry.
+	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
+		return fmt.Errorf("_disconnectBurnNFT: prev NFT entry doesn't exist; " +
+			"this should never happen.")
+	}
+
+	// Make sure that there is a prev post entry.
+	if operationData.PrevPostEntry == nil || operationData.PrevPostEntry.isDeleted {
+		return fmt.Errorf("_disconnectBurnNFT: prev NFT entry doesn't exist; " +
+			"this should never happen.")
+	}
+
+	// Sanity check the old NFT entry PKID / PostHash / SerialNumber.
+	updaterPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if updaterPKID == nil || updaterPKID.isDeleted {
+		return fmt.Errorf("_disconnectBurnNFT: non-existent updaterPKID: %s",
+			PkToString(currentTxn.PublicKey, bav.Params))
+	}
+	if !reflect.DeepEqual(operationData.PrevNFTEntry.OwnerPKID, updaterPKID.PKID) {
+		return fmt.Errorf("_disconnectBurnNFT: updaterPKID does not match NFT owner: %s, %s",
+			PkToString(updaterPKID.PKID[:], bav.Params),
+			PkToString(operationData.PrevNFTEntry.OwnerPKID[:], bav.Params))
+	}
+	if !reflect.DeepEqual(txMeta.NFTPostHash, operationData.PrevNFTEntry.NFTPostHash) ||
+		txMeta.SerialNumber != operationData.PrevNFTEntry.SerialNumber {
+		return fmt.Errorf("_disconnectBurnNFT: txMeta post hash and serial number do "+
+			"not match previous NFT entry; this should never happen (%v, %v).",
+			txMeta, operationData.PrevNFTEntry)
+	}
+
+	// Sanity check that the old NFT entry was pending and not for sale.
+	if !operationData.PrevNFTEntry.IsPending || operationData.PrevNFTEntry.IsForSale {
+		return fmt.Errorf("_disconnectBurnNFT: prevNFT Entry was either not "+
+			"pending or for sale (%v); this should never happen.", operationData.PrevNFTEntry)
+	}
+
+	// Get the postEntry for sanity checking later.
+	currPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	if currPostEntry == nil || currPostEntry.isDeleted {
+		return fmt.Errorf(
+			"_disconnectBurnNFT: non-existent nftPostEntry for NFTPostHash: %s",
+			txMeta.NFTPostHash.String())
+	}
+
+	// Sanity check that the previous num NFT copies burned makes sense.
+	if operationData.PrevPostEntry.NumNFTCopiesBurned == currPostEntry.NumNFTCopiesBurned-1 {
+		return fmt.Errorf("_disconnectBurnNFT: prevNFT Entry was either not "+
+			"pending or for sale (%v); this should never happen.", operationData.PrevNFTEntry)
+	}
+
+	// Set the old NFT entry.
+	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
+
+	// Set the old post entry.
+	bav._setPostEntryMappings(operationData.PrevPostEntry)
 
 	// Now revert the basic transfer with the remaining operations.
 	return bav._disconnectBasicTransfer(
