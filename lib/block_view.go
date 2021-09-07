@@ -757,8 +757,11 @@ const (
 	OperationTypeAcceptNFTBid                 OperationType = 17
 	OperationTypeNFTBid                       OperationType = 18
 	OperationTypeBitCloutDiamond              OperationType = 19
+	OperationTypeNFTTransfer                  OperationType = 20
+	OperationTypeAcceptNFTTransfer            OperationType = 21
+	OperationTypeBurnNFT                      OperationType = 22
 
-	// NEXT_TAG = 20
+	// NEXT_TAG = 23
 )
 
 func (op OperationType) String() string {

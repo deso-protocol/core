@@ -247,7 +247,7 @@ const (
 	TxnTypeAcceptNFTTransfer            TxnType = 20
 	TxnTypeBurnNFT                      TxnType = 21
 
-	// NEXT_ID = 19
+	// NEXT_ID = 22
 )
 
 func (txnType TxnType) String() string {
