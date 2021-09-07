@@ -37,15 +37,7 @@ func init() {
 		_, err = db.Exec(`
 			ALTER TABLE IF EXISTS pg_transactions 
 				DROP COLUMN IF EXISTS r, 
-				DROP COLUMN IF EXISTS s
-			;
-		`)
-		if err != nil {
-			return err
-		}
-
-		_, err = db.Exec(`
-			ALTER TABLE IF EXISTS pg_transactions
+				DROP COLUMN IF EXISTS s,
 				ADD signature BYTEA
 			;
 		`)
@@ -60,6 +52,11 @@ func init() {
 		_, err := db.Exec(`
 			DROP TABLE pg_metadata_derived_keys;
 			DROP TABLE pg_derived_keys;
+			ALTER TABLE IF EXISTS pg_transactions
+				DROP COLUMN IF EXISTS signature,
+				ADD r BYTEA,
+				ADD s BYTEA
+			;
 		`)
 		if err != nil {
 			return err
