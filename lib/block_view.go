@@ -7020,9 +7020,17 @@ func (bav *UtxoView) _connectNFTTransfer(
 			txMeta.NFTPostHash.String())
 	}
 
-	// RPH-FIXME: Force unlockable to be added if it exists on the post entry.
-	if nftPostEntry.HasUnlockable {
+	// If the post entry requires the NFT to have unlockable text, make sure it is provided.
+	if nftPostEntry.HasUnlockable && len(txMeta.UnlockableText) == 0 {
 		return 0, 0, nil, RuleErrorCannotTransferNFTWithUnlockable
+	}
+
+	// Check the length of the UnlockableText.
+	if uint64(len(txMeta.UnlockableText)) > bav.Params.MaxPrivateMessageLengthBytes {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorUnlockableTextLengthExceedsMax, "_connectNFTTransfer: "+
+				"UnlockableTextLen = %d; Max length = %d",
+			len(txMeta.UnlockableText), bav.Params.MaxPrivateMessageLengthBytes)
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -7054,7 +7062,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 		SerialNumber:               prevNFTEntry.SerialNumber,
 		IsForSale:                  prevNFTEntry.IsForSale,
 		MinBidAmountNanos:          prevNFTEntry.MinBidAmountNanos,
-		UnlockableText:             "TBD",
+		UnlockableText:             txMeta.UnlockableText,
 		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
 		IsPending:                  true,
 	}

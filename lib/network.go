@@ -4059,7 +4059,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 	ret.UnlockableText = make([]byte, unlockableTextLen)
 	_, err = io.ReadFull(rr, ret.UnlockableText)
 	if err != nil {
-		return fmt.Errorf("PrivateMessageMetadata.FromBytes: Error reading EncryptedText: %v", err)
+		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading EncryptedText: %v", err)
 	}
 
 	// De-serialize the inputs
@@ -4170,6 +4170,7 @@ type NFTTransferMetadata struct {
 	NFTPostHash       *BlockHash
 	SerialNumber      uint64
 	ReceiverPublicKey []byte
+	UnlockableText    []byte
 }
 
 func (txnData *NFTTransferMetadata) GetTxnType() TxnType {
@@ -4197,6 +4198,10 @@ func (txnData *NFTTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
 	data = append(data, txnData.ReceiverPublicKey...)
 
+	// UnlockableText
+	data = append(data, UintToBuf(uint64(len(txnData.UnlockableText)))...)
+	data = append(data, txnData.UnlockableText...)
+
 	return data, nil
 }
 
@@ -4223,6 +4228,22 @@ func (txnData *NFTTransferMetadata) FromBytes(dataa []byte) error {
 	if err != nil {
 		return fmt.Errorf(
 			"NFTTransferMetadataa.FromBytes: Error reading ReceiverPublicKey: %v", err)
+	}
+
+	// UnlockableText
+	unlockableTextLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTTransferMetadata.FromBytes: Problem "+
+			"decoding UnlockableText length")
+	}
+	if unlockableTextLen > MaxMessagePayload {
+		return fmt.Errorf("NFTTransferMetadata.FromBytes: unlockableTextLen %d "+
+			"exceeds max %d", unlockableTextLen, MaxMessagePayload)
+	}
+	ret.UnlockableText = make([]byte, unlockableTextLen)
+	_, err = io.ReadFull(rr, ret.UnlockableText)
+	if err != nil {
+		return fmt.Errorf("NFTTransferMetadata.FromBytes: Error reading EncryptedText: %v", err)
 	}
 
 	*txnData = ret
