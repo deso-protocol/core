@@ -3114,6 +3114,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 	ReceiverPublicKey []byte,
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
+	EncryptedUnlockableTextBytes []byte,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
 	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3125,6 +3126,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 			NFTPostHash,
 			SerialNumber,
 			ReceiverPublicKey,
+			EncryptedUnlockableTextBytes,
 		},
 
 		// We wait to compute the signature until we've added all the
