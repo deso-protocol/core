@@ -516,6 +516,7 @@ type PostEntry struct {
 	IsNFT                          bool
 	NumNFTCopies                   uint64
 	NumNFTCopiesForSale            uint64
+	NumNFTCopiesBurned             uint64
 	HasUnlockable                  bool
 	NFTRoyaltyToCreatorBasisPoints uint64
 	NFTRoyaltyToCoinBasisPoints    uint64
@@ -7010,14 +7011,14 @@ func (bav *UtxoView) _connectNFTTransfer(
 	}
 
 	// Get the postEntry so we can check for unlockable content.
-	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
-	if postEntry == nil || postEntry.isDeleted {
-		return 0, 0, nil, fmt.Errorf("_connectNFTTransfer: non-existent postEntry for NFTPostHash: %s",
+	nftPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	if nftPostEntry == nil || nftPostEntry.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectNFTTransfer: non-existent nftPostEntry for NFTPostHash: %s",
 			txMeta.NFTPostHash.String())
 	}
 
 	// RPH-FIXME: Force unlockable to be added if it exists on the post entry.
-	if postEntry.HasUnlockable {
+	if nftPostEntry.HasUnlockable {
 		return 0, 0, nil, RuleErrorCannotTransferNFTWithUnlockable
 	}
 
@@ -7188,6 +7189,14 @@ func (bav *UtxoView) _connectBurnNFT(
 			"inconsistent with txMeta %v; this should never happen.", nftEntry, txMeta)
 	}
 
+	// Get the postEntry so we can increment the burned copies count.
+	nftPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	if nftPostEntry == nil || nftPostEntry.isDeleted {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectBurnNFT: non-existent nftPostEntry for NFTPostHash: %s",
+			txMeta.NFTPostHash.String())
+	}
+
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
@@ -7214,10 +7223,17 @@ func (bav *UtxoView) _connectBurnNFT(
 	// Delete the NFT.
 	bav._deleteNFTEntryMappings(nftEntry)
 
+	// Save a copy of the previous postEntry and then increment NumNFTCopiesBurned.
+	prevPostEntry := &PostEntry{}
+	*prevPostEntry = *nftPostEntry
+	nftPostEntry.NumNFTCopiesBurned++
+	bav._setPostEntryMappings(nftPostEntry)
+
 	// Add an operation for the burnt NFT.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:         OperationTypeBurnNFT,
-		PrevNFTEntry: prevNFTEntry,
+		Type:          OperationTypeBurnNFT,
+		PrevNFTEntry:  prevNFTEntry,
+		PrevPostEntry: prevPostEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
