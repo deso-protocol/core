@@ -1962,12 +1962,6 @@ var (
 			AmountNanos: uint64(15600),
 		},
 	}
-	TestSeedBalances = []*BitCloutOutput{
-		{
-			PublicKey:   MustBase58CheckDecode("BC1YLjBxKjyopwRqZQkZaQKZbzq1peYv1F8rU2aNBQFe8eJR2eXR8B9"),
-			AmountNanos: uint64(2000000 * NanosPerUnit),
-		},
-	}
 	// In early blocks there was a bug that allowed users to claim usernames that
 	// weren't actually available. This map defines exceptions for these cases that
 	// assign a new username to the profile. It maps transaction hashes to new
