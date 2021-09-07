@@ -251,6 +251,8 @@ const (
 	RuleErrorNFTBidLessThanMinBidAmountNanos               RuleError = "RuleErrorNFTBidLessThanMinBidAmountNanos"
 
 	// NFT Transfers
+	RuleErrorNFTTranserBeforeBlockHeight           RuleError = "RuleErrorNFTTranserBeforeBlockHeight"
+	RuleErrorAcceptNFTTranserBeforeBlockHeight     RuleError = "RuleErrorAcceptNFTTranserBeforeBlockHeight"
 	RuleErrorNFTTransferInvalidReceiverPubKeySize  RuleError = "RuleErrorNFTTransferInvalidReceiverPubKeySize"
 	RuleErrorNFTTransferCannotTransferToSelf       RuleError = "RuleErrorNFTTransferCannotTransferToSelf"
 	RuleErrorCannotTransferNonExistentNFT          RuleError = "RuleErrorCannotTransferNonExistentNFT"
@@ -264,6 +266,7 @@ const (
 	RuleErrorAcceptNFTTransferRequiresNonZeroInput RuleError = "RuleErrorAcceptNFTTransferRequiresNonZeroInput"
 
 	// NFT Burns
+	RuleErrorBurnNFTBeforeBlockHeight    RuleError = "RuleErrorBurnNFTBeforeBlockHeight"
 	RuleErrorCannotBurnNonExistentNFT    RuleError = "RuleErrorCannotBurnNonExistentNFT"
 	RuleErrorBurnNFTByNonOwner           RuleError = "RuleErrorBurnNFTByNonOwner"
 	RuleErrorCannotBurnNFTThatIsForSale  RuleError = "RuleErrorCannotBurnNFTThatIsForSale"

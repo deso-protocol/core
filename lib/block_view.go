@@ -7151,6 +7151,10 @@ func (bav *UtxoView) _connectNFTTransfer(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
+	if blockHeight < NFTTransferOrBurnBlockHeight {
+		return 0, 0, nil, RuleErrorNFTTranserBeforeBlockHeight
+	}
+
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeNFTTransfer {
 		return 0, 0, nil, fmt.Errorf("_connectNFTTransfer: called with bad TxnType %s",
@@ -7274,6 +7278,10 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
+	if blockHeight < NFTTransferOrBurnBlockHeight {
+		return 0, 0, nil, RuleErrorAcceptNFTTranserBeforeBlockHeight
+	}
+
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeAcceptNFTTransfer {
 		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTTransfer: called with bad TxnType %s",
@@ -7356,6 +7364,10 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 func (bav *UtxoView) _connectBurnNFT(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	if blockHeight < NFTTransferOrBurnBlockHeight {
+		return 0, 0, nil, RuleErrorBurnNFTBeforeBlockHeight
+	}
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeBurnNFT {
