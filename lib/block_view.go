@@ -228,6 +228,9 @@ type NFTEntry struct {
 	UnlockableText             []byte
 	LastAcceptedBidAmountNanos uint64
 
+	// If this NFT was transferred to the current owner, it will be pending until accepted.
+	IsPending bool
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
@@ -2823,6 +2826,18 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgBitCloutTxn, txnHash *
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
 		return bav._disconnectNFTBid(
 			OperationTypeNFTBid, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+		return bav._disconnectNFTTransfer(
+			OperationTypeNFTTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
+		return bav._disconnectAcceptNFTTransfer(
+			OperationTypeAcceptNFTTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
+		return bav._disconnectBurnNFT(
+			OperationTypeBurnNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	}
 
@@ -6290,6 +6305,11 @@ func (bav *UtxoView) _connectUpdateNFT(
 		return 0, 0, nil, RuleErrorCannotUpdateNonExistentNFT
 	}
 
+	// Verify the NFT is not a pending transfer.
+	if prevNFTEntry.IsPending {
+		return 0, 0, nil, RuleErrorCannotUpdatePendingNFTTransfer
+	}
+
 	// Get the postEntry so we can update the number of NFT copies for sale.
 	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
 	if postEntry == nil || postEntry.isDeleted {
@@ -6925,6 +6945,279 @@ func (bav *UtxoView) _connectNFTBid(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:            OperationTypeNFTBid,
 		PrevNFTBidEntry: prevNFTBidEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _connectNFTTransfer(
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeNFTTransfer {
+		return 0, 0, nil, fmt.Errorf("_connectNFTTransfer: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*NFTTransferMetadata)
+
+	// Check that the specified receiver public key is valid.
+	if len(txMeta.ReceiverPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return 0, 0, nil, RuleErrorNFTTransferInvalidReceiverPubKeySize
+	}
+
+	// Check that the sender and receiver public keys are different.
+	if reflect.DeepEqual(txn.PublicKey, txMeta.ReceiverPublicKey) {
+		return 0, 0, nil, RuleErrorNFTTransferCannotTransferToSelf
+	}
+
+	// Verify the NFT entry exists.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	prevNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	if prevNFTEntry == nil || prevNFTEntry.isDeleted {
+		return 0, 0, nil, RuleErrorCannotTransferNonExistentNFT
+	}
+
+	// Verify that the updater is the owner of the NFT.
+	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if updaterPKID == nil || updaterPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectNFTTransfer: non-existent updaterPKID: %s",
+			PkToString(txn.PublicKey, bav.Params))
+	}
+	if !reflect.DeepEqual(prevNFTEntry.OwnerPKID, updaterPKID.PKID) {
+		return 0, 0, nil, RuleErrorNFTTransferByNonOwner
+	}
+
+	// Fetch the receiver's PKID and make sure it exists.
+	receiverPKID := bav.GetPKIDForPublicKey(txMeta.ReceiverPublicKey)
+	// Sanity check that we found a PKID entry for these pub keys (should never fail).
+	if receiverPKID == nil || receiverPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectNFTTransfer: Found nil or deleted PKID for receiver, this should never "+
+				"happen. Receiver pubkey: %v", PkToStringMainnet(txMeta.ReceiverPublicKey))
+	}
+
+	// Make sure that the NFT entry is not for sale.
+	if prevNFTEntry.IsForSale {
+		return 0, 0, nil, RuleErrorCannotTransferForSaleNFT
+	}
+
+	// Sanity check that the NFT entry is correct.
+	if !reflect.DeepEqual(prevNFTEntry.NFTPostHash, txMeta.NFTPostHash) ||
+		!reflect.DeepEqual(prevNFTEntry.SerialNumber, txMeta.SerialNumber) {
+		return 0, 0, nil, fmt.Errorf("_connectNFTTransfer: prevNFTEntry %v is inconsistent with txMeta %v;"+
+			" this should never happen.", prevNFTEntry, txMeta)
+	}
+
+	// Get the postEntry so we can check for unlockable content.
+	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	if postEntry == nil || postEntry.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectNFTTransfer: non-existent postEntry for NFTPostHash: %s",
+			txMeta.NFTPostHash.String())
+	}
+
+	// RPH-FIXME: Force unlockable to be added if it exists on the post entry.
+	if postEntry.HasUnlockable {
+		return 0, 0, nil, RuleErrorCannotTransferNFTWithUnlockable
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectNFTTransfer: ")
+	}
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorNFTTransferRequiresNonZeroInput
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+	}
+
+	// Now we are ready to transfer the NFT.
+
+	// Create the updated NFTEntry.
+	newNFTEntry := &NFTEntry{
+		LastOwnerPKID:              prevNFTEntry.OwnerPKID,
+		OwnerPKID:                  receiverPKID.PKID,
+		NFTPostHash:                prevNFTEntry.NFTPostHash,
+		SerialNumber:               prevNFTEntry.SerialNumber,
+		IsForSale:                  prevNFTEntry.IsForSale,
+		MinBidAmountNanos:          prevNFTEntry.MinBidAmountNanos,
+		UnlockableText:             "TBD",
+		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
+		IsPending:                  true,
+	}
+	bav._setNFTEntryMappings(newNFTEntry)
+
+	// Add an operation to the list at the end indicating we've connected an NFT update.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:         OperationTypeNFTTransfer,
+		PrevNFTEntry: prevNFTEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _connectAcceptNFTTransfer(
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeAcceptNFTTransfer {
+		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTTransfer: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*AcceptNFTTransferMetadata)
+
+	// Verify the NFT entry exists.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	prevNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	if prevNFTEntry == nil || prevNFTEntry.isDeleted {
+		return 0, 0, nil, RuleErrorCannotAcceptTransferOfNonExistentNFT
+	}
+
+	// Verify that the updater is the owner of the NFT.
+	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if updaterPKID == nil || updaterPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTTransfer: non-existent updaterPKID: %s",
+			PkToString(txn.PublicKey, bav.Params))
+	}
+	if !reflect.DeepEqual(prevNFTEntry.OwnerPKID, updaterPKID.PKID) {
+		return 0, 0, nil, RuleErrorAcceptNFTTransferByNonOwner
+	}
+
+	// Verify that the NFT is actually pending.
+	if !prevNFTEntry.IsPending {
+		return 0, 0, nil, RuleErrorAcceptNFTTransferForNonPendingNFT
+	}
+
+	// Sanity check that the NFT entry is not for sale.
+	if prevNFTEntry.IsForSale {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTTransfer: attempted to accept NFT transfer of NFT that is for "+
+				"sale. This should never happen; txMeta %v.", txMeta)
+	}
+
+	// Sanity check that the NFT entry is correct.
+	if !reflect.DeepEqual(prevNFTEntry.NFTPostHash, txMeta.NFTPostHash) ||
+		!reflect.DeepEqual(prevNFTEntry.SerialNumber, txMeta.SerialNumber) {
+		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTTransfer: prevNFTEntry %v is "+
+			"inconsistent with txMeta %v; this should never happen.", prevNFTEntry, txMeta)
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTTransfer: ")
+	}
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorAcceptNFTTransferRequiresNonZeroInput
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+	}
+
+	// Now we are ready to transfer the NFT.
+
+	// Create the updated NFTEntry (everything the same except for IsPending) and set it.
+	newNFTEntry := &NFTEntry{}
+	*newNFTEntry = *prevNFTEntry
+	newNFTEntry.IsPending = false
+	bav._setNFTEntryMappings(newNFTEntry)
+
+	// Add an operation for the accepted NFT transfer.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:         OperationTypeAcceptNFTTransfer,
+		PrevNFTEntry: prevNFTEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _connectBurnNFT(
+	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeBurnNFT {
+		return 0, 0, nil, fmt.Errorf("_connectBurnNFT: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*BurnNFTMetadata)
+
+	// Verify the NFT entry exists.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	nftEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	if nftEntry == nil || nftEntry.isDeleted {
+		return 0, 0, nil, RuleErrorCannotBurnNonExistentNFT
+	}
+
+	// Verify that the updater is the owner of the NFT.
+	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if updaterPKID == nil || updaterPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectBurnNFT: non-existent updaterPKID: %s",
+			PkToString(txn.PublicKey, bav.Params))
+	}
+	if !reflect.DeepEqual(nftEntry.OwnerPKID, updaterPKID.PKID) {
+		return 0, 0, nil, RuleErrorBurnNFTByNonOwner
+	}
+
+	// Verify that the NFT is not for sale.
+	if nftEntry.IsForSale {
+		return 0, 0, nil, RuleErrorCannotBurnNFTThatIsForSale
+	}
+
+	// Sanity check that the NFT entry is correct.
+	if !reflect.DeepEqual(nftEntry.NFTPostHash, txMeta.NFTPostHash) ||
+		!reflect.DeepEqual(nftEntry.SerialNumber, txMeta.SerialNumber) {
+		return 0, 0, nil, fmt.Errorf("_connectBurnNFT: nftEntry %v is "+
+			"inconsistent with txMeta %v; this should never happen.", nftEntry, txMeta)
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectBurnNFT: ")
+	}
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorBurnNFTRequiresNonZeroInput
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+	}
+
+	// Create a backup before we burn the NFT.
+	prevNFTEntry := &NFTEntry{}
+	*prevNFTEntry = *nftEntry
+
+	// Delete the NFT.
+	bav._deleteNFTEntryMappings(nftEntry)
+
+	// Add an operation for the burnt NFT.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:         OperationTypeBurnNFT,
+		PrevNFTEntry: prevNFTEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -8393,6 +8686,21 @@ func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNFTBid(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectNFTTransfer(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectAcceptNFTTransfer(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectBurnNFT(
 				txn, txHash, blockHeight, verifySignatures)
 
 	} else {
