@@ -507,7 +507,7 @@ func TestSeedBalancesTest(t *testing.T) {
 
 	chain, params, db := NewTestBlockchain()
 	for _, seedBalance := range params.SeedBalances {
-		require.Equal(int64(1), int64(GetUtxoNumEntries(db)))
+		require.Equal(int64(482), int64(GetUtxoNumEntries(db)))
 		foundUtxos, err := chain.GetSpendableUtxosForPublicKey(seedBalance.PublicKey, nil, nil)
 		require.NoError(err)
 		require.Equal(int64(1), int64(len(foundUtxos)))
