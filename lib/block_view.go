@@ -2834,26 +2834,30 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	var ownerPublicKey []byte
 	if len(currentTxn.PublicKey) != 0 {
 		if len(currentTxn.PublicKey) != btcec.PubKeyBytesLenCompressed {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey: %#v", currentTxn.PublicKey)
+			return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", currentTxn.PublicKey)
 		}
 		_, err := btcec.ParsePubKey(currentTxn.PublicKey, btcec.S256())
 		if err != nil {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey: %v", err)
+			return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", err)
 		}
 		ownerPublicKey = currentTxn.PublicKey
+	} else {
+		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", currentTxn.PublicKey)
 	}
 
 	// Sanity-check that derived key is valid. Assign this key to derivedPublicKey.
 	var derivedPublicKey []byte
 	if len(txMeta.DerivedPublicKey) != 0 {
 		if len(txMeta.DerivedPublicKey) != btcec.PubKeyBytesLenCompressed {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey: %#v", txMeta.DerivedPublicKey)
+			return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", txMeta.DerivedPublicKey)
 		}
 		_, err := btcec.ParsePubKey(txMeta.DerivedPublicKey, btcec.S256())
 		if err != nil {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey: %v", err)
+			return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", err)
 		}
 		derivedPublicKey = txMeta.DerivedPublicKey
+	} else {
+		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", txMeta.DerivedPublicKey)
 	}
 
 	// Get the derived key entry. If it's nil or is deleted then we have an error.
