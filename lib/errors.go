@@ -249,6 +249,25 @@ const (
 	RuleErrorInsufficientFundsForNFTBid                    RuleError = "RuleErrorInsufficientFundsForNFTBid"
 	RuleErrorNFTBidLessThanMinBidAmountNanos               RuleError = "RuleErrorNFTBidLessThanMinBidAmountNanos"
 
+	// NFT Transfers
+	RuleErrorNFTTransferInvalidReceiverPubKeySize  RuleError = "RuleErrorNFTTransferInvalidReceiverPubKeySize"
+	RuleErrorNFTTransferCannotTransferToSelf       RuleError = "RuleErrorNFTTransferCannotTransferToSelf"
+	RuleErrorCannotTransferNonExistentNFT          RuleError = "RuleErrorCannotTransferNonExistentNFT"
+	RuleErrorNFTTransferByNonOwner                 RuleError = "RuleErrorNFTTransferByNonOwner"
+	RuleErrorCannotTransferForSaleNFT              RuleError = "RuleErrorCannotTransferForSaleNFT"
+	RuleErrorCannotTransferNFTWithUnlockable       RuleError = "RuleErrorCannotTransferNFTWithUnlockable"
+	RuleErrorNFTTransferRequiresNonZeroInput       RuleError = "RuleErrorNFTTransferRequiresNonZeroInput"
+	RuleErrorCannotAcceptTransferOfNonExistentNFT  RuleError = "RuleErrorCannotAcceptTransferOfNonExistentNFT"
+	RuleErrorAcceptNFTTransferByNonOwner           RuleError = "RuleErrorAcceptNFTTransferByNonOwner"
+	RuleErrorAcceptNFTTransferForNonPendingNFT     RuleError = "RuleErrorAcceptNFTTransferForNonPendingNFT"
+	RuleErrorAcceptNFTTransferRequiresNonZeroInput RuleError = "RuleErrorAcceptNFTTransferRequiresNonZeroInput"
+
+	// NFT Burns
+	RuleErrorCannotBurnNonExistentNFT    RuleError = "RuleErrorCannotBurnNonExistentNFT"
+	RuleErrorBurnNFTByNonOwner           RuleError = "RuleErrorBurnNFTByNonOwner"
+	RuleErrorCannotBurnNFTThatIsForSale  RuleError = "RuleErrorCannotBurnNFTThatIsForSale"
+	RuleErrorBurnNFTRequiresNonZeroInput RuleError = "RuleErrorBurnNFTRequiresNonZeroInput"
+
 	RuleErrorSwapIdentityIsParamUpdaterOnly RuleError = "RuleErrorSwapIdentityIsParamUpdaterOnly"
 	RuleErrorFromPublicKeyIsRequired        RuleError = "RuleErrorFromPublicKeyIsRequired"
 	RuleErrorInvalidFromPublicKey           RuleError = "RuleErrorInvalidFromPublicKey"
