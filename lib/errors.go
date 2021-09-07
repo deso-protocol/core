@@ -222,6 +222,7 @@ const (
 	RuleErrorCreateNFTMustBeCalledByPoster      RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
 	RuleErrorNFTMustHaveNonZeroCopies           RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
 	RuleErrorCannotUpdateNonExistentNFT         RuleError = "RuleErrorCannotUpdateNonExistentNFT"
+	RuleErrorCannotUpdatePendingNFTTransfer     RuleError = "RuleErrorCannotUpdatePendingNFTTransfer"
 	RuleErrorUpdateNFTByNonOwner                RuleError = "RuleErrorUpdateNFTByNonOwner"
 	RuleErrorAcceptNFTBidByNonOwner             RuleError = "RuleErrorAcceptNFTBidByNonOwner"
 	RuleErrorCantCreateNFTWithoutProfileEntry   RuleError = "RuleErrorCantCreateNFTWithoutProfileEntry"
