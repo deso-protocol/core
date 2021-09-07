@@ -63,8 +63,10 @@ func init() {
 				spent        BOOL     NOT NULL,
 				input_hash   BYTEA,
 				input_index  INT,
+
 				PRIMARY KEY (output_hash, output_index)
 			);
+
 			CREATE INDEX pg_transaction_outputs_public_key ON pg_transaction_outputs(public_key);
 		`)
 		if err != nil {
@@ -251,6 +253,7 @@ func init() {
 				transaction_hash BYTEA NOT NULL,
 				input_hash       BYTEA NOT NULL,
 				input_index      BIGINT NOT NULL,
+
 				PRIMARY KEY (transaction_hash, input_hash, input_index)
 			);
 		`)
@@ -300,6 +303,7 @@ func init() {
 				coins_in_circulation_nanos BIGINT,
 				coin_watermark_nanos       BIGINT
 			);
+
 			CREATE INDEX pg_profiles_public_key ON pg_profiles(public_key);
 			CREATE INDEX pg_profiles_username ON pg_profiles(username);
 			CREATE INDEX pg_profiles_lower_username ON pg_profiles(LOWER(username));
@@ -340,6 +344,7 @@ func init() {
 			CREATE TABLE pg_likes (
 				liker_public_key BYTEA,
 				liked_post_hash  BYTEA,
+
 				PRIMARY KEY (liker_public_key, liked_post_hash)
 			);
 		`)
@@ -351,6 +356,7 @@ func init() {
 			CREATE TABLE pg_follows (
 				follower_pkid BYTEA,
 				followed_pkid BYTEA,
+
 				PRIMARY KEY (follower_pkid, followed_pkid)
 			);
 		`)
@@ -364,6 +370,7 @@ func init() {
 				receiver_pkid     BYTEA,
 				diamond_post_hash BYTEA,
 				diamond_level     SMALLINT,
+
 				PRIMARY KEY (sender_pkid, receiver_pkid, diamond_post_hash)
 			);
 		`)
@@ -390,6 +397,7 @@ func init() {
 				creator_pkid  BYTEA,
 				balance_nanos BIGINT,
 				has_purchased BOOL,
+
 				PRIMARY KEY (holder_pkid, creator_pkid)
 			);
 		`)
@@ -426,6 +434,7 @@ func init() {
 				reclouter_public_key BYTEA,
 				reclouted_post_hash  BYTEA,
 				reclout_post_hash    BYTEA,
+
 				PRIMARY KEY (reclouter_public_key, reclouted_post_hash)
 			);
 		`)
@@ -452,6 +461,7 @@ func init() {
 				min_bid_amount_nanos           BIGINT,
 				unlockable_text                TEXT,
 				last_accepted_bid_amount_nanos BIGINT,
+
 				PRIMARY KEY (nft_post_hash, serial_number)
 			);
 		`)
@@ -466,6 +476,7 @@ func init() {
 				serial_number    BIGINT,
 				bid_amount_nanos BIGINT,
 				accepted         BOOL,
+
 				PRIMARY KEY (bidder_pkid, nft_post_hash, serial_number)
 			);
 		`)
