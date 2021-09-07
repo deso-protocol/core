@@ -44,7 +44,8 @@ func init() {
 				type       SMALLINT NOT NULL,
 				public_key BYTEA,
 				extra_data JSONB,
-				signature  BYTEA
+				r          BYTEA,
+				s          BYTEA
 			);
 		`)
 		if err != nil {
@@ -62,10 +63,8 @@ func init() {
 				spent        BOOL     NOT NULL,
 				input_hash   BYTEA,
 				input_index  INT,
-
 				PRIMARY KEY (output_hash, output_index)
 			);
-
 			CREATE INDEX pg_transaction_outputs_public_key ON pg_transaction_outputs(public_key);
 		`)
 		if err != nil {
@@ -252,7 +251,6 @@ func init() {
 				transaction_hash BYTEA NOT NULL,
 				input_hash       BYTEA NOT NULL,
 				input_index      BIGINT NOT NULL,
-
 				PRIMARY KEY (transaction_hash, input_hash, input_index)
 			);
 		`)
@@ -266,19 +264,6 @@ func init() {
 				nft_post_hash    BYTEA NOT NULL,
 				serial_number    BIGINT NOT NULL,
 				bid_amount_nanos BIGINT NOT NULL
-			);
-		`)
-		if err != nil {
-			return err
-		}
-
-		_, err = db.Exec(`
-			CREATE TABLE pg_metadata_derived_keys (
-				transaction_hash   BYTEA PRIMARY KEY,
-				derived_public_key BYTEA NOT NULL,
-				expiration_block   BIGINT NOT NULL,
-				operation_type     SMALLINT NOT NULL,
-				access_signature   BYTEA NOT NULL
 			);
 		`)
 		if err != nil {
@@ -315,7 +300,6 @@ func init() {
 				coins_in_circulation_nanos BIGINT,
 				coin_watermark_nanos       BIGINT
 			);
-
 			CREATE INDEX pg_profiles_public_key ON pg_profiles(public_key);
 			CREATE INDEX pg_profiles_username ON pg_profiles(username);
 			CREATE INDEX pg_profiles_lower_username ON pg_profiles(LOWER(username));
@@ -356,7 +340,6 @@ func init() {
 			CREATE TABLE pg_likes (
 				liker_public_key BYTEA,
 				liked_post_hash  BYTEA,
-
 				PRIMARY KEY (liker_public_key, liked_post_hash)
 			);
 		`)
@@ -368,7 +351,6 @@ func init() {
 			CREATE TABLE pg_follows (
 				follower_pkid BYTEA,
 				followed_pkid BYTEA,
-
 				PRIMARY KEY (follower_pkid, followed_pkid)
 			);
 		`)
@@ -382,7 +364,6 @@ func init() {
 				receiver_pkid     BYTEA,
 				diamond_post_hash BYTEA,
 				diamond_level     SMALLINT,
-
 				PRIMARY KEY (sender_pkid, receiver_pkid, diamond_post_hash)
 			);
 		`)
@@ -409,7 +390,6 @@ func init() {
 				creator_pkid  BYTEA,
 				balance_nanos BIGINT,
 				has_purchased BOOL,
-
 				PRIMARY KEY (holder_pkid, creator_pkid)
 			);
 		`)
@@ -446,7 +426,6 @@ func init() {
 				reclouter_public_key BYTEA,
 				reclouted_post_hash  BYTEA,
 				reclout_post_hash    BYTEA,
-
 				PRIMARY KEY (reclouter_public_key, reclouted_post_hash)
 			);
 		`)
@@ -473,7 +452,6 @@ func init() {
 				min_bid_amount_nanos           BIGINT,
 				unlockable_text                TEXT,
 				last_accepted_bid_amount_nanos BIGINT,
-
 				PRIMARY KEY (nft_post_hash, serial_number)
 			);
 		`)
@@ -488,22 +466,7 @@ func init() {
 				serial_number    BIGINT,
 				bid_amount_nanos BIGINT,
 				accepted         BOOL,
-
 				PRIMARY KEY (bidder_pkid, nft_post_hash, serial_number)
-			);
-		`)
-		if err != nil {
-			return err
-		}
-
-		_, err = db.Exec(`
-			CREATE TABLE pg_derived_keys (
-				owner_public_key   BYTEA NOT NULL,
-				derived_public_key BYTEA NOT NULL,
-				expiration_block   BIGINT NOT NULL,
-				operation_type     SMALLINT NOT NULL,
-
-				PRIMARY KEY (owner_public_key, derived_public_key)
 			);
 		`)
 		if err != nil {
@@ -535,7 +498,6 @@ func init() {
 			DROP TABLE pg_metadata_accept_nft_bids;
 			DROP TABLE pg_metadata_bid_inputs;
 			DROP TABLE pg_metadata_nft_bids;
-			DROP TABLE pg_metadata_derived_keys;
 			DROP TABLE pg_notifications;
 			DROP TABLE pg_profiles;
 			DROP TABLE pg_posts;
@@ -550,7 +512,6 @@ func init() {
 			DROP TABLE pg_forbidden_keys;
 			DROP TABLE pg_nfts;
 			DROP TABLE pg_nft_bids;
-			DROP TABLE pg_derived_keys;
 		`)
 		return err
 	}
