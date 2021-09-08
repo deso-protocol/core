@@ -2926,10 +2926,10 @@ func (bav *UtxoView) _disconnectBurnNFT(
 			txMeta, operationData.PrevNFTEntry)
 	}
 
-	// Sanity check that the old NFT entry was pending and not for sale.
-	if !operationData.PrevNFTEntry.IsPending || operationData.PrevNFTEntry.IsForSale {
-		return fmt.Errorf("_disconnectBurnNFT: prevNFT Entry was either not "+
-			"pending or for sale (%v); this should never happen.", operationData.PrevNFTEntry)
+	// Sanity check that the old NFT entry was not for sale.
+	if operationData.PrevNFTEntry.IsForSale {
+		return fmt.Errorf("_disconnectBurnNFT: prevNFTEntry was for sale (%v); this should"+
+			" never happen.", operationData.PrevNFTEntry)
 	}
 
 	// Get the postEntry for sanity checking later.
@@ -2941,9 +2941,10 @@ func (bav *UtxoView) _disconnectBurnNFT(
 	}
 
 	// Sanity check that the previous num NFT copies burned makes sense.
-	if operationData.PrevPostEntry.NumNFTCopiesBurned == currPostEntry.NumNFTCopiesBurned-1 {
-		return fmt.Errorf("_disconnectBurnNFT: prevNFT Entry was either not "+
-			"pending or for sale (%v); this should never happen.", operationData.PrevNFTEntry)
+	if operationData.PrevPostEntry.NumNFTCopiesBurned != currPostEntry.NumNFTCopiesBurned-1 {
+		return fmt.Errorf(
+			"_disconnectBurnNFT: prevPostEntry has the wrong num NFT copies burned %d != %d-1",
+			operationData.PrevPostEntry.NumNFTCopiesBurned, currPostEntry.NumNFTCopiesBurned)
 	}
 
 	// Set the old NFT entry.
@@ -7219,7 +7220,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 
 	// If the post entry requires the NFT to have unlockable text, make sure it is provided.
 	if nftPostEntry.HasUnlockable && len(txMeta.UnlockableText) == 0 {
-		return 0, 0, nil, RuleErrorCannotTransferNFTWithUnlockable
+		return 0, 0, nil, RuleErrorCannotTransferUnlockableNFTWithoutUnlockable
 	}
 
 	// Check the length of the UnlockableText.

@@ -4174,7 +4174,7 @@ type NFTTransferMetadata struct {
 }
 
 func (txnData *NFTTransferMetadata) GetTxnType() TxnType {
-	return TxnTypeNFTBid
+	return TxnTypeNFTTransfer
 }
 
 func (txnData *NFTTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
@@ -4264,7 +4264,7 @@ type AcceptNFTTransferMetadata struct {
 }
 
 func (txnData *AcceptNFTTransferMetadata) GetTxnType() TxnType {
-	return TxnTypeNFTBid
+	return TxnTypeAcceptNFTTransfer
 }
 
 func (txnData *AcceptNFTTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
@@ -4323,7 +4323,7 @@ type BurnNFTMetadata struct {
 }
 
 func (txnData *BurnNFTMetadata) GetTxnType() TxnType {
-	return TxnTypeNFTBid
+	return TxnTypeBurnNFT
 }
 
 func (txnData *BurnNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
