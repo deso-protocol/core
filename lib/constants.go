@@ -733,7 +733,8 @@ var BitCloutTestnetParams = BitCloutParams{
 	SeedTxns: TestSeedTxns,
 
 	// Set some seed balances if desired
-	SeedBalances: TestSeedBalances,
+	// Note: For now these must be the same as mainnet because GenesisBlock is the same
+	SeedBalances: SeedBalances,
 
 	// Just charge one basis point on creator coin trades for now.
 	CreatorCoinTradeFeeBasisPoints: 1,
