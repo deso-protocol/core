@@ -2830,35 +2830,27 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	txMeta := currentTxn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 	prevDerivedKeyEntry := utxoOpsForTxn[operationIndex].PrevDerivedKeyEntry
 
-	// Sanity-check that txn public key is valid. Assign this public key to ownerPublicKey.
+	// Sanity check that txn public key is valid. Assign this public key to ownerPublicKey.
 	var ownerPublicKey []byte
-	if len(currentTxn.PublicKey) != 0 {
-		if len(currentTxn.PublicKey) != btcec.PubKeyBytesLenCompressed {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", currentTxn.PublicKey)
-		}
-		_, err := btcec.ParsePubKey(currentTxn.PublicKey, btcec.S256())
-		if err != nil {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", err)
-		}
-		ownerPublicKey = currentTxn.PublicKey
-	} else {
+	if len(currentTxn.PublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", currentTxn.PublicKey)
 	}
+	_, err := btcec.ParsePubKey(currentTxn.PublicKey, btcec.S256())
+	if err != nil {
+		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", err)
+	}
+	ownerPublicKey = currentTxn.PublicKey
 
-	// Sanity-check that derived key is valid. Assign this key to derivedPublicKey.
+	// Sanity check that derived key is valid. Assign this key to derivedPublicKey.
 	var derivedPublicKey []byte
-	if len(txMeta.DerivedPublicKey) != 0 {
-		if len(txMeta.DerivedPublicKey) != btcec.PubKeyBytesLenCompressed {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", txMeta.DerivedPublicKey)
-		}
-		_, err := btcec.ParsePubKey(txMeta.DerivedPublicKey, btcec.S256())
-		if err != nil {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", err)
-		}
-		derivedPublicKey = txMeta.DerivedPublicKey
-	} else {
+	if len(txMeta.DerivedPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", txMeta.DerivedPublicKey)
 	}
+	_, err = btcec.ParsePubKey(txMeta.DerivedPublicKey, btcec.S256())
+	if err != nil {
+		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", err)
+	}
+	derivedPublicKey = txMeta.DerivedPublicKey
 
 	// Get the derived key entry. If it's nil or is deleted then we have an error.
 	derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
@@ -2869,26 +2861,26 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 			derivedKeyEntry)
 	}
 
+	// If we had a previous derivedKeyEntry set then compare it with the current entry.
+	if prevDerivedKeyEntry != nil {
+		// Sanity check public keys. This should never fail.
+		if !reflect.DeepEqual(ownerPublicKey, prevDerivedKeyEntry.OwnerPublicKey[:]) {
+			return fmt.Errorf("_disconnectAuthorizeDerivedKey: Owner public key in txn "+
+				"differs from that in previous derivedKeyEntry (%v %v)", prevDerivedKeyEntry.OwnerPublicKey, ownerPublicKey)
+		}
+		if !reflect.DeepEqual(derivedPublicKey, prevDerivedKeyEntry.DerivedPublicKey[:]) {
+			return fmt.Errorf("_disconnectAuthorizeDerivedKey: Derived public key in txn "+
+				"differs from that in existing derivedKeyEntry (%v %v)", prevDerivedKeyEntry.DerivedPublicKey, derivedPublicKey)
+		}
+	}
+
 	// Now that we are confident the derivedKeyEntry lines up with the transaction we're
 	// rolling back, delete the mapping from utxoView. We need to do this to prevent
 	// a fetch from a db later on.
 	bav._deleteDerivedKeyMapping(derivedKeyEntry)
 
-	// If we had a previous derivedKeyEntry set then update the mapping to match
-	// that. Otherwise leave it as deleted.
-	if prevDerivedKeyEntry != nil {
-		// Sanity check public keys.
-		if !reflect.DeepEqual(ownerPublicKey, prevDerivedKeyEntry.OwnerPublicKey[:]) {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey: Owner public key in txn "+
-				"differs from that in previous derivedKeyEntry (%v %v)", ownerPublicKey, prevDerivedKeyEntry.OwnerPublicKey)
-		}
-		if !reflect.DeepEqual(derivedPublicKey, prevDerivedKeyEntry.DerivedPublicKey[:]) {
-			return fmt.Errorf("_disconnectAuthorizeDerivedKey: Derived public key in txn "+
-				"differs from that in existing derivedKeyEntry (%v %v)", derivedPublicKey, prevDerivedKeyEntry.DerivedPublicKey)
-		}
-		// Set the mapping to the previous entry.
-		bav._setDerivedKeyMapping(prevDerivedKeyEntry)
-	}
+	// Set the previous derivedKeyEntry.
+	bav._setDerivedKeyMapping(prevDerivedKeyEntry)
 
 	// Now revert the basic transfer with the remaining operations. Cut off
 	// the authorizeDerivedKey operation at the end since we just reverted it.
@@ -3076,8 +3068,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 	var derivedPkBytes []byte
 	isDerived := false
 	if txn.ExtraData != nil {
-		derivedPkBytes, isDerived = txn.ExtraData[DerivedPublicKey]
-		if isDerived {
+		if derivedPkBytes, isDerived = txn.ExtraData[DerivedPublicKey]; isDerived {
 			derivedPk, err = btcec.ParsePubKey(derivedPkBytes, btcec.S256())
 			if err != nil {
 				return RuleErrorDerivedKeyInvalidExtraData
@@ -3085,32 +3076,28 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 		}
 	}
 
-	// If no derived key is passed, we check if transaction was signed by the owner.
-	// If derived key is present in ExtraData, we attempt to use it to verify signature.
+	// Get the owner public key and attempt turning it into *btcec.PublicKey.
+	ownerPkBytes := txn.PublicKey
+	ownerPk, err :=  btcec.ParsePubKey(ownerPkBytes, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, "_verifySignature: Problem parsing owner public key: ")
+	}
+
+	// If no derived key is present in ExtraData, we check if transaction was signed by the owner.
+	// If derived key is present in ExtraData, we check if transaction was signed by the derived key.
 	if isDerived == false {
-		// Convert the txn public key into a *btcec.PublicKey
-		txnPk, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
-		if err != nil {
-			return errors.Wrapf(err, "_verifySignature: Problem parsing public key: ")
-		}
 		// Verify that the transaction is signed by the specified key.
-		if sig.Verify(txHash[:], txnPk) {
+		if sig.Verify(txHash[:], ownerPk) {
 			return nil
 		}
 	} else {
-		ownerPkBytes := txn.PublicKey
-		_, err := btcec.ParsePubKey(ownerPkBytes, btcec.S256())
-		if err != nil {
-			return errors.Wrapf(err, "_verifySignature: Problem parsing public key: ")
-		}
-		// Look for a derived key entry and check if it exists.
+		// Look for a derived key entry in UtxoView and DB, check if it exists nor is deleted.
 		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
 		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 			return RuleErrorDerivedKeyNotAuthorized
 		}
 
 		// Return an error if transaction public keys don't match derivedKeyEntry public keys.
-		// Sanity check, this should generally never happen.
 		if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
 			!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
 			return RuleErrorDerivedKeyNotAuthorized
@@ -3123,8 +3110,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 			return RuleErrorDerivedKeyNotAuthorized
 		}
 
-		// All checks passed so we return without an error.
-		// Verify that the transaction is signed by the derived key.
+		// All checks passed so we try to verify the signature.
 		if sig.Verify(txHash[:], derivedPk) {
 			return nil
 		}
@@ -3385,7 +3371,8 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// all.
 		//
 		// UPDATE: Transaction can be signed by a different key, called a derived key.
-		// The derived key is passed in ExtraData and we use it to verify the signature.
+		// The derived key must be authorized through an AuthorizeDerivedKey transaction,
+		// and then passed along in ExtraData for evey transaction signed with it.
 		//
 		// We treat block rewards as a special case in that we actually require that they
 		// not have a transaction-level public key and that they not be signed. Doing this
@@ -4760,20 +4747,16 @@ func (bav *UtxoView) _deleteProfileEntryMappings(profileEntry *ProfileEntry) {
 func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
 	// Check if the entry exists in utxoView
 	derivedKeyMapKey := MakeDerivedKeyMapKey(*NewPublicKey(ownerPublicKey), *NewPublicKey(derivedPublicKey))
-	entry, ok := bav.DerivedKeyToDerivedEntry[derivedKeyMapKey]
-	if ok {
-		if entry.isDeleted {
-			return nil
-		}
+	entry, exists := bav.DerivedKeyToDerivedEntry[derivedKeyMapKey]
+	if exists {
 		return entry
 	}
 
-	// Check if the entry exists in the Db
+	// Check if the entry exists in the DB.
 	ownerPk := NewPublicKey(ownerPublicKey)
 	derivedPk := NewPublicKey(derivedPublicKey)
 	if bav.Postgres != nil {
-		entryPG := bav.Postgres.GetDerivedKey(ownerPk, derivedPk)
-		if entryPG != nil {
+		if entryPG := bav.Postgres.GetDerivedKey(ownerPk, derivedPk); entryPG != nil {
 			entry = entryPG.NewDerivedKeyEntry()
 		} else {
 			entry = nil
@@ -4781,6 +4764,8 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 	} else {
 		entry = DBGetOwnerToDerivedKeyMapping(bav.Handle, *ownerPk, *derivedPk)
 	}
+
+	// If an entry exists, update the UtxoView map.
 	if entry != nil {
 		bav._setDerivedKeyMapping(entry)
 		return entry
@@ -4793,7 +4778,7 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 	map[PublicKey]*DerivedKeyEntry, error) {
 	derivedKeyMappings := make(map[PublicKey]*DerivedKeyEntry)
 
-	// Check for entries in utxoView.
+	// Check for entries in UtxoView.
 	for entryKey, entry := range bav.DerivedKeyToDerivedEntry {
 		if reflect.DeepEqual(entryKey.OwnerPublicKey[:], ownerPublicKey) {
 			derivedKeyMappings[entryKey.DerivedPublicKey] = entry
@@ -4841,6 +4826,11 @@ func (bav *UtxoView) _setDerivedKeyMapping(derivedKeyEntry *DerivedKeyEntry) {
 
 // _deleteDerivedKeyMapping deletes a derived key mapping from utxoView.
 func (bav *UtxoView) _deleteDerivedKeyMapping(derivedKeyEntry *DerivedKeyEntry) {
+	// If the derivedKeyEntry is nil then there's nothing to do.
+	if derivedKeyEntry == nil {
+		return
+	}
+
 	// Create a tombstone entry.
 	tombstoneDerivedKeyEntry := *derivedKeyEntry
 	tombstoneDerivedKeyEntry.isDeleted = true
@@ -7352,11 +7342,10 @@ func (bav *UtxoView) _connectSwapIdentity(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-// _verifyAccessSignature verifies if the accessSignature is valid.
-// Valid accessSignature is the signed hash of (derivedPublicKey + expirationBlock)
+// _verifyAccessSignature verifies if the accessSignature is correct. Valid
+// accessSignature is the signed hash of (derivedPublicKey + expirationBlock)
 // in DER format, made with the ownerPublicKey.
-func _verifyAccessSignature(
-	ownerPublicKey []byte, derivedPublicKey []byte,
+func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	expirationBlock uint64, accessSignature []byte) error {
 
 	// Compute a hash of derivedPublicKey+expirationBlock
@@ -7365,6 +7354,9 @@ func _verifyAccessSignature(
 	accessHash := Sha256DoubleHash(accessByte)
 
 	// Convert ownerPublicKey to *btcec.PublicKey
+	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
+		fmt.Errorf("_verifyAccessSignature: Problem parsing owner public key")
+	}
 	ownerPk, err := btcec.ParsePubKey(ownerPublicKey, btcec.S256())
 	if err != nil {
 		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing owner public key: ")
@@ -7388,7 +7380,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	// Check that the transaction has the right TxnType
+	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeAuthorizeDerivedKey {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
@@ -7396,14 +7388,14 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 
 	txMeta := txn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 
-	// Validate the operation type
+	// Validate the operation type.
 	if txMeta.OperationType != AuthorizeDerivedKeyOperationValid &&
 		txMeta.OperationType != AuthorizeDerivedKeyOperationNotValid {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: called with bad OperationType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
 
-	// Make sure transaction hasn't expired
+	// Make sure transaction hasn't expired.
 	if txMeta.ExpirationBlock <= uint64(blockHeight) {
 		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyExpiredDerivedPublicKey
 	}
@@ -7417,7 +7409,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey, err.Error())
 	}
 
-	// Validate the derived public key
+	// Validate the derived public key.
 	derivedPublicKey := txMeta.DerivedPublicKey
 	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey
@@ -7436,16 +7428,16 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// Get current (previous) derived key entry. We might revert to it later so we copy it.
 	prevDerivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
 
-	// We make sure that the key hasn't been invalidated in the past.
-	// If that's the case, we return.
+	// We make sure that the key hasn't been invalidated in the past. If that's the case,
+	// we return. A derived key can't be re-authorized after being revoked in the past.
 	if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 		if prevDerivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationNotValid {
 			return 0, 0, nil, RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey
 		}
 	}
 
-	// At this point we've verified the access signature, which means the derived key is
-	// authorized to sign on behalf of the owner. We now add a temporary derived key to utxoView with
+	// At this point we've verified the access signature, which means the derived key is authorized
+	// to sign on behalf of the owner. We now add a temporary derived key to utxoView with
 	// OperationType set to Valid so we pass txn signature verification in _connectBasicTransfer.
 	derivedKeyEntry := DerivedKeyEntry {
 		*NewPublicKey(ownerPublicKey),
@@ -7456,7 +7448,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	}
 	bav._setDerivedKeyMapping(&derivedKeyEntry)
 
-	// call _connectBasicTransfer to verify txn signature.
+	// Call _connectBasicTransfer to verify txn signature.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
