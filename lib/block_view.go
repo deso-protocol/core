@@ -6639,6 +6639,11 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		return 0, 0, nil, errors.Wrapf(RuleErrorNFTBidOnNFTThatIsNotForSale, "_connectAcceptNFTBid: ")
 	}
 
+	// Verify the NFT is not a pending transfer.
+	if prevNFTEntry.IsPending {
+		return 0, 0, nil, RuleErrorCannotAcceptBidForPendingNFTTransfer
+	}
+
 	// Verify that the updater is the owner of the NFT.
 	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if updaterPKID == nil || updaterPKID.isDeleted {
@@ -7077,6 +7082,11 @@ func (bav *UtxoView) _connectNFTBid(
 			return 0, 0, nil, RuleErrorNFTBidOnNFTThatIsNotForSale
 		}
 
+		// Verify the NFT is not a pending transfer.
+		if nftEntry.IsPending {
+			return 0, 0, nil, RuleErrorCannotBidForPendingNFTTransfer
+		}
+
 		// Verify that the bidder is not the current owner of the NFT.
 		if reflect.DeepEqual(nftEntry.OwnerPKID, bidderPKID.PKID) {
 			return 0, 0, nil, RuleErrorNFTOwnerCannotBidOnOwnedNFT
@@ -7246,25 +7256,22 @@ func (bav *UtxoView) _connectNFTTransfer(
 
 	if verifySignatures {
 		// _connectBasicTransfer has already checked that the transaction is
-		// signed by the top-level public key, which we take to be the poster's
+		// signed by the top-level public key, which we take to be the NFT owner's
 		// public key.
 	}
 
 	// Now we are ready to transfer the NFT.
 
-	// Create the updated NFTEntry.
-	newNFTEntry := &NFTEntry{
-		LastOwnerPKID:              prevNFTEntry.OwnerPKID,
-		OwnerPKID:                  receiverPKID.PKID,
-		NFTPostHash:                prevNFTEntry.NFTPostHash,
-		SerialNumber:               prevNFTEntry.SerialNumber,
-		IsForSale:                  prevNFTEntry.IsForSale,
-		MinBidAmountNanos:          prevNFTEntry.MinBidAmountNanos,
-		UnlockableText:             txMeta.UnlockableText,
-		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
-		IsPending:                  true,
-	}
-	bav._setNFTEntryMappings(newNFTEntry)
+	// Make a copy of the previous NFT
+	newNFTEntry := *prevNFTEntry
+	// Update the fields that were set during this transfer.
+	newNFTEntry.LastOwnerPKID = prevNFTEntry.OwnerPKID
+	newNFTEntry.OwnerPKID = receiverPKID.PKID
+	newNFTEntry.UnlockableText = txMeta.UnlockableText
+	newNFTEntry.IsPending = true
+
+	// Set the new entry in the view.
+	bav._setNFTEntryMappings(&newNFTEntry)
 
 	// Add an operation to the list at the end indicating we've connected an NFT update.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -7341,17 +7348,16 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 
 	if verifySignatures {
 		// _connectBasicTransfer has already checked that the transaction is
-		// signed by the top-level public key, which we take to be the poster's
+		// signed by the top-level public key, which we take to be the NFT owner's
 		// public key.
 	}
 
 	// Now we are ready to transfer the NFT.
 
 	// Create the updated NFTEntry (everything the same except for IsPending) and set it.
-	newNFTEntry := &NFTEntry{}
-	*newNFTEntry = *prevNFTEntry
+	newNFTEntry := *prevNFTEntry
 	newNFTEntry.IsPending = false
-	bav._setNFTEntryMappings(newNFTEntry)
+	bav._setNFTEntryMappings(&newNFTEntry)
 
 	// Add an operation for the accepted NFT transfer.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -7429,28 +7435,26 @@ func (bav *UtxoView) _connectBurnNFT(
 
 	if verifySignatures {
 		// _connectBasicTransfer has already checked that the transaction is
-		// signed by the top-level public key, which we take to be the poster's
+		// signed by the top-level public key, which we take to be the NFT owner's
 		// public key.
 	}
 
 	// Create a backup before we burn the NFT.
-	prevNFTEntry := &NFTEntry{}
-	*prevNFTEntry = *nftEntry
+	prevNFTEntry := *nftEntry
 
 	// Delete the NFT.
 	bav._deleteNFTEntryMappings(nftEntry)
 
 	// Save a copy of the previous postEntry and then increment NumNFTCopiesBurned.
-	prevPostEntry := &PostEntry{}
-	*prevPostEntry = *nftPostEntry
+	prevPostEntry := *nftPostEntry
 	nftPostEntry.NumNFTCopiesBurned++
 	bav._setPostEntryMappings(nftPostEntry)
 
 	// Add an operation for the burnt NFT.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:          OperationTypeBurnNFT,
-		PrevNFTEntry:  prevNFTEntry,
-		PrevPostEntry: prevPostEntry,
+		PrevNFTEntry:  &prevNFTEntry,
+		PrevPostEntry: &prevPostEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
