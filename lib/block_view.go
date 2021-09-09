@@ -2813,7 +2813,16 @@ func (bav *UtxoView) _disconnectNFTTransfer(
 			"pending or for sale (%v); this should never happen.", operationData.PrevNFTEntry)
 	}
 
+	// Get the current NFT entry so we can delete it.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	currNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	if currNFTEntry == nil || currNFTEntry.isDeleted {
+		return fmt.Errorf("_disconnectNFTTransfer: currNFTEntry not found: %s, %d",
+			txMeta.NFTPostHash.String(), txMeta.SerialNumber)
+	}
+
 	// Set the old NFT entry.
+	bav._deleteNFTEntryMappings(currNFTEntry)
 	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
 
 	// Now revert the basic transfer with the remaining operations.
@@ -2870,7 +2879,16 @@ func (bav *UtxoView) _disconnectAcceptNFTTransfer(
 			"pending or for sale (%v); this should never happen.", operationData.PrevNFTEntry)
 	}
 
-	// Set the old NFT entry.
+	// Get the current NFT entry so we can delete it.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	currNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	if currNFTEntry == nil || currNFTEntry.isDeleted {
+		return fmt.Errorf("_disconnectAcceptNFTTransfer: currNFTEntry not found: %s, %d",
+			txMeta.NFTPostHash.String(), txMeta.SerialNumber)
+	}
+
+	// Delete the current NFT entry and set the old one.
+	bav._deleteNFTEntryMappings(currNFTEntry)
 	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
 
 	// Now revert the basic transfer with the remaining operations.
@@ -2932,7 +2950,7 @@ func (bav *UtxoView) _disconnectBurnNFT(
 			" never happen.", operationData.PrevNFTEntry)
 	}
 
-	// Get the postEntry for sanity checking later.
+	// Get the postEntry for sanity checking / deletion later.
 	currPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
 	if currPostEntry == nil || currPostEntry.isDeleted {
 		return fmt.Errorf(
@@ -2947,10 +2965,19 @@ func (bav *UtxoView) _disconnectBurnNFT(
 			operationData.PrevPostEntry.NumNFTCopiesBurned, currPostEntry.NumNFTCopiesBurned)
 	}
 
-	// Set the old NFT entry.
+	// Sanity check that there is no current NFT entry.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	currNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	if currNFTEntry != nil && !currNFTEntry.isDeleted {
+		return fmt.Errorf("_disconnectBurnNFT: found currNFTEntry for burned NFT: %s, %d",
+			txMeta.NFTPostHash.String(), txMeta.SerialNumber)
+	}
+
+	// Set the old NFT entry (no need to delete first since there is no current entry).
 	bav._setNFTEntryMappings(operationData.PrevNFTEntry)
 
-	// Set the old post entry.
+	// Delete the current post entry and set the old one.
+	bav._deletePostEntryMappings(currPostEntry)
 	bav._setPostEntryMappings(operationData.PrevPostEntry)
 
 	// Now revert the basic transfer with the remaining operations.
@@ -7271,6 +7298,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 	newNFTEntry.IsPending = true
 
 	// Set the new entry in the view.
+	bav._deleteNFTEntryMappings(prevNFTEntry)
 	bav._setNFTEntryMappings(&newNFTEntry)
 
 	// Add an operation to the list at the end indicating we've connected an NFT update.
@@ -7357,6 +7385,7 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 	// Create the updated NFTEntry (everything the same except for IsPending) and set it.
 	newNFTEntry := *prevNFTEntry
 	newNFTEntry.IsPending = false
+	bav._deleteNFTEntryMappings(prevNFTEntry)
 	bav._setNFTEntryMappings(&newNFTEntry)
 
 	// Add an operation for the accepted NFT transfer.
@@ -7448,6 +7477,7 @@ func (bav *UtxoView) _connectBurnNFT(
 	// Save a copy of the previous postEntry and then increment NumNFTCopiesBurned.
 	prevPostEntry := *nftPostEntry
 	nftPostEntry.NumNFTCopiesBurned++
+	bav._deletePostEntryMappings(&prevPostEntry)
 	bav._setPostEntryMappings(nftPostEntry)
 
 	// Add an operation for the burnt NFT.
