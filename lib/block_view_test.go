@@ -1047,6 +1047,249 @@ func _updateNFTWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
+func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *BitCloutParams,
+	feeRateNanosPerKB uint64, senderPk string, senderPriv string, receiverPk string,
+	nftPostHash *BlockHash, serialNumber uint64, unlockableText string,
+) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPk)
+	require.NoError(err)
+
+	receiverPkBytes, _, err := Base58CheckDecode(receiverPk)
+	require.NoError(err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateNFTTransferTxn(
+		senderPkBytes,
+		receiverPkBytes,
+		nftPostHash,
+		serialNumber,
+		[]byte(unlockableText),
+		feeRateNanosPerKB,
+		nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, senderPriv)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeNFTTransfer operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeNFTTransfer, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
+func _transferNFTWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	senderPkBase58Check string,
+	senderPrivBase58Check string,
+	receiverPkBase58Check string,
+	postHash *BlockHash,
+	serialNumber uint64,
+	unlockableText string,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check))
+	currentOps, currentTxn, _, err := _transferNFT(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		senderPkBase58Check,
+		senderPrivBase58Check,
+		receiverPkBase58Check,
+		postHash,
+		serialNumber,
+		unlockableText,
+	)
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	updaterPrivBase58Check string, nftPostHash *BlockHash, serialNumber uint64,
+) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	require.NoError(err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAcceptNFTTransferTxn(
+		updaterPkBytes,
+		nftPostHash,
+		serialNumber,
+		feeRateNanosPerKB,
+		nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, updaterPrivBase58Check)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeNFTTransfer operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeAcceptNFTTransfer, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
+func _acceptNFTTransferWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	postHash *BlockHash,
+	serialNumber uint64,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+	currentOps, currentTxn, _, err := _acceptNFTTransfer(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		postHash,
+		serialNumber,
+	)
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *BitCloutParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	updaterPrivBase58Check string, nftPostHash *BlockHash, serialNumber uint64,
+) (_utxoOps []*UtxoOperation, _txn *MsgBitCloutTxn, _height uint32, _err error) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	require.NoError(err)
+
+	utxoView, err := NewUtxoView(db, params, nil)
+	require.NoError(err)
+
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateBurnNFTTxn(
+		updaterPkBytes,
+		nftPostHash,
+		serialNumber,
+		feeRateNanosPerKB,
+		nil)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(t, txn, updaterPrivBase58Check)
+
+	txHash := txn.Hash()
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	utxoOps, totalInput, totalOutput, fees, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalInputMake)
+
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeNFTTransfer operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+	for ii := 0; ii < len(txn.TxInputs); ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	require.Equal(OperationTypeBurnNFT, utxoOps[len(utxoOps)-1].Type)
+
+	require.NoError(utxoView.FlushToDb())
+
+	return utxoOps, txn, blockHeight, nil
+}
+
+func _burnNFTWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	postHash *BlockHash,
+	serialNumber uint64,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+	currentOps, currentTxn, _, err := _burnNFT(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		postHash,
+		serialNumber,
+	)
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
 func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 	// Roll back all of the above using the utxoOps from each.
 	for ii := 0; ii < len(testMeta.txnOps); ii++ {
@@ -18966,4 +19209,504 @@ func TestBitCloutDiamondErrorCases(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBasicTransferInsufficientBitCloutForDiamondLevel)
 	}
+}
+
+func TestNFTTransfersAndBurns(t *testing.T) {
+	BrokenNFTBidsFixBlockHeight = uint32(0)
+	NFTTransferOrBurnBlockHeight = uint32(0)
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3 a paramUpdater for this test
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund all the keys.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 1000)
+
+	// Get PKIDs for checking nft ownership.
+	m0PkBytes, _, err := Base58CheckDecode(m0Pub)
+	require.NoError(err)
+	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
+	_ = m0PKID
+
+	m1PkBytes, _, err := Base58CheckDecode(m1Pub)
+	require.NoError(err)
+	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+	_ = m1PKID
+
+	m2PkBytes, _, err := Base58CheckDecode(m2Pub)
+	require.NoError(err)
+	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+	_ = m2PKID
+
+	m3PkBytes, _, err := Base58CheckDecode(m3Pub)
+	require.NoError(err)
+	m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+	_ = m3PKID
+
+	// Set max copies to a non-zero value to activate NFTs.
+	{
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			-1, -1, -1, -1,
+			1000, /*maxCopiesPerNFT*/
+		)
+	}
+
+	// Create two posts to NFTify (one will have unlockable, one will not).
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 1"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&BitCloutBodySchema{Body: "m0 post 2"}, /*body*/
+			[]byte{},
+			1502947012*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
+	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+
+	// Create a profile so we can make an NFT.
+	{
+		_updateProfileWithTestMeta(
+			testMeta,
+			10,            /*feeRateNanosPerKB*/
+			m0Pub,         /*updaterPkBase58Check*/
+			m0Priv,        /*updaterPrivBase58Check*/
+			[]byte{},      /*profilePubKey*/
+			"m0",          /*newUsername*/
+			"i am the m0", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+	}
+
+	// Have m0 turn both post1 and post2 into NFTs.
+	{
+		// Balance before.
+		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(uint64(957), m0BalBeforeNFT)
+
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			5,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			5,     /*NumCopies*/
+			true,  /*HasUnlockable*/
+			false, /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
+		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		require.Equal(uint64(955), m0BalAfterNFT)
+	}
+
+	// Have m1 bid on and win post #1 / serial #5.
+	{
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 5)
+		require.Equal(0, len(bidEntries))
+
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			5, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 5)
+		require.Equal(1, len(bidEntries))
+
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			5, /*SerialNumber*/
+			m1Pub,
+			1,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 5)
+		require.Equal(0, len(bidEntries))
+	}
+
+	// Update <post1, #2>, so that it is no longer for sale.
+	{
+		_updateNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			2,     /*SerialNumber*/
+			false, /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+		)
+	}
+
+	// At this point, we have 10 NFTs in the following state:
+	//   - m1 owns <post 1, #5> (no unlockable, not for sale; purchased from m0)
+	//   - m0 owns:
+	//     - <post 1, #1-4> (no unlockable, all for sale except #2)
+	//     - <post 2, #1-5> (has unlockable, none for sale)
+
+	// Now that we have some NFTs, let's try transferring them.
+
+	// Error case: non-existent NFT.
+	{
+		_, _, _, err := _transferNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			m1Pub,
+			post1Hash,
+			6, /*Non-existent serial number.*/
+			"",
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCannotTransferNonExistentNFT)
+	}
+
+	// Error case: transfer by non-owner.
+	{
+		_, _, _, err := _transferNFT(
+			t, chain, db, params, 10,
+			m3Pub,
+			m3Priv,
+			m2Pub,
+			post1Hash,
+			2,
+			"",
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorNFTTransferByNonOwner)
+	}
+
+	// Error case: cannot transfer NFT that is for sale.
+	{
+		_, _, _, err := _transferNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			m1Pub,
+			post1Hash,
+			1,
+			"",
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCannotTransferForSaleNFT)
+	}
+
+	// Error case: cannot transfer unlockable NFT without unlockable text.
+	{
+		_, _, _, err := _transferNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			m1Pub,
+			post2Hash,
+			1,
+			"",
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCannotTransferUnlockableNFTWithoutUnlockable)
+	}
+
+	// Let's transfer some NFTs!
+	{
+		// m0 transfers <post 1, #2> (not for sale, no unlockable) to m2.
+		_transferNFTWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			m2Pub,
+			post1Hash,
+			2,
+			"",
+		)
+
+		// m1 transfers <post 1, #5> (not for sale, no unlockable) to m3.
+		_transferNFTWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			m1Priv,
+			m3Pub,
+			post1Hash,
+			5,
+			"",
+		)
+
+		// m0 transfers <post 2, #1> (not for sale, has unlockable) to m1.
+		unlockableText := "this is an encrypted unlockable string"
+		_transferNFTWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			m1Pub,
+			post2Hash,
+			1,
+			unlockableText,
+		)
+
+		// Check the state of the transferred NFTs.
+		transferredNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 2)
+		require.Equal(transferredNFT1.IsPending, true)
+		require.True(reflect.DeepEqual(transferredNFT1.OwnerPKID, m2PKID.PKID))
+		require.True(reflect.DeepEqual(transferredNFT1.LastOwnerPKID, m0PKID.PKID))
+
+		transferredNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 5)
+		require.Equal(transferredNFT2.IsPending, true)
+		require.True(reflect.DeepEqual(transferredNFT2.OwnerPKID, m3PKID.PKID))
+		require.True(reflect.DeepEqual(transferredNFT2.LastOwnerPKID, m1PKID.PKID))
+
+		transferredNFT3 := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 1)
+		require.Equal(transferredNFT3.IsPending, true)
+		require.True(reflect.DeepEqual(transferredNFT3.OwnerPKID, m1PKID.PKID))
+		require.True(reflect.DeepEqual(transferredNFT3.LastOwnerPKID, m0PKID.PKID))
+		require.True(reflect.DeepEqual(transferredNFT3.UnlockableText, []byte(unlockableText)))
+	}
+
+	// Now let's test out accepting NFT transfers.
+
+	// Error case: non-existent NFT.
+	{
+		_, _, _, err := _acceptNFTTransfer(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			6, /*Non-existent serial number.*/
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCannotAcceptTransferOfNonExistentNFT)
+	}
+
+	// Error case: transfer by non-owner (m1 owns <post 2, #1>).
+	{
+		_, _, _, err := _acceptNFTTransfer(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			1,
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTTransferByNonOwner)
+	}
+
+	// Error case: cannot accept NFT transfer on non-pending NFT.
+	{
+		_, _, _, err := _acceptNFTTransfer(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			4,
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAcceptNFTTransferForNonPendingNFT)
+	}
+
+	// Let's accept some NFT transfers!
+	{
+		// m2 accepts <post 1, #2>
+		_acceptNFTTransferWithTestMeta(
+			testMeta,
+			10,
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			2,
+		)
+
+		// m1 accepts <post 2, #1>
+		_acceptNFTTransferWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			m1Priv,
+			post2Hash,
+			1,
+		)
+
+		// Check the state of the accepted NFTs.
+		acceptedNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 2)
+		require.Equal(acceptedNFT1.IsPending, false)
+
+		acceptedNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 1)
+		require.Equal(acceptedNFT2.IsPending, false)
+	}
+
+	// Now let's test out burning NFTs.
+
+	// Error case: non-existent NFT.
+	{
+		_, _, _, err := _burnNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			6, /*Non-existent serial number.*/
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCannotBurnNonExistentNFT)
+	}
+
+	// Error case: transfer by non-owner (m1 owns <post 2, #1>).
+	{
+		_, _, _, err := _burnNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			1,
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorBurnNFTByNonOwner)
+	}
+
+	// Error case: cannot burn an NFT that is for sale (<post 1, #1> is still for sale).
+	{
+		_, _, _, err := _burnNFT(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCannotBurnNFTThatIsForSale)
+	}
+
+	// Let's burn some NFTs!!
+	{
+		// m3 burns <post 1, #5> (not for sale, is pending, no unlockable)
+		_burnNFTWithTestMeta(
+			testMeta,
+			10,
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			5,
+		)
+
+		// m0 burns <post 2, #3> (not for sale, not pending, has unlockable)
+		_burnNFTWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			post2Hash,
+			3,
+		)
+
+		// Check the burned NFTs no longer exist.
+		burnedNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 5)
+		require.Nil(burnedNFT1)
+
+		burnedNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 3)
+		require.Nil(burnedNFT2)
+
+		// Check that the post entries have the correct burn count.
+		post1 := DBGetPostEntryByPostHash(db, post1Hash)
+		require.Equal(uint64(1), post1.NumNFTCopiesBurned)
+
+		post2 := DBGetPostEntryByPostHash(db, post2Hash)
+		require.Equal(uint64(1), post2.NumNFTCopiesBurned)
+	}
+
+	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }

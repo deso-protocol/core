@@ -3109,6 +3109,123 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) CreateNFTTransferTxn(
+	SenderPublicKey []byte,
+	ReceiverPublicKey []byte,
+	NFTPostHash *BlockHash,
+	SerialNumber uint64,
+	EncryptedUnlockableTextBytes []byte,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a transaction containing the NFT transfer fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: SenderPublicKey,
+		TxnMeta: &NFTTransferMetadata{
+			NFTPostHash,
+			SerialNumber,
+			ReceiverPublicKey,
+			EncryptedUnlockableTextBytes,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, _, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTTransferTxn: Problem adding inputs: ")
+	}
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateNFTTransferTxn: NFTTransfer txn must have " +
+			"at least one input but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateAcceptNFTTransferTxn(
+	UpdaterPublicKey []byte,
+	NFTPostHash *BlockHash,
+	SerialNumber uint64,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a transaction containing the accept NFT transfer fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta: &AcceptNFTTransferMetadata{
+			NFTPostHash,
+			SerialNumber,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, _, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"CreateAcceptNFTTransferTxn: Problem adding inputs: ")
+	}
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateAcceptNFTTransferTxn: AcceptNFTTransfer txn must have at least one input" +
+				" but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateBurnNFTTxn(
+	UpdaterPublicKey []byte,
+	NFTPostHash *BlockHash,
+	SerialNumber uint64,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Create a transaction containing the burn NFT fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta: &BurnNFTMetadata{
+			NFTPostHash,
+			SerialNumber,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, _, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateBurnNFTTxn: Problem adding inputs: ")
+	}
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateBurnNFTTxn: BurnNFT txn must have at least " +
+			"one input but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
 func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	UpdaterPublicKey []byte,
 	NFTPostHash *BlockHash,
