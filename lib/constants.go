@@ -121,7 +121,8 @@ var (
 
 	// NFTTransfersBlockHeight defines the height at which NFT transfer txns, accept NFT
 	// transfer txns, and NFT burn txns will be accepted.
-	NFTTransferOrBurnBlockHeight = uint32(100000)
+	// Triggers: 12PM PT on 9/15/2021
+	NFTTransferOrBurnBlockHeight = uint32(60743)
 )
 
 func (nt NetworkType) String() string {
