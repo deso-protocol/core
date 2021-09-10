@@ -118,6 +118,11 @@ var (
 	// rather than in creator coin.
 	// Triggers: 3pm PT on 8/16/2021
 	BitCloutDiamondsBlockHeight = uint32(52112)
+
+	// NFTTransfersBlockHeight defines the height at which NFT transfer txns, accept NFT
+	// transfer txns, and NFT burn txns will be accepted.
+	// Triggers: 12PM PT on 9/15/2021
+	NFTTransferOrBurnBlockHeight = uint32(60743)
 )
 
 func (nt NetworkType) String() string {
@@ -733,7 +738,8 @@ var BitCloutTestnetParams = BitCloutParams{
 	SeedTxns: TestSeedTxns,
 
 	// Set some seed balances if desired
-	SeedBalances: TestSeedBalances,
+	// Note: For now these must be the same as mainnet because GenesisBlock is the same
+	SeedBalances: SeedBalances,
 
 	// Just charge one basis point on creator coin trades for now.
 	CreatorCoinTradeFeeBasisPoints: 1,

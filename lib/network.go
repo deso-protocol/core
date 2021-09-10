@@ -243,9 +243,12 @@ const (
 	TxnTypeUpdateNFT                    TxnType = 16
 	TxnTypeAcceptNFTBid                 TxnType = 17
 	TxnTypeNFTBid                       TxnType = 18
-	TxnTypeAuthorizeDerivedKey          TxnType = 19
+	TxnTypeNFTTransfer                  TxnType = 19
+	TxnTypeAcceptNFTTransfer            TxnType = 20
+	TxnTypeBurnNFT                      TxnType = 21
+	TxnTypeAuthorizeDerivedKey          TxnType = 22
 
-	// NEXT_ID = 20
+	// NEXT_ID = 23
 )
 
 func (txnType TxnType) String() string {
@@ -286,6 +289,12 @@ func (txnType TxnType) String() string {
 		return "ACCEPT_NFT_BID"
 	case TxnTypeNFTBid:
 		return "NFT_BID"
+	case TxnTypeNFTTransfer:
+		return "NFT_TRANSFER"
+	case TxnTypeAcceptNFTTransfer:
+		return "ACCEPT_NFT_TRANSFER"
+	case TxnTypeBurnNFT:
+		return "BURN_NFT"
 	case TxnTypeAuthorizeDerivedKey:
 		return "AUTHORIZE_DERIVED_KEY"
 
@@ -339,6 +348,12 @@ func NewTxnMetadata(txType TxnType) (BitCloutTxnMetadata, error) {
 		return (&AcceptNFTBidMetadata{}).New(), nil
 	case TxnTypeNFTBid:
 		return (&NFTBidMetadata{}).New(), nil
+	case TxnTypeNFTTransfer:
+		return (&NFTTransferMetadata{}).New(), nil
+	case TxnTypeAcceptNFTTransfer:
+		return (&AcceptNFTTransferMetadata{}).New(), nil
+	case TxnTypeBurnNFT:
+		return (&BurnNFTMetadata{}).New(), nil
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
 
@@ -3756,7 +3771,7 @@ func (txnData *CreatorCoinTransferMetadataa) ToBytes(preSignature bool) ([]byte,
 	// CreatorCoinToTransferNanos uint64
 	data = append(data, UintToBuf(uint64(txnData.CreatorCoinToTransferNanos))...)
 
-	// RecipientPublicKey
+	// ReceiverPublicKey
 	data = append(data, UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
 	data = append(data, txnData.ReceiverPublicKey...)
 
@@ -3785,7 +3800,7 @@ func (txnData *CreatorCoinTransferMetadataa) FromBytes(dataa []byte) error {
 	ret.ReceiverPublicKey, err = ReadVarString(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"CreatorCoinTransferMetadataa.FromBytes: Error reading ProfilePublicKey: %v", err)
+			"CreatorCoinTransferMetadataa.FromBytes: Error reading ReceiverPublicKey: %v", err)
 	}
 
 	*txnData = ret
@@ -4083,7 +4098,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 	ret.UnlockableText = make([]byte, unlockableTextLen)
 	_, err = io.ReadFull(rr, ret.UnlockableText)
 	if err != nil {
-		return fmt.Errorf("PrivateMessageMetadata.FromBytes: Error reading EncryptedText: %v", err)
+		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading EncryptedText: %v", err)
 	}
 
 	// De-serialize the inputs
@@ -4184,6 +4199,216 @@ func (txnData *NFTBidMetadata) FromBytes(dataa []byte) error {
 
 func (txnData *NFTBidMetadata) New() BitCloutTxnMetadata {
 	return &NFTBidMetadata{}
+}
+
+// ==================================================================
+// NFTTransferMetadata
+// ==================================================================
+
+type NFTTransferMetadata struct {
+	NFTPostHash       *BlockHash
+	SerialNumber      uint64
+	ReceiverPublicKey []byte
+	UnlockableText    []byte
+}
+
+func (txnData *NFTTransferMetadata) GetTxnType() TxnType {
+	return TxnTypeNFTTransfer
+}
+
+func (txnData *NFTTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// Validate the metadata before encoding it.
+	//
+	// Post hash must be included and must have the expected length.
+	if len(txnData.NFTPostHash) != HashSizeBytes {
+		return nil, fmt.Errorf("NFTTransferMetadata.ToBytes: NFTPostHash "+
+			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+	}
+
+	data := []byte{}
+
+	// NFTPostHash
+	data = append(data, txnData.NFTPostHash[:]...)
+
+	// SerialNumber uint64
+	data = append(data, UintToBuf(txnData.SerialNumber)...)
+
+	// ReceiverPublicKey
+	data = append(data, UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
+	data = append(data, txnData.ReceiverPublicKey...)
+
+	// UnlockableText
+	data = append(data, UintToBuf(uint64(len(txnData.UnlockableText)))...)
+	data = append(data, txnData.UnlockableText...)
+
+	return data, nil
+}
+
+func (txnData *NFTTransferMetadata) FromBytes(dataa []byte) error {
+	ret := NFTTransferMetadata{}
+	rr := bytes.NewReader(dataa)
+
+	// NFTPostHash
+	ret.NFTPostHash = &BlockHash{}
+	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
+	if err != nil {
+		return fmt.Errorf(
+			"NFTTransferMetadata.FromBytes: Error reading NFTPostHash: %v", err)
+	}
+
+	// SerialNumber uint64
+	ret.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("NFTTransferMetadata.FromBytes: Error reading SerialNumber: %v", err)
+	}
+
+	// ReceiverPublicKey
+	ret.ReceiverPublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"NFTTransferMetadataa.FromBytes: Error reading ReceiverPublicKey: %v", err)
+	}
+
+	// UnlockableText
+	unlockableTextLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTTransferMetadata.FromBytes: Problem "+
+			"decoding UnlockableText length")
+	}
+	if unlockableTextLen > MaxMessagePayload {
+		return fmt.Errorf("NFTTransferMetadata.FromBytes: unlockableTextLen %d "+
+			"exceeds max %d", unlockableTextLen, MaxMessagePayload)
+	}
+	ret.UnlockableText = make([]byte, unlockableTextLen)
+	_, err = io.ReadFull(rr, ret.UnlockableText)
+	if err != nil {
+		return fmt.Errorf("NFTTransferMetadata.FromBytes: Error reading EncryptedText: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *NFTTransferMetadata) New() BitCloutTxnMetadata {
+	return &NFTTransferMetadata{}
+}
+
+// ==================================================================
+// AcceptNFTTransferMetadata
+// ==================================================================
+
+type AcceptNFTTransferMetadata struct {
+	NFTPostHash  *BlockHash
+	SerialNumber uint64
+}
+
+func (txnData *AcceptNFTTransferMetadata) GetTxnType() TxnType {
+	return TxnTypeAcceptNFTTransfer
+}
+
+func (txnData *AcceptNFTTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// Validate the metadata before encoding it.
+	//
+	// Post hash must be included and must have the expected length.
+	if len(txnData.NFTPostHash) != HashSizeBytes {
+		return nil, fmt.Errorf("AcceptNFTTransferMetadata.ToBytes: NFTPostHash "+
+			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+	}
+
+	data := []byte{}
+
+	// NFTPostHash
+	data = append(data, txnData.NFTPostHash[:]...)
+
+	// SerialNumber uint64
+	data = append(data, UintToBuf(txnData.SerialNumber)...)
+
+	return data, nil
+}
+
+func (txnData *AcceptNFTTransferMetadata) FromBytes(dataa []byte) error {
+	ret := AcceptNFTTransferMetadata{}
+	rr := bytes.NewReader(dataa)
+
+	// NFTPostHash
+	ret.NFTPostHash = &BlockHash{}
+	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
+	if err != nil {
+		return fmt.Errorf(
+			"AcceptNFTTransferMetadata.FromBytes: Error reading NFTPostHash: %v", err)
+	}
+
+	// SerialNumber uint64
+	ret.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("AcceptNFTTransferMetadata.FromBytes: Error reading SerialNumber: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *AcceptNFTTransferMetadata) New() BitCloutTxnMetadata {
+	return &AcceptNFTTransferMetadata{}
+}
+
+// ==================================================================
+// BurnNFTMetadata
+// ==================================================================
+
+type BurnNFTMetadata struct {
+	NFTPostHash  *BlockHash
+	SerialNumber uint64
+}
+
+func (txnData *BurnNFTMetadata) GetTxnType() TxnType {
+	return TxnTypeBurnNFT
+}
+
+func (txnData *BurnNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// Validate the metadata before encoding it.
+	//
+	// Post hash must be included and must have the expected length.
+	if len(txnData.NFTPostHash) != HashSizeBytes {
+		return nil, fmt.Errorf("BurnNFTMetadata.ToBytes: NFTPostHash "+
+			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+	}
+
+	data := []byte{}
+
+	// NFTPostHash
+	data = append(data, txnData.NFTPostHash[:]...)
+
+	// SerialNumber uint64
+	data = append(data, UintToBuf(txnData.SerialNumber)...)
+
+	return data, nil
+}
+
+func (txnData *BurnNFTMetadata) FromBytes(dataa []byte) error {
+	ret := BurnNFTMetadata{}
+	rr := bytes.NewReader(dataa)
+
+	// NFTPostHash
+	ret.NFTPostHash = &BlockHash{}
+	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
+	if err != nil {
+		return fmt.Errorf(
+			"BurnNFTMetadata.FromBytes: Error reading NFTPostHash: %v", err)
+	}
+
+	// SerialNumber uint64
+	ret.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("BurnNFTMetadata.FromBytes: Error reading SerialNumber: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *BurnNFTMetadata) New() BitCloutTxnMetadata {
+	return &BurnNFTMetadata{}
 }
 
 // ==================================================================

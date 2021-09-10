@@ -998,6 +998,81 @@ func TestSerializeNFTBid(t *testing.T) {
 	require.Equal(txMeta, testMeta)
 }
 
+func TestSerializeNFTTransfer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &NFTTransferMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+	txMeta.ReceiverPublicKey = []byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02}
+	txMeta.UnlockableText = []byte("accept nft bid")
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeNFTTransfer)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestAcceptNFTTransfer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &AcceptNFTTransferMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeAcceptNFTTransfer)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestBurnNFT(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &BurnNFTMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeBurnNFT)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
 func TestDecodeHeaderVersion0(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
