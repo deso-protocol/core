@@ -2250,7 +2250,7 @@ type MsgBitCloutTxn struct {
 	// inputs to the transaction. The exception to this rule is that
 	// BLOCK_REWARD and CREATE_bitclout transactions do not require a signature
 	// since they have no inputs.
-	Signature []byte
+	Signature *btcec.Signature
 
 	// (!!) **DO_NOT_USE** (!!)
 	//
@@ -2358,8 +2358,8 @@ func (msg *MsgBitCloutTxn) ToBytes(preSignature bool) ([]byte, error) {
 	// a zero will be encoded for the length and no signature bytes will be added
 	// beyond it.
 	sigBytes := []byte{}
-	if !preSignature && len(msg.Signature) != 0 {
-		sigBytes = append([]byte{}, msg.Signature...)
+	if !preSignature && msg.Signature != nil {
+		sigBytes = msg.Signature.Serialize()
 	}
 	// Note that even though we encode the length as a varint as opposed to a
 	// fixed-width int, it should always take up just one byte since the length
@@ -2525,6 +2525,7 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
 	}
 
+	ret.Signature = nil
 	if sigLen != 0 {
 		sigBytes := make([]byte, sigLen)
 		_, err = io.ReadFull(rr, sigBytes)
@@ -2533,12 +2534,12 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 		}
 
 		// Verify that the signature is valid.
-		_, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
+		sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing BitCloutTxn.Signature bytes")
 		}
 		// If everything worked, we set the ret signature to the original.
-		ret.Signature = sigBytes
+		ret.Signature = sig
 	}
 
 	return ret, nil
@@ -2701,7 +2702,7 @@ func (msg *MsgBitCloutTxn) UnmarshalJSON(data []byte) error {
 		TxOutputs []*BitCloutOutput
 		TxnMeta   BitCloutTxnMetadata
 		PublicKey []byte
-		Signature []byte
+		Signature *btcec.Signature
 		TxnType   uint64
 	}{
 		TxInputs:  msg.TxInputs,

@@ -100,7 +100,8 @@ type PGTransaction struct {
 	Type      TxnType    `pg:",use_zero"`
 	PublicKey []byte     `pg:",type:bytea"`
 	ExtraData map[string][]byte
-	Signature []byte     `pg:",type:bytea"`
+	R         *BlockHash `pg:",type:bytea"`
+	S         *BlockHash `pg:",type:bytea"`
 
 	// Relationships
 	Outputs                     []*PGTransactionOutput         `pg:"rel:has-many,join_fk:output_hash"`
@@ -761,7 +762,11 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, bitCloutTxns []*MsgBit
 			Type:      txn.TxnMeta.GetTxnType(),
 			PublicKey: txn.PublicKey,
 			ExtraData: txn.ExtraData,
-			Signature: txn.Signature,
+		}
+
+		if txn.Signature != nil {
+			transaction.R = BigintToHash(txn.Signature.R)
+			transaction.S = BigintToHash(txn.Signature.S)
 		}
 
 		transactions = append(transactions, transaction)
