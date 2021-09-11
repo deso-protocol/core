@@ -786,7 +786,7 @@ const (
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
 
-	// Key in transaction's extra data map containing the derived key used in signing the txn
+	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
 )
 

@@ -4597,7 +4597,6 @@ func DBGetOwnerToDerivedKeyMapping(
 
 func DBDeleteDerivedKeyMappingWithTxn(
 	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
-	// We could call DBDeleteDerivedKeyMappingWithTxn to delete a key from the db.
 
 	// First check that a mapping exists for the passed in public keys.
 	// If one doesn't exist then there's nothing to do.

@@ -4490,13 +4490,13 @@ const (
 
 type AuthorizeDerivedKeyMetadata struct {
 	// DerivedPublicKey is the key that is authorized to sign transactions
-	// on behalf of the public key owner
+	// on behalf of the public key owner.
 	DerivedPublicKey []byte
 
-	// ExpirationBlock is the block at which this authorization becomes invalid
+	// ExpirationBlock is the block at which this authorization becomes invalid.
 	ExpirationBlock uint64
 
-	// OperationType determines if transaction validates or invalidates derived key
+	// OperationType determines if transaction validates or invalidates derived key.
 	OperationType AuthorizeDerivedKeyOperationType
 
 	// AccessSignature is the signed hash of (derivedPublicKey + expirationBlock)

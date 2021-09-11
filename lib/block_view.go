@@ -797,7 +797,7 @@ const (
 	OperationTypeNFTTransfer                  OperationType = 20
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
-    OperationTypeAuthorizeDerivedKey          OperationType = 23
+	OperationTypeAuthorizeDerivedKey          OperationType = 23
 
 	// NEXT_TAG = 24
 )
@@ -928,7 +928,7 @@ type UtxoOperation struct {
 	NFTSpentUtxoEntries       []*UtxoEntry
 	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
 
-	// For disconnecting authorize derived key.
+	// For disconnecting AuthorizeDerivedKey transactions.
 	PrevDerivedKeyEntry *DerivedKeyEntry
 
 	// Save the previous reclout entry and reclout count when making an update.
@@ -5036,7 +5036,7 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 		}
 	} else {
 		var err error
-		dbMappings, err = DBGetAllOwnerToDerivedKeyMappings(bav.Handle, *NewPublicKey(ownerPublicKey))
+		dbMappings, err = DBGetAllOwnerToDerivedKeyMappings(bav.Handle, *ownerPk)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetAllDerivedKeyMappingsForOwner: problem looking up" +
 				"entries in the DB.")
@@ -5048,6 +5048,14 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 		mapKey := entry.DerivedPublicKey
 		if _, ok := derivedKeyMappings[mapKey]; !ok {
 			derivedKeyMappings[mapKey] = entry
+		}
+	}
+
+	// Delete entries with isDeleted=true. We are deleting these entries
+	// only now, because we wanted to skip corresponding keys in DB fetch.
+	for entryKey, entry := range derivedKeyMappings {
+		if entry.isDeleted {
+			delete(derivedKeyMappings, entryKey)
 		}
 	}
 
@@ -7909,12 +7917,12 @@ func (bav *UtxoView) _connectSwapIdentity(
 func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	expirationBlock uint64, accessSignature []byte) error {
 
-	// Compute a hash of derivedPublicKey+expirationBlock
+	// Compute a hash of derivedPublicKey+expirationBlock.
 	expirationBlockBytes := UintToBuf(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
 	accessHash := Sha256DoubleHash(accessBytes)
 
-	// Convert ownerPublicKey to *btcec.PublicKey
+	// Convert ownerPublicKey to *btcec.PublicKey.
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
 		fmt.Errorf("_verifyAccessSignature: Problem parsing owner public key")
 	}
@@ -7923,13 +7931,13 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing owner public key: ")
 	}
 
-	// Convert accessSignature to *btcec.Signature
+	// Convert accessSignature to *btcec.Signature.
 	signature, err := btcec.ParseDERSignature(accessSignature, btcec.S256())
 	if err != nil {
 		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing access signature: ")
 	}
 
-	// Verify signature
+	// Verify signature.
 	if !signature.Verify(accessHash[:], ownerPk) {
 		return fmt.Errorf("_verifyAccessSignature: Invalid signature")
 	}
@@ -8000,20 +8008,19 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		}
 	}
 
-	// At this point we've verified the access signature, which means the derived key is
-	// authorized to sign on behalf of the owner. This extends even to this very transaction,
-	// so if authorize transaction was signed by the derived keys, we would accept it. To
-	// accommodate this, we add a temporary derived key entry to UtxoView with OperationType
-	// set to Valid. This way we pass txn signature verification, which happens in _connectBasicTransfer().
-	// If derived key is present in transaction's ExtraData, it will be used in _verifySignature().
+	// At this point we've verified the access signature, which means the derived key is authorized
+	// to sign on behalf of the owner. In particular, if this authorize transaction was signed
+	// by the derived key, we would accept it. We accommodate this by adding a temporary derived
+	// key entry to UtxoView, to support first-time derived keys (they don't exist in the DB yet).
+	// As a result, and if the derived key is present in transaction's ExtraData, we will
+	// pass signature verification in _connectBasicTransfer() -> _verifySignature().
 	//
-	// NOTE: Setting a mapping in UtxoView prior to fully validating a transaction shouldn't
-	// be reproduced elsewhere. It's error-prone, controversial, some even call it "a dirty hack!"
-	// We're doing it here, because it's necessary for first-time derived keys (they don't exist in
-	// the DB yet). Overall, this greatly simplifies the flow in identity - from the moment you
+	// NOTE: Setting a mapping in UtxoView prior to fully validating a transaction shouldn't be
+	// reproduced elsewhere. It's error-prone, controversial, some even call it "a dirty hack!"
+	// All considered, this feature greatly simplifies the flow in identity - from the moment you
 	// generate a derived key, you can use it to sign any transaction offline, including authorize
-	// transactions. It also solves issues stemming from owner account having insufficient balance
-	// to submit an authorize transactions, aka, authorize is lazy: you can post it anytime.
+	// transactions. It also resolves issues in situations where the owner account has insufficient
+	// balance to submit an authorize transaction.
 	derivedKeyEntry := DerivedKeyEntry {
 		OwnerPublicKey: *NewPublicKey(ownerPublicKey),
 		DerivedPublicKey: *NewPublicKey(derivedPublicKey),
@@ -8027,8 +8034,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
-		// Since we've failed, we revert the utxoView mapping to what it was previously.
-		// We're doing this manually because we've set a temporary entry in utxoView.
+		// Since we've failed, we revert the UtxoView mapping to what it was previously.
+		// We're doing this manually because we've set a temporary entry in UtxoView.
 		bav._deleteDerivedKeyMapping(&derivedKeyEntry)
 		bav._setDerivedKeyMapping(prevDerivedKeyEntry)
 		return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: ")
@@ -8036,18 +8043,15 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
-		// Since we've failed, we revert the utxoView mapping to what it was previously.
-		// We're doing this manually because we've set a temporary entry in utxoView.
+		// Since we've failed, we revert the UtxoView mapping to what it was previously.
+		// We're doing this manually because we've set a temporary entry in UtxoView.
 		bav._deleteDerivedKeyMapping(&derivedKeyEntry)
 		bav._setDerivedKeyMapping(prevDerivedKeyEntry)
 		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput
 	}
 
-	// Now that we've verified this txn is good to go, we update the UtxoView entry
-	// to what it's supposed to be. The temporary derived key entry that we've set
-	// earlier had OperationType set to Valid, so that we always pass signature
-	// verification in _connectBasicTransfer(); however, if we've submitted a txn
-	// with OperationType set to NotValid, we must update the entry here.
+	// Earlier we've set a temporary derived key entry that had OperationType set to Valid.
+	// So if the txn metadata had OperationType set to NotValid, we update the entry here.
 	bav._deleteDerivedKeyMapping(&derivedKeyEntry)
 	derivedKeyEntry.OperationType = txMeta.OperationType
 	bav._setDerivedKeyMapping(&derivedKeyEntry)
@@ -11222,7 +11226,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
 
-	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the Db.
+	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the DB.
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false.
@@ -11238,7 +11242,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 			// Since entry is deleted, there's nothing to do.
 			numDeleted++
 		} else {
-			// In this case we add the mapping to the db
+			// In this case we add the mapping to the DB.
 			if err := DBPutDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
 				derivedKeyMapKey.DerivedPublicKey, derivedKeyEntry); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
