@@ -220,6 +220,7 @@ const (
 	RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey   RuleError = "RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey"
 	RuleErrorDerivedKeyNotAuthorized                    RuleError = "RuleErrorDerivedKeyNotAuthorized"
 	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
+	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                     RuleError = "RuleErrorTooManyNFTCopies"

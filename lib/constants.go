@@ -120,9 +120,9 @@ var (
 	BitCloutDiamondsBlockHeight = uint32(52112)
 
 	// NFTTransfersBlockHeight defines the height at which NFT transfer txns, accept NFT
-	// transfer txns, and NFT burn txns will be accepted.
+	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
 	// Triggers: 12PM PT on 9/15/2021
-	NFTTransferOrBurnBlockHeight = uint32(60743)
+	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
 )
 
 func (nt NetworkType) String() string {

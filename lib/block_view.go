@@ -7480,7 +7480,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnBlockHeight {
+	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorNFTTranserBeforeBlockHeight
 	}
 
@@ -7605,7 +7605,7 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnBlockHeight {
+	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorAcceptNFTTranserBeforeBlockHeight
 	}
 
@@ -7692,7 +7692,7 @@ func (bav *UtxoView) _connectBurnNFT(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnBlockHeight {
+	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorBurnNFTBeforeBlockHeight
 	}
 
@@ -7917,12 +7917,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	expirationBlock uint64, accessSignature []byte) error {
 
-	// Compute a hash of derivedPublicKey+expirationBlock.
-	expirationBlockBytes := UintToBuf(expirationBlock)
-	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
-	accessHash := Sha256DoubleHash(accessBytes)
-
-	// Convert ownerPublicKey to *btcec.PublicKey.
+	// Sanity-check and convert ownerPublicKey to *btcec.PublicKey.
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
 		fmt.Errorf("_verifyAccessSignature: Problem parsing owner public key")
 	}
@@ -7930,6 +7925,20 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	if err != nil {
 		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing owner public key: ")
 	}
+
+	// Sanity-check and convert derivedPublicKey to *btcec.PublicKey.
+	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
+		fmt.Errorf("_verifyAccessSignature: Problem parsing derived public key")
+	}
+	_, err = btcec.ParsePubKey(derivedPublicKey, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing derived public key: ")
+	}
+
+	// Compute a hash of derivedPublicKey+expirationBlock.
+	expirationBlockBytes := EncodeUint64(expirationBlock)
+	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
+	accessHash := Sha256DoubleHash(accessBytes)
 
 	// Convert accessSignature to *btcec.Signature.
 	signature, err := btcec.ParseDERSignature(accessSignature, btcec.S256())
@@ -7948,6 +7957,10 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
+		return 0, 0, nil, RuleErrorDerivedKeyBeforeBlockHeight
+	}
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeAuthorizeDerivedKey {

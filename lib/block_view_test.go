@@ -1568,7 +1568,7 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 	derivedPublicKey := derivedPrivateKey.PubKey().SerializeCompressed()
 
 	// Create access signature
-	expirationBlockByte := UintToBuf(expirationBlock)
+	expirationBlockByte := EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockByte[:]...)
 	accessSignature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadata: Error creating access signature")
@@ -18869,6 +18869,8 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 }
 
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {
+	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -20158,7 +20160,7 @@ func TestBitCloutDiamondErrorCases(t *testing.T) {
 
 func TestNFTTransfersAndBurns(t *testing.T) {
 	BrokenNFTBidsFixBlockHeight = uint32(0)
-	NFTTransferOrBurnBlockHeight = uint32(0)
+	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
