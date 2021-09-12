@@ -229,6 +229,10 @@ var (
 	//   - Schema: <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
 	_PrefixPublicKeyBlockHashToBlockReward = []byte{53}
 
+	// Prefix for Authorize Derived Key transactions:
+	// 		<prefix, OwnerPublicKey [33]byte> -> <>
+	_PrefixAuthorizeDerivedKey = []byte{54}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
@@ -4509,6 +4513,133 @@ func DBGetNFTBidEntriesPaginated(
 	}
 
 	return bidEntries
+}
+
+// ======================================================================================
+// Authorize derived key functions
+//  	<prefix, owner pub key [33]byte, derived pub key [33]byte> -> <DerivedKeyEntry>
+// ======================================================================================
+
+func _dbKeyForOwnerToDerivedKeyMapping(
+	ownerPublicKey PublicKey, derivedPublicKey PublicKey) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
+	key := append(prefixCopy, ownerPublicKey[:]...)
+	key = append(key, derivedPublicKey[:]...)
+	return key
+}
+
+func _dbSeekPrefixForDerivedKeyMappings(
+	ownerPublicKey PublicKey) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
+	key := append(prefixCopy, ownerPublicKey[:]...)
+	return key
+}
+
+func DBPutDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+
+	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Owner Public Key "+
+			"length %d != %d", len(ownerPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Derived Public Key "+
+			"length %d != %d", len(derivedPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
+
+	derivedKeyEntryBuffer := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(derivedKeyEntryBuffer).Encode(derivedKeyEntry)
+	return txn.Set(key, derivedKeyEntryBuffer.Bytes())
+}
+
+func DBPutDerivedKeyMapping(
+	handle *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey, derivedKeyEntry)
+	})
+}
+
+func DBGetOwnerToDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
+
+	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
+	derivedKeyEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	derivedKeyEntryBytes, err := derivedKeyEntryItem.ValueCopy(nil)
+	if err != nil {
+		return nil
+	}
+	derivedKeyEntry := &DerivedKeyEntry{}
+	err = derivedKeyEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(derivedKeyEntryBytes)).Decode(derivedKeyEntry)
+	})
+
+	return derivedKeyEntry
+}
+
+func DBGetOwnerToDerivedKeyMapping(
+	db *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
+
+	var derivedKeyEntry *DerivedKeyEntry
+	db.View(func(txn *badger.Txn) error {
+		derivedKeyEntry = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
+		return nil
+	})
+	return derivedKeyEntry
+}
+
+func DBDeleteDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
+
+	// First check that a mapping exists for the passed in public keys.
+	// If one doesn't exist then there's nothing to do.
+	derivedKeyEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
+		txn, ownerPublicKey, derivedPublicKey)
+	if derivedKeyEntry == nil {
+		return nil
+	}
+
+	// When a mapping exists, delete it.
+	if err := txn.Delete(_dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)); err != nil {
+		return errors.Wrapf(err, "DBDeleteDerivedKeyMappingWithTxn: Deleting "+
+			"ownerPublicKey %s and derivedPublicKey %s failed",
+			PkToStringMainnet(ownerPublicKey[:]), PkToStringMainnet(derivedPublicKey[:]))
+	}
+
+	return nil
+}
+
+func DBDeleteDerivedKeyMapping(
+	handle *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
+	})
+}
+
+func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicKey) (
+	_entries []*DerivedKeyEntry, _err error) {
+
+	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPublicKey)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefix)
+
+	var derivedEntries []*DerivedKeyEntry
+	for _, keyBytes := range valsFound {
+		derivedKeyEntry := &DerivedKeyEntry{}
+		err := gob.NewDecoder(bytes.NewReader(keyBytes)).Decode(derivedKeyEntry)
+		if err != nil {
+			return nil, err
+		}
+		derivedEntries = append(derivedEntries, derivedKeyEntry)
+	}
+
+	return derivedEntries, nil
 }
 
 // ======================================================================================

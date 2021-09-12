@@ -211,6 +211,17 @@ const (
 	RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked           RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked"
 	RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller              RuleError = "RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller"
 
+	// Derived Keys
+	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
+	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput    RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
+	RuleErrorAuthorizeDerivedKeyExpiredDerivedPublicKey RuleError = "RuleErrorAuthorizeDerivedKeyExpired"
+	RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey RuleError = "RuleErrorAuthorizeDerivedKeyInvalidDerivedKey"
+	RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey RuleError = "RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey"
+	RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey   RuleError = "RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey"
+	RuleErrorDerivedKeyNotAuthorized                    RuleError = "RuleErrorDerivedKeyNotAuthorized"
+	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
+	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
+
 	// NFTs
 	RuleErrorTooManyNFTCopies                     RuleError = "RuleErrorTooManyNFTCopies"
 	RuleErrorCreateNFTRequiresNonZeroInput        RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"

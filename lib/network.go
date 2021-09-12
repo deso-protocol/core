@@ -246,8 +246,9 @@ const (
 	TxnTypeNFTTransfer                  TxnType = 19
 	TxnTypeAcceptNFTTransfer            TxnType = 20
 	TxnTypeBurnNFT                      TxnType = 21
+	TxnTypeAuthorizeDerivedKey          TxnType = 22
 
-	// NEXT_ID = 22
+	// NEXT_ID = 23
 )
 
 func (txnType TxnType) String() string {
@@ -294,6 +295,8 @@ func (txnType TxnType) String() string {
 		return "ACCEPT_NFT_TRANSFER"
 	case TxnTypeBurnNFT:
 		return "BURN_NFT"
+	case TxnTypeAuthorizeDerivedKey:
+		return "AUTHORIZE_DERIVED_KEY"
 
 	default:
 		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", txnType)
@@ -351,6 +354,8 @@ func NewTxnMetadata(txType TxnType) (BitCloutTxnMetadata, error) {
 		return (&AcceptNFTTransferMetadata{}).New(), nil
 	case TxnTypeBurnNFT:
 		return (&BurnNFTMetadata{}).New(), nil
+	case TxnTypeAuthorizeDerivedKey:
+		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
 
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
@@ -2289,7 +2294,7 @@ func (msg *MsgBitCloutTxn) String() string {
 		}
 	}
 	return fmt.Sprintf("< TxHash: %v, TxnType: %v, PubKey: %v >",
-		msg.Hash(), PkToStringMainnet(pubKey), msg.TxnMeta.GetTxnType())
+		msg.Hash(), msg.TxnMeta.GetTxnType(), PkToStringMainnet(pubKey))
 }
 
 func (msg *MsgBitCloutTxn) ToBytes(preSignature bool) ([]byte, error) {
@@ -2534,6 +2539,7 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 	if sigLen > MaxMessagePayload {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
 	}
+
 	ret.Signature = nil
 	if sigLen != 0 {
 		sigBytes := make([]byte, sigLen)
@@ -2541,10 +2547,13 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem reading BitCloutTxn.Signature")
 		}
+
+		// Verify that the signature is valid.
 		sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing BitCloutTxn.Signature bytes")
 		}
+		// If everything worked, we set the ret signature to the original.
 		ret.Signature = sig
 	}
 
@@ -2617,6 +2626,36 @@ func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, er
 		return nil, err
 	}
 	return txnSignature, nil
+}
+
+// SignTransactionWithDerivedKey the signature contains solution iteration,
+// which allows us to recover signer public key from the signature.
+// Returns (new txn bytes, txn signature, error)
+func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error){
+	// As we're signing the transaction using a derived key, we
+	// pass the key to extraData.
+	rr := bytes.NewReader(txnBytes)
+	txn, err := _readTransaction(rr)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "SignTransactionWithDerivedKey: Problem reading txn: ")
+	}
+	if txn.ExtraData == nil {
+		txn.ExtraData = make(map[string][]byte)
+	}
+	txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
+
+	// Sign the transaction with the passed private key.
+	txnSignature, err := txn.Sign(privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	newTxnBytes, err := txn.ToBytes(true)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return newTxnBytes, txnSignature.Serialize(), nil
 }
 
 // MarshalJSON and UnmarshalJSON implement custom JSON marshaling/unmarshaling
@@ -4436,4 +4475,97 @@ func (txnData *SwapIdentityMetadataa) FromBytes(dataa []byte) error {
 
 func (txnData *SwapIdentityMetadataa) New() BitCloutTxnMetadata {
 	return &SwapIdentityMetadataa{}
+}
+
+// ==================================================================
+// AuthorizeDerivedKeyMetadata
+// ==================================================================
+
+type AuthorizeDerivedKeyOperationType uint8
+
+const (
+	AuthorizeDerivedKeyOperationNotValid AuthorizeDerivedKeyOperationType = 0
+	AuthorizeDerivedKeyOperationValid    AuthorizeDerivedKeyOperationType = 1
+)
+
+type AuthorizeDerivedKeyMetadata struct {
+	// DerivedPublicKey is the key that is authorized to sign transactions
+	// on behalf of the public key owner.
+	DerivedPublicKey []byte
+
+	// ExpirationBlock is the block at which this authorization becomes invalid.
+	ExpirationBlock uint64
+
+	// OperationType determines if transaction validates or invalidates derived key.
+	OperationType AuthorizeDerivedKeyOperationType
+
+	// AccessSignature is the signed hash of (derivedPublicKey + expirationBlock)
+	// made with the ownerPublicKey. Signature is in the DER format.
+	AccessSignature []byte
+}
+
+func (txnData *AuthorizeDerivedKeyMetadata) GetTxnType() TxnType {
+	return TxnTypeAuthorizeDerivedKey
+}
+
+func (txnData *AuthorizeDerivedKeyMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// DerivedPublicKey
+	data = append(data, UintToBuf(uint64(len(txnData.DerivedPublicKey)))...)
+	data = append(data, txnData.DerivedPublicKey...)
+
+	// ExpirationBlock uint64
+	data = append(data, UintToBuf(uint64(txnData.ExpirationBlock))...)
+
+	// OperationType byte
+	data = append(data, byte(txnData.OperationType))
+
+	// AccessSignature
+	data = append(data, UintToBuf(uint64(len(txnData.AccessSignature)))...)
+	data = append(data, txnData.AccessSignature...)
+
+	return data, nil
+}
+
+func (txnData *AuthorizeDerivedKeyMetadata) FromBytes(data []byte) error {
+	ret := AuthorizeDerivedKeyMetadata{}
+	rr := bytes.NewReader(data)
+
+	// DerivedPublicKey
+	var err error
+	ret.DerivedPublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading DerivedPublicKey: %v", err)
+	}
+
+	// ExpirationBlock uint64
+	ret.ExpirationBlock, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading ExpirationBlock: %v", err)
+	}
+
+	// OperationType byte
+	operationType, err := rr.ReadByte()
+	if err != nil {
+		return fmt.Errorf(
+			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading OperationType: %v", err)
+	}
+	ret.OperationType = AuthorizeDerivedKeyOperationType(operationType)
+
+	// AccessSignature
+	ret.AccessSignature, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading AccessSignature: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *AuthorizeDerivedKeyMetadata) New() BitCloutTxnMetadata {
+	return &AuthorizeDerivedKeyMetadata{}
 }

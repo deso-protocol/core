@@ -3506,6 +3506,70 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
+	ownerPublicKey []byte,
+	derivedPublicKey []byte,
+	expirationBlock uint64,
+	accessSignature []byte,
+	deleteKey bool,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *BitCloutMempool) (
+	_txn *MsgBitCloutTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Verify that the signature is valid.
+	err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
+		expirationBlock, accessSignature)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
+	}
+
+	// Check that the expiration block is valid.
+	blockHeight := bc.blockTip().Height + 1
+	if expirationBlock <= uint64(blockHeight) {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: Expired access signature")
+	}
+
+	// Get the appropriate operation type.
+	var operationType AuthorizeDerivedKeyOperationType
+	if deleteKey {
+		operationType = AuthorizeDerivedKeyOperationNotValid
+	} else {
+		operationType = AuthorizeDerivedKeyOperationValid
+	}
+
+	// Create a transaction containing the authorize derived key fields.
+	txn := &MsgBitCloutTxn{
+		PublicKey: ownerPublicKey,
+		TxnMeta: &AuthorizeDerivedKeyMetadata{
+			derivedPublicKey,
+			expirationBlock,
+			operationType,
+			accessSignature,
+		},
+
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// We don't need to make any tweaks to the amount because it's basically
+	// a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateAuthorizeDerivedKeyTxn: Spend amount "+
+			"should be zero but was %d instead: ", spendAmount)
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
 func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	SenderPublicKey []byte,
 	DiamondPostHash *BlockHash,

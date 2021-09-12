@@ -741,9 +741,26 @@ func _signTxn(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg string) {
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	require.NoError(err)
 	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
+	txn.Signature = txnSignature
+}
+
+// Signs the transaction with a derived key. Transaction ExtraData contains the derived
+// public key, so that _verifySignature() knows transaction wasn't signed by the owner.
+func _signTxnWithDerivedKey(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg string) {
+	require := require.New(t)
+
+	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+	require.NoError(err)
+	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	if txn.ExtraData == nil {
+		txn.ExtraData = make(map[string][]byte)
+	}
+	txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
+	txnSignature, err := txn.Sign(privateKey)
+	require.NoError(err)
+
 	txn.Signature = txnSignature
 }
 

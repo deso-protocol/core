@@ -114,12 +114,13 @@ type PGTransaction struct {
 	MetadataFollow              *PGMetadataFollow              `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataLike                *PGMetadataLike                `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataCreatorCoin         *PGMetadataCreatorCoin         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataSwapIdentity        *PGMetadataSwapIdentity        `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataCreatorCoinTransfer *PGMetadataCreatorCoinTransfer `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataSwapIdentity        *PGMetadataSwapIdentity        `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataCreateNFT           *PGMetadataCreateNFT           `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataUpdateNFT           *PGMetadataUpdateNFT           `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataNFTBid              *PGMetadataNFTBid              `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataAcceptNFTBid        *PGMetadataAcceptNFTBid        `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNFTBid              *PGMetadataNFTBid              `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDerivedKey          *PGMetadataDerivedKey          `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents BitCloutOutput, BitCloutInput, and UtxoEntry
@@ -263,6 +264,7 @@ type PGMetadataSwapIdentity struct {
 	ToPublicKey     []byte     `pg:",type:bytea"`
 }
 
+// PGMetadataCreateNFT represents CreateNFTMetadata
 type PGMetadataCreateNFT struct {
 	tableName struct{} `pg:"pg_metadata_create_nfts"`
 
@@ -276,6 +278,7 @@ type PGMetadataCreateNFT struct {
 	CoinRoyaltyBasisPoints    uint64     `pg:",use_zero"`
 }
 
+// PGMetadataUpdateNFT represents UpdateNFTMetadata
 type PGMetadataUpdateNFT struct {
 	tableName struct{} `pg:"pg_metadata_update_nfts"`
 
@@ -286,6 +289,7 @@ type PGMetadataUpdateNFT struct {
 	MinBidAmountNanos uint64     `pg:",use_zero"`
 }
 
+// PGMetadataAcceptNFTBid represents AcceptNFTBidMetadata
 type PGMetadataAcceptNFTBid struct {
 	tableName struct{} `pg:"pg_metadata_accept_nft_bids"`
 
@@ -306,6 +310,7 @@ type PGMetadataBidInput struct {
 	InputIndex      uint32     `pg:",pk,use_zero"`
 }
 
+// PGMetadataNFTBid represents NFTBidMetadata
 type PGMetadataNFTBid struct {
 	tableName struct{} `pg:"pg_metadata_nft_bids"`
 
@@ -313,6 +318,17 @@ type PGMetadataNFTBid struct {
 	NFTPostHash     *BlockHash `pg:",type:bytea"`
 	SerialNumber    uint64     `pg:",use_zero"`
 	BidAmountNanos  uint64     `pg:",use_zero"`
+}
+
+// PGMetadataDerivedKey represents AuthorizeDerivedKeyMetadata
+type PGMetadataDerivedKey struct {
+	tableName struct{} `pg:"pg_metadata_derived_keys"`
+
+	TransactionHash  *BlockHash                       `pg:",pk,type:bytea"`
+	DerivedPublicKey PublicKey                        `pg:",type:bytea"`
+	ExpirationBlock  uint64                           `pg:",use_zero"`
+	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
+	AccessSignature  []byte                           `pg:",type:bytea"`
 }
 
 type PGNotification struct {
@@ -586,6 +602,25 @@ func (bid *PGNFTBid) NewNFTBidEntry() *NFTBidEntry {
 	}
 }
 
+// PGDerivedKey represents DerivedKeyEntry
+type PGDerivedKey struct {
+	tableName struct{} `pg:"pg_derived_keys"`
+
+	OwnerPublicKey   PublicKey                        `pg:",pk,type:bytea"`
+	DerivedPublicKey PublicKey                        `pg:",pk,type:bytea"`
+	ExpirationBlock  uint64                           `pg:",use_zero"`
+	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
+}
+
+func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
+	return &DerivedKeyEntry{
+		OwnerPublicKey:   key.OwnerPublicKey,
+		DerivedPublicKey: key.DerivedPublicKey,
+		ExpirationBlock:  key.ExpirationBlock,
+		OperationType:    key.OperationType,
+	}
+}
+
 //
 // Blockchain and Transactions
 //
@@ -714,6 +749,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, bitCloutTxns []*MsgBit
 	var metadataAcceptNFTBids []*PGMetadataAcceptNFTBid
 	var metadataBidInputs []*PGMetadataBidInput
 	var metadataNFTBids []*PGMetadataNFTBid
+	var metadataDerivedKey []*PGMetadataDerivedKey
 
 	blockHash := blockNode.Hash
 
@@ -900,6 +936,15 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, bitCloutTxns []*MsgBit
 				SerialNumber:    txMeta.SerialNumber,
 				BidAmountNanos:  txMeta.BidAmountNanos,
 			})
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
+			txMeta := txn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
+			metadataDerivedKey = append(metadataDerivedKey, &PGMetadataDerivedKey{
+				TransactionHash:  txnHash,
+				DerivedPublicKey: *NewPublicKey(txMeta.DerivedPublicKey),
+				ExpirationBlock:  txMeta.ExpirationBlock,
+				OperationType:    txMeta.OperationType,
+				AccessSignature:  txMeta.AccessSignature,
+			})
 		} else {
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 		}
@@ -1021,6 +1066,12 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, bitCloutTxns []*MsgBit
 		}
 	}
 
+	if len(metadataDerivedKey) > 0 {
+		if _, err := tx.Model(&metadataDerivedKey).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1086,6 +1137,9 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 			return err
 		}
 		if err := postgres.flushNFTBids(tx, view); err != nil {
+			return err
+		}
+		if err := postgres.flushDerivedKeys(tx, view); err != nil {
 			return err
 		}
 
@@ -1530,6 +1584,41 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
+func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
+	var insertKeys []*PGDerivedKey
+	var deleteKeys []*PGDerivedKey
+	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
+		key := &PGDerivedKey{
+			OwnerPublicKey: keyEntry.OwnerPublicKey,
+			DerivedPublicKey: keyEntry.DerivedPublicKey,
+			ExpirationBlock: keyEntry.ExpirationBlock,
+			OperationType: keyEntry.OperationType,
+		}
+
+		if keyEntry.isDeleted {
+			deleteKeys = append(deleteKeys, key)
+		} else {
+			insertKeys = append(insertKeys, key)
+		}
+	}
+
+	if len(insertKeys) > 0 {
+		_, err := tx.Model(&insertKeys).WherePK().OnConflict("(owner_public_key, derived_public_key) DO UPDATE").Returning("NULL").Insert()
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(deleteKeys) > 0 {
+		_, err := tx.Model(&deleteKeys).Returning("NULL").Delete()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 //
 // UTXOS
 //
@@ -1901,6 +1990,31 @@ func (postgres *Postgres) GetNFTBid(nftPostHash *BlockHash, bidderPKID *PKID, se
 		return nil
 	}
 	return &bid
+}
+
+//
+// Derived Keys
+//
+
+func (postgres *Postgres) GetDerivedKey(ownerPublicKey *PublicKey, derivedPublicKey *PublicKey) *PGDerivedKey {
+	key := PGDerivedKey{
+		OwnerPublicKey: *ownerPublicKey,
+		DerivedPublicKey: *derivedPublicKey,
+	}
+	err := postgres.db.Model(&key).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return &key
+}
+
+func (postgres *Postgres) GetAllDerivedKeysForOwner(ownerPublicKey *PublicKey) []*PGDerivedKey {
+	var keys []*PGDerivedKey
+	err := postgres.db.Model(&keys).Where("owner_public_key = ?", *ownerPublicKey).Select()
+	if err != nil {
+		return nil
+	}
+	return keys
 }
 
 //
