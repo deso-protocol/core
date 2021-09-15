@@ -860,8 +860,9 @@ func (msg *MsgBitCloutGetBlocks) String() string {
 // Within a post, the body typically has a particular
 // schema defined below.
 type BitCloutBodySchema struct {
-	Body      string
-	ImageURLs []string
+	Body      string `json:",omitempty"`
+	ImageURLs []string `json:",omitempty"`
+	VideoURLs []string `json:",omitempty"`
 }
 
 // ==================================================================

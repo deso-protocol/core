@@ -497,7 +497,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(err)
 
 	isQuotedReclout := false
-	if len(recloutedPostHash) > 0 && (bodyObj.Body != "" || len(bodyObj.ImageURLs) > 0) {
+	if len(recloutedPostHash) > 0 && (bodyObj.Body != "" || len(bodyObj.ImageURLs) > 0 || len(bodyObj.VideoURLs) > 0) {
 		isQuotedReclout = true
 	}
 	postExtraData := make(map[string][]byte)
