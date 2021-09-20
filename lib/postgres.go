@@ -431,8 +431,8 @@ type PGPost struct {
 	Pinned                    bool       `pg:",use_zero"`
 	NFT                       bool       `pg:",use_zero"`
 	NumNFTCopies              uint64     `pg:",use_zero"`
-	NumNFTCopiesForSale       uint64     `pg:"num_nft_copies_for_sale,use_zero"`
-	NumNFTCopiesBurned        uint64     `pg:"num_nft_copies_burned,use_zero"`
+	NumNFTCopiesForSale       uint64     `pg:",use_zero"`
+	NumNFTCopiesBurned        uint64     `pg:",use_zero"`
 	Unlockable                bool       `pg:",use_zero"`
 	CreatorRoyaltyBasisPoints uint64     `pg:",use_zero"`
 	CoinRoyaltyBasisPoints    uint64     `pg:",use_zero"`
