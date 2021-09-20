@@ -18900,7 +18900,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	fmt.Println("Derived public key:", hex.EncodeToString(derivedPkBytes))
 
 	// We create this inline function for attempting a basic transfer.
-	// This helps us test that the CloutChain recognizes a derived key.
+	// This helps us test that the DeSoChain recognizes a derived key.
 	_basicTransfer := func(senderPk []byte, recipientPk []byte, signerPriv string, utxoView *UtxoView,
 		mempool *DeSoMempool, isSignerSender bool) ([]*UtxoOperation, *MsgDeSoTxn, error) {
 

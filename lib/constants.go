@@ -246,7 +246,7 @@ type DeSoParams struct {
 	// Amount of time one must wait before a block reward can be spent.
 	BlockRewardMaturity time.Duration
 	// When shifting from v0 blocks to v1 blocks, we changed the hash function to
-	// CloutHash, which is technically easier. Thus we needed to apply an adjustment
+	// DeSoHash, which is technically easier. Thus we needed to apply an adjustment
 	// factor in order to phase it in.
 	V1DifficultyAdjustmentFactor int64
 

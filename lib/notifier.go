@@ -65,7 +65,7 @@ func (notifier *Notifier) Update() error {
 							Mined:           true,
 							ToUser:          output.PublicKey,
 							FromUser:        transaction.PublicKey,
-							Type:            NotificationSendClout,
+							Type:            NotificationSendDESO,
 							Amount:          output.AmountNanos,
 							Timestamp:       block.Timestamp,
 						}
@@ -74,7 +74,7 @@ func (notifier *Notifier) Update() error {
 						if hasDiamondLevel && hasDiamondPost {
 							diamondLevel, bytesRead := Varint(diamondLevelBytes)
 							if bytesRead > 0 {
-								notification.Type = NotificationCloutDiamond
+								notification.Type = NotificationDESODiamond
 								notification.Amount = uint64(diamondLevel)
 								notification.PostHash = &BlockHash{}
 								copy(notification.PostHash[:], diamondPostBytes)

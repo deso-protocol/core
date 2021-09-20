@@ -338,15 +338,15 @@ func ProofOfWorkHash(inputBytes []byte, version uint32) *BlockHash {
 	output := BlockHash{}
 
 	if version == HeaderVersion0 {
-		hashBytes := desohash.CloutHashV0(inputBytes)
+		hashBytes := desohash.DeSoHashV0(inputBytes)
 		copy(output[:], hashBytes[:])
 	} else if version == HeaderVersion1 {
-		hashBytes := desohash.CloutHashV1(inputBytes)
+		hashBytes := desohash.DeSoHashV1(inputBytes)
 		copy(output[:], hashBytes[:])
 	} else {
 		// If we don't recognize the version, we return the v0 hash. We do
 		// this to avoid having to return an error or panic.
-		hashBytes := desohash.CloutHashV0(inputBytes)
+		hashBytes := desohash.DeSoHashV0(inputBytes)
 		copy(output[:], hashBytes[:])
 	}
 

@@ -349,7 +349,7 @@ type NotificationType uint8
 
 const (
 	NotificationUnknown NotificationType = iota
-	NotificationSendClout
+	NotificationSendDESO
 	NotificationLike
 	NotificationFollow
 	NotificationCoinPurchase
@@ -358,7 +358,7 @@ const (
 	NotificationPostMention
 	NotificationPostReply
 	NotificationPostRepost
-	NotificationCloutDiamond
+	NotificationDESODiamond
 )
 
 type PGProfile struct {
