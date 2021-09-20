@@ -120,6 +120,9 @@ type PGTransaction struct {
 	MetadataUpdateNFT           *PGMetadataUpdateNFT           `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataAcceptNFTBid        *PGMetadataAcceptNFTBid        `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataNFTBid              *PGMetadataNFTBid              `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNFTTransfer         *PGMetadataNFTTransfer         `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAcceptNFTTransfer   *PGMetadataAcceptNFTTransfer   `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataBurnNFT             *PGMetadataBurnNFT             `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDerivedKey          *PGMetadataDerivedKey          `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
@@ -320,6 +323,35 @@ type PGMetadataNFTBid struct {
 	BidAmountNanos  uint64     `pg:",use_zero"`
 }
 
+// PGMetadataNFTTransfer represents NFTTransferMetadata
+type PGMetadataNFTTransfer struct {
+	tableName struct{} `pg:"pg_metadata_nft_transfer"`
+
+	TransactionHash   *BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash       *BlockHash `pg:",pk,type:bytea"`
+	SerialNumber      uint64     `pg:",use_zero"`
+	ReceiverPublicKey []byte     `pg:",pk,type:bytea"`
+	UnlockableText    []byte     `pg:",type:bytea"`
+}
+
+// PGMetadataAcceptNFTTransfer represents AcceptNFTTransferMetadata
+type PGMetadataAcceptNFTTransfer struct {
+	tableName struct{} `pg:"pg_metadata_accept_nft_transfer"`
+
+	TransactionHash *BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash     *BlockHash `pg:",pk,type:bytea"`
+	SerialNumber    uint64     `pg:",use_zero"`
+}
+
+// PGMetadataBurnNFT represents BurnNFTMetadata
+type PGMetadataBurnNFT struct {
+	tableName struct{} `pg:"pg_metadata_burn_nft"`
+
+	TransactionHash *BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash     *BlockHash `pg:",pk,type:bytea"`
+	SerialNumber    uint64     `pg:",use_zero"`
+}
+
 // PGMetadataDerivedKey represents AuthorizeDerivedKeyMetadata
 type PGMetadataDerivedKey struct {
 	tableName struct{} `pg:"pg_metadata_derived_keys"`
@@ -399,6 +431,8 @@ type PGPost struct {
 	Pinned                    bool       `pg:",use_zero"`
 	NFT                       bool       `pg:",use_zero"`
 	NumNFTCopies              uint64     `pg:",use_zero"`
+	NumNFTCopiesForSale       uint64     `pg:",use_zero"`
+	NumNFTCopiesBurned        uint64     `pg:",use_zero"`
 	Unlockable                bool       `pg:",use_zero"`
 	CreatorRoyaltyBasisPoints uint64     `pg:",use_zero"`
 	CoinRoyaltyBasisPoints    uint64     `pg:",use_zero"`
@@ -422,6 +456,8 @@ func (post *PGPost) NewPostEntry() *PostEntry {
 		IsPinned:                       post.Pinned,
 		IsNFT:                          post.NFT,
 		NumNFTCopies:                   post.NumNFTCopies,
+		NumNFTCopiesForSale:            post.NumNFTCopiesForSale,
+		NumNFTCopiesBurned:             post.NumNFTCopiesBurned,
 		HasUnlockable:                  post.Unlockable,
 		NFTRoyaltyToCoinBasisPoints:    post.CoinRoyaltyBasisPoints,
 		NFTRoyaltyToCreatorBasisPoints: post.CreatorRoyaltyBasisPoints,
@@ -567,6 +603,7 @@ type PGNFT struct {
 	MinBidAmountNanos          uint64 `pg:",use_zero"`
 	UnlockableText             string
 	LastAcceptedBidAmountNanos uint64 `pg:",use_zero"`
+	IsPending                  bool   `pg:",use_zero"`
 }
 
 func (nft *PGNFT) NewNFTEntry() *NFTEntry {
@@ -579,6 +616,7 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 		MinBidAmountNanos:          nft.MinBidAmountNanos,
 		UnlockableText:             []byte(nft.UnlockableText),
 		LastAcceptedBidAmountNanos: nft.LastAcceptedBidAmountNanos,
+		IsPending:                  nft.IsPending,
 	}
 }
 
@@ -749,6 +787,9 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, bitCloutTxns []*MsgBit
 	var metadataAcceptNFTBids []*PGMetadataAcceptNFTBid
 	var metadataBidInputs []*PGMetadataBidInput
 	var metadataNFTBids []*PGMetadataNFTBid
+	var metadataNFTTransfer []*PGMetadataNFTTransfer
+	var metadataAcceptNFTTransfer []*PGMetadataAcceptNFTTransfer
+	var metadataBurnNFT []*PGMetadataBurnNFT
 	var metadataDerivedKey []*PGMetadataDerivedKey
 
 	blockHash := blockNode.Hash
@@ -936,6 +977,29 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, bitCloutTxns []*MsgBit
 				SerialNumber:    txMeta.SerialNumber,
 				BidAmountNanos:  txMeta.BidAmountNanos,
 			})
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+			txMeta := txn.TxnMeta.(*NFTTransferMetadata)
+			metadataNFTTransfer = append(metadataNFTTransfer, &PGMetadataNFTTransfer{
+				TransactionHash:   txnHash,
+				NFTPostHash:       txMeta.NFTPostHash,
+				SerialNumber:      txMeta.SerialNumber,
+				ReceiverPublicKey: txMeta.ReceiverPublicKey,
+				UnlockableText:    txMeta.UnlockableText,
+			})
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
+			txMeta := txn.TxnMeta.(*AcceptNFTTransferMetadata)
+			metadataAcceptNFTTransfer = append(metadataAcceptNFTTransfer, &PGMetadataAcceptNFTTransfer{
+				TransactionHash: txnHash,
+				NFTPostHash:     txMeta.NFTPostHash,
+				SerialNumber:    txMeta.SerialNumber,
+			})
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
+			txMeta := txn.TxnMeta.(*BurnNFTMetadata)
+			metadataBurnNFT = append(metadataBurnNFT, &PGMetadataBurnNFT{
+				TransactionHash: txnHash,
+				NFTPostHash: txMeta.NFTPostHash,
+				SerialNumber: txMeta.SerialNumber,
+			})
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
 			txMeta := txn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 			metadataDerivedKey = append(metadataDerivedKey, &PGMetadataDerivedKey{
@@ -1062,6 +1126,24 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, bitCloutTxns []*MsgBit
 
 	if len(metadataNFTBids) > 0 {
 		if _, err := tx.Model(&metadataNFTBids).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataNFTTransfer) > 0 {
+		if _, err := tx.Model(&metadataNFTTransfer).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataAcceptNFTTransfer) > 0 {
+		if _, err := tx.Model(&metadataAcceptNFTTransfer).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataBurnNFT) > 0 {
+		if _, err := tx.Model(&metadataBurnNFT).Returning("NULL").Insert(); err != nil {
 			return err
 		}
 	}
@@ -1241,6 +1323,8 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 			Pinned:                    postEntry.IsPinned,
 			NFT:                       postEntry.IsNFT,
 			NumNFTCopies:              postEntry.NumNFTCopies,
+			NumNFTCopiesForSale:       postEntry.NumNFTCopiesForSale,
+			NumNFTCopiesBurned:        postEntry.NumNFTCopiesBurned,
 			Unlockable:                postEntry.HasUnlockable,
 			CreatorRoyaltyBasisPoints: postEntry.NFTRoyaltyToCreatorBasisPoints,
 			CoinRoyaltyBasisPoints:    postEntry.NFTRoyaltyToCoinBasisPoints,
@@ -1521,6 +1605,7 @@ func (postgres *Postgres) flushNFTs(tx *pg.Tx, view *UtxoView) error {
 			MinBidAmountNanos:          nftEntry.MinBidAmountNanos,
 			UnlockableText:             string(nftEntry.UnlockableText),
 			LastAcceptedBidAmountNanos: nftEntry.LastAcceptedBidAmountNanos,
+			IsPending:                  nftEntry.IsPending,
 		}
 
 		if nftEntry.isDeleted {
