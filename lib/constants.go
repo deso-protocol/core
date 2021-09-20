@@ -771,9 +771,9 @@ func GetDataDir(params *DeSoParams) string {
 // Defines keys that may exist in a transaction's ExtraData map
 const (
 	// Key in transaction's extra data map that points to a post that the current transaction is reposting
-	RepostedPostHash = "RepostedPostHash"
+	RepostedPostHash = "RecloutedPostHash"
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a repost with a quote.
-	IsQuotedRepostKey = "IsQuotedRepost"
+	IsQuotedRepostKey = "IsQuotedReclout"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
