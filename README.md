@@ -6,7 +6,7 @@ social network. Its architecture is similar to Bitcoin, only it supports complex
 social network data like profiles, posts, follows, creator coin transactions, and
 more.
 
-[Read about the vision](https://docs.bitclout.com/the-vision)
+[Read about the vision](https://docs.deso.org/the-vision)
 
 # About this Repo
 
