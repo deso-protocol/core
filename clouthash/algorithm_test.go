@@ -1,4 +1,4 @@
-package clouthash
+package desohash
 
 import (
 	"bytes"

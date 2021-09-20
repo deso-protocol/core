@@ -101,7 +101,7 @@ func (utxoEntry *UtxoEntry) String() string {
 }
 
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
-// This needs to be in-sync with BitCloutMainnetParams.MaxUsernameLengthBytes
+// This needs to be in-sync with DeSoMainnetParams.MaxUsernameLengthBytes
 type UsernameMapKey [MaxUsernameLengthBytes]byte
 
 func MakeUsernameMapKey(nonLowercaseUsername []byte) UsernameMapKey {
@@ -145,7 +145,7 @@ func (mm *MessageKey) String() string {
 }
 
 // StringKey is useful for creating maps that need to be serialized to JSON.
-func (mm *MessageKey) StringKey(params *BitCloutParams) string {
+func (mm *MessageKey) StringKey(params *DeSoParams) string {
 	return PkToString(mm.PublicKey[:], params) + "_" + fmt.Sprint(mm.TstampNanos)
 }
 
@@ -348,28 +348,28 @@ type DiamondEntry struct {
 	isDeleted bool
 }
 
-func MakeRecloutKey(userPk []byte, RecloutedPostHash BlockHash) RecloutKey {
-	return RecloutKey{
-		ReclouterPubKey:   MakePkMapKey(userPk),
-		RecloutedPostHash: RecloutedPostHash,
+func MakeRepostKey(userPk []byte, RepostedPostHash BlockHash) RepostKey {
+	return RepostKey{
+		ReposterPubKey:   MakePkMapKey(userPk),
+		RepostedPostHash: RepostedPostHash,
 	}
 }
 
-type RecloutKey struct {
-	ReclouterPubKey PkMapKey
-	// Post Hash of post that was reclouted
-	RecloutedPostHash BlockHash
+type RepostKey struct {
+	ReposterPubKey PkMapKey
+	// Post Hash of post that was reposted
+	RepostedPostHash BlockHash
 }
 
-// RecloutEntry stores the content of a Reclout transaction.
-type RecloutEntry struct {
-	ReclouterPubKey []byte
+// RepostEntry stores the content of a Repost transaction.
+type RepostEntry struct {
+	ReposterPubKey []byte
 
-	// BlockHash of the reclout
-	RecloutPostHash *BlockHash
+	// BlockHash of the repost
+	RepostPostHash *BlockHash
 
-	// Post Hash of post that was reclouted
-	RecloutedPostHash *BlockHash
+	// Post Hash of post that was reposted
+	RepostedPostHash *BlockHash
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -412,11 +412,11 @@ type PostEntryReaderState struct {
 	// The number of diamonds that the reader has given this post.
 	DiamondLevelBestowed int64
 
-	// This is true if the reader has reclouted the associated post.
-	RecloutedByReader bool
+	// This is true if the reader has reposted the associated post.
+	RepostedByReader bool
 
-	// This is the post hash hex of the reclout
-	RecloutPostHashHex string
+	// This is the post hash hex of the repost
+	RepostPostHashHex string
 }
 
 func (bav *UtxoView) GetPostEntryReaderState(
@@ -426,8 +426,8 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	// Get like state.
 	postEntryReaderState.LikedByReader = bav.GetLikedByReader(readerPK, postEntry.PostHash)
 
-	// Get reclout state.
-	postEntryReaderState.RecloutPostHashHex, postEntryReaderState.RecloutedByReader = bav.GetRecloutPostEntryStateForReader(readerPK, postEntry.PostHash)
+	// Get repost state.
+	postEntryReaderState.RepostPostHashHex, postEntryReaderState.RepostedByReader = bav.GetRepostPostEntryStateForReader(readerPK, postEntry.PostHash)
 
 	// Get diamond state.
 	senderPKID := bav.GetPKIDForPublicKey(readerPK)
@@ -454,21 +454,21 @@ func (bav *UtxoView) GetLikedByReader(readerPK []byte, postHash *BlockHash) bool
 	return likeEntry != nil && !likeEntry.isDeleted
 }
 
-func (bav *UtxoView) GetRecloutPostEntryStateForReader(readerPK []byte, postHash *BlockHash) (string, bool) {
-	recloutKey := MakeRecloutKey(readerPK, *postHash)
-	recloutEntry := bav._getRecloutEntryForRecloutKey(&recloutKey)
-	if recloutEntry == nil {
+func (bav *UtxoView) GetRepostPostEntryStateForReader(readerPK []byte, postHash *BlockHash) (string, bool) {
+	repostKey := MakeRepostKey(readerPK, *postHash)
+	repostEntry := bav._getRepostEntryForRepostKey(&repostKey)
+	if repostEntry == nil {
 		return "", false
 	}
-	recloutPostEntry := bav.GetPostEntryForPostHash(recloutEntry.RecloutPostHash)
-	if recloutPostEntry == nil {
-		glog.Errorf("Could not find reclout post entry from post hash: %v", recloutEntry.RecloutedPostHash)
+	repostPostEntry := bav.GetPostEntryForPostHash(repostEntry.RepostPostHash)
+	if repostPostEntry == nil {
+		glog.Errorf("Could not find repost post entry from post hash: %v", repostEntry.RepostedPostHash)
 		return "", false
 	}
-	// We include the PostHashHex of this user's post that reclouts the current post to
-	// handle undo-ing (AKA hiding) a reclout.
-	// If the user's reclout of this post is hidden, we set RecloutedByReader to false.
-	return hex.EncodeToString(recloutEntry.RecloutPostHash[:]), !recloutPostEntry.IsHidden
+	// We include the PostHashHex of this user's post that reposts the current post to
+	// handle undo-ing (AKA hiding) a repost.
+	// If the user's repost of this post is hidden, we set RepostedByReader to false.
+	return hex.EncodeToString(repostEntry.RepostPostHash[:]), !repostPostEntry.IsHidden
 }
 
 type PostEntry struct {
@@ -484,11 +484,11 @@ type PostEntry struct {
 	// The body of this post.
 	Body []byte
 
-	// The PostHash of the post this post reclouts
-	RecloutedPostHash *BlockHash
+	// The PostHash of the post this post reposts
+	RepostedPostHash *BlockHash
 
-	// Indicator if this PostEntry is a quoted reclout or not
-	IsQuotedReclout bool
+	// Indicator if this PostEntry is a quoted repost or not
+	IsQuotedRepost bool
 
 	// The amount the creator of the post gets when someone stakes
 	// to the post.
@@ -525,11 +525,11 @@ type PostEntry struct {
 	// Counter of users that have liked this post.
 	LikeCount uint64
 
-	// Counter of users that have reclouted this post.
-	RecloutCount uint64
+	// Counter of users that have reposted this post.
+	RepostCount uint64
 
-	// Counter of quote reclouts for this post.
-	QuoteRecloutCount uint64
+	// Counter of quote reposts for this post.
+	QuoteRepostCount uint64
 
 	// Counter of diamonds that the post has received.
 	DiamondCount uint64
@@ -563,12 +563,12 @@ func (pe *PostEntry) IsDeleted() bool {
 	return pe.isDeleted
 }
 
-func IsQuotedReclout(postEntry *PostEntry) bool {
-	return postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil
+func IsQuotedRepost(postEntry *PostEntry) bool {
+	return postEntry.IsQuotedRepost && postEntry.RepostedPostHash != nil
 }
 
 func (pe *PostEntry) HasMedia() bool {
-	bodyJSONObj := BitCloutBodySchema{}
+	bodyJSONObj := DeSoBodySchema{}
 	err := json.Unmarshal(pe.Body, &bodyJSONObj)
 	//Return true if body json can be parsed and ImageUrls is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
 	if (err == nil && len(bodyJSONObj.ImageURLs) > 0) || len(pe.PostExtraData["EmbedVideoURL"]) > 0 {
@@ -577,10 +577,10 @@ func (pe *PostEntry) HasMedia() bool {
 	return false
 }
 
-// Return true if postEntry is a vanilla reclout.  A vanilla reclout is a post that reclouts another post,
+// Return true if postEntry is a vanilla repost.  A vanilla repost is a post that reposts another post,
 // but does not have a body.
-func IsVanillaReclout(postEntry *PostEntry) bool {
-	return !postEntry.IsQuotedReclout && postEntry.RecloutedPostHash != nil
+func IsVanillaRepost(postEntry *PostEntry) bool {
+	return !postEntry.IsQuotedRepost && postEntry.RepostedPostHash != nil
 }
 
 type BalanceEntryMapKey struct {
@@ -626,17 +626,17 @@ type CoinEntry struct {
 	// "net new" purchase of their coin.
 	CreatorBasisPoints uint64
 
-	// The amount of BitClout backing the coin. Whenever a user buys a coin
+	// The amount of DeSo backing the coin. Whenever a user buys a coin
 	// from the protocol this amount increases, and whenever a user sells a
 	// coin to the protocol this decreases.
-	BitCloutLockedNanos uint64
+	DeSoLockedNanos uint64
 
 	// The number of public keys who have holdings in this creator coin.
 	// Due to floating point truncation, it can be difficult to simultaneously
-	// reset CoinsInCirculationNanos and BitCloutLockedNanos to zero after
+	// reset CoinsInCirculationNanos and DeSoLockedNanos to zero after
 	// everyone has sold all their creator coins. Initially NumberOfHolders
 	// is set to zero. Once it returns to zero after a series of buys & sells
-	// we reset the BitCloutLockedNanos and CoinsInCirculationNanos to prevent
+	// we reset the DeSoLockedNanos and CoinsInCirculationNanos to prevent
 	// abnormal bancor curve behavior.
 	NumberOfHolders uint64
 
@@ -709,7 +709,7 @@ type UtxoView struct {
 	// Utxo data
 	NumUtxoEntries                  uint64
 	UtxoKeyToUtxoEntry              map[UtxoKey]*UtxoEntry
-	PublicKeyToBitcloutBalanceNanos map[PkMapKey]uint64
+	PublicKeyToDeSoBalanceNanos map[PkMapKey]uint64
 
 	// BitcoinExchange data
 	NanosPurchased     uint64
@@ -740,8 +740,8 @@ type UtxoView struct {
 	// Like data
 	LikeKeyToLikeEntry map[LikeKey]*LikeEntry
 
-	// Reclout data
-	RecloutKeyToRecloutEntry map[RecloutKey]*RecloutEntry
+	// Repost data
+	RepostKeyToRepostEntry map[RepostKey]*RepostEntry
 
 	// Post data
 	PostHashToPostEntry map[BlockHash]*PostEntry
@@ -765,7 +765,7 @@ type UtxoView struct {
 
 	Handle   *badger.DB
 	Postgres *Postgres
-	Params   *BitCloutParams
+	Params   *DeSoParams
 }
 
 type OperationType uint
@@ -793,7 +793,7 @@ const (
 	OperationTypeUpdateNFT                    OperationType = 16
 	OperationTypeAcceptNFTBid                 OperationType = 17
 	OperationTypeNFTBid                       OperationType = 18
-	OperationTypeBitCloutDiamond              OperationType = 19
+	OperationTypeDeSoDiamond              OperationType = 19
 	OperationTypeNFTTransfer                  OperationType = 20
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
@@ -908,7 +908,7 @@ type UtxoOperation struct {
 	PrevPostEntry            *PostEntry
 	PrevParentPostEntry      *PostEntry
 	PrevGrandparentPostEntry *PostEntry
-	PrevRecloutedPostEntry   *PostEntry
+	PrevRepostedPostEntry   *PostEntry
 
 	// Save the previous profile entry when making an update.
 	PrevProfileEntry *ProfileEntry
@@ -931,9 +931,9 @@ type UtxoOperation struct {
 	// For disconnecting AuthorizeDerivedKey transactions.
 	PrevDerivedKeyEntry *DerivedKeyEntry
 
-	// Save the previous reclout entry and reclout count when making an update.
-	PrevRecloutEntry *RecloutEntry
-	PrevRecloutCount uint64
+	// Save the previous repost entry and repost count when making an update.
+	PrevRepostEntry *RepostEntry
+	PrevRepostCount uint64
 
 	// Save the state of a creator coin prior to updating it due to a
 	// buy/sell/add transaction.
@@ -962,7 +962,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry)
 	// TODO: Deprecate this value
 	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle)
-	bav.PublicKeyToBitcloutBalanceNanos = make(map[PkMapKey]uint64)
+	bav.PublicKeyToDeSoBalanceNanos = make(map[PkMapKey]uint64)
 
 	// BitcoinExchange data
 	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle)
@@ -998,8 +998,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Like data
 	bav.LikeKeyToLikeEntry = make(map[LikeKey]*LikeEntry)
 
-	// Reclout data
-	bav.RecloutKeyToRecloutEntry = make(map[RecloutKey]*RecloutEntry)
+	// Repost data
+	bav.RepostKeyToRepostEntry = make(map[RepostKey]*RepostEntry)
 
 	// Coin balance entries
 	bav.HODLerPKIDCreatorPKIDToBalanceEntry = make(map[BalanceEntryMapKey]*BalanceEntry)
@@ -1025,9 +1025,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.NumUtxoEntries = bav.NumUtxoEntries
 
 	// Copy the public key to balance data
-	newView.PublicKeyToBitcloutBalanceNanos = make(map[PkMapKey]uint64, len(bav.PublicKeyToBitcloutBalanceNanos))
-	for pkMapKey, bitcloutBalance := range bav.PublicKeyToBitcloutBalanceNanos {
-		newView.PublicKeyToBitcloutBalanceNanos[pkMapKey] = bitcloutBalance
+	newView.PublicKeyToDeSoBalanceNanos = make(map[PkMapKey]uint64, len(bav.PublicKeyToDeSoBalanceNanos))
+	for pkMapKey, desoBalance := range bav.PublicKeyToDeSoBalanceNanos {
+		newView.PublicKeyToDeSoBalanceNanos[pkMapKey] = desoBalance
 	}
 
 	// Copy the BitcoinExchange data
@@ -1121,11 +1121,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.LikeKeyToLikeEntry[likeKey] = &newLikeEntry
 	}
 
-	// Copy the reclout data
-	newView.RecloutKeyToRecloutEntry = make(map[RecloutKey]*RecloutEntry, len(bav.RecloutKeyToRecloutEntry))
-	for recloutKey, recloutEntry := range bav.RecloutKeyToRecloutEntry {
-		newRecloutEntry := *recloutEntry
-		newView.RecloutKeyToRecloutEntry[recloutKey] = &newRecloutEntry
+	// Copy the repost data
+	newView.RepostKeyToRepostEntry = make(map[RepostKey]*RepostEntry, len(bav.RepostKeyToRepostEntry))
+	for repostKey, repostEntry := range bav.RepostKeyToRepostEntry {
+		newRepostEntry := *repostEntry
+		newView.RepostKeyToRepostEntry[repostKey] = &newRepostEntry
 	}
 
 	// Copy the balance entry data
@@ -1179,7 +1179,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 func NewUtxoView(
 	_handle *badger.DB,
-	_params *BitCloutParams,
+	_params *DeSoParams,
 	_postgres *Postgres,
 ) (*UtxoView, error) {
 
@@ -1192,7 +1192,7 @@ func NewUtxoView(
 		// whether or not the view is flushed or not. Additionally the utxo view does
 		// not concern itself with the header chain (see comment on GetBestHash for more
 		// info on that).
-		TipHash: DbGetBestHash(_handle, ChainTypeBitCloutBlock /* don't get the header chain */),
+		TipHash: DbGetBestHash(_handle, ChainTypeDeSoBlock /* don't get the header chain */),
 
 		Postgres: _postgres,
 		// Set everything else in _ResetViewMappings()
@@ -1207,7 +1207,7 @@ func NewUtxoView(
 	if view.Postgres != nil {
 		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
 	} else {
-		view.TipHash = DbGetBestHash(view.Handle, ChainTypeBitCloutBlock /* don't get the header chain */)
+		view.TipHash = DbGetBestHash(view.Handle, ChainTypeDeSoBlock /* don't get the header chain */)
 	}
 
 	// This function is generally used to reset the view after a flush has been performed
@@ -1277,8 +1277,8 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	return utxoEntry
 }
 
-func (bav *UtxoView) GetBitcloutBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
-	balanceNanos, hasBalance := bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)]
+func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
+	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
 	}
@@ -1288,14 +1288,14 @@ func (bav *UtxoView) GetBitcloutBalanceNanosForPublicKey(publicKey []byte) (uint
 		balanceNanos = bav.Postgres.GetBalance(NewPublicKey(publicKey))
 	} else {
 		var err error
-		balanceNanos, err = DbGetBitcloutBalanceNanosForPublicKey(bav.Handle, publicKey)
+		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, publicKey)
 		if err != nil {
-			return uint64(0), errors.Wrap(err, "GetBitcloutBalanceNanosForPublicKey: ")
+			return uint64(0), errors.Wrap(err, "GetDeSoBalanceNanosForPublicKey: ")
 		}
 	}
 
 	// Add the balance to memory for future references.
-	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(publicKey)] = balanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(publicKey)] = balanceNanos
 
 	return balanceNanos, nil
 }
@@ -1325,12 +1325,12 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 	bav.NumUtxoEntries++
 
 	// Add the utxo back to the spender's balance.
-	bitcloutBalanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(utxoEntryy.PublicKey)
 	if err != nil {
 		return errors.Wrap(err, "_unSpendUtxo: ")
 	}
-	bitcloutBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = bitcloutBalanceNanos
+	desoBalanceNanos += utxoEntryy.AmountNanos
+	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = desoBalanceNanos
 
 	return nil
 }
@@ -1359,12 +1359,12 @@ func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
 	bav.NumUtxoEntries--
 
 	// Deduct the utxo from the spender's balance.
-	bitcloutBalanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntry.PublicKey)
+	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(utxoEntry.PublicKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_spendUtxo: ")
 	}
-	bitcloutBalanceNanos -= utxoEntry.AmountNanos
-	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = bitcloutBalanceNanos
+	desoBalanceNanos -= utxoEntry.AmountNanos
+	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = desoBalanceNanos
 
 	// Record a UtxoOperation in case we want to roll this back in the
 	// future. At this point, the UtxoEntry passed in still has all of its
@@ -1405,12 +1405,12 @@ func (bav *UtxoView) _unAddUtxo(utxoKey *UtxoKey) error {
 	bav.NumUtxoEntries--
 
 	// Remove the utxo back from the spender's balance.
-	bitcloutBalanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntry.PublicKey)
+	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(utxoEntry.PublicKey)
 	if err != nil {
 		return errors.Wrapf(err, "_unAddUtxo: ")
 	}
-	bitcloutBalanceNanos -= utxoEntry.AmountNanos
-	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = bitcloutBalanceNanos
+	desoBalanceNanos -= utxoEntry.AmountNanos
+	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = desoBalanceNanos
 
 	return nil
 }
@@ -1456,12 +1456,12 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 	bav.NumUtxoEntries++
 
 	// Add the utxo back to the spender's balance.
-	bitcloutBalanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(utxoEntryy.PublicKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_addUtxo: ")
 	}
-	bitcloutBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToBitcloutBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = bitcloutBalanceNanos
+	desoBalanceNanos += utxoEntryy.AmountNanos
+	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = desoBalanceNanos
 
 	// Finally record a UtxoOperation in case we want to roll back this ADD
 	// in the future. Note that Entry data isn't required for an ADD operation.
@@ -1476,11 +1476,11 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 	}, nil
 }
 
-func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgBitCloutTxn, txnHash *BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 	// First we check to see if the last utxoOp was a diamond operation. If it was, we disconnect
 	// the diamond-related changes and decrement the operation index to move past it.
 	operationIndex := len(utxoOpsForTxn) - 1
-	if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeBitCloutDiamond {
+	if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeDeSoDiamond {
 		currentOperation := utxoOpsForTxn[operationIndex]
 
 		diamondPostHashBytes, hasDiamondPostHash := currentTxn.ExtraData[DiamondPostHashKey]
@@ -1645,7 +1645,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgBitCloutTxn, txnHas
 }
 
 func (bav *UtxoView) _disconnectBitcoinExchange(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Check that the last operation has the required OperationType
@@ -1668,8 +1668,8 @@ func (bav *UtxoView) _disconnectBitcoinExchange(
 
 	// Remove the BitcoinTransactionHash from our TxID mappings since we are
 	// unspending it. This makes it so that this hash can be processed again in
-	// the future in order to re-grant the public key the BitClout they are entitled
-	// to (though possibly more or less than the amount of BitClout they had before
+	// the future in order to re-grant the public key the DeSo they are entitled
+	// to (though possibly more or less than the amount of DeSo they had before
 	// because they might execute at a different conversion price).
 	bitcoinTxHash := (BlockHash)(txMeta.BitcoinTransaction.TxHash())
 	bav._deleteBitcoinBurnTxIDMappings(&bitcoinTxHash)
@@ -1689,7 +1689,7 @@ func (bav *UtxoView) _disconnectBitcoinExchange(
 		return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding utxo %v: ", utxoKey)
 	}
 
-	// Reset NanosPurchased to the value it was before granting this BitClout to this user.
+	// Reset NanosPurchased to the value it was before granting this DeSo to this user.
 	// This previous value comes from the UtxoOperation data.
 	prevNanosPurchased := operationData.PrevNanosPurchased
 	bav.NanosPurchased = prevNanosPurchased
@@ -1699,7 +1699,7 @@ func (bav *UtxoView) _disconnectBitcoinExchange(
 }
 
 func (bav *UtxoView) _disconnectUpdateBitcoinUSDExchangeRate(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Check that the last operation has the required OperationType
@@ -1721,7 +1721,7 @@ func (bav *UtxoView) _disconnectUpdateBitcoinUSDExchangeRate(
 	txMeta := currentTxn.TxnMeta.(*UpdateBitcoinUSDExchangeRateMetadataa)
 	_ = txMeta
 
-	// Reset exchange rate to the value it was before granting this BitClout to this user.
+	// Reset exchange rate to the value it was before granting this DeSo to this user.
 	// This previous value comes from the UtxoOperation data.
 	prevUSDCentsPerBitcoin := operationData.PrevUSDCentsPerBitcoin
 	bav.USDCentsPerBitcoin = prevUSDCentsPerBitcoin
@@ -1733,7 +1733,7 @@ func (bav *UtxoView) _disconnectUpdateBitcoinUSDExchangeRate(
 }
 
 func (bav *UtxoView) _disconnectUpdateGlobalParams(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 	// Check that the last operation has the required OperationType
 	operationIndex := len(utxoOpsForTxn) - 1
@@ -1771,7 +1771,7 @@ func (bav *UtxoView) _disconnectUpdateGlobalParams(
 
 // TODO: Update for postgres
 func (bav *UtxoView) _disconnectPrivateMessage(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a PrivateMessage opration
@@ -1839,7 +1839,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 }
 
 func (bav *UtxoView) _disconnectLike(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a Like operation
@@ -1928,7 +1928,7 @@ func (bav *UtxoView) _disconnectLike(
 }
 
 func (bav *UtxoView) _disconnectFollow(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a Follow operation
@@ -2003,7 +2003,7 @@ func (bav *UtxoView) _disconnectFollow(
 }
 
 func (bav *UtxoView) _disconnectSubmitPost(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a SubmitPost operation
@@ -2038,16 +2038,16 @@ func (bav *UtxoView) _disconnectSubmitPost(
 			&txnHash, postEntry)
 	}
 
-	// Delete reclout mappings if they exist. They will be added back later if there is a previous version of this
+	// Delete repost mappings if they exist. They will be added back later if there is a previous version of this
 	// postEntry
-	if IsVanillaReclout(postEntry) {
-		recloutKey := MakeRecloutKey(postEntry.PosterPublicKey, *postEntry.RecloutedPostHash)
-		recloutEntry := bav._getRecloutEntryForRecloutKey(&recloutKey)
-		if recloutEntry == nil {
-			return fmt.Errorf("_disconnectSubmitPost: RecloutEntry for "+
+	if IsVanillaRepost(postEntry) {
+		repostKey := MakeRepostKey(postEntry.PosterPublicKey, *postEntry.RepostedPostHash)
+		repostEntry := bav._getRepostEntryForRepostKey(&repostKey)
+		if repostEntry == nil {
+			return fmt.Errorf("_disconnectSubmitPost: RepostEntry for "+
 				"Post Has %v could not be found: %v", &txnHash, postEntry)
 		}
-		bav._deleteRecloutEntryMappings(recloutEntry)
+		bav._deleteRepostEntryMappings(repostEntry)
 	}
 
 	// Now that we are confident the PostEntry lines up with the transaction we're
@@ -2069,11 +2069,11 @@ func (bav *UtxoView) _disconnectSubmitPost(
 	if currentOperation.PrevGrandparentPostEntry != nil {
 		bav._setPostEntryMappings(currentOperation.PrevGrandparentPostEntry)
 	}
-	if currentOperation.PrevRecloutedPostEntry != nil {
-		bav._setPostEntryMappings(currentOperation.PrevRecloutedPostEntry)
+	if currentOperation.PrevRepostedPostEntry != nil {
+		bav._setPostEntryMappings(currentOperation.PrevRepostedPostEntry)
 	}
-	if currentOperation.PrevRecloutEntry != nil {
-		bav._setRecloutEntryMappings(currentOperation.PrevRecloutEntry)
+	if currentOperation.PrevRepostEntry != nil {
+		bav._setRepostEntryMappings(currentOperation.PrevRepostEntry)
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
@@ -2083,7 +2083,7 @@ func (bav *UtxoView) _disconnectSubmitPost(
 }
 
 func (bav *UtxoView) _disconnectUpdateProfile(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an UpdateProfile opration
@@ -2143,7 +2143,7 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 }
 
 func (bav *UtxoView) _disconnectSwapIdentity(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an SwapIdentity operation
@@ -2200,7 +2200,7 @@ func (bav *UtxoView) _disconnectSwapIdentity(
 }
 
 func (bav *UtxoView) _disconnectCreatorCoin(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a CreatorCoin opration
@@ -2283,9 +2283,9 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 
 			// Sanity-check that the watermark delta equates to what the creator received.
 			deltaNanos := uint64(0)
-			if blockHeight > BitCloutFounderRewardBlockHeight {
-				// Do nothing.  After the BitCloutFounderRewardBlockHeight, creator coins are not
-				// minted as a founder's reward, just BitClout (see utxo reverted later).
+			if blockHeight > DeSoFounderRewardBlockHeight {
+				// Do nothing.  After the DeSoFounderRewardBlockHeight, creator coins are not
+				// minted as a founder's reward, just DeSo (see utxo reverted later).
 			} else if blockHeight > SalomonFixBlockHeight {
 				// Following the SalomonFixBlockHeight block, we calculate a founders reward
 				// on every buy, not just the ones that push a creator to a new all time high.
@@ -2327,17 +2327,17 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		*transactorBalanceEntry = *operationData.PrevTransactorBalanceEntry
 		bav._setBalanceEntryMappings(transactorBalanceEntry)
 
-		// If a BitClout founder reward was created, revert it.
+		// If a DeSo founder reward was created, revert it.
 		if operationData.FounderRewardUtxoKey != nil {
 			if err := bav._unAddUtxo(operationData.FounderRewardUtxoKey); err != nil {
 				return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding utxo %v: ", operationData.FounderRewardUtxoKey)
 			}
 		}
 
-		// The buyer will get the BitClout they locked up back when we revert the
+		// The buyer will get the DeSo they locked up back when we revert the
 		// basic transfer. This is OK because resetting the CoinEntry to the previous
-		// value lowers the amount of BitClout locked in the profile by the same
-		// amount the buyer will receive. Thus no BitClout is created in this
+		// value lowers the amount of DeSo locked in the profile by the same
+		// amount the buyer will receive. Thus no DeSo is created in this
 		// transaction.
 	} else if txMeta.OperationType == CreatorCoinOperationTypeSell {
 		// Set up some variables so that we can run some sanity-checks. The coins
@@ -2377,8 +2377,8 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		if err := bav._unAddUtxo(&utxoKey); err != nil {
 			return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding utxo %v: ", utxoKey)
 		}
-	} else if txMeta.OperationType == CreatorCoinOperationTypeAddBitClout {
-		return fmt.Errorf("_disconnectCreatorCoin: Add BitClout operation txn not implemented")
+	} else if txMeta.OperationType == CreatorCoinOperationTypeAddDeSo {
+		return fmt.Errorf("_disconnectCreatorCoin: Add DeSo operation txn not implemented")
 	}
 
 	// Reset the CoinEntry on the profile to what it was previously now that we
@@ -2393,7 +2393,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 }
 
 func (bav *UtxoView) _disconnectCreatorCoinTransfer(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a CreatorCoinTransfer operation
@@ -2538,7 +2538,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 }
 
 func (bav *UtxoView) _disconnectCreateNFT(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a CreateNFT operation
@@ -2589,7 +2589,7 @@ func (bav *UtxoView) _disconnectCreateNFT(
 }
 
 func (bav *UtxoView) _disconnectUpdateNFT(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an UpdateNFT operation
@@ -2654,7 +2654,7 @@ func (bav *UtxoView) _disconnectUpdateNFT(
 }
 
 func (bav *UtxoView) _disconnectAcceptNFTBid(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a CreatorCoinTransfer operation
@@ -2688,7 +2688,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	//  (2) Add back all of the bids that were deleted.
 	//  (3) Disconnect payment UTXOs.
 	//  (4) Unspend bidder UTXOs.
-	//  (5) Revert profileEntry to undo royalties added to BitCloutLockedNanos.
+	//  (5) Revert profileEntry to undo royalties added to DeSoLockedNanos.
 	//  (6) Revert the postEntry since NumNFTCopiesForSale was decremented.
 
 	// (1) Set the old NFT entry.
@@ -2776,7 +2776,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 }
 
 func (bav *UtxoView) _disconnectNFTBid(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a CreatorCoinTransfer operation
@@ -2820,7 +2820,7 @@ func (bav *UtxoView) _disconnectNFTBid(
 }
 
 func (bav *UtxoView) _disconnectNFTTransfer(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an NFTTransfer operation
@@ -2886,7 +2886,7 @@ func (bav *UtxoView) _disconnectNFTTransfer(
 }
 
 func (bav *UtxoView) _disconnectAcceptNFTTransfer(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an AcceptNFTTransfer operation
@@ -2952,7 +2952,7 @@ func (bav *UtxoView) _disconnectAcceptNFTTransfer(
 }
 
 func (bav *UtxoView) _disconnectBurnNFT(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an BurnNFT operation
@@ -3041,7 +3041,7 @@ func (bav *UtxoView) _disconnectBurnNFT(
 }
 
 func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
-	operationType OperationType, currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a AuthorizeDerivedKey operation.
@@ -3116,7 +3116,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }
 
-func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgBitCloutTxn, txnHash *BlockHash,
+func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	if currentTxn.TxnMeta.GetTxnType() == TxnTypeBlockReward || currentTxn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
@@ -3205,13 +3205,13 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgBitCloutTxn, txnHash *
 }
 
 func (bav *UtxoView) DisconnectBlock(
-	bitcloutBlock *MsgBitCloutBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation) error {
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation) error {
 
-	glog.Infof("DisconnectBlock: Disconnecting block %v", bitcloutBlock)
+	glog.Infof("DisconnectBlock: Disconnecting block %v", desoBlock)
 
 	// Verify that the block being disconnected is the current tip. DisconnectBlock
 	// can only be called on a block at the tip. We do this to keep the API simple.
-	blockHash, err := bitcloutBlock.Header.Hash()
+	blockHash, err := desoBlock.Header.Hash()
 	if err != nil {
 		return fmt.Errorf("DisconnectBlock: Problem computing block hash")
 	}
@@ -3223,7 +3223,7 @@ func (bav *UtxoView) DisconnectBlock(
 	// to the number of outputs and inputs in the block respectively.
 	numInputs := 0
 	numOutputs := 0
-	for _, txn := range bitcloutBlock.Txns {
+	for _, txn := range desoBlock.Txns {
 		numInputs += len(txn.TxInputs)
 		numOutputs += len(txn.TxOutputs)
 	}
@@ -3256,11 +3256,11 @@ func (bav *UtxoView) DisconnectBlock(
 
 	// Loop through the txns backwards to process them.
 	// Track the operation we're performing as we go.
-	for txnIndex := len(bitcloutBlock.Txns) - 1; txnIndex >= 0; txnIndex-- {
-		currentTxn := bitcloutBlock.Txns[txnIndex]
+	for txnIndex := len(desoBlock.Txns) - 1; txnIndex >= 0; txnIndex-- {
+		currentTxn := desoBlock.Txns[txnIndex]
 		txnHash := txHashes[txnIndex]
 		utxoOpsForTxn := utxoOps[txnIndex]
-		blockHeight := bitcloutBlock.Header.Height
+		blockHeight := desoBlock.Header.Height
 
 		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(blockHeight))
 		if err != nil {
@@ -3274,12 +3274,12 @@ func (bav *UtxoView) DisconnectBlock(
 
 	// Update the tip to point to the parent of this block since we've managed
 	// to successfully disconnect it.
-	bav.TipHash = bitcloutBlock.Header.PrevBlockHash
+	bav.TipHash = desoBlock.Header.PrevBlockHash
 
 	return nil
 }
 
-func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, params *BitCloutParams) bool {
+func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, params *DeSoParams) bool {
 	if utxoEntry.UtxoType == UtxoTypeBlockReward {
 		blocksPassed := blockHeight - utxoEntry.BlockHeight
 		// Note multiplication is OK here and has no chance of overflowing because
@@ -3294,7 +3294,7 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 	return false
 }
 
-func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) error {
+func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) error {
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -3363,7 +3363,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgBitCloutTxn, blockHeight uint32) e
 }
 
 func (bav *UtxoView) _connectBasicTransfer(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	var utxoOpsForTxn []*UtxoOperation
@@ -3373,10 +3373,10 @@ func (bav *UtxoView) _connectBasicTransfer(
 	// Each input should have a UtxoEntry corresponding to it if the transaction
 	// is legitimate. These should all have back-pointers to their UtxoKeys as well.
 	utxoEntriesForInputs := []*UtxoEntry{}
-	for _, bitcloutInput := range txn.TxInputs {
+	for _, desoInput := range txn.TxInputs {
 		// Fetch the utxoEntry for this input from the view. Make a copy to
 		// avoid having the iterator change under our feet.
-		utxoKey := UtxoKey(*bitcloutInput)
+		utxoKey := UtxoKey(*desoInput)
 		utxoEntry := bav.GetUtxoEntryForUtxoKey(&utxoKey)
 		// If the utxo doesn't exist mark the block as invalid and return an error.
 		if utxoEntry == nil {
@@ -3457,26 +3457,26 @@ func (bav *UtxoView) _connectBasicTransfer(
 	// the outputs.
 	var totalOutput uint64
 	amountsByPublicKey := make(map[PkMapKey]uint64)
-	for outputIndex, bitcloutOutput := range txn.TxOutputs {
+	for outputIndex, desoOutput := range txn.TxOutputs {
 		// Sanity check the amount of the output. Mark the block as invalid and
 		// return an error if it isn't sane.
-		if bitcloutOutput.AmountNanos > MaxNanos ||
-			totalOutput >= (math.MaxUint64-bitcloutOutput.AmountNanos) ||
-			totalOutput+bitcloutOutput.AmountNanos > MaxNanos {
+		if desoOutput.AmountNanos > MaxNanos ||
+			totalOutput >= (math.MaxUint64-desoOutput.AmountNanos) ||
+			totalOutput+desoOutput.AmountNanos > MaxNanos {
 
 			return 0, 0, nil, RuleErrorTxnOutputWithInvalidAmount
 		}
 
 		// Since the amount is sane, add it to the total.
-		totalOutput += bitcloutOutput.AmountNanos
+		totalOutput += desoOutput.AmountNanos
 
 		// Create a map of total output by public key. This is used to check diamond
 		// amounts below.
 		//
 		// Note that we don't need to check overflow here because overflow is checked
 		// directly above when adding to totalOutput.
-		currentAmount, _ := amountsByPublicKey[MakePkMapKey(bitcloutOutput.PublicKey)]
-		amountsByPublicKey[MakePkMapKey(bitcloutOutput.PublicKey)] = currentAmount + bitcloutOutput.AmountNanos
+		currentAmount, _ := amountsByPublicKey[MakePkMapKey(desoOutput.PublicKey)]
+		amountsByPublicKey[MakePkMapKey(desoOutput.PublicKey)] = currentAmount + desoOutput.AmountNanos
 
 		// Create a new entry for this output and add it to the view. It should be
 		// added at the end of the utxo list.
@@ -3493,8 +3493,8 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// the "basic" outputs.
 
 		utxoEntry := UtxoEntry{
-			AmountNanos: bitcloutOutput.AmountNanos,
-			PublicKey:   bitcloutOutput.PublicKey,
+			AmountNanos: desoOutput.AmountNanos,
+			PublicKey:   desoOutput.PublicKey,
 			BlockHeight: blockHeight,
 			UtxoType:    utxoType,
 			UtxoKey:     &outputKey,
@@ -3519,7 +3519,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 	var previousDiamondPostEntry *PostEntry
 	var previousDiamondEntry *DiamondEntry
-	if hasDiamondPostHash && blockHeight > BitCloutDiamondsBlockHeight &&
+	if hasDiamondPostHash && blockHeight > DeSoDiamondsBlockHeight &&
 		txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		if !hasDiamondLevel {
 			return 0, 0, nil, RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel
@@ -3552,15 +3552,15 @@ func (bav *UtxoView) _connectBasicTransfer(
 			return 0, 0, nil, RuleErrorBasicTransferDiamondCannotTransferToSelf
 		}
 
-		expectedBitCloutNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumBitCloutNanos(
+		expectedDeSoNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumDeSoNanos(
 			txn.PublicKey, diamondRecipientPubKey, diamondPostHash, diamondLevel, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: ")
 		}
 		diamondRecipientTotal, _ := amountsByPublicKey[MakePkMapKey(diamondRecipientPubKey)]
 
-		if diamondRecipientTotal < expectedBitCloutNanosToTransfer {
-			return 0, 0, nil, RuleErrorBasicTransferInsufficientBitCloutForDiamondLevel
+		if diamondRecipientTotal < expectedDeSoNanosToTransfer {
+			return 0, 0, nil, RuleErrorBasicTransferInsufficientDeSoForDiamondLevel
 		}
 
 		// The diamondPostEntry needs to be updated with the number of new diamonds.
@@ -3597,7 +3597,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 
 		// Add an op to help us with the disconnect.
 		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-			Type:             OperationTypeBitCloutDiamond,
+			Type:             OperationTypeDeSoDiamond,
 			PrevPostEntry:    previousDiamondPostEntry,
 			PrevDiamondEntry: previousDiamondEntry,
 		})
@@ -3737,9 +3737,9 @@ func (bav *UtxoView) _getLikeEntryForLikeKey(likeKey *LikeKey) *LikeEntry {
 	return nil
 }
 
-func (bav *UtxoView) _getRecloutEntryForRecloutKey(recloutKey *RecloutKey) *RecloutEntry {
+func (bav *UtxoView) _getRepostEntryForRepostKey(repostKey *RepostKey) *RepostEntry {
 	// If an entry exists in the in-memory map, return the value of that mapping.
-	mapValue, existsMapValue := bav.RecloutKeyToRecloutEntry[*recloutKey]
+	mapValue, existsMapValue := bav.RepostKeyToRepostEntry[*repostKey]
 	if existsMapValue {
 		return mapValue
 	}
@@ -3747,12 +3747,12 @@ func (bav *UtxoView) _getRecloutEntryForRecloutKey(recloutKey *RecloutKey) *Recl
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	recloutEntry := DbReclouterPubKeyRecloutedPostHashToRecloutEntry(
-		bav.Handle, recloutKey.ReclouterPubKey[:], recloutKey.RecloutedPostHash)
-	if recloutEntry != nil {
-		bav._setRecloutEntryMappings(recloutEntry)
+	repostEntry := DbReposterPubKeyRepostedPostHashToRepostEntry(
+		bav.Handle, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash)
+	if repostEntry != nil {
+		bav._setRepostEntryMappings(repostEntry)
 	}
-	return recloutEntry
+	return repostEntry
 }
 
 func (bav *UtxoView) _setLikeEntryMappings(likeEntry *LikeEntry) {
@@ -3777,31 +3777,31 @@ func (bav *UtxoView) _deleteLikeEntryMappings(likeEntry *LikeEntry) {
 	bav._setLikeEntryMappings(&tombstoneLikeEntry)
 }
 
-func (bav *UtxoView) _setRecloutEntryMappings(recloutEntry *RecloutEntry) {
+func (bav *UtxoView) _setRepostEntryMappings(repostEntry *RepostEntry) {
 	// This function shouldn't be called with nil.
-	if recloutEntry == nil {
-		glog.Errorf("_setRecloutEntryMappings: Called with nil RecloutEntry; " +
+	if repostEntry == nil {
+		glog.Errorf("_setRepostEntryMappings: Called with nil RepostEntry; " +
 			"this should never happen.")
 		return
 	}
 
-	recloutKey := MakeRecloutKey(recloutEntry.ReclouterPubKey, *recloutEntry.RecloutedPostHash)
-	bav.RecloutKeyToRecloutEntry[recloutKey] = recloutEntry
+	repostKey := MakeRepostKey(repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash)
+	bav.RepostKeyToRepostEntry[repostKey] = repostEntry
 }
 
-func (bav *UtxoView) _deleteRecloutEntryMappings(recloutEntry *RecloutEntry) {
+func (bav *UtxoView) _deleteRepostEntryMappings(repostEntry *RepostEntry) {
 
-	if recloutEntry == nil {
-		glog.Errorf("_deleteRecloutEntryMappings: called with nil RecloutEntry; " +
+	if repostEntry == nil {
+		glog.Errorf("_deleteRepostEntryMappings: called with nil RepostEntry; " +
 			"this should never happen")
 		return
 	}
 	// Create a tombstone entry.
-	tombstoneRecloutEntry := *recloutEntry
-	tombstoneRecloutEntry.isDeleted = true
+	tombstoneRepostEntry := *repostEntry
+	tombstoneRepostEntry.isDeleted = true
 
 	// Set the mappings to point to the tombstone entry.
-	bav._setRecloutEntryMappings(&tombstoneRecloutEntry)
+	bav._setRepostEntryMappings(&tombstoneRepostEntry)
 }
 
 func (bav *UtxoView) GetFollowEntryForFollowerPublicKeyCreatorPublicKey(followerPublicKey []byte, creatorPublicKey []byte) *FollowEntry {
@@ -5110,7 +5110,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 			ProfilePic:  profile.ProfilePic,
 			CoinEntry: CoinEntry{
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
-				BitCloutLockedNanos:     profile.BitCloutLockedNanos,
+				DeSoLockedNanos:     profile.DeSoLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
 				CoinsInCirculationNanos: profile.CoinsInCirculationNanos,
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
@@ -5157,7 +5157,7 @@ func (bav *UtxoView) GetProfilesForUsernamePrefixByCoinValue(usernamePrefix stri
 
 	// Username searches are always sorted by coin value.
 	sort.Slice(profileEntrys, func(ii, jj int) bool {
-		return profileEntrys[ii].CoinEntry.BitCloutLockedNanos > profileEntrys[jj].CoinEntry.BitCloutLockedNanos
+		return profileEntrys[ii].CoinEntry.DeSoLockedNanos > profileEntrys[jj].CoinEntry.DeSoLockedNanos
 	})
 
 	return profileEntrys
@@ -5270,13 +5270,13 @@ func _computeBitcoinBurnOutput(bitcoinTransaction *wire.MsgTx, bitcoinBurnAddres
 }
 
 func (bav *UtxoView) _connectBitcoinExchange(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if bav.Params.DeflationBombBlockHeight != 0 &&
 		uint64(blockHeight) >= bav.Params.DeflationBombBlockHeight {
 
-		return 0, 0, nil, RuleErrorDeflationBombForbidsMintingAnyMoreBitClout
+		return 0, 0, nil, RuleErrorDeflationBombForbidsMintingAnyMoreDeSo
 	}
 
 	// Check that the transaction has the right TxnType.
@@ -5313,7 +5313,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 
 	// Check that the BitcoinTransactionHash has not been used in a BitcoinExchange
 	// transaction in the past. This ensures that all the Bitcoin that is burned can
-	// be converted to BitClout precisely one time. No need to worry about malleability
+	// be converted to DeSo precisely one time. No need to worry about malleability
 	// because we also verify that the transaction was mined into a valid Bitcoin block
 	// with a lot of work on top of it, which means we can't be tricked by someone
 	// twiddling the transaction to give it a different hash (unless the Bitcoin chain
@@ -5334,16 +5334,16 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	// Extract a public key from the BitcoinTransaction's inputs. Note that we only
 	// consider P2PKH inputs to be valid. If no P2PKH inputs are found then we consider
 	// the transaction as a whole to be invalid since we don't know who to credit the
-	// new BitClout to. If we find more than one P2PKH input, we consider the public key
+	// new DeSo to. If we find more than one P2PKH input, we consider the public key
 	// corresponding to the first of these inputs to be the one that will receive the
-	// BitClout that will be created.
+	// DeSo that will be created.
 	publicKey, err := ExtractBitcoinPublicKeyFromBitcoinTransactionInputs(
 		txMetaa.BitcoinTransaction, bav.Params.BitcoinBtcdParams)
 	if err != nil {
 		return 0, 0, nil, RuleErrorBitcoinExchangeValidPublicKeyNotFoundInInputs
 	}
 	// At this point, we should have extracted a public key from the Bitcoin transaction
-	// that we expect to credit the newly-created BitClout to.
+	// that we expect to credit the newly-created DeSo to.
 
 	// The burn address cannot create this type of transaction.
 	addrFromPubKey, err := btcutil.NewAddressPubKey(
@@ -5371,16 +5371,16 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	}
 
 	// At this point we know how many satoshis were burned and we know the public key
-	// that should receive the BitClout we are going to create.
+	// that should receive the DeSo we are going to create.
 	usdCentsPerBitcoin := bav.GetCurrentUSDCentsPerBitcoin()
-	// Compute the amount of BitClout that we should create as a result of this transaction.
+	// Compute the amount of DeSo that we should create as a result of this transaction.
 	nanosToCreate := CalcNanosToCreate(bav.NanosPurchased, uint64(totalBurnOutput), usdCentsPerBitcoin)
 
-	// Compute the amount of BitClout that the user will receive. Note
+	// Compute the amount of DeSo that the user will receive. Note
 	// that we allocate a small fee to the miner to incentivize her to include the
 	// transaction in a block. The fee for BitcoinExchange transactions is fixed because
 	// if it weren't then a miner could theoretically repackage the BitcoinTransaction
-	// into a new BitcoinExchange transaction that spends all of the newly-created BitClout as
+	// into a new BitcoinExchange transaction that spends all of the newly-created DeSo as
 	// a fee. This way of doing it is a bit annoying because it means that for small
 	// BitcoinExchange transactions they might have to wait a long time and for large
 	// BitcoinExchange transactions they are highly likely to be overpaying. But it has
@@ -5407,7 +5407,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	userNanos := nanosToCreate - feeNanos
 
 	// Now that we have all the information we need, save a UTXO allowing the user to
-	// spend the BitClout she's purchased in the future.
+	// spend the DeSo she's purchased in the future.
 	outputKey := UtxoKey{
 		TxID: *txn.Hash(),
 		// We give all UTXOs that are created as a result of BitcoinExchange transactions
@@ -5457,7 +5457,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 }
 
 func (bav *UtxoView) _connectUpdateBitcoinUSDExchangeRate(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -5515,7 +5515,7 @@ func (bav *UtxoView) _connectUpdateBitcoinUSDExchangeRate(
 }
 
 func (bav *UtxoView) _connectUpdateGlobalParams(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -5664,7 +5664,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 }
 
 func (bav *UtxoView) _connectPrivateMessage(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -5792,7 +5792,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 }
 
 func (bav *UtxoView) _connectLike(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -5883,7 +5883,7 @@ func (bav *UtxoView) _connectLike(
 }
 
 func (bav *UtxoView) _connectFollow(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -5983,7 +5983,7 @@ func (bav *UtxoView) _connectFollow(
 }
 
 func (bav *UtxoView) _connectSubmitPost(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32,
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
 	verifySignatures bool, ignoreUtxos bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
@@ -6017,27 +6017,27 @@ func (bav *UtxoView) _connectSubmitPost(
 		}
 	}
 
-	// Transaction extra data contains both consensus-related, such as reclout info, and additional information about a post,
+	// Transaction extra data contains both consensus-related, such as repost info, and additional information about a post,
 	// whereas PostExtraData is an attribute of a PostEntry that contains only non-consensus related
 	// information about a post, such as a link to a video that is embedded.
 	extraData := make(map[string][]byte)
 	for k, v := range txn.ExtraData {
 		extraData[k] = v
 	}
-	// Set the IsQuotedReclout attribute of postEntry based on extra data
-	isQuotedReclout := false
-	if quotedReclout, hasQuotedReclout := extraData[IsQuotedRecloutKey]; hasQuotedReclout {
-		if reflect.DeepEqual(quotedReclout, QuotedRecloutVal) {
-			isQuotedReclout = true
+	// Set the IsQuotedRepost attribute of postEntry based on extra data
+	isQuotedRepost := false
+	if quotedRepost, hasQuotedRepost := extraData[IsQuotedRepostKey]; hasQuotedRepost {
+		if reflect.DeepEqual(quotedRepost, QuotedRepostVal) {
+			isQuotedRepost = true
 		}
-		// Delete key since it is not needed in the PostExtraData map as IsQuotedReclout is involved in consensus code.
-		delete(extraData, IsQuotedRecloutKey)
+		// Delete key since it is not needed in the PostExtraData map as IsQuotedRepost is involved in consensus code.
+		delete(extraData, IsQuotedRepostKey)
 	}
-	var recloutedPostHash *BlockHash
-	if recloutedPostHashBytes, isReclout := extraData[RecloutedPostHash]; isReclout {
-		recloutedPostHash = &BlockHash{}
-		copy(recloutedPostHash[:], recloutedPostHashBytes)
-		delete(extraData, RecloutedPostHash)
+	var repostedPostHash *BlockHash
+	if repostedPostHashBytes, isRepost := extraData[RepostedPostHash]; isRepost {
+		repostedPostHash = &BlockHash{}
+		copy(repostedPostHash[:], repostedPostHashBytes)
+		delete(extraData, RepostedPostHash)
 	}
 
 	// At this point the inputs and outputs have been processed. Now we
@@ -6048,14 +6048,14 @@ func (bav *UtxoView) _connectSubmitPost(
 	var prevPostEntry *PostEntry
 	var prevParentPostEntry *PostEntry
 	var prevGrandparentPostEntry *PostEntry
-	var prevRecloutedPostEntry *PostEntry
-	var prevRecloutEntry *RecloutEntry
+	var prevRepostedPostEntry *PostEntry
+	var prevRepostEntry *RepostEntry
 
 	var newPostEntry *PostEntry
 	var newParentPostEntry *PostEntry
 	var newGrandparentPostEntry *PostEntry
-	var newRecloutedPostEntry *PostEntry
-	var newRecloutEntry *RecloutEntry
+	var newRepostedPostEntry *PostEntry
+	var newRepostEntry *RepostEntry
 	if len(txMeta.PostHashToModify) != 0 {
 		// Make sure the post hash is valid
 		if len(txMeta.PostHashToModify) != HashSizeBytes {
@@ -6090,18 +6090,18 @@ func (bav *UtxoView) _connectSubmitPost(
 			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
 		}
 
-		// It's an error if we are updating the value of RecloutedPostHash. A post can only ever reclout a single post.
-		if !reflect.DeepEqual(recloutedPostHash, existingPostEntryy.RecloutedPostHash) {
+		// It's an error if we are updating the value of RepostedPostHash. A post can only ever repost a single post.
+		if !reflect.DeepEqual(repostedPostHash, existingPostEntryy.RepostedPostHash) {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorSubmitPostUpdateRecloutHash,
-				"_connectSubmitPost: cannot update reclouted post hash when updating a post")
+				RuleErrorSubmitPostUpdateRepostHash,
+				"_connectSubmitPost: cannot update reposted post hash when updating a post")
 		}
 
-		// It's an error if we are updating the value of IsQuotedReclout.
-		if isQuotedReclout != existingPostEntryy.IsQuotedReclout {
+		// It's an error if we are updating the value of IsQuotedRepost.
+		if isQuotedRepost != existingPostEntryy.IsQuotedRepost {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorSubmitPostUpdateIsQuotedReclout,
-				"_connectSubmitPost: cannot update isQuotedReclout attribute of post when updating a post")
+				RuleErrorSubmitPostUpdateIsQuotedRepost,
+				"_connectSubmitPost: cannot update isQuotedRepost attribute of post when updating a post")
 		}
 
 		// Save the data from the post. Note that we don't make a deep copy
@@ -6146,26 +6146,26 @@ func (bav *UtxoView) _connectSubmitPost(
 			return 0, 0, nil, errors.Wrapf(err, "_connectSubmitPost: error with _getParentAndGrandparentPostEntry: %v", postHash)
 		}
 
-		if newPostEntry.RecloutedPostHash != nil {
-			newRecloutedPostEntry = bav.GetPostEntryForPostHash(newPostEntry.RecloutedPostHash)
+		if newPostEntry.RepostedPostHash != nil {
+			newRepostedPostEntry = bav.GetPostEntryForPostHash(newPostEntry.RepostedPostHash)
 		}
 
 		// Figure out how much we need to change the parent / grandparent's comment count by
 		var commentCountUpdateAmount int
-		recloutCountUpdateAmount := 0
-		quoteRecloutCountUpdateAmount := 0
+		repostCountUpdateAmount := 0
+		quoteRepostCountUpdateAmount := 0
 		hidingPostEntry := !prevPostEntry.IsHidden && newPostEntry.IsHidden
 		if hidingPostEntry {
 			// If we're hiding a post then we need to decrement the comment count of the parent
 			// and grandparent posts.
 			commentCountUpdateAmount = -1 * int(1+prevPostEntry.CommentCount)
 
-			// If we're hiding a post that is a vanilla reclout of another post, we decrement the reclout count of the
-			// post that was reclouted.
-			if IsVanillaReclout(newPostEntry) {
-				recloutCountUpdateAmount = -1
-			} else if isQuotedReclout {
-				quoteRecloutCountUpdateAmount = -1
+			// If we're hiding a post that is a vanilla repost of another post, we decrement the repost count of the
+			// post that was reposted.
+			if IsVanillaRepost(newPostEntry) {
+				repostCountUpdateAmount = -1
+			} else if isQuotedRepost {
+				quoteRepostCountUpdateAmount = -1
 			}
 		}
 
@@ -6174,12 +6174,12 @@ func (bav *UtxoView) _connectSubmitPost(
 			// If we're unhiding a post then we need to increment the comment count of the parent
 			// and grandparent posts.
 			commentCountUpdateAmount = int(1 + prevPostEntry.CommentCount)
-			// If we are unhiding a post that is a vanilla reclout of another post, we increment the reclout count of
-			// the post that was reclouted.
-			if IsVanillaReclout(newPostEntry) {
-				recloutCountUpdateAmount = 1
-			} else if isQuotedReclout {
-				quoteRecloutCountUpdateAmount = 1
+			// If we are unhiding a post that is a vanilla repost of another post, we increment the repost count of
+			// the post that was reposted.
+			if IsVanillaRepost(newPostEntry) {
+				repostCountUpdateAmount = 1
+			} else if isQuotedRepost {
+				quoteRepostCountUpdateAmount = 1
 			}
 		}
 
@@ -6198,29 +6198,29 @@ func (bav *UtxoView) _connectSubmitPost(
 			*prevGrandparentPostEntry = *newGrandparentPostEntry
 			bav._updateParentCommentCountForPost(newPostEntry, newGrandparentPostEntry, commentCountUpdateAmount)
 		}
-		if newRecloutedPostEntry != nil {
-			prevRecloutedPostEntry = &PostEntry{}
-			*prevRecloutedPostEntry = *newRecloutedPostEntry
-			// If the previous post entry is a vanilla reclout, we can set the prevRecloutEntry.
-			if IsVanillaReclout(prevPostEntry) {
-				prevRecloutKey := MakeRecloutKey(prevPostEntry.PosterPublicKey, *prevPostEntry.RecloutedPostHash)
-				prevRecloutEntry = bav._getRecloutEntryForRecloutKey(&prevRecloutKey)
-				if prevRecloutEntry == nil {
-					return 0, 0, nil, fmt.Errorf("prevRecloutEntry not found for prevPostEntry")
+		if newRepostedPostEntry != nil {
+			prevRepostedPostEntry = &PostEntry{}
+			*prevRepostedPostEntry = *newRepostedPostEntry
+			// If the previous post entry is a vanilla repost, we can set the prevRepostEntry.
+			if IsVanillaRepost(prevPostEntry) {
+				prevRepostKey := MakeRepostKey(prevPostEntry.PosterPublicKey, *prevPostEntry.RepostedPostHash)
+				prevRepostEntry = bav._getRepostEntryForRepostKey(&prevRepostKey)
+				if prevRepostEntry == nil {
+					return 0, 0, nil, fmt.Errorf("prevRepostEntry not found for prevPostEntry")
 				}
-				// Generally prevRecloutEntry is identical to newRecloutEntry. Currently, we enforce a check that
-				// the RecloutedPostHash does not get modified when attempting to connect a submitPost transaction
-				newRecloutEntry = &RecloutEntry{
-					ReclouterPubKey:   newPostEntry.PosterPublicKey,
-					RecloutedPostHash: newPostEntry.RecloutedPostHash,
-					RecloutPostHash:   newPostEntry.PostHash,
+				// Generally prevRepostEntry is identical to newRepostEntry. Currently, we enforce a check that
+				// the RepostedPostHash does not get modified when attempting to connect a submitPost transaction
+				newRepostEntry = &RepostEntry{
+					ReposterPubKey:   newPostEntry.PosterPublicKey,
+					RepostedPostHash: newPostEntry.RepostedPostHash,
+					RepostPostHash:   newPostEntry.PostHash,
 				}
 
-				// Update the reclout count if it has changed.
-				bav._updateRecloutCount(newRecloutedPostEntry, recloutCountUpdateAmount)
+				// Update the repost count if it has changed.
+				bav._updateRepostCount(newRepostedPostEntry, repostCountUpdateAmount)
 			} else {
-				// Update the quote reclout count if it has changed.
-				bav._updateQuoteRecloutCount(newRecloutedPostEntry, quoteRecloutCountUpdateAmount)
+				// Update the quote repost count if it has changed.
+				bav._updateQuoteRepostCount(newRepostedPostEntry, quoteRepostCountUpdateAmount)
 			}
 		}
 	} else {
@@ -6267,15 +6267,15 @@ func (bav *UtxoView) _connectSubmitPost(
 				"_connectSubmitPost: Post hash: %v", postHash)
 		}
 
-		if recloutedPostHash != nil {
-			newRecloutedPostEntry = bav.GetPostEntryForPostHash(recloutedPostHash)
-			// It is an error if a post entry attempts to reclout a post that does not exist.
-			if newRecloutedPostEntry == nil {
-				return 0, 0, nil, RuleErrorSubmitPostRecloutPostNotFound
+		if repostedPostHash != nil {
+			newRepostedPostEntry = bav.GetPostEntryForPostHash(repostedPostHash)
+			// It is an error if a post entry attempts to repost a post that does not exist.
+			if newRepostedPostEntry == nil {
+				return 0, 0, nil, RuleErrorSubmitPostRepostPostNotFound
 			}
-			// It is an error if a post is trying to reclout a vanilla reclout.
-			if IsVanillaReclout(newRecloutedPostEntry) {
-				return 0, 0, nil, RuleErrorSubmitPostRecloutOfReclout
+			// It is an error if a post is trying to repost a vanilla repost.
+			if IsVanillaRepost(newRepostedPostEntry) {
+				return 0, 0, nil, RuleErrorSubmitPostRepostOfRepost
 			}
 		}
 
@@ -6285,8 +6285,8 @@ func (bav *UtxoView) _connectSubmitPost(
 			PosterPublicKey:          txn.PublicKey,
 			ParentStakeID:            txMeta.ParentStakeID,
 			Body:                     txMeta.Body,
-			RecloutedPostHash:        recloutedPostHash,
-			IsQuotedReclout:          isQuotedReclout,
+			RepostedPostHash:        repostedPostHash,
+			IsQuotedRepost:          isQuotedRepost,
 			CreatorBasisPoints:       txMeta.CreatorBasisPoints,
 			StakeMultipleBasisPoints: txMeta.StakeMultipleBasisPoints,
 			TimestampNanos:           txMeta.TimestampNanos,
@@ -6315,25 +6315,25 @@ func (bav *UtxoView) _connectSubmitPost(
 			bav._updateParentCommentCountForPost(newPostEntry, newGrandparentPostEntry, 1 /*amountToChangeParentBy*/)
 		}
 
-		// Save the data from the reclouted post.
-		if newRecloutedPostEntry != nil {
-			prevRecloutedPostEntry = &PostEntry{}
-			*prevRecloutedPostEntry = *newRecloutedPostEntry
+		// Save the data from the reposted post.
+		if newRepostedPostEntry != nil {
+			prevRepostedPostEntry = &PostEntry{}
+			*prevRepostedPostEntry = *newRepostedPostEntry
 
-			// We only set reclout entry mappings and increment counts for vanilla reclouts.
-			if !isQuotedReclout {
-				// Increment the reclout count of the post that was reclouted by 1 as we are creating a new
-				// vanilla reclout.
-				bav._updateRecloutCount(newRecloutedPostEntry, 1)
-				// Create the new recloutEntry
-				newRecloutEntry = &RecloutEntry{
-					ReclouterPubKey:   newPostEntry.PosterPublicKey,
-					RecloutedPostHash: newPostEntry.RecloutedPostHash,
-					RecloutPostHash:   newPostEntry.PostHash,
+			// We only set repost entry mappings and increment counts for vanilla reposts.
+			if !isQuotedRepost {
+				// Increment the repost count of the post that was reposted by 1 as we are creating a new
+				// vanilla repost.
+				bav._updateRepostCount(newRepostedPostEntry, 1)
+				// Create the new repostEntry
+				newRepostEntry = &RepostEntry{
+					ReposterPubKey:   newPostEntry.PosterPublicKey,
+					RepostedPostHash: newPostEntry.RepostedPostHash,
+					RepostPostHash:   newPostEntry.PostHash,
 				}
 			} else {
-				// If it is a quote reclout, we need to increment the corresponding count.
-				bav._updateQuoteRecloutCount(newRecloutedPostEntry, 1)
+				// If it is a quote repost, we need to increment the corresponding count.
+				bav._updateQuoteRepostCount(newRepostedPostEntry, 1)
 			}
 		}
 	}
@@ -6353,12 +6353,12 @@ func (bav *UtxoView) _connectSubmitPost(
 	if newGrandparentPostEntry != nil {
 		bav._setPostEntryMappings(newGrandparentPostEntry)
 	}
-	if newRecloutedPostEntry != nil {
-		bav._setPostEntryMappings(newRecloutedPostEntry)
+	if newRepostedPostEntry != nil {
+		bav._setPostEntryMappings(newRepostedPostEntry)
 	}
 
-	if newRecloutEntry != nil {
-		bav._setRecloutEntryMappings(newRecloutEntry)
+	if newRepostEntry != nil {
+		bav._setRepostEntryMappings(newRepostEntry)
 	}
 
 	// Add an operation to the list at the end indicating we've added a post.
@@ -6368,8 +6368,8 @@ func (bav *UtxoView) _connectSubmitPost(
 		PrevPostEntry:            prevPostEntry,
 		PrevParentPostEntry:      prevParentPostEntry,
 		PrevGrandparentPostEntry: prevGrandparentPostEntry,
-		PrevRecloutedPostEntry:   prevRecloutedPostEntry,
-		PrevRecloutEntry:         prevRecloutEntry,
+		PrevRepostedPostEntry:   prevRepostedPostEntry,
+		PrevRepostEntry:         prevRepostEntry,
 		Type:                     OperationTypeSubmitPost,
 	})
 
@@ -6410,31 +6410,31 @@ func (bav *UtxoView) _getParentAndGrandparentPostEntry(postEntry *PostEntry) (
 	return parentPostEntry, grandparentPostEntry, nil
 }
 
-// Adds amount to the reclout count of the post at recloutPostHash
-func (bav *UtxoView) _updateRecloutCount(recloutedPost *PostEntry, amount int) {
-	result := int(recloutedPost.RecloutCount) + amount
+// Adds amount to the repost count of the post at repostPostHash
+func (bav *UtxoView) _updateRepostCount(repostedPost *PostEntry, amount int) {
+	result := int(repostedPost.RepostCount) + amount
 
-	// Reclout count should never be below 0.
+	// Repost count should never be below 0.
 	if result < 0 {
-		glog.Errorf("_updateRecloutCountForPost: RecloutCount < 0 for result %v, reclout post hash: %v, amount : %v",
-			result, recloutedPost, amount)
+		glog.Errorf("_updateRepostCountForPost: RepostCount < 0 for result %v, repost post hash: %v, amount : %v",
+			result, repostedPost, amount)
 		result = 0
 	}
-	recloutedPost.RecloutCount = uint64(result)
+	repostedPost.RepostCount = uint64(result)
 
 }
 
-// Adds amount to the quote reclout count of the post at recloutPostHash
-func (bav *UtxoView) _updateQuoteRecloutCount(recloutedPost *PostEntry, amount int) {
-	result := int(recloutedPost.QuoteRecloutCount) + amount
+// Adds amount to the quote repost count of the post at repostPostHash
+func (bav *UtxoView) _updateQuoteRepostCount(repostedPost *PostEntry, amount int) {
+	result := int(repostedPost.QuoteRepostCount) + amount
 
-	// Reclout count should never be below 0.
+	// Repost count should never be below 0.
 	if result < 0 {
-		glog.Errorf("_updateQuoteRecloutCountForPost: QuoteRecloutCount < 0 for result %v, reclout post hash: %v, amount : %v",
-			result, recloutedPost, amount)
+		glog.Errorf("_updateQuoteRepostCountForPost: QuoteRepostCount < 0 for result %v, repost post hash: %v, amount : %v",
+			result, repostedPost, amount)
 		result = 0
 	}
-	recloutedPost.QuoteRecloutCount = uint64(result)
+	repostedPost.QuoteRepostCount = uint64(result)
 
 }
 
@@ -6450,7 +6450,7 @@ func (bav *UtxoView) _updateParentCommentCountForPost(postEntry *PostEntry, pare
 }
 
 func (bav *UtxoView) _connectUpdateProfile(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
 	ignoreUtxos bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
@@ -6679,7 +6679,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 }
 
 func (bav *UtxoView) _connectCreateNFT(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectCreateNFT: called with zero MaxCopiesPerNFT")
@@ -6711,8 +6711,8 @@ func (bav *UtxoView) _connectCreateNFT(
 	if postEntry == nil || postEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCreateNFTOnNonexistentPost
 	}
-	if IsVanillaReclout(postEntry) {
-		return 0, 0, nil, RuleErrorCreateNFTOnVanillaReclout
+	if IsVanillaRepost(postEntry) {
+		return 0, 0, nil, RuleErrorCreateNFTOnVanillaRepost
 	}
 	if !reflect.DeepEqual(postEntry.PosterPublicKey, txn.PublicKey) {
 		return 0, 0, nil, RuleErrorCreateNFTMustBeCalledByPoster
@@ -6801,7 +6801,7 @@ func (bav *UtxoView) _connectCreateNFT(
 }
 
 func (bav *UtxoView) _connectUpdateNFT(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectUpdateNFT: called with zero MaxCopiesPerNFT")
@@ -6933,7 +6933,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 }
 
 func (bav *UtxoView) _connectAcceptNFTBid(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTBid: called with zero MaxCopiesPerNFT")
@@ -7032,20 +7032,20 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	if blockHeight > 0 {
 		tipHeight = blockHeight - 1
 	}
-	sellerBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
+	sellerBalanceBefore, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Problem getting initial balance for seller pubkey: %v",
 			PkToStringBoth(txn.PublicKey))
 	}
-	bidderBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(
+	bidderBalanceBefore, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(
 		bidderPublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Problem getting initial balance for bidder pubkey: %v",
 			PkToStringBoth(bidderPublicKey))
 	}
-	creatorBalanceBefore, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(
+	creatorBalanceBefore, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(
 		nftPostEntry.PosterPublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
@@ -7094,14 +7094,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// The bidder gets back any unspent nanos from the inputs specified.
 	bidderChangeNanos := totalBidderInput - txMeta.BidAmountNanos
-	// The amount of bitclout that should go to the original creator from this purchase.
+	// The amount of deso that should go to the original creator from this purchase.
 	// Calculated as: (BidAmountNanos * NFTRoyaltyToCreatorBasisPoints) / (100 * 100)
 	creatorRoyaltyNanos := IntDiv(
 		IntMul(
 			big.NewInt(int64(txMeta.BidAmountNanos)),
 			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCreatorBasisPoints))),
 		big.NewInt(100*100)).Uint64()
-	// The amount of bitclout that should go to the original creator's coin from this purchase.
+	// The amount of deso that should go to the original creator's coin from this purchase.
 	// Calculated as: (BidAmountNanos * NFTRoyaltyToCoinBasisPoints) / (100 * 100)
 	creatorCoinRoyaltyNanos := IntDiv(
 		IntMul(
@@ -7145,7 +7145,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	//  (3) Pay the seller.
 	//  (4) Pay royalties to the original creator.
 	//  (5) Pay change to the bidder.
-	//  (6) Add creator coin royalties to bitclout locked.
+	//  (6) Add creator coin royalties to deso locked.
 	//  (7) Decrement the nftPostEntry NumNFTCopiesForSale.
 
 	// (1) Set an appropriate NFTEntry for the new owner.
@@ -7274,12 +7274,12 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	}
 
-	// (6) Add creator coin royalties to bitclout locked. If the number of coins in circulation is
-	// less than the "auto sell threshold" we burn the bitclout.
+	// (6) Add creator coin royalties to deso locked. If the number of coins in circulation is
+	// less than the "auto sell threshold" we burn the deso.
 	newCoinEntry := prevCoinEntry
 	if creatorCoinRoyaltyNanos > 0 && existingProfileEntry.CoinsInCirculationNanos >= bav.Params.CreatorCoinAutoSellThresholdNanos {
 		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
-		newCoinEntry.BitCloutLockedNanos += creatorCoinRoyaltyNanos
+		newCoinEntry.DeSoLockedNanos += creatorCoinRoyaltyNanos
 		existingProfileEntry.CoinEntry = newCoinEntry
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
@@ -7306,7 +7306,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	//  - Before returning we do one more sanity check that money hasn't been printed.
 	//
 	// Seller balance diff:
-	sellerBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
+	sellerBalanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectAcceptNFTBid: Problem getting final balance for seller pubkey: %v",
@@ -7316,7 +7316,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	// Bidder balance diff (only relevant if bidder != seller):
 	bidderDiff := int64(0)
 	if !reflect.DeepEqual(bidderPublicKey, txn.PublicKey) {
-		bidderBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(bidderPublicKey, tipHeight)
+		bidderBalanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(bidderPublicKey, tipHeight)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf(
 				"_connectAcceptNFTBid: Problem getting final balance for bidder pubkey: %v",
@@ -7328,7 +7328,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	creatorDiff := int64(0)
 	if !reflect.DeepEqual(nftPostEntry.PosterPublicKey, txn.PublicKey) &&
 		!reflect.DeepEqual(nftPostEntry.PosterPublicKey, bidderPublicKey) {
-		creatorBalanceAfter, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey, tipHeight)
+		creatorBalanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey, tipHeight)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf(
 				"_connectAcceptNFTBid: Problem getting final balance for poster pubkey: %v",
@@ -7337,7 +7337,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		creatorDiff = int64(creatorBalanceAfter) - int64(creatorBalanceBefore)
 	}
 	// Creator coin diff:
-	coinDiff := int64(newCoinEntry.BitCloutLockedNanos) - int64(prevCoinEntry.BitCloutLockedNanos)
+	coinDiff := int64(newCoinEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 	// Now the actual check. Use bigints to avoid getting fooled by overflow.
 	sellerPlusBidderDiff := big.NewInt(0).Add(big.NewInt(sellerDiff), big.NewInt(bidderDiff))
 	creatorPlusCoinDiff := big.NewInt(0).Add(big.NewInt(creatorDiff), big.NewInt(coinDiff))
@@ -7352,7 +7352,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 }
 
 func (bav *UtxoView) _connectNFTBid(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectNFTBid: called with zero MaxCopiesPerNFT")
@@ -7430,8 +7430,8 @@ func (bav *UtxoView) _connectNFTBid(
 	if blockHeight > 0 {
 		tipHeight = blockHeight - 1
 	}
-	// Verify that the transaction creator has sufficient bitclout to create the bid.
-	spendableBalance, err := bav.GetSpendableBitcloutBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
+	// Verify that the transaction creator has sufficient deso to create the bid.
+	spendableBalance, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: Error getting bidder balance: ")
 
@@ -7477,7 +7477,7 @@ func (bav *UtxoView) _connectNFTBid(
 }
 
 func (bav *UtxoView) _connectNFTTransfer(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
@@ -7602,7 +7602,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 }
 
 func (bav *UtxoView) _connectAcceptNFTTransfer(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
@@ -7689,7 +7689,7 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 }
 
 func (bav *UtxoView) _connectBurnNFT(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
@@ -7782,7 +7782,7 @@ func (bav *UtxoView) _connectBurnNFT(
 }
 
 func (bav *UtxoView) _connectSwapIdentity(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -7955,7 +7955,7 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
@@ -8085,12 +8085,12 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 }
 
 func CalculateCreatorCoinToMintPolynomial(
-	deltaBitCloutNanos uint64, currentCreatorCoinSupplyNanos uint64, params *BitCloutParams) uint64 {
+	deltaDeSoNanos uint64, currentCreatorCoinSupplyNanos uint64, params *DeSoParams) uint64 {
 	// The values our equations take are generally in whole units rather than
 	// nanos, so the first step is to convert the nano amounts into floats
 	// representing full coin units.
 	bigNanosPerUnit := NewFloat().SetUint64(NanosPerUnit)
-	bigDeltaBitClout := Div(NewFloat().SetUint64(deltaBitCloutNanos), bigNanosPerUnit)
+	bigDeltaDeSo := Div(NewFloat().SetUint64(deltaDeSoNanos), bigNanosPerUnit)
 	bigCurrentCreatorCoinSupply :=
 		Div(NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
 
@@ -8102,14 +8102,14 @@ func CalculateCreatorCoinToMintPolynomial(
 	// This is the formula:
 	// - (((dB + m*RR*s^(1/RR))/(m*RR)))^RR-s
 	// - where:
-	//     dB = bigDeltaBitClout,
+	//     dB = bigDeltaDeSo,
 	//     m = params.CreatorCoinSlope
 	//     RR = params.CreatorCoinReserveRatio
 	//     s = bigCurrentCreatorCoinSupply
 	//
 	// If you think it's hard to understand the code below, don't worry-- I hate
 	// the Go float libary syntax too...
-	bigRet := Sub(BigFloatPow((Div((Add(bigDeltaBitClout,
+	bigRet := Sub(BigFloatPow((Div((Add(bigDeltaDeSo,
 		Mul(params.CreatorCoinSlope, Mul(params.CreatorCoinReserveRatio,
 			BigFloatPow(bigCurrentCreatorCoinSupply, (Div(bigOne,
 				params.CreatorCoinReserveRatio))))))), Mul(params.CreatorCoinSlope,
@@ -8122,15 +8122,15 @@ func CalculateCreatorCoinToMintPolynomial(
 }
 
 func CalculateCreatorCoinToMintBancor(
-	deltaBitCloutNanos uint64, currentCreatorCoinSupplyNanos uint64,
-	currentBitCloutLockedNanos uint64, params *BitCloutParams) uint64 {
+	deltaDeSoNanos uint64, currentCreatorCoinSupplyNanos uint64,
+	currentDeSoLockedNanos uint64, params *DeSoParams) uint64 {
 	// The values our equations take are generally in whole units rather than
 	// nanos, so the first step is to convert the nano amounts into floats
 	// representing full coin units.
 	bigNanosPerUnit := NewFloat().SetUint64(NanosPerUnit)
-	bigDeltaBitClout := Div(NewFloat().SetUint64(deltaBitCloutNanos), bigNanosPerUnit)
+	bigDeltaDeSo := Div(NewFloat().SetUint64(deltaDeSoNanos), bigNanosPerUnit)
 	bigCurrentCreatorCoinSupply := Div(NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
-	bigCurrentBitCloutLocked := Div(NewFloat().SetUint64(currentBitCloutLockedNanos), bigNanosPerUnit)
+	bigCurrentDeSoLocked := Div(NewFloat().SetUint64(currentDeSoLockedNanos), bigNanosPerUnit)
 
 	// These calculations are derived from the Bancor pricing formula, which
 	// is proportional to a polynomial price curve (and equivalent to Uniswap
@@ -8141,15 +8141,15 @@ func CalculateCreatorCoinToMintBancor(
 	// This is the formula:
 	// - S0 * ((1 + dB / B0) ^ (RR) - 1)
 	// - where:
-	//     dB = bigDeltaBitClout,
-	//     B0 = bigCurrentBitCloutLocked
+	//     dB = bigDeltaDeSo,
+	//     B0 = bigCurrentDeSoLocked
 	//     S0 = bigCurrentCreatorCoinSupply
 	//     RR = params.CreatorCoinReserveRatio
 	//
 	// Sorry the code for the equation is so hard to read.
 	bigRet := Mul(bigCurrentCreatorCoinSupply,
-		Sub(BigFloatPow((Add(bigOne, Div(bigDeltaBitClout,
-			bigCurrentBitCloutLocked))),
+		Sub(BigFloatPow((Add(bigOne, Div(bigDeltaDeSo,
+			bigCurrentDeSoLocked))),
 			(params.CreatorCoinReserveRatio)), bigOne))
 	// The value we get is generally a number of whole creator coins, and so we
 	// need to convert it to "nanos" as a last step.
@@ -8157,16 +8157,16 @@ func CalculateCreatorCoinToMintBancor(
 	return retNanos
 }
 
-func CalculateBitCloutToReturn(
+func CalculateDeSoToReturn(
 	deltaCreatorCoinNanos uint64, currentCreatorCoinSupplyNanos uint64,
-	currentBitCloutLockedNanos uint64, params *BitCloutParams) uint64 {
+	currentDeSoLockedNanos uint64, params *DeSoParams) uint64 {
 	// The values our equations take are generally in whole units rather than
 	// nanos, so the first step is to convert the nano amounts into floats
 	// representing full coin units.
 	bigNanosPerUnit := NewFloat().SetUint64(NanosPerUnit)
 	bigDeltaCreatorCoin := Div(NewFloat().SetUint64(deltaCreatorCoinNanos), bigNanosPerUnit)
 	bigCurrentCreatorCoinSupply := Div(NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
-	bigCurrentBitCloutLocked := Div(NewFloat().SetUint64(currentBitCloutLockedNanos), bigNanosPerUnit)
+	bigCurrentDeSoLocked := Div(NewFloat().SetUint64(currentDeSoLockedNanos), bigNanosPerUnit)
 
 	// These calculations are derived from the Bancor pricing formula, which
 	// is proportional to a polynomial price curve (and equivalent to Uniswap
@@ -8178,12 +8178,12 @@ func CalculateBitCloutToReturn(
 	// - B0 * (1 - (1 - dS / S0)^(1/RR))
 	// - where:
 	//     dS = bigDeltaCreatorCoin,
-	//     B0 = bigCurrentBitCloutLocked
+	//     B0 = bigCurrentDeSoLocked
 	//     S0 = bigCurrentCreatorCoinSupply
 	//     RR = params.CreatorCoinReserveRatio
 	//
 	// Sorry the code for the equation is so hard to read.
-	bigRet := Mul(bigCurrentBitCloutLocked, (Sub(bigOne, BigFloatPow((Sub(bigOne,
+	bigRet := Mul(bigCurrentDeSoLocked, (Sub(bigOne, BigFloatPow((Sub(bigOne,
 		Div(bigDeltaCreatorCoin, bigCurrentCreatorCoinSupply))), (Div(bigOne,
 		params.CreatorCoinReserveRatio))))))
 	// The value we get is generally a number of whole creator coins, and so we
@@ -8193,30 +8193,30 @@ func CalculateBitCloutToReturn(
 }
 
 func CalculateCreatorCoinToMint(
-	bitcloutToSellNanos uint64,
-	coinsInCirculationNanos uint64, bitcloutLockedNanos uint64,
-	params *BitCloutParams) uint64 {
+	desoToSellNanos uint64,
+	coinsInCirculationNanos uint64, desoLockedNanos uint64,
+	params *DeSoParams) uint64 {
 
-	if bitcloutLockedNanos == 0 {
-		// In this case, there is no BitClout in the profile so we have to use
+	if desoLockedNanos == 0 {
+		// In this case, there is no DeSo in the profile so we have to use
 		// the polynomial equations to initialize the coin and determine how
 		// much to mint.
 		return CalculateCreatorCoinToMintPolynomial(
-			bitcloutToSellNanos, coinsInCirculationNanos,
+			desoToSellNanos, coinsInCirculationNanos,
 			params)
 	}
 
-	// In this case, we have BitClout locked in the profile and so we use the
+	// In this case, we have DeSo locked in the profile and so we use the
 	// standard Bancor equations to determine how much creator coin to mint.
 	return CalculateCreatorCoinToMintBancor(
-		bitcloutToSellNanos, coinsInCirculationNanos,
-		bitcloutLockedNanos, params)
+		desoToSellNanos, coinsInCirculationNanos,
+		desoLockedNanos, params)
 }
 
 // TODO: A lot of duplicate code between buy and sell. Consider factoring
 // out the common code.
 func (bav *UtxoView) HelpConnectCreatorCoinBuy(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _creatorCoinReturnedNanos uint64, _founderRewardNanos uint64,
 	_utxoOps []*UtxoOperation, _err error) {
 
@@ -8230,7 +8230,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Force the input to be non-zero so that we can prevent replay attacks. If
 	// we didn't do this then someone could replay your sell over and over again
-	// to force-convert all your creator coin into BitClout. Think about it.
+	// to force-convert all your creator coin into DeSo. Think about it.
 	if totalInput == 0 {
 		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinRequiresNonZeroInput
 	}
@@ -8259,23 +8259,23 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// exists that corresponds to the profile public key the user
 	// provided.
 
-	// Check that the amount of BitClout being traded for creator coin is
+	// Check that the amount of DeSo being traded for creator coin is
 	// non-zero.
-	bitCloutBeforeFeesNanos := txMeta.BitCloutToSellNanos
-	if bitCloutBeforeFeesNanos == 0 {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroBitClout
+	desoBeforeFeesNanos := txMeta.DeSoToSellNanos
+	if desoBeforeFeesNanos == 0 {
+		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroDeSo
 	}
-	// The amount of BitClout being traded counts as output being spent by
+	// The amount of DeSo being traded counts as output being spent by
 	// this transaction, so add it to the transaction output and check that
 	// the resulting output does not exceed the total input.
 	//
 	// Check for overflow of the outputs before adding.
-	if totalOutput > math.MaxUint64-bitCloutBeforeFeesNanos {
+	if totalOutput > math.MaxUint64-desoBeforeFeesNanos {
 		return 0, 0, 0, 0, nil, errors.Wrapf(
 			RuleErrorCreatorCoinTxnOutputWithInvalidBuyAmount,
-			"_connectCreatorCoin: %v", bitCloutBeforeFeesNanos)
+			"_connectCreatorCoin: %v", desoBeforeFeesNanos)
 	}
-	totalOutput += bitCloutBeforeFeesNanos
+	totalOutput += desoBeforeFeesNanos
 	// It's assumed the caller code will check that things like output <= input,
 	// but we check it here just in case...
 	if totalInput < totalOutput {
@@ -8286,59 +8286,59 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// At this point we have verified that the output is sufficient to cover
 	// the amount the user wants to use to buy the creator's coin.
 
-	// Now we burn some BitClout before executing the creator coin buy. Doing
+	// Now we burn some DeSo before executing the creator coin buy. Doing
 	// this guarantees that floating point errors in our subsequent calculations
-	// will not result in a user being able to print infinite amounts of BitClout
+	// will not result in a user being able to print infinite amounts of DeSo
 	// through the protocol.
 	//
 	// TODO(performance): We use bigints to avoid overflow in the intermediate
 	// stages of the calculation but this most likely isn't necessary. This
 	// formula is equal to:
-	// - bitCloutAfterFeesNanos = bitCloutBeforeFeesNanos * (CreatorCoinTradeFeeBasisPoints / (100*100))
-	bitCloutAfterFeesNanos := IntDiv(
+	// - desoAfterFeesNanos = desoBeforeFeesNanos * (CreatorCoinTradeFeeBasisPoints / (100*100))
+	desoAfterFeesNanos := IntDiv(
 		IntMul(
-			big.NewInt(int64(bitCloutBeforeFeesNanos)),
+			big.NewInt(int64(desoBeforeFeesNanos)),
 			big.NewInt(int64(100*100-bav.Params.CreatorCoinTradeFeeBasisPoints))),
 		big.NewInt(100*100)).Uint64()
 
-	// The amount of BitClout being convertend must be nonzero after fees as well.
-	if bitCloutAfterFeesNanos == 0 {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroBitCloutAfterFees
+	// The amount of DeSo being convertend must be nonzero after fees as well.
+	if desoAfterFeesNanos == 0 {
+		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFees
 	}
 
-	// Figure out how much bitclout goes to the founder.
+	// Figure out how much deso goes to the founder.
 	// Note: If the user performing this transaction has the same public key as the
 	// profile being bought, we do not cut a founder reward.
-	bitcloutRemainingNanos := uint64(0)
-	bitcloutFounderRewardNanos := uint64(0)
-	if blockHeight > BitCloutFounderRewardBlockHeight &&
+	desoRemainingNanos := uint64(0)
+	desoFounderRewardNanos := uint64(0)
+	if blockHeight > DeSoFounderRewardBlockHeight &&
 		!reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) {
 
 		// This formula is equal to:
-		// bitCloutFounderRewardNanos = bitcloutAfterFeesNanos * creatorBasisPoints / (100*100)
-		bitcloutFounderRewardNanos = IntDiv(
+		// desoFounderRewardNanos = desoAfterFeesNanos * creatorBasisPoints / (100*100)
+		desoFounderRewardNanos = IntDiv(
 			IntMul(
-				big.NewInt(int64(bitCloutAfterFeesNanos)),
+				big.NewInt(int64(desoAfterFeesNanos)),
 				big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
 			big.NewInt(100*100)).Uint64()
 
 		// Sanity check, just to be extra safe.
-		if bitCloutAfterFeesNanos < bitcloutFounderRewardNanos {
-			return 0, 0, 0, 0, nil, fmt.Errorf("HelpConnectCreatorCoinBuy: bitCloutAfterFeesNanos"+
-				" less than bitCloutFounderRewardNanos: %v %v",
-				bitCloutAfterFeesNanos, bitcloutFounderRewardNanos)
+		if desoAfterFeesNanos < desoFounderRewardNanos {
+			return 0, 0, 0, 0, nil, fmt.Errorf("HelpConnectCreatorCoinBuy: desoAfterFeesNanos"+
+				" less than desoFounderRewardNanos: %v %v",
+				desoAfterFeesNanos, desoFounderRewardNanos)
 		}
 
-		bitcloutRemainingNanos = bitCloutAfterFeesNanos - bitcloutFounderRewardNanos
+		desoRemainingNanos = desoAfterFeesNanos - desoFounderRewardNanos
 	} else {
-		bitcloutRemainingNanos = bitCloutAfterFeesNanos
+		desoRemainingNanos = desoAfterFeesNanos
 	}
 
-	if bitcloutRemainingNanos == 0 {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroBitCloutAfterFounderReward
+	if desoRemainingNanos == 0 {
+		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFounderReward
 	}
 
-	// If no BitClout is currently locked in the profile then we use the
+	// If no DeSo is currently locked in the profile then we use the
 	// polynomial equation to mint creator coins. We do this because the
 	// Uniswap/Bancor equations don't work when zero coins have been minted,
 	// and so we have to special case here. See this wolfram sheet for all
@@ -8351,12 +8351,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// could round floats or use different levels of precision for intermediate
 	// results and get different answers which would break consensus.
 	creatorCoinToMintNanos := CalculateCreatorCoinToMint(
-		bitcloutRemainingNanos, existingProfileEntry.CoinsInCirculationNanos,
-		existingProfileEntry.BitCloutLockedNanos, bav.Params)
+		desoRemainingNanos, existingProfileEntry.CoinsInCirculationNanos,
+		existingProfileEntry.DeSoLockedNanos, bav.Params)
 
 	// Check if the total amount minted satisfies CreatorCoinAutoSellThresholdNanos.
 	// This makes it prohibitively expensive for a user to buy themself above the
-	// CreatorCoinAutoSellThresholdNanos and then spam tiny nano BitClout creator
+	// CreatorCoinAutoSellThresholdNanos and then spam tiny nano DeSo creator
 	// coin purchases causing the effective Bancor Creator Coin Reserve Ratio to drift.
 	if blockHeight > SalomonFixBlockHeight {
 		if creatorCoinToMintNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
@@ -8373,14 +8373,14 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// a direct copy is OK.
 	prevCoinEntry := existingProfileEntry.CoinEntry
 
-	// Increment BitCloutLockedNanos. Sanity-check that we're not going to
+	// Increment DeSoLockedNanos. Sanity-check that we're not going to
 	// overflow.
-	if existingProfileEntry.BitCloutLockedNanos > math.MaxUint64-bitcloutRemainingNanos {
+	if existingProfileEntry.DeSoLockedNanos > math.MaxUint64-desoRemainingNanos {
 		return 0, 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Overflow while summing"+
-			"BitCloutLockedNanos and bitCloutAfterFounderRewardNanos: %v %v",
-			existingProfileEntry.BitCloutLockedNanos, bitcloutRemainingNanos)
+			"DeSoLockedNanos and desoAfterFounderRewardNanos: %v %v",
+			existingProfileEntry.DeSoLockedNanos, desoRemainingNanos)
 	}
-	existingProfileEntry.BitCloutLockedNanos += bitcloutRemainingNanos
+	existingProfileEntry.DeSoLockedNanos += desoRemainingNanos
 
 	// Increment CoinsInCirculation. Sanity-check that we're not going to
 	// overflow.
@@ -8393,9 +8393,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Calculate the *Creator Coin nanos* to give as a founder reward.
 	creatorCoinFounderRewardNanos := uint64(0)
-	if blockHeight > BitCloutFounderRewardBlockHeight {
+	if blockHeight > DeSoFounderRewardBlockHeight {
 		// Do nothing. The chain stopped minting creator coins as a founder reward for
-		// creators at this blockheight.  It gives BitClout as a founder reward now instead.
+		// creators at this blockheight.  It gives DeSo as a founder reward now instead.
 
 	} else if blockHeight > SalomonFixBlockHeight {
 		// Following the SalomonFixBlockHeight block, creator coin buys continuously mint
@@ -8431,7 +8431,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// At this point, founderRewardNanos will be non-zero if and only if we increased
 	// the watermark *and* there was a non-zero CreatorBasisPoints set on the CoinEntry
-	// *and* the blockHeight is less than BitCloutFounderRewardBlockHeight.
+	// *and* the blockHeight is less than DeSoFounderRewardBlockHeight.
 
 	// The user gets whatever's left after we pay the founder their reward.
 	coinsBuyerGetsNanos := creatorCoinToMintNanos - creatorCoinFounderRewardNanos
@@ -8522,7 +8522,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	}
 	// Check that if the buyer is receiving nanos for the first time, it's enough
 	// to push them above the CreatorCoinAutoSellThresholdNanos threshold. This helps
-	// prevent tiny amounts of nanos from drifting the ratio of creator coins to BitClout locked.
+	// prevent tiny amounts of nanos from drifting the ratio of creator coins to DeSo locked.
 	if blockHeight > SalomonFixBlockHeight {
 		if buyerBalanceEntry.BalanceNanos == 0 && coinsBuyerGetsNanos != 0 &&
 			coinsBuyerGetsNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
@@ -8579,10 +8579,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		bav._setBalanceEntryMappings(creatorBalanceEntry)
 	}
 
-	// Finally, if the creator is getting a bitclout founder reward, add a UTXO for it.
+	// Finally, if the creator is getting a deso founder reward, add a UTXO for it.
 	var outputKey *UtxoKey
-	if blockHeight > BitCloutFounderRewardBlockHeight {
-		if bitcloutFounderRewardNanos > 0 {
+	if blockHeight > DeSoFounderRewardBlockHeight {
+		if desoFounderRewardNanos > 0 {
 			// Create a new entry for this output and add it to the view. It should be
 			// added at the end of the utxo list.
 			outputKey = &UtxoKey{
@@ -8592,7 +8592,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			}
 
 			utxoEntry := UtxoEntry{
-				AmountNanos: bitcloutFounderRewardNanos,
+				AmountNanos: desoFounderRewardNanos,
 				PublicKey:   existingProfileEntry.PublicKey,
 				BlockHeight: blockHeight,
 				UtxoType:    UtxoTypeCreatorCoinFounderReward,
@@ -8628,8 +8628,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 // TODO: A lot of duplicate code between buy and sell. Consider factoring
 // out the common code.
 func (bav *UtxoView) HelpConnectCreatorCoinSell(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
-	_totalInput uint64, _totalOutput uint64, _bitCloutReturnedNanos uint64,
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _desoReturnedNanos uint64,
 	_utxoOps []*UtxoOperation, _err error) {
 
 	// Connect basic txn to get the total input and the total output without
@@ -8642,7 +8642,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	// Force the input to be non-zero so that we can prevent replay attacks. If
 	// we didn't do this then someone could replay your sell over and over again
-	// to force-convert all your creator coin into BitClout. Think about it.
+	// to force-convert all your creator coin into DeSo. Think about it.
 	if totalInput == 0 {
 		return 0, 0, 0, nil, RuleErrorCreatorCoinRequiresNonZeroInput
 	}
@@ -8704,14 +8704,14 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 			creatorCoinToSellNanos, sellerBalanceEntry.BalanceNanos)
 	}
 
-	// If the amount of BitClout locked in the profile is zero then selling is
+	// If the amount of DeSo locked in the profile is zero then selling is
 	// not allowed.
-	if existingProfileEntry.BitCloutLockedNanos == 0 {
-		return 0, 0, 0, nil, RuleErrorCreatorCoinSellNotAllowedWhenZeroBitCloutLocked
+	if existingProfileEntry.DeSoLockedNanos == 0 {
+		return 0, 0, 0, nil, RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked
 	}
 
-	bitCloutBeforeFeesNanos := uint64(0)
-	// Compute the amount of BitClout to return.
+	desoBeforeFeesNanos := uint64(0)
+	// Compute the amount of DeSo to return.
 	if blockHeight > SalomonFixBlockHeight {
 		// Following the SalomonFixBlockHeight block, if a user would be left with less than
 		// bav.Params.CreatorCoinAutoSellThresholdNanos, we clear all their remaining holdings
@@ -8723,50 +8723,50 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 			// Setup to sell all the creator coins the seller has.
 			creatorCoinToSellNanos = sellerBalanceEntry.BalanceNanos
 
-			// Compute the amount of BitClout to return with the new creatorCoinToSellNanos.
-			bitCloutBeforeFeesNanos = CalculateBitCloutToReturn(
+			// Compute the amount of DeSo to return with the new creatorCoinToSellNanos.
+			desoBeforeFeesNanos = CalculateDeSoToReturn(
 				creatorCoinToSellNanos, existingProfileEntry.CoinsInCirculationNanos,
-				existingProfileEntry.BitCloutLockedNanos, bav.Params)
+				existingProfileEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
-			// equations may return *too much* BitClout due to rounding errors.
-			if bitCloutBeforeFeesNanos > existingProfileEntry.BitCloutLockedNanos {
-				bitCloutBeforeFeesNanos = existingProfileEntry.BitCloutLockedNanos
+			// equations may return *too much* DeSo due to rounding errors.
+			if desoBeforeFeesNanos > existingProfileEntry.DeSoLockedNanos {
+				desoBeforeFeesNanos = existingProfileEntry.DeSoLockedNanos
 			}
 		} else {
 			// If we're above the CreatorCoinAutoSellThresholdNanos, we can safely compute
 			// the amount to return based on the Bancor curve.
-			bitCloutBeforeFeesNanos = CalculateBitCloutToReturn(
+			desoBeforeFeesNanos = CalculateDeSoToReturn(
 				creatorCoinToSellNanos, existingProfileEntry.CoinsInCirculationNanos,
-				existingProfileEntry.BitCloutLockedNanos, bav.Params)
+				existingProfileEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
-			// equations may return *too much* BitClout due to rounding errors.
-			if bitCloutBeforeFeesNanos > existingProfileEntry.BitCloutLockedNanos {
-				bitCloutBeforeFeesNanos = existingProfileEntry.BitCloutLockedNanos
+			// equations may return *too much* DeSo due to rounding errors.
+			if desoBeforeFeesNanos > existingProfileEntry.DeSoLockedNanos {
+				desoBeforeFeesNanos = existingProfileEntry.DeSoLockedNanos
 			}
 		}
 	} else {
 		// Prior to the SalomonFixBlockHeight block, coins would be minted based on floating point
 		// arithmetic with the exception being if a creator was selling all remaining creator coins. This caused
 		// a rare issue where a creator would be left with 1 creator coin nano in circulation
-		// and 1 nano BitClout locked after completely selling. This in turn made the Bancor Curve unstable.
+		// and 1 nano DeSo locked after completely selling. This in turn made the Bancor Curve unstable.
 
 		if creatorCoinToSellNanos == existingProfileEntry.CoinsInCirculationNanos {
-			bitCloutBeforeFeesNanos = existingProfileEntry.BitCloutLockedNanos
+			desoBeforeFeesNanos = existingProfileEntry.DeSoLockedNanos
 		} else {
 			// Calculate the amount to return based on the Bancor Curve.
-			bitCloutBeforeFeesNanos = CalculateBitCloutToReturn(
+			desoBeforeFeesNanos = CalculateDeSoToReturn(
 				creatorCoinToSellNanos, existingProfileEntry.CoinsInCirculationNanos,
-				existingProfileEntry.BitCloutLockedNanos, bav.Params)
+				existingProfileEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
-			// equations may return *too much* BitClout due to rounding errors.
-			if bitCloutBeforeFeesNanos > existingProfileEntry.BitCloutLockedNanos {
-				bitCloutBeforeFeesNanos = existingProfileEntry.BitCloutLockedNanos
+			// equations may return *too much* DeSo due to rounding errors.
+			if desoBeforeFeesNanos > existingProfileEntry.DeSoLockedNanos {
+				desoBeforeFeesNanos = existingProfileEntry.DeSoLockedNanos
 			}
 		}
 	}
@@ -8776,15 +8776,15 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// a direct copy is OK.
 	prevCoinEntry := existingProfileEntry.CoinEntry
 
-	// Subtract the amount of BitClout the seller is getting from the amount of
-	// BitClout locked in the profile. Sanity-check that it does not exceed the
-	// total amount of BitClout locked.
-	if bitCloutBeforeFeesNanos > existingProfileEntry.BitCloutLockedNanos {
-		return 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: BitClout nanos seller "+
-			"would get %v exceeds BitClout nanos locked in profile %v",
-			bitCloutBeforeFeesNanos, existingProfileEntry.BitCloutLockedNanos)
+	// Subtract the amount of DeSo the seller is getting from the amount of
+	// DeSo locked in the profile. Sanity-check that it does not exceed the
+	// total amount of DeSo locked.
+	if desoBeforeFeesNanos > existingProfileEntry.DeSoLockedNanos {
+		return 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: DeSo nanos seller "+
+			"would get %v exceeds DeSo nanos locked in profile %v",
+			desoBeforeFeesNanos, existingProfileEntry.DeSoLockedNanos)
 	}
-	existingProfileEntry.BitCloutLockedNanos -= bitCloutBeforeFeesNanos
+	existingProfileEntry.DeSoLockedNanos -= desoBeforeFeesNanos
 
 	// Subtract the number of coins the seller is selling from the number of coins
 	// in circulation. Sanity-check that it does not exceed the number of coins
@@ -8801,11 +8801,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		existingProfileEntry.NumberOfHolders -= 1
 	}
 
-	// If the number of holders has reached zero, we clear all the BitCloutLockedNanos and
+	// If the number of holders has reached zero, we clear all the DeSoLockedNanos and
 	// creatorCoinToSellNanos to ensure that the profile is reset to its normal initial state.
 	// It's okay to modify these values because they are saved in the PrevCoinEntry.
 	if existingProfileEntry.NumberOfHolders == 0 {
-		existingProfileEntry.BitCloutLockedNanos = 0
+		existingProfileEntry.DeSoLockedNanos = 0
 		existingProfileEntry.CoinsInCirculationNanos = 0
 	}
 
@@ -8831,36 +8831,36 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	bav._setBalanceEntryMappings(sellerBalanceEntry)
 	bav._setProfileEntryMappings(existingProfileEntry)
 
-	// Charge a fee on the BitClout the seller is getting to hedge against
+	// Charge a fee on the DeSo the seller is getting to hedge against
 	// floating point errors
-	bitCloutAfterFeesNanos := IntDiv(
+	desoAfterFeesNanos := IntDiv(
 		IntMul(
-			big.NewInt(int64(bitCloutBeforeFeesNanos)),
+			big.NewInt(int64(desoBeforeFeesNanos)),
 			big.NewInt(int64(100*100-bav.Params.CreatorCoinTradeFeeBasisPoints))),
 		big.NewInt(100*100)).Uint64()
 
-	// Check that the seller is getting back an amount of BitClout that is
+	// Check that the seller is getting back an amount of DeSo that is
 	// greater than or equal to what they expect. Note that this check is
 	// skipped if the min amount specified is zero.
-	if txMeta.MinBitCloutExpectedNanos != 0 &&
-		bitCloutAfterFeesNanos < txMeta.MinBitCloutExpectedNanos {
+	if txMeta.MinDeSoExpectedNanos != 0 &&
+		desoAfterFeesNanos < txMeta.MinDeSoExpectedNanos {
 
 		return 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorBitCloutReceivedIsLessThanMinimumSetBySeller,
-			"_connectCreatorCoin: BitClout nanos that would be given to seller: "+
+			RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller,
+			"_connectCreatorCoin: DeSo nanos that would be given to seller: "+
 				"%v, amount user needed: %v",
-			bitCloutAfterFeesNanos, txMeta.MinBitCloutExpectedNanos)
+			desoAfterFeesNanos, txMeta.MinDeSoExpectedNanos)
 	}
 
 	// Now that we have all the information we need, save a UTXO allowing the user to
-	// spend the BitClout from the sale in the future.
+	// spend the DeSo from the sale in the future.
 	outputKey := UtxoKey{
 		TxID: *txn.Hash(),
 		// The output is like an extra virtual output at the end of the transaction.
 		Index: uint32(len(txn.TxOutputs)),
 	}
 	utxoEntry := UtxoEntry{
-		AmountNanos: bitCloutAfterFeesNanos,
+		AmountNanos: desoAfterFeesNanos,
 		PublicKey:   txn.PublicKey,
 		BlockHeight: blockHeight,
 		UtxoType:    UtxoTypeCreatorCoinSale,
@@ -8890,15 +8890,15 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		PrevCreatorBalanceEntry:    nil,
 	})
 
-	// The BitClout that the user gets from selling their creator coin counts
+	// The DeSo that the user gets from selling their creator coin counts
 	// as both input and output in the transaction.
-	return totalInput + bitCloutAfterFeesNanos,
-		totalOutput + bitCloutAfterFeesNanos,
-		bitCloutAfterFeesNanos, utxoOpsForTxn, nil
+	return totalInput + desoAfterFeesNanos,
+		totalOutput + desoAfterFeesNanos,
+		desoAfterFeesNanos, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectCreatorCoin(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -8919,13 +8919,13 @@ func (bav *UtxoView) _connectCreatorCoin(
 		return totalInput, totalOutput, utxoOps, err
 
 	case CreatorCoinOperationTypeSell:
-		// We don't need the bitCloutReturned return value
+		// We don't need the desoReturned return value
 		totalInput, totalOutput, _, utxoOps, err :=
 			bav.HelpConnectCreatorCoinSell(txn, txHash, blockHeight, verifySignatures)
 		return totalInput, totalOutput, utxoOps, err
 
-	case CreatorCoinOperationTypeAddBitClout:
-		return 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Add BitClout not implemented")
+	case CreatorCoinOperationTypeAddDeSo:
+		return 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Add DeSo not implemented")
 	}
 
 	return 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Unrecognized CreatorCoin "+
@@ -8941,7 +8941,7 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumCreatorCoinNanos(
 ) (_numCreatorCoinNanos uint64, _netNewDiamonds int64, _err error) {
 
 	// Check that the diamond level is reasonable
-	diamondLevelMap := GetBitCloutNanosDiamondLevelMapAtBlockHeight(int64(blockHeight))
+	diamondLevelMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(int64(blockHeight))
 	if _, isAllowedLevel := diamondLevelMap[diamondLevel]; !isAllowedLevel {
 		return 0, 0, fmt.Errorf(
 			"ValidateDiamondsAndGetNumCreatorCoinNanos: Diamond level %v not allowed",
@@ -8978,10 +8978,10 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumCreatorCoinNanos(
 
 	// Calculate the number of creator coin nanos needed vs. already added for previous diamonds.
 	currCreatorCoinNanos := GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
-		existingProfileEntry.CoinsInCirculationNanos, existingProfileEntry.BitCloutLockedNanos,
+		existingProfileEntry.CoinsInCirculationNanos, existingProfileEntry.DeSoLockedNanos,
 		currDiamondLevel, int64(blockHeight), bav.Params)
 	neededCreatorCoinNanos := GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
-		existingProfileEntry.CoinsInCirculationNanos, existingProfileEntry.BitCloutLockedNanos,
+		existingProfileEntry.CoinsInCirculationNanos, existingProfileEntry.DeSoLockedNanos,
 		diamondLevel, int64(blockHeight), bav.Params)
 
 	// There is an edge case where, if the person's creator coin value goes down
@@ -8997,16 +8997,16 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumCreatorCoinNanos(
 	return creatorCoinToTransferNanos, netNewDiamonds, nil
 }
 
-func (bav *UtxoView) ValidateDiamondsAndGetNumBitCloutNanos(
+func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 	senderPublicKey []byte,
 	receiverPublicKey []byte,
 	diamondPostHash *BlockHash,
 	diamondLevel int64,
 	blockHeight uint32,
-) (_numBitCloutNanos uint64, _netNewDiamonds int64, _err error) {
+) (_numDeSoNanos uint64, _netNewDiamonds int64, _err error) {
 
 	// Check that the diamond level is reasonable
-	diamondLevelMap := GetBitCloutNanosDiamondLevelMapAtBlockHeight(int64(blockHeight))
+	diamondLevelMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(int64(blockHeight))
 	if _, isAllowedLevel := diamondLevelMap[diamondLevel]; !isAllowedLevel {
 		return 0, 0, fmt.Errorf(
 			"ValidateDiamondsAndGetNumCreatorCoinNanos: Diamond level %v not allowed",
@@ -9031,24 +9031,24 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumBitCloutNanos(
 	}
 
 	// Calculate the number of creator coin nanos needed vs. already added for previous diamonds.
-	currBitCloutNanos := GetBitCloutNanosForDiamondLevelAtBlockHeight(currDiamondLevel, int64(blockHeight))
-	neededBitCloutNanos := GetBitCloutNanosForDiamondLevelAtBlockHeight(diamondLevel, int64(blockHeight))
+	currDeSoNanos := GetDeSoNanosForDiamondLevelAtBlockHeight(currDiamondLevel, int64(blockHeight))
+	neededDeSoNanos := GetDeSoNanosForDiamondLevelAtBlockHeight(diamondLevel, int64(blockHeight))
 
 	// There is an edge case where, if the person's creator coin value goes down
 	// by a large enough amount, then they can get a "free" diamond upgrade. This
 	// seems fine for now.
-	bitcloutToTransferNanos := uint64(0)
-	if neededBitCloutNanos > currBitCloutNanos {
-		bitcloutToTransferNanos = neededBitCloutNanos - currBitCloutNanos
+	desoToTransferNanos := uint64(0)
+	if neededDeSoNanos > currDeSoNanos {
+		desoToTransferNanos = neededDeSoNanos - currDeSoNanos
 	}
 
 	netNewDiamonds := diamondLevel - currDiamondLevel
 
-	return bitcloutToTransferNanos, netNewDiamonds, nil
+	return desoToTransferNanos, netNewDiamonds, nil
 }
 
 func (bav *UtxoView) _connectCreatorCoinTransfer(
-	txn *MsgBitCloutTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -9068,7 +9068,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 
 	// Force the input to be non-zero so that we can prevent replay attacks. If
 	// we didn't do this then someone could replay your transfer over and over again
-	// to force-convert all your creator coin into BitClout. Think about it.
+	// to force-convert all your creator coin into DeSo. Think about it.
 	if totalInput == 0 {
 		return 0, 0, nil, RuleErrorCreatorCoinTransferRequiresNonZeroInput
 	}
@@ -9214,9 +9214,9 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 	var previousDiamondPostEntry *PostEntry
 	var previousDiamondEntry *DiamondEntry
-	// After the BitCloutDiamondsBlockHeight, we no longer accept creator coin diamonds.
-	if hasDiamondPostHash && blockHeight > BitCloutDiamondsBlockHeight {
-		return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondsAfterBitCloutBlockHeight
+	// After the DeSoDiamondsBlockHeight, we no longer accept creator coin diamonds.
+	if hasDiamondPostHash && blockHeight > DeSoDiamondsBlockHeight {
+		return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight
 	} else if hasDiamondPostHash {
 		if !hasDiamondLevel {
 			return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel
@@ -9305,7 +9305,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-func (bav *UtxoView) ConnectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
+func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	txnSizeBytes int64,
 	blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
 	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
@@ -9318,7 +9318,7 @@ func (bav *UtxoView) ConnectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 
 }
 
-func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
+func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
 	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
 	_fees uint64, _err error) {
@@ -9460,7 +9460,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 	}
 
 	// BitcoinExchange transactions have their own special fee that is computed as a function of how much
-	// BitClout is being minted. They do not need to abide by the global minimum fee check, since if they had
+	// DeSo is being minted. They do not need to abide by the global minimum fee check, since if they had
 	// enough fees to get mined into the Bitcoin blockchain itself then they're almost certainly not spam.
 	// If the transaction size was set to 0, skip validating the fee is above the minimum.
 	// If the current minimum network fee per kb is set to 0, that indicates we should not assess a minimum fee.
@@ -9479,23 +9479,23 @@ func (bav *UtxoView) _connectTransaction(txn *MsgBitCloutTxn, txHash *BlockHash,
 }
 
 func (bav *UtxoView) ConnectBlock(
-	bitcloutBlock *MsgBitCloutBlock, txHashes []*BlockHash, verifySignatures bool) (
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool) (
 	[][]*UtxoOperation, error) {
 
-	glog.Debugf("ConnectBlock: Connecting block %v", bitcloutBlock)
+	glog.Debugf("ConnectBlock: Connecting block %v", desoBlock)
 
 	// Check that the block being connected references the current tip. ConnectBlock
 	// can only add a block to the current tip. We do this to keep the API simple.
-	if *bitcloutBlock.Header.PrevBlockHash != *bav.TipHash {
+	if *desoBlock.Header.PrevBlockHash != *bav.TipHash {
 		return nil, fmt.Errorf("ConnectBlock: Parent hash of block being connected does not match tip")
 	}
 
-	blockHeader := bitcloutBlock.Header
+	blockHeader := desoBlock.Header
 	// Loop through all the transactions and validate them using the view. Also
 	// keep track of the total fees throughout.
 	var totalFees uint64
 	utxoOps := [][]*UtxoOperation{}
-	for txIndex, txn := range bitcloutBlock.Txns {
+	for txIndex, txn := range desoBlock.Txns {
 		txHash := txHashes[txIndex]
 
 		// ConnectTransaction validates all of the transactions in the block and
@@ -9531,7 +9531,7 @@ func (bav *UtxoView) ConnectBlock(
 	// Compute the sum of the outputs in the block reward. If an overflow
 	// occurs mark the block as invalid and return a rule error.
 	var blockRewardOutput uint64
-	for _, bro := range bitcloutBlock.Txns[0].TxOutputs {
+	for _, bro := range desoBlock.Txns[0].TxOutputs {
 		if bro.AmountNanos > MaxNanos ||
 			blockRewardOutput > (math.MaxUint64-bro.AmountNanos) {
 
@@ -9558,7 +9558,7 @@ func (bav *UtxoView) ConnectBlock(
 
 	// If we made it to the end and this block is valid, advance the tip
 	// of the view to reflect that.
-	blockHash, err := bitcloutBlock.Header.Hash()
+	blockHash, err := desoBlock.Header.Hash()
 	if err != nil {
 		return nil, fmt.Errorf("ConnectBlock: Problem computing block hash after validation")
 	}
@@ -9573,7 +9573,7 @@ func (bav *UtxoView) ConnectBlock(
 // the database. It's much faster to fetch data in bulk and cache "nil" values
 // then to query individual records when connecting every transaction. If something
 // is not preloaded the view falls back to individual queries.
-func (bav *UtxoView) Preload(bitcloutBlock *MsgBitCloutBlock) error {
+func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 	// We can only preload if we're using postgres
 	if bav.Postgres == nil {
 		return nil
@@ -9582,7 +9582,7 @@ func (bav *UtxoView) Preload(bitcloutBlock *MsgBitCloutBlock) error {
 	// One iteration for all the PKIDs
 	// NOTE: Work in progress. Testing with follows for now.
 	var publicKeys []*PublicKey
-	for _, txn := range bitcloutBlock.Txns {
+	for _, txn := range desoBlock.Txns {
 		if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
 			txnMeta := txn.TxnMeta.(*FollowMetadata)
 			publicKeys = append(publicKeys, NewPublicKey(txn.PublicKey))
@@ -9627,7 +9627,7 @@ func (bav *UtxoView) Preload(bitcloutBlock *MsgBitCloutBlock) error {
 	var posts []*PGPost
 	var lowercaseUsernames []string
 
-	for _, txn := range bitcloutBlock.Txns {
+	for _, txn := range desoBlock.Txns {
 		// Preload all the inputs
 		for _, txInput := range txn.TxInputs {
 			output := &PGTransactionOutput{
@@ -9711,7 +9711,7 @@ func (bav *UtxoView) Preload(bitcloutBlock *MsgBitCloutBlock) error {
 			// We cache the posts as not present and then fill them in later
 			bav.PostHashToPostEntry[*postHash] = nil
 
-			// TODO: Preload parent, grandparent, and reclouted posts
+			// TODO: Preload parent, grandparent, and reposted posts
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
 			txnMeta := txn.TxnMeta.(*UpdateProfileMetadata)
 			if len(txnMeta.NewUsername) == 0 {
@@ -10190,9 +10190,9 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][
 	return likerPubKeys, nil
 }
 
-func (bav *UtxoView) GetRecloutsForPostHash(postHash *BlockHash) (_reclouterPubKeys [][]byte, _err error) {
+func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKeys [][]byte, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKey...)
+	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKey...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
@@ -10201,72 +10201,72 @@ func (bav *UtxoView) GetRecloutsForPostHash(postHash *BlockHash) (_reclouterPubK
 	for _, key := range keysFound {
 		// Sanity check that this is a reasonable key.
 		if len(key) != expectedKeyLength {
-			return nil, fmt.Errorf("UtxoView.GetRecloutersForPostHash: Invalid key length found: %d", len(key))
+			return nil, fmt.Errorf("UtxoView.GetRepostersForPostHash: Invalid key length found: %d", len(key))
 		}
 
-		reclouterPubKey := key[1+HashSizeBytes:]
+		reposterPubKey := key[1+HashSizeBytes:]
 
-		recloutKey := &RecloutKey{
-			ReclouterPubKey:   MakePkMapKey(reclouterPubKey),
-			RecloutedPostHash: *postHash,
+		repostKey := &RepostKey{
+			ReposterPubKey:   MakePkMapKey(reposterPubKey),
+			RepostedPostHash: *postHash,
 		}
 
-		bav._getRecloutEntryForRecloutKey(recloutKey)
+		bav._getRepostEntryForRepostKey(repostKey)
 	}
 
 	// Iterate over the view and create the final list to return.
-	reclouterPubKeys := [][]byte{}
-	for _, recloutEntry := range bav.RecloutKeyToRecloutEntry {
-		if !recloutEntry.isDeleted && reflect.DeepEqual(recloutEntry.RecloutedPostHash[:], postHash[:]) {
-			reclouterPubKeys = append(reclouterPubKeys, recloutEntry.ReclouterPubKey)
+	reposterPubKeys := [][]byte{}
+	for _, repostEntry := range bav.RepostKeyToRepostEntry {
+		if !repostEntry.isDeleted && reflect.DeepEqual(repostEntry.RepostedPostHash[:], postHash[:]) {
+			reposterPubKeys = append(reposterPubKeys, repostEntry.ReposterPubKey)
 		}
 	}
 
-	return reclouterPubKeys, nil
+	return reposterPubKeys, nil
 }
 
-func (bav *UtxoView) GetQuoteRecloutsForPostHash(postHash *BlockHash,
-) (_quoteReclouterPubKeys [][]byte, _quoteReclouterPubKeyToPosts map[PkMapKey][]*PostEntry, _err error) {
+func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
+) (_quoteReposterPubKeys [][]byte, _quoteReposterPubKeyToPosts map[PkMapKey][]*PostEntry, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash...)
+	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
 	// Iterate over all the db keys & values and load them into the view.
 	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed + HashSizeBytes
 
-	recloutPostHashIdx := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
+	repostPostHashIdx := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
 	for _, key := range keysFound {
 		// Sanity check that this is a reasonable key.
 		if len(key) != expectedKeyLength {
-			return nil, nil, fmt.Errorf("UtxoView.GetQuoteRecloutsForPostHash: Invalid key length found: %d", len(key))
+			return nil, nil, fmt.Errorf("UtxoView.GetQuoteRepostsForPostHash: Invalid key length found: %d", len(key))
 		}
 
-		recloutPostHash := &BlockHash{}
-		copy(recloutPostHash[:], key[recloutPostHashIdx:])
+		repostPostHash := &BlockHash{}
+		copy(repostPostHash[:], key[repostPostHashIdx:])
 
-		bav.GetPostEntryForPostHash(recloutPostHash)
+		bav.GetPostEntryForPostHash(repostPostHash)
 	}
 
 	// Iterate over the view and create the final map to return.
-	quoteReclouterPubKeys := [][]byte{}
-	quoteReclouterPubKeyToPosts := make(map[PkMapKey][]*PostEntry)
+	quoteReposterPubKeys := [][]byte{}
+	quoteReposterPubKeyToPosts := make(map[PkMapKey][]*PostEntry)
 
 	for _, postEntry := range bav.PostHashToPostEntry {
-		if !postEntry.isDeleted && postEntry.IsQuotedReclout && reflect.DeepEqual(postEntry.RecloutedPostHash[:], postHash[:]) {
-			quoteReclouterPubKeys = append(quoteReclouterPubKeys, postEntry.PosterPublicKey)
+		if !postEntry.isDeleted && postEntry.IsQuotedRepost && reflect.DeepEqual(postEntry.RepostedPostHash[:], postHash[:]) {
+			quoteReposterPubKeys = append(quoteReposterPubKeys, postEntry.PosterPublicKey)
 
-			quoteRecloutPosts, _ := quoteReclouterPubKeyToPosts[MakePkMapKey(postEntry.PosterPublicKey)]
-			quoteRecloutPosts = append(quoteRecloutPosts, postEntry)
-			quoteReclouterPubKeyToPosts[MakePkMapKey(postEntry.PosterPublicKey)] = quoteRecloutPosts
+			quoteRepostPosts, _ := quoteReposterPubKeyToPosts[MakePkMapKey(postEntry.PosterPublicKey)]
+			quoteRepostPosts = append(quoteRepostPosts, postEntry)
+			quoteReposterPubKeyToPosts[MakePkMapKey(postEntry.PosterPublicKey)] = quoteRepostPosts
 		}
 	}
 
-	return quoteReclouterPubKeys, quoteReclouterPubKeyToPosts, nil
+	return quoteReposterPubKeys, quoteReposterPubKeyToPosts, nil
 }
 
 // Just fetch all the profiles from the db and join them with all the profiles
-// in the mempool. Then sort them by their BitClout. This can be called
+// in the mempool. Then sort them by their DeSo. This can be called
 // on an empty view or a view that already has a lot of transactions
 // applied to it.
 func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
@@ -10444,7 +10444,7 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	return utxoEntriesToReturn, nil
 }
 
-func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte,
+func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	tipHeight uint32) (_spendableBalance uint64, _err error) {
 	// In order to get the spendable balance, we need to account for any immature block rewards.
 	// We get these by starting at the chain tip and iterating backwards until we have collected
@@ -10469,13 +10469,13 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 			blockNode := GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
 				return uint64(0), fmt.Errorf(
-					"GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block for blockhash %s",
+					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 					nextBlockHash.String())
 			}
 			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
 			if err != nil {
 				return uint64(0), errors.Wrapf(
-					err, "GetSpendableBitcloutBalanceNanosForPublicKey: Problem getting block reward for "+
+					err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block reward for "+
 						"public key %s blockhash %s", PkToString(pkBytes, bav.Params), nextBlockHash.String())
 			}
 			immatureBlockRewards += blockRewardForPK
@@ -10487,7 +10487,7 @@ func (bav *UtxoView) GetSpendableBitcloutBalanceNanosForPublicKey(pkBytes []byte
 		}
 	}
 
-	balanceNanos, err := bav.GetBitcloutBalanceNanosForPublicKey(pkBytes)
+	balanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(pkBytes)
 	if err != nil {
 		return uint64(0), errors.Wrap(err, "GetSpendableUtxosForPublicKey: ")
 	}
@@ -10554,26 +10554,26 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushBitcloutBalancesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushBitcloutBalancesToDbWithTxn: flushing %d mappings",
-		len(bav.PublicKeyToBitcloutBalanceNanos))
+func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
+	glog.Debugf("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
+		len(bav.PublicKeyToDeSoBalanceNanos))
 
-	for pubKeyIter := range bav.PublicKeyToBitcloutBalanceNanos {
+	for pubKeyIter := range bav.PublicKeyToDeSoBalanceNanos {
 		// Make a copy of the iterator since it might change from under us.
 		pubKey := pubKeyIter[:]
 
 		// Start by deleting the pre-existing mappings in the db for this key if they
 		// have not yet been modified.
-		if err := DbDeletePublicKeyToBitcloutBalanceWithTxn(txn, pubKey); err != nil {
+		if err := DbDeletePublicKeyToDeSoBalanceWithTxn(txn, pubKey); err != nil {
 			return err
 		}
 	}
-	for pubKeyIter, balanceNanos := range bav.PublicKeyToBitcloutBalanceNanos {
+	for pubKeyIter, balanceNanos := range bav.PublicKeyToDeSoBalanceNanos {
 		// Make a copy of the iterator since it might change from under us.
 		pubKey := pubKeyIter[:]
 
 		if balanceNanos > 0 {
-			if err := DbPutBitcloutBalanceForPublicKeyWithTxn(txn, pubKey, balanceNanos); err != nil {
+			if err := DbPutDeSoBalanceForPublicKeyWithTxn(txn, pubKey, balanceNanos); err != nil {
 				return err
 			}
 		}
@@ -10592,7 +10592,7 @@ func (bav *UtxoView) _flushGlobalParamsEntryToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the KeyTorecloutEntry map.
+	// Go through all the entries in the KeyTorepostEntry map.
 	for _, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		// Delete the existing mappings in the db for this ForbiddenPubKeyEntry. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
@@ -10708,47 +10708,47 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushRecloutEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the recloutKeyTorecloutEntry map.
-	for recloutKeyIter, recloutEntry := range bav.RecloutKeyToRecloutEntry {
+	// Go through all the entries in the repostKeyTorepostEntry map.
+	for repostKeyIter, repostEntry := range bav.RepostKeyToRepostEntry {
 		// Make a copy of the iterator since we make references to it below.
-		recloutKey := recloutKeyIter
+		repostKey := repostKeyIter
 
-		// Sanity-check that the RecloutKey computed from the RecloutEntry is
-		// equal to the RecloutKey that maps to that entry.
-		recloutKeyInEntry := MakeRecloutKey(recloutEntry.ReclouterPubKey, *recloutEntry.RecloutedPostHash)
-		if recloutKeyInEntry != recloutKey {
-			return fmt.Errorf("_flushRecloutEntriesToDbWithTxn: RecloutEntry has "+
-				"RecloutKey: %v, which doesn't match the RecloutKeyToRecloutEntry map key %v",
-				&recloutKeyInEntry, &recloutKey)
+		// Sanity-check that the RepostKey computed from the RepostEntry is
+		// equal to the RepostKey that maps to that entry.
+		repostKeyInEntry := MakeRepostKey(repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash)
+		if repostKeyInEntry != repostKey {
+			return fmt.Errorf("_flushRepostEntriesToDbWithTxn: RepostEntry has "+
+				"RepostKey: %v, which doesn't match the RepostKeyToRepostEntry map key %v",
+				&repostKeyInEntry, &repostKey)
 		}
 
-		// Delete the existing mappings in the db for this RecloutKey. They will be re-added
+		// Delete the existing mappings in the db for this RepostKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteRecloutMappingsWithTxn(
-			txn, recloutKey.ReclouterPubKey[:], recloutKey.RecloutedPostHash); err != nil {
+		if err := DbDeleteRepostMappingsWithTxn(
+			txn, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash); err != nil {
 
 			return errors.Wrapf(
-				err, "_flushRecloutEntriesToDbWithTxn: Problem deleting mappings "+
-					"for RecloutKey: %v: ", &recloutKey)
+				err, "_flushRepostEntriesToDbWithTxn: Problem deleting mappings "+
+					"for RepostKey: %v: ", &repostKey)
 		}
 	}
-	for _, recloutEntry := range bav.RecloutKeyToRecloutEntry {
-		if recloutEntry.isDeleted {
-			// If the RecloutedEntry has isDeleted=true then there's nothing to do because
+	for _, repostEntry := range bav.RepostKeyToRepostEntry {
+		if repostEntry.isDeleted {
+			// If the RepostedEntry has isDeleted=true then there's nothing to do because
 			// we already deleted the entry above.
 		} else {
-			// If the RecloutEntry has (isDeleted = false) then we put the corresponding
+			// If the RepostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutRecloutMappingsWithTxn(
-				txn, recloutEntry.ReclouterPubKey, *recloutEntry.RecloutedPostHash, *recloutEntry); err != nil {
+			if err := DbPutRepostMappingsWithTxn(
+				txn, repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry); err != nil {
 				return err
 			}
 		}
 	}
 
-	// At this point all of the RecloutEntry mappings in the db should be up-to-date.
+	// At this point all of the RepostEntry mappings in the db should be up-to-date.
 
 	return nil
 }
@@ -11299,7 +11299,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		if err := bav._flushBalanceEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
-		if err := bav._flushBitcloutBalancesToDbWithTxn(txn); err != nil {
+		if err := bav._flushDeSoBalancesToDbWithTxn(txn); err != nil {
 			return err
 		}
 		if err := bav._flushForbiddenPubKeyEntriesToDbWithTxn(txn); err != nil {
@@ -11326,7 +11326,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	if err := bav._flushAcceptedBidEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
-	if err := bav._flushRecloutEntriesToDbWithTxn(txn); err != nil {
+	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 

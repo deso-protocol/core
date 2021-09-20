@@ -26,7 +26,7 @@ func Run(cmd *cobra.Command, args []string) {
 	// Parse the configuration (can use CLI flags, environment variables, or config file)
 	config := LoadConfig()
 
-	// Start the bitclout node
+	// Start the deso node
 	node := NewNode(config)
 	go node.Start()
 
@@ -42,7 +42,7 @@ func Run(cmd *cobra.Command, args []string) {
 
 func SetupRunFlags(cmd *cobra.Command) {
 	// Core
-	cmd.PersistentFlags().Bool("testnet", false, "Use the BitClout testnet. Mainnet is used by default")
+	cmd.PersistentFlags().Bool("testnet", false, "Use the DeSo testnet. Mainnet is used by default")
 	cmd.PersistentFlags().String("data-dir", "",
 		"The location where all of the protocol-related data like blocks is stored. "+
 			"Useful for testing situations where multiple clients need to run on the "+
@@ -101,7 +101,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 	// Listeners
 	cmd.PersistentFlags().Uint64("protocol-port", 0,
 		"When set, determines the port on which this node will listen for protocol-related "+
-			"messages. If unset, the port will default to what is present in the BitCloutParams set. "+
+			"messages. If unset, the port will default to what is present in the DeSoParams set. "+
 			"Note also that even though the node will listen on this port, its outbound "+
 			"connections will not be determined by this flag.")
 

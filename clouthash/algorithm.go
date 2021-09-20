@@ -1,9 +1,9 @@
-package clouthash
+package desohash
 
 import (
 	"crypto/sha256"
 
-	"github.com/bitclout/core/clouthash/sha3m"
+	"github.com/deso-protocol/core/desohash/sha3m"
 	"golang.org/x/crypto/sha3"
 )
 

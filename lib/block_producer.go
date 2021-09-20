@@ -17,7 +17,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type BitCloutBlockProducer struct {
+type DeSoBlockProducer struct {
 	// The minimum amount of time we wait before trying to produce a new block
 	// template. If this value is set low enough then we will produce a block template
 	// continuously.
@@ -33,15 +33,15 @@ type BitCloutBlockProducer struct {
 	// The most recent N blocks that we've produced indexed by their hash.
 	// Keeping this list allows us to accept a valid header from a miner without
 	// requiring them to download/send the whole block.
-	recentBlockTemplatesProduced map[BlockHash]*MsgBitCloutBlock
+	recentBlockTemplatesProduced map[BlockHash]*MsgDeSoBlock
 	latestBlockTemplateHash      *BlockHash
 	currentDifficultyTarget      *BlockHash
 
 	latestBlockTemplateStats *BlockTemplateStats
 
-	mempool *BitCloutMempool
+	mempool *DeSoMempool
 	chain   *Blockchain
-	params  *BitCloutParams
+	params  *DeSoParams
 
 	producerWaitGroup   sync.WaitGroup
 	stopProducerChannel chan struct{}
@@ -63,35 +63,35 @@ type BlockTemplateStats struct {
 	FailingTxnMinutesSinceAdded float64
 }
 
-func NewBitCloutBlockProducer(
+func NewDeSoBlockProducer(
 	minBlockUpdateIntervalSeconds uint64,
 	maxBlockTemplatesToCache uint64,
 	blockProducerSeed string,
-	mempool *BitCloutMempool,
+	mempool *DeSoMempool,
 	chain *Blockchain,
-	params *BitCloutParams,
+	params *DeSoParams,
 	postgres *Postgres,
-) (*BitCloutBlockProducer, error) {
+) (*DeSoBlockProducer, error) {
 
 	var privKey *btcec.PrivateKey
 	if blockProducerSeed != "" {
 		seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
 		if err != nil {
-			return nil, fmt.Errorf("NewBitCloutBlockProducer: Error converting mnemonic: %+v", err)
+			return nil, fmt.Errorf("NewDeSoBlockProducer: Error converting mnemonic: %+v", err)
 		}
 
 		_, privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, params)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"NewBitCloutBlockProducer: Error computing keys from seed: %+v", err)
+				"NewDeSoBlockProducer: Error computing keys from seed: %+v", err)
 		}
 	}
 
-	return &BitCloutBlockProducer{
+	return &DeSoBlockProducer{
 		minBlockUpdateIntervalSeconds: minBlockUpdateIntervalSeconds,
 		maxBlockTemplatesToCache:      maxBlockTemplatesToCache,
 		blockProducerPrivateKey:       privKey,
-		recentBlockTemplatesProduced:  make(map[BlockHash]*MsgBitCloutBlock),
+		recentBlockTemplatesProduced:  make(map[BlockHash]*MsgDeSoBlock),
 
 		mempool:             mempool,
 		chain:               chain,
@@ -101,40 +101,40 @@ func NewBitCloutBlockProducer(
 	}, nil
 }
 
-func (bbp *BitCloutBlockProducer) GetLatestBlockTemplateStats() *BlockTemplateStats {
+func (bbp *DeSoBlockProducer) GetLatestBlockTemplateStats() *BlockTemplateStats {
 	return bbp.latestBlockTemplateStats
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) _updateBlockTimestamp(blk *MsgBitCloutBlock, lastNode *BlockNode) {
+func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *MsgDeSoBlock, lastNode *BlockNode) {
 	// Set the block's timestamp. If the timesource's time happens to be before
 	// the timestamp set in the last block then set the time based on the last
 	// block's timestamp instead. We do this because consensus rules require a
 	// monotonically increasing timestamp.
-	blockTstamp := uint32(bitcloutBlockProducer.chain.timeSource.AdjustedTime().Unix())
+	blockTstamp := uint32(desoBlockProducer.chain.timeSource.AdjustedTime().Unix())
 	if blockTstamp <= uint32(lastNode.Header.TstampSecs) {
 		blockTstamp = uint32(lastNode.Header.TstampSecs) + 1
 	}
 	blk.Header.TstampSecs = uint64(blockTstamp)
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey []byte) (
-	_blk *MsgBitCloutBlock, _diffTarget *BlockHash, _lastNode *BlockNode, _err error) {
+func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) (
+	_blk *MsgDeSoBlock, _diffTarget *BlockHash, _lastNode *BlockNode, _err error) {
 
 	// Get the current tip of the best block chain. Note that using the tip of the
 	// best block chain as opposed to the best header chain means we'll be mining
 	// stale blocks until we're fully synced. This isn't ideal, but is currently
 	// preferred to mining atop the best header chain because the latter currently results
 	// in the blocks being rejected as unconnectedTxns before the block tip is in-sync.
-	lastNode := bitcloutBlockProducer.chain.blockTip()
+	lastNode := desoBlockProducer.chain.blockTip()
 
 	// Compute the public key to contribute the reward to.
 	rewardPk, err := btcec.ParsePubKey(publicKey, btcec.S256())
 	if err != nil {
-		return nil, nil, nil, errors.Wrapf(err, "BitCloutBlockProducer._getBlockTemplate: ")
+		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: ")
 	}
 
 	// Construct the next block.
-	blockRewardOutput := &BitCloutOutput{}
+	blockRewardOutput := &DeSoOutput{}
 	if rewardPk != nil {
 		// This is to account for a really weird edge case where somebody stops the BlockProducer
 		// in the middle of us getting a block.
@@ -147,7 +147,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 
 	// Block reward txn only needs a single output. No need to specify spending
 	// pk or sigs.
-	blockRewardTxn := NewMessage(MsgTypeTxn).(*MsgBitCloutTxn)
+	blockRewardTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
 	// Set the ExtraData to zero. This gives miners something they can
 	// twiddle if they run out of space on their actual nonce.
@@ -156,26 +156,26 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 	}
 
 	// Create the block and add the BlockReward txn to it.
-	blockRet := NewMessage(MsgTypeBlock).(*MsgBitCloutBlock)
+	blockRet := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 	blockRet.Txns = append(blockRet.Txns, blockRewardTxn)
 	// The version may be swapped out in a call to GetBlockTemplate in order to remain
 	// backwards-compatible with existing miners that use an older version.
 	blockRet.Header.Version = CurrentHeaderVersion
 	blockRet.Header.Height = uint64(lastNode.Height + 1)
 	blockRet.Header.PrevBlockHash = lastNode.Hash
-	bitcloutBlockProducer._updateBlockTimestamp(blockRet, lastNode)
+	desoBlockProducer._updateBlockTimestamp(blockRet, lastNode)
 	// Start the nonce at zero. This is OK because we'll set a random ExtraData for the
 	// miner later.
 	blockRet.Header.Nonce = 0
 
 	// Only add transactions to the block if our chain is done syncing.
-	if bitcloutBlockProducer.chain.chainState() != SyncStateSyncingHeaders &&
-		bitcloutBlockProducer.chain.chainState() != SyncStateNeedBlocksss {
+	if desoBlockProducer.chain.chainState() != SyncStateSyncingHeaders &&
+		desoBlockProducer.chain.chainState() != SyncStateNeedBlocksss {
 
 		// Fetch a bunch of mempool transactions to add.
-		txnsOrderedByTimeAdded, _, err := bitcloutBlockProducer.mempool.GetTransactionsOrderedByTimeAdded()
+		txnsOrderedByTimeAdded, _, err := desoBlockProducer.mempool.GetTransactionsOrderedByTimeAdded()
 		if err != nil {
-			return nil, nil, nil, errors.Wrapf(err, "BitCloutBlockProducer._getBlockTemplate: Problem getting mempool transactions: ")
+			return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem getting mempool transactions: ")
 		}
 
 		// Now keep
@@ -193,21 +193,21 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 		// the block.
 		blockBytes, err := blockRet.ToBytes(false)
 		if err != nil {
-			return nil, nil, nil, errors.Wrapf(err, "BitCloutBlockProducer._getBlockTemplate: Problem serializing block: ")
+			return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem serializing block: ")
 		}
 		currentBlockSize := uint64(len(blockBytes) + MaxVarintLen64)
 
 		// Create a new view object.
-		utxoView, err := NewUtxoView(bitcloutBlockProducer.chain.db, bitcloutBlockProducer.params, bitcloutBlockProducer.postgres)
+		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
 		if err != nil {
 			return nil, nil, nil, errors.Wrapf(err,
-				"BitCloutBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
+				"DeSoBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
 		}
 
 		txnsAddedToBlock := make(map[BlockHash]bool)
 		for ii, mempoolTx := range txnsOrderedByTimeAdded {
 			// If we hit a transaction that's too big to fit into a block then we're done.
-			if mempoolTx.TxSizeBytes+currentBlockSize > bitcloutBlockProducer.params.MinerMaxBlockSizeBytes {
+			if mempoolTx.TxSizeBytes+currentBlockSize > desoBlockProducer.params.MinerMaxBlockSizeBytes {
 				break
 			}
 
@@ -219,7 +219,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 				// If we fail to apply this transaction then we're done. Don't mine any of the
 				// other transactions since they could be dependent on this one.
 				txnErrorString := fmt.Sprintf(
-					"BitCloutBlockProducer._getBlockTemplate: Stopping at txn %v because it's not ready yet: %v", ii, err)
+					"DeSoBlockProducer._getBlockTemplate: Stopping at txn %v because it's not ready yet: %v", ii, err)
 				glog.Infof(txnErrorString)
 				if mempoolTx.Tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
 					// Print the Bitcoin block hash when we break out due to this.
@@ -235,12 +235,12 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 				// Update the block template stats for the admin dashboard.
 				failingTxnHash := mempoolTx.Hash.String()
 				failingTxnOriginalTimeAdded := mempoolTx.Added
-				if bitcloutBlockProducer.latestBlockTemplateStats != nil &&
-					bitcloutBlockProducer.latestBlockTemplateStats.FailingTxnHash == failingTxnHash {
+				if desoBlockProducer.latestBlockTemplateStats != nil &&
+					desoBlockProducer.latestBlockTemplateStats.FailingTxnHash == failingTxnHash {
 					// If we already have the txn stored, update the error message in case it changed
 					// and set the originalTimeAdded variable to compute an accurate staleness metric.
-					bitcloutBlockProducer.latestBlockTemplateStats.FailingTxnError = txnErrorString
-					failingTxnOriginalTimeAdded = bitcloutBlockProducer.latestBlockTemplateStats.FailingTxnOriginalTimeAdded
+					desoBlockProducer.latestBlockTemplateStats.FailingTxnError = txnErrorString
+					failingTxnOriginalTimeAdded = desoBlockProducer.latestBlockTemplateStats.FailingTxnOriginalTimeAdded
 				} else {
 					// If we haven't seen this txn before, build the block template stats from scratch.
 					blockTemplateStats := &BlockTemplateStats{}
@@ -248,19 +248,19 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 					blockTemplateStats.TxnCount = uint32(ii)
 					blockTemplateStats.FailingTxnError = txnErrorString
 					blockTemplateStats.FailingTxnOriginalTimeAdded = failingTxnOriginalTimeAdded
-					bitcloutBlockProducer.latestBlockTemplateStats = blockTemplateStats
+					desoBlockProducer.latestBlockTemplateStats = blockTemplateStats
 				}
 				// Compute the time since this txn started holding up the mempool.
 				currentTime := time.Now()
 				timeElapsed := currentTime.Sub(failingTxnOriginalTimeAdded)
-				bitcloutBlockProducer.latestBlockTemplateStats.FailingTxnMinutesSinceAdded = timeElapsed.Minutes()
+				desoBlockProducer.latestBlockTemplateStats.FailingTxnMinutesSinceAdded = timeElapsed.Minutes()
 
 				break
-			} else if bitcloutBlockProducer.latestBlockTemplateStats != nil {
-				bitcloutBlockProducer.latestBlockTemplateStats.FailingTxnError = "You good"
-				bitcloutBlockProducer.latestBlockTemplateStats.FailingTxnHash = "Nada"
-				bitcloutBlockProducer.latestBlockTemplateStats.FailingTxnMinutesSinceAdded = 0
-				bitcloutBlockProducer.latestBlockTemplateStats.FailingTxnOriginalTimeAdded = time.Now()
+			} else if desoBlockProducer.latestBlockTemplateStats != nil {
+				desoBlockProducer.latestBlockTemplateStats.FailingTxnError = "You good"
+				desoBlockProducer.latestBlockTemplateStats.FailingTxnHash = "Nada"
+				desoBlockProducer.latestBlockTemplateStats.FailingTxnMinutesSinceAdded = 0
+				desoBlockProducer.latestBlockTemplateStats.FailingTxnOriginalTimeAdded = time.Now()
 			}
 
 			// If we get here then it means the txn is ready to be processed *and* we've added
@@ -273,20 +273,20 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 		// Double-check that the final block size is below the limit.
 		blockBytes, err = blockRet.ToBytes(false)
 		if err != nil {
-			return nil, nil, nil, errors.Wrapf(err, "BitCloutBlockProducer._getBlockTemplate: Problem serializing block after txns added: ")
+			return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem serializing block after txns added: ")
 		}
-		if uint64(len(blockBytes)) > bitcloutBlockProducer.params.MinerMaxBlockSizeBytes {
-			return nil, nil, nil, fmt.Errorf("BitCloutBlockProducer._getBlockTemplate: Block created with size "+
-				"(%d) exceeds BlockProducerMaxBlockSizeBytes (%d): ", len(blockBytes), bitcloutBlockProducer.params.MinerMaxBlockSizeBytes)
+		if uint64(len(blockBytes)) > desoBlockProducer.params.MinerMaxBlockSizeBytes {
+			return nil, nil, nil, fmt.Errorf("DeSoBlockProducer._getBlockTemplate: Block created with size "+
+				"(%d) exceeds BlockProducerMaxBlockSizeBytes (%d): ", len(blockBytes), desoBlockProducer.params.MinerMaxBlockSizeBytes)
 		}
 	}
 
 	// Compute the total fee the BlockProducer should get.
 	totalFeeNanos := uint64(0)
-	feesUtxoView, err := NewUtxoView(bitcloutBlockProducer.chain.db, bitcloutBlockProducer.params, bitcloutBlockProducer.postgres)
+	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf(
-			"BitCloutBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
+			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
 	}
 	// Skip the block reward, which is the first txn in the block.
 	for _, txnInBlock := range blockRet.Txns[1:] {
@@ -296,7 +296,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 			false /*ignoreUtxos*/)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf(
-				"BitCloutBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)
+				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)
 		}
 
 		// Add the fee to the block reward output as we go. Note this has some risk of
@@ -313,33 +313,33 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) _getBlockTemplate(publicKey 
 	// been added.
 	merkleRoot, _, err := ComputeMerkleRoot(blockRet.Txns)
 	if err != nil {
-		return nil, nil, nil, errors.Wrapf(err, "BitCloutBlockProducer._getBlockTemplate: Problem computing merkle root: ")
+		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem computing merkle root: ")
 	}
 	blockRet.Header.TransactionMerkleRoot = merkleRoot
 
 	// Compute the next difficulty target given the current tip.
 	diffTarget, err := CalcNextDifficultyTarget(
-		lastNode, CurrentHeaderVersion, bitcloutBlockProducer.params)
+		lastNode, CurrentHeaderVersion, desoBlockProducer.params)
 	if err != nil {
-		return nil, nil, nil, errors.Wrapf(err, "BitCloutBlockProducer._getBlockTemplate: Problem computing next difficulty: ")
+		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem computing next difficulty: ")
 	}
 
 	glog.Infof("Produced block with %v txns with approx %v total txns in mempool",
-		len(blockRet.Txns), len(bitcloutBlockProducer.mempool.readOnlyUniversalTransactionList))
+		len(blockRet.Txns), len(desoBlockProducer.mempool.readOnlyUniversalTransactionList))
 	return blockRet, diffTarget, lastNode, nil
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) Stop() {
-	bitcloutBlockProducer.stopProducerChannel <- struct{}{}
-	bitcloutBlockProducer.producerWaitGroup.Wait()
+func (desoBlockProducer *DeSoBlockProducer) Stop() {
+	desoBlockProducer.stopProducerChannel <- struct{}{}
+	desoBlockProducer.producerWaitGroup.Wait()
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) GetRecentBlock(blockHash *BlockHash) *MsgBitCloutBlock {
+func (desoBlockProducer *DeSoBlockProducer) GetRecentBlock(blockHash *BlockHash) *MsgDeSoBlock {
 	// Find the block and quickly lock/unlock for reading.
-	bitcloutBlockProducer.mtxRecentBlockTemplatesProduced.RLock()
-	defer bitcloutBlockProducer.mtxRecentBlockTemplatesProduced.RUnlock()
+	desoBlockProducer.mtxRecentBlockTemplatesProduced.RLock()
+	defer desoBlockProducer.mtxRecentBlockTemplatesProduced.RUnlock()
 
-	blockFound, exists := bitcloutBlockProducer.recentBlockTemplatesProduced[*blockHash]
+	blockFound, exists := desoBlockProducer.recentBlockTemplatesProduced[*blockHash]
 	if !exists {
 		return nil
 	}
@@ -347,7 +347,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) GetRecentBlock(blockHash *Bl
 	return blockFound
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) GetCopyOfRecentBlock(blockID string) (*MsgBitCloutBlock, error) {
+func (desoBlockProducer *DeSoBlockProducer) GetCopyOfRecentBlock(blockID string) (*MsgDeSoBlock, error) {
 	blockHashBytes, err := hex.DecodeString(blockID)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
@@ -360,7 +360,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) GetCopyOfRecentBlock(blockID
 	blockHash := &BlockHash{}
 	copy(blockHash[:], blockHashBytes)
 
-	blockFound := bitcloutBlockProducer.GetRecentBlock(blockHash)
+	blockFound := desoBlockProducer.GetRecentBlock(blockHash)
 	if blockFound == nil {
 		return nil, fmt.Errorf("Block with blockID %v not found "+
 			"in BlockProducer", blockID)
@@ -371,7 +371,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) GetCopyOfRecentBlock(blockID
 		return nil, fmt.Errorf("Error serializing block: %v", err)
 	}
 
-	newBlock := &MsgBitCloutBlock{}
+	newBlock := &MsgDeSoBlock{}
 	err = newBlock.FromBytes(blockFoundBytes)
 	if err != nil {
 		return nil, fmt.Errorf("Error de-serializing block: %v", err)
@@ -380,36 +380,36 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) GetCopyOfRecentBlock(blockID
 	return newBlock, nil
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) AddBlockTemplate(block *MsgBitCloutBlock, diffTarget *BlockHash) {
-	bitcloutBlockProducer.mtxRecentBlockTemplatesProduced.Lock()
-	defer bitcloutBlockProducer.mtxRecentBlockTemplatesProduced.Unlock()
+func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock, diffTarget *BlockHash) {
+	desoBlockProducer.mtxRecentBlockTemplatesProduced.Lock()
+	defer desoBlockProducer.mtxRecentBlockTemplatesProduced.Unlock()
 
 	hash, _ := block.Header.Hash()
-	bitcloutBlockProducer.recentBlockTemplatesProduced[*hash] = block
-	bitcloutBlockProducer.latestBlockTemplateHash = hash
-	bitcloutBlockProducer.currentDifficultyTarget = diffTarget
+	desoBlockProducer.recentBlockTemplatesProduced[*hash] = block
+	desoBlockProducer.latestBlockTemplateHash = hash
+	desoBlockProducer.currentDifficultyTarget = diffTarget
 
 	// Evict entries if we're at capacity.
-	for uint64(len(bitcloutBlockProducer.recentBlockTemplatesProduced)) >
-		bitcloutBlockProducer.maxBlockTemplatesToCache {
+	for uint64(len(desoBlockProducer.recentBlockTemplatesProduced)) >
+		desoBlockProducer.maxBlockTemplatesToCache {
 
 		// TODO: We could be evicting things out of order if they both happen at the same
 		// second. The fix is to use nanos rather than seconds but we're skipping the work
 		// to do this for now since it doesn't really matter.
 		minTstamp := uint32(math.MaxUint32)
 		var oldestBlockHash *BlockHash
-		for _, cachedBlock := range bitcloutBlockProducer.recentBlockTemplatesProduced {
+		for _, cachedBlock := range desoBlockProducer.recentBlockTemplatesProduced {
 			if uint32(cachedBlock.Header.TstampSecs) < minTstamp {
 				minTstamp = uint32(cachedBlock.Header.TstampSecs)
 				oldestBlockHash, _ = cachedBlock.Header.Hash()
 			}
 		}
 
-		delete(bitcloutBlockProducer.recentBlockTemplatesProduced, *oldestBlockHash)
+		delete(desoBlockProducer.recentBlockTemplatesProduced, *oldestBlockHash)
 	}
 }
 
-func (blockProducer *BitCloutBlockProducer) GetHeadersAndExtraDatas(
+func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 	publicKeyBytes []byte, numHeaders int64, headerVersion uint32) (
 	_blockID string, _headers [][]byte, _extraNonces []uint64, _diffTarget *BlockHash, _err error) {
 
@@ -480,10 +480,10 @@ func (blockProducer *BitCloutBlockProducer) GetHeadersAndExtraDatas(
 	return blockID, headers, extraNonces, blockProducer.currentDifficultyTarget, nil
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) UpdateLatestBlockTemplate() error {
+func (desoBlockProducer *DeSoBlockProducer) UpdateLatestBlockTemplate() error {
 	// Use a dummy public key.
 	currentBlockTemplate, diffTarget, lastNode, err :=
-		bitcloutBlockProducer._getBlockTemplate(MustBase58CheckDecode(ArchitectPubKeyBase58Check))
+		desoBlockProducer._getBlockTemplate(MustBase58CheckDecode(ArchitectPubKeyBase58Check))
 	if err != nil {
 		return err
 	}
@@ -492,13 +492,13 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) UpdateLatestBlockTemplate() 
 	glog.Debugf("Produced block template with difficulty target %v "+
 		"and lastNode %v", diffTarget, lastNode)
 
-	bitcloutBlockProducer.AddBlockTemplate(currentBlockTemplate, diffTarget)
+	desoBlockProducer.AddBlockTemplate(currentBlockTemplate, diffTarget)
 	return nil
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) SignBlock(blockFound *MsgBitCloutBlock) error {
+func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) error {
 	// If there's no private key on this BlockProducer then there's nothing to do.
-	if bitcloutBlockProducer.blockProducerPrivateKey == nil {
+	if desoBlockProducer.blockProducerPrivateKey == nil {
 		return nil
 	}
 
@@ -510,7 +510,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) SignBlock(blockFound *MsgBit
 			fmt.Errorf("Error computing block hash from header submitted: %v", err), "")
 	}
 
-	signature, err := bitcloutBlockProducer.blockProducerPrivateKey.Sign(blockHash[:])
+	signature, err := desoBlockProducer.blockProducerPrivateKey.Sign(blockHash[:])
 	if err != nil {
 		return errors.Wrap(
 			fmt.Errorf("Error signing block: %v", err), "")
@@ -519,25 +519,25 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) SignBlock(blockFound *MsgBit
 
 	// Embed the signature into the block.
 	blockFound.BlockProducerInfo = &BlockProducerInfo{
-		PublicKey: bitcloutBlockProducer.blockProducerPrivateKey.PubKey().SerializeCompressed(),
+		PublicKey: desoBlockProducer.blockProducerPrivateKey.PubKey().SerializeCompressed(),
 		Signature: signature,
 	}
 
 	return nil
 }
 
-func (bitcloutBlockProducer *BitCloutBlockProducer) Start() {
+func (desoBlockProducer *DeSoBlockProducer) Start() {
 	// Set the time to a nil value so we run on the first iteration of the loop.
 	var lastBlockUpdate time.Time
-	bitcloutBlockProducer.producerWaitGroup.Add(1)
+	desoBlockProducer.producerWaitGroup.Add(1)
 
 	for {
 		select {
-		case <-bitcloutBlockProducer.stopProducerChannel:
-			bitcloutBlockProducer.producerWaitGroup.Done()
+		case <-desoBlockProducer.stopProducerChannel:
+			desoBlockProducer.producerWaitGroup.Done()
 			return
 		default:
-			secondsLeft := float64(bitcloutBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
+			secondsLeft := float64(desoBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
 			if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
 				glog.Debugf("Sleeping for %v seconds before producing next block template...", secondsLeft)
 				time.Sleep(time.Duration(math.Ceil(secondsLeft)) * time.Second)
@@ -548,7 +548,7 @@ func (bitcloutBlockProducer *BitCloutBlockProducer) Start() {
 			lastBlockUpdate = time.Now()
 
 			glog.Debugf("Producing block template...")
-			err := bitcloutBlockProducer.UpdateLatestBlockTemplate()
+			err := desoBlockProducer.UpdateLatestBlockTemplate()
 			if err != nil {
 				// If we hit an error, log it and sleep for a second. This could happen due to us
 				// being in the middle of processing a block or something.

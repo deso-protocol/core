@@ -32,7 +32,7 @@ var rc = [24]uint64{
 	0x8000000080008008,
 }
 
-func cloutHashPermute(a uint64) uint64 {
+func desoHashPermute(a uint64) uint64 {
 	const finmask = uint64(0b1100000000000000000000000000000000000000000000000000000000000011)
 	const rotmask = uint64(0b0010010010010010010010010010010010010010010010010010010010010000)
 
@@ -71,11 +71,11 @@ func keccakF1600(a *[25]uint64) {
 		bc3 = t<<21 | t>>(64-21)
 		t = a[24] ^ d4
 		bc4 = t<<14 | t>>(64-14)
-		a[0] = cloutHashPermute(bc0 ^ (bc2 &^ bc1) ^ rc[i])
-		a[6] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[12] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[18] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[24] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[0] = desoHashPermute(bc0 ^ (bc2 &^ bc1) ^ rc[i])
+		a[6] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[12] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[18] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[24] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[10] ^ d0
 		bc2 = t<<3 | t>>(64-3)
@@ -87,11 +87,11 @@ func keccakF1600(a *[25]uint64) {
 		bc0 = t<<28 | t>>(64-28)
 		t = a[9] ^ d4
 		bc1 = t<<20 | t>>(64-20)
-		a[10] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[16] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[22] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[3] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[9] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[10] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[16] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[22] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[3] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[9] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[20] ^ d0
 		bc4 = t<<18 | t>>(64-18)
@@ -103,11 +103,11 @@ func keccakF1600(a *[25]uint64) {
 		bc2 = t<<25 | t>>(64-25)
 		t = a[19] ^ d4
 		bc3 = t<<8 | t>>(64-8)
-		a[20] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[1] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[7] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[13] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[19] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[20] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[1] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[7] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[13] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[19] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[5] ^ d0
 		bc1 = t<<36 | t>>(64-36)
@@ -119,11 +119,11 @@ func keccakF1600(a *[25]uint64) {
 		bc4 = t<<56 | t>>(64-56)
 		t = a[4] ^ d4
 		bc0 = t<<27 | t>>(64-27)
-		a[5] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[11] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[17] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[23] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[4] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[5] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[11] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[17] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[23] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[4] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[15] ^ d0
 		bc3 = t<<41 | t>>(64-41)
@@ -135,11 +135,11 @@ func keccakF1600(a *[25]uint64) {
 		bc1 = t<<55 | t>>(64-55)
 		t = a[14] ^ d4
 		bc2 = t<<39 | t>>(64-39)
-		a[15] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[21] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[2] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[8] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[14] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[15] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[21] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[2] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[8] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[14] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		// Round 2
 		bc0 = a[0] ^ a[5] ^ a[10] ^ a[15] ^ a[20]
@@ -162,11 +162,11 @@ func keccakF1600(a *[25]uint64) {
 		bc3 = t<<21 | t>>(64-21)
 		t = a[14] ^ d4
 		bc4 = t<<14 | t>>(64-14)
-		a[0] = cloutHashPermute(bc0 ^ (bc2 &^ bc1) ^ rc[i+1])
-		a[16] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[7] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[23] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[14] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[0] = desoHashPermute(bc0 ^ (bc2 &^ bc1) ^ rc[i+1])
+		a[16] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[7] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[23] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[14] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[20] ^ d0
 		bc2 = t<<3 | t>>(64-3)
@@ -178,11 +178,11 @@ func keccakF1600(a *[25]uint64) {
 		bc0 = t<<28 | t>>(64-28)
 		t = a[9] ^ d4
 		bc1 = t<<20 | t>>(64-20)
-		a[20] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[11] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[2] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[18] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[9] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[20] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[11] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[2] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[18] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[9] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[15] ^ d0
 		bc4 = t<<18 | t>>(64-18)
@@ -194,11 +194,11 @@ func keccakF1600(a *[25]uint64) {
 		bc2 = t<<25 | t>>(64-25)
 		t = a[4] ^ d4
 		bc3 = t<<8 | t>>(64-8)
-		a[15] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[6] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[22] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[13] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[4] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[15] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[6] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[22] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[13] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[4] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[10] ^ d0
 		bc1 = t<<36 | t>>(64-36)
@@ -210,11 +210,11 @@ func keccakF1600(a *[25]uint64) {
 		bc4 = t<<56 | t>>(64-56)
 		t = a[24] ^ d4
 		bc0 = t<<27 | t>>(64-27)
-		a[10] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[1] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[17] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[8] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[24] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[10] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[1] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[17] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[8] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[24] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[5] ^ d0
 		bc3 = t<<41 | t>>(64-41)
@@ -226,11 +226,11 @@ func keccakF1600(a *[25]uint64) {
 		bc1 = t<<55 | t>>(64-55)
 		t = a[19] ^ d4
 		bc2 = t<<39 | t>>(64-39)
-		a[5] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[21] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[12] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[3] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[19] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[5] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[21] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[12] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[3] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[19] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		// Round 3
 		bc0 = a[0] ^ a[5] ^ a[10] ^ a[15] ^ a[20]
@@ -253,11 +253,11 @@ func keccakF1600(a *[25]uint64) {
 		bc3 = t<<21 | t>>(64-21)
 		t = a[19] ^ d4
 		bc4 = t<<14 | t>>(64-14)
-		a[0] = cloutHashPermute(bc0 ^ (bc2 &^ bc1) ^ rc[i+2])
-		a[11] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[22] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[8] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[19] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[0] = desoHashPermute(bc0 ^ (bc2 &^ bc1) ^ rc[i+2])
+		a[11] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[22] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[8] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[19] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[15] ^ d0
 		bc2 = t<<3 | t>>(64-3)
@@ -269,11 +269,11 @@ func keccakF1600(a *[25]uint64) {
 		bc0 = t<<28 | t>>(64-28)
 		t = a[9] ^ d4
 		bc1 = t<<20 | t>>(64-20)
-		a[15] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[1] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[12] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[23] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[9] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[15] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[1] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[12] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[23] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[9] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[5] ^ d0
 		bc4 = t<<18 | t>>(64-18)
@@ -285,11 +285,11 @@ func keccakF1600(a *[25]uint64) {
 		bc2 = t<<25 | t>>(64-25)
 		t = a[24] ^ d4
 		bc3 = t<<8 | t>>(64-8)
-		a[5] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[16] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[2] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[13] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[24] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[5] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[16] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[2] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[13] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[24] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[20] ^ d0
 		bc1 = t<<36 | t>>(64-36)
@@ -301,11 +301,11 @@ func keccakF1600(a *[25]uint64) {
 		bc4 = t<<56 | t>>(64-56)
 		t = a[14] ^ d4
 		bc0 = t<<27 | t>>(64-27)
-		a[20] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[6] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[17] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[3] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[14] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[20] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[6] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[17] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[3] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[14] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[10] ^ d0
 		bc3 = t<<41 | t>>(64-41)
@@ -317,11 +317,11 @@ func keccakF1600(a *[25]uint64) {
 		bc1 = t<<55 | t>>(64-55)
 		t = a[4] ^ d4
 		bc2 = t<<39 | t>>(64-39)
-		a[10] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[21] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[7] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[18] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[4] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[10] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[21] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[7] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[18] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[4] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		// Round 4
 		bc0 = a[0] ^ a[5] ^ a[10] ^ a[15] ^ a[20]
@@ -344,11 +344,11 @@ func keccakF1600(a *[25]uint64) {
 		bc3 = t<<21 | t>>(64-21)
 		t = a[4] ^ d4
 		bc4 = t<<14 | t>>(64-14)
-		a[0] = cloutHashPermute(bc0 ^ (bc2 &^ bc1) ^ rc[i+3])
-		a[1] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[2] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[3] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[4] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[0] = desoHashPermute(bc0 ^ (bc2 &^ bc1) ^ rc[i+3])
+		a[1] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[2] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[3] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[4] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[5] ^ d0
 		bc2 = t<<3 | t>>(64-3)
@@ -360,11 +360,11 @@ func keccakF1600(a *[25]uint64) {
 		bc0 = t<<28 | t>>(64-28)
 		t = a[9] ^ d4
 		bc1 = t<<20 | t>>(64-20)
-		a[5] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[6] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[7] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[8] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[9] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[5] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[6] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[7] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[8] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[9] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[10] ^ d0
 		bc4 = t<<18 | t>>(64-18)
@@ -376,11 +376,11 @@ func keccakF1600(a *[25]uint64) {
 		bc2 = t<<25 | t>>(64-25)
 		t = a[14] ^ d4
 		bc3 = t<<8 | t>>(64-8)
-		a[10] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[11] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[12] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[13] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[14] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[10] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[11] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[12] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[13] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[14] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[15] ^ d0
 		bc1 = t<<36 | t>>(64-36)
@@ -392,11 +392,11 @@ func keccakF1600(a *[25]uint64) {
 		bc4 = t<<56 | t>>(64-56)
 		t = a[19] ^ d4
 		bc0 = t<<27 | t>>(64-27)
-		a[15] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[16] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[17] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[18] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[19] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[15] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[16] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[17] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[18] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[19] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 
 		t = a[20] ^ d0
 		bc3 = t<<41 | t>>(64-41)
@@ -408,10 +408,10 @@ func keccakF1600(a *[25]uint64) {
 		bc1 = t<<55 | t>>(64-55)
 		t = a[24] ^ d4
 		bc2 = t<<39 | t>>(64-39)
-		a[20] = cloutHashPermute(bc0 ^ (bc2 &^ bc1))
-		a[21] = cloutHashPermute(bc1 ^ (bc3 &^ bc2))
-		a[22] = cloutHashPermute(bc2 ^ (bc4 &^ bc3))
-		a[23] = cloutHashPermute(bc3 ^ (bc0 &^ bc4))
-		a[24] = cloutHashPermute(bc4 ^ (bc1 &^ bc0))
+		a[20] = desoHashPermute(bc0 ^ (bc2 &^ bc1))
+		a[21] = desoHashPermute(bc1 ^ (bc3 &^ bc2))
+		a[22] = desoHashPermute(bc2 ^ (bc4 &^ bc3))
+		a[23] = desoHashPermute(bc3 ^ (bc0 &^ bc4))
+		a[24] = desoHashPermute(bc4 ^ (bc1 &^ bc0))
 	}
 }
