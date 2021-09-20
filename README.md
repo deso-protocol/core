@@ -19,9 +19,9 @@ multiple examples of how to do this in this README.
 
 Below we provide a few real-world examples of how to compose DeSo core into your project.
 
-## Example 1: A DeSo Website (aka [bitclout.com](https://bitclout.com))
+## Example 1: A Standard DeSo App (e.g. [bitclout.com](https://bitclout.com) or [flickapp.com](https://flickapp.com))
 
-The code that powers [bitclout.com](https://bitclout.com) is fully open-source
+The code that powers DeSo apps like [bitclout.com](https://bitclout.com) is fully open-source
 such that anyone in the world can run it, and it consists of three repositories:
 * **[github.com/deso-protocol/backend](https://github.com/deso-protocol/backend)**
 * **[github.com/deso-protocol/frontend](https://github.com/deso-protocol/frontend)**
@@ -38,7 +38,7 @@ much more.
 The backend repo's API is then utilized by
 [frontend](https://github.com/deso-protocol/frontend) and 
 [identity](https://github.com/deso-protocol/identity), which are Angular apps that are
-served as the frontend to [bitclout.com](https://bitclout.com).
+served as the frontend to apps like [bitclout.com](https://bitclout.com).
 
 ## Example 2: A Rosetta API for Exchange Listing
 
@@ -75,7 +75,7 @@ Because core is intended to be composed into other projects, we suggest that
 users who want to run it start by reading [the README in the backend repo](https://github.com/deso-protocol/backend)
 mentioned previously. This repo provides instructions on how set up a dev environment
 for a full frontend and backend stack that can serve a full clone 
-of [bitclout.com](https://bitclout.com) with one's own custom feed.
+of apps like [bitclout.com](https://bitclout.com) with one's own custom feed.
 
 We also provide a [run repo](https://github.com/deso-protocol/run) that shows how to 
 run this full stack in a fully Dockerized production environment.
