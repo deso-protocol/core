@@ -26,7 +26,7 @@ import (
 // loop.
 type ServerMessage struct {
 	Peer      *Peer
-	Msg       BitCloutMessage
+	Msg       DeSoMessage
 	ReplyChan chan *ServerReply
 }
 
@@ -42,16 +42,16 @@ type GetDataRequestInfo struct {
 type ServerReply struct {
 }
 
-// Server is the core of the BitClout node. It effectively runs a single-threaded
+// Server is the core of the DeSo node. It effectively runs a single-threaded
 // main loop that processes transactions from other peers and responds to them
 // accordingly. Probably the best place to start looking is the messageHandler
 // function.
 type Server struct {
 	cmgr          *ConnectionManager
 	blockchain    *Blockchain
-	mempool       *BitCloutMempool
-	miner         *BitCloutMiner
-	blockProducer *BitCloutBlockProducer
+	mempool       *DeSoMempool
+	miner         *DeSoMiner
+	blockProducer *DeSoBlockProducer
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -185,12 +185,12 @@ func (srv *Server) GetBlockchain() *Blockchain {
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
-func (srv *Server) GetMempool() *BitCloutMempool {
+func (srv *Server) GetMempool() *DeSoMempool {
 	return srv.mempool
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
-func (srv *Server) GetBlockProducer() *BitCloutBlockProducer {
+func (srv *Server) GetBlockProducer() *DeSoBlockProducer {
 	return srv.blockProducer
 }
 
@@ -200,11 +200,11 @@ func (srv *Server) GetConnectionManager() *ConnectionManager {
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
-func (srv *Server) GetMiner() *BitCloutMiner {
+func (srv *Server) GetMiner() *DeSoMiner {
 	return srv.miner
 }
 
-func (srv *Server) BroadcastTransaction(txn *MsgBitCloutTxn) ([]*MempoolTx, error) {
+func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 	// Use the backendServer to add the transaction to the mempool and
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
@@ -221,7 +221,7 @@ func (srv *Server) BroadcastTransaction(txn *MsgBitCloutTxn) ([]*MempoolTx, erro
 	return mempoolTxs, nil
 }
 
-func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgBitCloutTxn) error {
+func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	// Grab the block tip and use it as the height for validation.
 	blockHeight := srv.blockchain.BlockTip().Height
 	err := srv.blockchain.ValidateTransaction(
@@ -267,9 +267,9 @@ func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgBitCloutTxn) error {
 //
 // TODO: Refactor all these arguments into a config object or something.
 func NewServer(
-	_params *BitCloutParams,
+	_params *DeSoParams,
 	_listeners []net.Listener,
-	_bitcloutAddrMgr *addrmgr.AddrManager,
+	_desoAddrMgr *addrmgr.AddrManager,
 	_connectIps []string,
 	_db *badger.DB,
 	postgres *Postgres,
@@ -312,7 +312,7 @@ func NewServer(
 	// Create a new connection manager but note that it won't be initialized until Start().
 	_incomingMessages := make(chan *ServerMessage, (_targetOutboundPeers+_maxInboundPeers)*3)
 	_cmgr := NewConnectionManager(
-		_params, _bitcloutAddrMgr, _listeners, _connectIps, timesource,
+		_params, _desoAddrMgr, _listeners, _connectIps, timesource,
 		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
 		_stallTimeoutSeconds, _minFeeRateNanosPerKB,
 		_incomingMessages, srv)
@@ -345,7 +345,7 @@ func NewServer(
 
 	// Create a mempool to store transactions until they're ready to be mined into
 	// blocks.
-	_mempool := NewBitCloutMempool(_chain, _rateLimitFeerateNanosPerKB,
+	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir)
 
@@ -373,9 +373,9 @@ func NewServer(
 
 	// Initialize the BlockProducer
 	// TODO(miner): Should figure out a way to get this into main.
-	var _blockProducer *BitCloutBlockProducer
+	var _blockProducer *DeSoBlockProducer
 	if _maxBlockTemplatesToCache > 0 {
-		_blockProducer, err = NewBitCloutBlockProducer(
+		_blockProducer, err = NewDeSoBlockProducer(
 			_minBlockUpdateIntervalSeconds, _maxBlockTemplatesToCache,
 			_blockProducerSeed,
 			_mempool, _chain,
@@ -393,7 +393,7 @@ func NewServer(
 	if _numMiningThreads <= 0 {
 		_numMiningThreads = uint64(runtime.NumCPU())
 	}
-	_miner, err := NewBitCloutMiner(_minerPublicKeys, uint32(_numMiningThreads), _blockProducer, _params)
+	_miner, err := NewDeSoMiner(_minerPublicKeys, uint32(_numMiningThreads), _blockProducer, _params)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: ")
 	}
@@ -429,7 +429,7 @@ func NewServer(
 	return srv, nil
 }
 
-func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgBitCloutGetHeaders) {
+func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	glog.Debugf("Server._handleGetHeadersMessage: called with locator: (%v), "+
 		"stopHash: (%v) from Peer %v", msg.BlockLocator, msg.StopHash, pp)
 
@@ -457,7 +457,7 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgBitCloutGetHeaders) {
 
 	// Send found headers to the requesting peer.
 	blockTip := srv.blockchain.blockTip()
-	pp.AddBitCloutMessage(&MsgBitCloutHeaderBundle{
+	pp.AddDeSoMessage(&MsgDeSoHeaderBundle{
 		Headers:   headers,
 		TipHash:   blockTip.Hash,
 		TipHeight: blockTip.Height,
@@ -488,7 +488,7 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 
 		pp.requestedBlocks[*node.Hash] = true
 	}
-	pp.AddBitCloutMessage(&MsgBitCloutGetBlocks{
+	pp.AddDeSoMessage(&MsgDeSoGetBlocks{
 		HashList: hashList,
 	}, false)
 
@@ -499,7 +499,7 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 		pp)
 }
 
-func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgBitCloutHeaderBundle) {
+func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	glog.Infof("Received header bundle with %v headers "+
 		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
@@ -665,7 +665,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgBitCloutHeaderBundle) {
 		pp.Disconnect()
 		return
 	}
-	pp.AddBitCloutMessage(&MsgBitCloutGetHeaders{
+	pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
 		BlockLocator: locator,
 	}, false)
@@ -675,11 +675,11 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgBitCloutHeaderBundle) {
 		headerTip.Header, msg.TipHeight, pp)
 }
 
-func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgBitCloutGetBlocks) {
+func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
 	glog.Debugf("srv._handleGetBlocks: Called with message %v from Peer %v", msg, pp)
 
 	// Let the peer handle this
-	pp.AddBitCloutMessage(msg, true /*inbound*/)
+	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
 func (srv *Server) _startSync() {
@@ -738,7 +738,7 @@ func (srv *Server) _startSync() {
 	// Note that we include an empty BlockHash as the stopHash to indicate we want as
 	// many headers as the Peer can give us.
 	locator := srv.blockchain.LatestHeaderLocator()
-	bestPeer.AddBitCloutMessage(&MsgBitCloutGetHeaders{
+	bestPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
 		BlockLocator: locator,
 	}, false)
@@ -822,15 +822,15 @@ func (srv *Server) _cleanupDonePeerPeerState(pp *Peer) {
 	}
 	// Request any hashes we might have reassigned in a goroutine to keep things
 	// moving.
-	newPeer.AddBitCloutMessage(&MsgBitCloutGetTransactions{
+	newPeer.AddDeSoMessage(&MsgDeSoGetTransactions{
 		HashList: txnHashesReassigned,
 	}, false)
 }
 
-func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgBitCloutBitcoinManagerUpdate) {
+func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUpdate) {
 	glog.Debugf("Server._handleBitcoinManagerUpdate: Being called")
 
-	// Regardless of whether the BitClout chain is in-sync, consider adding any BitcoinExchange
+	// Regardless of whether the DeSo chain is in-sync, consider adding any BitcoinExchange
 	// transactions we've found to our mempool. We do this to minimize the chances that the
 	// network ever loses track of someone's BitcoinExchange.
 	if len(bmUpdate.TransactionsFound) > 0 {
@@ -846,7 +846,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgBitCloutBitcoinManag
 			// Note that we pass a nil mempool in order to avoid considering transactions
 			// that are in the mempool but lacking a merkle proof. If transactions are
 			// invalid then a separate mempool check later will catch them.
-			validTransactions := []*MsgBitCloutTxn{}
+			validTransactions := []*MsgDeSoTxn{}
 			for _, burnTxn := range bmUpdate.TransactionsFound {
 				err := srv.blockchain.ValidateTransaction(
 					burnTxn, srv.blockchain.blockTip().Height+1, true, /*verifySignatures*/
@@ -903,11 +903,11 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgBitCloutBitcoinManag
 
 		//glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil and " +
 		//	"BitcoinManager is time-current; sending " +
-		//	"BitClout getheaders for good measure")
+		//	"DeSo getheaders for good measure")
 		glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil; sending " +
-			"BitClout getheaders for good measure")
+			"DeSo getheaders for good measure")
 		locator := srv.blockchain.LatestHeaderLocator()
-		srv.SyncPeer.AddBitCloutMessage(&MsgBitCloutGetHeaders{
+		srv.SyncPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
 		}, false)
@@ -962,7 +962,7 @@ func (srv *Server) _relayTransactions() {
 		}
 		// For each peer construct an inventory message that excludes transactions
 		// for which the minimum fee is below what the Peer will allow.
-		invMsg := &MsgBitCloutInv{}
+		invMsg := &MsgDeSoInv{}
 		for _, newTxn := range txnList {
 			invVect := &InvVect{
 				Type: InvTypeTx,
@@ -977,7 +977,7 @@ func (srv *Server) _relayTransactions() {
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {
-			pp.AddBitCloutMessage(invMsg, false)
+			pp.AddDeSoMessage(invMsg, false)
 		}
 	}
 
@@ -985,7 +985,7 @@ func (srv *Server) _relayTransactions() {
 }
 
 func (srv *Server) _addNewTxn(
-	pp *Peer, txn *MsgBitCloutTxn, rateLimit bool, verifySignatures bool) ([]*MempoolTx, error) {
+	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MempoolTx, error) {
 
 	if srv.readOnlyMode {
 		err := fmt.Errorf("Server._addNewTxnAndRelay: Not processing txn from peer %v "+
@@ -1025,7 +1025,7 @@ func (srv *Server) _addNewTxn(
 
 // It's assumed that the caller will hold the ChainLock for reading so
 // that the mempool transactions don't shift under our feet.
-func (srv *Server) _handleBlockMainChainConnectedd(blk *MsgBitCloutBlock) {
+func (srv *Server) _handleBlockMainChainConnectedd(blk *MsgDeSoBlock) {
 
 	// Don't do anything mempool-related until our best block chain is done
 	// syncing.
@@ -1048,7 +1048,7 @@ func (srv *Server) _handleBlockMainChainConnectedd(blk *MsgBitCloutBlock) {
 
 // It's assumed that the caller will hold the ChainLock for reading so
 // that the mempool transactions don't shift under our feet.
-func (srv *Server) _handleBlockMainChainDisconnectedd(blk *MsgBitCloutBlock) {
+func (srv *Server) _handleBlockMainChainDisconnectedd(blk *MsgDeSoBlock) {
 
 	// Don't do anything mempool-related until our best block chain is done
 	// syncing.
@@ -1069,11 +1069,11 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(blk *MsgBitCloutBlock) {
 }
 
 func (srv *Server) _maybeRequestSync(pp *Peer) {
-	// Send the mempool message if BitClout and Bitcoin are fully current
+	// Send the mempool message if DeSo and Bitcoin are fully current
 	if srv.blockchain.chainState() == SyncStateFullyCurrent {
 		if pp != nil {
 			glog.Debugf("Server._maybeRequestSync: Sending mempool message: %v", pp)
-			pp.AddBitCloutMessage(&MsgBitCloutMempool{}, false)
+			pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
 		} else {
 			glog.Debugf("Server._maybeRequestSync: NOT sending mempool message because peer is nil: %v", pp)
 		}
@@ -1084,7 +1084,7 @@ func (srv *Server) _maybeRequestSync(pp *Peer) {
 	}
 }
 
-func (srv *Server) _handleBlockAccepted(blk *MsgBitCloutBlock) {
+func (srv *Server) _handleBlockAccepted(blk *MsgDeSoBlock) {
 	// Don't relay blocks until our best block chain is done syncing.
 	if srv.blockchain.isSyncing() {
 		return
@@ -1108,13 +1108,13 @@ func (srv *Server) _handleBlockAccepted(blk *MsgBitCloutBlock) {
 	// actually be relayed if it's not already in the peer's knownInventory.
 	allPeers := srv.cmgr.GetAllPeers()
 	for _, pp := range allPeers {
-		pp.AddBitCloutMessage(&MsgBitCloutInv{
+		pp.AddDeSoMessage(&MsgDeSoInv{
 			InvList: []*InvVect{invVect},
 		}, false)
 	}
 }
 
-func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgBitCloutBlock, suffix string) {
+func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffix string) {
 	// Disconnect the Peer. Generally-speaking, disconnecting from the peer will cause its
 	// requested blocks and txns to be removed from the global maps and cause it to be
 	// replaced by another peer. Furthermore,
@@ -1127,7 +1127,7 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgBitCloutBlock, s
 	pp.Disconnect()
 }
 
-func (srv *Server) _handleBlock(pp *Peer, blk *MsgBitCloutBlock) {
+func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	glog.Infof("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)
 
@@ -1245,7 +1245,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgBitCloutBlock) {
 		//   result in us not sending anything back because there won’t be any new
 		//   blocks to request.
 		locator := srv.blockchain.LatestHeaderLocator()
-		pp.AddBitCloutMessage(&MsgBitCloutGetHeaders{
+		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
 		}, false)
@@ -1257,24 +1257,24 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgBitCloutBlock) {
 	srv._maybeRequestSync(pp)
 }
 
-func (srv *Server) _handleInv(peer *Peer, msg *MsgBitCloutInv) {
+func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
 	if !peer.isOutbound && srv.ignoreInboundPeerInvMessages {
 		glog.Infof("_handleInv: Ignoring inv message from inbound peer because "+
 			"ignore_outbound_peer_inv_messages=true: %v", peer)
 		return
 	}
-	peer.AddBitCloutMessage(msg, true /*inbound*/)
+	peer.AddDeSoMessage(msg, true /*inbound*/)
 }
 
-func (srv *Server) _handleGetTransactions(pp *Peer, msg *MsgBitCloutGetTransactions) {
+func (srv *Server) _handleGetTransactions(pp *Peer, msg *MsgDeSoGetTransactions) {
 	glog.Debugf("Server._handleGetTransactions: Received GetTransactions "+
 		"message %v from Peer %v", msg, pp)
 
-	pp.AddBitCloutMessage(msg, true /*inbound*/)
+	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
 func (srv *Server) ProcessSingleTxnWithChainLock(
-	pp *Peer, txn *MsgBitCloutTxn) ([]*MempoolTx, error) {
+	pp *Peer, txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 	// Lock the chain for reading so that transactions don't shift under our feet
 	// when processing this bundle. Not doing this could cause us to miss transactions
 	// erroneously.
@@ -1291,7 +1291,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(
 		pp.ID, true /*verifySignatures*/)
 }
 
-func (srv *Server) _processTransactions(pp *Peer, msg *MsgBitCloutTransactionBundle) []*MempoolTx {
+func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle) []*MempoolTx {
 	// Try and add all the transactions to our mempool in the order we received
 	// them. If any fail to get added, just log an error.
 	//
@@ -1336,14 +1336,14 @@ func (srv *Server) _processTransactions(pp *Peer, msg *MsgBitCloutTransactionBun
 	return transactionsToRelay
 }
 
-func (srv *Server) _handleTransactionBundle(pp *Peer, msg *MsgBitCloutTransactionBundle) {
+func (srv *Server) _handleTransactionBundle(pp *Peer, msg *MsgDeSoTransactionBundle) {
 	glog.Debugf("Server._handleTransactionBundle: Received TransactionBundle "+
 		"message of size %v from Peer %v", len(msg.Transactions), pp)
 
-	pp.AddBitCloutMessage(msg, true /*inbound*/)
+	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
-func (srv *Server) _handleMempool(pp *Peer, msg *MsgBitCloutMempool) {
+func (srv *Server) _handleMempool(pp *Peer, msg *MsgDeSoMempool) {
 	glog.Debugf("Server._handleMempool: Received Mempool message from Peer %v", pp)
 
 	pp.canReceiveInvMessagess = true
@@ -1375,7 +1375,7 @@ func (srv *Server) StartStatsdReporter() {
 	}()
 }
 
-func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgBitCloutAddr) {
+func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 	srv.addrsToBroadcastLock.Lock()
 	defer srv.addrsToBroadcastLock.Unlock()
 
@@ -1431,7 +1431,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgBitCloutAddr) {
 	}
 }
 
-func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgBitCloutGetAddr) {
+func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 	glog.Debugf("Server._handleGetAddrMessage: Received GetAddr from peer %v", pp)
 	// When we get a GetAddr message, choose MaxAddrsPerMsg from the AddrMgr
 	// and send them back to the peer.
@@ -1441,7 +1441,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgBitCloutGetAddr) {
 	}
 
 	// Convert the list to a SingleAddr list.
-	res := &MsgBitCloutAddr{}
+	res := &MsgDeSoAddr{}
 	for _, netAddr := range netAddrsFound {
 		singleAddr := &SingleAddr{
 			Timestamp: time.Now(),
@@ -1451,21 +1451,21 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgBitCloutGetAddr) {
 		}
 		res.AddrList = append(res.AddrList, singleAddr)
 	}
-	pp.AddBitCloutMessage(res, false)
+	pp.AddDeSoMessage(res, false)
 }
 
 func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_shouldQuit bool) {
 	switch msg := serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
-	case *MsgBitCloutNewPeer:
+	case *MsgDeSoNewPeer:
 		srv._handleNewPeer(serverMessage.Peer)
-	case *MsgBitCloutDonePeer:
+	case *MsgDeSoDonePeer:
 		srv._handleDonePeer(serverMessage.Peer)
-	case *MsgBitCloutBlockAccepted:
+	case *MsgDeSoBlockAccepted:
 		srv._handleBlockAccepted(msg.block)
-	case *MsgBitCloutBitcoinManagerUpdate:
+	case *MsgDeSoBitcoinManagerUpdate:
 		srv._handleBitcoinManagerUpdate(msg)
-	case *MsgBitCloutQuit:
+	case *MsgDeSoQuit:
 		return true
 	}
 
@@ -1476,21 +1476,21 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	// Handle all non-control message types from our Peers.
 	switch msg := serverMessage.Msg.(type) {
 	// Messages sent among peers.
-	case *MsgBitCloutBlock:
+	case *MsgDeSoBlock:
 		srv._handleBlock(serverMessage.Peer, msg)
-	case *MsgBitCloutGetHeaders:
+	case *MsgDeSoGetHeaders:
 		srv._handleGetHeaders(serverMessage.Peer, msg)
-	case *MsgBitCloutHeaderBundle:
+	case *MsgDeSoHeaderBundle:
 		srv._handleHeaderBundle(serverMessage.Peer, msg)
-	case *MsgBitCloutGetBlocks:
+	case *MsgDeSoGetBlocks:
 		srv._handleGetBlocks(serverMessage.Peer, msg)
-	case *MsgBitCloutGetTransactions:
+	case *MsgDeSoGetTransactions:
 		srv._handleGetTransactions(serverMessage.Peer, msg)
-	case *MsgBitCloutTransactionBundle:
+	case *MsgDeSoTransactionBundle:
 		srv._handleTransactionBundle(serverMessage.Peer, msg)
-	case *MsgBitCloutMempool:
+	case *MsgDeSoMempool:
 		srv._handleMempool(serverMessage.Peer, msg)
-	case *MsgBitCloutInv:
+	case *MsgDeSoInv:
 		srv._handleInv(serverMessage.Peer, msg)
 	}
 }
@@ -1507,13 +1507,13 @@ func (srv *Server) messageHandler() {
 		// If the message is an addr message we handle it independent of whether or
 		// not the BitcoinManager is synced.
 		if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
-			srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgBitCloutAddr))
+			srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
 			continue
 		}
 		// If the message is a GetAddr message we handle it independent of whether or
 		// not the BitcoinManager is synced.
 		if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
-			srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgBitCloutGetAddr))
+			srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
 			continue
 		}
 
@@ -1591,7 +1591,7 @@ func (srv *Server) _startAddressRelayer() {
 				if bestAddress != nil {
 					glog.Tracef("Server.Start._startAddressRelayer: Relaying address %v to "+
 						"peer %v", bestAddress.IP.String(), pp)
-					pp.AddBitCloutMessage(&MsgBitCloutAddr{
+					pp.AddDeSoMessage(&MsgDeSoAddr{
 						AddrList: []*SingleAddr{
 							&SingleAddr{
 								Timestamp: time.Now(),
@@ -1618,7 +1618,7 @@ func (srv *Server) _startAddressRelayer() {
 			"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
 		// Iterate over all our peers and broadcast the addrs to all of them.
 		for _, pp := range srv.cmgr.GetAllPeers() {
-			pp.AddBitCloutMessage(&MsgBitCloutAddr{
+			pp.AddDeSoMessage(&MsgDeSoAddr{
 				AddrList: addrsToBroadcast,
 			}, false)
 		}
@@ -1670,9 +1670,9 @@ func (srv *Server) Stop() {
 	// messages before calling waitGroup.Done(), which seems like a good thing.
 	go func() {
 		srv.incomingMessages <- &ServerMessage{
-			// Peer is ignored for MsgBitCloutQuit.
+			// Peer is ignored for MsgDeSoQuit.
 			Peer: nil,
-			Msg:  &MsgBitCloutQuit{},
+			Msg:  &MsgDeSoQuit{},
 		}
 	}()
 

@@ -45,7 +45,7 @@ type ConnectionManager struct {
 	// The interfaces we listen on for new incoming connections.
 	listeners []net.Listener
 	// The parameters we are initialized with.
-	params *BitCloutParams
+	params *DeSoParams
 	// The target number of outbound peers we want to have.
 	targetOutboundPeers uint32
 	// The maximum number of inbound peers we allow.
@@ -116,7 +116,7 @@ type ConnectionManager struct {
 }
 
 func NewConnectionManager(
-	_params *BitCloutParams, _addrMgr *addrmgr.AddrManager, _listeners []net.Listener,
+	_params *DeSoParams, _addrMgr *addrmgr.AddrManager, _listeners []net.Listener,
 	_connectIps []string, _timeSource chainlib.MedianTimeSource,
 	_targetOutboundPeers uint32, _maxInboundPeers uint32,
 	_limitOneInboundConnectionPerIP bool,
@@ -342,7 +342,7 @@ func (cmgr *ConnectionManager) _getOutboundConn(persistentAddr *wire.NetAddress)
 	}
 }
 
-func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *BitCloutParams) (*wire.NetAddress, error) {
+func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *DeSoParams) (*wire.NetAddress, error) {
 	port := params.DefaultSocketPort
 	host, portstr, err := net.SplitHostPort(ipStr)
 	if err != nil {
@@ -850,7 +850,7 @@ func (cmgr *ConnectionManager) Start() {
 				// Signal the server about the new Peer in case it wants to do something with it.
 				cmgr.serverMessageQueue <- &ServerMessage{
 					Peer: pp,
-					Msg:  &MsgBitCloutNewPeer{},
+					Msg:  &MsgDeSoNewPeer{},
 				}
 
 			}
@@ -875,7 +875,7 @@ func (cmgr *ConnectionManager) Start() {
 				// with it.
 				cmgr.serverMessageQueue <- &ServerMessage{
 					Peer: pp,
-					Msg:  &MsgBitCloutDonePeer{},
+					Msg:  &MsgDeSoDonePeer{},
 				}
 			}
 		}

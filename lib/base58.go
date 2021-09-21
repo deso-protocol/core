@@ -8,7 +8,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func Base58CheckEncode(input []byte, isPrivate bool, params *BitCloutParams) string {
+func Base58CheckEncode(input []byte, isPrivate bool, params *DeSoParams) string {
 	prefix := params.Base58PrefixPublicKey
 	if isPrivate {
 		prefix = params.Base58PrefixPrivateKey

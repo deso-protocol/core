@@ -15,7 +15,7 @@ import (
 	"github.com/sasha-s/go-deadlock"
 )
 
-// peer.go defines an interface for connecting to and managing an BitClout
+// peer.go defines an interface for connecting to and managing an DeSo
 // peer. Each peer a node is connected to is represented by a Peer object,
 // and the Peer object is how messages are sent and received to/from the
 // peer. A good place to start is inHandler and outHandler in this file.
@@ -28,8 +28,8 @@ type ExpectedResponse struct {
 	MessageType  MsgType
 }
 
-type BitCloutMessageMeta struct {
-	BitCloutMessage BitCloutMessage
+type DeSoMessageMeta struct {
+	DeSoMessage DeSoMessage
 	Inbound         bool
 }
 
@@ -61,7 +61,7 @@ type Peer struct {
 	isOutbound          bool
 	isPersistent        bool
 	stallTimeoutSeconds uint64
-	Params              *BitCloutParams
+	Params              *DeSoParams
 	MessageChan         chan *ServerMessage
 	// A hack to make it so that we can allow an API endpoint to manually
 	// delete a peer.
@@ -103,7 +103,7 @@ type Peer struct {
 	knownAddressesmap   map[string]bool
 
 	// Output queue for messages that need to be sent to the peer.
-	outputQueueChan chan BitCloutMessage
+	outputQueueChan chan DeSoMessage
 
 	// Set to zero until Disconnect has been called on the Peer. Used to make it
 	// so that the logic in Disconnect will only be executed once.
@@ -131,28 +131,28 @@ type Peer struct {
 	// We process GetTransaction requests in a separate loop. This allows us
 	// to ensure that the responses are ordered.
 	mtxMessageQueue deadlock.RWMutex
-	messagQueue     []*BitCloutMessageMeta
+	messagQueue     []*DeSoMessageMeta
 
 	requestedBlocks map[BlockHash]bool
 }
 
-func (pp *Peer) AddBitCloutMessage(bitcloutMessage BitCloutMessage, inbound bool) {
+func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
 	// Don't add any more messages if the peer is disconnected
 	if pp.disconnected != 0 {
-		glog.Errorf("AddBitCloutMessage: Not enqueueing message %v because peer is disconnecting", bitcloutMessage.GetMsgType())
+		glog.Errorf("AddDeSoMessage: Not enqueueing message %v because peer is disconnecting", desoMessage.GetMsgType())
 		return
 	}
 
 	pp.mtxMessageQueue.Lock()
 	defer pp.mtxMessageQueue.Unlock()
 
-	pp.messagQueue = append(pp.messagQueue, &BitCloutMessageMeta{
-		BitCloutMessage: bitcloutMessage,
+	pp.messagQueue = append(pp.messagQueue, &DeSoMessageMeta{
+		DeSoMessage: desoMessage,
 		Inbound:         inbound,
 	})
 }
 
-func (pp *Peer) MaybeDequeueBitCloutMessage() *BitCloutMessageMeta {
+func (pp *Peer) MaybeDequeueDeSoMessage() *DeSoMessageMeta {
 	pp.mtxMessageQueue.Lock()
 	defer pp.mtxMessageQueue.Unlock()
 
@@ -169,10 +169,10 @@ func (pp *Peer) MaybeDequeueBitCloutMessage() *BitCloutMessageMeta {
 }
 
 // This call blocks on the Peer's queue.
-func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgBitCloutGetTransactions) {
+func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// Get all the transactions we have from the mempool.
 	glog.Debugf("Peer._handleGetTransactions: Processing "+
-		"MsgBitCloutGetTransactions message with %v txns from peer %v",
+		"MsgDeSoGetTransactions message with %v txns from peer %v",
 		len(getTxnMsg.HashList), pp)
 
 	mempoolTxs := []*MempoolTx{}
@@ -197,7 +197,7 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgBitCloutGetTransactions) 
 	})
 
 	// Add all of the fetched transactions to a response.
-	res := &MsgBitCloutTransactionBundle{}
+	res := &MsgDeSoTransactionBundle{}
 	for _, mempoolTx := range mempoolTxs {
 		res.Transactions = append(res.Transactions, mempoolTx.Tx)
 	}
@@ -211,7 +211,7 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgBitCloutGetTransactions) 
 	pp.QueueMessage(res)
 }
 
-func (pp *Peer) HandleTransactionBundleMessage(msg *MsgBitCloutTransactionBundle) {
+func (pp *Peer) HandleTransactionBundleMessage(msg *MsgDeSoTransactionBundle) {
 	// TODO: I think making it so that we can't process more than one TransactionBundle at
 	// a time would reduce transaction reorderings. Right now, if you get multiple bundles
 	// from multiple peers they'll be processed all at once, potentially interleaving with
@@ -242,7 +242,7 @@ func (pp *Peer) HandleTransactionBundleMessage(msg *MsgBitCloutTransactionBundle
 	pp.srv.hasProcessedFirstTransactionBundle = true
 }
 
-func (pp *Peer) HelpHandleInv(msg *MsgBitCloutInv) {
+func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 	// Get the requestedTransactions lock and release it at the end of the function.
 	pp.srv.dataLock.Lock()
 	defer pp.srv.dataLock.Unlock()
@@ -317,7 +317,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgBitCloutInv) {
 			}
 		}
 
-		pp.AddBitCloutMessage(&MsgBitCloutGetTransactions{
+		pp.AddDeSoMessage(&MsgDeSoGetTransactions{
 			HashList: txHashList,
 		}, false /*inbound*/)
 	} else {
@@ -337,14 +337,14 @@ func (pp *Peer) HelpHandleInv(msg *MsgBitCloutInv) {
 	//   one-by-one.
 	if len(blockHashList) > 0 {
 		locator := pp.srv.blockchain.LatestHeaderLocator()
-		pp.AddBitCloutMessage(&MsgBitCloutGetHeaders{
+		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
 		}, false /*inbound*/)
 	}
 }
 
-func (pp *Peer) HandleInv(msg *MsgBitCloutInv) {
+func (pp *Peer) HandleInv(msg *MsgDeSoInv) {
 	// Ignore invs while we're still syncing and before we've requested
 	// all mempool transactions from one of our peers to bootstrap.
 	if pp.srv.blockchain.isSyncing() {
@@ -360,7 +360,7 @@ func (pp *Peer) HandleInv(msg *MsgBitCloutInv) {
 	pp.HelpHandleInv(msg)
 }
 
-func (pp *Peer) HandleGetBlocks(msg *MsgBitCloutGetBlocks) {
+func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 	// Nothing to do if the request is empty.
 	if len(msg.HashList) == 0 {
 		glog.Debugf("Server._handleGetBlocks: Received empty GetBlocks "+
@@ -386,7 +386,7 @@ func (pp *Peer) HandleGetBlocks(msg *MsgBitCloutGetBlocks) {
 			pp.Disconnect()
 			return
 		}
-		pp.AddBitCloutMessage(blockToSend, false)
+		pp.AddDeSoMessage(blockToSend, false)
 	}
 }
 
@@ -396,7 +396,7 @@ func (pp *Peer) cleanupMessageProcessor() {
 
 	// We assume that no more elements will be added to the message queue once this function
 	// is called.
-	glog.Infof("StartBitCloutMessageProcessor: Cleaning up message queue for peer: %v", pp)
+	glog.Infof("StartDeSoMessageProcessor: Cleaning up message queue for peer: %v", pp)
 	pp.messagQueue = nil
 	// Set a few more things to nil just to make sure the garbage collector doesn't
 	// get confused when freeing up this Peer's memory. This is to fix a bug where
@@ -407,15 +407,15 @@ func (pp *Peer) cleanupMessageProcessor() {
 	//pp.conn = nil
 }
 
-func (pp *Peer) StartBitCloutMessageProcessor() {
-	glog.Infof("StartBitCloutMessageProcessor: Starting for peer %v", pp)
+func (pp *Peer) StartDeSoMessageProcessor() {
+	glog.Infof("StartDeSoMessageProcessor: Starting for peer %v", pp)
 	for {
 		if pp.disconnected != 0 {
 			pp.cleanupMessageProcessor()
-			glog.Infof("StartBitCloutMessageProcessor: Stopping because peer disconnected: %v", pp)
+			glog.Infof("StartDeSoMessageProcessor: Stopping because peer disconnected: %v", pp)
 			return
 		}
-		msgToProcess := pp.MaybeDequeueBitCloutMessage()
+		msgToProcess := pp.MaybeDequeueDeSoMessage()
 		if msgToProcess == nil {
 			time.Sleep(50 * time.Millisecond)
 			continue
@@ -423,38 +423,38 @@ func (pp *Peer) StartBitCloutMessageProcessor() {
 		// If we get here we know we have a transaction to process.
 
 		if msgToProcess.Inbound {
-			if msgToProcess.BitCloutMessage.GetMsgType() == MsgTypeGetTransactions {
-				glog.Debugf("StartBitCloutMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.BitCloutMessage.GetMsgType(),
-					len(msgToProcess.BitCloutMessage.(*MsgBitCloutGetTransactions).HashList), pp)
-				pp.HandleGetTransactionsMsg(msgToProcess.BitCloutMessage.(*MsgBitCloutGetTransactions))
+			if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetTransactions {
+				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
+					len(msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions).HashList), pp)
+				pp.HandleGetTransactionsMsg(msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions))
 
-			} else if msgToProcess.BitCloutMessage.GetMsgType() == MsgTypeTransactionBundle {
-				glog.Debugf("StartBitCloutMessageProcessor: RECEIVED message of "+
-					"type %v with num txns %v from peer %v", msgToProcess.BitCloutMessage.GetMsgType(),
-					len(msgToProcess.BitCloutMessage.(*MsgBitCloutTransactionBundle).Transactions), pp)
-				pp.HandleTransactionBundleMessage(msgToProcess.BitCloutMessage.(*MsgBitCloutTransactionBundle))
+			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeTransactionBundle {
+				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+					"type %v with num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
+					len(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle).Transactions), pp)
+				pp.HandleTransactionBundleMessage(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle))
 
-			} else if msgToProcess.BitCloutMessage.GetMsgType() == MsgTypeInv {
-				glog.Debugf("StartBitCloutMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.BitCloutMessage.GetMsgType(),
-					len(msgToProcess.BitCloutMessage.(*MsgBitCloutInv).InvList), pp)
-				pp.HandleInv(msgToProcess.BitCloutMessage.(*MsgBitCloutInv))
+			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeInv {
+				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
+					len(msgToProcess.DeSoMessage.(*MsgDeSoInv).InvList), pp)
+				pp.HandleInv(msgToProcess.DeSoMessage.(*MsgDeSoInv))
 
-			} else if msgToProcess.BitCloutMessage.GetMsgType() == MsgTypeGetBlocks {
-				glog.Debugf("StartBitCloutMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.BitCloutMessage.GetMsgType(),
-					len(msgToProcess.BitCloutMessage.(*MsgBitCloutGetBlocks).HashList), pp)
-				pp.HandleGetBlocks(msgToProcess.BitCloutMessage.(*MsgBitCloutGetBlocks))
+			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetBlocks {
+				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
+					len(msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks).HashList), pp)
+				pp.HandleGetBlocks(msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks))
 
 			} else {
-				glog.Errorf("StartBitCloutMessageProcessor: ERROR RECEIVED message of "+
-					"type %v from peer %v", msgToProcess.BitCloutMessage.GetMsgType(), pp)
+				glog.Errorf("StartDeSoMessageProcessor: ERROR RECEIVED message of "+
+					"type %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), pp)
 			}
 		} else {
-			glog.Debugf("StartBitCloutMessageProcessor: SENDING message of "+
-				"type %v to peer %v", msgToProcess.BitCloutMessage.GetMsgType(), pp)
-			pp.QueueMessage(msgToProcess.BitCloutMessage)
+			glog.Debugf("StartDeSoMessageProcessor: SENDING message of "+
+				"type %v to peer %v", msgToProcess.DeSoMessage.GetMsgType(), pp)
+			pp.QueueMessage(msgToProcess.DeSoMessage)
 		}
 	}
 }
@@ -463,7 +463,7 @@ func (pp *Peer) StartBitCloutMessageProcessor() {
 func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 	_isPersistent bool, _stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
-	params *BitCloutParams,
+	params *DeSoParams,
 	messageChan chan *ServerMessage,
 	_cmgr *ConnectionManager, _srv *Server) *Peer {
 
@@ -475,7 +475,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		netAddr:                _netAddr,
 		isOutbound:             _isOutbound,
 		isPersistent:           _isPersistent,
-		outputQueueChan:        make(chan BitCloutMessage),
+		outputQueueChan:        make(chan DeSoMessage),
 		quit:                   make(chan interface{}),
 		knownInventory:         lru.NewCache(maxKnownInventory),
 		blocksToSend:           make(map[BlockHash]bool),
@@ -553,16 +553,16 @@ const (
 
 // handlePingMsg is invoked when a peer receives a ping message. It replies with a pong
 // message.
-func (pp *Peer) handlePingMsg(msg *MsgBitCloutPing) {
+func (pp *Peer) handlePingMsg(msg *MsgDeSoPing) {
 	// Include nonce from ping so pong can be identified.
 	glog.Tracef("Peer.handlePingMsg: Received ping from peer %v: %v", pp, msg)
 	// Queue up a pong message.
-	pp.QueueMessage(&MsgBitCloutPong{Nonce: msg.Nonce})
+	pp.QueueMessage(&MsgDeSoPong{Nonce: msg.Nonce})
 }
 
 // handlePongMsg is invoked when a peer receives a pong message.  It
 // updates the ping statistics.
-func (pp *Peer) handlePongMsg(msg *MsgBitCloutPong) {
+func (pp *Peer) handlePongMsg(msg *MsgDeSoPong) {
 	// Arguably we could use a buffered channel here sending data
 	// in a fifo manner whenever we send a ping, or a list keeping track of
 	// the times of each ping. For now we just make a best effort and
@@ -607,7 +607,7 @@ out:
 			pp.LastPingTime = time.Now()
 			pp.StatsMtx.Unlock()
 			// Queue the ping message to be sent.
-			pp.QueueMessage(&MsgBitCloutPing{Nonce: nonce})
+			pp.QueueMessage(&MsgDeSoPing{Nonce: nonce})
 
 		case <-pp.quit:
 			break out
@@ -643,16 +643,16 @@ func (pp *Peer) IsOutbound() bool {
 	return pp.isOutbound
 }
 
-func (pp *Peer) QueueMessage(bitcloutMessage BitCloutMessage) {
+func (pp *Peer) QueueMessage(desoMessage DeSoMessage) {
 	// If the peer is disconnected, don't queue anything.
 	if !pp.Connected() {
 		return
 	}
 
-	pp.outputQueueChan <- bitcloutMessage
+	pp.outputQueueChan <- desoMessage
 }
 
-func (pp *Peer) _handleOutExpectedResponse(msg BitCloutMessage) {
+func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	pp.PeerInfoMtx.Lock()
 	defer pp.PeerInfoMtx.Unlock()
 
@@ -660,7 +660,7 @@ func (pp *Peer) _handleOutExpectedResponse(msg BitCloutMessage) {
 	// blocks at minimum within a few seconds of each other.
 	stallTimeout := time.Duration(int64(pp.stallTimeoutSeconds) * int64(time.Second))
 	if msg.GetMsgType() == MsgTypeGetBlocks {
-		getBlocks := msg.(*MsgBitCloutGetBlocks)
+		getBlocks := msg.(*MsgDeSoGetBlocks)
 		// We have one block expected for each entry in the message.
 		for ii := range getBlocks.HashList {
 			pp._addExpectedResponse(&ExpectedResponse{
@@ -696,11 +696,11 @@ func (pp *Peer) _handleOutExpectedResponse(msg BitCloutMessage) {
 	}
 }
 
-func (pp *Peer) _filterAddrMsg(addrMsg *MsgBitCloutAddr) *MsgBitCloutAddr {
+func (pp *Peer) _filterAddrMsg(addrMsg *MsgDeSoAddr) *MsgDeSoAddr {
 	pp.knownAddressMapLock.Lock()
 	defer pp.knownAddressMapLock.Unlock()
 
-	filteredAddrMsg := &MsgBitCloutAddr{}
+	filteredAddrMsg := &MsgDeSoAddr{}
 	for _, addr := range addrMsg.AddrList {
 		if _, hasAddr := pp.knownAddressesmap[addr.StringWithPort(false /*includePort*/)]; hasAddr {
 			continue
@@ -734,7 +734,7 @@ out:
 			pp._handleOutExpectedResponse(msg)
 
 			if msg.GetMsgType() == MsgTypeInv {
-				invMsg := msg.(*MsgBitCloutInv)
+				invMsg := msg.(*MsgDeSoInv)
 
 				if len(invMsg.InvList) == 0 {
 					// Don't send anything if the inv list is empty after filtering.
@@ -751,7 +751,7 @@ out:
 			// the peer to request more blocks after receiving this one.
 			if msg.GetMsgType() == MsgTypeBlock {
 				pp.blocksToSendMtx.Lock()
-				hash, _ := msg.(*MsgBitCloutBlock).Hash()
+				hash, _ := msg.(*MsgDeSoBlock).Hash()
 				delete(pp.blocksToSend, *hash)
 				pp.blocksToSendMtx.Unlock()
 			}
@@ -759,16 +759,16 @@ out:
 			// Before we send an addr message to the peer, filter out the addresses
 			// the peer is already aware of.
 			if msg.GetMsgType() == MsgTypeAddr {
-				msg = pp._filterAddrMsg(msg.(*MsgBitCloutAddr))
+				msg = pp._filterAddrMsg(msg.(*MsgDeSoAddr))
 
 				// Don't send anything if we managed to filter out all the addresses.
-				if len(msg.(*MsgBitCloutAddr).AddrList) == 0 {
+				if len(msg.(*MsgDeSoAddr).AddrList) == 0 {
 					continue
 				}
 			}
 
 			// If we have a problem sending a message to a peer then disconnect them.
-			if err := pp.WriteBitCloutMessage(msg); err != nil {
+			if err := pp.WriteDeSoMessage(msg); err != nil {
 				glog.Errorf("Peer.outHandler: Problem sending message to peer: %v: %v", pp, err)
 				pp.Disconnect()
 			}
@@ -799,7 +799,7 @@ out:
 	glog.Debugf("Peer.outHandler: Quitting outHandler for Peer %v", pp)
 }
 
-func (pp *Peer) _maybeAddBlocksToSend(msg BitCloutMessage) error {
+func (pp *Peer) _maybeAddBlocksToSend(msg DeSoMessage) error {
 	// If the input is not a GetBlocks message, don't do anything.
 	if msg.GetMsgType() != MsgTypeGetBlocks {
 		return nil
@@ -809,7 +809,7 @@ func (pp *Peer) _maybeAddBlocksToSend(msg BitCloutMessage) error {
 	// blocksToSend mutex and cast the message.
 	pp.blocksToSendMtx.Lock()
 	defer pp.blocksToSendMtx.Unlock()
-	getBlocks := msg.(*MsgBitCloutGetBlocks)
+	getBlocks := msg.(*MsgDeSoGetBlocks)
 
 	// When blocks have been requested, add them to the list of blocks we're
 	// in the process of sending to the Peer.
@@ -870,7 +870,7 @@ func (pp *Peer) _addExpectedResponse(item *ExpectedResponse) {
 	pp.expectedResponses = append(append(left, item), right...)
 }
 
-func (pp *Peer) _handleInExpectedResponse(rmsg BitCloutMessage) error {
+func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 	// Let the Peer off the hook if the response is one we were waiting for.
 	// Do this in a separate switch to keep things clean.
 	msgType := rmsg.GetMsgType()
@@ -913,7 +913,7 @@ out:
 		// Read a message and stop the idle timer as soon as the read
 		// is done. The timer is reset below for the next iteration if
 		// needed.
-		rmsg, err := pp.ReadBitCloutMessage()
+		rmsg, err := pp.ReadDeSoMessage()
 		idleTimer.Stop()
 		if err != nil {
 			glog.Errorf("Peer.inHandler: Can't read message from peer %v: %v", pp, err)
@@ -930,7 +930,7 @@ out:
 		// If we get an addr message, add all of the addresses to the known addresses
 		// for the peer.
 		if rmsg.GetMsgType() == MsgTypeAddr {
-			addrMsg := rmsg.(*MsgBitCloutAddr)
+			addrMsg := rmsg.(*MsgDeSoAddr)
 			for _, addr := range addrMsg.AddrList {
 				pp._setKnownAddressesMap(addr.StringWithPort(false /*includePort*/), true)
 			}
@@ -955,30 +955,30 @@ out:
 		// This switch actually processes the message. For most messages, we just
 		// pass them onto the Server.
 		switch msg := rmsg.(type) {
-		case *MsgBitCloutVersion:
+		case *MsgDeSoVersion:
 			// We always receive the VERSION from the Peer before starting this select
 			// statement, so getting one here is an error.
 
 			glog.Errorf("Peer.inHandler: Already received 'version' from peer %v -- disconnecting", pp)
 			break out
 
-		case *MsgBitCloutVerack:
+		case *MsgDeSoVerack:
 			// We always receive the VERACK from the Peer before starting this select
 			// statement, so getting one here is an error.
 
 			glog.Errorf("Peer.inHandler: Already received 'verack' from peer %v -- disconnecting", pp)
 			break out
 
-		case *MsgBitCloutPing:
+		case *MsgDeSoPing:
 			// Respond to a ping with a pong.
 			pp.handlePingMsg(msg)
 
-		case *MsgBitCloutPong:
+		case *MsgDeSoPong:
 			// Measure the ping time when we receive a pong.
 			pp.handlePongMsg(msg)
 
-		case *MsgBitCloutNewPeer, *MsgBitCloutDonePeer, *MsgBitCloutBlockAccepted,
-			*MsgBitCloutBitcoinManagerUpdate, *MsgBitCloutQuit:
+		case *MsgDeSoNewPeer, *MsgDeSoDonePeer, *MsgDeSoBlockAccepted,
+			*MsgDeSoBitcoinManagerUpdate, *MsgDeSoQuit:
 
 			// We should never receive control messages from a Peer. Disconnect if we do.
 			glog.Errorf("Peer.inHandler: Received control message of type %v from "+
@@ -1014,14 +1014,14 @@ func (pp *Peer) Start() {
 	go pp.pingHandler()
 	go pp.outHandler()
 	go pp.inHandler()
-	go pp.StartBitCloutMessageProcessor()
+	go pp.StartDeSoMessageProcessor()
 
 	// If the address manager needs more addresses, then send a GetAddr message
 	// to the peer. This is best-effort.
 	if pp.cmgr != nil {
 		if pp.cmgr.addrMgr.NeedMoreAddresses() {
 			go func() {
-				pp.QueueMessage(&MsgBitCloutGetAddr{})
+				pp.QueueMessage(&MsgDeSoGetAddr{})
 			}()
 		}
 	}
@@ -1034,10 +1034,10 @@ func (pp *Peer) IsSyncCandidate() bool {
 	return flagsAreCorrect && pp.isOutbound
 }
 
-func (pp *Peer) WriteBitCloutMessage(msg BitCloutMessage) error {
+func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
 	payload, err := WriteMessage(pp.conn, msg, pp.Params.NetworkType)
 	if err != nil {
-		return errors.Wrapf(err, "WriteBitCloutMessage: ")
+		return errors.Wrapf(err, "WriteDeSoMessage: ")
 	}
 
 	// Only track the payload sent in the statistics we track.
@@ -1053,10 +1053,10 @@ func (pp *Peer) WriteBitCloutMessage(msg BitCloutMessage) error {
 	return nil
 }
 
-func (pp *Peer) ReadBitCloutMessage() (BitCloutMessage, error) {
+func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
 	msg, payload, err := ReadMessage(pp.conn, pp.Params.NetworkType)
 	if err != nil {
-		err := errors.Wrapf(err, "ReadBitCloutMessage: ")
+		err := errors.Wrapf(err, "ReadDeSoMessage: ")
 		glog.Error(err)
 		return nil, err
 	}
@@ -1074,8 +1074,8 @@ func (pp *Peer) ReadBitCloutMessage() (BitCloutMessage, error) {
 	return msg, nil
 }
 
-func (pp *Peer) NewVersionMessage(params *BitCloutParams) *MsgBitCloutVersion {
-	ver := NewMessage(MsgTypeVersion).(*MsgBitCloutVersion)
+func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
+	ver := NewMessage(MsgTypeVersion).(*MsgDeSoVersion)
 
 	ver.Version = params.ProtocolVersion
 	ver.TstampSecs = time.Now().Unix()
@@ -1111,8 +1111,8 @@ func (pp *Peer) sendVerack() error {
 	verackMsg := NewMessage(MsgTypeVerack)
 	// Include the nonce we received in the peer's version message so
 	// we can validate that we actually control our IP address.
-	verackMsg.(*MsgBitCloutVerack).Nonce = pp.versionNonceReceived
-	if err := pp.WriteBitCloutMessage(verackMsg); err != nil {
+	verackMsg.(*MsgDeSoVerack).Nonce = pp.versionNonceReceived
+	if err := pp.WriteDeSoMessage(verackMsg); err != nil {
 		return errors.Wrap(err, "sendVerack: ")
 	}
 
@@ -1120,7 +1120,7 @@ func (pp *Peer) sendVerack() error {
 }
 
 func (pp *Peer) readVerack() error {
-	msg, err := pp.ReadBitCloutMessage()
+	msg, err := pp.ReadDeSoMessage()
 	if err != nil {
 		return errors.Wrap(err, "readVerack: ")
 	}
@@ -1129,7 +1129,7 @@ func (pp *Peer) readVerack() error {
 			"readVerack: Received message with type %s but expected type VERACK. ",
 			msg.GetMsgType().String())
 	}
-	verackMsg := msg.(*MsgBitCloutVerack)
+	verackMsg := msg.(*MsgDeSoVerack)
 	if verackMsg.Nonce != pp.versionNonceSent {
 		return fmt.Errorf(
 			"readVerack: Received VERACK message with nonce %d but expected nonce %d",
@@ -1152,7 +1152,7 @@ func (pp *Peer) sendVersion() error {
 		pp.cmgr.sentNonces.Add(pp.versionNonceSent)
 	}
 
-	if err := pp.WriteBitCloutMessage(verMsg); err != nil {
+	if err := pp.WriteDeSoMessage(verMsg); err != nil {
 		return errors.Wrap(err, "sendVersion: ")
 	}
 
@@ -1160,12 +1160,12 @@ func (pp *Peer) sendVersion() error {
 }
 
 func (pp *Peer) readVersion() error {
-	msg, err := pp.ReadBitCloutMessage()
+	msg, err := pp.ReadDeSoMessage()
 	if err != nil {
 		return errors.Wrap(err, "readVersion: ")
 	}
 
-	verMsg, ok := msg.(*MsgBitCloutVersion)
+	verMsg, ok := msg.(*MsgDeSoVersion)
 	if !ok {
 		return fmt.Errorf(
 			"readVersion: Received message with type %s but expected type VERSION. "+

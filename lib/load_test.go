@@ -31,7 +31,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	numPostsPerProfile := 1000
 	privKeys := []*btcec.PrivateKey{}
 	pubKeys := []*btcec.PublicKey{}
-	txns := []*MsgBitCloutTxn{}
+	txns := []*MsgDeSoTxn{}
 	for ii := 0; ii < numProfiles; ii++ {
 		fmt.Println("Processing top txn: ", len(txns))
 		// Compute a private/public key pair
@@ -78,7 +78,7 @@ func TestComputeMaxTPS(t *testing.T) {
 
 			txns = append(txns, txn)
 		}
-		bodyObj := &BitCloutBodySchema{Body: "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" +
+		bodyObj := &DeSoBodySchema{Body: "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" +
 			"1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" +
 			"12345678901234567890123456789012345678901234567890123456789012345678901234567890"}
 		bodyBytes, err := json.Marshal(bodyObj)
@@ -145,7 +145,7 @@ func TestComputeMaxTPS(t *testing.T) {
 
 	// At this point we have some number of transactions. Clear the mempool and see how
 	// long it takes to add them all to the mempool.
-	mempool.resetPool(NewBitCloutMempool(mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
+	mempool.resetPool(NewDeSoMempool(mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
@@ -166,7 +166,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	}
 
 	// Mine blocks until the mempool is empty.
-	blocksMined := []*MsgBitCloutBlock{}
+	blocksMined := []*MsgDeSoBlock{}
 	mempoolTxns, _, err := mempool.GetTransactionsOrderedByTimeAdded()
 	require.NoError(err)
 	for ii := 0; len(mempoolTxns) > 0; ii++ {
@@ -209,7 +209,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 
 	// Mine blocks until the mempool is empty.
 	numBlocksToMine := 10
-	blocksMined := []*MsgBitCloutBlock{}
+	blocksMined := []*MsgDeSoBlock{}
 	for ii := 0; ii < numBlocksToMine; ii++ {
 		finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 		require.NoError(err)
