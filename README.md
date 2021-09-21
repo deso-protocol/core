@@ -53,7 +53,7 @@ to build a fully Dockerized Rosetta API that conforms perfectly to spec as its o
 self-contained service. This allows exchanges to integrate DeSo without having
 to run the unnecessary services associated with serving bitclout.com.
 
-For more information on the DeSo Rosetta API, see our deso-rosetta repo here:
+For more information on the DeSo Rosetta API, see our rosetta-deso repo here:
 * **[https://github.com/deso-protocol/rosetta-deso](https://github.com/deso-protocol/rosetta-deso)**
 
 ## Example 3: A MongoDB Data Dumper
