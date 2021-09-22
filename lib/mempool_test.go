@@ -17,7 +17,7 @@ func _filterOutBlockRewards(utxoEntries []*UtxoEntry) []*UtxoEntry {
 	return nonBlockRewardUtxos
 }
 
-func _setupFiveBlocks(t *testing.T) (*Blockchain, *BitCloutParams, []byte, []byte) {
+func _setupFiveBlocks(t *testing.T) (*Blockchain, *DeSoParams, []byte, []byte) {
 	require := require.New(t)
 	chain, params, db := NewLowDifficultyBlockchain()
 	_ = db
@@ -47,13 +47,13 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 
 	chain, _, senderPkBytes, recipientPkBytes := _setupFiveBlocks(t)
 
-	// Create a transaction that sends 1 BitClout to the recipient as its
+	// Create a transaction that sends 1 DeSo to the recipient as its
 	// zeroth output.
 	txn1 := _assembleBasicTransferTxnFullySigned(t, chain, 1, 0,
 		senderPkString, recipientPkString, senderPrivString, nil)
 
 	// Validate this txn.
-	mp := NewBitCloutMempool(
+	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
@@ -70,15 +70,15 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 			fmt.Printf("TestMempoolRateLimit: Processing txn %d\n", ii)
 		}
 		prevTxnHash := prevTxn.Hash()
-		newTxn := &MsgBitCloutTxn{
-			TxInputs: []*BitCloutInput{
-				&BitCloutInput{
+		newTxn := &MsgDeSoTxn{
+			TxInputs: []*DeSoInput{
+				&DeSoInput{
 					TxID:  *prevTxnHash,
 					Index: 0,
 				},
 			},
-			TxOutputs: []*BitCloutOutput{
-				&BitCloutOutput{
+			TxOutputs: []*DeSoOutput{
+				&DeSoOutput{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
@@ -97,7 +97,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 }
 
 // Create a chain of transactions with zero fees. Have one public key just
-// send 1 BitClout to itself over and over again. Then run all the txns
+// send 1 DeSo to itself over and over again. Then run all the txns
 // through the mempool at once and verify that they are rejected when
 // a ratelimit is set.
 func TestMempoolRateLimit(t *testing.T) {
@@ -112,12 +112,12 @@ func TestMempoolRateLimit(t *testing.T) {
 
 	// Create a new pool object that sets the min fees to zero. This object should
 	// accept all of the transactions we're about to create without fail.
-	mpNoMinFees := NewBitCloutMempool(
+	mpNoMinFees := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 
-	// Create a transaction that sends 1 BitClout to the recipient as its
+	// Create a transaction that sends 1 DeSo to the recipient as its
 	// zeroth output.
 	txn1 := _assembleBasicTransferTxnFullySigned(t, chain, 1, 0,
 		senderPkString, recipientPkString, senderPrivString, nil)
@@ -128,7 +128,7 @@ func TestMempoolRateLimit(t *testing.T) {
 
 	// If we set a min fee, the transactions should just be immediately rejected
 	// if we set rateLimit to true.
-	mpWithMinFee := NewBitCloutMempool(
+	mpWithMinFee := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		100 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
@@ -140,7 +140,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.NoError(err)
 
-	txnsCreated := []*MsgBitCloutTxn{txn1}
+	txnsCreated := []*MsgDeSoTxn{txn1}
 	prevTxn := txn1
 	// Create fewer than the maximum number of dependencies allowed by the
 	// mempool to avoid transactions being rejected.
@@ -149,15 +149,15 @@ func TestMempoolRateLimit(t *testing.T) {
 			fmt.Printf("TestMempoolRateLimit: Processing txn %d\n", ii)
 		}
 		prevTxnHash := prevTxn.Hash()
-		newTxn := &MsgBitCloutTxn{
-			TxInputs: []*BitCloutInput{
-				&BitCloutInput{
+		newTxn := &MsgDeSoTxn{
+			TxInputs: []*DeSoInput{
+				&DeSoInput{
 					TxID:  *prevTxnHash,
 					Index: 0,
 				},
 			},
-			TxOutputs: []*BitCloutOutput{
-				&BitCloutOutput{
+			TxOutputs: []*DeSoOutput{
+				&DeSoOutput{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
@@ -177,7 +177,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	// Processing 24 transactions very quickly should cause our rate
 	// limit to trigger if it's set even if we don't have a hard min
 	// feerate set since 24 transactions should be ~2400 bytes.
-	mpWithRateLimit := NewBitCloutMempool(
+	mpWithRateLimit := NewDeSoMempool(
 		chain, 100, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
@@ -217,21 +217,21 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 		Base58CheckEncode(changeOutput.PublicKey, false, chain.params))
 
 	// Construct a second transaction that depends on the first. Send 1
-	// BitClout to the recipient and set the rest as change.
+	// DeSo to the recipient and set the rest as change.
 	txn1Hash := txn1.Hash()
-	txn2 := &MsgBitCloutTxn{
+	txn2 := &MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*BitCloutInput{
-			&BitCloutInput{
+		TxInputs: []*DeSoInput{
+			&DeSoInput{
 				TxID:  *txn1Hash,
 				Index: 1,
 			},
 		},
-		TxOutputs: []*BitCloutOutput{
-			&BitCloutOutput{
+		TxOutputs: []*DeSoOutput{
+			&DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
-			}, &BitCloutOutput{
+			}, &DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: changeOutput.AmountNanos - 1,
 			},
@@ -243,19 +243,19 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 
 	// Construct a third transaction that depends on the second.
 	txn2Hash := txn2.Hash()
-	txn3 := &MsgBitCloutTxn{
+	txn3 := &MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*BitCloutInput{
-			&BitCloutInput{
+		TxInputs: []*DeSoInput{
+			&DeSoInput{
 				TxID:  *txn2Hash,
 				Index: 1,
 			},
 		},
-		TxOutputs: []*BitCloutOutput{
-			&BitCloutOutput{
+		TxOutputs: []*DeSoOutput{
+			&DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
-			}, &BitCloutOutput{
+			}, &DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: changeOutput.AmountNanos - 2,
 			},
@@ -267,25 +267,25 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	txn3Hash := txn3.Hash()
 
 	// Construct a fourth transaction that spends an output from the recipient's
-	// key sending the BitClout back to the sender with some change going back to
+	// key sending the DeSo back to the sender with some change going back to
 	// herself. Make the output come from the first and second transaction above.
-	txn4 := &MsgBitCloutTxn{
+	txn4 := &MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*BitCloutInput{
-			&BitCloutInput{
+		TxInputs: []*DeSoInput{
+			&DeSoInput{
 				TxID:  *txn1Hash,
 				Index: 0,
 			},
-			&BitCloutInput{
+			&DeSoInput{
 				TxID:  *txn2Hash,
 				Index: 0,
 			},
 		},
-		TxOutputs: []*BitCloutOutput{
-			&BitCloutOutput{
+		TxOutputs: []*DeSoOutput{
+			&DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: 1,
-			}, &BitCloutOutput{
+			}, &DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
 			},
@@ -298,7 +298,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 
 	// Create a new pool object. Set the min fees to zero since we're
 	// not testing that here.
-	mp := NewBitCloutMempool(
+	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
