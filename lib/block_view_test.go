@@ -15521,7 +15521,7 @@ func TestNFTBasic(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(27), m0BalBeforeNFT)
+		require.Equal(uint64(28), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -15540,7 +15540,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(26), m0BalAfterNFT)
+		require.Equal(uint64(27), m0BalAfterNFT)
 	}
 
 	// Error case: cannot turn a post into an NFT twice.
@@ -15639,7 +15639,7 @@ func TestNFTBasic(t *testing.T) {
 		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
 
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(24), m0BalBeforeNFT)
+		require.Equal(uint64(26), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -15658,7 +15658,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Check that m0 was charged the correct nftFee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(23)-nftFee, m0BalAfterNFT)
+		require.Equal(uint64(25)-nftFee, m0BalAfterNFT)
 	}
 
 	//
@@ -16698,7 +16698,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFTs := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(57), m0BalBeforeNFTs)
+		require.Equal(uint64(59), m0BalBeforeNFTs)
 
 		// Create an NFT with a ton of copies for testing accepting bids.
 		_createNFTWithTestMeta(
@@ -16861,7 +16861,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(55), m0BalBefore)
+		require.Equal(uint64(57), m0BalBefore)
 
 		// This will accept m1's serial #0 bid.
 		_acceptNFTBidWithTestMeta(
@@ -16910,7 +16910,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore-6+100+1000+999, m0BalAfter)
-		require.Equal(uint64(2148), m0BalAfter)
+		require.Equal(uint64(2150), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
