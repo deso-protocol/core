@@ -1,4 +1,4 @@
-package desohash
+package clouthash
 
 import (
 	"bytes"
@@ -72,7 +72,7 @@ var (
 
 var testVectors = []testVector{empty, zeroHeaderV0, maxHeaderV0, genesisHeaderV0, zeroHeaderV1, maxHeaderV1}
 
-func TestDeSoHashV1Distribution(t *testing.T) {
+func TestCloutHashV1Distribution(t *testing.T) {
 	const iterations = 1e5
 
 	r := rand.New(rand.NewSource(time.Now().Unix()))
@@ -80,7 +80,7 @@ func TestDeSoHashV1Distribution(t *testing.T) {
 	bytes := [32]uint64{}
 
 	for i := uint64(0); i < iterations; i++ {
-		hash := DeSoHashV1([]byte(fmt.Sprintf("%b", r.Uint64())))
+		hash := CloutHashV1([]byte(fmt.Sprintf("%b", r.Uint64())))
 
 		for j, b := range hash {
 			bytes[j] += uint64(b)
@@ -94,41 +94,41 @@ func TestDeSoHashV1Distribution(t *testing.T) {
 	for _, b := range bytes {
 		spread := int(b) - 127
 		if spread > 1 || spread < -1 {
-			t.Fatalf("TestDeSoHashV1Distribution: Non-random distribution! - %v", bytes)
+			t.Fatalf("TestCloutHashV1Distribution: Non-random distribution! - %v", bytes)
 		}
 	}
 }
 
-func TestDeSoHashV1(t *testing.T) {
+func TestCloutHashV1(t *testing.T) {
 	for _, vec := range testVectors {
-		hash := DeSoHashV1(vec.input)
+		hash := CloutHashV1(vec.input)
 
 		if bytes.Compare(vec.expected.V1[:], hash[:]) != 0 {
-			t.Errorf("TestDeSoHashV1: Mismatched hash value! Input: %v, Hash: %v, Expected: %v", hex.EncodeToString(vec.input), hex.EncodeToString(hash[:]), hex.EncodeToString(vec.expected.V1[:]))
-			t.Errorf("TestDeSoHashV1: Mismatched hash value! Input: %v, Hash: %v, Expected: %v", hex.EncodeToString(vec.input), (hash[:]), (vec.expected.V1[:]))
+			t.Errorf("TestCloutHashV1: Mismatched hash value! Input: %v, Hash: %v, Expected: %v", hex.EncodeToString(vec.input), hex.EncodeToString(hash[:]), hex.EncodeToString(vec.expected.V1[:]))
+			t.Errorf("TestCloutHashV1: Mismatched hash value! Input: %v, Hash: %v, Expected: %v", hex.EncodeToString(vec.input), (hash[:]), (vec.expected.V1[:]))
 		}
 	}
 }
 
-func TestDeSoHashV0(t *testing.T) {
+func TestCloutHashV0(t *testing.T) {
 	for _, vec := range testVectors {
-		hash := DeSoHashV0(vec.input)
+		hash := CloutHashV0(vec.input)
 
 		if bytes.Compare(vec.expected.V0[:], hash[:]) != 0 {
-			t.Errorf("TestDeSoHashV0: Mismatched hash value! Input: %v, Hash: %v, Expected: %v", hex.EncodeToString(vec.input), hex.EncodeToString(hash[:]), hex.EncodeToString(vec.expected.V0[:]))
-			t.Errorf("TestDeSoHashV0: Mismatched hash value! Input: %v, Hash: %v, Expected: %v", hex.EncodeToString(vec.input), (hash[:]), (vec.expected.V0[:]))
+			t.Errorf("TestCloutHashV0: Mismatched hash value! Input: %v, Hash: %v, Expected: %v", hex.EncodeToString(vec.input), hex.EncodeToString(hash[:]), hex.EncodeToString(vec.expected.V0[:]))
+			t.Errorf("TestCloutHashV0: Mismatched hash value! Input: %v, Hash: %v, Expected: %v", hex.EncodeToString(vec.input), (hash[:]), (vec.expected.V0[:]))
 		}
 	}
 }
 
-func BenchmarkDeSoHashV0(b *testing.B) {
+func BenchmarkCloutHashV0(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_ = DeSoHashV0([]byte(strconv.FormatInt(int64(i), 10)))
+		_ = CloutHashV0([]byte(strconv.FormatInt(int64(i), 10)))
 	}
 }
 
-func BenchmarkDeSoHashV1(b *testing.B) {
+func BenchmarkCloutHashV1(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_ = DeSoHashV1([]byte(strconv.FormatInt(int64(i), 10)))
+		_ = CloutHashV1([]byte(strconv.FormatInt(int64(i), 10)))
 	}
 }

@@ -54,8 +54,8 @@ func CreateUnsignedBitcoinSpendTransaction(
 	feeRateSatoshisPerKB uint64,
 	spendAddrString string,
 	recipientAddrString string,
-	params *DeSoParams,
-	utxoSource func(addr string, params *DeSoParams) ([]*BitcoinUtxo, error)) (
+	params *BitCloutParams,
+	utxoSource func(addr string, params *BitCloutParams) ([]*BitcoinUtxo, error)) (
 	_txn *wire.MsgTx, _totalInput uint64, _fee uint64, _err error) {
 
 	// Get the utxos for the spend key.
@@ -186,8 +186,8 @@ func CreateUnsignedBitcoinSpendTransaction(
 func CreateBitcoinSpendTransaction(
 	spendAmountSatoshis uint64, feeRateSatoshisPerKB uint64,
 	pubKey *btcec.PublicKey,
-	recipientAddrString string, params *DeSoParams,
-	utxoSource func(addr string, params *DeSoParams) ([]*BitcoinUtxo, error)) (_txn *wire.MsgTx, _totalInput uint64, _fee uint64, _unsignedHashes []string, _err error) {
+	recipientAddrString string, params *BitCloutParams,
+	utxoSource func(addr string, params *BitCloutParams) ([]*BitcoinUtxo, error)) (_txn *wire.MsgTx, _totalInput uint64, _fee uint64, _unsignedHashes []string, _err error) {
 
 	// Convert the public key into a Bitcoin address.
 	spendAddrTmp, err := btcutil.NewAddressPubKey(pubKey.SerializeCompressed(), params.BitcoinBtcdParams)
@@ -245,7 +245,7 @@ func CreateBitcoinSpendTransaction(
 	return retTxn, totalInputSatoshis, finalFee, unsignedHashes, nil
 }
 
-func IsBitcoinTestnet(params *DeSoParams) bool {
+func IsBitcoinTestnet(params *BitCloutParams) bool {
 	return params.BitcoinBtcdParams.Name == "testnet3"
 }
 
@@ -258,7 +258,7 @@ func IsBitcoinTestnet(params *DeSoParams) bool {
 // that we could do this in the BitcoinManager and cut reliance on BlockCypher to make
 // decentralized, but it would increase complexity significantly. Moreover, this
 // piece is not critical to the protocol or to consensus, and it breaking doesn't even
-// stop people from being able to purchase DeSo since they can always do that by sending
+// stop people from being able to purchase BitClout since they can always do that by sending
 // Bitcoin to the burn address from any standard Bitcoin client after entering their
 // seed phrase.
 // ======================================================================================
@@ -309,7 +309,7 @@ type BlockCypherAPIFullAddressResponse struct {
 }
 
 func BlockCypherExtractBitcoinUtxosFromResponse(
-	apiData *BlockCypherAPIFullAddressResponse, addrString string, params *DeSoParams) (
+	apiData *BlockCypherAPIFullAddressResponse, addrString string, params *BitCloutParams) (
 	[]*BitcoinUtxo, error) {
 
 	glog.Tracef("BlockCypherExtractBitcoinUtxosFromResponse: Extracting BitcoinUtxos "+
@@ -395,7 +395,7 @@ func BlockCypherExtractBitcoinUtxosFromResponse(
 	return bitcoinUtxos, nil
 }
 
-func GetBlockCypherAPIFullAddressResponse(addrString string, params *DeSoParams) (
+func GetBlockCypherAPIFullAddressResponse(addrString string, params *BitCloutParams) (
 	_apiData *BlockCypherAPIFullAddressResponse, _err error) {
 
 	URL := fmt.Sprintf("http://api.blockcypher.com/v1/btc/main/addrs/%s/full", addrString)
@@ -414,7 +414,7 @@ func GetBlockCypherAPIFullAddressResponse(addrString string, params *DeSoParams)
 	// This means if the user has done more than 50 transactions with their address
 	// we'll start missing some of the older utxos. This is easy to fix, though, and
 	// just amounts to cycling through the API's pages. Note also that this does not
-	// prevent a user from buying DeSo in this case nor does it prevent her from being
+	// prevent a user from buying BitClout in this case nor does it prevent her from being
 	// able to recover her Bitcoin. Both of these can be accomplished by loading the
 	// address in a standard Bitcoin wallet like Electrum.
 	q.Add("limit", "50")
@@ -446,7 +446,7 @@ func GetBlockCypherAPIFullAddressResponse(addrString string, params *DeSoParams)
 	return responseData, nil
 }
 
-func BlockCypherUtxoSource(addrString string, params *DeSoParams) (
+func BlockCypherUtxoSource(addrString string, params *BitCloutParams) (
 	[]*BitcoinUtxo, error) {
 
 	apiData, err := GetBlockCypherAPIFullAddressResponse(addrString, params)
@@ -462,13 +462,13 @@ func BlockCypherUtxoSource(addrString string, params *DeSoParams) (
 // get rate-limited by the free tier.
 func FrontendBlockCypherUtxoSource(
 	apiData *BlockCypherAPIFullAddressResponse, addrString string,
-	params *DeSoParams) (
+	params *BitCloutParams) (
 	[]*BitcoinUtxo, error) {
 
 	return BlockCypherExtractBitcoinUtxosFromResponse(apiData, addrString, params)
 }
 
-func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
+func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *BitCloutParams) (
 	_isDoubleSpend bool, _err error) {
 
 	URL := fmt.Sprintf("http://api.blockcypher.com/v1/btc/main/txs/%s", txnHash.String())
@@ -487,7 +487,7 @@ func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIK
 	// This means if the user has done more than 50 transactions with their address
 	// we'll start missing some of the older utxos. This is easy to fix, though, and
 	// just amounts to cycling through the API's pages. Note also that this does not
-	// prevent a user from buying DeSo in this case nor does it prevent her from being
+	// prevent a user from buying BitClout in this case nor does it prevent her from being
 	// able to recover her Bitcoin. Both of these can be accomplished by loading the
 	// address in a standard Bitcoin wallet like Electrum.
 	q.Add("token", blockCypherAPIKey)
@@ -527,7 +527,7 @@ func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIK
 
 	return false, nil
 }
-func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
+func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCypherAPIKey string, params *BitCloutParams) (
 	_added bool, _err error) {
 
 	URL := fmt.Sprintf("http://api.blockcypher.com/v1/btc/main/txs/push")
@@ -554,7 +554,7 @@ func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCyp
 	// This means if the user has done more than 50 transactions with their address
 	// we'll start missing some of the older utxos. This is easy to fix, though, and
 	// just amounts to cycling through the API's pages. Note also that this does not
-	// prevent a user from buying DeSo in this case nor does it prevent her from being
+	// prevent a user from buying BitClout in this case nor does it prevent her from being
 	// able to recover her Bitcoin. Both of these can be accomplished by loading the
 	// address in a standard Bitcoin wallet like Electrum.
 	q.Add("token", blockCypherAPIKey)
@@ -581,7 +581,7 @@ func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCyp
 }
 
 func BlockCypherPushAndWaitForTxn(txnHex string, txnHash *chainhash.Hash,
-	blockCypherAPIKey string, doubleSpendWaitSeconds float64, params *DeSoParams) error {
+	blockCypherAPIKey string, doubleSpendWaitSeconds float64, params *BitCloutParams) error {
 	_, err := BlockCypherPushTransaction(txnHex, txnHash, blockCypherAPIKey, params)
 	if err != nil {
 		return fmt.Errorf("PushAndWaitForTxn: %v", err)

@@ -1,7 +1,7 @@
 package lib
 
-// supply.go defines all of the logic regarding the DeSo supply schedule. It also
-// defines the Bitcoin <-> DeSo exchange schedule.
+// supply.go defines all of the logic regarding the BitClout supply schedule. It also
+// defines the Bitcoin <-> BitClout exchange schedule.
 
 type MiningSupplyIntervalStart struct {
 	StartBlockHeight uint32
@@ -19,15 +19,15 @@ const (
 	NanosPerUnit  = uint64(1000000000)
 	BlocksPerYear = uint32(12 * 24 * 365)
 	BlocksPerDay = uint32(12 * 24)
-	// Every 1M DeSo we sell causes the price to increase by a factor of 2.
+	// Every 1M BitClout we sell causes the price to increase by a factor of 2.
 	TrancheSizeNanos = uint64(1000000000000000)
-	// When exchanging Bitcoin for DeSo, we don't allow transactions to create
+	// When exchanging Bitcoin for BitClout, we don't allow transactions to create
 	// less than this amount. This avoids issues around small transactions that
 	// exploit floating point errors.
 	MinNanosToCreate = 50
 
-	// The price of DeSo at the beginning.
-	StartDeSoPriceUSDCents = 50
+	// The price of BitClout at the beginning.
+	StartBitCloutPriceUSDCents = 50
 	SatoshisPerBitcoin         = 100000000
 
 	// The minimum and maximum Bitcoin prices, used as a sanity-check.
@@ -48,7 +48,7 @@ var (
 			StartBlockHeight: 0,
 			BlockRewardNanos: 1 * NanosPerUnit,
 		},
-		// Adjust the block reward as part of the deflation bomb to mark the DeSo
+		// Adjust the block reward as part of the deflation bomb to mark the BitClout
 		// dev community's commitment to a zero-waste, environmentally-friendly
 		// consensus mechanism. Do a smooth ramp in order to minimize issues with
 		// block mining times.
@@ -117,13 +117,13 @@ func CalcBlockRewardNanos(blockHeight uint32) uint64 {
 	return 0
 }
 
-func GetStartPriceSatoshisPerDeSo(usdCentsPerBitcoinExchangeRate uint64) uint64 {
-	return StartDeSoPriceUSDCents * SatoshisPerBitcoin / usdCentsPerBitcoinExchangeRate
+func GetStartPriceSatoshisPerBitClout(usdCentsPerBitcoinExchangeRate uint64) uint64 {
+	return StartBitCloutPriceUSDCents * SatoshisPerBitcoin / usdCentsPerBitcoinExchangeRate
 }
 
 func GetSatoshisPerUnitExchangeRate(startNanos uint64, usdCentsPerBitcoinExchangeRate uint64) uint64 {
-	startPriceSatoshisPerDeSo := GetStartPriceSatoshisPerDeSo(usdCentsPerBitcoinExchangeRate)
-	val, _ := Mul(NewFloat().SetUint64(startPriceSatoshisPerDeSo), BigFloatPow(
+	startPriceSatoshisPerBitClout := GetStartPriceSatoshisPerBitClout(usdCentsPerBitcoinExchangeRate)
+	val, _ := Mul(NewFloat().SetUint64(startPriceSatoshisPerBitClout), BigFloatPow(
 		bigTwo, Div(NewFloat().SetUint64(startNanos), NewFloat().SetUint64(TrancheSizeNanos)))).Uint64()
 	return val
 }
@@ -133,36 +133,36 @@ func CalcNanosToCreate(
 	_nanosToCreate uint64) {
 
 	// Given the amount this user wants to burn, we have a formula that tells us
-	// how much DeSo we should have after processing the transaction. The
+	// how much BitClout we should have after processing the transaction. The
 	// "tranche size nanos" below simply modulates how quickly the price doubles.
-	// The smaller it is, the faster the price increases with each DeSo sold.
+	// The smaller it is, the faster the price increases with each BitClout sold.
 	//
-	// price in satoshis per DeSo
-	//   = 2 ^((nanos sold) / tranche size nanos) * SatoshisPerDeSo
+	// price in satoshis per BitClout
+	//   = 2 ^((nanos sold) / tranche size nanos) * SatoshisPerBitClout
 	//
 	// Taking the integral of this with respect to the nanos sold tells us how
 	// many Bitcoin we burn for a given number of nanos.
 	//
-	// Bitcoin to burn = (SatoshisPerDeSo) * (tranche size in nanos) / (ln(2)) * (
-	// 		2^((final DeSo burned) / (tranche size in nanos) -
-	//    2^((initial DeSo burned) / (tranche size in nanos)))
+	// Bitcoin to burn = (SatoshisPerBitClout) * (tranche size in nanos) / (ln(2)) * (
+	// 		2^((final BitClout burned) / (tranche size in nanos) -
+	//    2^((initial BitClout burned) / (tranche size in nanos)))
 	//
-	// Solving this equation for "final DeSo burned" yields the formula you see
+	// Solving this equation for "final BitClout burned" yields the formula you see
 	// below, which we can then use to figure out how many nanos we should create.
-	startPriceSatoshisPerDeSo := GetStartPriceSatoshisPerDeSo(usdCentsPerBitcoinExchangeRate)
+	startPriceSatoshisPerBitClout := GetStartPriceSatoshisPerBitClout(usdCentsPerBitcoinExchangeRate)
 	nanosComponent := Div(NewFloat().SetUint64(NanosPerUnit), NewFloat().SetUint64(TrancheSizeNanos))
-	bitcoinComponent := Div(NewFloat().SetUint64(satoshisToBurn), NewFloat().SetUint64(startPriceSatoshisPerDeSo))
-	bigFloatFinalDeSoNanos := Mul(NewFloat().SetUint64(TrancheSizeNanos), BigFloatLog2(
+	bitcoinComponent := Div(NewFloat().SetUint64(satoshisToBurn), NewFloat().SetUint64(startPriceSatoshisPerBitClout))
+	bigFloatFinalBitCloutNanos := Mul(NewFloat().SetUint64(TrancheSizeNanos), BigFloatLog2(
 		Add(Mul(nanosComponent, Mul(bitcoinComponent, NaturalLogOfTwo)),
 			BigFloatPow(bigTwo, Div(NewFloat().SetUint64(startNanos), NewFloat().SetUint64(TrancheSizeNanos))))))
 
 	// If somehow the final amount is less than what we started with then return
 	// zero just to be safe.
-	finalDeSoNanos, _ := bigFloatFinalDeSoNanos.Uint64()
-	if finalDeSoNanos <= startNanos {
+	finalBitCloutNanos, _ := bigFloatFinalBitCloutNanos.Uint64()
+	if finalBitCloutNanos <= startNanos {
 		return uint64(0)
 	}
-	nanosToCreate := finalDeSoNanos - startNanos
+	nanosToCreate := finalBitCloutNanos - startNanos
 
 	// Return zero unless we're above a threshold amount. This avoids floating
 	// point issues around very small exchanges.

@@ -19,9 +19,9 @@ import (
 const (
 	// ConfigDirVendorName is the enclosing folder for user data.
 	// It's required to created a ConfigDir.
-	ConfigDirVendorName = "deso"
+	ConfigDirVendorName = "bitclout"
 	// ConfigDirAppName is the folder where we keep user data.
-	ConfigDirAppName = "deso"
+	ConfigDirAppName = "bitclout"
 	// UseridLengthBytes is the number of bytes of entropy to use for
 	// a userid.
 	UseridLengthBytes = 32
@@ -78,7 +78,7 @@ var (
 	//		to utilize the protocol.
 	//	(2) A fix was created to deal with a bug accidentally triggered by @salomon.
 	//		After a series of buys and sells @salomon was left with a single creator coin
-	//		nano in circulation and a single DeSo nano locked. This caused a detach
+	//		nano in circulation and a single BitClout nano locked. This caused a detach
 	//		between @salomon's bonding curve and others on the protocol. As more buys and sells
 	//		continued, @salomon's bonding curve continued to detach further and further from its peers.
 	// 		At its core, @salomon had too few creator coins in circulation. This fix introduces
@@ -88,9 +88,9 @@ var (
 	//		to prevent similar cases from occurring again, but @salomon is left alone.
 	SalomonFixBlockHeight = uint32(15270)
 
-	// DeSoFounderRewardBlockHeight defines a block height where the protocol switches from
-	// paying the founder reward in the founder's own creator coin to paying in DeSo instead.
-	DeSoFounderRewardBlockHeight = uint32(21869)
+	// BitCloutFounderRewardBlockHeight defines a block height where the protocol switches from
+	// paying the founder reward in the founder's own creator coin to paying in BitClout instead.
+	BitCloutFounderRewardBlockHeight = uint32(21869)
 
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight defines a block height after which the protocol will create
 	// a new BalanceEntry when a user purchases a Creator Coin and their current BalanceEntry is deleted.
@@ -109,15 +109,15 @@ var (
 	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
 	UpdateProfileFixBlockHeight = uint32(46165)
 
-	// BrokenNFTBidsFixBlockHeight defines the height at which the deso balance index takes effect
+	// BrokenNFTBidsFixBlockHeight defines the height at which the bitclout balance index takes effect
 	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
-	// deso balance index, allowing bids to be submitted that were greater than the user's deso balance.
+	// bitclout balance index, allowing bids to be submitted that were greater than the user's bitclout balance.
 	BrokenNFTBidsFixBlockHeight = uint32(46917)
 
-	// DeSoDiamondsBlockHeight defines the height at which diamonds will be given in DESO
+	// BitCloutDiamondsBlockHeight defines the height at which diamonds will be given in CLOUT
 	// rather than in creator coin.
 	// Triggers: 3pm PT on 8/16/2021
-	DeSoDiamondsBlockHeight = uint32(52112)
+	BitCloutDiamondsBlockHeight = uint32(52112)
 
 	// NFTTransfersBlockHeight defines the height at which NFT transfer txns, accept NFT
 	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
@@ -151,9 +151,9 @@ var (
 	TikTokFullURLRegex  = regexp.MustCompile("^.*((tiktok\\.com/)(v/)|(@[A-Za-z0-9_-]{2,24}/video/)|(embed/v2/))(\\d{0,30}).*")
 )
 
-// DeSoParams defines the full list of possible parameters for the
-// DeSo network.
-type DeSoParams struct {
+// BitCloutParams defines the full list of possible parameters for the
+// BitClout network.
+type BitCloutParams struct {
 	// The network type (mainnet, testnet, etc).
 	NetworkType NetworkType
 	// The current protocol version we're running.
@@ -161,7 +161,7 @@ type DeSoParams struct {
 	// The minimum protocol version we'll allow a peer we connect to
 	// to have.
 	MinProtocolVersion uint64
-	// Used as a "vanity plate" to identify different DeSo
+	// Used as a "vanity plate" to identify different BitClout
 	// clients. Mainly useful in analyzing the network at
 	// a meta level, not in the protocol itself.
 	UserAgent string
@@ -178,7 +178,7 @@ type DeSoParams struct {
 	BitcoinBtcdParams *chaincfg.Params
 
 	// Because we use the Bitcoin header chain only to process exchanges from
-	// BTC to DeSo, we don't need to worry about Bitcoin blocks before a certain
+	// BTC to BitClout, we don't need to worry about Bitcoin blocks before a certain
 	// point, which is specified by this node. This is basically used to make
 	// header download more efficient but it's important to note that if for
 	// some reason there becomes a different main chain that is stronger than
@@ -187,15 +187,15 @@ type DeSoParams struct {
 	BitcoinStartBlockNode *BlockNode
 
 	// The base58Check-encoded Bitcoin address that users must send Bitcoin to in order
-	// to purchase DeSo. Note that, unfortunately, simply using an all-zeros or
+	// to purchase BitClout. Note that, unfortunately, simply using an all-zeros or
 	// mostly-all-zeros address or public key doesn't work and, in fact, I found that
 	// using almost any address other than this one also doesn't work.
 	BitcoinBurnAddress string
 
 	// This is a fee in basis points charged on BitcoinExchange transactions that gets
-	// paid to the miners. Basically, if a user burned enough Satoshi to create 100 DeSo,
-	// and if the BitcoinExchangeFeeBasisPoints was 1%, then 99 DeSo would be allocated to
-	// the user's public key while 1 DeSo would be left as a transaction fee to the miner.
+	// paid to the miners. Basically, if a user burned enough Satoshi to create 100 BitClout,
+	// and if the BitcoinExchangeFeeBasisPoints was 1%, then 99 BitClout would be allocated to
+	// the user's public key while 1 BitClout would be left as a transaction fee to the miner.
 	BitcoinExchangeFeeBasisPoints uint64
 
 	// The amount of time to wait for a Bitcoin txn to broadcast throughout the Bitcoin
@@ -204,7 +204,7 @@ type DeSoParams struct {
 
 	// This field allows us to set the amount purchased at genesis to a non-zero
 	// value.
-	DeSoNanosPurchasedAtGenesis uint64
+	BitCloutNanosPurchasedAtGenesis uint64
 
 	// Port used for network communications among full nodes.
 	DefaultSocketPort uint16
@@ -217,7 +217,7 @@ type DeSoParams struct {
 	VersionNegotiationTimeout time.Duration
 
 	// The genesis block to use as the base of our chain.
-	GenesisBlock *MsgDeSoBlock
+	GenesisBlock *MsgBitCloutBlock
 	// The expected hash of the genesis block. Should align with what one
 	// would get from actually hashing the provided genesis block.
 	GenesisBlockHashHex string
@@ -246,7 +246,7 @@ type DeSoParams struct {
 	// Amount of time one must wait before a block reward can be spent.
 	BlockRewardMaturity time.Duration
 	// When shifting from v0 blocks to v1 blocks, we changed the hash function to
-	// DeSoHash, which is technically easier. Thus we needed to apply an adjustment
+	// CloutHash, which is technically easier. Thus we needed to apply an adjustment
 	// factor in order to phase it in.
 	V1DifficultyAdjustmentFactor int64
 
@@ -276,7 +276,7 @@ type DeSoParams struct {
 
 	MiningIterationsPerCycle uint64
 
-	// deso
+	// bitclout
 	MaxUsernameLengthBytes        uint64
 	MaxUserDescriptionLengthBytes uint64
 	MaxProfilePicLengthBytes      uint64
@@ -298,7 +298,7 @@ type DeSoParams struct {
 
 	// A list of balances to initialize the blockchain with. This is useful for
 	// testing and useful in the event that the devs need to hard fork the chain.
-	SeedBalances []*DeSoOutput
+	SeedBalances []*BitCloutOutput
 
 	// This is a small fee charged on creator coin transactions. It helps
 	// prevent issues related to floating point calculations.
@@ -331,19 +331,19 @@ type DeSoParams struct {
 	// 1000 - x < CreatorCoinAutoSellThresholdNanos, we auto liquidate the remaining holdings.
 	// It does this to prevent issues with floating point rounding that can arise.
 	// This value should be chosen such that the chain is resistant to "phantom nanos." Phantom nanos
-	// are tiny amounts of CreatorCoinsInCirculation/DeSoLocked which can cause
+	// are tiny amounts of CreatorCoinsInCirculation/BitCloutLocked which can cause
 	// the effective reserve ratio to deviate from the expected reserve ratio of the bancor curve.
 	// A higher CreatorCoinAutoSellThresholdNanos makes it prohibitively expensive for someone to
 	// attack the bancor curve to any meaningful measure.
 	CreatorCoinAutoSellThresholdNanos uint64
 
-	// The most deflationary event in DeSo history has yet to come...
+	// The most deflationary event in BitClout history has yet to come...
 	DeflationBombBlockHeight uint64
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
 // can be spent as soon as they are mined. It also removes the default testnet seeds
-func (params *DeSoParams) EnableRegtest() {
+func (params *BitCloutParams) EnableRegtest() {
 	if params.NetworkType != NetworkType_TESTNET {
 		glog.Error("Regtest mode can only be enabled in testnet mode")
 		return
@@ -364,14 +364,14 @@ func (params *DeSoParams) EnableRegtest() {
 	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
 }
 
-// GenesisBlock defines the genesis block used for the DeSo maainnet and testnet
+// GenesisBlock defines the genesis block used for the BitClout maainnet and testnet
 var (
 	ArchitectPubKeyBase58Check = "BC1YLg3oh6Boj8e2boCo1vQCYHLk1rjsHF6jthBdvSw79bixQvKK6Qa"
 	// This is the public key corresponding to the BitcoinBurnAddress on mainnet.
 	BurnPubKeyBase58Check = "BC1YLjWBf2qnDJmi8HZzzCPeXqy4dCKq95oqqzerAyW8MUTbuXTb1QT"
 
-	GenesisBlock = MsgDeSoBlock{
-		Header: &MsgDeSoHeader{
+	GenesisBlock = MsgBitCloutBlock{
+		Header: &MsgBitCloutHeader{
 			Version:               0,
 			PrevBlockHash:         &BlockHash{},
 			TransactionMerkleRoot: mustDecodeHexBlockHash("4b71d103dd6fff1bd6110bc8ed0a2f3118bbe29a67e45c6c7d97546ad126906f"),
@@ -379,9 +379,9 @@ var (
 			Height:                uint64(0),
 			Nonce:                 uint64(0),
 		},
-		Txns: []*MsgDeSoTxn{
+		Txns: []*MsgBitCloutTxn{
 			{
-				TxInputs: []*DeSoInput{},
+				TxInputs: []*BitCloutInput{},
 				// The outputs in the genesis block aren't actually used by anything, but
 				// including them helps our block explorer return the genesis transactions
 				// without needing an explicit special case.
@@ -411,27 +411,27 @@ var (
 	}
 )
 
-// DeSoMainnetParams defines the DeSo parameters for the mainnet.
-var DeSoMainnetParams = DeSoParams{
+// BitCloutMainnetParams defines the BitClout parameters for the mainnet.
+var BitCloutMainnetParams = BitCloutParams{
 	NetworkType:        NetworkType_MAINNET,
 	ProtocolVersion:    1,
 	MinProtocolVersion: 1,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
-		"deso.coinbase.com",
-		"deso.gemini.com",
-		"deso.kraken.com",
-		"deso.bitstamp.com",
-		"deso.bitfinex.com",
-		"deso.binance.com",
-		"deso.hbg.com",
-		"deso.okex.com",
-		"deso.bithumb.com",
-		"deso.upbit.com",
+		"bitclout.coinbase.com",
+		"bitclout.gemini.com",
+		"bitclout.kraken.com",
+		"bitclout.bitstamp.com",
+		"bitclout.bitfinex.com",
+		"bitclout.binance.com",
+		"bitclout.hbg.com",
+		"bitclout.okex.com",
+		"bitclout.bithumb.com",
+		"bitclout.upbit.com",
 	},
 	DNSSeedGenerators: [][]string{
 		{
-			"deso-seed-",
+			"bitclout-seed-",
 			".io",
 		},
 	},
@@ -480,8 +480,8 @@ var DeSoMainnetParams = DeSoParams{
 		_difficultyBitsToHash(386798414),
 		// CumWork shouldn't matter.
 		big.NewInt(0),
-		// We are bastardizing the DeSo header to store Bitcoin information here.
-		&MsgDeSoHeader{
+		// We are bastardizing the BitClout header to store Bitcoin information here.
+		&MsgBitCloutHeader{
 			TstampSecs: 1602950620,
 			Height:     0,
 		},
@@ -490,7 +490,7 @@ var DeSoMainnetParams = DeSoParams{
 
 	BitcoinExchangeFeeBasisPoints:   10,
 	BitcoinDoubleSpendWaitSeconds:   5.0,
-	DeSoNanosPurchasedAtGenesis: uint64(6000000000000000),
+	BitCloutNanosPurchasedAtGenesis: uint64(6000000000000000),
 	DefaultSocketPort:               uint16(17000),
 	DefaultJSONPort:                 uint16(17001),
 
@@ -616,8 +616,8 @@ func mustDecodeHexBlockHash(ss string) *BlockHash {
 	return &ret
 }
 
-// DeSoTestnetParams defines the DeSo parameters for the testnet.
-var DeSoTestnetParams = DeSoParams{
+// BitCloutTestnetParams defines the BitClout parameters for the testnet.
+var BitCloutTestnetParams = BitCloutParams{
 	NetworkType:        NetworkType_TESTNET,
 	ProtocolVersion:    0,
 	MinProtocolVersion: 0,
@@ -634,7 +634,7 @@ var DeSoTestnetParams = DeSoParams{
 	BitcoinBurnAddress:              "mhziDsPWSMwUqvZkVdKY92CjesziGP3wHL",
 	BitcoinExchangeFeeBasisPoints:   10,
 	BitcoinDoubleSpendWaitSeconds:   5.0,
-	DeSoNanosPurchasedAtGenesis: uint64(6000000000000000),
+	BitCloutNanosPurchasedAtGenesis: uint64(6000000000000000),
 
 	// See comment in mainnet config.
 	BitcoinStartBlockNode: NewBlockNode(
@@ -646,8 +646,8 @@ var DeSoTestnetParams = DeSoParams{
 		// CumWork: We set the work of the start node such that, when added to all of the
 		// blocks that follow it, it hurdles the min chain work.
 		big.NewInt(0),
-		// We are bastardizing the DeSo header to store Bitcoin information here.
-		&MsgDeSoHeader{
+		// We are bastardizing the BitClout header to store Bitcoin information here.
+		&MsgBitCloutHeader{
 			TstampSecs: 1607659152,
 			Height:     0,
 		},
@@ -706,7 +706,7 @@ var DeSoTestnetParams = DeSoParams{
 
 	MiningIterationsPerCycle: 9500,
 
-	// deso
+	// bitclout
 	MaxUsernameLengthBytes: MaxUsernameLengthBytes,
 
 	MaxUserDescriptionLengthBytes: 20000,
@@ -757,7 +757,7 @@ var DeSoTestnetParams = DeSoParams{
 
 // GetDataDir gets the user data directory where we store files
 // in a cross-platform way.
-func GetDataDir(params *DeSoParams) string {
+func GetDataDir(params *BitCloutParams) string {
 	configDirs := configdir.New(
 		ConfigDirVendorName, ConfigDirAppName)
 	dirString := configDirs.QueryFolders(configdir.Global)[0].Path
@@ -770,10 +770,10 @@ func GetDataDir(params *DeSoParams) string {
 
 // Defines keys that may exist in a transaction's ExtraData map
 const (
-	// Key in transaction's extra data map that points to a post that the current transaction is reposting
-	RepostedPostHash = "RecloutedPostHash"
-	// Key in transaction's extra map -- The presence of this key indicates that this post is a repost with a quote.
-	IsQuotedRepostKey = "IsQuotedReclout"
+	// Key in transaction's extra data map that points to a post that the current transaction is reclouting
+	RecloutedPostHash = "RecloutedPostHash"
+	// Key in transaction's extra map -- The presence of this key indicates that this post is a reclout with a quote.
+	IsQuotedRecloutKey = "IsQuotedReclout"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
@@ -792,12 +792,12 @@ const (
 
 // Defines values that may exist in a transaction's ExtraData map
 var (
-	PostExtraDataConsensusKeys = [2]string{RepostedPostHash, IsQuotedRepostKey}
+	PostExtraDataConsensusKeys = [2]string{RecloutedPostHash, IsQuotedRecloutKey}
 )
 
 var (
-	QuotedRepostVal    = []byte{1}
-	NotQuotedRepostVal = []byte{0}
+	QuotedRecloutVal    = []byte{1}
+	NotQuotedRecloutVal = []byte{0}
 )
 
 var (

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/deso-protocol/core/lib"
+	"github.com/bitclout/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
 	"os"
@@ -9,7 +9,7 @@ import (
 
 type Config struct {
 	// Core
-	Params               *lib.DeSoParams
+	Params               *lib.BitCloutParams
 	ProtocolPort         uint16
 	DataDirectory        string
 	MempoolDumpDirectory string
@@ -62,9 +62,9 @@ func LoadConfig() *Config {
 	// Core
 	testnet := viper.GetBool("testnet")
 	if testnet {
-		config.Params = &lib.DeSoTestnetParams
+		config.Params = &lib.BitCloutTestnetParams
 	} else {
-		config.Params = &lib.DeSoMainnetParams
+		config.Params = &lib.BitCloutMainnetParams
 	}
 
 	config.ProtocolPort = uint16(viper.GetUint64("protocol-port"))

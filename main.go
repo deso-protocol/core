@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/deso-protocol/core/cmd"
+	"github.com/bitclout/core/cmd"
 )
 
 func main() {

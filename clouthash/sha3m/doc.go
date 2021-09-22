@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package sha3m implements the SHA-3 fixed-output-length hash functions with modifications for DeSo proof-of-work
+// Package sha3m implements the SHA-3 fixed-output-length hash functions with modifications for Bitclout proof-of-work
 //
 // Guidance
 //
@@ -34,4 +34,4 @@
 // They produce output of the same length, with the same security strengths
 // against all attacks. This means, in particular, that SHA3-256 only has
 // 128-bit collision resistance, because its output length is 32 bytes.
-package sha3m // import "github.com/deso-protocol/lib/sha3m"
+package sha3m // import "github.com/bitclout/lib/sha3m"

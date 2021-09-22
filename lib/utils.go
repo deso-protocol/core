@@ -56,7 +56,7 @@ func MinUint32(a, b uint32) uint32 {
 	return b
 }
 
-func ComputeKeysFromSeed(seedBytes []byte, index uint32, params *DeSoParams) (_pubKey *btcec.PublicKey, _privKey *btcec.PrivateKey, _btcAddress string, _err error) {
+func ComputeKeysFromSeed(seedBytes []byte, index uint32, params *BitCloutParams) (_pubKey *btcec.PublicKey, _privKey *btcec.PrivateKey, _btcAddress string, _err error) {
 	isTestnet := params.NetworkType == NetworkType_TESTNET
 	return ComputeKeysFromSeedWithNet(seedBytes, index, isTestnet)
 }
@@ -64,7 +64,7 @@ func ComputeKeysFromSeed(seedBytes []byte, index uint32, params *DeSoParams) (_p
 func ComputeKeysFromSeedWithNet(seedBytes []byte, index uint32, isTestnet bool) (_pubKey *btcec.PublicKey, _privKey *btcec.PrivateKey, _btcAddress string, _err error) {
 	// Get the pubkey and privkey from the seed. We use the Bitcoin parameters
 	// to generate them.
-	// TODO: We should get this from the DeSoParams, not reference them directly.
+	// TODO: We should get this from the BitCloutParams, not reference them directly.
 	netParams := &chaincfg.MainNetParams
 	if isTestnet {
 		netParams = &chaincfg.TestNet3Params

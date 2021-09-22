@@ -27,7 +27,7 @@ type TXIndex struct {
 	CoreChain *Blockchain
 
 	// Core params object
-	Params *DeSoParams
+	Params *BitCloutParams
 
 	// Update wait group
 	updateWaitGroup sync.WaitGroup
@@ -36,7 +36,7 @@ type TXIndex struct {
 	stopUpdateChannel chan struct{}
 }
 
-func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (*TXIndex, error) {
+func NewTXIndex(coreChain *Blockchain, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
 	txIndexOpts := badger.DefaultOptions(txIndexDir)
@@ -50,7 +50,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	}
 
 	// See if we have a best chain hash stored in the txindex db.
-	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, ChainTypeDeSoBlock)
+	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, ChainTypeBitCloutBlock)
 
 	// If we haven't initialized the txIndexChain before, set up the
 	// seed mappings.
@@ -60,8 +60,8 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		// set their block as the genesis block.
 		{
 			dummyPk := ArchitectPubKeyBase58Check
-			dummyTxn := &MsgDeSoTxn{
-				TxInputs:  []*DeSoInput{},
+			dummyTxn := &MsgBitCloutTxn{
+				TxInputs:  []*BitCloutInput{},
 				TxOutputs: params.SeedBalances,
 				TxnMeta:   &BlockRewardMetadataa{},
 				PublicKey: MustBase58CheckDecode(dummyPk),
@@ -98,7 +98,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 			if err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn HEX: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
-			txn := &MsgDeSoTxn{}
+			txn := &MsgBitCloutTxn{}
 			if err := txn.FromBytes(txnBytes); err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
@@ -325,7 +325,7 @@ func (txi *TXIndex) Update() error {
 				"%v: %v", blockToDetach, err)
 		}
 		// We have to flush a couple of extra things that the view doesn't flush...
-		if err := PutBestHash(utxoView.TipHash, txi.TXIndexChain.DB(), ChainTypeDeSoBlock); err != nil {
+		if err := PutBestHash(utxoView.TipHash, txi.TXIndexChain.DB(), ChainTypeBitCloutBlock); err != nil {
 			return fmt.Errorf("Update: Error putting best hash for block "+
 				"%v: %v", blockToDetach, err)
 		}

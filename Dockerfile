@@ -3,7 +3,7 @@ FROM alpine:edge AS core
 RUN apk update && apk upgrade
 RUN apk add --update go=1.16.6-r0 gcc g++ vips vips-dev
 
-WORKDIR /deso/src/core
+WORKDIR /bitclout/src/core
 
 COPY third_party third_party
 COPY go.mod .
@@ -11,7 +11,7 @@ COPY go.sum .
 
 RUN go mod download
 
-COPY desohash desohash
+COPY clouthash clouthash
 COPY cmd       cmd
 COPY lib       lib
 COPY migrate   migrate
@@ -26,6 +26,6 @@ FROM alpine:edge
 
 RUN apk add --update vips-dev
 
-COPY --from=core /deso/src/core/bin/core /deso/bin/core
+COPY --from=core /bitclout/src/core/bin/core /bitclout/bin/core
 
-ENTRYPOINT ["/deso/bin/core"]
+ENTRYPOINT ["/bitclout/bin/core"]

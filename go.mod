@@ -1,4 +1,4 @@
-module github.com/deso-protocol/core
+module github.com/bitclout/core
 
 go 1.14
 

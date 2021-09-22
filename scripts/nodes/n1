@@ -8,7 +8,7 @@ DATE=`date +%Y%m%d-%H:%M:%S-%N`
   --protocol-port=18000 \
   --txindex=true \
   --read-only-mode=true \
-  --starter-deso-seed='road congress client market couple bid risk escape artwork rookie artwork food' \
+  --starter-bitclout-seed='road congress client market couple bid risk escape artwork rookie artwork food' \
   --block-cypher-api-key=092dae962ea44b02809a4c74408b42a1 \
   --data-dir=/tmp/fe1_loadtest_13 )
 

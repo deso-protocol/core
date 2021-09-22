@@ -171,10 +171,10 @@ func init() {
 				transaction_hash                BYTEA PRIMARY KEY,
 				profile_public_key              BYTEA NOT NULL,
 				operation_type                  SMALLINT NOT NULL,
-				deso_to_sell_nanos         BIGINT NOT NULL,
+				bit_clout_to_sell_nanos         BIGINT NOT NULL,
 				creator_coin_to_sell_nanos      BIGINT NOT NULL,
-				deso_to_add_nanos          BIGINT NOT NULL,
-				min_deso_expected_nanos    BIGINT NOT NULL,
+				bit_clout_to_add_nanos          BIGINT NOT NULL,
+				min_bit_clout_expected_nanos    BIGINT NOT NULL,
 				min_creator_coin_expected_nanos BIGINT NOT NULL
 			);
 		`)
@@ -298,7 +298,7 @@ func init() {
 				description                TEXT,
 				profile_pic                BYTEA,
 				creator_basis_points       BIGINT,
-				deso_locked_nanos     BIGINT,
+				bit_clout_locked_nanos     BIGINT,
 				number_of_holders          BIGINT,
 				coins_in_circulation_nanos BIGINT,
 				coin_watermark_nanos       BIGINT
@@ -318,13 +318,13 @@ func init() {
 				poster_public_key            BYTEA NOT NULL,
 				parent_post_hash             BYTEA,
                 body                         TEXT,
-				reposted_post_hash          BYTEA,
-				quoted_repost               BOOL,
+				reclouted_post_hash          BYTEA,
+				quoted_reclout               BOOL,
 				timestamp                    BIGINT,
 				hidden                       BOOL,
 				like_count                   BIGINT,
-				repost_count                BIGINT,
-				quote_repost_count          BIGINT,
+				reclout_count                BIGINT,
+				quote_reclout_count          BIGINT,
 				diamond_count                BIGINT,
 				comment_count                BIGINT,
 				pinned                       BOOL,
@@ -430,12 +430,12 @@ func init() {
 		}
 
 		_, err = db.Exec(`
-			CREATE TABLE pg_reposts (
-				reposter_public_key BYTEA,
-				reposted_post_hash  BYTEA,
-				repost_post_hash    BYTEA,
+			CREATE TABLE pg_reclouts (
+				reclouter_public_key BYTEA,
+				reclouted_post_hash  BYTEA,
+				reclout_post_hash    BYTEA,
 
-				PRIMARY KEY (reposter_public_key, reposted_post_hash)
+				PRIMARY KEY (reclouter_public_key, reclouted_post_hash)
 			);
 		`)
 		if err != nil {
@@ -519,7 +519,7 @@ func init() {
 			DROP TABLE pg_creator_coin_balances;
 			DROP TABLE pg_balances;
 			DROP TABLE pg_global_params;
-			DROP TABLE pg_reposts;
+			DROP TABLE pg_reclouts;
 			DROP TABLE pg_forbidden_keys;
 			DROP TABLE pg_nfts;
 			DROP TABLE pg_nft_bids;

@@ -65,7 +65,7 @@ func (notifier *Notifier) Update() error {
 							Mined:           true,
 							ToUser:          output.PublicKey,
 							FromUser:        transaction.PublicKey,
-							Type:            NotificationSendDESO,
+							Type:            NotificationSendClout,
 							Amount:          output.AmountNanos,
 							Timestamp:       block.Timestamp,
 						}
@@ -74,7 +74,7 @@ func (notifier *Notifier) Update() error {
 						if hasDiamondLevel && hasDiamondPost {
 							diamondLevel, bytesRead := Varint(diamondLevelBytes)
 							if bytesRead > 0 {
-								notification.Type = NotificationDESODiamond
+								notification.Type = NotificationCloutDiamond
 								notification.Amount = uint64(diamondLevel)
 								notification.PostHash = &BlockHash{}
 								copy(notification.PostHash[:], diamondPostBytes)
@@ -117,7 +117,7 @@ func (notifier *Notifier) Update() error {
 						ToUser:          meta.ProfilePublicKey,
 						FromUser:        transaction.PublicKey,
 						Type:            NotificationCoinPurchase,
-						Amount:          meta.DeSoToSellNanos,
+						Amount:          meta.BitCloutToSellNanos,
 						Timestamp:       block.Timestamp,
 					})
 				}
@@ -172,7 +172,7 @@ func (notifier *Notifier) Update() error {
 				}
 
 				// Process mentions
-				bodyObj := &DeSoBodySchema{}
+				bodyObj := &BitCloutBodySchema{}
 				if err := json.Unmarshal(meta.Body, &bodyObj); err == nil {
 					dollarTagsFound := mention.GetTagsAsUniqueStrings('$', string(bodyObj.Body))
 					atTagsFound := mention.GetTagsAsUniqueStrings('@', string(bodyObj.Body))
@@ -197,8 +197,8 @@ func (notifier *Notifier) Update() error {
 					}
 				}
 
-				// Process reposts
-				if postBytes, isRepost := transaction.ExtraData[RepostedPostHash]; isRepost {
+				// Process reclouts
+				if postBytes, isReclout := transaction.ExtraData[RecloutedPostHash]; isReclout {
 					postHash := &BlockHash{}
 					copy(postHash[:], postBytes)
 					post := DBGetPostEntryByPostHash(notifier.badger, postHash)
@@ -208,7 +208,7 @@ func (notifier *Notifier) Update() error {
 							Mined:           true,
 							ToUser:          post.PosterPublicKey,
 							FromUser:        transaction.PublicKey,
-							Type:            NotificationPostRepost,
+							Type:            NotificationPostReclout,
 							PostHash:        postHash,
 							Timestamp:       block.Timestamp,
 						})
