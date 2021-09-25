@@ -194,12 +194,12 @@ func (msgType MsgType) String() string {
 	}
 }
 
-// BitCloutMessage is the interface that a message we send on the wire must implement.
-type BitCloutMessage interface {
+// DeSoMessage is the interface that a message we send on the wire must implement.
+type DeSoMessage interface {
 	// The following methods allow one to convert a message struct into
 	// a byte slice and back. Example usage:
 	//
-	//   params := &BitCloutTestnetParams
+	//   params := &DeSoTestnetParams
 	//   msgType := MsgTypeVersion
 	//   byteSlice := []byte{0x00, ...}
 	//
@@ -303,14 +303,14 @@ func (txnType TxnType) String() string {
 	}
 }
 
-type BitCloutTxnMetadata interface {
+type DeSoTxnMetadata interface {
 	ToBytes(preSignature bool) ([]byte, error)
 	FromBytes(data []byte) error
-	New() BitCloutTxnMetadata
+	New() DeSoTxnMetadata
 	GetTxnType() TxnType
 }
 
-func NewTxnMetadata(txType TxnType) (BitCloutTxnMetadata, error) {
+func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 	switch txType {
 	case TxnTypeUnset:
 		return nil, fmt.Errorf("NewTxnMetadata: UNSET TxnType: %v", TxnTypeUnset)
@@ -365,7 +365,7 @@ func NewTxnMetadata(txType TxnType) (BitCloutTxnMetadata, error) {
 // WriteMessage takes an io.Writer and serializes and writes the specified message
 // to it. Returns an error if the message is malformed or invalid for any reason.
 // Otherwise returns the payload that was written sans the header.
-func WriteMessage(ww io.Writer, msg BitCloutMessage, networkType NetworkType) ([]byte, error) {
+func WriteMessage(ww io.Writer, msg DeSoMessage, networkType NetworkType) ([]byte, error) {
 	hdr := []byte{}
 
 	// Add the network as a uvarint.
@@ -416,7 +416,7 @@ func WriteMessage(ww io.Writer, msg BitCloutMessage, networkType NetworkType) ([
 // Returns an error if the message is malformed or invalid for any reason. Otherwise
 // returns a formed message object and the raw byte payload from which it was
 // derived.
-func ReadMessage(rr io.Reader, networkType NetworkType) (BitCloutMessage, []byte, error) {
+func ReadMessage(rr io.Reader, networkType NetworkType) (DeSoMessage, []byte, error) {
 	// Read the network as a uvarint.
 	inNetworkType, err := ReadUvarint(rr)
 	if err != nil {
@@ -482,76 +482,76 @@ func ReadMessage(rr io.Reader, networkType NetworkType) (BitCloutMessage, []byte
 	return retMsg, payload, nil
 }
 
-func NewMessage(msgType MsgType) BitCloutMessage {
+func NewMessage(msgType MsgType) DeSoMessage {
 	switch msgType {
 	case MsgTypeVersion:
 		{
-			return &MsgBitCloutVersion{}
+			return &MsgDeSoVersion{}
 		}
 	case MsgTypeVerack:
 		{
-			return &MsgBitCloutVerack{}
+			return &MsgDeSoVerack{}
 		}
 	case MsgTypeHeader:
 		{
-			return &MsgBitCloutHeader{
+			return &MsgDeSoHeader{
 				PrevBlockHash:         &BlockHash{},
 				TransactionMerkleRoot: &BlockHash{},
 			}
 		}
 	case MsgTypeBlock:
 		{
-			return &MsgBitCloutBlock{
-				Header: NewMessage(MsgTypeHeader).(*MsgBitCloutHeader),
+			return &MsgDeSoBlock{
+				Header: NewMessage(MsgTypeHeader).(*MsgDeSoHeader),
 			}
 		}
 	case MsgTypeTxn:
 		{
-			return &MsgBitCloutTxn{}
+			return &MsgDeSoTxn{}
 		}
 	case MsgTypePing:
 		{
-			return &MsgBitCloutPing{}
+			return &MsgDeSoPing{}
 		}
 	case MsgTypePong:
 		{
-			return &MsgBitCloutPong{}
+			return &MsgDeSoPong{}
 		}
 	case MsgTypeInv:
 		{
-			return &MsgBitCloutInv{}
+			return &MsgDeSoInv{}
 		}
 	case MsgTypeGetBlocks:
 		{
-			return &MsgBitCloutGetBlocks{}
+			return &MsgDeSoGetBlocks{}
 		}
 	case MsgTypeGetTransactions:
 		{
-			return &MsgBitCloutGetTransactions{}
+			return &MsgDeSoGetTransactions{}
 		}
 	case MsgTypeTransactionBundle:
 		{
-			return &MsgBitCloutTransactionBundle{}
+			return &MsgDeSoTransactionBundle{}
 		}
 	case MsgTypeMempool:
 		{
-			return &MsgBitCloutMempool{}
+			return &MsgDeSoMempool{}
 		}
 	case MsgTypeGetHeaders:
 		{
-			return &MsgBitCloutGetHeaders{}
+			return &MsgDeSoGetHeaders{}
 		}
 	case MsgTypeHeaderBundle:
 		{
-			return &MsgBitCloutHeaderBundle{}
+			return &MsgDeSoHeaderBundle{}
 		}
 	case MsgTypeAddr:
 		{
-			return &MsgBitCloutAddr{}
+			return &MsgDeSoAddr{}
 		}
 	case MsgTypeGetAddr:
 		{
-			return &MsgBitCloutGetAddr{}
+			return &MsgDeSoGetAddr{}
 		}
 	default:
 		{
@@ -564,100 +564,100 @@ func NewMessage(msgType MsgType) BitCloutMessage {
 // Control Messages
 // ==================================================================
 
-type MsgBitCloutQuit struct {
+type MsgDeSoQuit struct {
 }
 
-func (msg *MsgBitCloutQuit) GetMsgType() MsgType {
+func (msg *MsgDeSoQuit) GetMsgType() MsgType {
 	return MsgTypeQuit
 }
 
-func (msg *MsgBitCloutQuit) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgBitCloutQuit.ToBytes not implemented")
+func (msg *MsgDeSoQuit) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoQuit.ToBytes not implemented")
 }
 
-func (msg *MsgBitCloutQuit) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgBitCloutQuit.FromBytes not implemented")
+func (msg *MsgDeSoQuit) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoQuit.FromBytes not implemented")
 }
 
-type MsgBitCloutNewPeer struct {
+type MsgDeSoNewPeer struct {
 }
 
-func (msg *MsgBitCloutNewPeer) GetMsgType() MsgType {
+func (msg *MsgDeSoNewPeer) GetMsgType() MsgType {
 	return MsgTypeNewPeer
 }
 
-func (msg *MsgBitCloutNewPeer) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgBitCloutNewPeer.ToBytes: Not implemented")
+func (msg *MsgDeSoNewPeer) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoNewPeer.ToBytes: Not implemented")
 }
 
-func (msg *MsgBitCloutNewPeer) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgBitCloutNewPeer.FromBytes not implemented")
+func (msg *MsgDeSoNewPeer) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoNewPeer.FromBytes not implemented")
 }
 
-type MsgBitCloutDonePeer struct {
+type MsgDeSoDonePeer struct {
 }
 
-func (msg *MsgBitCloutDonePeer) GetMsgType() MsgType {
+func (msg *MsgDeSoDonePeer) GetMsgType() MsgType {
 	return MsgTypeDonePeer
 }
 
-func (msg *MsgBitCloutDonePeer) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgBitCloutDonePeer.ToBytes: Not implemented")
+func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoDonePeer.ToBytes: Not implemented")
 }
 
-func (msg *MsgBitCloutDonePeer) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgBitCloutDonePeer.FromBytes not implemented")
+func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
 }
 
-type MsgBitCloutBlockAccepted struct {
-	block *MsgBitCloutBlock
+type MsgDeSoBlockAccepted struct {
+	block *MsgDeSoBlock
 }
 
-func (msg *MsgBitCloutBlockAccepted) GetMsgType() MsgType {
+func (msg *MsgDeSoBlockAccepted) GetMsgType() MsgType {
 	return MsgTypeBlockAccepted
 }
 
-func (msg *MsgBitCloutBlockAccepted) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgBitCloutBlockAccepted.ToBytes: Not implemented")
+func (msg *MsgDeSoBlockAccepted) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoBlockAccepted.ToBytes: Not implemented")
 }
 
-func (msg *MsgBitCloutBlockAccepted) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgBitCloutBlockAccepted.FromBytes not implemented")
+func (msg *MsgDeSoBlockAccepted) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoBlockAccepted.FromBytes not implemented")
 }
 
-type MsgBitCloutBitcoinManagerUpdate struct {
+type MsgDeSoBitcoinManagerUpdate struct {
 	// Keep it simple for now. A BitcoinManagerUpdate just signals that
 	// the BitcoinManager has added at least one block or done a reorg.
 	// No serialization because we don't want this sent on the wire ever.
-	TransactionsFound []*MsgBitCloutTxn
+	TransactionsFound []*MsgDeSoTxn
 }
 
-func (msg *MsgBitCloutBitcoinManagerUpdate) GetMsgType() MsgType {
+func (msg *MsgDeSoBitcoinManagerUpdate) GetMsgType() MsgType {
 	return MsgTypeBitcoinManagerUpdate
 }
 
-func (msg *MsgBitCloutBitcoinManagerUpdate) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgBitCloutBitcoinManagerUpdate.ToBytes: Not implemented")
+func (msg *MsgDeSoBitcoinManagerUpdate) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoBitcoinManagerUpdate.ToBytes: Not implemented")
 }
 
-func (msg *MsgBitCloutBitcoinManagerUpdate) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgBitCloutBitcoinManagerUpdate.FromBytes not implemented")
+func (msg *MsgDeSoBitcoinManagerUpdate) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoBitcoinManagerUpdate.FromBytes not implemented")
 }
 
 // ==================================================================
 // GET_HEADERS message
 // ==================================================================
 
-type MsgBitCloutGetHeaders struct {
+type MsgDeSoGetHeaders struct {
 	StopHash     *BlockHash
 	BlockLocator []*BlockHash
 }
 
-func (msg *MsgBitCloutGetHeaders) GetMsgType() MsgType {
+func (msg *MsgDeSoGetHeaders) GetMsgType() MsgType {
 	return MsgTypeGetHeaders
 }
 
-func (msg *MsgBitCloutGetHeaders) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoGetHeaders) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Encode the StopHash first.
@@ -674,29 +674,29 @@ func (msg *MsgBitCloutGetHeaders) ToBytes(preSignature bool) ([]byte, error) {
 	return data, nil
 }
 
-func (msg *MsgBitCloutGetHeaders) FromBytes(data []byte) error {
+func (msg *MsgDeSoGetHeaders) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retGetHeaders := NewMessage(MsgTypeGetHeaders).(*MsgBitCloutGetHeaders)
+	retGetHeaders := NewMessage(MsgTypeGetHeaders).(*MsgDeSoGetHeaders)
 
 	// StopHash
 	stopHash := BlockHash{}
 	_, err := io.ReadFull(rr, stopHash[:])
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutGetHeaders.FromBytes: Problem decoding StopHash")
+		return errors.Wrapf(err, "MsgDeSoGetHeaders.FromBytes: Problem decoding StopHash")
 	}
 	retGetHeaders.StopHash = &stopHash
 
 	// Number of hashes in block locator.
 	numHeaders, err := ReadUvarint(rr)
 	if err != nil {
-		return fmt.Errorf("MsgBitCloutGetHeaders.FromBytes: %v", err)
+		return fmt.Errorf("MsgDeSoGetHeaders.FromBytes: %v", err)
 	}
 
 	for ii := uint64(0); ii < numHeaders; ii++ {
 		currentHeader := BlockHash{}
 		_, err := io.ReadFull(rr, currentHeader[:])
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutGetHeaders.FromBytes: Problem decoding header hash")
+			return errors.Wrapf(err, "MsgDeSoGetHeaders.FromBytes: Problem decoding header hash")
 		}
 
 		retGetHeaders.BlockLocator = append(retGetHeaders.BlockLocator, &currentHeader)
@@ -706,7 +706,7 @@ func (msg *MsgBitCloutGetHeaders) FromBytes(data []byte) error {
 	return nil
 }
 
-func (msg *MsgBitCloutGetHeaders) String() string {
+func (msg *MsgDeSoGetHeaders) String() string {
 	return fmt.Sprintf("StopHash: %v Locator: %v",
 		msg.StopHash, msg.BlockLocator)
 }
@@ -715,17 +715,17 @@ func (msg *MsgBitCloutGetHeaders) String() string {
 // HEADER_BUNDLE message
 // ==================================================================
 
-type MsgBitCloutHeaderBundle struct {
-	Headers   []*MsgBitCloutHeader
+type MsgDeSoHeaderBundle struct {
+	Headers   []*MsgDeSoHeader
 	TipHash   *BlockHash
 	TipHeight uint32
 }
 
-func (msg *MsgBitCloutHeaderBundle) GetMsgType() MsgType {
+func (msg *MsgDeSoHeaderBundle) GetMsgType() MsgType {
 	return MsgTypeHeaderBundle
 }
 
-func (msg *MsgBitCloutHeaderBundle) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoHeaderBundle) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Encode the number of headers in the bundle.
@@ -735,7 +735,7 @@ func (msg *MsgBitCloutHeaderBundle) ToBytes(preSignature bool) ([]byte, error) {
 	for _, header := range msg.Headers {
 		headerBytes, err := header.ToBytes(preSignature)
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutHeaderBundle.ToBytes: Problem encoding header")
+			return nil, errors.Wrapf(err, "MsgDeSoHeaderBundle.ToBytes: Problem encoding header")
 		}
 		data = append(data, headerBytes...)
 	}
@@ -749,21 +749,21 @@ func (msg *MsgBitCloutHeaderBundle) ToBytes(preSignature bool) ([]byte, error) {
 	return data, nil
 }
 
-func (msg *MsgBitCloutHeaderBundle) FromBytes(data []byte) error {
+func (msg *MsgDeSoHeaderBundle) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retBundle := NewMessage(MsgTypeHeaderBundle).(*MsgBitCloutHeaderBundle)
+	retBundle := NewMessage(MsgTypeHeaderBundle).(*MsgDeSoHeaderBundle)
 
 	// Read in the number of headers in the bundle.
 	numHeaders, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutHeaderBundle.FromBytes: Problem decoding number of header")
+		return errors.Wrapf(err, "MsgDeSoHeaderBundle.FromBytes: Problem decoding number of header")
 	}
 
 	// Read in all of the headers.
 	for ii := uint64(0); ii < numHeaders; ii++ {
 		retHeader, err := DecodeHeader(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: ")
+			return errors.Wrapf(err, "MsgDeSoHeader.FromBytes: ")
 		}
 
 		retBundle.Headers = append(retBundle.Headers, retHeader)
@@ -773,13 +773,13 @@ func (msg *MsgBitCloutHeaderBundle) FromBytes(data []byte) error {
 	retBundle.TipHash = &BlockHash{}
 	_, err = io.ReadFull(rr, retBundle.TipHash[:])
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutHeaderBundle.FromBytes:: Error reading TipHash: ")
+		return errors.Wrapf(err, "MsgDeSoHeaderBundle.FromBytes:: Error reading TipHash: ")
 	}
 
 	// Read in the tip height.
 	tipHeight, err := ReadUvarint(rr)
 	if err != nil || tipHeight > math.MaxUint32 {
-		return fmt.Errorf("MsgBitCloutHeaderBundle.FromBytes: %v", err)
+		return fmt.Errorf("MsgDeSoHeaderBundle.FromBytes: %v", err)
 	}
 	retBundle.TipHeight = uint32(tipHeight)
 
@@ -787,7 +787,7 @@ func (msg *MsgBitCloutHeaderBundle) FromBytes(data []byte) error {
 	return nil
 }
 
-func (msg *MsgBitCloutHeaderBundle) String() string {
+func (msg *MsgDeSoHeaderBundle) String() string {
 	return fmt.Sprintf("Num Headers: %v, Tip Height: %v, Tip Hash: %v, Headers: %v", len(msg.Headers), msg.TipHeight, msg.TipHash, msg.Headers)
 }
 
@@ -795,19 +795,19 @@ func (msg *MsgBitCloutHeaderBundle) String() string {
 // GetBlocks Messages
 // ==================================================================
 
-type MsgBitCloutGetBlocks struct {
+type MsgDeSoGetBlocks struct {
 	HashList []*BlockHash
 }
 
-func (msg *MsgBitCloutGetBlocks) GetMsgType() MsgType {
+func (msg *MsgDeSoGetBlocks) GetMsgType() MsgType {
 	return MsgTypeGetBlocks
 }
 
-func (msg *MsgBitCloutGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	if len(msg.HashList) > MaxBlocksInFlight {
-		return nil, fmt.Errorf("MsgBitCloutGetBlocks.ToBytes: Blocks requested %d "+
+		return nil, fmt.Errorf("MsgDeSoGetBlocks.ToBytes: Blocks requested %d "+
 			"exceeds MaxBlocksInFlight %d", len(msg.HashList), MaxBlocksInFlight)
 	}
 
@@ -821,17 +821,17 @@ func (msg *MsgBitCloutGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 	return data, nil
 }
 
-func (msg *MsgBitCloutGetBlocks) FromBytes(data []byte) error {
+func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// Parse the nmber of block hashes.
 	numHashes, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutGetBlocks.FromBytes: Problem "+
+		return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes: Problem "+
 			"reading number of block hashes requested")
 	}
 	if numHashes > MaxBlocksInFlight {
-		return fmt.Errorf("MsgBitCloutGetBlocks.FromBytes: HashList length (%d) "+
+		return fmt.Errorf("MsgDeSoGetBlocks.FromBytes: HashList length (%d) "+
 			"exceeds maximum allowed (%d)", numHashes, MaxBlocksInFlight)
 	}
 
@@ -842,24 +842,24 @@ func (msg *MsgBitCloutGetBlocks) FromBytes(data []byte) error {
 
 		_, err = io.ReadFull(rr, newHash[:])
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutGetBlocks.FromBytes:: Error reading Hash: ")
+			return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes:: Error reading Hash: ")
 		}
 		hashList = append(hashList, &newHash)
 	}
 
-	*msg = MsgBitCloutGetBlocks{
+	*msg = MsgDeSoGetBlocks{
 		HashList: hashList,
 	}
 	return nil
 }
 
-func (msg *MsgBitCloutGetBlocks) String() string {
+func (msg *MsgDeSoGetBlocks) String() string {
 	return fmt.Sprintf("%v", msg.HashList)
 }
 
 // Within a post, the body typically has a particular
 // schema defined below.
-type BitCloutBodySchema struct {
+type DeSoBodySchema struct {
 	Body      string
 	ImageURLs []string
 }
@@ -868,15 +868,15 @@ type BitCloutBodySchema struct {
 // GetTransactions Messages
 // ==================================================================
 
-type MsgBitCloutGetTransactions struct {
+type MsgDeSoGetTransactions struct {
 	HashList []*BlockHash
 }
 
-func (msg *MsgBitCloutGetTransactions) GetMsgType() MsgType {
+func (msg *MsgDeSoGetTransactions) GetMsgType() MsgType {
 	return MsgTypeGetTransactions
 }
 
-func (msg *MsgBitCloutGetTransactions) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoGetTransactions) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Encode the number of hashes.
@@ -889,13 +889,13 @@ func (msg *MsgBitCloutGetTransactions) ToBytes(preSignature bool) ([]byte, error
 	return data, nil
 }
 
-func (msg *MsgBitCloutGetTransactions) FromBytes(data []byte) error {
+func (msg *MsgDeSoGetTransactions) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// Parse the nmber of block hashes.
 	numHashes, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutGetTransactions.FromBytes: Problem "+
+		return errors.Wrapf(err, "MsgDeSoGetTransactions.FromBytes: Problem "+
 			"reading number of transaction hashes requested")
 	}
 
@@ -906,18 +906,18 @@ func (msg *MsgBitCloutGetTransactions) FromBytes(data []byte) error {
 
 		_, err = io.ReadFull(rr, newHash[:])
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutGetTransactions.FromBytes: Error reading Hash: ")
+			return errors.Wrapf(err, "MsgDeSoGetTransactions.FromBytes: Error reading Hash: ")
 		}
 		hashList = append(hashList, &newHash)
 	}
 
-	*msg = MsgBitCloutGetTransactions{
+	*msg = MsgDeSoGetTransactions{
 		HashList: hashList,
 	}
 	return nil
 }
 
-func (msg *MsgBitCloutGetTransactions) String() string {
+func (msg *MsgDeSoGetTransactions) String() string {
 	return fmt.Sprintf("Num hashes: %v, HashList: %v", len(msg.HashList), msg.HashList)
 }
 
@@ -925,15 +925,15 @@ func (msg *MsgBitCloutGetTransactions) String() string {
 // TransactionBundle message
 // ==================================================================
 
-type MsgBitCloutTransactionBundle struct {
-	Transactions []*MsgBitCloutTxn
+type MsgDeSoTransactionBundle struct {
+	Transactions []*MsgDeSoTxn
 }
 
-func (msg *MsgBitCloutTransactionBundle) GetMsgType() MsgType {
+func (msg *MsgDeSoTransactionBundle) GetMsgType() MsgType {
 	return MsgTypeTransactionBundle
 }
 
-func (msg *MsgBitCloutTransactionBundle) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoTransactionBundle) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Encode the number of transactions in the bundle.
@@ -943,7 +943,7 @@ func (msg *MsgBitCloutTransactionBundle) ToBytes(preSignature bool) ([]byte, err
 	for _, transaction := range msg.Transactions {
 		transactionBytes, err := transaction.ToBytes(preSignature)
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutTransactionBundle.ToBytes: Problem encoding transaction")
+			return nil, errors.Wrapf(err, "MsgDeSoTransactionBundle.ToBytes: Problem encoding transaction")
 		}
 		data = append(data, transactionBytes...)
 	}
@@ -951,21 +951,21 @@ func (msg *MsgBitCloutTransactionBundle) ToBytes(preSignature bool) ([]byte, err
 	return data, nil
 }
 
-func (msg *MsgBitCloutTransactionBundle) FromBytes(data []byte) error {
+func (msg *MsgDeSoTransactionBundle) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retBundle := NewMessage(MsgTypeTransactionBundle).(*MsgBitCloutTransactionBundle)
+	retBundle := NewMessage(MsgTypeTransactionBundle).(*MsgDeSoTransactionBundle)
 
 	// Read in the number of transactions in the bundle.
 	numTransactions, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutTransactionBundle.FromBytes: Problem decoding number of transaction")
+		return errors.Wrapf(err, "MsgDeSoTransactionBundle.FromBytes: Problem decoding number of transaction")
 	}
 
 	// Read in all of the transactions.
 	for ii := uint64(0); ii < numTransactions; ii++ {
 		retTransaction, err := _readTransaction(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutTransaction.FromBytes: ")
+			return errors.Wrapf(err, "MsgDeSoTransaction.FromBytes: ")
 		}
 
 		retBundle.Transactions = append(retBundle.Transactions, retTransaction)
@@ -975,7 +975,7 @@ func (msg *MsgBitCloutTransactionBundle) FromBytes(data []byte) error {
 	return nil
 }
 
-func (msg *MsgBitCloutTransactionBundle) String() string {
+func (msg *MsgDeSoTransactionBundle) String() string {
 	return fmt.Sprintf("Num txns: %v, Txns: %v", len(msg.Transactions), msg.Transactions)
 }
 
@@ -983,24 +983,24 @@ func (msg *MsgBitCloutTransactionBundle) String() string {
 // Mempool Messages
 // ==================================================================
 
-type MsgBitCloutMempool struct {
+type MsgDeSoMempool struct {
 }
 
-func (msg *MsgBitCloutMempool) GetMsgType() MsgType {
+func (msg *MsgDeSoMempool) GetMsgType() MsgType {
 	return MsgTypeMempool
 }
 
-func (msg *MsgBitCloutMempool) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoMempool) ToBytes(preSignature bool) ([]byte, error) {
 	// A mempool message is just empty.
 	return []byte{}, nil
 }
 
-func (msg *MsgBitCloutMempool) FromBytes(data []byte) error {
+func (msg *MsgDeSoMempool) FromBytes(data []byte) error {
 	// A mempool message is just empty.
 	return nil
 }
 
-func (msg *MsgBitCloutMempool) String() string {
+func (msg *MsgDeSoMempool) String() string {
 	return fmt.Sprintf("%v", msg.GetMsgType())
 }
 
@@ -1050,7 +1050,7 @@ func (invVect *InvVect) String() string {
 	return fmt.Sprintf("Type: %v, Hash: %v", invVect.Type, &(invVect.Hash))
 }
 
-type MsgBitCloutInv struct {
+type MsgDeSoInv struct {
 	InvList []*InvVect
 	// IsSyncResponse indicates that the inv was sent in response to a sync message.
 	// This indicates that the node shouldn't relay it to peers because they likely
@@ -1058,7 +1058,7 @@ type MsgBitCloutInv struct {
 	IsSyncResponse bool
 }
 
-func (msg *MsgBitCloutInv) GetMsgType() MsgType {
+func (msg *MsgDeSoInv) GetMsgType() MsgType {
 	return MsgTypeInv
 }
 
@@ -1116,32 +1116,32 @@ func _readInvList(rr io.Reader) ([]*InvVect, error) {
 	return invList, nil
 }
 
-func (msg *MsgBitCloutInv) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoInv) ToBytes(preSignature bool) ([]byte, error) {
 	data, err := _invListToBytes(msg.InvList)
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutGetInv: ")
+		return nil, errors.Wrapf(err, "MsgDeSoGetInv: ")
 	}
 	data = append(data, BoolToByte(msg.IsSyncResponse))
 
 	return data, nil
 }
 
-func (msg *MsgBitCloutInv) FromBytes(data []byte) error {
+func (msg *MsgDeSoInv) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 	invList, err := _readInvList(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutInv: ")
+		return errors.Wrapf(err, "MsgDeSoInv: ")
 	}
 	isSyncResponse := ReadBoolByte(rr)
 
-	*msg = MsgBitCloutInv{
+	*msg = MsgDeSoInv{
 		InvList:        invList,
 		IsSyncResponse: isSyncResponse,
 	}
 	return nil
 }
 
-func (msg *MsgBitCloutInv) String() string {
+func (msg *MsgDeSoInv) String() string {
 	return fmt.Sprintf("Num invs: %v, SyncResponse: %v, InvList: %v",
 		len(msg.InvList), msg.IsSyncResponse, msg.InvList)
 }
@@ -1150,45 +1150,45 @@ func (msg *MsgBitCloutInv) String() string {
 // PING and PONG Messages
 // ==================================================================
 
-type MsgBitCloutPing struct {
+type MsgDeSoPing struct {
 	Nonce uint64
 }
 
-func (msg *MsgBitCloutPing) GetMsgType() MsgType {
+func (msg *MsgDeSoPing) GetMsgType() MsgType {
 	return MsgTypePing
 }
 
-func (msg *MsgBitCloutPing) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoPing) ToBytes(preSignature bool) ([]byte, error) {
 	return UintToBuf(msg.Nonce), nil
 }
 
-func (msg *MsgBitCloutPing) FromBytes(data []byte) error {
+func (msg *MsgDeSoPing) FromBytes(data []byte) error {
 	nonce, err := ReadUvarint(bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("MsgBitCloutPing.FromBytes: %v", err)
+		return fmt.Errorf("MsgDeSoPing.FromBytes: %v", err)
 	}
-	*msg = MsgBitCloutPing{Nonce: nonce}
+	*msg = MsgDeSoPing{Nonce: nonce}
 	return nil
 }
 
-type MsgBitCloutPong struct {
+type MsgDeSoPong struct {
 	Nonce uint64
 }
 
-func (msg *MsgBitCloutPong) GetMsgType() MsgType {
+func (msg *MsgDeSoPong) GetMsgType() MsgType {
 	return MsgTypePong
 }
 
-func (msg *MsgBitCloutPong) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoPong) ToBytes(preSignature bool) ([]byte, error) {
 	return UintToBuf(msg.Nonce), nil
 }
 
-func (msg *MsgBitCloutPong) FromBytes(data []byte) error {
+func (msg *MsgDeSoPong) FromBytes(data []byte) error {
 	nonce, err := ReadUvarint(bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("MsgBitCloutPong.FromBytes: %v", err)
+		return fmt.Errorf("MsgDeSoPong.FromBytes: %v", err)
 	}
-	*msg = MsgBitCloutPong{Nonce: nonce}
+	*msg = MsgDeSoPong{Nonce: nonce}
 	return nil
 }
 
@@ -1203,7 +1203,7 @@ const (
 	SFFullNode ServiceFlag = 1 << iota
 )
 
-type MsgBitCloutVersion struct {
+type MsgDeSoVersion struct {
 	// What is the current version we're on?
 	Version uint64
 
@@ -1218,7 +1218,7 @@ type MsgBitCloutVersion struct {
 	// we generally want to prevent.
 	Nonce uint64
 
-	// Used as a "vanity plate" to identify different BitClout
+	// Used as a "vanity plate" to identify different DeSo
 	// clients. Mainly useful in analyzing the network at
 	// a meta level, not in the protocol itself.
 	UserAgent string
@@ -1234,7 +1234,7 @@ type MsgBitCloutVersion struct {
 	MinFeeRateNanosPerKB uint64
 }
 
-func (msg *MsgBitCloutVersion) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoVersion) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
 	// Version
@@ -1271,9 +1271,9 @@ func (msg *MsgBitCloutVersion) ToBytes(preSignature bool) ([]byte, error) {
 	return retBytes, nil
 }
 
-func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
+func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retVer := MsgBitCloutVersion{}
+	retVer := MsgDeSoVersion{}
 
 	// Version
 	//
@@ -1282,7 +1282,7 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	{
 		ver, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Problem converting msg.Version")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.Version")
 		}
 		retVer.Version = ver
 	}
@@ -1291,7 +1291,7 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	{
 		services, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Problem converting msg.Services")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.Services")
 		}
 		retVer.Services = ServiceFlag(services)
 	}
@@ -1300,7 +1300,7 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	{
 		tstampSecs, err := ReadVarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Problem converting msg.TstampSecs")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.TstampSecs")
 		}
 		retVer.TstampSecs = tstampSecs
 	}
@@ -1309,7 +1309,7 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	{
 		nonce, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Problem converting msg.Nonce")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.Nonce")
 		}
 		retVer.Nonce = nonce
 	}
@@ -1321,15 +1321,15 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	{
 		strLen, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Problem reading length of msg.UserAgent")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem reading length of msg.UserAgent")
 		}
 		if strLen > MaxMessagePayload {
-			return fmt.Errorf("MsgBitCloutVersion.FromBytes: Length msg.UserAgent %d larger than max allowed %d", strLen, MaxMessagePayload)
+			return fmt.Errorf("MsgDeSoVersion.FromBytes: Length msg.UserAgent %d larger than max allowed %d", strLen, MaxMessagePayload)
 		}
 		userAgent := make([]byte, strLen)
 		_, err = io.ReadFull(rr, userAgent)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Error reading msg.UserAgent")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Error reading msg.UserAgent")
 		}
 		retVer.UserAgent = string(userAgent)
 	}
@@ -1338,7 +1338,7 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	{
 		lastBlockHeight, err := ReadUvarint(rr)
 		if err != nil || lastBlockHeight > math.MaxUint32 {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Problem converting msg.LatestBlockHeight")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.LatestBlockHeight")
 		}
 		retVer.StartBlockHeight = uint32(lastBlockHeight)
 	}
@@ -1347,7 +1347,7 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	{
 		minFeeRateNanosPerKB, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Problem converting msg.MinFeeRateNanosPerKB")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.MinFeeRateNanosPerKB")
 		}
 		retVer.MinFeeRateNanosPerKB = minFeeRateNanosPerKB
 	}
@@ -1356,7 +1356,7 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	{
 		_, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVersion.FromBytes: Problem converting msg.JSONAPIPort")
+			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.JSONAPIPort")
 		}
 	}
 
@@ -1364,7 +1364,7 @@ func (msg *MsgBitCloutVersion) FromBytes(data []byte) error {
 	return nil
 }
 
-func (msg *MsgBitCloutVersion) GetMsgType() MsgType {
+func (msg *MsgDeSoVersion) GetMsgType() MsgType {
 	return MsgTypeVersion
 }
 
@@ -1413,16 +1413,16 @@ func (addr *SingleAddr) String() string {
 	return fmt.Sprintf("%s:%d", addr.IP.String(), addr.Port)
 }
 
-type MsgBitCloutAddr struct {
+type MsgDeSoAddr struct {
 	// The definition of NetAddress as defined by the btcd guys works fine for
-	// our purposes. The only difference is that for BitClout nodes, the Service
+	// our purposes. The only difference is that for DeSo nodes, the Service
 	// flag in the NetAddress is as we define it above in ServiceFlag.
 	// Note that we also rewrite the serialization logic as well to avoid
 	// relying on potentially crusty Bitcoin-related work-arounds going forward.
 	AddrList []*SingleAddr
 }
 
-func (msg *MsgBitCloutAddr) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoAddr) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
 	// Encode the number of addresses as a uvarint.
@@ -1449,14 +1449,14 @@ func (msg *MsgBitCloutAddr) ToBytes(preSignature bool) ([]byte, error) {
 	return retBytes, nil
 }
 
-func (msg *MsgBitCloutAddr) FromBytes(data []byte) error {
+func (msg *MsgDeSoAddr) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retVer := MsgBitCloutAddr{}
+	retVer := MsgDeSoAddr{}
 
 	// Read the number of addresses encoded.
 	numAddrs, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutAddr.FromBytes: Problem reading numAddrs: ")
+		return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading numAddrs: ")
 	}
 	for ii := uint64(0); ii < numAddrs; ii++ {
 		// Read each addr and add it to the AddrList.
@@ -1465,38 +1465,38 @@ func (msg *MsgBitCloutAddr) FromBytes(data []byte) error {
 		// Timestamp
 		tstampSecs, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutAddr.FromBytes: Problem reading tstamp: ")
+			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading tstamp: ")
 		}
 		currentAddr.Timestamp = time.Unix(int64(tstampSecs), 0)
 
 		// Services
 		serviceUint, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutAddr.FromBytes: Problem reading services: ")
+			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading services: ")
 		}
 		currentAddr.Services = ServiceFlag(serviceUint)
 
 		// IP
 		ipLen, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutAddr.FromBytes: Problem reading IP: ")
+			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading IP: ")
 		}
 		if ipLen != 4 && ipLen != 16 {
-			return fmt.Errorf("MsgBitCloutAddr.FromBytes: IP length must be 4 or 16 bytes but was %d", ipLen)
+			return fmt.Errorf("MsgDeSoAddr.FromBytes: IP length must be 4 or 16 bytes but was %d", ipLen)
 		}
 		currentAddr.IP = net.IP(make([]byte, ipLen))
 		_, err = io.ReadFull(rr, currentAddr.IP)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutAddr.FromBytes: Error reading IP")
+			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Error reading IP")
 		}
 
 		// Port
 		port, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutAddr.FromBytes: Problem reading port: ")
+			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading port: ")
 		}
 		if port > math.MaxUint16 {
-			return fmt.Errorf("MsgBitCloutAddr.FromBytes: Port value %d exceeds max "+
+			return fmt.Errorf("MsgDeSoAddr.FromBytes: Port value %d exceeds max "+
 				"allowed %d", port, math.MaxUint16)
 		}
 		currentAddr.Port = uint16(port)
@@ -1508,11 +1508,11 @@ func (msg *MsgBitCloutAddr) FromBytes(data []byte) error {
 	return nil
 }
 
-func (msg *MsgBitCloutAddr) GetMsgType() MsgType {
+func (msg *MsgDeSoAddr) GetMsgType() MsgType {
 	return MsgTypeAddr
 }
 
-func (msg *MsgBitCloutAddr) String() string {
+func (msg *MsgDeSoAddr) String() string {
 	return fmt.Sprintf("Num addrs: %v, AddrList: %v", len(msg.AddrList), msg.AddrList)
 }
 
@@ -1520,18 +1520,18 @@ func (msg *MsgBitCloutAddr) String() string {
 // GET_ADDR Message
 // ==================================================================
 
-type MsgBitCloutGetAddr struct {
+type MsgDeSoGetAddr struct {
 }
 
-func (msg *MsgBitCloutGetAddr) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoGetAddr) ToBytes(preSignature bool) ([]byte, error) {
 	return []byte{}, nil
 }
 
-func (msg *MsgBitCloutGetAddr) FromBytes(data []byte) error {
+func (msg *MsgDeSoGetAddr) FromBytes(data []byte) error {
 	return nil
 }
 
-func (msg *MsgBitCloutGetAddr) GetMsgType() MsgType {
+func (msg *MsgDeSoGetAddr) GetMsgType() MsgType {
 	return MsgTypeGetAddr
 }
 
@@ -1540,7 +1540,7 @@ func (msg *MsgBitCloutGetAddr) GetMsgType() MsgType {
 // ==================================================================
 
 // VERACK messages have no payload.
-type MsgBitCloutVerack struct {
+type MsgDeSoVerack struct {
 	// A verack message must contain the nonce the peer received in the
 	// initial version message. This ensures the peer that is communicating
 	// with us actually controls the address she says she does similar to
@@ -1548,7 +1548,7 @@ type MsgBitCloutVerack struct {
 	Nonce uint64
 }
 
-func (msg *MsgBitCloutVerack) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoVerack) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
 	// Nonce
@@ -1556,13 +1556,13 @@ func (msg *MsgBitCloutVerack) ToBytes(preSignature bool) ([]byte, error) {
 	return retBytes, nil
 }
 
-func (msg *MsgBitCloutVerack) FromBytes(data []byte) error {
+func (msg *MsgDeSoVerack) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retMsg := NewMessage(MsgTypeVerack).(*MsgBitCloutVerack)
+	retMsg := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
 	{
 		nonce, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutVerack.FromBytes: Problem reading Nonce")
+			return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce")
 		}
 		retMsg.Nonce = nonce
 	}
@@ -1570,7 +1570,7 @@ func (msg *MsgBitCloutVerack) FromBytes(data []byte) error {
 	return nil
 }
 
-func (msg *MsgBitCloutVerack) GetMsgType() MsgType {
+func (msg *MsgDeSoVerack) GetMsgType() MsgType {
 	return MsgTypeVerack
 }
 
@@ -1578,7 +1578,7 @@ func (msg *MsgBitCloutVerack) GetMsgType() MsgType {
 // HEADER Message
 // ==================================================================
 
-// MsgBitCloutHeader definition.
+// MsgDeSoHeader definition.
 //
 // Note that all of these fields must be encoded as *full* big-endian
 // ints/uints rather than varints. This is because these fields are hashed to
@@ -1589,7 +1589,7 @@ func (msg *MsgBitCloutVerack) GetMsgType() MsgType {
 // Additionally note that it's particularly important that headers be
 // space-efficient, since light clients will need to download an entire
 // history of them in order to be able to validate anything.
-type MsgBitCloutHeader struct {
+type MsgDeSoHeader struct {
 	// Note this is encoded as a fixed-width uint32 rather than a
 	// uvarint or a uint64.
 	Version uint32
@@ -1625,7 +1625,7 @@ func HeaderSizeBytes() int {
 	return len(headerBytes)
 }
 
-func (msg *MsgBitCloutHeader) EncodeHeaderVersion0(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoHeader) EncodeHeaderVersion0(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
 	// Version
@@ -1674,7 +1674,7 @@ func (msg *MsgBitCloutHeader) EncodeHeaderVersion0(preSignature bool) ([]byte, e
 	return retBytes, nil
 }
 
-func (msg *MsgBitCloutHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
 	// Version
@@ -1745,7 +1745,7 @@ func (msg *MsgBitCloutHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, e
 	return retBytes, nil
 }
 
-func (msg *MsgBitCloutHeader) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 
 	// Depending on the version, we decode the header differently.
 	if msg.Version == HeaderVersion0 {
@@ -1755,24 +1755,24 @@ func (msg *MsgBitCloutHeader) ToBytes(preSignature bool) ([]byte, error) {
 	} else {
 		// If we have an unrecognized version then we default to serializing with
 		// version 0. This is necessary because there are places where we use a
-		// MsgBitCloutHeader struct to store Bitcoin headers.
+		// MsgDeSoHeader struct to store Bitcoin headers.
 		return msg.EncodeHeaderVersion0(preSignature)
 	}
 }
 
-func DecodeHeaderVersion0(rr io.Reader) (*MsgBitCloutHeader, error) {
-	retHeader := NewMessage(MsgTypeHeader).(*MsgBitCloutHeader)
+func DecodeHeaderVersion0(rr io.Reader) (*MsgDeSoHeader, error) {
+	retHeader := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
 
 	// PrevBlockHash
 	_, err := io.ReadFull(rr, retHeader.PrevBlockHash[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding PrevBlockHash")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding PrevBlockHash")
 	}
 
 	// TransactionMerkleRoot
 	_, err = io.ReadFull(rr, retHeader.TransactionMerkleRoot[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding TransactionMerkleRoot")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TransactionMerkleRoot")
 	}
 
 	// TstampSecs
@@ -1780,7 +1780,7 @@ func DecodeHeaderVersion0(rr io.Reader) (*MsgBitCloutHeader, error) {
 		scratchBytes := [4]byte{}
 		_, err := io.ReadFull(rr, scratchBytes[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding TstampSecs")
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 		}
 		retHeader.TstampSecs = uint64(binary.LittleEndian.Uint32(scratchBytes[:]))
 	}
@@ -1790,7 +1790,7 @@ func DecodeHeaderVersion0(rr io.Reader) (*MsgBitCloutHeader, error) {
 		scratchBytes := [4]byte{}
 		_, err := io.ReadFull(rr, scratchBytes[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding Height")
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Height")
 		}
 		retHeader.Height = uint64(binary.LittleEndian.Uint32(scratchBytes[:]))
 	}
@@ -1800,7 +1800,7 @@ func DecodeHeaderVersion0(rr io.Reader) (*MsgBitCloutHeader, error) {
 		scratchBytes := [4]byte{}
 		_, err := io.ReadFull(rr, scratchBytes[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding Nonce")
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Nonce")
 		}
 		retHeader.Nonce = uint64(binary.LittleEndian.Uint32(scratchBytes[:]))
 	}
@@ -1808,19 +1808,19 @@ func DecodeHeaderVersion0(rr io.Reader) (*MsgBitCloutHeader, error) {
 	return retHeader, nil
 }
 
-func DecodeHeaderVersion1(rr io.Reader) (*MsgBitCloutHeader, error) {
-	retHeader := NewMessage(MsgTypeHeader).(*MsgBitCloutHeader)
+func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
+	retHeader := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
 
 	// PrevBlockHash
 	_, err := io.ReadFull(rr, retHeader.PrevBlockHash[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding PrevBlockHash")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding PrevBlockHash")
 	}
 
 	// TransactionMerkleRoot
 	_, err = io.ReadFull(rr, retHeader.TransactionMerkleRoot[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding TransactionMerkleRoot")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TransactionMerkleRoot")
 	}
 
 	// TstampSecs
@@ -1828,7 +1828,7 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgBitCloutHeader, error) {
 		scratchBytes := [8]byte{}
 		_, err := io.ReadFull(rr, scratchBytes[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding TstampSecs")
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 		}
 		retHeader.TstampSecs = binary.BigEndian.Uint64(scratchBytes[:])
 	}
@@ -1838,7 +1838,7 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgBitCloutHeader, error) {
 		scratchBytes := [8]byte{}
 		_, err := io.ReadFull(rr, scratchBytes[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding Height")
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Height")
 		}
 		retHeader.Height = binary.BigEndian.Uint64(scratchBytes[:])
 	}
@@ -1848,7 +1848,7 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgBitCloutHeader, error) {
 		scratchBytes := [8]byte{}
 		_, err := io.ReadFull(rr, scratchBytes[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding Nonce")
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Nonce")
 		}
 		retHeader.Nonce = binary.BigEndian.Uint64(scratchBytes[:])
 	}
@@ -1858,7 +1858,7 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgBitCloutHeader, error) {
 		scratchBytes := [8]byte{}
 		_, err := io.ReadFull(rr, scratchBytes[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding ExtraNonce")
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ExtraNonce")
 		}
 		retHeader.ExtraNonce = binary.BigEndian.Uint64(scratchBytes[:])
 	}
@@ -1866,16 +1866,16 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgBitCloutHeader, error) {
 	return retHeader, nil
 }
 
-func DecodeHeader(rr io.Reader) (*MsgBitCloutHeader, error) {
+func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 	// Read the version to determine
 	scratchBytes := [4]byte{}
 	_, err := io.ReadFull(rr, scratchBytes[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutHeader.FromBytes: Problem decoding Version")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Version")
 	}
 	headerVersion := binary.BigEndian.Uint32(scratchBytes[:])
 
-	var ret *MsgBitCloutHeader
+	var ret *MsgDeSoHeader
 	if headerVersion == HeaderVersion0 {
 		ret, err = DecodeHeaderVersion0(rr)
 	} else if headerVersion == HeaderVersion1 {
@@ -1883,7 +1883,7 @@ func DecodeHeader(rr io.Reader) (*MsgBitCloutHeader, error) {
 	} else {
 		// If we have an unrecognized version then we default to de-serializing with
 		// version 0. This is necessary because there are places where we use a
-		// MsgBitCloutHeader struct to store Bitcoin headers.
+		// MsgDeSoHeader struct to store Bitcoin headers.
 		ret, err = DecodeHeaderVersion0(rr)
 	}
 	if err != nil {
@@ -1896,35 +1896,35 @@ func DecodeHeader(rr io.Reader) (*MsgBitCloutHeader, error) {
 	return ret, nil
 }
 
-func (msg *MsgBitCloutHeader) FromBytes(data []byte) error {
+func (msg *MsgDeSoHeader) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 	retHeader, err := DecodeHeader(rr)
 	if err != nil {
-		return fmt.Errorf("MsgBitCloutHeader.FromBytes: %v", err)
+		return fmt.Errorf("MsgDeSoHeader.FromBytes: %v", err)
 	}
 
 	*msg = *retHeader
 	return nil
 }
 
-func (msg *MsgBitCloutHeader) GetMsgType() MsgType {
+func (msg *MsgDeSoHeader) GetMsgType() MsgType {
 	return MsgTypeHeader
 }
 
 // Hash is a helper function to compute a hash of the header. Note that the header
 // hash is special in that we always hash it using the ProofOfWorkHash rather than
 // Sha256DoubleHash.
-func (msg *MsgBitCloutHeader) Hash() (*BlockHash, error) {
+func (msg *MsgDeSoHeader) Hash() (*BlockHash, error) {
 	preSignature := false
 	headerBytes, err := msg.ToBytes(preSignature)
 	if err != nil {
-		return nil, errors.Wrap(err, "MsgBitCloutHeader.Hash: ")
+		return nil, errors.Wrap(err, "MsgDeSoHeader.Hash: ")
 	}
 
 	return ProofOfWorkHash(headerBytes, msg.Version), nil
 }
 
-func (msg *MsgBitCloutHeader) String() string {
+func (msg *MsgDeSoHeader) String() string {
 	hash, _ := msg.Hash()
 	return fmt.Sprintf("< %d, %s, %v >", msg.Height, hash, msg.Version)
 }
@@ -2009,9 +2009,9 @@ func (bpi *BlockProducerInfo) String() string {
 	return fmt.Sprintf("Signer Key: %v", PkToStringMainnet(bpi.PublicKey))
 }
 
-type MsgBitCloutBlock struct {
-	Header *MsgBitCloutHeader
-	Txns   []*MsgBitCloutTxn
+type MsgDeSoBlock struct {
+	Header *MsgDeSoHeader
+	Txns   []*MsgDeSoTxn
 
 	// This field is optional and provides the producer of the block the ability to sign it
 	// with their private key. Doing this proves that this block was produced by a particular
@@ -2020,16 +2020,16 @@ type MsgBitCloutBlock struct {
 	BlockProducerInfo *BlockProducerInfo
 }
 
-func (msg *MsgBitCloutBlock) EncodeBlockCommmon(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoBlock) EncodeBlockCommmon(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Serialize the header.
 	if msg.Header == nil {
-		return nil, fmt.Errorf("MsgBitCloutBlock.ToBytes: Header should not be nil")
+		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Header should not be nil")
 	}
 	hdrBytes, err := msg.Header.ToBytes(preSignature)
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutBlock.ToBytes: Problem encoding header")
+		return nil, errors.Wrapf(err, "MsgDeSoBlock.ToBytes: Problem encoding header")
 	}
 	data = append(data, UintToBuf(uint64(len(hdrBytes)))...)
 	data = append(data, hdrBytes...)
@@ -2040,7 +2040,7 @@ func (msg *MsgBitCloutBlock) EncodeBlockCommmon(preSignature bool) ([]byte, erro
 	for ii := uint64(0); ii < numTxns; ii++ {
 		currentTxnBytes, err := msg.Txns[ii].ToBytes(preSignature)
 		if err != nil {
-			return nil, errors.Wrapf(err, "MsgBitCloutBlock.ToBytes: Problem encoding txn")
+			return nil, errors.Wrapf(err, "MsgDeSoBlock.ToBytes: Problem encoding txn")
 		}
 		data = append(data, UintToBuf(uint64(len(currentTxnBytes)))...)
 		data = append(data, currentTxnBytes...)
@@ -2049,11 +2049,11 @@ func (msg *MsgBitCloutBlock) EncodeBlockCommmon(preSignature bool) ([]byte, erro
 	return data, nil
 }
 
-func (msg *MsgBitCloutBlock) EncodeBlockVersion0(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoBlock) EncodeBlockVersion0(preSignature bool) ([]byte, error) {
 	return msg.EncodeBlockCommmon(preSignature)
 }
 
-func (msg *MsgBitCloutBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) {
 	data, err := msg.EncodeBlockCommmon(preSignature)
 	if err != nil {
 		return nil, err
@@ -2070,62 +2070,62 @@ func (msg *MsgBitCloutBlock) EncodeBlockVersion1(preSignature bool) ([]byte, err
 	return data, nil
 }
 
-func (msg *MsgBitCloutBlock) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
 	if msg.Header.Version == HeaderVersion0 {
 		return msg.EncodeBlockVersion0(preSignature)
 	} else if msg.Header.Version == HeaderVersion1 {
 		return msg.EncodeBlockVersion1(preSignature)
 	} else {
-		return nil, fmt.Errorf("MsgBitCloutBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
+		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
 	}
 }
 
-func (msg *MsgBitCloutBlock) FromBytes(data []byte) error {
-	ret := NewMessage(MsgTypeBlock).(*MsgBitCloutBlock)
+func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
+	ret := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 	rr := bytes.NewReader(data)
 
 	// De-serialize the header.
 	hdrLen, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Problem decoding header length")
+		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding header length")
 	}
 	if hdrLen > MaxMessagePayload {
-		return fmt.Errorf("MsgBitCloutBlock.FromBytes: Header length %d longer than max %d", hdrLen, MaxMessagePayload)
+		return fmt.Errorf("MsgDeSoBlock.FromBytes: Header length %d longer than max %d", hdrLen, MaxMessagePayload)
 	}
 	hdrBytes := make([]byte, hdrLen)
 	_, err = io.ReadFull(rr, hdrBytes)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Problem reading header")
+		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading header")
 	}
 
 	err = ret.Header.FromBytes(hdrBytes)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Problem converting header")
+		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem converting header")
 	}
 
 	// De-serialize the transactions.
 	numTxns, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Problem decoding num txns")
+		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding num txns")
 	}
-	ret.Txns = make([]*MsgBitCloutTxn, 0)
+	ret.Txns = make([]*MsgDeSoTxn, 0)
 	for ii := uint64(0); ii < numTxns; ii++ {
 		txBytesLen, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Problem decoding txn length")
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn length")
 		}
 		if txBytesLen > MaxMessagePayload {
-			return fmt.Errorf("MsgBitCloutBlock.FromBytes: Txn %d length %d longer than max %d", ii, hdrLen, MaxMessagePayload)
+			return fmt.Errorf("MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d", ii, hdrLen, MaxMessagePayload)
 		}
 		txBytes := make([]byte, txBytesLen)
 		_, err = io.ReadFull(rr, txBytes)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Problem reading tx bytes")
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading tx bytes")
 		}
-		currentTxn := NewMessage(MsgTypeTxn).(*MsgBitCloutTxn)
+		currentTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 		err = currentTxn.FromBytes(txBytes)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Problem decoding txn")
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn")
 		}
 		ret.Txns = append(ret.Txns, currentTxn)
 	}
@@ -2136,18 +2136,18 @@ func (msg *MsgBitCloutBlock) FromBytes(data []byte) error {
 	if ret.Header.Version == HeaderVersion1 {
 		blockProducerInfoLen, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Error decoding header length")
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding header length")
 		}
 		var blockProducerInfo *BlockProducerInfo
 		if blockProducerInfoLen > 0 {
 			if blockProducerInfoLen > MaxMessagePayload {
-				return fmt.Errorf("MsgBitCloutBlock.FromBytes: Header length %d longer "+
+				return fmt.Errorf("MsgDeSoBlock.FromBytes: Header length %d longer "+
 					"than max %d", blockProducerInfoLen, MaxMessagePayload)
 			}
 			blockProducerInfoBytes := make([]byte, blockProducerInfoLen)
 			_, err = io.ReadFull(rr, blockProducerInfoBytes)
 			if err != nil {
-				return errors.Wrapf(err, "MsgBitCloutBlock.FromBytes: Problem reading header")
+				return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading header")
 			}
 			blockProducerInfo = &BlockProducerInfo{}
 			blockProducerInfo.Deserialize(blockProducerInfoBytes)
@@ -2159,18 +2159,18 @@ func (msg *MsgBitCloutBlock) FromBytes(data []byte) error {
 	return nil
 }
 
-func (msg *MsgBitCloutBlock) GetMsgType() MsgType {
+func (msg *MsgDeSoBlock) GetMsgType() MsgType {
 	return MsgTypeBlock
 }
 
-func (msg *MsgBitCloutBlock) Hash() (*BlockHash, error) {
+func (msg *MsgDeSoBlock) Hash() (*BlockHash, error) {
 	if msg == nil || msg.Header == nil {
-		return nil, fmt.Errorf("MsgBitCloutBLock.Hash: nil block or nil header")
+		return nil, fmt.Errorf("MsgDeSoBLock.Hash: nil block or nil header")
 	}
 	return msg.Header.Hash()
 }
 
-func (msg *MsgBitCloutBlock) String() string {
+func (msg *MsgDeSoBlock) String() string {
 	if msg == nil || msg.Header == nil {
 		return "<nil block or header>"
 	}
@@ -2198,53 +2198,53 @@ func (utxoKey *UtxoKey) String() string {
 }
 
 const (
-	// MaxBitCloutInputSizeBytes is the size required to encode an BitCloutInput.
+	// MaxDeSoInputSizeBytes is the size required to encode an DeSoInput.
 	// 32 bytes for the TxID and 4 bytes for the Index = 36 bytes. Note
 	// that because the index is encoded as a uvarint, this size represents
 	// a maximum.
-	MaxBitCloutInputSizeBytes = 32 + 4
-	// MaxBitCloutOutputSizeBytes is the size required to encode an BitCloutOutput.
+	MaxDeSoInputSizeBytes = 32 + 4
+	// MaxDeSoOutputSizeBytes is the size required to encode an DeSoOutput.
 	// It is 33 bytes for the public key and 8 bytes for the amount
 	// = 41 bytes. Note that because the amount is encoded as a uvarint,
 	// this size represents a maximum.
-	MaxBitCloutOutputSizeBytes = btcec.PubKeyBytesLenCompressed + 8
+	MaxDeSoOutputSizeBytes = btcec.PubKeyBytesLenCompressed + 8
 )
 
-// BitCloutInput represents a single unspent output from a previous txn.
+// DeSoInput represents a single unspent output from a previous txn.
 // For that reason it specifies the previous txn and the index in that txn where
 // the output appears by simply aliasing UtxoKey.
-type BitCloutInput UtxoKey
+type DeSoInput UtxoKey
 
-func (bitcloutInput *BitCloutInput) String() string {
-	return (*UtxoKey)(bitcloutInput).String()
+func (desoInput *DeSoInput) String() string {
+	return (*UtxoKey)(desoInput).String()
 }
 
-func NewBitCloutInput() *BitCloutInput {
-	return &BitCloutInput{
+func NewDeSoInput() *DeSoInput {
+	return &DeSoInput{
 		TxID: BlockHash{},
 	}
 }
 
-type BitCloutOutput struct {
+type DeSoOutput struct {
 	// Outputs always compensate a specific public key.
 	PublicKey []byte
-	// The amount of BitClout to send to this public key.
+	// The amount of DeSo to send to this public key.
 	AmountNanos uint64
 }
 
-func (bitcloutOutput *BitCloutOutput) String() string {
+func (desoOutput *DeSoOutput) String() string {
 	return fmt.Sprintf("< PublicKey: %#v, AmountNanos: %d >",
-		PkToStringMainnet(bitcloutOutput.PublicKey), bitcloutOutput.AmountNanos)
+		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
 }
 
-type MsgBitCloutTxn struct {
-	TxInputs  []*BitCloutInput
-	TxOutputs []*BitCloutOutput
+type MsgDeSoTxn struct {
+	TxInputs  []*DeSoInput
+	TxOutputs []*DeSoOutput
 
-	// BitCloutTxnMetadata is an interface type that will give us information on how
+	// DeSoTxnMetadata is an interface type that will give us information on how
 	// we should handle the transaction, including what type of transaction this
 	// is.
-	TxnMeta BitCloutTxnMetadata
+	TxnMeta DeSoTxnMetadata
 
 	// Transactions must generally explicitly include the key that is
 	// spending the inputs to the transaction. The exception to this rule is that
@@ -2263,7 +2263,7 @@ type MsgBitCloutTxn struct {
 
 	// Transactions must generally be signed by the key that is spending the
 	// inputs to the transaction. The exception to this rule is that
-	// BLOCK_REWARD and CREATE_bitclout transactions do not require a signature
+	// BLOCK_REWARD and CREATE_deso transactions do not require a signature
 	// since they have no inputs.
 	Signature *btcec.Signature
 
@@ -2274,7 +2274,7 @@ type MsgBitCloutTxn struct {
 	// We need this for JSON encoding/decoding. It isn't used for anything
 	// else and it isn't actually serialized or de-serialized when sent
 	// across the network using ToBytes/FromBytes because we prefer that
-	// any use of the MsgBitCloutTxn in Go code rely on TxnMeta.GetTxnType() rather
+	// any use of the MsgDeSoTxn in Go code rely on TxnMeta.GetTxnType() rather
 	// than checking this value, which, in Go context, is redundant and
 	// therefore error-prone (e.g. someone might change TxnMeta while
 	// forgetting to set it). We make it a uint64 explicitly to prevent
@@ -2282,11 +2282,11 @@ type MsgBitCloutTxn struct {
 	TxnTypeJSON uint64
 }
 
-func (msg *MsgBitCloutTxn) String() string {
+func (msg *MsgDeSoTxn) String() string {
 	pubKey := msg.PublicKey
 	if msg.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
 		pubKeyObj, err := ExtractBitcoinPublicKeyFromBitcoinTransactionInputs(
-			msg.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction, BitCloutMainnetParams.BitcoinBtcdParams)
+			msg.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction, DeSoMainnetParams.BitcoinBtcdParams)
 		if err != nil {
 			pubKey = msg.PublicKey
 		} else {
@@ -2297,22 +2297,22 @@ func (msg *MsgBitCloutTxn) String() string {
 		msg.Hash(), msg.TxnMeta.GetTxnType(), PkToStringMainnet(pubKey))
 }
 
-func (msg *MsgBitCloutTxn) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Serialize the inputs
 	data = append(data, UintToBuf(uint64(len(msg.TxInputs)))...)
-	for _, bitcloutInput := range msg.TxInputs {
-		data = append(data, bitcloutInput.TxID[:]...)
-		data = append(data, UintToBuf(uint64(bitcloutInput.Index))...)
+	for _, desoInput := range msg.TxInputs {
+		data = append(data, desoInput.TxID[:]...)
+		data = append(data, UintToBuf(uint64(desoInput.Index))...)
 	}
 
 	// Serialize the outputs
 	data = append(data, UintToBuf(uint64(len(msg.TxOutputs)))...)
-	for _, bitcloutOutput := range msg.TxOutputs {
+	for _, desoOutput := range msg.TxOutputs {
 		// The public key is always 33 bytes.
-		data = append(data, bitcloutOutput.PublicKey[:]...)
-		data = append(data, UintToBuf(bitcloutOutput.AmountNanos)...)
+		data = append(data, desoOutput.PublicKey[:]...)
+		data = append(data, UintToBuf(desoOutput.AmountNanos)...)
 	}
 
 	// Serialize the metadata
@@ -2336,7 +2336,7 @@ func (msg *MsgBitCloutTxn) ToBytes(preSignature bool) ([]byte, error) {
 	preSignatureForMeta := false
 	metadataBuf, err := msg.TxnMeta.ToBytes(preSignatureForMeta)
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutTxn.ToBytes: Problem encoding meta of type %v: ",
+		return nil, errors.Wrapf(err, "MsgDeSoTxn.ToBytes: Problem encoding meta of type %v: ",
 			msg.TxnMeta.GetTxnType())
 	}
 	data = append(data, UintToBuf(uint64(len(metadataBuf)))...)
@@ -2387,8 +2387,8 @@ func (msg *MsgBitCloutTxn) ToBytes(preSignature bool) ([]byte, error) {
 	return data, nil
 }
 
-func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
-	ret := NewMessage(MsgTypeTxn).(*MsgBitCloutTxn)
+func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
+	ret := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 
 	// De-serialize the inputs
 	numInputs, err := ReadUvarint(rr)
@@ -2396,7 +2396,7 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem converting len(msg.TxInputs)")
 	}
 	for ii := uint64(0); ii < numInputs; ii++ {
-		currentInput := NewBitCloutInput()
+		currentInput := NewDeSoInput()
 		_, err = io.ReadFull(rr, currentInput.TxID[:])
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem converting input txid")
@@ -2419,16 +2419,16 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem converting len(msg.TxOutputs)")
 	}
 	for ii := uint64(0); ii < numOutputs; ii++ {
-		currentOutput := &BitCloutOutput{}
+		currentOutput := &DeSoOutput{}
 		currentOutput.PublicKey = make([]byte, btcec.PubKeyBytesLenCompressed)
 		_, err = io.ReadFull(rr, currentOutput.PublicKey)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem reading BitCloutOutput.PublicKey")
+			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoOutput.PublicKey")
 		}
 
 		amountNanos, err := ReadUvarint(rr)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem reading BitCloutOutput.AmountNanos")
+			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoOutput.AmountNanos")
 		}
 		currentOutput.AmountNanos = amountNanos
 
@@ -2440,7 +2440,7 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 	// Encode the type as a uvarint.
 	txnMetaType, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading MsgBitCloutTxn.TxnType")
+		return nil, errors.Wrapf(err, "_readTransaction: Problem reading MsgDeSoTxn.TxnType")
 	}
 	ret.TxnMeta, err = NewTxnMetadata(TxnType(txnMetaType))
 	if err != nil {
@@ -2469,7 +2469,7 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 	// De-serialize the public key if there is one
 	pkLen, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(BitCloutTxn.PublicKey)")
+		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.PublicKey)")
 	}
 	if pkLen > MaxMessagePayload {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: pkLen length %d longer than max %d", pkLen, MaxMessagePayload)
@@ -2479,14 +2479,14 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 		ret.PublicKey = make([]byte, pkLen)
 		_, err = io.ReadFull(rr, ret.PublicKey)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem reading BitCloutTxn.PublicKey")
+			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoTxn.PublicKey")
 		}
 	}
 
 	// De-serialize the ExtraData
 	extraDataLen, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(BitCloutTxn.ExtraData)")
+		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.ExtraData)")
 	}
 	if extraDataLen > MaxMessagePayload {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
@@ -2500,7 +2500,7 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 			var keyLen uint64
 			keyLen, err = ReadUvarint(rr)
 			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(BitcloutTxn.ExtraData.Keys[#{ii}]")
+				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
 			}
 			// De-serialize the key
 			keyBytes := make([]byte, keyLen)
@@ -2518,7 +2518,7 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 			var valueLen uint64
 			valueLen, err = ReadUvarint(rr)
 			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(BitcloutTxn.ExtraData.Value[#{ii}]")
+				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
 			}
 			// De-serialize the value
 			value := make([]byte, valueLen)
@@ -2534,7 +2534,7 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 	// De-serialize the signature if there is one.
 	sigLen, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(BitCloutTxn.Signature)")
+		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.Signature)")
 	}
 	if sigLen > MaxMessagePayload {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
@@ -2545,13 +2545,13 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 		sigBytes := make([]byte, sigLen)
 		_, err = io.ReadFull(rr, sigBytes)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem reading BitCloutTxn.Signature")
+			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoTxn.Signature")
 		}
 
 		// Verify that the signature is valid.
 		sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing BitCloutTxn.Signature bytes")
+			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing DeSoTxn.Signature bytes")
 		}
 		// If everything worked, we set the ret signature to the original.
 		ret.Signature = sig
@@ -2560,30 +2560,30 @@ func _readTransaction(rr io.Reader) (*MsgBitCloutTxn, error) {
 	return ret, nil
 }
 
-func (msg *MsgBitCloutTxn) FromBytes(data []byte) error {
+func (msg *MsgDeSoTxn) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	ret, err := _readTransaction(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgBitCloutTxn.FromBytes: Problem reading txn: ")
+		return errors.Wrapf(err, "MsgDeSoTxn.FromBytes: Problem reading txn: ")
 	}
 	*msg = *ret
 	return nil
 }
 
-func (msg *MsgBitCloutTxn) GetMsgType() MsgType {
+func (msg *MsgDeSoTxn) GetMsgType() MsgType {
 	return MsgTypeTxn
 }
 
 // Hash is a helper function to compute a hash of the transaction aka a
 // transaction ID.
-func (msg *MsgBitCloutTxn) Hash() *BlockHash {
+func (msg *MsgDeSoTxn) Hash() *BlockHash {
 	// BitcoinExchange transactions are a special case whereby the hash
-	// of the BitClout transaction is defined as the hash of the Bitcoin
+	// of the DeSo transaction is defined as the hash of the Bitcoin
 	// transaction embedded within it. This allows us to use BitcoinExchange
 	// transactions as inputs to subsequent transactions *before* the
 	// merkle proof has actually been defined. Thus it allows us to support
-	// the "instant BitClout buy" feature in the UI.
+	// the "instant DeSo buy" feature in the UI.
 	if msg.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
 		bitcoinTxHash := (BlockHash)(
 			msg.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction.TxHash())
@@ -2599,20 +2599,20 @@ func (msg *MsgBitCloutTxn) Hash() *BlockHash {
 	return Sha256DoubleHash(txBytes)
 }
 
-func (msg *MsgBitCloutTxn) Copy() (*MsgBitCloutTxn, error) {
+func (msg *MsgDeSoTxn) Copy() (*MsgDeSoTxn, error) {
 	txnBytes, err := msg.ToBytes(false /*preSignature*/)
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutTxn.Copy: ")
+		return nil, errors.Wrapf(err, "MsgDeSoTxn.Copy: ")
 	}
-	newTxn := &MsgBitCloutTxn{}
+	newTxn := &MsgDeSoTxn{}
 	err = newTxn.FromBytes(txnBytes)
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgBitCloutTxn.Copy: ")
+		return nil, errors.Wrapf(err, "MsgDeSoTxn.Copy: ")
 	}
 	return newTxn, nil
 }
 
-func (msg *MsgBitCloutTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error) {
+func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error) {
 	// Serialize the transaction without the signature portion.
 	txnBytes, err := msg.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -2665,14 +2665,14 @@ func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey
 // cannot be inferred from the JSON unless we augment it a little bit.
 // Note this format is not used to relay messages between nodes, only
 // for replying to frontend/user-facing queries.
-func (msg *MsgBitCloutTxn) MarshalJSON() ([]byte, error) {
+func (msg *MsgDeSoTxn) MarshalJSON() ([]byte, error) {
 	// Copy the txn so none of the fields get set on the passed-in txn.
 	txnCopy := *msg
 	// If there's no metadata then we have an error. Transactions should
 	// always have a metadata field that indicates what type the transaction
 	// is.
 	if txnCopy.TxnMeta == nil {
-		return nil, fmt.Errorf("MsgBitCloutTxn.MarshalJSON: Transaction is missing TxnMeta: %v", txnCopy)
+		return nil, fmt.Errorf("MsgDeSoTxn.MarshalJSON: Transaction is missing TxnMeta: %v", txnCopy)
 	}
 	// Set the txnType based on the metadata that is set.
 	txnCopy.TxnTypeJSON = uint64(txnCopy.TxnMeta.GetTxnType())
@@ -2680,7 +2680,7 @@ func (msg *MsgBitCloutTxn) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON is covered by the comment on MarshalJSON.
-func (msg *MsgBitCloutTxn) UnmarshalJSON(data []byte) error {
+func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 	// Use the map-based JSON conversion to determine the type of the
 	// TxnMeta and initialize it appropriately.
 	var responseMap map[string]interface{}
@@ -2694,28 +2694,28 @@ func (msg *MsgBitCloutTxn) UnmarshalJSON(data []byte) error {
 	txnType, txnTypeExists := responseMap["TxnTypeJSON"]
 	if !txnTypeExists {
 		// If there is not metadata that's an error.
-		return fmt.Errorf("MsgBitCloutTxn.UnmarshalJSON: Field txnType is missing "+
+		return fmt.Errorf("MsgDeSoTxn.UnmarshalJSON: Field txnType is missing "+
 			"from JSON decoded map: %v", responseMap)
 	}
 	txnMeta, err := NewTxnMetadata(TxnType(uint64(txnType.(float64))))
 	if err != nil {
-		return fmt.Errorf("MsgBitCloutTxn.UnmarshalJSON: Problem parsing TxnType: %v, %v", err, responseMap)
+		return fmt.Errorf("MsgDeSoTxn.UnmarshalJSON: Problem parsing TxnType: %v, %v", err, responseMap)
 	}
 	msg.TxnMeta = txnMeta
 
 	// TODO: The code below is an ugly hack, but it achieves the goal of making
-	// TxnMeta (and MsgBitCloutTxn by proxy) serializable to JSON without any extra overhead
+	// TxnMeta (and MsgDeSoTxn by proxy) serializable to JSON without any extra overhead
 	// needed on the caller side. This is particularly important when one considers
 	// that transactions can be serialized to JSON as part of blocks,
 	// and this makes it so that even in that case no special handling is
 	// needed by the code serializing/deserializing, which is good. Still, would
 	// be nice if, for example, the code below didn't break whenever we modify
-	// MsgBitCloutTxn (which is admittedly very rare and a test can easily catch this
+	// MsgDeSoTxn (which is admittedly very rare and a test can easily catch this
 	// by erroring when the number of fields changes with a helpful message).
 	anonymousTxn := struct {
-		TxInputs  []*BitCloutInput
-		TxOutputs []*BitCloutOutput
-		TxnMeta   BitCloutTxnMetadata
+		TxInputs  []*DeSoInput
+		TxOutputs []*DeSoOutput
+		TxnMeta   DeSoTxnMetadata
 		PublicKey []byte
 		Signature *btcec.Signature
 		TxnType   uint64
@@ -2762,7 +2762,7 @@ func (txnData *BasicTransferMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *BasicTransferMetadata) New() BitCloutTxnMetadata {
+func (txnData *BasicTransferMetadata) New() DeSoTxnMetadata {
 	return &BasicTransferMetadata{}
 }
 
@@ -2825,7 +2825,7 @@ func (txnData *BlockRewardMetadataa) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *BlockRewardMetadataa) New() BitCloutTxnMetadata {
+func (txnData *BlockRewardMetadataa) New() DeSoTxnMetadata {
 	return &BlockRewardMetadataa{}
 }
 
@@ -2981,7 +2981,7 @@ func (txnData *BitcoinExchangeMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *BitcoinExchangeMetadata) New() BitCloutTxnMetadata {
+func (txnData *BitcoinExchangeMetadata) New() DeSoTxnMetadata {
 	return &BitcoinExchangeMetadata{}
 }
 
@@ -2991,7 +2991,7 @@ func (txnData *BitcoinExchangeMetadata) New() BitCloutTxnMetadata {
 // A private message is a message from one user on the platform to
 // another user on the platform. It is generally treated as a normal
 // transaction would be except that the public key of the top-level
-// MsgBitCloutTxn is assumed to be the sender of the message and the
+// MsgDeSoTxn is assumed to be the sender of the message and the
 // metadata contains a messange encrypted with the receiver's public
 // key.
 // ==================================================================
@@ -3092,7 +3092,7 @@ func (txnData *PrivateMessageMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *PrivateMessageMetadata) New() BitCloutTxnMetadata {
+func (txnData *PrivateMessageMetadata) New() DeSoTxnMetadata {
 	return &PrivateMessageMetadata{}
 }
 
@@ -3160,7 +3160,7 @@ func (txnData *LikeMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *LikeMetadata) New() BitCloutTxnMetadata {
+func (txnData *LikeMetadata) New() DeSoTxnMetadata {
 	return &LikeMetadata{}
 }
 
@@ -3232,12 +3232,12 @@ func (txnData *FollowMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *FollowMetadata) New() BitCloutTxnMetadata {
+func (txnData *FollowMetadata) New() DeSoTxnMetadata {
 	return &FollowMetadata{}
 }
 
 // = = = = = = = = = = = = = = = = = = = = = = =
-// BitClout
+// DeSo
 // = = = = = = = = = = = = = = = = = = = = = = =
 
 // ==================================================================
@@ -3407,7 +3407,7 @@ func (txnData *SubmitPostMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *SubmitPostMetadata) New() BitCloutTxnMetadata {
+func (txnData *SubmitPostMetadata) New() DeSoTxnMetadata {
 	return &SubmitPostMetadata{}
 }
 
@@ -3431,7 +3431,7 @@ type UpdateProfileMetadata struct {
 	// someone purchases her coin. For example, if this were set to 25%,
 	// then every time their coin reaches a new high, they would get 25%
 	// of the coins as they're being minted. More concretely, if someone
-	// put in enough BitClout to buy 10 coins, the creator would get 2.5
+	// put in enough DeSo to buy 10 coins, the creator would get 2.5
 	// and this person would get 7.5. However, if they sold 5 coins and
 	// someone subsequently bought those same coins, the creator wouldn't
 	// get any coins because no "net new" coins have been created.
@@ -3542,7 +3542,7 @@ func (txnData *UpdateProfileMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *UpdateProfileMetadata) New() BitCloutTxnMetadata {
+func (txnData *UpdateProfileMetadata) New() DeSoTxnMetadata {
 	return &UpdateProfileMetadata{}
 }
 
@@ -3570,7 +3570,7 @@ func (txnData *UpdateGlobalParamsMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *UpdateGlobalParamsMetadata) New() BitCloutTxnMetadata {
+func (txnData *UpdateGlobalParamsMetadata) New() DeSoTxnMetadata {
 	return &UpdateGlobalParamsMetadata{}
 }
 
@@ -3610,7 +3610,7 @@ func (txnData *UpdateBitcoinUSDExchangeRateMetadataa) FromBytes(dataa []byte) er
 	return nil
 }
 
-func (txnData *UpdateBitcoinUSDExchangeRateMetadataa) New() BitCloutTxnMetadata {
+func (txnData *UpdateBitcoinUSDExchangeRateMetadataa) New() DeSoTxnMetadata {
 	return &UpdateBitcoinUSDExchangeRateMetadataa{}
 }
 
@@ -3623,7 +3623,7 @@ type CreatorCoinOperationType uint8
 const (
 	CreatorCoinOperationTypeBuy         CreatorCoinOperationType = 0
 	CreatorCoinOperationTypeSell        CreatorCoinOperationType = 1
-	CreatorCoinOperationTypeAddBitClout CreatorCoinOperationType = 2
+	CreatorCoinOperationTypeAddDeSo CreatorCoinOperationType = 2
 )
 
 type CreatorCoinMetadataa struct {
@@ -3637,21 +3637,21 @@ type CreatorCoinMetadataa struct {
 	OperationType CreatorCoinOperationType
 
 	// Generally, only one of these will be used depending on the OperationType
-	// set. In a Buy transaction, BitCloutToSellNanos will be converted into
+	// set. In a Buy transaction, DeSoToSellNanos will be converted into
 	// creator coin on behalf of the user. In a Sell transaction,
-	// CreatorCoinToSellNanos will be converted into BitClout. In an AddBitClout
-	// operation, BitCloutToAddNanos will be aded for the user. This allows us to
+	// CreatorCoinToSellNanos will be converted into DeSo. In an AddDeSo
+	// operation, DeSoToAddNanos will be aded for the user. This allows us to
 	// support multiple transaction types with same meta field.
-	BitCloutToSellNanos    uint64
+	DeSoToSellNanos    uint64
 	CreatorCoinToSellNanos uint64
-	BitCloutToAddNanos     uint64
+	DeSoToAddNanos     uint64
 
-	// When a user converts BitClout into CreatorCoin, MinCreatorCoinExpectedNanos
+	// When a user converts DeSo into CreatorCoin, MinCreatorCoinExpectedNanos
 	// specifies the minimum amount of creator coin that the user expects from their
-	// transaction. And vice versa when a user is converting CreatorCoin for BitClout.
+	// transaction. And vice versa when a user is converting CreatorCoin for DeSo.
 	// Specifying these fields prevents the front-running of users' buy/sell. Setting
 	// them to zero turns off the check. Give it your best shot, Ivan.
-	MinBitCloutExpectedNanos    uint64
+	MinDeSoExpectedNanos    uint64
 	MinCreatorCoinExpectedNanos uint64
 }
 
@@ -3669,16 +3669,16 @@ func (txnData *CreatorCoinMetadataa) ToBytes(preSignature bool) ([]byte, error) 
 	// OperationType byte
 	data = append(data, byte(txnData.OperationType))
 
-	// BitCloutToSellNanos    uint64
-	data = append(data, UintToBuf(uint64(txnData.BitCloutToSellNanos))...)
+	// DeSoToSellNanos    uint64
+	data = append(data, UintToBuf(uint64(txnData.DeSoToSellNanos))...)
 
 	// CreatorCoinToSellNanos uint64
 	data = append(data, UintToBuf(uint64(txnData.CreatorCoinToSellNanos))...)
-	// BitCloutToAddNanos     uint64
-	data = append(data, UintToBuf(uint64(txnData.BitCloutToAddNanos))...)
+	// DeSoToAddNanos     uint64
+	data = append(data, UintToBuf(uint64(txnData.DeSoToAddNanos))...)
 
-	// MinBitCloutExpectedNanos    uint64
-	data = append(data, UintToBuf(uint64(txnData.MinBitCloutExpectedNanos))...)
+	// MinDeSoExpectedNanos    uint64
+	data = append(data, UintToBuf(uint64(txnData.MinDeSoExpectedNanos))...)
 	// MinCreatorCoinExpectedNanos uint64
 	data = append(data, UintToBuf(uint64(txnData.MinCreatorCoinExpectedNanos))...)
 
@@ -3705,10 +3705,10 @@ func (txnData *CreatorCoinMetadataa) FromBytes(dataa []byte) error {
 	}
 	ret.OperationType = CreatorCoinOperationType(operationType)
 
-	// BitCloutToSellNanos    uint64
-	ret.BitCloutToSellNanos, err = ReadUvarint(rr)
+	// DeSoToSellNanos    uint64
+	ret.DeSoToSellNanos, err = ReadUvarint(rr)
 	if err != nil {
-		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading BitCloutToSellNanos: %v", err)
+		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading DeSoToSellNanos: %v", err)
 	}
 
 	// CreatorCoinToSellNanos uint64
@@ -3717,16 +3717,16 @@ func (txnData *CreatorCoinMetadataa) FromBytes(dataa []byte) error {
 		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading CreatorCoinToSellNanos: %v", err)
 	}
 
-	// BitCloutToAddNanos     uint64
-	ret.BitCloutToAddNanos, err = ReadUvarint(rr)
+	// DeSoToAddNanos     uint64
+	ret.DeSoToAddNanos, err = ReadUvarint(rr)
 	if err != nil {
-		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading BitCloutToAddNanos: %v", err)
+		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading DeSoToAddNanos: %v", err)
 	}
 
-	// MinBitCloutExpectedNanos    uint64
-	ret.MinBitCloutExpectedNanos, err = ReadUvarint(rr)
+	// MinDeSoExpectedNanos    uint64
+	ret.MinDeSoExpectedNanos, err = ReadUvarint(rr)
 	if err != nil {
-		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading MinBitCloutExpectedNanos: %v", err)
+		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading MinDeSoExpectedNanos: %v", err)
 	}
 
 	// MinCreatorCoinExpectedNanos uint64
@@ -3739,7 +3739,7 @@ func (txnData *CreatorCoinMetadataa) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *CreatorCoinMetadataa) New() BitCloutTxnMetadata {
+func (txnData *CreatorCoinMetadataa) New() DeSoTxnMetadata {
 	return &CreatorCoinMetadataa{}
 }
 
@@ -3807,7 +3807,7 @@ func (txnData *CreatorCoinTransferMetadataa) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *CreatorCoinTransferMetadataa) New() BitCloutTxnMetadata {
+func (txnData *CreatorCoinTransferMetadataa) New() DeSoTxnMetadata {
 	return &CreatorCoinTransferMetadataa{}
 }
 
@@ -3910,7 +3910,7 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *CreateNFTMetadata) New() BitCloutTxnMetadata {
+func (txnData *CreateNFTMetadata) New() DeSoTxnMetadata {
 	return &CreateNFTMetadata{}
 }
 
@@ -3986,7 +3986,7 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *UpdateNFTMetadata) New() BitCloutTxnMetadata {
+func (txnData *UpdateNFTMetadata) New() DeSoTxnMetadata {
 	return &UpdateNFTMetadata{}
 }
 
@@ -4004,7 +4004,7 @@ type AcceptNFTBidMetadata struct {
 	// When an NFT owner accepts a bid, they must specify the bidder's UTXO inputs they will lock up
 	// as payment for the purchase. This prevents the transaction from accidentally using UTXOs
 	// that are used by future transactions.
-	BidderInputs []*BitCloutInput
+	BidderInputs []*DeSoInput
 }
 
 func (txnData *AcceptNFTBidMetadata) GetTxnType() TxnType {
@@ -4045,9 +4045,9 @@ func (txnData *AcceptNFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) 
 
 	// Serialize the bidder inputs
 	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
-	for _, bitcloutInput := range txnData.BidderInputs {
-		data = append(data, bitcloutInput.TxID[:]...)
-		data = append(data, UintToBuf(uint64(bitcloutInput.Index))...)
+	for _, desoInput := range txnData.BidderInputs {
+		data = append(data, desoInput.TxID[:]...)
+		data = append(data, UintToBuf(uint64(desoInput.Index))...)
 	}
 
 	return data, nil
@@ -4107,7 +4107,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 		return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem getting length of inputs")
 	}
 	for ii := uint64(0); ii < numInputs; ii++ {
-		currentInput := NewBitCloutInput()
+		currentInput := NewDeSoInput()
 		_, err = io.ReadFull(rr, currentInput.TxID[:])
 		if err != nil {
 			return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem converting input txid")
@@ -4128,7 +4128,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *AcceptNFTBidMetadata) New() BitCloutTxnMetadata {
+func (txnData *AcceptNFTBidMetadata) New() DeSoTxnMetadata {
 	return &AcceptNFTBidMetadata{}
 }
 
@@ -4197,7 +4197,7 @@ func (txnData *NFTBidMetadata) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *NFTBidMetadata) New() BitCloutTxnMetadata {
+func (txnData *NFTBidMetadata) New() DeSoTxnMetadata {
 	return &NFTBidMetadata{}
 }
 
@@ -4289,7 +4289,7 @@ func (txnData *NFTTransferMetadata) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *NFTTransferMetadata) New() BitCloutTxnMetadata {
+func (txnData *NFTTransferMetadata) New() DeSoTxnMetadata {
 	return &NFTTransferMetadata{}
 }
 
@@ -4348,7 +4348,7 @@ func (txnData *AcceptNFTTransferMetadata) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *AcceptNFTTransferMetadata) New() BitCloutTxnMetadata {
+func (txnData *AcceptNFTTransferMetadata) New() DeSoTxnMetadata {
 	return &AcceptNFTTransferMetadata{}
 }
 
@@ -4407,7 +4407,7 @@ func (txnData *BurnNFTMetadata) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *BurnNFTMetadata) New() BitCloutTxnMetadata {
+func (txnData *BurnNFTMetadata) New() DeSoTxnMetadata {
 	return &BurnNFTMetadata{}
 }
 
@@ -4473,7 +4473,7 @@ func (txnData *SwapIdentityMetadataa) FromBytes(dataa []byte) error {
 	return nil
 }
 
-func (txnData *SwapIdentityMetadataa) New() BitCloutTxnMetadata {
+func (txnData *SwapIdentityMetadataa) New() DeSoTxnMetadata {
 	return &SwapIdentityMetadataa{}
 }
 
@@ -4566,6 +4566,6 @@ func (txnData *AuthorizeDerivedKeyMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *AuthorizeDerivedKeyMetadata) New() BitCloutTxnMetadata {
+func (txnData *AuthorizeDerivedKeyMetadata) New() DeSoTxnMetadata {
 	return &AuthorizeDerivedKeyMetadata{}
 }

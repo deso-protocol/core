@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bitclout/core/lib"
+	"github.com/deso-protocol/core/lib"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 )
@@ -53,7 +53,7 @@ func main() {
 	}
 
 	// Set up the to node as a peer
-	netAddrss, err := lib.IPToNetAddr(*flagNode, addrmgr.New("", net.LookupIP), &lib.BitCloutMainnetParams)
+	netAddrss, err := lib.IPToNetAddr(*flagNode, addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
 	if err != nil {
 		panic(err)
 	}
@@ -62,24 +62,24 @@ func main() {
 		IP:   netAddrss.IP,
 		Port: int(netAddrss.Port),
 	}
-	conn, err := net.DialTimeout(netAddr2.Network(), netAddr2.String(), lib.BitCloutMainnetParams.DialTimeout)
+	conn, err := net.DialTimeout(netAddr2.Network(), netAddr2.String(), lib.DeSoMainnetParams.DialTimeout)
 	if err != nil {
 		panic(err)
 	}
 
 	messagesFromPeer := make(chan *lib.ServerMessage)
 	peer := lib.NewPeer(conn, true, netAddrss, true,
-		10000, 0, &lib.BitCloutMainnetParams,
+		10000, 0, &lib.DeSoMainnetParams,
 		messagesFromPeer, nil, nil)
 	time.Sleep(1 * time.Second)
-	if err := peer.NegotiateVersion(lib.BitCloutMainnetParams.VersionNegotiationTimeout); err != nil {
+	if err := peer.NegotiateVersion(lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
 		panic(err)
 	}
 
 	// As a test, send a GetHeaders request and see if we get it back
 	if *flagCommand == "get_headers" {
 		time.Sleep(1 * time.Second)
-		peer.WriteBitCloutMessage(&lib.MsgBitCloutGetHeaders{
+		peer.WriteDeSoMessage(&lib.MsgDeSoGetHeaders{
 			StopHash: lib.MustDecodeHexBlockHash("0000000000000000000000000000000000000000000000000000000000000000"),
 			BlockLocator: []*lib.BlockHash{
 				lib.MustDecodeHexBlockHash("0000000000f70d7a6dce5502eddb40772fc4b6b1e54e809b21bd38c6bd447e05"),
@@ -114,7 +114,7 @@ func main() {
 
 		// There should be a single inv that comes back
 		for {
-			msg, err := peer.ReadBitCloutMessage()
+			msg, err := peer.ReadDeSoMessage()
 			if err != nil {
 				panic(err)
 			}
@@ -122,17 +122,17 @@ func main() {
 		}
 	} else if *flagCommand == "dump" {
 		time.Sleep(1 * time.Second)
-		peer.WriteBitCloutMessage(&lib.MsgBitCloutMempool{})
+		peer.WriteDeSoMessage(&lib.MsgDeSoMempool{})
 		log.Println("Sent Mempool message. Waiting for big inv")
 
 		// There should be a single inv that comes back
 		for {
-			msg, err := peer.ReadBitCloutMessage()
+			msg, err := peer.ReadDeSoMessage()
 			if err != nil {
 				panic(err)
 			}
 			if msg.GetMsgType() == lib.MsgTypeInv {
-				invMsg := msg.(*lib.MsgBitCloutInv)
+				invMsg := msg.(*lib.MsgDeSoInv)
 				if len(invMsg.InvList) == 0 {
 					log.Println("Ignoringing empty INV")
 					continue
@@ -150,15 +150,15 @@ func main() {
 				}
 
 				// Now we have all the hashes, request the txn.
-				getTxns := &lib.MsgBitCloutGetTransactions{}
+				getTxns := &lib.MsgDeSoGetTransactions{}
 				getTxns.HashList = hashesToRequest
 
 				// Fetch all the txns back from the node
-				peer.WriteBitCloutMessage(getTxns)
+				peer.WriteDeSoMessage(getTxns)
 				time.Sleep(100 * time.Millisecond)
 
 			} else if msg.GetMsgType() == lib.MsgTypeTransactionBundle {
-				txBundle := msg.(*lib.MsgBitCloutTransactionBundle)
+				txBundle := msg.(*lib.MsgDeSoTransactionBundle)
 				log.Println("Processing txn bundle of size ", len(txBundle.Transactions))
 				for _, tx := range txBundle.Transactions {
 					bb, _ := tx.ToBytes(false /*preSignature*/)
@@ -174,8 +174,8 @@ func main() {
 		scanner := bufio.NewScanner(os.Stdin)
 		buf := make([]byte, 0, 64*1024)
 		scanner.Buffer(buf, 250*1024*1024)
-		txnBundle := &lib.MsgBitCloutTransactionBundle{}
-		getTxnMsg := &lib.MsgBitCloutGetTransactions{}
+		txnBundle := &lib.MsgDeSoTransactionBundle{}
+		getTxnMsg := &lib.MsgDeSoGetTransactions{}
 		for scanner.Scan() {
 			txnHex := scanner.Text()
 
@@ -188,7 +188,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			txn := &lib.MsgBitCloutTxn{}
+			txn := &lib.MsgDeSoTxn{}
 			if err := txn.FromBytes(bb); err != nil {
 				glog.Error(err)
 				continue
@@ -205,19 +205,19 @@ func main() {
 		fmt.Println(len(txnBundle.Transactions))
 
 		// Write all the messages to the node
-		peer.WriteBitCloutMessage(txnBundle)
+		peer.WriteDeSoMessage(txnBundle)
 
 		// Fetch all the txns back from the node
-		peer.WriteBitCloutMessage(getTxnMsg)
+		peer.WriteDeSoMessage(getTxnMsg)
 
 		for {
-			msg, err := peer.ReadBitCloutMessage()
+			msg, err := peer.ReadDeSoMessage()
 			if err != nil {
 				panic(err)
 			}
-			txnsFound := make(map[lib.BlockHash]*lib.MsgBitCloutTxn)
+			txnsFound := make(map[lib.BlockHash]*lib.MsgDeSoTxn)
 			if msg.GetMsgType() == lib.MsgTypeTransactionBundle {
-				for _, txn := range msg.(*lib.MsgBitCloutTransactionBundle).Transactions {
+				for _, txn := range msg.(*lib.MsgDeSoTransactionBundle).Transactions {
 					txnsFound[*txn.Hash()] = txn
 				}
 
