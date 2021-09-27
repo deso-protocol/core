@@ -1,7 +1,7 @@
 FROM alpine:edge AS core
 
 RUN apk update && apk upgrade
-RUN apk add --update go=1.16.6-r0 gcc g++ vips vips-dev
+RUN apk add --update go=1.17.1-r0 gcc g++ vips vips-dev
 
 WORKDIR /deso/src/core
 

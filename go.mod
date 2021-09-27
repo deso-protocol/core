@@ -1,6 +1,6 @@
 module github.com/deso-protocol/core
 
-go 1.14
+go 1.17
 
 replace github.com/golang/glog => ./third_party/github.com/golang/glog
 
