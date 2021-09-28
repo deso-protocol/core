@@ -171,10 +171,10 @@ func init() {
 				transaction_hash                BYTEA PRIMARY KEY,
 				profile_public_key              BYTEA NOT NULL,
 				operation_type                  SMALLINT NOT NULL,
-				deso_to_sell_nanos         BIGINT NOT NULL,
+				de_so_to_sell_nanos         BIGINT NOT NULL,
 				creator_coin_to_sell_nanos      BIGINT NOT NULL,
-				deso_to_add_nanos          BIGINT NOT NULL,
-				min_deso_expected_nanos    BIGINT NOT NULL,
+				de_so_to_add_nanos          BIGINT NOT NULL,
+				min_de_so_expected_nanos    BIGINT NOT NULL,
 				min_creator_coin_expected_nanos BIGINT NOT NULL
 			);
 		`)
@@ -298,7 +298,7 @@ func init() {
 				description                TEXT,
 				profile_pic                BYTEA,
 				creator_basis_points       BIGINT,
-				deso_locked_nanos     BIGINT,
+				de_so_locked_nanos     BIGINT,
 				number_of_holders          BIGINT,
 				coins_in_circulation_nanos BIGINT,
 				coin_watermark_nanos       BIGINT
