@@ -857,11 +857,12 @@ func (msg *MsgDeSoGetBlocks) String() string {
 	return fmt.Sprintf("%v", msg.HashList)
 }
 
-// Within a post, the body typically has a particular
+// DeSoBodySchema Within a post, the body typically has a particular
 // schema defined below.
 type DeSoBodySchema struct {
-	Body      string
-	ImageURLs []string
+	Body      string `json:",omitempty"`
+	ImageURLs []string `json:",omitempty"`
+	VideoURLs []string `json:",omitempty"`
 }
 
 // ==================================================================
