@@ -176,6 +176,7 @@ type MessageEntry struct {
 
 // Entry for a public key forbidden from signing blocks.
 type ForbiddenPubKeyEntry struct {
+	ID     uint64
 	PubKey []byte
 
 	// Whether or not this entry is deleted in the view.
@@ -196,6 +197,7 @@ type LikeKey struct {
 
 // LikeEntry stores the content of a like transaction.
 type LikeEntry struct {
+	ID            uint64
 	LikerPubKey   []byte
 	LikedPostHash *BlockHash
 
@@ -219,6 +221,7 @@ type NFTKey struct {
 // postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
 // defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
 type NFTEntry struct {
+	ID                         uint64
 	LastOwnerPKID              *PKID // This is needed to decrypt unlockable text.
 	OwnerPKID                  *PKID
 	NFTPostHash                *BlockHash
@@ -251,6 +254,7 @@ type NFTBidKey struct {
 
 // This struct defines a single bid on an NFT.
 type NFTBidEntry struct {
+	ID             uint64
 	BidderPKID     *PKID
 	NFTPostHash    *BlockHash
 	SerialNumber   uint64
@@ -261,6 +265,8 @@ type NFTBidEntry struct {
 }
 
 type DerivedKeyEntry struct {
+	ID uint64
+
 	// Owner public key
 	OwnerPublicKey PublicKey
 
@@ -307,6 +313,7 @@ type FollowKey struct {
 
 // FollowEntry stores the content of a follow transaction.
 type FollowEntry struct {
+	ID uint64
 	// Note: It's a little redundant to have these in the entry because they're
 	// already used as the key in the DB but it doesn't hurt for now.
 	FollowerPKID *PKID
@@ -338,6 +345,7 @@ func (mm *DiamondKey) String() string {
 
 // DiamondEntry stores the number of diamonds given by a sender to a post.
 type DiamondEntry struct {
+	ID              uint64
 	SenderPKID      *PKID
 	ReceiverPKID    *PKID
 	DiamondPostHash *BlockHash
@@ -471,6 +479,9 @@ func (bav *UtxoView) GetRepostPostEntryStateForReader(readerPK []byte, postHash 
 }
 
 type PostEntry struct {
+	// MySQL ID
+	ID uint64
+
 	// The hash of this post entry. Used as the ID for the entry.
 	PostHash *BlockHash
 
@@ -603,6 +614,8 @@ func (mm BalanceEntryMapKey) String() string {
 // that looks as follows:
 // <HodlerPKID, CreatorPKID> -> HODLerEntry
 type BalanceEntry struct {
+	ID uint64
+
 	// The PKID of the HODLer. This should never change after it's set initially.
 	HODLerPKID *PKID
 	// The PKID of the creator. This should never change after it's set initially.
@@ -2710,7 +2723,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	//  (2) Add back all of the bids that were deleted.
 	//  (3) Disconnect payment UTXOs.
 	//  (4) Unspend bidder UTXOs.
-	//  (5) Revert profileEntry to undo royalties added to DeSoLockedNanos.
+	//  (5) Revert profileEntry to undo royalties added to DESOLockedNanos.
 	//  (6) Revert the postEntry since NumNFTCopiesForSale was decremented.
 
 	// (1) Set the old NFT entry.
@@ -3746,20 +3759,23 @@ func (bav *UtxoView) _getLikeEntryForLikeKey(likeKey *LikeKey) *LikeEntry {
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	likeExists := false
 	if bav.Postgres != nil {
-		likeExists = bav.Postgres.GetLike(likeKey.LikerPubKey[:], &likeKey.LikedPostHash) != nil
-	} else {
-		likeExists = DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
-	}
-
-	if likeExists {
-		likeEntry := LikeEntry{
-			LikerPubKey:   likeKey.LikerPubKey[:],
-			LikedPostHash: &likeKey.LikedPostHash,
+		like := bav.Postgres.GetLike(likeKey.LikerPubKey[:], &likeKey.LikedPostHash)
+		if like != nil {
+			likeEntry := like.NewLikeEntry()
+			bav._setLikeEntryMappings(likeEntry)
+			return likeEntry
 		}
-		bav._setLikeEntryMappings(&likeEntry)
-		return &likeEntry
+	} else {
+		likeExists := DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
+		if likeExists {
+			likeEntry := LikeEntry{
+				LikerPubKey:   likeKey.LikerPubKey[:],
+				LikedPostHash: &likeKey.LikedPostHash,
+			}
+			bav._setLikeEntryMappings(&likeEntry)
+			return &likeEntry
+		}
 	}
 
 	return nil
@@ -3854,20 +3870,23 @@ func (bav *UtxoView) _getFollowEntryForFollowKey(followKey *FollowKey) *FollowEn
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	followExists := false
 	if bav.Postgres != nil {
-		followExists = bav.Postgres.GetFollow(&followKey.FollowerPKID, &followKey.FollowedPKID) != nil
-	} else {
-		followExists = DbGetFollowerToFollowedMapping(bav.Handle, &followKey.FollowerPKID, &followKey.FollowedPKID) != nil
-	}
-
-	if followExists {
-		followEntry := FollowEntry{
-			FollowerPKID: &followKey.FollowerPKID,
-			FollowedPKID: &followKey.FollowedPKID,
+		follow := bav.Postgres.GetFollow(&followKey.FollowerPKID, &followKey.FollowedPKID)
+		if follow != nil {
+			followEntry := follow.NewFollowEntry()
+			bav._setFollowEntryMappings(followEntry)
+			return followEntry
 		}
-		bav._setFollowEntryMappings(&followEntry)
-		return &followEntry
+	} else {
+		followExists := DbGetFollowerToFollowedMapping(bav.Handle, &followKey.FollowerPKID, &followKey.FollowedPKID) != nil
+		if followExists {
+			followEntry := FollowEntry{
+				FollowerPKID: &followKey.FollowerPKID,
+				FollowedPKID: &followKey.FollowedPKID,
+			}
+			bav._setFollowEntryMappings(&followEntry)
+			return &followEntry
+		}
 	}
 
 	return nil
@@ -4481,6 +4500,7 @@ func (bav *UtxoView) GetDiamondEntryForDiamondKey(diamondKey *DiamondKey) *Diamo
 		diamond := bav.Postgres.GetDiamond(&diamondKey.SenderPKID, &diamondKey.ReceiverPKID, &diamondKey.DiamondPostHash)
 		if diamond != nil {
 			diamondEntry = &DiamondEntry{
+				ID:              diamond.ID,
 				SenderPKID:      diamond.SenderPKID,
 				ReceiverPKID:    diamond.ReceiverPKID,
 				DiamondPostHash: diamond.DiamondPostHash,
@@ -4901,7 +4921,7 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 	// isDeleted on the view. If not for isDeleted, we wouldn't need the PKIDEntry
 	// wrapper.
 	if bav.Postgres != nil {
-		profile := bav.Postgres.GetProfile(*pkid)
+		profile := bav.Postgres.GetProfile(pkid)
 		if profile == nil {
 			pkidEntry := &PKIDEntry{
 				PKID:      pkid,
@@ -4970,7 +4990,7 @@ func (bav *UtxoView) GetProfileEntryForPKID(pkid *PKID) *ProfileEntry {
 	// nil.
 	if bav.Postgres != nil {
 		// Note: We should never get here but writing this code just in case
-		profile := bav.Postgres.GetProfile(*pkid)
+		profile := bav.Postgres.GetProfile(pkid)
 		if profile == nil {
 			return nil
 		}
@@ -5138,7 +5158,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 			ProfilePic:  profile.ProfilePic,
 			CoinEntry: CoinEntry{
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
-				DeSoLockedNanos:         profile.DeSoLockedNanos,
+				DeSoLockedNanos:         profile.DESOLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
 				CoinsInCirculationNanos: profile.CoinsInCirculationNanos,
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
@@ -8452,11 +8472,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// a direct copy is OK.
 	prevCoinEntry := existingProfileEntry.CoinEntry
 
-	// Increment DeSoLockedNanos. Sanity-check that we're not going to
+	// Increment DESOLockedNanos. Sanity-check that we're not going to
 	// overflow.
 	if existingProfileEntry.DeSoLockedNanos > math.MaxUint64-desoRemainingNanos {
 		return 0, 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Overflow while summing"+
-			"DeSoLockedNanos and desoAfterFounderRewardNanos: %v %v",
+			"DESOLockedNanos and desoAfterFounderRewardNanos: %v %v",
 			existingProfileEntry.DeSoLockedNanos, desoRemainingNanos)
 	}
 	existingProfileEntry.DeSoLockedNanos += desoRemainingNanos
@@ -8890,7 +8910,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		existingProfileEntry.NumberOfHolders -= 1
 	}
 
-	// If the number of holders has reached zero, we clear all the DeSoLockedNanos and
+	// If the number of holders has reached zero, we clear all the DESOLockedNanos and
 	// creatorCoinToSellNanos to ensure that the profile is reset to its normal initial state.
 	// It's okay to modify these values because they are saved in the PrevCoinEntry.
 	if existingProfileEntry.NumberOfHolders == 0 {
