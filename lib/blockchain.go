@@ -2502,6 +2502,17 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 	return spendableUtxoEntries, nil
 }
 
+func validateSpendAmount(spendAmount uint64, additionalOutputs []*DeSoOutput) error {
+	expectedAdditionalOutputSum := uint64(0)
+	for _, output := range additionalOutputs {
+		expectedAdditionalOutputSum += output.AmountNanos
+	}
+	if spendAmount != expectedAdditionalOutputSum {
+		return fmt.Errorf("Expected spendAmount to be %d, instead got %d", expectedAdditionalOutputSum, spendAmount)
+	}
+	return nil
+}
+
 // Define a helper function for computing the upper bound of the size
 // of a transaction and associated fees. This basically serializes the
 // transaction without the signature and then accounts for the maximum possible
@@ -2536,7 +2547,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderPublicKey []byte, recipientPublicKey []byte,
 	unencryptedMessageText string, encryptedMessageText string,
 	tstampNanos uint64,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	var encryptedMessageBytes []byte
@@ -2581,7 +2592,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	}
 
 	// Create a transaction containing the encrypted message text.
-	// A PrivateMessage transaction doesn't need any inputs or outputs.
+	// A PrivateMessage transaction doesn't need any inputs or outputs (except additionalOutputs provided).
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
 		TxnMeta: &PrivateMessageMetadata{
@@ -2590,6 +2601,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 			TimestampNanos:     tstampNanos,
 		},
 		ExtraData: messageExtraData,
+		TxOutputs: additionalOutputs,
 
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
@@ -2602,9 +2614,8 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreatePrivateMessageTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreatePrivateMessageTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -2612,18 +2623,18 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 
 func (bc *Blockchain) CreateLikeTxn(
 	userPublicKey []byte, likedPostHash BlockHash, isUnlike bool,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64,
 	_err error) {
 
-	// A Like transaction doesn't need any inputs or outputs.
+	// A Like transaction doesn't need any inputs or outputs (except additionalOutputs provided).
 	txn := &MsgDeSoTxn{
 		PublicKey: userPublicKey,
 		TxnMeta: &LikeMetadata{
 			LikedPostHash: &likedPostHash,
 			IsUnlike:      isUnlike,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -2636,9 +2647,8 @@ func (bc *Blockchain) CreateLikeTxn(
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateLikeTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreateLikeTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -2646,18 +2656,18 @@ func (bc *Blockchain) CreateLikeTxn(
 
 func (bc *Blockchain) CreateFollowTxn(
 	senderPublicKey []byte, followedPublicKey []byte, isUnfollow bool,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64,
 	_err error) {
 
-	// A Follow transaction doesn't need any inputs or outputs.
+	// A Follow transaction doesn't need any inputs or outputs (except additionalOutputs provided).
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
 		TxnMeta: &FollowMetadata{
 			FollowedPublicKey: followedPublicKey,
 			IsUnfollow:        isUnfollow,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -2670,9 +2680,8 @@ func (bc *Blockchain) CreateFollowTxn(
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateFollowTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreateFollowTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -2686,7 +2695,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	minimumNetworkFeeNanosPerKb int64,
 	forbiddenPubKey []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Set RepostedPostHash and IsQuotedRepost on the extra data map as necessary to track reposting.
@@ -2714,6 +2723,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 		PublicKey: updaterPublicKey,
 		TxnMeta:   &UpdateGlobalParamsMetadata{},
 		ExtraData: extraData,
+		TxOutputs: additionalOutputs,
 	}
 
 	// We don't need to make any tweaks to the amount because it's basically
@@ -2725,9 +2735,8 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	}
 
 	// The spend amount should be zero for these txns.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateGlobalParamsTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateGlobalParamsTxn %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -2738,16 +2747,16 @@ func (bc *Blockchain) CreateUpdateBitcoinUSDExchangeRateTxn(
 	updaterPublicKey []byte,
 	usdCentsPerbitcoin uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a transaction containing the post fields.
+	// Create a transaction containing the UpdateBitcoinUSDExchangeRate fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: updaterPublicKey,
 		TxnMeta: &UpdateBitcoinUSDExchangeRateMetadataa{
 			USDCentsPerBitcoin: usdCentsPerbitcoin,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -2761,9 +2770,8 @@ func (bc *Blockchain) CreateUpdateBitcoinUSDExchangeRateTxn(
 	}
 
 	// The spend amount should be zero for these txns.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateBitcoinUSDExchangeRateTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateBitcoinUSDExchangeRateTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -2781,7 +2789,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	postExtraData map[string][]byte,
 	isHidden bool,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Initialize txnExtraData to postExtraData.
@@ -2813,7 +2821,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 			TimestampNanos:           tstampNanos,
 			IsHidden:                 isHidden,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -2831,9 +2839,8 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	}
 
 	// The spend amount should be zero for post submissions.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateSubmitPostTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreateSubmitPostTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -2851,7 +2858,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	IsHidden bool,
 	AdditionalFees uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the profile fields.
@@ -2866,7 +2873,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 			NewStakeMultipleBasisPoints: NewStakeMultipleBasisPoints,
 			IsHidden:                    IsHidden,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 
@@ -2880,9 +2887,8 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	}
 
 	// The spend amount should equal to the additional fees for profile submissions.
-	if spendAmount != AdditionalFees {
-		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: Spend amount "+
-			"should be %d but was %d instead: ", AdditionalFees, spendAmount)
+	if err = validateSpendAmount(spendAmount + AdditionalFees, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -2894,7 +2900,7 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 	ToPublicKeyBytes []byte,
 
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the profile fields.
@@ -2904,7 +2910,7 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 			FromPublicKey: FromPublicKeyBytes,
 			ToPublicKey:   ToPublicKeyBytes,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -2918,9 +2924,8 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 	}
 
 	// The spend amount should be zero for SwapIdentity txns.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -2937,7 +2942,7 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 	MinDeSoExpectedNanos uint64,
 	MinCreatorCoinExpectedNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the creator coin fields.
@@ -2952,7 +2957,7 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 			MinDeSoExpectedNanos,
 			MinCreatorCoinExpectedNanos,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -2984,7 +2989,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 	CreatorCoinToTransferNanos uint64,
 	RecipientPublicKey []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the creator coin fields.
@@ -2995,7 +3000,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 			CreatorCoinToTransferNanos,
 			RecipientPublicKey,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3031,7 +3036,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTRoyaltyToCreatorBasisPoints uint64,
 	NFTRoyaltyToCoinBasisPoints uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the create NFT fields.
@@ -3046,7 +3051,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 			NFTRoyaltyToCreatorBasisPoints,
 			NFTRoyaltyToCoinBasisPoints,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3075,7 +3080,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	SerialNumber uint64,
 	BidAmountNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the NFT bid fields.
@@ -3086,7 +3091,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 			SerialNumber,
 			BidAmountNanos,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3116,7 +3121,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 	SerialNumber uint64,
 	EncryptedUnlockableTextBytes []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the NFT transfer fields.
@@ -3128,7 +3133,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 			ReceiverPublicKey,
 			EncryptedUnlockableTextBytes,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3155,7 +3160,7 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the accept NFT transfer fields.
@@ -3165,7 +3170,7 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 			NFTPostHash,
 			SerialNumber,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3194,7 +3199,7 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the burn NFT fields.
@@ -3204,7 +3209,7 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 			NFTPostHash,
 			SerialNumber,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3234,7 +3239,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	BidAmountNanos uint64,
 	EncryptedUnlockableTextBytes []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
@@ -3303,7 +3308,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 			EncryptedUnlockableTextBytes,
 			bidderInputs,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3333,7 +3338,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	IsForSale bool,
 	MinBidAmountNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the update NFT fields.
@@ -3345,7 +3350,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 			IsForSale,
 			MinBidAmountNanos,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3435,7 +3440,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
@@ -3474,7 +3479,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 			uint64(float64(creatorCoinToTransferNanos) * 1.05),
 			ReceiverPublicKey,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3513,7 +3518,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	accessSignature []byte,
 	deleteKey bool,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Verify that the signature is valid.
@@ -3548,7 +3553,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 			operationType,
 			accessSignature,
 		},
-
+		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3575,7 +3580,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _spendAmount uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
@@ -3615,12 +3620,10 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	txn := &MsgDeSoTxn{
 		PublicKey: SenderPublicKey,
 		TxnMeta:   &BasicTransferMetadata{},
-		TxOutputs: []*DeSoOutput{
-			{
+		TxOutputs: append(additionalOutputs, &DeSoOutput{
 				PublicKey:   diamondPostEntry.PosterPublicKey,
 				AmountNanos: desoToTransferNanos,
-			},
-		},
+			}),
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
 	}
@@ -3654,7 +3657,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 func (bc *Blockchain) CreateMaxSpend(
 	senderPkBytes []byte, recipientPkBytes []byte, minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool) (
+	mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInputAdded uint64, _spendAmount uint64, _fee uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
@@ -3663,12 +3666,10 @@ func (bc *Blockchain) CreateMaxSpend(
 		// Set a single output with the maximum possible size to ensure we don't
 		// underestimate the fee. Note it must be a max size output because outputs
 		// are encoded as uvarints.
-		TxOutputs: []*DeSoOutput{
-			{
+		TxOutputs: append(additionalOutputs, &DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: math.MaxUint64,
-			},
-		},
+			}),
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
 	}
@@ -3710,9 +3711,9 @@ func (bc *Blockchain) CreateMaxSpend(
 			"be less than the fee required to spend it %d", totalInput, txnFee)
 	}
 
-	// We just have one output paying the receiver whatever is left after subtracting off
+	// We have multiple outputs, the last one of which pays the receiver whatever is left after subtracting off
 	// the fee. We can just set the value of the dummy output we set up earlier.
-	txn.TxOutputs[0].AmountNanos = totalInput - txnFee
+	txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = totalInput - txnFee
 
 	return txn, totalInput, totalInput - txnFee, txnFee, nil
 }
