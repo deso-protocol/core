@@ -475,8 +475,8 @@ func (post *PGPost) NewPostEntry() *PostEntry {
 func (post *PGPost) HasMedia() bool {
 	bodyJSONObj := BitCloutBodySchema{}
 	err := json.Unmarshal([]byte(post.Body), &bodyJSONObj)
-	// Return true if body json can be parsed and ImageUrls is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
-	return (err == nil && len(bodyJSONObj.ImageURLs) > 0) || len(post.ExtraData["EmbedVideoURL"]) > 0
+	// Return true if body json can be parsed and ImageUrls or VideoURLs is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
+	return (err == nil && len(bodyJSONObj.ImageURLs) > 0 || len(bodyJSONObj.VideoURLs) > 0) || len(post.ExtraData["EmbedVideoURL"]) > 0
 }
 
 type PGLike struct {

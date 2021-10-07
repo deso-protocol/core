@@ -570,8 +570,8 @@ func IsQuotedReclout(postEntry *PostEntry) bool {
 func (pe *PostEntry) HasMedia() bool {
 	bodyJSONObj := BitCloutBodySchema{}
 	err := json.Unmarshal(pe.Body, &bodyJSONObj)
-	//Return true if body json can be parsed and ImageUrls is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
-	if (err == nil && len(bodyJSONObj.ImageURLs) > 0) || len(pe.PostExtraData["EmbedVideoURL"]) > 0 {
+	//Return true if body json can be parsed and ImageURLs or VideoURLs is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
+	if (err == nil && len(bodyJSONObj.ImageURLs) > 0 || len(bodyJSONObj.VideoURLs) > 0) || len(pe.PostExtraData["EmbedVideoURL"]) > 0 {
 		return true
 	}
 	return false
