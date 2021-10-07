@@ -24,7 +24,7 @@ func TestCheckDoubleSpend(t *testing.T) {
 
 	// Mainnet checks
 	{
-		params := &BitCloutMainnetParams
+		params := &DeSoMainnetParams
 
 		// This txn is not a double-spend
 		{
@@ -45,7 +45,7 @@ func TestCheckDoubleSpend(t *testing.T) {
 
 	{
 		// Testnet checks
-		params := &BitCloutTestnetParams
+		params := &DeSoTestnetParams
 
 		// This txn is not a double-spend
 		{
