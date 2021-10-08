@@ -1099,6 +1099,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		mempoolTx.TxMeta = txnMeta
 	}
 
+	mp.bc.sqsQueue.SendSQSTxnMessage(mempoolTx)
 	glog.Tracef("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
 		len(mp.poolMap))
 

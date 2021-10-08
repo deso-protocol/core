@@ -402,6 +402,7 @@ type OrphanBlock struct {
 type Blockchain struct {
 	db                              *badger.DB
 	postgres                        *Postgres
+	sqsQueue						*SQSQueue
 	timeSource                      chainlib.MedianTimeSource
 	trustedBlockProducerPublicKeys  map[PkMapKey]bool
 	trustedBlockProducerStartHeight uint64
@@ -583,6 +584,7 @@ func NewBlockchain(
 	timeSource chainlib.MedianTimeSource,
 	db *badger.DB,
 	postgres *Postgres,
+	sqsQueue *SQSQueue,
 	server *Server,
 ) (*Blockchain, error) {
 
@@ -598,6 +600,7 @@ func NewBlockchain(
 	bc := &Blockchain{
 		db:                              db,
 		postgres:                        postgres,
+		sqsQueue:						 sqsQueue,
 		timeSource:                      timeSource,
 		trustedBlockProducerPublicKeys:  trustedBlockProducerPublicKeys,
 		trustedBlockProducerStartHeight: trustedBlockProducerStartHeight,
