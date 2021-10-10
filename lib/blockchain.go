@@ -2502,13 +2502,13 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 	return spendableUtxoEntries, nil
 }
 
-func validateSpendAmount(spendAmount uint64, additionalOutputs []*DeSoOutput) error {
+func amountEqualsAdditionalOutputs(spendAmount uint64, additionalOutputs []*DeSoOutput) error {
 	expectedAdditionalOutputSum := uint64(0)
 	for _, output := range additionalOutputs {
 		expectedAdditionalOutputSum += output.AmountNanos
 	}
 	if spendAmount != expectedAdditionalOutputSum {
-		return fmt.Errorf("Expected spendAmount to be %d, instead got %d", expectedAdditionalOutputSum, spendAmount)
+		return fmt.Errorf("expected spendAmount to be %d, instead got %d", expectedAdditionalOutputSum, spendAmount)
 	}
 	return nil
 }
@@ -2614,7 +2614,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreatePrivateMessageTxn: %v", err)
 	}
 
@@ -2647,7 +2647,7 @@ func (bc *Blockchain) CreateLikeTxn(
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateLikeTxn: %v", err)
 	}
 
@@ -2680,7 +2680,7 @@ func (bc *Blockchain) CreateFollowTxn(
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateFollowTxn: %v", err)
 	}
 
@@ -2735,7 +2735,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	}
 
 	// The spend amount should be zero for these txns.
-	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateGlobalParamsTxn %v", err)
 	}
 
@@ -2770,7 +2770,7 @@ func (bc *Blockchain) CreateUpdateBitcoinUSDExchangeRateTxn(
 	}
 
 	// The spend amount should be zero for these txns.
-	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateBitcoinUSDExchangeRateTxn: %v", err)
 	}
 
@@ -2839,7 +2839,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	}
 
 	// The spend amount should be zero for post submissions.
-	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateSubmitPostTxn: %v", err)
 	}
 
@@ -2887,7 +2887,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	}
 
 	// The spend amount should equal to the additional fees for profile submissions.
-	if err = validateSpendAmount(spendAmount + AdditionalFees, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount + AdditionalFees, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
 	}
 
@@ -2924,7 +2924,7 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 	}
 
 	// The spend amount should be zero for SwapIdentity txns.
-	if err = validateSpendAmount(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
 	}
 
