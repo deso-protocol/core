@@ -308,6 +308,10 @@ type BlockCypherAPIFullAddressResponse struct {
 	Error string `json:"error"`
 }
 
+type BlockchainInfoAPIResponse struct {
+	DoubleSpend   bool                            `json:"double_spend"`
+}
+
 func BlockCypherExtractBitcoinUtxosFromResponse(
 	apiData *BlockCypherAPIFullAddressResponse, addrString string, params *DeSoParams) (
 	[]*BitcoinUtxo, error) {
@@ -468,6 +472,52 @@ func FrontendBlockCypherUtxoSource(
 	return BlockCypherExtractBitcoinUtxosFromResponse(apiData, addrString, params)
 }
 
+func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
+	_isDoubleSpend bool, _err error) {
+
+	// Always pass on testnet for simplicity.
+	if IsBitcoinTestnet(params) {
+		return false, nil
+	}
+	URL := fmt.Sprintf("https://blockchain.info/rawtx/%s", txnHash.String())
+	glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Querying URL: %s", URL)
+
+	req, _ := http.NewRequest("GET", URL, nil)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: " +
+			"Problem with HTTP request %s: %v", URL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin txn with " +
+			"hash %v was not found in Blockchain.info OR an error occurred: %v", txnHash)
+		return true, nil
+	}
+
+	// Decode the response into the appropriate struct.
+	body, _ := ioutil.ReadAll(resp.Body)
+	responseData := &BlockchainInfoAPIResponse{}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(responseData); err != nil {
+		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: " +
+			"Problem decoding response JSON into "+
+			"interface %v, response: %v, error: %v", responseData, resp, err)
+	}
+
+	if responseData.DoubleSpend {
+		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin " +
+			"txn with hash %v was a double spend", txnHash)
+		return true, nil
+	}
+
+	return false, nil
+}
+
 func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
 	_isDoubleSpend bool, _err error) {
 
@@ -589,14 +639,32 @@ func BlockCypherPushAndWaitForTxn(txnHex string, txnHash *chainhash.Hash,
 	// Wait some amount of time before checking for a double-spend.
 	time.Sleep(time.Duration(doubleSpendWaitSeconds) * time.Second)
 
-	isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(txnHash, blockCypherAPIKey, params)
-	if err != nil {
-		return fmt.Errorf("PushAndWaitForTxn: Error occurred when checking for " +
-			"double-spend. Your transaction will go through once it has been mined into a Bitcoin block.")
+	{
+		isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(txnHash, blockCypherAPIKey, params)
+		if err != nil {
+			return fmt.Errorf("PushAndWaitForTxn: Error occurred when checking for " +
+				"double-spend. Your transaction will go through once it has been mined into a Bitcoin block.")
+		}
+		if isDoubleSpend {
+			return fmt.Errorf("PushAndWaitForTxn: Error: double-spend detected. Your " +
+				"transaction will go through once it mines into the next Bitcoin block")
+		}
 	}
-	if isDoubleSpend {
-		return fmt.Errorf("PushAndWaitForTxn: Error: double-spend detected. Your " +
-			"transaction will go through once it mines into the next Bitcoin block")
+
+	// Also check the Blockchain.com API for a double-spend. This prevents an attack
+	// that exploits a weakness in BlockCypher's APIs.
+	//
+	// TODO: Document this attack later.
+	{
+		isDoubleSpend, err := BlockchainInfoCheckBitcoinDoubleSpend(txnHash, blockCypherAPIKey, params)
+		if err != nil {
+			return fmt.Errorf("PushAndWaitForTxn: Error occurred when checking for " +
+				"double-spend. Your transaction will go through once it has been mined into a Bitcoin block.")
+		}
+		if isDoubleSpend {
+			return fmt.Errorf("PushAndWaitForTxn: Error: double-spend detected. Your " +
+				"transaction will go through once it mines into the next Bitcoin block")
+		}
 	}
 
 	return nil
