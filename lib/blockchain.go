@@ -2887,7 +2887,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	}
 
 	// The spend amount should equal to the additional fees for profile submissions.
-	if err = amountEqualsAdditionalOutputs(spendAmount + AdditionalFees, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount - AdditionalFees, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
 	}
 
