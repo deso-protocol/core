@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -495,7 +496,7 @@ func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherA
 
 	if resp.StatusCode != 200 {
 		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin txn with " +
-			"hash %v was not found in Blockchain.info OR an error occurred: %v", txnHash)
+			"hash %v was not found in Blockchain.info OR an error occurred: %v", txnHash, spew.Sdump(resp))
 		return true, nil
 	}
 
