@@ -1536,7 +1536,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
 	require.NoError(err)
 	txn, _, _, _, err := chain.CreateUpdateGlobalParamsTxn(
-		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil)
+		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil, []*DeSoOutput{})
 	require.NoError(err)
 
 	// Mine a few blocks to give the senderPkString some money.
