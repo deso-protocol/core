@@ -4882,8 +4882,8 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 			return pkidEntry.PublicKey
 		}
 
-		profileEntry, _ := bav.setProfileMappings(profile)
-		return profileEntry.PublicKey
+		_, pkidEntry := bav.setProfileMappings(profile)
+		return pkidEntry.PublicKey
 	} else {
 		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
 		if len(dbPublicKey) != 0 {
