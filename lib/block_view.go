@@ -262,25 +262,25 @@ type NFTBidEntry struct {
 
 type DerivedKeyEntry struct {
 	// Owner public key
-	OwnerPublicKey   PublicKey
+	OwnerPublicKey PublicKey
 
 	// Derived public key
 	DerivedPublicKey PublicKey
 
 	// Expiration Block
-	ExpirationBlock  uint64
+	ExpirationBlock uint64
 
 	// Operation type determines if the derived key is
 	// authorized or de-authorized.
-	OperationType    AuthorizeDerivedKeyOperationType
+	OperationType AuthorizeDerivedKeyOperationType
 
 	// Whether or not this entry is deleted in the view.
-	isDeleted        bool
+	isDeleted bool
 }
 
 type DerivedKeyMapKey struct {
 	// Owner public key
-	OwnerPublicKey   PublicKey
+	OwnerPublicKey PublicKey
 
 	// Derived public key
 	DerivedPublicKey PublicKey
@@ -292,7 +292,6 @@ func MakeDerivedKeyMapKey(ownerPublicKey PublicKey, derivedPublicKey PublicKey) 
 		DerivedPublicKey: derivedPublicKey,
 	}
 }
-
 
 func MakeFollowKey(followerPKID *PKID, followedPKID *PKID) FollowKey {
 	return FollowKey{
@@ -707,8 +706,8 @@ func (pe *ProfileEntry) IsDeleted() bool {
 
 type UtxoView struct {
 	// Utxo data
-	NumUtxoEntries                  uint64
-	UtxoKeyToUtxoEntry              map[UtxoKey]*UtxoEntry
+	NumUtxoEntries              uint64
+	UtxoKeyToUtxoEntry          map[UtxoKey]*UtxoEntry
 	PublicKeyToDeSoBalanceNanos map[PkMapKey]uint64
 
 	// BitcoinExchange data
@@ -757,7 +756,7 @@ type UtxoView struct {
 	HODLerPKIDCreatorPKIDToBalanceEntry map[BalanceEntryMapKey]*BalanceEntry
 
 	// Derived Key entries. Map key is a combination of owner and derived public keys.
-	DerivedKeyToDerivedEntry          map[DerivedKeyMapKey]*DerivedKeyEntry
+	DerivedKeyToDerivedEntry map[DerivedKeyMapKey]*DerivedKeyEntry
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -793,7 +792,7 @@ const (
 	OperationTypeUpdateNFT                    OperationType = 16
 	OperationTypeAcceptNFTBid                 OperationType = 17
 	OperationTypeNFTBid                       OperationType = 18
-	OperationTypeDeSoDiamond              OperationType = 19
+	OperationTypeDeSoDiamond                  OperationType = 19
 	OperationTypeNFTTransfer                  OperationType = 20
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
@@ -908,7 +907,7 @@ type UtxoOperation struct {
 	PrevPostEntry            *PostEntry
 	PrevParentPostEntry      *PostEntry
 	PrevGrandparentPostEntry *PostEntry
-	PrevRepostedPostEntry   *PostEntry
+	PrevRepostedPostEntry    *PostEntry
 
 	// Save the previous profile entry when making an update.
 	PrevProfileEntry *ProfileEntry
@@ -3319,7 +3318,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) error
 
 	// Get the owner public key and attempt turning it into *btcec.PublicKey.
 	ownerPkBytes := txn.PublicKey
-	ownerPk, err :=  btcec.ParsePubKey(ownerPkBytes, btcec.S256())
+	ownerPk, err := btcec.ParsePubKey(ownerPkBytes, btcec.S256())
 	if err != nil {
 		return errors.Wrapf(err, "_verifySignature: Problem parsing owner public key: ")
 	}
@@ -4883,8 +4882,8 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 			return pkidEntry.PublicKey
 		}
 
-		profileEntry, _ := bav.setProfileMappings(profile)
-		return profileEntry.PublicKey
+		_, pkidEntry := bav.setProfileMappings(profile)
+		return pkidEntry.PublicKey
 	} else {
 		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
 		if len(dbPublicKey) != 0 {
@@ -5038,7 +5037,7 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 		var err error
 		dbMappings, err = DBGetAllOwnerToDerivedKeyMappings(bav.Handle, *ownerPk)
 		if err != nil {
-			return nil, errors.Wrapf(err, "GetAllDerivedKeyMappingsForOwner: problem looking up" +
+			return nil, errors.Wrapf(err, "GetAllDerivedKeyMappingsForOwner: problem looking up"+
 				"entries in the DB.")
 		}
 	}
@@ -5110,7 +5109,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 			ProfilePic:  profile.ProfilePic,
 			CoinEntry: CoinEntry{
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
-				DeSoLockedNanos:     profile.DeSoLockedNanos,
+				DeSoLockedNanos:         profile.DeSoLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
 				CoinsInCirculationNanos: profile.CoinsInCirculationNanos,
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
@@ -6285,8 +6284,8 @@ func (bav *UtxoView) _connectSubmitPost(
 			PosterPublicKey:          txn.PublicKey,
 			ParentStakeID:            txMeta.ParentStakeID,
 			Body:                     txMeta.Body,
-			RepostedPostHash:        repostedPostHash,
-			IsQuotedRepost:          isQuotedRepost,
+			RepostedPostHash:         repostedPostHash,
+			IsQuotedRepost:           isQuotedRepost,
 			CreatorBasisPoints:       txMeta.CreatorBasisPoints,
 			StakeMultipleBasisPoints: txMeta.StakeMultipleBasisPoints,
 			TimestampNanos:           txMeta.TimestampNanos,
@@ -6368,8 +6367,8 @@ func (bav *UtxoView) _connectSubmitPost(
 		PrevPostEntry:            prevPostEntry,
 		PrevParentPostEntry:      prevParentPostEntry,
 		PrevGrandparentPostEntry: prevGrandparentPostEntry,
-		PrevRepostedPostEntry:   prevRepostedPostEntry,
-		PrevRepostEntry:         prevRepostEntry,
+		PrevRepostedPostEntry:    prevRepostedPostEntry,
+		PrevRepostEntry:          prevRepostEntry,
 		Type:                     OperationTypeSubmitPost,
 	})
 
@@ -8034,12 +8033,12 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// generate a derived key, you can use it to sign any transaction offline, including authorize
 	// transactions. It also resolves issues in situations where the owner account has insufficient
 	// balance to submit an authorize transaction.
-	derivedKeyEntry := DerivedKeyEntry {
-		OwnerPublicKey: *NewPublicKey(ownerPublicKey),
+	derivedKeyEntry := DerivedKeyEntry{
+		OwnerPublicKey:   *NewPublicKey(ownerPublicKey),
 		DerivedPublicKey: *NewPublicKey(derivedPublicKey),
-		ExpirationBlock: txMeta.ExpirationBlock,
-		OperationType: AuthorizeDerivedKeyOperationValid,
-		isDeleted: false,
+		ExpirationBlock:  txMeta.ExpirationBlock,
+		OperationType:    AuthorizeDerivedKeyOperationValid,
+		isDeleted:        false,
 	}
 	bav._setDerivedKeyMapping(&derivedKeyEntry)
 
