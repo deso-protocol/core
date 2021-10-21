@@ -264,8 +264,8 @@ const (
 	RuleErrorNFTBidLessThanMinBidAmountNanos               RuleError = "RuleErrorNFTBidLessThanMinBidAmountNanos"
 
 	// NFT Transfers
-	RuleErrorNFTTranserBeforeBlockHeight                  RuleError = "RuleErrorNFTTranserBeforeBlockHeight"
-	RuleErrorAcceptNFTTranserBeforeBlockHeight            RuleError = "RuleErrorAcceptNFTTranserBeforeBlockHeight"
+	RuleErrorNFTTransferBeforeBlockHeight                  RuleError = "RuleErrorNFTTranserBeforeBlockHeight"
+	RuleErrorAcceptNFTTransferBeforeBlockHeight            RuleError = "RuleErrorAcceptNFTTranserBeforeBlockHeight"
 	RuleErrorNFTTransferInvalidReceiverPubKeySize         RuleError = "RuleErrorNFTTransferInvalidReceiverPubKeySize"
 	RuleErrorNFTTransferCannotTransferToSelf              RuleError = "RuleErrorNFTTransferCannotTransferToSelf"
 	RuleErrorCannotTransferNonExistentNFT                 RuleError = "RuleErrorCannotTransferNonExistentNFT"

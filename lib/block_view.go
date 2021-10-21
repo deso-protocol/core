@@ -7480,7 +7480,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
-		return 0, 0, nil, RuleErrorNFTTranserBeforeBlockHeight
+		return 0, 0, nil, RuleErrorNFTTransferBeforeBlockHeight
 	}
 
 	// Check that the transaction has the right TxnType.
@@ -7605,7 +7605,7 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
-		return 0, 0, nil, RuleErrorAcceptNFTTranserBeforeBlockHeight
+		return 0, 0, nil, RuleErrorAcceptNFTTransferBeforeBlockHeight
 	}
 
 	// Check that the transaction has the right TxnType.
