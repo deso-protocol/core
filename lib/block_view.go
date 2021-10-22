@@ -6820,9 +6820,13 @@ func (bav *UtxoView) _connectUpdateNFT(
 		return 0, 0, nil, RuleErrorCannotUpdateNonExistentNFT
 	}
 
-	// Verify the NFT is not a pending transfer.
-	if prevNFTEntry.IsPending {
-		return 0, 0, nil, RuleErrorCannotUpdatePendingNFTTransfer
+	// Prior to the "AllowPendingNFTSalesBlockHeight", one could not update (ie. put for sale)
+	// a pending NFT. At this block height, updating a transferred NFT also accepts it.
+	if blockHeight < AllowPendingNFTSalesBlockHeight {
+		// Verify the NFT is not a pending transfer.
+		if prevNFTEntry.IsPending {
+			return 0, 0, nil, RuleErrorCannotUpdatePendingNFTTransfer
+		}
 	}
 
 	// Get the postEntry so we can update the number of NFT copies for sale.
@@ -6886,6 +6890,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 		NFTPostHash:       txMeta.NFTPostHash,
 		SerialNumber:      txMeta.SerialNumber,
 		IsForSale:         txMeta.IsForSale,
+		IsPending:         false, // Updating an NFT automatically accepts it.
 		MinBidAmountNanos: txMeta.MinBidAmountNanos,
 		UnlockableText:    prevNFTEntry.UnlockableText,
 		// Keep the last accepted bid amount nanos from the previous entry since this
