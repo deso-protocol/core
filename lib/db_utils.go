@@ -198,9 +198,9 @@ var (
 	// 		Reposts: <prefix, RepostedPostHash, ReposterPubKey> -> <>
 	// 		Quote Reposts: <prefix, RepostedPostHash, ReposterPubKey, RepostPostHash> -> <>
 	// 		Diamonds: <prefix, DiamondedPostHash, DiamonderPubKey [33]byte> -> <DiamondLevel (uint64)>
-	_PrefixRepostedPostHashReposterPubKey                = []byte{45}
+	_PrefixRepostedPostHashReposterPubKey               = []byte{45}
 	_PrefixRepostedPostHashReposterPubKeyRepostPostHash = []byte{46}
-	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel      = []byte{47}
+	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   = []byte{47}
 
 	// Prefixes for NFT ownership:
 	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
@@ -3175,9 +3175,9 @@ type CreatorCoinTxindexMetadata struct {
 	// CreatorPublicKeyBase58Check in AffectedPublicKeys
 
 	// Differs depending on OperationType.
-	DeSoToSellNanos    uint64
+	DeSoToSellNanos        uint64
 	CreatorCoinToSellNanos uint64
-	DeSoToAddNanos     uint64
+	DeSoToAddNanos         uint64
 }
 
 type CreatorCoinTransferTxindexMetadata struct {
@@ -3234,8 +3234,10 @@ type SwapIdentityTxindexMetadata struct {
 	// ParamUpdater = TransactorPublicKeyBase58Check
 
 	FromPublicKeyBase58Check string
+	ToPublicKeyBase58Check   string
 
-	ToPublicKeyBase58Check string
+	FromDeSoLockedNanos uint64
+	ToDeSoLockedNanos   uint64
 }
 
 type NFTBidTxindexMetadata struct {
@@ -3245,9 +3247,11 @@ type NFTBidTxindexMetadata struct {
 }
 
 type AcceptNFTBidTxindexMetadata struct {
-	NFTPostHashHex string
-	SerialNumber   uint64
-	BidAmountNanos uint64
+	NFTPostHashHex              string
+	SerialNumber                uint64
+	BidAmountNanos              uint64
+	CreatorCoinRoyaltyNanos     uint64
+	CreatorPublicKeyBase58Check string
 }
 
 type TransactionMetadata struct {
