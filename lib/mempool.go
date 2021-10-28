@@ -1468,15 +1468,18 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 		_ = realTxMeta
 
-		var creatorCoinRoyaltyNanos uint64
+		var prevCoinEntry *CoinEntry
 		var creatorPublicKey []byte
 		for _, utxoOp := range utxoOps {
 			if utxoOp.Type == OperationTypeAcceptNFTBid {
-				creatorCoinRoyaltyNanos = utxoOp.CreatorCoinRoyaltyNanos
+				prevCoinEntry = utxoOp.PrevCoinEntry
 				creatorPublicKey = utxoOp.PrevPostEntry.PosterPublicKey
 				break
 			}
 		}
+
+		coinEntry := utxoView.GetProfileEntryForPublicKey(creatorPublicKey).CoinEntry
+		creatorCoinRoyaltyNanos := coinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
 
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
 			NFTPostHashHex:              hex.EncodeToString(realTxMeta.NFTPostHash[:]),

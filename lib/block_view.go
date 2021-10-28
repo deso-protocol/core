@@ -927,9 +927,6 @@ type UtxoOperation struct {
 	NFTSpentUtxoEntries       []*UtxoEntry
 	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
 
-	// TODO: We need to snapshot the creator coin royalty nanos for rosetta. This doesn't belong here
-	CreatorCoinRoyaltyNanos uint64
-
 	// For disconnecting AuthorizeDerivedKey transactions.
 	PrevDerivedKeyEntry *DerivedKeyEntry
 
@@ -7302,7 +7299,6 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		NFTPaymentUtxoKeys:        nftPaymentUtxoKeys,
 		NFTSpentUtxoEntries:       spentUtxoEntries,
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
-		CreatorCoinRoyaltyNanos:   creatorCoinRoyaltyNanos,
 	})
 
 	// HARDCORE SANITY CHECK:
