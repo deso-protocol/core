@@ -5608,7 +5608,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
 	if _, exists := extraData[ForbiddenBlockSignaturePubKeyKey]; exists {
-		forbiddenPubKey := extraData[ForbiddenBlockSignaturePubKeyKey]
+		forbiddenPubKey = extraData[ForbiddenBlockSignaturePubKeyKey]
 
 		if len(forbiddenPubKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, RuleErrorForbiddenPubKeyLength
