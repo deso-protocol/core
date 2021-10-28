@@ -1170,7 +1170,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		// Get the txn metadata
 		realTxMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 
-		// Compute the change in DESOLockedNanos
+		// Rosetta needs to know the change in DESOLockedNanos so it can model the change in
+		// total deso locked in the creator coin. Calculate this by comparing the current CoinEntry
+		// to the previous CoinEntry
 		coinEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 		var prevCoinEntry *CoinEntry
 		for _, op := range utxoOps {
@@ -1412,7 +1414,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		realTxMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 		_ = realTxMeta
 
-		// Rosetta needs to know the current locked deso in each profile
+		// Rosetta needs to know the current locked deso in each profile so it can model the swap of
+		// the creator coins. Rosetta models a swap identity as two INPUTs and two OUTPUTs effectively
+		// swapping the balances of total deso locked. If no profile exists, from/to is zero.
 		var fromNanos uint64
 		var toNanos uint64
 
@@ -1468,6 +1472,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 		_ = realTxMeta
 
+		// Rosetta needs to know the royalty paid to the creator coin so it can model the change in
+		// total deso locked in the creator coin correctly.
 		var prevCoinEntry *CoinEntry
 		var creatorPublicKey []byte
 		for _, utxoOp := range utxoOps {

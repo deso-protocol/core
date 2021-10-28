@@ -3179,7 +3179,8 @@ type CreatorCoinTxindexMetadata struct {
 	CreatorCoinToSellNanos uint64
 	DeSoToAddNanos         uint64
 
-	// Rosetta needs to know how much DESO was added or removed
+	// Rosetta needs to know how much DESO was added or removed so it can
+	// model the change to the total deso locked in the creator coin
 	DESOLockedNanosDiff uint64
 }
 
