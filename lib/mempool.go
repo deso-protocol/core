@@ -1170,11 +1170,29 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		// Get the txn metadata
 		realTxMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 
+		// Compute the change in DESOLockedNanos
+		coinEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
+		var prevCoinEntry *CoinEntry
+		for _, op := range utxoOps {
+			if op.Type == OperationTypeCreatorCoin {
+				prevCoinEntry = op.PrevCoinEntry
+				break
+			}
+		}
+
+		var desoLockedNanosDiff uint64
+		if coinEntry.DeSoLockedNanos > prevCoinEntry.DeSoLockedNanos {
+			desoLockedNanosDiff = coinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
+		} else {
+			desoLockedNanosDiff = prevCoinEntry.DeSoLockedNanos - coinEntry.DeSoLockedNanos
+		}
+
 		// Set the amount of the buy/sell/add
 		txnMeta.CreatorCoinTxindexMetadata = &CreatorCoinTxindexMetadata{
 			DeSoToSellNanos:        realTxMeta.DeSoToSellNanos,
 			CreatorCoinToSellNanos: realTxMeta.CreatorCoinToSellNanos,
 			DeSoToAddNanos:         realTxMeta.DeSoToAddNanos,
+			DESOLockedNanosDiff:    desoLockedNanosDiff,
 		}
 
 		// Set the type of the operation.
