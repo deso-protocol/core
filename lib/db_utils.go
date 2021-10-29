@@ -3240,6 +3240,7 @@ type SwapIdentityTxindexMetadata struct {
 	FromPublicKeyBase58Check string
 	ToPublicKeyBase58Check   string
 
+	// Rosetta needs this information to track creator coin balances
 	FromDeSoLockedNanos uint64
 	ToDeSoLockedNanos   uint64
 }

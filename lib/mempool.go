@@ -1487,12 +1487,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 		creatorCoinRoyaltyNanos := uint64(0)
 		profileEntry := utxoView.GetProfileEntryForPublicKey(creatorPublicKey)
-		if profileEntry != nil && prevCoinEntry != nil {
-			if profileEntry.CoinEntry.DeSoLockedNanos >= prevCoinEntry.DeSoLockedNanos {
-				creatorCoinRoyaltyNanos = profileEntry.CoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
-			} else {
-				glog.Errorf("Update TxIndex: CreatorCoinRoyaltyNanos overflow error: %v", txn.Hash().String())
-			}
+		if profileEntry == nil {
+			glog.Errorf("Update TxIndex: Missing profile entry: %v", txn.Hash().String())
+		} else if prevCoinEntry == nil {
+			glog.Errorf("Update TxIndex: Missing previous coin entry: %v", txn.Hash().String())
+		} else if profileEntry.CoinEntry.DeSoLockedNanos < prevCoinEntry.DeSoLockedNanos {
+			glog.Errorf("Update TxIndex: CreatorCoinRoyaltyNanos overflow error: %v", txn.Hash().String())
+		} else {
+			creatorCoinRoyaltyNanos = profileEntry.CoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
 		}
 
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
