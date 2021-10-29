@@ -1170,11 +1170,31 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		// Get the txn metadata
 		realTxMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 
+		// Rosetta needs to know the change in DESOLockedNanos so it can model the change in
+		// total deso locked in the creator coin. Calculate this by comparing the current CoinEntry
+		// to the previous CoinEntry
+		profileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
+		var prevCoinEntry *CoinEntry
+		for _, op := range utxoOps {
+			if op.Type == OperationTypeCreatorCoin {
+				prevCoinEntry = op.PrevCoinEntry
+				break
+			}
+		}
+
+		desoLockedNanosDiff := int64(0)
+		if profileEntry == nil || prevCoinEntry == nil {
+			glog.Errorf("Update TxIndex: missing DESOLockedNanosDiff error: %v", txn.Hash().String())
+		} else {
+			desoLockedNanosDiff = int64(profileEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos)
+		}
+
 		// Set the amount of the buy/sell/add
 		txnMeta.CreatorCoinTxindexMetadata = &CreatorCoinTxindexMetadata{
-			DeSoToSellNanos:    realTxMeta.DeSoToSellNanos,
+			DeSoToSellNanos:        realTxMeta.DeSoToSellNanos,
 			CreatorCoinToSellNanos: realTxMeta.CreatorCoinToSellNanos,
-			DeSoToAddNanos:     realTxMeta.DeSoToAddNanos,
+			DeSoToAddNanos:         realTxMeta.DeSoToAddNanos,
+			DESOLockedNanosDiff:    desoLockedNanosDiff,
 		}
 
 		// Set the type of the operation.
@@ -1394,9 +1414,26 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		realTxMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 		_ = realTxMeta
 
+		// Rosetta needs to know the current locked deso in each profile so it can model the swap of
+		// the creator coins. Rosetta models a swap identity as two INPUTs and two OUTPUTs effectively
+		// swapping the balances of total deso locked. If no profile exists, from/to is zero.
+		fromNanos := uint64(0)
+		fromProfile := utxoView.GetProfileEntryForPublicKey(realTxMeta.FromPublicKey)
+		if fromProfile != nil {
+			fromNanos = fromProfile.CoinEntry.DeSoLockedNanos
+		}
+
+		toNanos := uint64(0)
+		toProfile := utxoView.GetProfileEntryForPublicKey(realTxMeta.ToPublicKey)
+		if toProfile != nil {
+			toNanos = toProfile.CoinEntry.DeSoLockedNanos
+		}
+
 		txnMeta.SwapIdentityTxindexMetadata = &SwapIdentityTxindexMetadata{
 			FromPublicKeyBase58Check: PkToString(realTxMeta.FromPublicKey, utxoView.Params),
 			ToPublicKeyBase58Check:   PkToString(realTxMeta.ToPublicKey, utxoView.Params),
+			FromDeSoLockedNanos:      fromNanos,
+			ToDeSoLockedNanos:        toNanos,
 		}
 
 		// The to and from public keys are affected by this.
@@ -1434,10 +1471,38 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 		_ = realTxMeta
 
+		// Rosetta needs to know the royalty paid to the creator coin so it can model the change in
+		// total deso locked in the creator coin correctly.
+		var prevCoinEntry *CoinEntry
+		var creatorPublicKey []byte
+		for _, utxoOp := range utxoOps {
+			if utxoOp.Type == OperationTypeAcceptNFTBid {
+				prevCoinEntry = utxoOp.PrevCoinEntry
+				if utxoOp.PrevPostEntry != nil {
+					creatorPublicKey = utxoOp.PrevPostEntry.PosterPublicKey
+				}
+				break
+			}
+		}
+
+		creatorCoinRoyaltyNanos := uint64(0)
+		profileEntry := utxoView.GetProfileEntryForPublicKey(creatorPublicKey)
+		if profileEntry == nil {
+			glog.Errorf("Update TxIndex: Missing profile entry: %v", txn.Hash().String())
+		} else if prevCoinEntry == nil {
+			glog.Errorf("Update TxIndex: Missing previous coin entry: %v", txn.Hash().String())
+		} else if profileEntry.CoinEntry.DeSoLockedNanos < prevCoinEntry.DeSoLockedNanos {
+			glog.Errorf("Update TxIndex: CreatorCoinRoyaltyNanos overflow error: %v", txn.Hash().String())
+		} else {
+			creatorCoinRoyaltyNanos = profileEntry.CoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
+		}
+
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
-			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber:   realTxMeta.SerialNumber,
-			BidAmountNanos: realTxMeta.BidAmountNanos,
+			NFTPostHashHex:              hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:                realTxMeta.SerialNumber,
+			BidAmountNanos:              realTxMeta.BidAmountNanos,
+			CreatorCoinRoyaltyNanos:     creatorCoinRoyaltyNanos,
+			CreatorPublicKeyBase58Check: PkToString(creatorPublicKey, utxoView.Params),
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{

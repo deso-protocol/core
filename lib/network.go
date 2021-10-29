@@ -252,6 +252,7 @@ const (
 )
 
 type TxnString string
+
 const (
 	TxnStringUnset                        TxnString = "UNSET"
 	TxnStringBlockReward                  TxnString = "BLOCK_REWARD"
@@ -407,7 +408,6 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeUnset
 	}
 }
-
 
 type DeSoTxnMetadata interface {
 	ToBytes(preSignature bool) ([]byte, error)
@@ -966,7 +966,7 @@ func (msg *MsgDeSoGetBlocks) String() string {
 // DeSoBodySchema Within a post, the body typically has a particular
 // schema defined below.
 type DeSoBodySchema struct {
-	Body      string `json:",omitempty"`
+	Body      string   `json:",omitempty"`
 	ImageURLs []string `json:",omitempty"`
 	VideoURLs []string `json:",omitempty"`
 }
@@ -2738,7 +2738,7 @@ func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error)
 // SignTransactionWithDerivedKey the signature contains solution iteration,
 // which allows us to recover signer public key from the signature.
 // Returns (new txn bytes, txn signature, error)
-func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error){
+func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error) {
 	// As we're signing the transaction using a derived key, we
 	// pass the key to extraData.
 	rr := bytes.NewReader(txnBytes)
@@ -3728,8 +3728,8 @@ func (txnData *UpdateBitcoinUSDExchangeRateMetadataa) New() DeSoTxnMetadata {
 type CreatorCoinOperationType uint8
 
 const (
-	CreatorCoinOperationTypeBuy         CreatorCoinOperationType = 0
-	CreatorCoinOperationTypeSell        CreatorCoinOperationType = 1
+	CreatorCoinOperationTypeBuy     CreatorCoinOperationType = 0
+	CreatorCoinOperationTypeSell    CreatorCoinOperationType = 1
 	CreatorCoinOperationTypeAddDeSo CreatorCoinOperationType = 2
 )
 
@@ -3749,16 +3749,16 @@ type CreatorCoinMetadataa struct {
 	// CreatorCoinToSellNanos will be converted into DeSo. In an AddDeSo
 	// operation, DeSoToAddNanos will be aded for the user. This allows us to
 	// support multiple transaction types with same meta field.
-	DeSoToSellNanos    uint64
+	DeSoToSellNanos        uint64
 	CreatorCoinToSellNanos uint64
-	DeSoToAddNanos     uint64
+	DeSoToAddNanos         uint64
 
 	// When a user converts DeSo into CreatorCoin, MinCreatorCoinExpectedNanos
 	// specifies the minimum amount of creator coin that the user expects from their
 	// transaction. And vice versa when a user is converting CreatorCoin for DeSo.
 	// Specifying these fields prevents the front-running of users' buy/sell. Setting
 	// them to zero turns off the check. Give it your best shot, Ivan.
-	MinDeSoExpectedNanos    uint64
+	MinDeSoExpectedNanos        uint64
 	MinCreatorCoinExpectedNanos uint64
 }
 
