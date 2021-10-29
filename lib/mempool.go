@@ -1173,7 +1173,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		// Rosetta needs to know the change in DESOLockedNanos so it can model the change in
 		// total deso locked in the creator coin. Calculate this by comparing the current CoinEntry
 		// to the previous CoinEntry
-		coinEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
+		profileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 		var prevCoinEntry *CoinEntry
 		for _, op := range utxoOps {
 			if op.Type == OperationTypeCreatorCoin {
@@ -1182,11 +1182,11 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			}
 		}
 
-		var desoLockedNanosDiff uint64
-		if coinEntry.DeSoLockedNanos > prevCoinEntry.DeSoLockedNanos {
-			desoLockedNanosDiff = coinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
+		desoLockedNanosDiff := int64(0)
+		if profileEntry == nil || prevCoinEntry == nil {
+			glog.Errorf("Update TxIndex: missing DESOLockedNanosDiff error: %v", txn.Hash().String())
 		} else {
-			desoLockedNanosDiff = prevCoinEntry.DeSoLockedNanos - coinEntry.DeSoLockedNanos
+			desoLockedNanosDiff = int64(profileEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos)
 		}
 
 		// Set the amount of the buy/sell/add
@@ -1417,14 +1417,13 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		// Rosetta needs to know the current locked deso in each profile so it can model the swap of
 		// the creator coins. Rosetta models a swap identity as two INPUTs and two OUTPUTs effectively
 		// swapping the balances of total deso locked. If no profile exists, from/to is zero.
-		var fromNanos uint64
-		var toNanos uint64
-
+		fromNanos := uint64(0)
 		fromProfile := utxoView.GetProfileEntryForPublicKey(realTxMeta.FromPublicKey)
 		if fromProfile != nil {
 			fromNanos = fromProfile.CoinEntry.DeSoLockedNanos
 		}
 
+		toNanos := uint64(0)
 		toProfile := utxoView.GetProfileEntryForPublicKey(realTxMeta.ToPublicKey)
 		if toProfile != nil {
 			toNanos = toProfile.CoinEntry.DeSoLockedNanos
@@ -1479,13 +1478,22 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		for _, utxoOp := range utxoOps {
 			if utxoOp.Type == OperationTypeAcceptNFTBid {
 				prevCoinEntry = utxoOp.PrevCoinEntry
-				creatorPublicKey = utxoOp.PrevPostEntry.PosterPublicKey
+				if utxoOp.PrevPostEntry != nil {
+					creatorPublicKey = utxoOp.PrevPostEntry.PosterPublicKey
+				}
 				break
 			}
 		}
 
-		coinEntry := utxoView.GetProfileEntryForPublicKey(creatorPublicKey).CoinEntry
-		creatorCoinRoyaltyNanos := coinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
+		creatorCoinRoyaltyNanos := uint64(0)
+		profileEntry := utxoView.GetProfileEntryForPublicKey(creatorPublicKey)
+		if profileEntry != nil && prevCoinEntry != nil {
+			if profileEntry.CoinEntry.DeSoLockedNanos >= prevCoinEntry.DeSoLockedNanos {
+				creatorCoinRoyaltyNanos = profileEntry.CoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
+			} else {
+				glog.Errorf("Update TxIndex: CreatorCoinRoyaltyNanos overflow error: %v", txn.Hash().String())
+			}
+		}
 
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
 			NFTPostHashHex:              hex.EncodeToString(realTxMeta.NFTPostHash[:]),
