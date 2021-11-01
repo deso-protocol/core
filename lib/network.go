@@ -265,7 +265,7 @@ const (
 	TxnStringFollow                       TxnString = "FOLLOW"
 	TxnStringLike                         TxnString = "LIKE"
 	TxnStringCreatorCoin                  TxnString = "CREATOR_COIN"
-	TxnStringSwapIdentity                 TxnString = "SWAP_IDENTIY"
+	TxnStringSwapIdentity                 TxnString = "SWAP_IDENTITY"
 	TxnStringUpdateGlobalParams           TxnString = "UPDATE_GLOBAL_PARAMS"
 	TxnStringCreatorCoinTransfer          TxnString = "CREATOR_COIN_TRANSFER"
 	TxnStringCreateNFT                    TxnString = "CREATE_NFT"
