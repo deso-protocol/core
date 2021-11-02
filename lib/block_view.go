@@ -1475,6 +1475,33 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 	}, nil
 }
 
+func (bav *UtxoView) _addToBalance(amountNanos uint64, balancePubKey []byte,
+) (*UtxoOperation, error) {
+
+	// Bump the number of entries since we just added this one at the end.
+	bav.NumUtxoEntries++
+
+	// Add the utxo back to the spender's balance.
+	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_addUtxo: ")
+	}
+	desoBalanceNanos += utxoEntryy.AmountNanos
+	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = desoBalanceNanos
+
+	// Finally record a UtxoOperation in case we want to roll back this ADD
+	// in the future. Note that Entry data isn't required for an ADD operation.
+	return &UtxoOperation{
+		Type: OperationTypeAddUtxo,
+		// We don't technically need these in order to be able to roll back the
+		// transaction but they're useful for callers of connectTransaction to
+		// determine implicit outputs that were created like those that get created
+		// in a Bitcoin burn transaction.
+		Key:   utxoEntryCopy.UtxoKey,
+		Entry: &utxoEntryCopy,
+	}, nil
+}
+
 func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 	// First we check to see if the last utxoOp was a diamond operation. If it was, we disconnect
 	// the diamond-related changes and decrement the operation index to move past it.
@@ -3366,89 +3393,95 @@ func (bav *UtxoView) _connectBasicTransfer(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	var utxoOpsForTxn []*UtxoOperation
-
-	// Loop through all the inputs and validate them.
 	var totalInput uint64
-	// Each input should have a UtxoEntry corresponding to it if the transaction
-	// is legitimate. These should all have back-pointers to their UtxoKeys as well.
-	utxoEntriesForInputs := []*UtxoEntry{}
-	for _, desoInput := range txn.TxInputs {
-		// Fetch the utxoEntry for this input from the view. Make a copy to
-		// avoid having the iterator change under our feet.
-		utxoKey := UtxoKey(*desoInput)
-		utxoEntry := bav.GetUtxoEntryForUtxoKey(&utxoKey)
-		// If the utxo doesn't exist mark the block as invalid and return an error.
-		if utxoEntry == nil {
-			return 0, 0, nil, RuleErrorInputSpendsNonexistentUtxo
+
+	// After the BalanceModelBlockHeight, UTXO inputs are no longer allowed.
+	if blockHeight >= BalanceModelBlockHeight && len(txn.TxInputs) != 0 {
+		return 0, 0, nil, RuleErrorBalanceModelDoesNotUseUTXOInputs
+	} else {
+		// If this txn is pre-balance model, loop through all the inputs and validate them.
+
+		// Each input should have a UtxoEntry corresponding to it if the transaction
+		// is legitimate. These should all have back-pointers to their UtxoKeys as well.
+		utxoEntriesForInputs := []*UtxoEntry{}
+		for _, desoInput := range txn.TxInputs {
+			// Fetch the utxoEntry for this input from the view. Make a copy to
+			// avoid having the iterator change under our feet.
+			utxoKey := UtxoKey(*desoInput)
+			utxoEntry := bav.GetUtxoEntryForUtxoKey(&utxoKey)
+			// If the utxo doesn't exist mark the block as invalid and return an error.
+			if utxoEntry == nil {
+				return 0, 0, nil, RuleErrorInputSpendsNonexistentUtxo
+			}
+			// If the utxo exists but is already spent mark the block as invalid and
+			// return an error.
+			if utxoEntry.isSpent {
+				return 0, 0, nil, RuleErrorInputSpendsPreviouslySpentOutput
+			}
+			// If the utxo is from a block reward txn, make sure enough time has passed to
+			// make it spendable.
+			if _isEntryImmatureBlockReward(utxoEntry, blockHeight, bav.Params) {
+				glog.Debugf("utxoKey: %v, utxoEntry: %v, height: %d", &utxoKey, utxoEntry, blockHeight)
+				return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
+			}
+
+			// Verify that the input's public key is the same as the public key specified
+			// in the transaction.
+			//
+			// TODO: Enforcing this rule isn't a clear-cut decision. On the one hand,
+			// we save space and minimize complexity by enforcing this constraint. On
+			// the other hand, we make certain things harder to implement in the
+			// future. For example, implementing constant key rotation like Bitcoin
+			// has is difficult to do with a scheme like this. As are things like
+			// multi-sig (although that could probably be handled using transaction
+			// metadata). Key rotation combined with the use of addresses also helps
+			// a lot with quantum resistance. Nevertheless, if we assume the platform
+			// is committed to "one identity = roughly one public key" for usability
+			// reasons (e.g. reputation is way easier to manage without key rotation),
+			// then I don't think this constraint should pose much of an issue.
+			if !reflect.DeepEqual(utxoEntry.PublicKey, txn.PublicKey) {
+				return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
+			}
+
+			// Sanity check the amount of the input.
+			if utxoEntry.AmountNanos > MaxNanos ||
+				totalInput >= (math.MaxUint64-utxoEntry.AmountNanos) ||
+				totalInput+utxoEntry.AmountNanos > MaxNanos {
+
+				return 0, 0, nil, RuleErrorInputSpendsOutputWithInvalidAmount
+			}
+			// Add the amount of the utxo to the total input and add the UtxoEntry to
+			// our list.
+			totalInput += utxoEntry.AmountNanos
+			utxoEntriesForInputs = append(utxoEntriesForInputs, utxoEntry)
+
+			// At this point we know the utxo exists in the view and is unspent so actually
+			// tell the view to spend the input. If the spend fails for any reason we return
+			// an error. Don't mark the block as invalid though since this is not necessarily
+			// a rule error and the block could benefit from reprocessing.
+			newUtxoOp, err := bav._spendUtxo(&utxoKey)
+
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending input utxo")
+			}
+
+			utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 		}
-		// If the utxo exists but is already spent mark the block as invalid and
-		// return an error.
-		if utxoEntry.isSpent {
-			return 0, 0, nil, RuleErrorInputSpendsPreviouslySpentOutput
-		}
-		// If the utxo is from a block reward txn, make sure enough time has passed to
-		// make it spendable.
-		if _isEntryImmatureBlockReward(utxoEntry, blockHeight, bav.Params) {
-			glog.Debugf("utxoKey: %v, utxoEntry: %v, height: %d", &utxoKey, utxoEntry, blockHeight)
-			return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
+
+		if len(txn.TxInputs) != len(utxoEntriesForInputs) {
+			// Something went wrong if these lists differ in length.
+			return 0, 0, nil, fmt.Errorf("_connectBasicTransfer: Length of list of " +
+				"UtxoEntries does not match length of input list; this should never happen")
 		}
 
-		// Verify that the input's public key is the same as the public key specified
-		// in the transaction.
-		//
-		// TODO: Enforcing this rule isn't a clear-cut decision. On the one hand,
-		// we save space and minimize complexity by enforcing this constraint. On
-		// the other hand, we make certain things harder to implement in the
-		// future. For example, implementing constant key rotation like Bitcoin
-		// has is difficult to do with a scheme like this. As are things like
-		// multi-sig (although that could probably be handled using transaction
-		// metadata). Key rotation combined with the use of addresses also helps
-		// a lot with quantum resistance. Nevertheless, if we assume the platform
-		// is committed to "one identity = roughly one public key" for usability
-		// reasons (e.g. reputation is way easier to manage without key rotation),
-		// then I don't think this constraint should pose much of an issue.
-		if !reflect.DeepEqual(utxoEntry.PublicKey, txn.PublicKey) {
-			return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
+		// Block rewards are a bit special in that we don't allow them to have any
+		// inputs. Part of the reason for this stems from the fact that we explicitly
+		// require that block reward transactions not be signed. If a block reward is
+		// not allowed to have a signature then it should not be trying to spend any
+		// inputs.
+		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward && len(txn.TxInputs) != 0 {
+			return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveInputs
 		}
-
-		// Sanity check the amount of the input.
-		if utxoEntry.AmountNanos > MaxNanos ||
-			totalInput >= (math.MaxUint64-utxoEntry.AmountNanos) ||
-			totalInput+utxoEntry.AmountNanos > MaxNanos {
-
-			return 0, 0, nil, RuleErrorInputSpendsOutputWithInvalidAmount
-		}
-		// Add the amount of the utxo to the total input and add the UtxoEntry to
-		// our list.
-		totalInput += utxoEntry.AmountNanos
-		utxoEntriesForInputs = append(utxoEntriesForInputs, utxoEntry)
-
-		// At this point we know the utxo exists in the view and is unspent so actually
-		// tell the view to spend the input. If the spend fails for any reason we return
-		// an error. Don't mark the block as invalid though since this is not necessarily
-		// a rule error and the block could benefit from reprocessing.
-		newUtxoOp, err := bav._spendUtxo(&utxoKey)
-
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending input utxo")
-		}
-
-		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
-	}
-
-	if len(txn.TxInputs) != len(utxoEntriesForInputs) {
-		// Something went wrong if these lists differ in length.
-		return 0, 0, nil, fmt.Errorf("_connectBasicTransfer: Length of list of " +
-			"UtxoEntries does not match length of input list; this should never happen")
-	}
-
-	// Block rewards are a bit special in that we don't allow them to have any
-	// inputs. Part of the reason for this stems from the fact that we explicitly
-	// require that block reward transactions not be signed. If a block reward is
-	// not allowed to have a signature then it should not be trying to spend any
-	// inputs.
-	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward && len(txn.TxInputs) != 0 {
-		return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveInputs
 	}
 
 	// At this point, all of the utxos corresponding to inputs of this txn
@@ -3477,38 +3510,58 @@ func (bav *UtxoView) _connectBasicTransfer(
 		currentAmount, _ := amountsByPublicKey[MakePkMapKey(desoOutput.PublicKey)]
 		amountsByPublicKey[MakePkMapKey(desoOutput.PublicKey)] = currentAmount + desoOutput.AmountNanos
 
-		// Create a new entry for this output and add it to the view. It should be
-		// added at the end of the utxo list.
-		outputKey := UtxoKey{
-			TxID:  *txHash,
-			Index: uint32(outputIndex),
-		}
-		utxoType := UtxoTypeOutput
-		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-			utxoType = UtxoTypeBlockReward
-		}
-		// A basic transfer cannot create any output other than a "normal" output
-		// or a BlockReward. Outputs of other types must be created after processing
-		// the "basic" outputs.
+		var newUtxoOp *UtxoOperation
+		var err error
+		if blockHeight >= BalanceModelBlockHeight {
+			newUtxoOp, err = bav._addToBalance(desoOutput.AmountNanos, desoOutput.PublicKey)
+		} else {
+			// Create a new entry for this output and add it to the view. It should be
+			// added at the end of the utxo list.
+			outputKey := UtxoKey{
+				TxID:  *txHash,
+				Index: uint32(outputIndex),
+			}
+			utxoType := UtxoTypeOutput
+			if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+				utxoType = UtxoTypeBlockReward
+			}
+			// A basic transfer cannot create any output other than a "normal" output
+			// or a BlockReward. Outputs of other types must be created after processing
+			// the "basic" outputs.
 
-		utxoEntry := UtxoEntry{
-			AmountNanos: desoOutput.AmountNanos,
-			PublicKey:   desoOutput.PublicKey,
-			BlockHeight: blockHeight,
-			UtxoType:    utxoType,
-			UtxoKey:     &outputKey,
-			// We leave the position unset and isSpent to false by default.
-			// The position will be set in the call to _addUtxo.
-		}
-		// If we have a problem adding this utxo return an error but don't
-		// mark this block as invalid since it's not a rule error and the block
-		// could therefore benefit from being processed in the future.
-		newUtxoOp, err := bav._addUtxo(&utxoEntry)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding output utxo")
+			utxoEntry := UtxoEntry{
+				AmountNanos: desoOutput.AmountNanos,
+				PublicKey:   desoOutput.PublicKey,
+				BlockHeight: blockHeight,
+				UtxoType:    utxoType,
+				UtxoKey:     &outputKey,
+				// We leave the position unset and isSpent to false by default.
+				// The position will be set in the call to _addUtxo.
+			}
+			// If we have a problem adding this utxo return an error but don't
+			// mark this block as invalid since it's not a rule error and the block
+			// could therefore benefit from being processed in the future.
+			newUtxoOp, err = bav._addUtxo(&utxoEntry)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding output utxo")
+			}
 		}
 
 		// Rosetta uses this UtxoOperation to provide INPUT amounts
+		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
+	}
+
+	// After the BalanceModelBlockHeight, we no longer spend UTXO inputs. Instead, we must
+	// spend the sender's balance. Note that we don't need to explicitly check that the
+	// sender's balance is sufficient because _spendBalance will error if it is insufficient.
+	if blockHeight >= BalanceModelBlockHeight {
+		newUtxoOp, err := bav._spendBalance(totalOutput, txn.PublicKey)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending balance")
+		}
+
+		// RPH-FIXME: Should totalInput be set to == totalOutput here?
+
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 	}
 
@@ -9323,7 +9376,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	_fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
-	if err := CheckTransactionSanity(txn); err != nil {
+	if err := CheckTransactionSanity(txn, blockHeight); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
 	}
 

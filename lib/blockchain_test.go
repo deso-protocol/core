@@ -275,8 +275,16 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		pkBytes, chain.headerTip().Height)
 	require.NoError(t, err)
 
-	// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
-	require.Equal(t, balanceForUserNanos, balanceNanos)
+	blockHeight := chain.blockTip().Height + 1
+
+	if blockHeight < BalanceModelBlockHeight {
+		// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
+		require.Equal(t, balanceForUserNanos, balanceNanos)
+	} else {
+		// After the BalanceModelBlockHeight, UTXOs are no longer stored so the UTXO balance
+		// for the user will be incorrect.
+		return balanceNanos
+	}
 
 	return balanceForUserNanos
 }

@@ -1299,7 +1299,7 @@ func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
 	return node1
 }
 
-func CheckTransactionSanity(txn *MsgDeSoTxn) error {
+func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32) error {
 	// We don't check the sanity of block reward transactions.
 	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil
@@ -1316,8 +1316,8 @@ func CheckTransactionSanity(txn *MsgDeSoTxn) error {
 		}
 	}
 
-	// Every txn must have at least one input unless it is one of the following
-	// transaction types.
+	// Prior to the switch from UTXOs to a balance model, every txn was required to have
+	// least one input unless it is one of the following transaction types:
 	// - BitcoinExchange transactions will be rejected if they're duplicates in
 	//   spite of the fact that they don't have inputs or outputs.
 	//
@@ -1331,7 +1331,8 @@ func CheckTransactionSanity(txn *MsgDeSoTxn) error {
 	// TODO: The above is easily fixed by requiring something like block height to
 	// be present in the ExtraNonce field.
 	canHaveZeroInputs := (txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange ||
-		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage)
+		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage ||
+		blockHeight >= BalanceModelBlockHeight)
 	if len(txn.TxInputs) == 0 && !canHaveZeroInputs {
 		glog.Tracef("CheckTransactionSanity: Txn needs at least one input: %v", spew.Sdump(txn))
 		return RuleErrorTxnMustHaveAtLeastOneInput
@@ -1820,6 +1821,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	}
 
 	// Do some txn sanity checks.
+	blockHeight := blockHeader.Height + 1
 	for _, txn := range desoBlock.Txns[1:] {
 		// There shouldn't be more than one block reward in the transaction list.
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
@@ -1827,7 +1829,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			return false, false, RuleErrorMoreThanOneBlockReward
 		}
 
-		if err := CheckTransactionSanity(txn); err != nil {
+		if err := CheckTransactionSanity(txn, uint32(blockHeight)); err != nil {
 			bc.MarkBlockInvalid(
 				nodeToValidate, RuleError(errors.Wrapf(RuleErrorTxnSanity, "Error: %v", err).Error()))
 			return false, false, err
@@ -2887,7 +2889,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	}
 
 	// The spend amount should equal to the additional fees for profile submissions.
-	if err = amountEqualsAdditionalOutputs(spendAmount - AdditionalFees, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount-AdditionalFees, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
 	}
 
@@ -3621,9 +3623,9 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 		PublicKey: SenderPublicKey,
 		TxnMeta:   &BasicTransferMetadata{},
 		TxOutputs: append(additionalOutputs, &DeSoOutput{
-				PublicKey:   diamondPostEntry.PosterPublicKey,
-				AmountNanos: desoToTransferNanos,
-			}),
+			PublicKey:   diamondPostEntry.PosterPublicKey,
+			AmountNanos: desoToTransferNanos,
+		}),
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
 	}
@@ -3667,9 +3669,9 @@ func (bc *Blockchain) CreateMaxSpend(
 		// underestimate the fee. Note it must be a max size output because outputs
 		// are encoded as uvarints.
 		TxOutputs: append(additionalOutputs, &DeSoOutput{
-				PublicKey:   recipientPkBytes,
-				AmountNanos: math.MaxUint64,
-			}),
+			PublicKey:   recipientPkBytes,
+			AmountNanos: math.MaxUint64,
+		}),
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
 	}

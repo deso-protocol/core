@@ -123,6 +123,11 @@ var (
 	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+
+	// BalanceModelBlockHeight defines the height at which the DeSo blockchain will stop using
+	// UTXOs and will instead rely on a user's balance for making transactions.
+	// Triggers: TBD
+	BalanceModelBlockHeight = uint32(100000)
 )
 
 func (nt NetworkType) String() string {
@@ -488,11 +493,11 @@ var DeSoMainnetParams = DeSoParams{
 		StatusBitcoinHeaderValidated,
 	),
 
-	BitcoinExchangeFeeBasisPoints:   10,
-	BitcoinDoubleSpendWaitSeconds:   5.0,
-	DeSoNanosPurchasedAtGenesis: uint64(6000000000000000),
-	DefaultSocketPort:               uint16(17000),
-	DefaultJSONPort:                 uint16(17001),
+	BitcoinExchangeFeeBasisPoints: 10,
+	BitcoinDoubleSpendWaitSeconds: 5.0,
+	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
+	DefaultSocketPort:             uint16(17000),
+	DefaultJSONPort:               uint16(17001),
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
@@ -630,11 +635,11 @@ var DeSoTestnetParams = DeSoParams{
 	// ===================================================================================
 	// Testnet Bitcoin config
 	// ===================================================================================
-	BitcoinBtcdParams:               &chaincfg.TestNet3Params,
-	BitcoinBurnAddress:              "mhziDsPWSMwUqvZkVdKY92CjesziGP3wHL",
-	BitcoinExchangeFeeBasisPoints:   10,
-	BitcoinDoubleSpendWaitSeconds:   5.0,
-	DeSoNanosPurchasedAtGenesis: uint64(6000000000000000),
+	BitcoinBtcdParams:             &chaincfg.TestNet3Params,
+	BitcoinBurnAddress:            "mhziDsPWSMwUqvZkVdKY92CjesziGP3wHL",
+	BitcoinExchangeFeeBasisPoints: 10,
+	BitcoinDoubleSpendWaitSeconds: 5.0,
+	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 
 	// See comment in mainnet config.
 	BitcoinStartBlockNode: NewBlockNode(
