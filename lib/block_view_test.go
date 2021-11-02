@@ -79,6 +79,75 @@ var (
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
 
+func resetBlockHeightGlobals() {
+	BalanceModelBlockHeight = 1000000
+	DeSoDiamondsBlockHeight = 1000000
+}
+
+func TestBalanceModel(t *testing.T) {
+	BalanceModelBlockHeight = 1 // Skip the genesis block.
+	defer resetBlockHeightGlobals()
+
+	// Basic transfers.
+	TestBasicTransfer(t)
+	TestBasicTransferReorg(t)
+	TestValidateBasicTransfer(t)
+
+	// Diamonds.
+	TestDeSoDiamonds(t)
+	TestDeSoDiamondErrorCases(t)
+
+	// Global params.
+	TestUpdateGlobalParams(t)
+
+	// Posts, profiles, likes, follows, messages.
+	TestSubmitPost(t)
+	TestUpdateProfile(t)
+	TestSpamUpdateProfile(t)
+	TestUpdateProfileChangeBack(t)
+	TestLikeTxns(t)
+	TestFollowTxns(t)
+	TestPrivateMessage(t)
+
+	// Derived keys.
+	TestAuthorizeDerivedKeyBasic(t)
+
+	// Creator coins.
+	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
+	TestSalomonSequence(t)
+	TestCreatorCoinBigBigBuyBigSell(t)
+	TestCreatorCoinBigBuyAfterSmallBuy(t)
+	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
+	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
+	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
+	TestCreatorCoinAroundThresholdBuySellAmounts(t)
+	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
+	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+	TestCreatorCoinTransferBelowMinThreshold(t)
+	TestCreatorCoinTransferWithMaxTransfers(t)
+	TestCreatorCoinTransferWithSwapIdentity(t)
+
+	// Swap identity.
+	TestSwapIdentityMain(t)
+	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
+	TestSwapIdentityCreatorCoinBuySimple(t)
+	TestSwapIdentityFailureCases(t)
+	TestSwapIdentityWithFollows(t)
+
+	// NFTs.
+	TestNFTBasic(t)
+	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
+	TestNFTMoreErrorCases(t)
+	TestNFTCreatedIsNotForSale(t)
+	TestNFTBidsAreCanceledAfterAccept(t)
+	TestNFTPreviousOwnersCantAcceptBids(t)
+	TestNFTMaxCopiesGlobalParam(t)
+	TestNFTSerialNumberZeroBid(t)
+	TestNFTMinimumBidAmount(t)
+	TestNFTDifferentMinBidAmountSerialNumbers(t)
+	TestNFTTransfersAndBurns(t)
+}
+
 func TestBasicTransfer(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -87,6 +156,7 @@ func TestBasicTransfer(t *testing.T) {
 
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -114,6 +184,8 @@ func TestBasicTransfer(t *testing.T) {
 			TxnMeta:   &BasicTransferMetadata{},
 		}
 
+		blockHeight := chain.blockTip().Height + 1
+
 		totalInput, spendAmount, changeAmount, fees, err :=
 			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 		require.NoError(err)
@@ -127,13 +199,17 @@ func TestBasicTransfer(t *testing.T) {
 
 		_signTxn(t, txn, recipientPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignatures*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
+		} else {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		}
 	}
 
 	// Just a basic transfer with a bad signature.
@@ -151,18 +227,22 @@ func TestBasicTransfer(t *testing.T) {
 			TxnMeta:   &BasicTransferMetadata{},
 		}
 
-		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
-		require.NoError(err)
-		require.Equal(totalInput, spendAmount+changeAmount+fees)
-		require.Greater(totalInput, uint64(0))
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight < BalanceModelBlockHeight {
+			totalInput, spendAmount, changeAmount, fees, err :=
+				chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+			require.NoError(err)
+			require.Equal(totalInput, spendAmount+changeAmount+fees)
+			require.Greater(totalInput, uint64(0))
+		} else {
+			txn.TxnVersion = 1
+		}
 
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
 		_signTxn(t, txn, recipientPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -186,10 +266,12 @@ func TestBasicTransfer(t *testing.T) {
 				ExtraData: []byte{0x00, 0x01},
 			},
 		}
+
+		blockHeight := chain.blockTip().Height + 1
+
 		_signTxn(t, txn, senderPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -215,6 +297,8 @@ func TestBasicTransfer(t *testing.T) {
 			},
 		}
 
+		blockHeight := chain.blockTip().Height + 1
+
 		totalInput, spendAmount, changeAmount, fees, err :=
 			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 		require.NoError(err)
@@ -224,12 +308,17 @@ func TestBasicTransfer(t *testing.T) {
 		_signTxn(t, txn, senderPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
+		} else {
+			// AddInputsAndChange() does not add inputs in the balance model case so this
+			// transaction fails with a different error.
+			require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
+		}
 	}
 
 	// A block with too much block reward should fail.
@@ -254,6 +343,9 @@ func TestBasicTransfer(t *testing.T) {
 
 	// A block with less than the max block reward should be OK.
 	{
+		utxoView, _ := NewUtxoView(db, params, nil)
+		minerBalanceBefore, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
+
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward - 1
 		// One iteration should be sufficient to find us a good block.
 		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000)
@@ -262,9 +354,58 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ = NewUtxoView(db, params, nil)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/)
 		require.NoError(err)
+
+		minerBalanceAfter, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
+
+		// The miner starts with two DESO from two blocks being mined.
+		require.Equal(uint64(2000000000), minerBalanceBefore)
+		// Then mines another block reward worth .999999999 DESO.
+		require.Equal(uint64(999999999), blockToMine.Txns[0].TxOutputs[0].AmountNanos)
+		// Therefore the balance after mining should be 2.999999999 DESO.
+		require.Equal(uint64(2999999999), minerBalanceAfter)
+
+		err = utxoView.FlushToDb()
+		require.NoError(err)
+	}
+
+	// A regular (non-BlockReward) basic transfer with sufficient balance should work.
+	{
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{},
+			TxOutputs: []*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1,
+				},
+			},
+			PublicKey: senderPkBytes,
+			TxnMeta:   &BasicTransferMetadata{},
+		}
+
+		blockHeight := chain.blockTip().Height + 1
+
+		totalInput, spendAmount, changeAmount, fees, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+		require.NoError(err)
+		require.Equal(totalInput, spendAmount+changeAmount+fees)
+		require.Greater(totalInput, uint64(0))
+
+		_signTxn(t, txn, senderPrivString)
+		utxoView, _ := NewUtxoView(db, params, nil)
+		txHash := txn.Hash()
+		_, _, _, _, err =
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
+				true /*verifySignature*/, false /*ignoreUtxos*/)
+		require.NoError(err)
+
+		senderBalance, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
+		recipientBalance, _ := utxoView.GetDeSoBalanceNanosForPublicKey(recipientPkBytes)
+		require.Equal(uint64(2999999997), senderBalance)
+		require.Equal(uint64(1), recipientBalance)
 	}
 }
 
@@ -293,12 +434,20 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 	require.GreaterOrEqual(totalOutput, amountNanos)
 	require.Equal(totalInput, totalOutput+fees)
 
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs), len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
-	}
-	for ii := len(txn.TxInputs); ii < len(txn.TxInputs)+len(txn.TxOutputs); ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs), len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ii := len(txn.TxInputs); ii < len(txn.TxInputs)+len(txn.TxOutputs); ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(0, len(txn.TxInputs))
+		for ii := 0; ii < len(txn.TxOutputs); ii++ {
+			require.Equal(OperationTypeAddBalance, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeSpendBalance, utxoOps[len(txn.TxOutputs)].Type)
 	}
 
 	require.NoError(utxoView.FlushToDb())
@@ -428,14 +577,19 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypePrivateMessage operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(
+			OperationTypeUpdateGlobalParams, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeUpdateGlobalParams, utxoOps[1].Type)
 	}
-	require.Equal(
-		OperationTypeUpdateGlobalParams, utxoOps[len(utxoOps)-1].Type)
 	if flushToDb {
 		require.NoError(utxoView.FlushToDb())
 	}
@@ -529,6 +683,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
+	utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the
@@ -539,12 +694,19 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeSubmitPost operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		// Under the balance model, the UTXO ops should only include a spend and a submit post.
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeSubmitPost, utxoOps[1].Type)
 	}
+
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
@@ -630,8 +792,16 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 		return nil, nil, 0, err
 	}
 
-	// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
-	require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
+	blockHeight := chain.blockTip().Height + 1
+
+	if blockHeight < BalanceModelBlockHeight {
+		// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
+		require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
+	} else {
+		// The balance model does not have "implicit" outputs  or "change" like the UTXO model.
+		// Instead, all fees are explicitly baked into the "feesMake".
+		require.Equal(totalInputMake, feesMake)
+	}
 
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
@@ -639,7 +809,6 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
-	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	if err != nil {
@@ -648,13 +817,18 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreateNFT operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreateNFT operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeCreateNFT, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -751,13 +925,19 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	require.Equal(t, totalInput, totalOutput+fees)
 	require.Equal(t, totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeDeSoDiamond operation at the end.
-	require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeDeSoDiamond operation at the end.
+		require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(t, OperationTypeAddBalance, utxoOps[0].Type)
+		require.Equal(t, OperationTypeSpendBalance, utxoOps[1].Type)
+		require.Equal(t, OperationTypeDeSoDiamond, utxoOps[2].Type)
 	}
-	require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(t, utxoView.FlushToDb())
 
@@ -834,13 +1014,18 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTBid operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTBid operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeNFTBid, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -924,17 +1109,30 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
-	numInputs := len(txn.TxInputs)
 	numOps := len(utxoOps)
-	for ii := 0; ii < numInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeAcceptNFTBid operation at the end.
+		numInputs := len(txn.TxInputs)
+		for ii := 0; ii < numInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ii := numInputs; ii < numOps-1; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type) // Basic transfer spend.
+		require.Equal(OperationTypeSpendBalance, utxoOps[1].Type) // Spend bidder balance.
+		require.Equal(OperationTypeAddBalance, utxoOps[2].Type)   // Pay the seller.
+		if numOps == 5 {
+			if OperationTypeAddBalance != utxoOps[3].Type {
+				glog.Info("WEE WOO WEE WOO")
+			}
+			require.Equal(OperationTypeAddBalance, utxoOps[3].Type) // Pay creator royalty (optional).
+		}
+		require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
 	}
-	for ii := numInputs; ii < numOps-1; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
-	}
-	require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1015,13 +1213,18 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateNFT operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateNFT operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeUpdateNFT, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeUpdateNFT, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeUpdateNFT, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1103,13 +1306,18 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeNFTTransfer, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeNFTTransfer, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeNFTTransfer, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1186,13 +1394,18 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeAcceptNFTTransfer, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeAcceptNFTTransfer, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeAcceptNFTTransfer, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1265,13 +1478,18 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeBurnNFT, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeBurnNFT, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeBurnNFT, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1461,13 +1679,18 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeSwapIdentity operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeSwapIdentity operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeSwapIdentity, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1478,7 +1701,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, profilePubKey []byte, newUsername string,
 	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
-	newStakeMultipleBasisPoints uint64, isHidden bool) (
+	newStakeMultipleBasisPoints uint64, isHidden bool, forceZeroAdditionalFee bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -1492,6 +1715,15 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	if utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB == 0 {
+		utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
+	}
+
+	additionalFees := utxoView.GlobalParamsEntry.CreateProfileFeeNanos
+	if forceZeroAdditionalFee {
+		additionalFees = 0
+	}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
 		updaterPkBytes,
 		profilePubKey,
@@ -1501,15 +1733,15 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		newCreatorBasisPoints,
 		newStakeMultipleBasisPoints,
 		isHidden,
-		0,
+		additionalFees,
 		feeRateNanosPerKB,
-		nil /*mempool*/,
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	require.Equal(totalInputMake, changeAmountMake+feesMake)
+	require.Equal(totalInputMake, changeAmountMake+feesMake+additionalFees)
 
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
@@ -1528,13 +1760,18 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateProfile operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateProfile operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeUpdateProfile, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1562,7 +1799,7 @@ func _updateProfileWithTestMeta(
 		feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, profilePubKey, newUsername,
 		newDescription, newProfilePic, newCreatorBasisPoints,
-		newStakeMultipleBasisPoints, isHidden)
+		newStakeMultipleBasisPoints, isHidden, false)
 
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -1570,8 +1807,8 @@ func _updateProfileWithTestMeta(
 }
 
 func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.PrivateKey,
-	params *DeSoParams, expirationBlock uint64, isDeleted bool) ( *AuthorizeDerivedKeyMetadata,
-	*btcec.PrivateKey){
+	params *DeSoParams, expirationBlock uint64, isDeleted bool) (*AuthorizeDerivedKeyMetadata,
+	*btcec.PrivateKey) {
 	require := require.New(t)
 
 	// Generate a random derived key pair
@@ -1620,13 +1857,13 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		accessSignature,
 		deleteKey,
 		feeRateNanosPerKB,
-		nil /*mempool*/,
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	require.Equal(totalInput, changeAmount + fees)
+	require.Equal(totalInput, changeAmount+fees)
 
 	// Sign the transaction now that its inputs are set up.
 	// We have to set the solution byte because we're signing
@@ -1647,13 +1884,18 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInput)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateProfile operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateProfile operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeAuthorizeDerivedKey, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeAuthorizeDerivedKey, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeAuthorizeDerivedKey, utxoOps[len(utxoOps)-1].Type)
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -1696,14 +1938,17 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		MinDeSoExpectedNanos,
 		MinCreatorCoinExpectedNanos,
 		feeRateNanosPerKB,
-		nil /*mempool*/,
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	if OperationType == CreatorCoinOperationTypeBuy {
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	if OperationType == CreatorCoinOperationTypeBuy && blockHeight < BalanceModelBlockHeight {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake+DeSoToSellNanos))
 	} else {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake))
@@ -1713,9 +1958,6 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	_signTxn(t, txn, UpdaterPrivateKeyBase58Check)
 
 	txHash := txn.Hash()
-	// Always use height+1 for validation since it's assumed the transaction will
-	// get mined into the next block.
-	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the
@@ -1726,17 +1968,29 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.GreaterOrEqual(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreatorCoin operation at the end.
-	numInputs := len(txn.TxInputs)
 	numOps := len(utxoOps)
-	for ii := 0; ii < numInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreatorCoin operation at the end.
+		numInputs := len(txn.TxInputs)
+		for ii := 0; ii < numInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ii := numInputs; ii < numOps-1; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		if numOps == 3 {
+			// Founder reward case.
+			require.Equal(OperationTypeAddBalance, utxoOps[1].Type)
+			require.Equal(OperationTypeCreatorCoin, utxoOps[2].Type)
+		} else {
+			// No founder reward case.
+			require.Equal(OperationTypeCreatorCoin, utxoOps[1].Type)
+		}
 	}
-	for ii := numInputs; ii < numOps-1; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
-	}
-	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1867,7 +2121,7 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		CreatorCoinToTransferNanos,
 		receiverPkBytes,
 		feeRateNanosPerKB,
-		nil /*mempool*/,
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -1890,13 +2144,18 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeCreatorCoinTransfer, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeCreatorCoinTransfer, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeCreatorCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1935,7 +2194,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		extraData,
 		isHidden,
 		feeRateNanosPerKB,
-		nil /*mempool*/,
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -2017,13 +2276,18 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypePrivateMessage operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypePrivateMessage, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypePrivateMessage, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypePrivateMessage, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -2072,13 +2336,18 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeLike operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeLike operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeLike, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeLike, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeLike, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -2129,13 +2398,18 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeFollow operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeFollow operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeFollow, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeFollow, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeFollow, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -2230,7 +2504,7 @@ func TestSubmitPost(t *testing.T) {
 			feeRateNanosPerKB, updaterPkBase58Check,
 			updaterPrivBase58Check, profilePubKey, newUsername,
 			newDescription, newProfilePic, newCreatorBasisPoints,
-			newStakeMultipleBasisPoints, isHidden)
+			newStakeMultipleBasisPoints, isHidden, false)
 
 		require.NoError(err)
 
@@ -2341,7 +2615,7 @@ func TestSubmitPost(t *testing.T) {
 	// Creating a post from a registered profile should succeed
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -2369,7 +2643,7 @@ func TestSubmitPost(t *testing.T) {
 
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m3Pub,         /*updaterPkBase58Check*/
 			m3Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -2426,7 +2700,12 @@ func TestSubmitPost(t *testing.T) {
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+		}
 	}
 
 	// PostHashToModify with bad length
@@ -2523,8 +2802,8 @@ func TestSubmitPost(t *testing.T) {
 			m0Pub,  /*updaterPkBase58Check*/
 			m0Priv, /*updaterPrivBase58Check*/
 			// this belongs to m1 who doesn't have a profile.
-			post3Hash[:],                                /*postHashToModify*/
-			RandomBytes(HashSizeBytes),                  /*parentStakeID*/
+			post3Hash[:],                            /*postHashToModify*/
+			RandomBytes(HashSizeBytes),              /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
@@ -2542,8 +2821,8 @@ func TestSubmitPost(t *testing.T) {
 			m2Pub,  /*updaterPkBase58Check*/
 			m2Priv, /*updaterPrivBase58Check*/
 			// this belongs to m1 who doesn't have a profile.
-			post1Hash[:],                                /*postHashToModify*/
-			RandomBytes(HashSizeBytes),                  /*parentStakeID*/
+			post1Hash[:],                            /*postHashToModify*/
+			RandomBytes(HashSizeBytes),              /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
@@ -2561,8 +2840,8 @@ func TestSubmitPost(t *testing.T) {
 			m0Pub,  /*updaterPkBase58Check*/
 			m0Priv, /*updaterPrivBase58Check*/
 			// this belongs to m1 who doesn't have a profile.
-			post4Hash[:],                                /*postHashToModify*/
-			RandomBytes(HashSizeBytes),                  /*parentStakeID*/
+			post4Hash[:],                            /*postHashToModify*/
+			RandomBytes(HashSizeBytes),              /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
@@ -2580,8 +2859,8 @@ func TestSubmitPost(t *testing.T) {
 			m2Pub,  /*updaterPkBase58Check*/
 			m2Priv, /*updaterPrivBase58Check*/
 			// this belongs to m1 who doesn't have a profile.
-			post5Hash[:],                                /*postHashToModify*/
-			RandomBytes(HashSizeBytes),                  /*parentStakeID*/
+			post5Hash[:],                            /*postHashToModify*/
+			RandomBytes(HashSizeBytes),              /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
@@ -2932,11 +3211,11 @@ func TestSubmitPost(t *testing.T) {
 		repost2Txn := txns[len(txns)-1]
 		repost2Hash := repost2Txn.Hash()
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m1Pub,           /*updaterPkBase58Check*/
-			m1Priv,          /*updaterPrivBase58Check*/
+			10,             /*feeRateNanosPerKB*/
+			m1Pub,          /*updaterPkBase58Check*/
+			m1Priv,         /*updaterPrivBase58Check*/
 			repost2Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			[]byte{},       /*parentStakeID*/
 			&DeSoBodySchema{},
 			post4Hash[:],
 			15029557052*1e9, /*tstampNanos*/
@@ -2970,11 +3249,11 @@ func TestSubmitPost(t *testing.T) {
 		repost4Txn := txns[len(txns)-1]
 		repost4hash := repost4Txn.Hash()
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m1Pub,           /*updaterPkBase58Check*/
-			m1Priv,          /*updaterPrivBase58Check*/
+			10,             /*feeRateNanosPerKB*/
+			m1Pub,          /*updaterPkBase58Check*/
+			m1Priv,         /*updaterPrivBase58Check*/
 			repost4hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			[]byte{},       /*parentStakeID*/
 			&DeSoBodySchema{Body: "quote-post-hide-me"},
 			post6Hash[:],
 			15029557054*1e9, /*tstampNanos*/
@@ -3592,7 +3871,7 @@ func TestUpdateProfile(t *testing.T) {
 			feeRateNanosPerKB, updaterPkBase58Check,
 			updaterPrivBase58Check, profilePubKey, newUsername,
 			newDescription, newProfilePic, newCreatorBasisPoints,
-			newStakeMultipleBasisPoints, isHidden)
+			newStakeMultipleBasisPoints, isHidden, false)
 
 		require.NoError(err)
 
@@ -3642,9 +3921,14 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		blockHeight := chain.blockTip().Height
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+		}
 	}
 
 	// Username too long should fail.
@@ -3662,7 +3946,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameTooLong)
 	}
@@ -3682,7 +3966,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,       /*newProfilePic*/
 			10*100,         /*newCreatorBasisPoints*/
 			2*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileDescriptionTooLong)
 	}
@@ -3700,7 +3984,7 @@ func TestUpdateProfile(t *testing.T) {
 			longPic,       /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxProfilePicSize)
 	}
@@ -3718,7 +4002,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			100*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
@@ -3736,7 +4020,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			.99*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
@@ -3754,7 +4038,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			101*100,       /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileCreatorPercentageSize)
 	}
@@ -3772,7 +4056,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,        /*newProfilePic*/
 			10*100,          /*newCreatorBasisPoints*/
 			1.25*100*100,    /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		// This returned RuleErrorProfilePubKeyNotAuthorized for me once
 		// "ConnectTransaction: : _connectUpdateProfile: ... RuleErrorProfilePubKeyNotAuthorized"
@@ -3792,7 +4076,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -3800,7 +4084,7 @@ func TestUpdateProfile(t *testing.T) {
 	// A simple registration should succeed
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m0Pub,         /*updaterPkBase58Check*/
 			m0Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -3825,7 +4109,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3840,7 +4124,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,          /*newProfilePic*/
 			10*100,            /*newCreatorBasisPoints*/
 			1.25*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3855,7 +4139,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,            /*newProfilePic*/
 			10*100,              /*newCreatorBasisPoints*/
 			1.25*100*100,        /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3870,7 +4154,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3885,7 +4169,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 	}
@@ -3903,7 +4187,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -3920,13 +4204,13 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
 		// Register m1 and then try to steal the username
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m1Pub,         /*updaterPkBase58Check*/
 			m1Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -3948,7 +4232,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -3965,7 +4249,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -3982,7 +4266,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 	}
@@ -3990,7 +4274,7 @@ func TestUpdateProfile(t *testing.T) {
 	// Register m2 (should succeed)
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -4020,7 +4304,7 @@ func TestUpdateProfile(t *testing.T) {
 	// An update followed by a reversion should result in no change.
 	{
 		updateProfile(
-			1,                    /*feeRateNanosPerKB*/
+			10,                   /*feeRateNanosPerKB*/
 			m2Pub,                /*updaterPkBase58Check*/
 			m2Priv,               /*updaterPrivBase58Check*/
 			[]byte{},             /*profilePubKey*/
@@ -4032,7 +4316,7 @@ func TestUpdateProfile(t *testing.T) {
 			true /*isHidden*/)
 
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -4047,7 +4331,7 @@ func TestUpdateProfile(t *testing.T) {
 	// A normal user updating their profile should succeed.
 	{
 		updateProfile(
-			1,                  /*feeRateNanosPerKB*/
+			10,                 /*feeRateNanosPerKB*/
 			m1Pub,              /*updaterPkBase58Check*/
 			m1Priv,             /*updaterPrivBase58Check*/
 			[]byte{},           /*profilePubKey*/
@@ -4072,7 +4356,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,         /*newProfilePic*/
 			10*100,           /*newCreatorBasisPoints*/
 			1.25*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -4080,7 +4364,7 @@ func TestUpdateProfile(t *testing.T) {
 	// ParamUpdater updating another user's profile should succeed.
 	{
 		updateProfile(
-			1,                            /*feeRateNanosPerKB*/
+			10,                           /*feeRateNanosPerKB*/
 			m3Pub,                        /*updaterPkBase58Check*/
 			m3Priv,                       /*updaterPrivBase58Check*/
 			m0PkBytes,                    /*profilePubKey*/
@@ -4095,7 +4379,7 @@ func TestUpdateProfile(t *testing.T) {
 	// ParamUpdater creating another user's profile should succeed.
 	{
 		updateProfile(
-			1,                            /*feeRateNanosPerKB*/
+			10,                           /*feeRateNanosPerKB*/
 			m3Pub,                        /*updaterPkBase58Check*/
 			m3Priv,                       /*updaterPrivBase58Check*/
 			m5PkBytes,                    /*profilePubKey*/
@@ -4130,11 +4414,47 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,
 			11*100,
 			1.5*100*100,
-			false)
+			false, false)
+		blockHeight := chain.blockTip().Height + 1
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
-		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(),
+				"Total input 70 is not sufficient to cover the spend amount (=100) plus the fee")
+		} else {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		}
 
+		// For the balance model, check the new RuleErrorCreateProfileTxnWithInsufficientFee
+		if blockHeight >= BalanceModelBlockHeight {
+			// Reduce the minimum network fee to 1 nanos per kb but make the create profile fee 50.
+			updateGlobalParamsEntry(
+				100,
+				m3Pub,
+				m3Priv,
+				int64(InitialUSDCentsPerBitcoinExchangeRate),
+				1,
+				50)
+
+			// Update profile fails as the fee is too low
+			_, _, _, err = _updateProfile(
+				t, chain, db, params,
+				10,
+				m4Pub,
+				m4Priv,
+				m4PkBytes,
+				"m4_username",
+				"m4 description",
+				otherShortPic,
+				11*100,
+				1.5*100*100,
+				false,
+				true, /*forceZeroAdditionalFees*/
+			)
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
+		}
+
+		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
 		updateGlobalParamsEntry(
 			100,
 			m3Pub,
@@ -4155,10 +4475,11 @@ func TestUpdateProfile(t *testing.T) {
 			otherShortPic,
 			11*100,
 			1.5*100*100,
-			false,
+			false, false,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+
 		// Update succeeds because fee is high enough and user has enough to meet fee.
 		updateProfile(
 			10,
@@ -4763,9 +5084,15 @@ func TestPrivateMessage(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
-		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)),
+		)
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 7)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 1)),
+		)
 	}
 
 	// Roll back the block and make sure we don't hit any errors.
@@ -5460,9 +5787,15 @@ func TestLikeTxns(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
-		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)),
+		)
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 7)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 1)),
+		)
 	}
 
 	testConnectedState()
@@ -5589,7 +5922,7 @@ func TestFollowTxns(t *testing.T) {
 			feeRateNanosPerKB, updaterPkBase58Check,
 			updaterPrivBase58Check, profilePubKey, newUsername,
 			newDescription, newProfilePic, newCreatorBasisPoints,
-			newStakeMultipleBasisPoints, isHidden)
+			newStakeMultipleBasisPoints, isHidden, false)
 
 		require.NoError(err)
 
@@ -6113,9 +6446,15 @@ func TestFollowTxns(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
-		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)),
+		)
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 7)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 1)),
+		)
 	}
 
 	testConnectedState()
@@ -9219,10 +9558,10 @@ type _CreatorCoinTestData struct {
 	UpdaterPrivateKeyBase58Check string
 	ProfilePublicKeyBase58Check  string
 	OperationType                CreatorCoinOperationType
-	DeSoToSellNanos          uint64
+	DeSoToSellNanos              uint64
 	CreatorCoinToSellNanos       uint64
-	DeSoToAddNanos           uint64
-	MinDeSoExpectedNanos     uint64
+	DeSoToAddNanos               uint64
+	MinDeSoExpectedNanos         uint64
 	MinCreatorCoinExpectedNanos  uint64
 
 	// The Diamond info
@@ -9267,7 +9606,7 @@ type _CreatorCoinTestData struct {
 
 	// These are the expectations (skipped when SkipChecks is set)
 	CoinsInCirculationNanos uint64
-	DeSoLockedNanos     uint64
+	DeSoLockedNanos         uint64
 	CoinWatermarkNanos      uint64
 	m0CCBalance             uint64
 	m1CCBalance             uint64
@@ -9276,13 +9615,13 @@ type _CreatorCoinTestData struct {
 	m4CCBalance             uint64
 	m5CCBalance             uint64
 	m6CCBalance             uint64
-	m0DeSoBalance       uint64
-	m1DeSoBalance       uint64
-	m2DeSoBalance       uint64
-	m3DeSoBalance       uint64
-	m4DeSoBalance       uint64
-	m5DeSoBalance       uint64
-	m6DeSoBalance       uint64
+	m0DeSoBalance           uint64
+	m1DeSoBalance           uint64
+	m2DeSoBalance           uint64
+	m3DeSoBalance           uint64
+	m4DeSoBalance           uint64
+	m5DeSoBalance           uint64
+	m6DeSoBalance           uint64
 	m0HasPurchased          bool
 	m1HasPurchased          bool
 	m2HasPurchased          bool
@@ -9545,33 +9884,33 @@ func _helpTestCreatorCoinBuySell(
 			"m0+m1+m2+m3+m4+m5+m6 != CoinsInCirculationNanos: %v", message)
 
 		// DeSo balances
-		if _getBalanceWithView(t, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m0DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m1DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m2DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m3DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m4DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m5DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m6DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
 		}
 
 		for ii, profilePubStr := range testData.ProfilesToCheckPublicKeysBase58Check {
@@ -9658,7 +9997,7 @@ func _helpTestCreatorCoinBuySell(
 				testData.UpdaterPrivateKeyBase58Check, profilePkBytes, testData.ProfileUsername,
 				testData.ProfileDescription, testData.ProfilePic,
 				testData.ProfileCreatorBasisPoints, /*CreatorBasisPoints*/
-				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
+				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/, false)
 			require.NoError(err)
 		} else if testData.TxnType == TxnTypeFollow {
 			utxoOps, txn, _, err = _doFollowTxn(
@@ -9727,10 +10066,10 @@ func _helpTestCreatorCoinBuySell(
 				testData.UpdaterPublicKeyBase58Check, testData.UpdaterPrivateKeyBase58Check, /*updater*/
 				testData.ProfilePublicKeyBase58Check, /*profile*/
 				testData.OperationType,               /*buy/sell*/
-				testData.DeSoToSellNanos,         /*DeSoToSellNanos*/
+				testData.DeSoToSellNanos,             /*DeSoToSellNanos*/
 				testData.CreatorCoinToSellNanos,      /*CreatorCoinToSellNanos*/
-				testData.DeSoToAddNanos,          /*DeSoToAddNanos*/
-				testData.MinDeSoExpectedNanos,    /*MinDeSoExpectedNanos*/
+				testData.DeSoToAddNanos,              /*DeSoToAddNanos*/
+				testData.MinDeSoExpectedNanos,        /*MinDeSoExpectedNanos*/
 				testData.MinCreatorCoinExpectedNanos /*MinCreatorCoinExpectedNanos*/)
 			require.NoError(err)
 		}
@@ -10024,15 +10363,15 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             10832150315,
 			m0HasPurchased:          true,
@@ -10040,9 +10379,9 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       4728876540,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           4728876540,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// Create a post for m0
 		{
@@ -10097,7 +10436,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             10817255342,
 			m0HasPurchased:          true,
@@ -10105,9 +10444,9 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       4728876535,
-			m1DeSoBalance:       5999999998,
-			m2DeSoBalance:       5999999998,
+			m0DeSoBalance:           4728876535,
+			m1DeSoBalance:           5999999998,
+			m2DeSoBalance:           5999999998,
 		},
 		// m0 upgrading the diamond level should work
 		{
@@ -10125,7 +10464,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             10684919520,
 			m0HasPurchased:          true,
@@ -10133,9 +10472,9 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       4728876532,
-			m1DeSoBalance:       5999999998,
-			m2DeSoBalance:       5999999998,
+			m0DeSoBalance:           4728876532,
+			m1DeSoBalance:           5999999998,
+			m2DeSoBalance:           5999999998,
 		},
 		// m0 giving diamond level 4 to m2 should result in the same
 		// CC balance for m2 as m1 has
@@ -10154,7 +10493,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             10537688724,
 			m0HasPurchased:          true,
@@ -10162,9 +10501,9 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             147230796,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       4728876529,
-			m1DeSoBalance:       5999999998,
-			m2DeSoBalance:       5999999998,
+			m0DeSoBalance:           4728876529,
+			m1DeSoBalance:           5999999998,
+			m2DeSoBalance:           5999999998,
 		},
 	}
 
@@ -10220,7 +10559,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			m0Priv, nil, "m0",
 			"m0 profile", "",
 			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 		require.NoError(err)
 	}
 	// Create a profile for m1
@@ -10231,7 +10570,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			m1Priv, nil, "m1",
 			"m1 profile", "",
 			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 		require.NoError(err)
 	}
 
@@ -10567,6 +10906,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	// Set the DeSoDiamondsBlockHeight so that it is immediately hit.
 	DeSoDiamondsBlockHeight = uint32(0)
+	defer resetBlockHeightGlobals()
 
 	// Set up a blockchain.
 	assert := assert.New(t)
@@ -10616,7 +10956,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			m0Priv, nil, "m0",
 			"m0 profile", "",
 			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 		require.NoError(err)
 	}
 	// Create a profile for m1.
@@ -10627,7 +10967,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			m1Priv, nil, "m1",
 			"m1 profile", "",
 			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 		require.NoError(err)
 	}
 
@@ -10722,15 +11062,15 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -10738,9 +11078,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 transfer some creator coins to m2
 		{
@@ -10754,7 +11094,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -10762,9 +11102,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1000000,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876540,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 transfer some more creator coins to m2
 		{
@@ -10778,7 +11118,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -10786,9 +11126,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             21000000,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876538,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876538,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 transfer some more creator coins to m0
 		{
@@ -10802,7 +11142,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             10708037578,
 			m0HasPurchased:          false,
@@ -10810,9 +11150,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             21000000,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876536,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876536,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 transfer the rest of her creator coins to m0
 		{
@@ -10826,7 +11166,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             10811150315,
 			m0HasPurchased:          false,
@@ -10834,9 +11174,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             21000000,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876534,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876534,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m0 transfer all coins back to m2
 		{
@@ -10850,7 +11190,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -10858,9 +11198,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             10832150315,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999996,
-			m1DeSoBalance:       4728876534,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999996,
+			m1DeSoBalance:           4728876534,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m2 transfer all coins back to m1. Weeeeee!!!
 		{
@@ -10874,7 +11214,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -10882,9 +11222,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999996,
-			m1DeSoBalance:       4728876534,
-			m2DeSoBalance:       5999999998,
+			m0DeSoBalance:           5999999996,
+			m1DeSoBalance:           4728876534,
+			m2DeSoBalance:           5999999998,
 		},
 	}
 
@@ -10919,15 +11259,15 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9841661798,
-			DeSoLockedNanos:     953247258,
+			DeSoLockedNanos:         953247258,
 			CoinWatermarkNanos:      9841661798,
 			m0CCBalance:             0, // Founder reward is given in DeSo here.
 			m0HasPurchased:          false,
@@ -10935,9 +11275,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6317749083,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6317749083,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// [2] Have m1 transfer some creator coins to m2
 		{
@@ -10951,7 +11291,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9841661798,
-			DeSoLockedNanos:     953247258,
+			DeSoLockedNanos:         953247258,
 			CoinWatermarkNanos:      9841661798,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -10959,9 +11299,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1000000,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6317749083,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6317749083,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// [3] Have m1 transfer some more creator coins to m2
 		{
@@ -10975,7 +11315,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9841661798,
-			DeSoLockedNanos:     953247258,
+			DeSoLockedNanos:         953247258,
 			CoinWatermarkNanos:      9841661798,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -10983,9 +11323,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             21000000,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6317749083,
-			m1DeSoBalance:       4728876538,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6317749083,
+			m1DeSoBalance:           4728876538 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// [4] Have m1 transfer some more creator coins to m0
 		{
@@ -10999,7 +11339,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9841661798,
-			DeSoLockedNanos:     953247258,
+			DeSoLockedNanos:         953247258,
 			CoinWatermarkNanos:      9841661798,
 			m0CCBalance:             8000000000,
 			m0HasPurchased:          false,
@@ -11007,9 +11347,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             21000000,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6317749083,
-			m1DeSoBalance:       4728876536,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6317749083,
+			m1DeSoBalance:           4728876536 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// [5] Have m1 transfer the rest of her creator coins to m0
 		{
@@ -11023,7 +11363,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9841661798,
-			DeSoLockedNanos:     953247258,
+			DeSoLockedNanos:         953247258,
 			CoinWatermarkNanos:      9841661798,
 			m0CCBalance:             9820661798,
 			m0HasPurchased:          false,
@@ -11031,9 +11371,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             21000000,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6317749083,
-			m1DeSoBalance:       4728876534,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6317749083,
+			m1DeSoBalance:           4728876534 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// [6] Have m0 transfer all coins back to m2
 		{
@@ -11047,7 +11387,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9841661798,
-			DeSoLockedNanos:     953247258,
+			DeSoLockedNanos:         953247258,
 			CoinWatermarkNanos:      9841661798,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -11055,9 +11395,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             9841661798,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6317749081,
-			m1DeSoBalance:       4728876534,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6317749081,
+			m1DeSoBalance:           4728876534 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// [7] Have m2 transfer all coins back to m1. Weeeeee!!!
 		{
@@ -11071,7 +11411,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9841661798,
-			DeSoLockedNanos:     953247258,
+			DeSoLockedNanos:         953247258,
 			CoinWatermarkNanos:      9841661798,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -11079,9 +11419,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6317749081,
-			m1DeSoBalance:       4728876534,
-			m2DeSoBalance:       5999999998,
+			m0DeSoBalance:           6317749081,
+			m1DeSoBalance:           4728876534 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           5999999998,
 		},
 	}
 
@@ -11095,7 +11435,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 	_, _ = assert, require
 
 	creatorCoinTests := []*_CreatorCoinTestData{
-		// Create a profile for m0
+		// [0] Create a profile for m0
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -11109,22 +11449,22 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 
 			SkipChecks: true,
 		},
-		// Have m1 buy some of m0's coins
+		// [1] Have m1 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -11132,26 +11472,26 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
-		// Have m2 buy some of m0's coins
+		// [2] Have m2 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1172373183,
+			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13468606753,
-			DeSoLockedNanos:     2443252288,
+			DeSoLockedNanos:         2443252288,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -11159,11 +11499,11 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Have m1 transfer 1e9 creator coins to m2
+		// [3] Have m1 transfer 1e9 creator coins to m2
 		{
 			TxnType: TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
@@ -11175,7 +11515,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13468606753,
-			DeSoLockedNanos:     2443252288,
+			DeSoLockedNanos:         2443252288,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -11183,11 +11523,11 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             2977342329,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Swap m0 and m3
+		// [4] Swap m0 and m3
 		{
 			TxnType:       TxnTypeSwapIdentity,
 			FromPublicKey: m0PkBytes,
@@ -11199,7 +11539,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13468606753,
-			DeSoLockedNanos:     2443252288,
+			DeSoLockedNanos:         2443252288,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -11209,11 +11549,11 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m2HasPurchased:          true,
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Have m2 transfer 2e9 creator coins (now attached to m3Pub's profile) to m0
+		// [5] Have m2 transfer 2e9 creator coins (now attached to m3Pub's profile) to m0
 		{
 			TxnType: TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
@@ -11225,7 +11565,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13468606753,
-			DeSoLockedNanos:     2443252288,
+			DeSoLockedNanos:         2443252288,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             2000000000,
 			m0HasPurchased:          false,
@@ -11235,9 +11575,9 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m2HasPurchased:          true,
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       4827626813,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626813 + _balanceModelDiffNaive(1),
 		},
 	}
 
@@ -11272,15 +11612,15 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -11288,9 +11628,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 all but one nano of their creator coins to m2
 		{
@@ -11304,7 +11644,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -11312,9 +11652,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             8124112737,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m2 transfer all but the min threshold back to m1 (threshold assumed to be 10 nanos).
 		{
@@ -11328,7 +11668,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -11336,9 +11676,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             10,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       5999999998,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           5999999998,
 		},
 		// Have m2 transfer their remaining 10 nanos back to m1.
 		{
@@ -11352,7 +11692,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -11360,9 +11700,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       5999999996,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           5999999996,
 		},
 		// Have m1 transfer all but 5 nanos back to m0.
 		{
@@ -11376,7 +11716,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             10832150315,
 			m0HasPurchased:          false,
@@ -11384,9 +11724,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876538,
-			m2DeSoBalance:       5999999996,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876538 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           5999999996,
 		},
 	}
 
@@ -11421,15 +11761,15 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -11437,9 +11777,9 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 send all of their creator coins to m2
 		{
@@ -11453,7 +11793,7 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -11461,9 +11801,9 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             8124112737,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876540,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 buy some more of m0's coins
 		{
@@ -11472,15 +11812,15 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13647653882,
-			DeSoLockedNanos:     2541992686,
+			DeSoLockedNanos:         2541992686,
 			CoinWatermarkNanos:      13647653882,
 			m0CCBalance:             3411913469,
 			m0HasPurchased:          false,
@@ -11488,9 +11828,9 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             8124112737,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       3457753082,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           3457753082 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 transfer all their m0 coins to m2
 		{
@@ -11504,7 +11844,7 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13647653882,
-			DeSoLockedNanos:     2541992686,
+			DeSoLockedNanos:         2541992686,
 			CoinWatermarkNanos:      13647653882,
 			m0CCBalance:             3411913469,
 			m0HasPurchased:          false,
@@ -11512,9 +11852,9 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             10235740413,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       3457753080,
-			m2DeSoBalance:       5999999998,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           3457753080 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           5999999998,
 		},
 	}
 
@@ -11559,7 +11899,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		t, chain, db, params,
 		feeRateNanosPerKB /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
 		"i am m0", "m0 profile pic", 2500, /*CreatorBasisPoints*/
-		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 	require.NoError(err)
 
 	// m1 buys some m0 creator coin.
@@ -11610,15 +11950,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -11626,9 +11966,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m2 buy some of m0's coins
 		{
@@ -11637,15 +11977,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1172373183,
+			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13468606753,
-			DeSoLockedNanos:     2443252288,
+			DeSoLockedNanos:         2443252288,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -11653,9 +11993,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542,
+			m2DeSoBalance:           4827626815,
 		},
 		// Have m1 sell half of their stake
 		{
@@ -11664,15 +12004,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4123456789,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9345149964,
-			DeSoLockedNanos:     816129494,
+			DeSoLockedNanos:         816129494,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -11680,9 +12020,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621,
+			m2DeSoBalance:           4827626815,
 		},
 		// Have m2 sell all of their stake
 		{
@@ -11691,15 +12031,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1977342329,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 7367807635,
-			DeSoLockedNanos:     399958612,
+			DeSoLockedNanos:         399958612,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -11707,9 +12047,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621,
+			m2DeSoBalance:           5243756077,
 		},
 		// Have m1 buy more
 		// Following SalomonFixBlockHeight, this should continue
@@ -11721,15 +12061,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2123456789,
+			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13613944261,
-			DeSoLockedNanos:     2523203055,
+			DeSoLockedNanos:         2523203055,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             4928685843,
 			m0HasPurchased:          false,
@@ -11737,9 +12077,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4232379830,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4232379830,
+			m2DeSoBalance:           5243756077,
 		},
 
 		// Have m1 sell the rest of their stake
@@ -11749,15 +12089,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8685258418,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4928685843,
-			DeSoLockedNanos:     119727407,
+			DeSoLockedNanos:         119727407,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             4928685843,
 			m0HasPurchased:          false,
@@ -11765,9 +12105,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6635615128,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6635615128,
+			m2DeSoBalance:           5243756077,
 		},
 
 		{
@@ -11778,15 +12118,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4928685842,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -11794,9 +12134,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6119715430,
-			m1DeSoBalance:       6635615128,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           6119715430,
+			m1DeSoBalance:           6635615128,
+			m2DeSoBalance:           5243756077,
 		},
 
 		// Have m1 buy a little more, again m0 should receive some more as a founders reward
@@ -11806,15 +12146,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2123456789,
+			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 12852863707,
-			DeSoLockedNanos:     2123244443,
+			DeSoLockedNanos:         2123244443,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             3213215926,
 			m0HasPurchased:          false,
@@ -11822,9 +12162,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6119715430,
-			m1DeSoBalance:       4512158337,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           6119715430,
+			m1DeSoBalance:           4512158337,
+			m2DeSoBalance:           5243756077,
 		},
 
 		// Have m1 sell their creator coins.
@@ -11834,15 +12174,15 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       9639647781,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 3213215926,
-			DeSoLockedNanos:     33175681,
+			DeSoLockedNanos:         33175681,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             3213215926,
 			m0HasPurchased:          false,
@@ -11850,9 +12190,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6119715430,
-			m1DeSoBalance:       6602018090,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           6119715430,
+			m1DeSoBalance:           6602018090,
+			m2DeSoBalance:           5243756077,
 		},
 	}
 
@@ -11887,15 +12227,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9841661798,
-			DeSoLockedNanos:     953247258,
+			DeSoLockedNanos:         953247258,
 			CoinWatermarkNanos:      9841661798,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -11903,9 +12243,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6317749083,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6317749083,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// [2] Have m2 buy some of m0's coins
 		{
@@ -11914,15 +12254,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1172373183,
+			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 12237041464,
-			DeSoLockedNanos:     1832439217,
+			DeSoLockedNanos:         1832439217,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -11930,9 +12270,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             2395379666,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       6610813069,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           6610813069,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
 		// [3] Have m1 sell a large chunk of their stake
 		{
@@ -11941,15 +12281,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4123456789,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 8113584675,
-			DeSoLockedNanos:     534119641,
+			DeSoLockedNanos:         534119641,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -11957,9 +12297,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             2395379666,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       6610813069,
-			m1DeSoBalance:       6027066284,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           6610813069,
+			m1DeSoBalance:           6027066284 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
 		// [4] Have m2 sell all of their stake
 		{
@@ -11968,15 +12308,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       2395379666,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 5718205009,
-			DeSoLockedNanos:     186973195,
+			DeSoLockedNanos:         186973195,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -11984,9 +12324,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6610813069,
-			m1DeSoBalance:       6027066284,
-			m2DeSoBalance:       5174738544,
+			m0DeSoBalance:           6610813069,
+			m1DeSoBalance:           6027066284 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           5174738544 + _balanceModelDiffNaive(2),
 		},
 		// [5] Have m1 buy more
 		// Following SalomonFixBlockHeight, this should continue
@@ -11998,15 +12338,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2123456789,
+			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 12117833075,
-			DeSoLockedNanos:     1779406528,
+			DeSoLockedNanos:         1779406528,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12014,9 +12354,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       7141624179,
-			m1DeSoBalance:       3903609493,
-			m2DeSoBalance:       5174738544,
+			m0DeSoBalance:           7141624179,
+			m1DeSoBalance:           3903609493 + _balanceModelDiffNaive(3),
+			m2DeSoBalance:           5174738544 + _balanceModelDiffNaive(2),
 		},
 
 		// [6] Have m1 sell the rest of their stake
@@ -12026,15 +12366,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       12117833075,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12042,9 +12382,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       7141624179,
-			m1DeSoBalance:       5682838078,
-			m2DeSoBalance:       5174738544,
+			m0DeSoBalance:           7141624179,
+			m1DeSoBalance:           5682838078 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5174738544 + _balanceModelDiffNaive(2),
 		},
 
 		// [7] Have m0 buy some of their own coins.
@@ -12054,15 +12394,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1e6,
+			DeSoToSellNanos:              1e6,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 999966698,
-			DeSoLockedNanos:     999900,
+			DeSoLockedNanos:         999900,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             999966698,
 			m0HasPurchased:          true,
@@ -12070,9 +12410,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       7140624177,
-			m1DeSoBalance:       5682838078,
-			m2DeSoBalance:       5174738544,
+			m0DeSoBalance:           7140624177 + _balanceModelDiffNaive(1),
+			m1DeSoBalance:           5682838078 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5174738544 + _balanceModelDiffNaive(2),
 		},
 
 		{
@@ -12083,15 +12423,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       999966697,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12099,9 +12439,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       7141623975,
-			m1DeSoBalance:       5682838078,
-			m2DeSoBalance:       5174738544,
+			m0DeSoBalance:           7141623975 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           5682838078 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5174738544 + _balanceModelDiffNaive(2),
 		},
 
 		// [9] Have m1 buy a little more, again m0 should receive some deso as a founders reward
@@ -12111,15 +12451,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2123456789,
+			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 11677601773,
-			DeSoLockedNanos:     1592433333,
+			DeSoLockedNanos:         1592433333,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12127,9 +12467,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       7672435085,
-			m1DeSoBalance:       3559381287,
-			m2DeSoBalance:       5174738544,
+			m0DeSoBalance:           7672435085 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           3559381287 + _balanceModelDiffNaive(5),
+			m2DeSoBalance:           5174738544 + _balanceModelDiffNaive(2),
 		},
 
 		// [10] Have m1 sell their creator coins.
@@ -12139,15 +12479,15 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       11677601773,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      12237041464,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12155,9 +12495,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       7672435085,
-			m1DeSoBalance:       5151655374,
-			m2DeSoBalance:       5174738544,
+			m0DeSoBalance:           7672435085 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           5151655374 + _balanceModelDiffNaive(6),
+			m2DeSoBalance:           5174738544 + _balanceModelDiffNaive(2),
 		},
 	}
 
@@ -12194,15 +12534,15 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             10832150315,
 			m0HasPurchased:          true,
@@ -12210,9 +12550,9 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       4728876540,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m0 buy his own coins *again*
 		{
@@ -12221,15 +12561,15 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1172373183,
+			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13468606753,
-			DeSoLockedNanos:     2443252288,
+			DeSoLockedNanos:         2443252288,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             13468606753,
 			m0HasPurchased:          true,
@@ -12237,9 +12577,9 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       3556503355,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           3556503355 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m0 sell half of his own coins
 		{
@@ -12248,15 +12588,15 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1556503355,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 11912103398,
-			DeSoLockedNanos:     1690307207,
+			DeSoLockedNanos:         1690307207,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             11912103398,
 			m0HasPurchased:          true,
@@ -12264,9 +12604,9 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       4309373139,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           4309373139 + _balanceModelDiffNaive(3),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m0 sell the rest of his own coins
 		{
@@ -12275,15 +12615,15 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       11912103398,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12291,9 +12631,9 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999511313,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999511313 + _balanceModelDiffNaive(4),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 	}
 
@@ -12330,15 +12670,15 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          100000000,
+			DeSoToSellNanos:              100000000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4641433551,
-			DeSoLockedNanos:     99990000,
+			DeSoLockedNanos:         99990000,
 			CoinWatermarkNanos:      4641433551,
 			m0CCBalance:             464143,
 			m0HasPurchased:          false,
@@ -12346,9 +12686,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       5899999998,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           5899999998,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m0 sell all their coins such that they're below the autosell threshold
 		{
@@ -12356,15 +12696,15 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       464143,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4640969408,
-			DeSoLockedNanos:     99960007,
+			DeSoLockedNanos:         99960007,
 			CoinWatermarkNanos:      4641433551,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12372,9 +12712,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6000029986,
-			m1DeSoBalance:       5899999998,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6000029986,
+			m1DeSoBalance:           5899999998,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 buy more just up till CoinsInCirculationNanos is almost CoinWatermarkNanos
 		// m0 should continue to receieve 1 basis point founders reward irrelevant of the CoinWatermarkNanos.
@@ -12383,26 +12723,26 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          10000,
+			DeSoToSellNanos:              10000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4641124148,
-			DeSoLockedNanos:     99970006,
+			DeSoLockedNanos:         99970006,
 			CoinWatermarkNanos:      4641433551,
 			m0CCBalance:             15, // Notice how this is just barely above the autosell threshold.
 			// If this was any smaller, this transaction would fail.
-			m0HasPurchased:    false,
-			m1CCBalance:       4641124133,
-			m1HasPurchased:    true,
-			m2CCBalance:       0,
-			m2HasPurchased:    false,
-			m0DeSoBalance: 6000029986,
-			m1DeSoBalance: 5899989996,
-			m2DeSoBalance: 6000000000,
+			m0HasPurchased: false,
+			m1CCBalance:    4641124133,
+			m1HasPurchased: true,
+			m2CCBalance:    0,
+			m2HasPurchased: false,
+			m0DeSoBalance:  6000029986,
+			m1DeSoBalance:  5899989996,
+			m2DeSoBalance:  6000000000,
 		},
 		// Now we have m2 buy a tiny amount of m0
 		// This should also mint m0 a tiny founders reward, but because m0's balance
@@ -12412,15 +12752,15 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1000,
+			DeSoToSellNanos:              1000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4641139607,
-			DeSoLockedNanos:     99971005,
+			DeSoLockedNanos:         99971005,
 			CoinWatermarkNanos:      4641433551,
 			m0CCBalance:             16,
 			m0HasPurchased:          false,
@@ -12428,9 +12768,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m1HasPurchased:          true,
 			m2CCBalance:             15458,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       6000029986,
-			m1DeSoBalance:       5899989996,
-			m2DeSoBalance:       5999998998,
+			m0DeSoBalance:           6000029986,
+			m1DeSoBalance:           5899989996,
+			m2DeSoBalance:           5999998998,
 		},
 	}
 
@@ -12464,15 +12804,15 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          100000000,
+			DeSoToSellNanos:              100000000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4641278831,
-			DeSoLockedNanos:     99980001,
+			DeSoLockedNanos:         99980001,
 			CoinWatermarkNanos:      4641278831,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12480,9 +12820,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6000009997,
-			m1DeSoBalance:       5899999998,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6000009997,
+			m1DeSoBalance:           5899999998 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 buy more just up till CoinsInCirculationNanos is almost CoinWatermarkNanos
 		// m0 should continue to receieve 1 basis point founders reward irrelevant of the CoinWatermarkNanos.
@@ -12491,15 +12831,15 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          10000,
+			DeSoToSellNanos:              10000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4641433550,
-			DeSoLockedNanos:     99990000,
+			DeSoLockedNanos:         99990000,
 			CoinWatermarkNanos:      4641433550,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12507,9 +12847,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6000009997,
-			m1DeSoBalance:       5899989996,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6000009997,
+			m1DeSoBalance:           5899989996 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           6000000000,
 		},
 		// Now we have m2 buy a tiny amount of m0
 		// This should also mint m0 a tiny founders reward, but because m0's balance
@@ -12519,15 +12859,15 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1000,
+			DeSoToSellNanos:              1000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4641449007,
-			DeSoLockedNanos:     99990999,
+			DeSoLockedNanos:         99990999,
 			CoinWatermarkNanos:      4641449007,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12535,9 +12875,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			m1HasPurchased:          true,
 			m2CCBalance:             15457,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       6000009997,
-			m1DeSoBalance:       5899989996,
-			m2DeSoBalance:       5999998998,
+			m0DeSoBalance:           6000009997,
+			m1DeSoBalance:           5899989996 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           5999998998 + _balanceModelDiffNaive(1),
 		},
 	}
 
@@ -12571,15 +12911,15 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          100000000,
+			DeSoToSellNanos:              100000000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4641433551,
-			DeSoLockedNanos:     99990000,
+			DeSoLockedNanos:         99990000,
 			CoinWatermarkNanos:      4641433551,
 			m0CCBalance:             4641433551,
 			m0HasPurchased:          false,
@@ -12587,9 +12927,9 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m1HasPurchased:          true, // Even though m1 does not received any creator coins, we set HasPurchased to true.
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       5899999998,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           5899999998,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m0 sell. The DeSo should've effectively
 		// been transferred from m1 to m0.
@@ -12598,15 +12938,15 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4641433551,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      4641433551,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12614,9 +12954,9 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m1HasPurchased:          true, // Even though m1 does not received any creator coins, we set HasPurchased to true.
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6099979997,
-			m1DeSoBalance:       5899999998,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6099979997,
+			m1DeSoBalance:           5899999998,
+			m2DeSoBalance:           6000000000,
 		},
 	}
 
@@ -12650,15 +12990,15 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          100000000,
+			DeSoToSellNanos:              100000000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4641433551,
-			DeSoLockedNanos:     99990000,
+			DeSoLockedNanos:         99990000,
 			CoinWatermarkNanos:      4641433551,
 			m0CCBalance:             4640969407,
 			m0HasPurchased:          false,
@@ -12666,9 +13006,9 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       5899999998,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           5899999998 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m2 try and buy a small amount of m0. If you set the amount
 		// to 64000 DeSo nanos to sell, the amount to mint for m2 would
@@ -12681,15 +13021,15 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          66000,
+			DeSoToSellNanos:              66000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4642454435,
-			DeSoLockedNanos:     100055993,
+			DeSoLockedNanos:         100055993,
 			CoinWatermarkNanos:      4642454435,
 			m0CCBalance:             4641990188,
 			m0HasPurchased:          false,
@@ -12697,9 +13037,9 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             103,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       5899999998,
-			m2DeSoBalance:       5999933998,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           5899999998 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           5999933998 + _balanceModelDiffNaive(1),
 		},
 	}
 
@@ -12733,15 +13073,15 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          7,
+			DeSoToSellNanos:              7,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 18171213,
-			DeSoLockedNanos:     6,
+			DeSoLockedNanos:         6,
 			CoinWatermarkNanos:      18171213,
 			m0CCBalance:             18171213,
 			m0HasPurchased:          true,
@@ -12749,9 +13089,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999989,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999989 + _balanceModelDiffNaive(1),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// m0 sells just enough creator coins to reach the CreatorCoinAutoSellThresholdNanos.
 		// This should not completely sell the remaining holdings.
@@ -12760,15 +13100,15 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       18171213 - DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      18171213,
 			m0CCBalance:             DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
 			m0HasPurchased:          true,
@@ -12776,9 +13116,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999992,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999992 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// m1 buys m0 increasing the total number of holders to 2.
 		{
@@ -12786,15 +13126,15 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1000,
+			DeSoToSellNanos:              1000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 99966681,
-			DeSoLockedNanos:     999,
+			DeSoLockedNanos:         999,
 			CoinWatermarkNanos:      99966681,
 			m0CCBalance:             DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
 			m0HasPurchased:          true,
@@ -12802,9 +13142,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999992,
-			m1DeSoBalance:       5999998998,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999992 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           5999998998 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// m0 sells a single nano of their own creator coin. This triggers the
 		// CreatorCoinAutoSellThresholdNanos. This reduces the number of holders to 1.
@@ -12813,15 +13153,15 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 99966671,
-			DeSoLockedNanos:     999,
+			DeSoLockedNanos:         999,
 			CoinWatermarkNanos:      99966681,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12829,9 +13169,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999990,
-			m1DeSoBalance:       5999998998,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999990 + _balanceModelDiffNaive(3),
+			m1DeSoBalance:           5999998998 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// m2 now purchases m0's creator coins
 		{
@@ -12839,15 +13179,15 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1000000000,
+			DeSoToSellNanos:              1000000000,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9999666925,
-			DeSoLockedNanos:     999900999,
+			DeSoLockedNanos:         999900999,
 			CoinWatermarkNanos:      9999666925,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12855,9 +13195,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             9899700254,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999990,
-			m1DeSoBalance:       5999998998,
-			m2DeSoBalance:       4999999998,
+			m0DeSoBalance:           5999999990 + _balanceModelDiffNaive(3),
+			m1DeSoBalance:           5999998998 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4999999998 + _balanceModelDiffNaive(1),
 		},
 		// m1 sells to just past the threshold, should trigger an autosell
 		{
@@ -12865,15 +13205,15 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       99966671 - DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9899700254,
-			DeSoLockedNanos:     970211757,
+			DeSoLockedNanos:         970211757,
 			CoinWatermarkNanos:      9999666925,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12881,9 +13221,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             9899700254,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999990,
-			m1DeSoBalance:       6029685269,
-			m2DeSoBalance:       4999999998,
+			m0DeSoBalance:           5999999990 + _balanceModelDiffNaive(3),
+			m1DeSoBalance:           6029685269 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4999999998 + _balanceModelDiffNaive(1),
 		},
 		// m2 sells to just past the threshold, should trigger an autosell and clear the profile
 		{
@@ -12891,15 +13231,15 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       9899700254 - DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      9999666925,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -12907,13 +13247,13 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999990,
-			m1DeSoBalance:       6029685269,
-			m2DeSoBalance:       5970114731,
+			m0DeSoBalance:           5999999990 + _balanceModelDiffNaive(3),
+			m1DeSoBalance:           6029685269 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           5970114731 + _balanceModelDiffNaive(2),
 		},
 	}
 
-	// These tests shoudl behave the same since there is no founder reward.
+	// These tests should behave the same since there is no founder reward.
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, true /*desoFounderReward*/)
 }
@@ -12949,15 +13289,15 @@ func TestSalomonSequence(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          323106117 + 6,
+			DeSoToSellNanos:              323106117 + 6,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 6861733544,
-			DeSoLockedNanos:     323073812,
+			DeSoLockedNanos:         323073812,
 			CoinWatermarkNanos:      6861733544,
 			m0CCBalance:             6861733544,
 			m0HasPurchased:          true,
@@ -12965,9 +13305,9 @@ func TestSalomonSequence(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5676893873,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5676893873 + _balanceModelDiffNaive(1),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// m0 follows up with another specific purchase.
 		// In the UI this represented selling 191807888 nanos.
@@ -12976,15 +13316,15 @@ func TestSalomonSequence(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          191807888 + 6,
+			DeSoToSellNanos:              191807888 + 6,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 8014879883,
-			DeSoLockedNanos:     514862525,
+			DeSoLockedNanos:         514862525,
 			CoinWatermarkNanos:      8014879883,
 			m0CCBalance:             8014879883,
 			m0HasPurchased:          true,
@@ -12992,9 +13332,9 @@ func TestSalomonSequence(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5485085977,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5485085977 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// Now is where things got interesting. In the original salomon sequence,
 		// the user (m0) attempted a max sell of all their creator coins. However,
@@ -13007,15 +13347,15 @@ func TestSalomonSequence(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8014879883,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      8014879883,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13023,9 +13363,9 @@ func TestSalomonSequence(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999897012,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999897012 + _balanceModelDiffNaive(3),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 	}
 
@@ -13062,15 +13402,15 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2,
+			DeSoToSellNanos:              2,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10000004, // Something small
-			DeSoLockedNanos:     1,
+			DeSoLockedNanos:         1,
 			CoinWatermarkNanos:      10000004, // Something small
 			m0CCBalance:             10000004, // Something small
 			m0HasPurchased:          true,
@@ -13078,9 +13418,9 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999994,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999994 + _balanceModelDiffNaive(1),
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 do a normal-sized buy of m0's coins
 		{
@@ -13089,15 +13429,15 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832149301,
-			DeSoLockedNanos:     1270996344,
+			DeSoLockedNanos:         1270996344,
 			CoinWatermarkNanos:      10832149301,
 			m0CCBalance:             2715537328,
 			m0HasPurchased:          true,
@@ -13105,9 +13445,9 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999994,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999994 + _balanceModelDiffNaive(1),
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m0 sell their amount.
 		{
@@ -13115,15 +13455,15 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       2715537328,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832149301 - 2715537328,
-			DeSoLockedNanos:     534717879,
+			DeSoLockedNanos:         534717879,
 			CoinWatermarkNanos:      10832149301,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13131,9 +13471,9 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6736204829,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6736204829 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
 		// Have m1 sell their amount.
 		{
@@ -13141,15 +13481,15 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8116611973,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      10832149301,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13157,9 +13497,9 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6736204829,
-			m1DeSoBalance:       5263540947,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           6736204829 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           5263540947 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           6000000000,
 		},
 	}
 
@@ -13249,7 +13589,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 			false, /*isHidden*/
 			0,
 			feeRateNanosPerKB, /*feeRateNanosPerKB*/
-			mempool /*mempool*/,
+			mempool,           /*mempool*/
 			[]*DeSoOutput{})
 		require.NoError(err)
 		_signTxn(t, txn, moneyPrivString)
@@ -13269,7 +13609,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 
 	creatorCoinTests := []*_CreatorCoinTestData{
-		// Create a profile for m0
+		// [0] Create a profile for m0
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -13283,22 +13623,22 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 
 			SkipChecks: true,
 		},
-		// Have m1 buy some of m0's coins
+		// [1] Have m1 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -13306,26 +13646,26 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
-		// Have m2 buy some of m0's coins
+		// [2] Have m2 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1172373183,
+			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13468606753,
-			DeSoLockedNanos:     2443252288,
+			DeSoLockedNanos:         2443252288,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -13333,26 +13673,26 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Have m1 sell half of their stake
+		// [3] Have m1 sell half of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4123456789,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9345149964,
-			DeSoLockedNanos:     816129494,
+			DeSoLockedNanos:         816129494,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -13360,12 +13700,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       4827626815,
-			m3DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
+			m3DeSoBalance:           6000000000,
 		},
-		// Swap m0 and m3
+		// [4] Swap m0 and m3
 		// State after swapping:
 		// m0Pk: m3 profile
 		// m3Pk: m0 profile (the one with the profile)
@@ -13380,7 +13720,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9345149964,
-			DeSoLockedNanos:     816129494,
+			DeSoLockedNanos:         816129494,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             0, // Should go to zero because it belongs to m3 now
 			m0HasPurchased:          false,
@@ -13390,12 +13730,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          true,
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       4827626815,
-			m3DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
+			m3DeSoBalance:           6000000000,
 		},
-		// Swap m3 and m1
+		// [5] Swap m3 and m1
 		// State after swapping:
 		// m0Pk: m3 profile
 		// m1Pk: m0 profile (the one with the profile)
@@ -13411,7 +13751,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9345149964,
-			DeSoLockedNanos:     816129494,
+			DeSoLockedNanos:         816129494,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             0, // m0 still has zero because they got a dummy profile
 			m0HasPurchased:          false,
@@ -13421,12 +13761,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          true,
 			m3CCBalance:             4000655948, // This becomes what m1 had a moment ago.
 			m3HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       4827626815,
-			m3DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
+			m3DeSoBalance:           6000000000,
 		},
-		// Swap m0 and m1. Should restore m0's profile to it.
+		// [6] Swap m0 and m1. Should restore m0's profile to it.
 		// State after swapping:
 		// m0Pk: m0 profile (the one with the profile)
 		// m1Pk: m3 profile
@@ -13442,7 +13782,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9345149964,
-			DeSoLockedNanos:     816129494,
+			DeSoLockedNanos:         816129494,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687, // m0 should be back to normal
 			m0HasPurchased:          false,
@@ -13452,12 +13792,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          true,
 			m3CCBalance:             4000655948, // This is still what m1 started with.
 			m3HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       4827626815,
-			m3DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
+			m3DeSoBalance:           6000000000,
 		},
-		// Swap m1 and m3. Should restore everything back to normal.
+		// [7] Swap m1 and m3. Should restore everything back to normal.
 		// State after swapping:
 		// m0Pk: m0 profile
 		// m1Pk: m1 profile (the one with the profile)
@@ -13473,7 +13813,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9345149964,
-			DeSoLockedNanos:     816129494,
+			DeSoLockedNanos:         816129494,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -13483,27 +13823,27 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          true,
 			m3CCBalance:             0, // This goes back to zero as we started with.
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       4827626815,
-			m3DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
+			m3DeSoBalance:           6000000000,
 		},
-		// Have m2 sell all of their stake
+		// [8] Have m2 sell all of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1977342329,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 7367807635,
-			DeSoLockedNanos:     399958612,
+			DeSoLockedNanos:         399958612,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -13511,26 +13851,26 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
-		// Have m1 buy more, m0 should receive 25% of the minted coins as a founders reward
+		// [9] Have m1 buy more, m0 should receive 25% of the minted coins as a founders reward
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2123456789,
+			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13613944261,
-			DeSoLockedNanos:     2523203055,
+			DeSoLockedNanos:         2523203055,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             4928685843,
 			m0HasPurchased:          false,
@@ -13538,27 +13878,27 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4232379830,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4232379830 + _balanceModelDiffNaive(3),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 sell the rest of their stake
+		// [10] Have m1 sell the rest of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8685258418,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4928685843,
-			DeSoLockedNanos:     119727407,
+			DeSoLockedNanos:         119727407,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             4928685843,
 			m0HasPurchased:          false,
@@ -13566,27 +13906,27 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6635615128,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m0 sell all of their stake except leave 1 DeSo locked
+		// [11] Have m0 sell all of their stake except leave 1 DeSo locked
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4925685829,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 3000014,
-			DeSoLockedNanos:     1,
+			DeSoLockedNanos:         1,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             3000014,
 			m0HasPurchased:          false,
@@ -13594,27 +13934,27 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6119715429,
-			m1DeSoBalance:       6635615128,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           6119715429 + _balanceModelDiffNaive(1),
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
 		{
-			// Have m0 sell all of their remaining stake except for 1 CreatorCoin nano
+			// [12] Have m0 sell all of their remaining stake except for 1 CreatorCoin nano
 			// This will trigger an autosell.
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       3000013,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13622,27 +13962,27 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6119715427,
-			m1DeSoBalance:       6635615128,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           6119715427 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 buy a little more, m0 should receieve some
+		// [13] Have m1 buy a little more, m0 should receieve some
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2123456789,
+			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 12852863707,
-			DeSoLockedNanos:     2123244443,
+			DeSoLockedNanos:         2123244443,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             3213215926,
 			m0HasPurchased:          false,
@@ -13650,12 +13990,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6119715427,
-			m1DeSoBalance:       4512158337,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           6119715427 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           4512158337 + _balanceModelDiffNaive(5),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 sell their creator coins. m0 should be the only one left with coins.
+		// [14] Have m1 sell their creator coins. m0 should be the only one left with coins.
 		// Meaning m0 is effectively being left with their founders reward, even after all
 		// their supporters have sold.
 		{
@@ -13664,15 +14004,15 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       9639647781,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 3213215926,
-			DeSoLockedNanos:     33175681,
+			DeSoLockedNanos:         33175681,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             3213215926,
 			m0HasPurchased:          false,
@@ -13680,9 +14020,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       6119715427,
-			m1DeSoBalance:       6602018090,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           6119715427 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           6602018090 + _balanceModelDiffNaive(6),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 	}
 
@@ -13696,7 +14036,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 	_, _ = assert, require
 
 	creatorCoinTests := []*_CreatorCoinTestData{
-		// Create a profile for m0
+		// [0] Create a profile for m0
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -13710,22 +14050,22 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 
 			SkipChecks: true,
 		},
-		// Have m1 buy some of m0's coins
+		// [1] Have m1 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             2708037578,
 			m0HasPurchased:          false,
@@ -13733,26 +14073,26 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           6000000000,
 		},
-		// Have m2 buy some of m0's coins
+		// [2] Have m2 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1172373183,
+			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13468606753,
-			DeSoLockedNanos:     2443252288,
+			DeSoLockedNanos:         2443252288,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -13760,26 +14100,26 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4728876542,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Have m1 sell half of their stake
+		// [3] Have m1 sell half of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4123456789,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9345149964,
-			DeSoLockedNanos:     816129494,
+			DeSoLockedNanos:         816129494,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             3367151687,
 			m0HasPurchased:          false,
@@ -13787,12 +14127,12 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
 
-		// Swap m0 and m3
+		// [4] Swap m0 and m3
 		{
 			TxnType:       TxnTypeSwapIdentity,
 			FromPublicKey: m0PkBytes,
@@ -13804,7 +14144,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 9345149964,
-			DeSoLockedNanos:     816129494,
+			DeSoLockedNanos:         816129494,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             0, // Should go to zero because it belongs to m3 now
 			m0HasPurchased:          false,
@@ -13814,27 +14154,27 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          true,
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       4827626815,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
 
-		// Have m2 sell all of their stake
+		// [5] Have m2 sell all of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1977342329,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 7367807635,
-			DeSoLockedNanos:     399958612,
+			DeSoLockedNanos:         399958612,
 			CoinWatermarkNanos:      13468606753,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13844,26 +14184,26 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          false,
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6355836621,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
-		// Have m1 buy more, m3 should receieve a founders reward
+		// [6] Have m1 buy more, m3 should receieve a founders reward
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2123456789,
+			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 13613944261,
-			DeSoLockedNanos:     2523203055,
+			DeSoLockedNanos:         2523203055,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13873,27 +14213,27 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          false,
 			m3CCBalance:             4928685843,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4232379830,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4232379830 + _balanceModelDiffNaive(3),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 sell the rest of their stake
+		// [7] Have m1 sell the rest of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8685258418,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 4928685843,
-			DeSoLockedNanos:     119727407,
+			DeSoLockedNanos:         119727407,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13903,27 +14243,27 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          false,
 			m3CCBalance:             4928685843,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6635615128,
-			m2DeSoBalance:       5243756077,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m3 sell all of their stake except leave 1 DeSo locked
+		// [8] Have m3 sell all of their stake except leave 1 DeSo locked
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m3Pub,
 			UpdaterPrivateKeyBase58Check: m3Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4925685829,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 3000014,
-			DeSoLockedNanos:     1,
+			DeSoLockedNanos:         1,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13933,29 +14273,29 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          false,
 			m3CCBalance:             3000014,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6635615128,
-			m2DeSoBalance:       5243756077,
-			m3DeSoBalance:       6119715431,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
+			m3DeSoBalance:           6119715431 + _balanceModelDiffNaive(1),
 		},
 
 		{
-			// Have m3 sell all of their remaining stake except for 1 CreatorCoin nano
+			// [9] Have m3 sell all of their remaining stake except for 1 CreatorCoin nano
 			// This should trigger the CreatorCoinAutoSellThresholdNanos threshold leaving
 			// m3 with no CreatorCoins.
 			UpdaterPublicKeyBase58Check:  m3Pub,
 			UpdaterPrivateKeyBase58Check: m3Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       3000013,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13965,28 +14305,28 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          false,
 			m3CCBalance:             0,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6635615128,
-			m2DeSoBalance:       5243756077,
-			m3DeSoBalance:       6119715429,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
+			m3DeSoBalance:           6119715429 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 buy a little more, m3 should receieve a founders reward
+		// [10] Have m1 buy a little more, m3 should receieve a founders reward
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2123456789,
+			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 12852863707,
-			DeSoLockedNanos:     2123244443,
+			DeSoLockedNanos:         2123244443,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -13996,13 +14336,13 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          false,
 			m3CCBalance:             3213215926,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       4512158337,
-			m2DeSoBalance:       5243756077,
-			m3DeSoBalance:       6119715429,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           4512158337 + _balanceModelDiffNaive(5),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
+			m3DeSoBalance:           6119715429 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 sell their creator coins except CreatorCoinAutoSellThresholdNanos - 1. This should
+		// [11] Have m1 sell their creator coins except CreatorCoinAutoSellThresholdNanos - 1. This should
 		// cause an auto sell and m1 back to zero.
 		{
 			// These are the transaction params
@@ -14010,15 +14350,15 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeSell,
-			DeSoToSellNanos:          0,
+			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       9639647781 - DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 3213215926,
-			DeSoLockedNanos:     33175681,
+			DeSoLockedNanos:         33175681,
 			CoinWatermarkNanos:      13613944261,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14028,10 +14368,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2HasPurchased:          false,
 			m3CCBalance:             3213215926,
 			m3HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6602018090,
-			m2DeSoBalance:       5243756077,
-			m3DeSoBalance:       6119715429,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6602018090 + _balanceModelDiffNaive(6),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
+			m3DeSoBalance:           6119715429 + _balanceModelDiffNaive(2),
 		},
 	}
 
@@ -14103,7 +14443,7 @@ func TestSwapIdentityMain(t *testing.T) {
 	_, _ = assert, require
 
 	creatorCoinTests := []*_CreatorCoinTestData{
-		// Create a profile for m0 so we can check creator coin balances easily.
+		// [0] Create a profile for m0 so we can check creator coin balances easily.
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -14117,7 +14457,7 @@ func TestSwapIdentityMain(t *testing.T) {
 
 			SkipChecks: true,
 		},
-		// Swap m1 and m2, which don't have profiles yet. This should work.
+		// [1] Swap m1 and m2, which don't have profiles yet. This should work.
 		{
 			TxnType:       TxnTypeSwapIdentity,
 			FromPublicKey: m1PkBytes,
@@ -14129,7 +14469,7 @@ func TestSwapIdentityMain(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      0,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14145,19 +14485,19 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          false,
 			m6CCBalance:             0,
 			m6HasPurchased:          false,
-			m0DeSoBalance:       5999999998, // m0 lost 2 nanos in fees when creating her profile
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       6000000000,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       6000000000,
-			m6DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998, // m0 lost 2 nanos in fees when creating her profile
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           6000000000,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           6000000000,
+			m6DeSoBalance:           6000000000,
 
 			// Profiles should not exist for either of these keys
 			ProfilesToCheckPublicKeysBase58Check: []string{m1Pub, m2Pub},
 			ProfilesToCheckUsernames:             []string{"", ""},
 		},
-		// Create a profile for m3
+		// [2] Create a profile for m3
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m3Pub,
@@ -14171,7 +14511,7 @@ func TestSwapIdentityMain(t *testing.T) {
 
 			// These are the expectations
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      0,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14187,13 +14527,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          false,
 			m6CCBalance:             0,
 			m6HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999998,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       6000000000,
-			m6DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999998,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           6000000000,
+			m6DeSoBalance:           6000000000,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub},
@@ -14201,21 +14541,21 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic"},
 		},
-		// Have m5 buy coins for m3
+		// [3] Have m5 buy coins for m3
 		{
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          1271123456,
+			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14231,13 +14571,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          true,
 			m6CCBalance:             0,
 			m6HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999998,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876542,
-			m6DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999998,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:           6000000000,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub},
@@ -14245,7 +14585,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic"},
 		},
-		// Swap m2 and m3. Everything should stay the same except m2 should be the
+		// [4] Swap m2 and m3. Everything should stay the same except m2 should be the
 		// creator everyone owns a piece of
 		{
 			TxnType:       TxnTypeSwapIdentity,
@@ -14257,7 +14597,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilePublicKeyBase58Check: m2Pub,
 
 			CoinsInCirculationNanos: 10832150315,
-			DeSoLockedNanos:     1270996343,
+			DeSoLockedNanos:         1270996343,
 			CoinWatermarkNanos:      10832150315,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14273,13 +14613,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          true,
 			m6CCBalance:             0,
 			m6HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999998,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876542,
-			m6DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999998,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:           6000000000,
 
 			// Profile check. Note m2 is the public key that owns the profile now.
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -14287,7 +14627,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", ""},
 		},
-		// Create a profile for m3 again. This should work, since m3 lost its
+		// [5] Create a profile for m3 again. This should work, since m3 lost its
 		// profile to m2 easrlier
 		{
 			TxnType:                      TxnTypeUpdateProfile,
@@ -14302,7 +14642,7 @@ func TestSwapIdentityMain(t *testing.T) {
 
 			// The CC balances are zero because we're checking against m3
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      0,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14318,13 +14658,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          false,
 			m6CCBalance:             0,
 			m6HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999996,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876542,
-			m6DeSoBalance:       6000000000,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999996,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:           6000000000,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -14332,21 +14672,21 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Have m6 buy some coins in m3
+		// [6] Have m6 buy some coins in m3
 		{
 			UpdaterPublicKeyBase58Check:  m6Pub,
 			UpdaterPrivateKeyBase58Check: m6Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          2000000001,
+			DeSoToSellNanos:              2000000001,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// The CC balances are zero because we're checking against m3
 			CoinsInCirculationNanos: 12598787739,
-			DeSoLockedNanos:     1999800000,
+			DeSoLockedNanos:         1999800000,
 			CoinWatermarkNanos:      12598787739,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14362,13 +14702,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          false,
 			m6CCBalance:             9449090805, // m6 now owns some m3
 			m6HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999996,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876542,
-			m6DeSoBalance:       3999999997,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999996,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:           3999999997 + _balanceModelDiffNaive(1),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -14376,21 +14716,21 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Have m6 buy a tiny amount of m2.
+		// [7] Have m6 buy a tiny amount of m2.
 		// This should fail the AutoSellThreshold test if you set it to 2 DeSoToSellNanos
 		{
 			UpdaterPublicKeyBase58Check:  m6Pub,
 			UpdaterPrivateKeyBase58Check: m6Priv,
 			ProfilePublicKeyBase58Check:  m2Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          10,
+			DeSoToSellNanos:              10,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			CoinsInCirculationNanos: 10832150340,
-			DeSoLockedNanos:     1270996352,
+			DeSoLockedNanos:         1270996352,
 			CoinWatermarkNanos:      10832150340,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14406,13 +14746,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          true,
 			m6CCBalance:             19,
 			m6HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999996,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876542,
-			m6DeSoBalance:       3999999985,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999996,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -14420,7 +14760,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Swap m2 and m3 again.
+		// [8] Swap m2 and m3 again.
 		{
 			TxnType:       TxnTypeSwapIdentity,
 			FromPublicKey: m2PkBytes,
@@ -14431,30 +14771,30 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilePublicKeyBase58Check: m2Pub,
 
 			CoinsInCirculationNanos: 12598787739,
-			DeSoLockedNanos:     1999800000,
+			DeSoLockedNanos:         1999800000,
 			CoinWatermarkNanos:      12598787739,
 			// This was previously the m3 cap table, but now it's the m2 cap table.
-			m0CCBalance:       0,
-			m0HasPurchased:    false,
-			m1CCBalance:       0,
-			m1HasPurchased:    false,
-			m2CCBalance:       3149696934,
-			m2HasPurchased:    false,
-			m3CCBalance:       0,
-			m3HasPurchased:    false,
-			m4CCBalance:       0,
-			m4HasPurchased:    false,
-			m5CCBalance:       0,
-			m5HasPurchased:    false,
-			m6CCBalance:       9449090805, // m6 now owns some m2
-			m6HasPurchased:    true,
-			m0DeSoBalance: 5999999998,
-			m1DeSoBalance: 6000000000,
-			m2DeSoBalance: 6000000000,
-			m3DeSoBalance: 5999999996,
-			m4DeSoBalance: 6000000000,
-			m5DeSoBalance: 4728876542,
-			m6DeSoBalance: 3999999985,
+			m0CCBalance:    0,
+			m0HasPurchased: false,
+			m1CCBalance:    0,
+			m1HasPurchased: false,
+			m2CCBalance:    3149696934,
+			m2HasPurchased: false,
+			m3CCBalance:    0,
+			m3HasPurchased: false,
+			m4CCBalance:    0,
+			m4HasPurchased: false,
+			m5CCBalance:    0,
+			m5HasPurchased: false,
+			m6CCBalance:    9449090805, // m6 now owns some m2
+			m6HasPurchased: true,
+			m0DeSoBalance:  5999999998,
+			m1DeSoBalance:  6000000000,
+			m2DeSoBalance:  6000000000,
+			m3DeSoBalance:  5999999996,
+			m4DeSoBalance:  6000000000,
+			m5DeSoBalance:  4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:  3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check. Note m2 is the public key that owns the profile now.
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub},
@@ -14462,21 +14802,21 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Have m5 buy a small amount of m3 and check the cap table
+		// [9] Have m5 buy a small amount of m3 and check the cap table
 		// If you set the DeSoToSellNanos to 2, this will also fail the autosell threshold.
 		{
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          10,
+			DeSoToSellNanos:              10,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			CoinsInCirculationNanos: 10832150365,
-			DeSoLockedNanos:     1270996361,
+			DeSoLockedNanos:         1270996361,
 			CoinWatermarkNanos:      10832150365,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14492,13 +14832,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          true,
 			m6CCBalance:             19,
 			m6HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999996,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876530,
-			m6DeSoBalance:       3999999985,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999996,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876530 + _balanceModelDiffNaive(2),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub},
@@ -14506,7 +14846,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Swap m3 for m4 and check the m4 cap table. It should be identical to
+		// [10] Swap m3 for m4 and check the m4 cap table. It should be identical to
 		// the m3 cap table from before.
 		{
 			TxnType:       TxnTypeSwapIdentity,
@@ -14518,7 +14858,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilePublicKeyBase58Check: m4Pub,
 
 			CoinsInCirculationNanos: 10832150365,
-			DeSoLockedNanos:     1270996361,
+			DeSoLockedNanos:         1270996361,
 			CoinWatermarkNanos:      10832150365,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14534,13 +14874,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          true,
 			m6CCBalance:             19,
 			m6HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999996,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876530,
-			m6DeSoBalance:       3999999985,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999996,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876530 + _balanceModelDiffNaive(2),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m4Pub, m2Pub, m3Pub},
@@ -14548,7 +14888,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", ""},
 		},
-		// Swap m2 for m3 and check the m3 cap table. It should be identical to
+		// [11] Swap m2 for m3 and check the m3 cap table. It should be identical to
 		// the m2 cap table from before.
 		{
 			TxnType:       TxnTypeSwapIdentity,
@@ -14560,29 +14900,29 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilePublicKeyBase58Check: m3Pub,
 
 			CoinsInCirculationNanos: 12598787739,
-			DeSoLockedNanos:     1999800000,
+			DeSoLockedNanos:         1999800000,
 			CoinWatermarkNanos:      12598787739,
 			// This was previously the m2 cap table, but now it's the m3 cap table.
-			m0CCBalance:       0,
-			m0HasPurchased:    false,
-			m1CCBalance:       0,
-			m1HasPurchased:    false,
-			m2CCBalance:       0,
-			m2HasPurchased:    false,
-			m3CCBalance:       3149696934,
-			m3HasPurchased:    false,
-			m4CCBalance:       0,
-			m4HasPurchased:    false,
-			m5CCBalance:       0,
-			m6CCBalance:       9449090805,
-			m6HasPurchased:    true,
-			m0DeSoBalance: 5999999998,
-			m1DeSoBalance: 6000000000,
-			m2DeSoBalance: 6000000000,
-			m3DeSoBalance: 5999999996,
-			m4DeSoBalance: 6000000000,
-			m5DeSoBalance: 4728876530,
-			m6DeSoBalance: 3999999985,
+			m0CCBalance:    0,
+			m0HasPurchased: false,
+			m1CCBalance:    0,
+			m1HasPurchased: false,
+			m2CCBalance:    0,
+			m2HasPurchased: false,
+			m3CCBalance:    3149696934,
+			m3HasPurchased: false,
+			m4CCBalance:    0,
+			m4HasPurchased: false,
+			m5CCBalance:    0,
+			m6CCBalance:    9449090805,
+			m6HasPurchased: true,
+			m0DeSoBalance:  5999999998,
+			m1DeSoBalance:  6000000000,
+			m2DeSoBalance:  6000000000,
+			m3DeSoBalance:  5999999996,
+			m4DeSoBalance:  6000000000,
+			m5DeSoBalance:  4728876530 + _balanceModelDiffNaive(2),
+			m6DeSoBalance:  3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m4Pub, m3Pub, m2Pub},
@@ -14590,7 +14930,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", ""},
 		},
-		// Swap m4 and m3 and check the m4 cap table. It should be identical to the above.
+		// [12] Swap m4 and m3 and check the m4 cap table. It should be identical to the above.
 		{
 			TxnType:                     TxnTypeSwapIdentity,
 			FromPublicKey:               m3PkBytes,
@@ -14598,30 +14938,30 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilePublicKeyBase58Check: m4Pub,
 
 			CoinsInCirculationNanos: 12598787739,
-			DeSoLockedNanos:     1999800000,
+			DeSoLockedNanos:         1999800000,
 			CoinWatermarkNanos:      12598787739,
 			// This was previously the m2 cap table, but now it's the m3 cap table.
-			m0CCBalance:       0,
-			m0HasPurchased:    false,
-			m1CCBalance:       0,
-			m1HasPurchased:    false,
-			m2CCBalance:       0,
-			m2HasPurchased:    false,
-			m3CCBalance:       0,
-			m3HasPurchased:    false,
-			m4CCBalance:       3149696934,
-			m4HasPurchased:    false,
-			m5CCBalance:       0,
-			m5HasPurchased:    false,
-			m6CCBalance:       9449090805,
-			m6HasPurchased:    true,
-			m0DeSoBalance: 5999999998,
-			m1DeSoBalance: 6000000000,
-			m2DeSoBalance: 6000000000,
-			m3DeSoBalance: 5999999996,
-			m4DeSoBalance: 6000000000,
-			m5DeSoBalance: 4728876530,
-			m6DeSoBalance: 3999999985,
+			m0CCBalance:    0,
+			m0HasPurchased: false,
+			m1CCBalance:    0,
+			m1HasPurchased: false,
+			m2CCBalance:    0,
+			m2HasPurchased: false,
+			m3CCBalance:    0,
+			m3HasPurchased: false,
+			m4CCBalance:    3149696934,
+			m4HasPurchased: false,
+			m5CCBalance:    0,
+			m5HasPurchased: false,
+			m6CCBalance:    9449090805,
+			m6HasPurchased: true,
+			m0DeSoBalance:  5999999998,
+			m1DeSoBalance:  6000000000,
+			m2DeSoBalance:  6000000000,
+			m3DeSoBalance:  5999999996,
+			m4DeSoBalance:  6000000000,
+			m5DeSoBalance:  4728876530 + _balanceModelDiffNaive(2),
+			m6DeSoBalance:  3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -14629,20 +14969,20 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", ""},
 		},
-		// Do a small m3 buy and check that the cap table lines up.
+		// [13] Do a small m3 buy and check that the cap table lines up.
 		{
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          10,
+			DeSoToSellNanos:              10,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			CoinsInCirculationNanos: 10832150390,
-			DeSoLockedNanos:     1270996370,
+			DeSoLockedNanos:         1270996370,
 			CoinWatermarkNanos:      10832150390,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14658,13 +14998,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          true,
 			m6CCBalance:             19,
 			m6HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       6000000000,
-			m3DeSoBalance:       5999999996,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876518,
-			m6DeSoBalance:       3999999985,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           6000000000,
+			m3DeSoBalance:           5999999996,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876518 + _balanceModelDiffNaive(3),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -14672,7 +15012,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", ""},
 		},
-		// Create a profile for m2
+		// [14] Create a profile for m2
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m2Pub,
@@ -14686,7 +15026,7 @@ func TestSwapIdentityMain(t *testing.T) {
 
 			// The CC balances are zero because we're checking against m3
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      0,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14702,13 +15042,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          false,
 			m6CCBalance:             0,
 			m6HasPurchased:          false,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       5999999998,
-			m3DeSoBalance:       5999999996,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876518,
-			m6DeSoBalance:       3999999985,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           5999999998,
+			m3DeSoBalance:           5999999996,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876518 + _balanceModelDiffNaive(3),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -14716,7 +15056,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", "i am the new m2"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", "the new m2 profile pic"},
 		},
-		// Swap m2 and m4 and verify that m4 now has the zeros
+		// [15] Swap m2 and m4 and verify that m4 now has the zeros
 		{
 			TxnType:                     TxnTypeSwapIdentity,
 			FromPublicKey:               m2PkBytes,
@@ -14724,30 +15064,30 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilePublicKeyBase58Check: m4Pub,
 
 			CoinsInCirculationNanos: 0,
-			DeSoLockedNanos:     0,
+			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      0,
 			// This was previously the m2 cap table, but now it's the m3 cap table.
-			m0CCBalance:       0,
-			m0HasPurchased:    false,
-			m1CCBalance:       0,
-			m1HasPurchased:    false,
-			m2CCBalance:       0,
-			m2HasPurchased:    false,
-			m3CCBalance:       0,
-			m3HasPurchased:    false,
-			m4CCBalance:       0,
-			m4HasPurchased:    false,
-			m5CCBalance:       0,
-			m5HasPurchased:    false,
-			m6CCBalance:       0,
-			m6HasPurchased:    false,
-			m0DeSoBalance: 5999999998,
-			m1DeSoBalance: 6000000000,
-			m2DeSoBalance: 5999999998,
-			m3DeSoBalance: 5999999996,
-			m4DeSoBalance: 6000000000,
-			m5DeSoBalance: 4728876518,
-			m6DeSoBalance: 3999999985,
+			m0CCBalance:    0,
+			m0HasPurchased: false,
+			m1CCBalance:    0,
+			m1HasPurchased: false,
+			m2CCBalance:    0,
+			m2HasPurchased: false,
+			m3CCBalance:    0,
+			m3HasPurchased: false,
+			m4CCBalance:    0,
+			m4HasPurchased: false,
+			m5CCBalance:    0,
+			m5HasPurchased: false,
+			m6CCBalance:    0,
+			m6HasPurchased: false,
+			m0DeSoBalance:  5999999998,
+			m1DeSoBalance:  6000000000,
+			m2DeSoBalance:  5999999998,
+			m3DeSoBalance:  5999999996,
+			m4DeSoBalance:  6000000000,
+			m5DeSoBalance:  4728876518 + _balanceModelDiffNaive(3),
+			m6DeSoBalance:  3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub, m4Pub},
@@ -14755,7 +15095,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", "i am the new m2"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", "the new m2 profile pic"},
 		},
-		// Do a small m2 buy and make sure that the m4 cap table is what we have
+		// [16] Do a small m2 buy and make sure that the m4 cap table is what we have
 		// Setting DeSoToSellNanos to zero will cause an RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanos
 		// rule exception.
 		{
@@ -14763,14 +15103,14 @@ func TestSwapIdentityMain(t *testing.T) {
 			UpdaterPrivateKeyBase58Check: m5Priv,
 			ProfilePublicKeyBase58Check:  m2Pub,
 			OperationType:                CreatorCoinOperationTypeBuy,
-			DeSoToSellNanos:          10,
+			DeSoToSellNanos:              10,
 			CreatorCoinToSellNanos:       0,
-			DeSoToAddNanos:           0,
-			MinDeSoExpectedNanos:     0,
+			DeSoToAddNanos:               0,
+			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			CoinsInCirculationNanos: 12598787757,
-			DeSoLockedNanos:     1999800009,
+			DeSoLockedNanos:         1999800009,
 			CoinWatermarkNanos:      12598787757,
 			m0CCBalance:             0,
 			m0HasPurchased:          false,
@@ -14786,13 +15126,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m5HasPurchased:          true,
 			m6CCBalance:             9449090805,
 			m6HasPurchased:          true,
-			m0DeSoBalance:       5999999998,
-			m1DeSoBalance:       6000000000,
-			m2DeSoBalance:       5999999998,
-			m3DeSoBalance:       5999999996,
-			m4DeSoBalance:       6000000000,
-			m5DeSoBalance:       4728876506,
-			m6DeSoBalance:       3999999985,
+			m0DeSoBalance:           5999999998,
+			m1DeSoBalance:           6000000000,
+			m2DeSoBalance:           5999999998,
+			m3DeSoBalance:           5999999996,
+			m4DeSoBalance:           6000000000,
+			m5DeSoBalance:           4728876506 + _balanceModelDiffNaive(4),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub, m4Pub},
@@ -15126,7 +15466,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -15151,7 +15491,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -15183,7 +15523,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -15209,7 +15549,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -15243,7 +15583,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -15275,7 +15615,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -15301,7 +15641,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -15314,6 +15654,24 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			require.Error(err)
 			require.Equal(0, len(mempoolTxsAdded))
 		}
+	}
+}
+
+// Because txns in the balance model use fewer bytes, balances will differ
+// after completing a transaction vs. the UTXO model.
+func _balanceModelDiff(bc *Blockchain, diffAmount uint64) uint64 {
+	if bc.blockTip().Height >= BalanceModelBlockHeight {
+		return diffAmount
+	} else {
+		return 0
+	}
+}
+
+func _balanceModelDiffNaive(diffAmount uint64) uint64 {
+	if BalanceModelBlockHeight == 0 || BalanceModelBlockHeight == 1 {
+		return diffAmount
+	} else {
+		return 0
 	}
 }
 
@@ -15375,11 +15733,11 @@ func TestNFTBasic(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -15427,14 +15785,14 @@ func TestNFTBasic(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                    /*feeRateNanosPerKB*/
-			m0Pub,                 /*updaterPkBase58Check*/
-			m0Priv,                /*updaterPrivBase58Check*/
-			[]byte{},              /*postHashToModify*/
-			[]byte{},              /*parentStakeID*/
+			10,                /*feeRateNanosPerKB*/
+			m0Pub,             /*updaterPkBase58Check*/
+			m0Priv,            /*updaterPrivBase58Check*/
+			[]byte{},          /*postHashToModify*/
+			[]byte{},          /*parentStakeID*/
 			&DeSoBodySchema{}, /*body*/
-			post1Hash[:],          /*repostedPostHash*/
-			1502947011*1e9,        /*tstampNanos*/
+			post1Hash[:],      /*repostedPostHash*/
+			1502947011*1e9,    /*tstampNanos*/
 			false /*isHidden*/)
 
 		vanillaRepostPostHash := testMeta.txns[len(testMeta.txns)-1].Hash()
@@ -15546,7 +15904,7 @@ func TestNFTBasic(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(28), m0BalBeforeNFT)
+		require.Equal(uint64(28)+_balanceModelDiff(chain, 1), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -15565,7 +15923,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(27), m0BalAfterNFT)
+		require.Equal(uint64(27)+_balanceModelDiff(chain, 1), m0BalAfterNFT)
 	}
 
 	// Error case: cannot turn a post into an NFT twice.
@@ -15623,11 +15981,11 @@ func TestNFTBasic(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
@@ -15651,7 +16009,11 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
+		if chain.blockTip().Height < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
+		} else {
+			require.Contains(err.Error(), RuleErrorCreateNFTTxnWithInsufficientFee)
+		}
 	}
 
 	// Creating an NFT with the correct NFT fee should succeed.
@@ -15664,7 +16026,7 @@ func TestNFTBasic(t *testing.T) {
 		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
 
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(26), m0BalBeforeNFT)
+		require.Equal(uint64(26)+_balanceModelDiff(chain, 1), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -15683,7 +16045,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Check that m0 was charged the correct nftFee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(25)-nftFee, m0BalAfterNFT)
+		require.Equal(uint64(25)+_balanceModelDiff(chain, 1)-nftFee, m0BalAfterNFT)
 	}
 
 	//
@@ -15713,11 +16075,11 @@ func TestNFTBasic(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 3"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
@@ -16152,11 +16514,11 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -16197,7 +16559,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		)
 
 		m0Bal := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(30), m0Bal)
+		require.Equal(uint64(30+_balanceModelDiffNaive(1)), m0Bal)
 	}
 	// Initial deso locked before royalties.
 	m0InitialDeSoLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
@@ -16261,7 +16623,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(30), m0BalBeforeNFT)
+		require.Equal(uint64(30+_balanceModelDiffNaive(1)), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -16280,7 +16642,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(29), m0BalAfterNFT)
+		require.Equal(uint64(29)+_balanceModelDiffNaive(1), m0BalAfterNFT)
 	}
 
 	// 1 nano bid: Have m1 make a bid on <post1, #1>, accept it and check the royalties.
@@ -16305,7 +16667,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Owner balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(29), m0BalBefore)
+		require.Equal(uint64(29)+_balanceModelDiffNaive(1), m0BalBefore)
 
 		// Bidder balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
@@ -16331,8 +16693,10 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		expectedCoinRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(0), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(28), m0BalAfter)
+		require.Equal(
+			m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty+_balanceModelDiffNaive(1),
+			m0BalAfter)
+		require.Equal(uint64(28)+_balanceModelDiffNaive(2), m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
@@ -16364,7 +16728,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(28), m0BalBefore)
+		require.Equal(uint64(28+_balanceModelDiffNaive(2)), m0BalBefore)
 
 		// Bidder balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
@@ -16389,8 +16753,10 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		expectedCoinRoyalty := 2 * bidAmountNanos / 10
 		require.Equal(uint64(2), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(34), m0BalAfter)
+		require.Equal(
+			m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty+_balanceModelDiffNaive(1),
+			m0BalAfter)
+		require.Equal(uint64(34+_balanceModelDiffNaive(3)), m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
@@ -16425,7 +16791,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(34), m0BalBefore)
+		require.Equal(uint64(34+_balanceModelDiffNaive(3)), m0BalBefore)
 
 		// Bidder balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
@@ -16450,8 +16816,10 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		expectedCoinRoyalty := 2 * bidAmountNanos / 10
 		require.Equal(uint64(20), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(112), m0BalAfter)
+		require.Equal(
+			m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty+_balanceModelDiffNaive(1),
+			m0BalAfter)
+		require.Equal(uint64(112+_balanceModelDiffNaive(4)), m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
@@ -16500,7 +16868,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(112), m0BalBefore)
+		require.Equal(uint64(112+_balanceModelDiffNaive(4)), m0BalBefore)
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(885), m1BalBefore)
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
@@ -16527,11 +16895,11 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(1112), m0BalAfter)
+		require.Equal(uint64(1112+_balanceModelDiffNaive(4)), m0BalAfter)
 
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
-		require.Equal(m1BalBefore-2+bidAmountMinusRoyalties, m1BalAfter)
-		require.Equal(uint64(7883), m1BalAfter)
+		require.Equal(m1BalBefore-2+bidAmountMinusRoyalties+_balanceModelDiffNaive(1), m1BalAfter)
+		require.Equal(uint64(7883+_balanceModelDiffNaive(1)), m1BalAfter)
 
 		// Make sure m3's balance was decreased appropriately.
 		m3BalAfter := _getBalance(t, chain, nil, m3Pub)
@@ -16584,7 +16952,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(3160), m0BalBefore)
+		require.Equal(uint64(3160+_balanceModelDiffNaive(4)), m0BalBefore)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -16606,8 +16974,10 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(3238), m0BalAfter)
+		require.Equal(
+			m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty+_balanceModelDiffNaive(1),
+			m0BalAfter)
+		require.Equal(uint64(3238+_balanceModelDiffNaive(5)), m0BalAfter)
 
 		// Creator coin --> Make sure no royalties were added.
 		desoLocked, _ := _getCreatorCoinInfo(t, db, params, m0Pub)
@@ -16678,11 +17048,11 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -16690,11 +17060,11 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -16723,7 +17093,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFTs := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(59), m0BalBeforeNFTs)
+		require.Equal(uint64(59+_balanceModelDiffNaive(1)), m0BalBeforeNFTs)
 
 		// Create an NFT with a ton of copies for testing accepting bids.
 		_createNFTWithTestMeta(
@@ -16886,7 +17256,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(57), m0BalBefore)
+		require.Equal(uint64(57+_balanceModelDiffNaive(1)), m0BalBefore)
 
 		// This will accept m1's serial #0 bid.
 		_acceptNFTBidWithTestMeta(
@@ -16934,8 +17304,8 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(m0BalBefore-6+100+1000+999, m0BalAfter)
-		require.Equal(uint64(2150), m0BalAfter)
+		require.Equal(m0BalBefore-6+100+1000+999+_balanceModelDiffNaive(3), m0BalAfter)
+		require.Equal(uint64(2150+_balanceModelDiffNaive(4)), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
@@ -17002,11 +17372,11 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -17034,7 +17404,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(14960), m0BalBeforeNFT)
+		require.Equal(uint64(14960+_balanceModelDiffNaive(1)), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -17053,7 +17423,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(14959), m0BalAfterNFT)
+		require.Equal(uint64(14959+_balanceModelDiffNaive(1)), m0BalAfterNFT)
 	}
 
 	// Error case: Attempt to make some bids below the minimum bid amount, they should error.
@@ -17149,7 +17519,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(14959), m0BalBefore)
+		require.Equal(uint64(14959+_balanceModelDiffNaive(1)), m0BalBefore)
 
 		// This will accept m3's serial #1 bid.
 		_acceptNFTBidWithTestMeta(
@@ -17183,8 +17553,8 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(m0BalBefore-4+1113+10, m0BalAfter)
-		require.Equal(uint64(16078), m0BalAfter)
+		require.Equal(m0BalBefore-4+1113+10+_balanceModelDiffNaive(2), m0BalAfter)
+		require.Equal(uint64(16078+_balanceModelDiffNaive(3)), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
@@ -17252,11 +17622,11 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -17284,7 +17654,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(14960), m0BalBeforeNFT)
+		require.Equal(uint64(14960+_balanceModelDiffNaive(1)), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -17303,7 +17673,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(14959), m0BalAfterNFT)
+		require.Equal(uint64(14959+_balanceModelDiffNaive(1)), m0BalAfterNFT)
 	}
 
 	// Error case: Attempt to make some bids on an NFT that is not for sale, they should error.
@@ -17370,7 +17740,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(14958), m0BalBefore)
+		require.Equal(uint64(14958+_balanceModelDiffNaive(1)), m0BalBefore)
 
 		// This will accept m1's serial #1 bid.
 		_acceptNFTBidWithTestMeta(
@@ -17389,8 +17759,8 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(m0BalBefore-2+1111, m0BalAfter)
-		require.Equal(uint64(16067), m0BalAfter)
+		require.Equal(m0BalBefore-2+1111+_balanceModelDiffNaive(1), m0BalAfter)
+		require.Equal(uint64(16067+_balanceModelDiffNaive(2)), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
@@ -17464,11 +17834,11 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -17550,7 +17920,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(30), m0BalBeforeNFT)
+		require.Equal(uint64(30+_balanceModelDiffNaive(1)), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -17569,7 +17939,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(29), m0BalAfterNFT)
+		require.Equal(uint64(29+_balanceModelDiffNaive(1)), m0BalAfterNFT)
 	}
 
 	// Error case: Cannot mint the NFT a second time.
@@ -17796,11 +18166,11 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -18080,11 +18450,11 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -18359,11 +18729,11 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -18371,11 +18741,11 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -18383,11 +18753,11 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 3"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -18663,11 +19033,11 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -18949,7 +19319,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.Equal(totalInput, spendAmount+changeAmount+fees)
 		require.Greater(totalInput, uint64(0))
 
-		if isSignerSender{
+		if isSignerSender {
 			// Sign the transaction with the provided derived key
 			_signTxn(t, txn, signerPriv)
 		} else {
@@ -19044,7 +19414,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			false)
 		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid,nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn signed with an unauthorized private key.")
 	}
 	// Attempt sending an AuthorizeDerivedKey txn where access signature is signed with
@@ -19073,7 +19443,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			false)
 		require.Error(err)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid,nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn signed with an invalid access signature.")
 	}
 	// Check basic transfer signed with still unauthorized derived key.
@@ -19752,6 +20122,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 func TestDeSoDiamonds(t *testing.T) {
 	DeSoDiamondsBlockHeight = 0
+	defer resetBlockHeightGlobals()
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
 	assert := assert.New(t)
@@ -19824,11 +20195,11 @@ func TestDeSoDiamonds(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -19961,6 +20332,7 @@ func TestDeSoDiamonds(t *testing.T) {
 
 func TestDeSoDiamondErrorCases(t *testing.T) {
 	DeSoDiamondsBlockHeight = 0
+	defer resetBlockHeightGlobals()
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
 	assert := assert.New(t)
@@ -20046,7 +20418,8 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 
 		// We want our transaction to have at least one input, even if it all
 		// goes to change. This ensures that the transaction will not be "replayable."
-		if len(txn.TxInputs) == 0 {
+		blockHeight := chain.blockTip().Height + 1
+		if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 			return fmt.Errorf(
 				"giveCustomDeSoDiamondTxn: BasicTransfer txn must have at" +
 					" least one input but had zero inputs instead. Try increasing the fee rate.")
@@ -20058,7 +20431,6 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
 		// get mined into the next block.
-		blockHeight := chain.blockTip().Height + 1
 		utxoOps, totalInput, totalOutput, fees, err :=
 			utxoView.ConnectTransaction(
 				txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -20067,13 +20439,19 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		}
 		require.Equal(t, totalInput, totalOutput+fees)
 
-		// We should have one SPEND UtxoOperation for each input, one ADD operation
-		// for each output, and one OperationTypeDeSoDiamond operation at the end.
-		require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-		for ii := 0; ii < len(txn.TxInputs); ii++ {
-			require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+		if blockHeight < BalanceModelBlockHeight {
+			// We should have one SPEND UtxoOperation for each input, one ADD operation
+			// for each output, and one OperationTypeDeSoDiamond operation at the end.
+			require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+			for ii := 0; ii < len(txn.TxInputs); ii++ {
+				require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+			}
+			require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
+		} else {
+			require.Equal(t, OperationTypeAddBalance, utxoOps[0].Type)
+			require.Equal(t, OperationTypeSpendBalance, utxoOps[1].Type)
+			require.Equal(t, OperationTypeDeSoDiamond, utxoOps[2].Type)
 		}
-		require.Equal(OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
 
 		require.NoError(utxoView.FlushToDb())
 
@@ -20112,11 +20490,11 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -20261,11 +20639,11 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
@@ -20273,11 +20651,11 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                     /*feeRateNanosPerKB*/
-			m0Pub,                                  /*updaterPkBase58Check*/
-			m0Priv,                                 /*updaterPrivBase58Check*/
-			[]byte{},                               /*postHashToModify*/
-			[]byte{},                               /*parentStakeID*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
@@ -20306,7 +20684,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(959), m0BalBeforeNFT)
+		require.Equal(uint64(959+_balanceModelDiffNaive(1)), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -20340,7 +20718,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(957), m0BalAfterNFT)
+		require.Equal(uint64(957+_balanceModelDiffNaive(1)), m0BalAfterNFT)
 	}
 
 	// Have m1 bid on and win post #1 / serial #5.
