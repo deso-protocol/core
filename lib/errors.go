@@ -227,9 +227,11 @@ const (
 	RuleErrorCreateNFTRequiresNonZeroInput        RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
 	RuleErrorUpdateNFTRequiresNonZeroInput        RuleError = "RuleErrorUpdateNFTRequiresNonZeroInput"
 	RuleErrorCreateNFTOnNonexistentPost           RuleError = "RuleErrorCreateNFTOnNonexistentPost"
-	RuleErrorCreateNFTOnVanillaRepost            RuleError = "RuleErrorCreateNFTOnVanillaRepost"
+	RuleErrorCreateNFTOnVanillaRepost             RuleError = "RuleErrorCreateNFTOnVanillaRepost"
 	RuleErrorCreateNFTWithInsufficientFunds       RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
 	RuleErrorCreateNFTOnPostThatAlreadyIsNFT      RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
+	RuleErrorCannotHaveUnlockableAndBuyNowNFT     RuleError = "RuleErrorCannotHaveUnlockableAndBuyNowNFT"
+	RuleErrorBuyNowMustHaveMinBidAmountNanos      RuleError = "RuleErrorBuyNowMustHaveMinBidAmountNanos"
 	RuleErrorCreateNFTMustBeCalledByPoster        RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
 	RuleErrorNFTMustHaveNonZeroCopies             RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
 	RuleErrorCannotUpdateNonExistentNFT           RuleError = "RuleErrorCannotUpdateNonExistentNFT"
@@ -262,6 +264,7 @@ const (
 	RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount RuleError = "RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount"
 	RuleErrorInsufficientFundsForNFTBid                    RuleError = "RuleErrorInsufficientFundsForNFTBid"
 	RuleErrorNFTBidLessThanMinBidAmountNanos               RuleError = "RuleErrorNFTBidLessThanMinBidAmountNanos"
+	RuleErrorZeroBidOnBuyNowNFT                            RuleError = "RuleErrorZeroBidOnBuyNowNFT"
 
 	// NFT Transfers
 	RuleErrorNFTTranserBeforeBlockHeight                  RuleError = "RuleErrorNFTTranserBeforeBlockHeight"

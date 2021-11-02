@@ -3050,6 +3050,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 			MinBidAmountNanos,
 			NFTRoyaltyToCreatorBasisPoints,
 			NFTRoyaltyToCoinBasisPoints,
+			false,
 		},
 		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
@@ -3074,6 +3075,48 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) GetInputsToCoverAmount(spenderPublicKey []byte, utxoView *UtxoView, amountToCover uint64) (
+	_inputs []*DeSoInput, _err error) {
+	// Get the spendable UtxoEntrys.
+	spenderSpendableUtxos, err := bc.GetSpendableUtxosForPublicKey(spenderPublicKey, nil, utxoView)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Problem getting spendable UtxoEntrys: ")
+	}
+
+	// Add input utxos to the transaction until we have enough total input to cover
+	// the amount we want to spend plus the maximum fee (or until we've exhausted
+	// all the utxos available).
+	spenderInputs := []*DeSoInput{}
+	totalSpenderInput := uint64(0)
+	for _, utxoEntry := range spenderSpendableUtxos {
+
+		// If the amount of input we have isn't enough to cover the bid amount, add an input and continue.
+		if totalSpenderInput < amountToCover {
+			spenderInputs = append(spenderInputs, (*DeSoInput)(utxoEntry.UtxoKey))
+
+			amountToAdd := utxoEntry.AmountNanos
+			// For Bitcoin burns, we subtract a tiny amount of slippage to the amount we can
+			// spend. This makes reorderings more forgiving.
+			if utxoEntry.UtxoType == UtxoTypeBitcoinBurn {
+				amountToAdd = uint64(float64(amountToAdd) * .999)
+			}
+
+			totalSpenderInput += amountToAdd
+			continue
+		}
+
+		// If we get here, we know we have enough input to cover the upper bound
+		// estimate of our amount needed so break.
+		break
+	}
+	// If we get here and we don't have sufficient input to cover the bid, error.
+	if totalSpenderInput < amountToCover {
+		return nil, fmt.Errorf("Spender has insufficient "+
+			"UTXOs (%d total) to cover amount %d: ", totalSpenderInput, amountToCover)
+	}
+	return spenderInputs, nil
+}
+
 func (bc *Blockchain) CreateNFTBidTxn(
 	UpdaterPublicKey []byte,
 	NFTPostHash *BlockHash,
@@ -3082,7 +3125,70 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+	if SerialNumber == 0 {
+		return bc.addInputsAndChangeForCreateNFTBidTxn(
+			UpdaterPublicKey,
+			NFTPostHash,
+			SerialNumber,
+			BidAmountNanos,
+			[]*DeSoInput{},
+			minFeeRateNanosPerKB,
+			mempool,
+			additionalOutputs)
+	}
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateNFTBidTxn: Problem creating new utxo view: ")
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateNFTBidTxn: Problem getting augmented UtxoView from mempool: ")
+		}
+	}
 
+	nftKey := MakeNFTKey(NFTPostHash, SerialNumber)
+	nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
+
+	if nftEntry == nil || !nftEntry.IsBuyNow {
+		return bc.addInputsAndChangeForCreateNFTBidTxn(
+			UpdaterPublicKey,
+			NFTPostHash,
+			SerialNumber,
+			BidAmountNanos,
+			[]*DeSoInput{},
+			minFeeRateNanosPerKB,
+			mempool,
+			additionalOutputs)
+	}
+
+	bidderInputs, err := bc.GetInputsToCoverAmount(UpdaterPublicKey, utxoView, BidAmountNanos)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateNFTBidTxn: ")
+	}
+	return bc.addInputsAndChangeForCreateNFTBidTxn(
+		UpdaterPublicKey,
+		NFTPostHash,
+		SerialNumber,
+		BidAmountNanos,
+		bidderInputs,
+		minFeeRateNanosPerKB,
+		mempool,
+		additionalOutputs)
+}
+
+func (bc *Blockchain) addInputsAndChangeForCreateNFTBidTxn(UpdaterPublicKey []byte,
+	NFTPostHash *BlockHash,
+	SerialNumber uint64,
+	BidAmountNanos uint64,
+	BidderInputs []*DeSoInput,
+// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput)(
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 	// Create a transaction containing the NFT bid fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,
@@ -3090,6 +3196,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 			NFTPostHash,
 			SerialNumber,
 			BidAmountNanos,
+			BidderInputs,
 		},
 		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
@@ -3257,45 +3364,8 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 		}
 	}
 
-	// Get the spendable UtxoEntrys.
-	bidderPkBytes := utxoView.GetPublicKeyForPKID(BidderPKID)
-	bidderSpendableUtxos, err := bc.GetSpendableUtxosForPublicKey(bidderPkBytes, nil, utxoView)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAcceptNFTBidTxn: Problem getting spendable UtxoEntrys: ")
-	}
-
-	// Add input utxos to the transaction until we have enough total input to cover
-	// the amount we want to spend plus the maximum fee (or until we've exhausted
-	// all the utxos available).
-	bidderInputs := []*DeSoInput{}
-	totalBidderInput := uint64(0)
-	for _, utxoEntry := range bidderSpendableUtxos {
-
-		// If the amount of input we have isn't enough to cover the bid amount, add an input and continue.
-		if totalBidderInput < BidAmountNanos {
-			bidderInputs = append(bidderInputs, (*DeSoInput)(utxoEntry.UtxoKey))
-
-			amountToAdd := utxoEntry.AmountNanos
-			// For Bitcoin burns, we subtract a tiny amount of slippage to the amount we can
-			// spend. This makes reorderings more forgiving.
-			if utxoEntry.UtxoType == UtxoTypeBitcoinBurn {
-				amountToAdd = uint64(float64(amountToAdd) * .999)
-			}
-
-			totalBidderInput += amountToAdd
-			continue
-		}
-
-		// If we get here, we know we have enough input to cover the upper bound
-		// estimate of our amount needed so break.
-		break
-	}
-
-	// If we get here and we don't have sufficient input to cover the bid, error.
-	if totalBidderInput < BidAmountNanos {
-		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateAcceptNFTBidTxn: Bidder has insufficient "+
-			"UTXOs (%d total) to cover BidAmountNanos %d: ", totalBidderInput, BidAmountNanos)
-	}
+	bidderPublicKey := utxoView.GetPublicKeyForPKID(BidderPKID)
+	bidderInputs, err := bc.GetInputsToCoverAmount(bidderPublicKey, utxoView, BidAmountNanos)
 
 	// Create a transaction containing the accept nft bid fields.
 	txn := &MsgDeSoTxn{
@@ -3349,6 +3419,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 			SerialNumber,
 			IsForSale,
 			MinBidAmountNanos,
+			false,
 		},
 		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
