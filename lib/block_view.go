@@ -952,6 +952,11 @@ type UtxoOperation struct {
 	// Save the global params when making an update.
 	PrevGlobalParamsEntry    *GlobalParamsEntry
 	PrevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
+
+	// This value is used by Rosetta to adjust for a bug whereby a ParamUpdater
+	// CoinEntry could get clobbered if updating a profile on someone else's
+	// behalf. This is super confusing.
+	ClobberedProfileBugDESOLockedNanos uint64
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -6574,6 +6579,11 @@ func (bav *UtxoView) _connectUpdateProfile(
 		*prevProfileEntry = *existingProfileEntry
 	}
 
+	// This is an adjustment factor that we track for Rosetta. It adjusts
+	// the amount of DeSo to make up for a bug whereby a profile's DeSo locked
+	// could get clobbered during a ParamUpdater txn.
+	clobberedProfileBugDeSoAdjustment := uint64(0)
+
 	// If a profile already exists then we only update fields that are set.
 	var newProfileEntry ProfileEntry
 	if existingProfileEntry != nil && !existingProfileEntry.isDeleted {
@@ -6634,6 +6644,19 @@ func (bav *UtxoView) _connectUpdateProfile(
 		profileEntryPublicKey := txn.PublicKey
 		if blockHeight > ParamUpdaterProfileUpdateFixBlockHeight {
 			profileEntryPublicKey = profilePublicKey
+		} else if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) {
+			// In this case a clobbering will occur if there was a pre-existing profile
+			// associated with txn.PublicKey. In this case, we save the
+			// DESO locked of the previous profile associated with the
+			// txn.PublicKey. Sorry this is confusing...
+
+			// Look up the profile of the txn.PublicKey
+			clobberedProfileEntry := bav.GetProfileEntryForPublicKey(txn.PublicKey)
+			// Save the amount of DESO locked in the profile since this is going to
+			// be clobbered.
+			if clobberedProfileEntry != nil && !clobberedProfileEntry.isDeleted {
+				clobberedProfileBugDeSoAdjustment = clobberedProfileEntry.CoinEntry.DeSoLockedNanos
+			}
 		}
 
 		newProfileEntry = ProfileEntry{
@@ -6649,6 +6672,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 				// appropriate default value for all of them.
 			},
 		}
+
 	}
 	// At this point the newProfileEntry should be set to what we actually
 	// want to store in the db.
@@ -6670,8 +6694,9 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 	// Add an operation to the list at the end indicating we've updated a profile.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:             OperationTypeUpdateProfile,
-		PrevProfileEntry: prevProfileEntry,
+		Type:                               OperationTypeUpdateProfile,
+		PrevProfileEntry:                   prevProfileEntry,
+		ClobberedProfileBugDESOLockedNanos: clobberedProfileBugDeSoAdjustment,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
