@@ -2686,7 +2686,17 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	}
 	operationIndex -= numUtxoAdds - len(currentTxn.TxOutputs)
 
-	// In order to disconnect an accepted bid, we need to do the following:
+	if err := bav._helpDisconnectNFTSold(operationData, txMeta.NFTPostHash); err != nil {
+		return errors.Wrapf(err, "_disconnectAcceptNFTBid: ")
+	}
+
+	// Now revert the basic transfer with the remaining operations.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+}
+
+func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPostHash *BlockHash) error {
+	// In order to disconnect the selling of an NFT, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one with the previous owner.
 	//  (2) Add back all of the bids that were deleted.
 	//  (3) Disconnect payment UTXOs.
@@ -2696,8 +2706,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 
 	// (1) Set the old NFT entry.
 	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
-		return fmt.Errorf("_disconnectAcceptNFTBid: prev NFT entry doesn't exist; " +
-			"this should never happen")
+		return fmt.Errorf("prev NFT entry doesn't exist; this should never happen")
 	}
 
 	prevNFTEntry := operationData.PrevNFTEntry
@@ -2708,8 +2717,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 
 	// (2) Set the old bids.
 	if operationData.DeletedNFTBidEntries == nil || len(operationData.DeletedNFTBidEntries) == 0 {
-		return fmt.Errorf("_disconnectAcceptNFTBid: DeletedNFTBidEntries doesn't exist; " +
-			"this should never happen")
+		return fmt.Errorf("DeletedNFTBidEntries doesn't exist; this should never happen")
 	}
 
 	for _, nftBid := range operationData.DeletedNFTBidEntries {
@@ -2718,27 +2726,26 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 
 	// (3) Revert payments made from accepting the NFT bids.
 	if operationData.NFTPaymentUtxoKeys == nil || len(operationData.NFTPaymentUtxoKeys) == 0 {
-		return fmt.Errorf("_disconnectAcceptNFTBid: NFTPaymentUtxoKeys was nil; " +
-			"this should never happen")
+		return fmt.Errorf("NFTPaymentUtxoKeys was nil; this should never happen")
 	}
 	// Note: these UTXOs need to be unadded in reverse order.
 	for ii := len(operationData.NFTPaymentUtxoKeys) - 1; ii >= 0; ii-- {
 		paymentUtxoKey := operationData.NFTPaymentUtxoKeys[ii]
 		if err := bav._unAddUtxo(paymentUtxoKey); err != nil {
-			return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unAdding utxo %v: ", paymentUtxoKey)
+			return errors.Wrapf(err, "Problem unAdding utxo %v: ", paymentUtxoKey)
 		}
 	}
 
 	// (4) Revert spent bidder UTXOs.
 	if operationData.NFTSpentUtxoEntries == nil || len(operationData.NFTSpentUtxoEntries) == 0 {
-		return fmt.Errorf("_disconnectAcceptNFTBid: NFTSpentUtxoEntries was nil; " +
+		return fmt.Errorf("NFTSpentUtxoEntries was nil; " +
 			"this should never happen")
 	}
 	// Note: these UTXOs need to be unspent in reverse order.
 	for ii := len(operationData.NFTSpentUtxoEntries) - 1; ii >= 0; ii-- {
 		spentUtxoEntry := operationData.NFTSpentUtxoEntries[ii]
 		if err := bav._unSpendUtxo(spentUtxoEntry); err != nil {
-			return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unSpending utxo %v: ", spentUtxoEntry)
+			return errors.Wrapf(err, "Problem unSpending utxo %v: ", spentUtxoEntry)
 		}
 	}
 
@@ -2747,13 +2754,11 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		nftPostEntry := bav.GetPostEntryForPostHash(operationData.PrevNFTEntry.NFTPostHash)
 		// We have to get the post entry first so that we have the poster's pub key.
 		if nftPostEntry == nil || nftPostEntry.isDeleted {
-			return fmt.Errorf("_disconnectAcceptNFTBid: nftPostEntry was nil; " +
-				"this should never happen")
+			return fmt.Errorf("nftPostEntry was nil; this should never happen")
 		}
 		existingProfileEntry := bav.GetProfileEntryForPublicKey(nftPostEntry.PosterPublicKey)
 		if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-			return fmt.Errorf("_disconnectAcceptNFTBid: existingProfileEntry was nil; " +
-				"this should never happen")
+			return fmt.Errorf("existingProfileEntry was nil; this should never happen")
 		}
 		existingProfileEntry.CoinEntry = *operationData.PrevCoinEntry
 		bav._setProfileEntryMappings(existingProfileEntry)
@@ -2762,20 +2767,17 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	// (6) Verify a postEntry exists and then revert it since NumNFTCopiesForSale was decremented.
 
 	// Get the postEntry corresponding to this txn.
-	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	existingPostEntry := bav.GetPostEntryForPostHash(nftPostHash)
 	// Sanity-check that it exists.
 	if existingPostEntry == nil || existingPostEntry.isDeleted {
 		return fmt.Errorf("_disconnectAcceptNFTBid: Post entry for "+
 			"post hash %v doesn't exist; this should never happen",
-			txMeta.NFTPostHash.String())
+			nftPostHash.String())
 	}
 
 	// Revert to the old post entry since we changed NumNFTCopiesForSale.
 	bav._setPostEntryMappings(operationData.PrevPostEntry)
-
-	// Now revert the basic transfer with the remaining operations.
-	return bav._disconnectBasicTransfer(
-		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+	return nil
 }
 
 func (bav *UtxoView) _disconnectNFTBid(
@@ -2801,20 +2803,41 @@ func (bav *UtxoView) _disconnectNFTBid(
 	if bidderPKID == nil || bidderPKID.isDeleted {
 		return fmt.Errorf("_disconnectNFTBid: PKID for bidder public key %v doesn't exist; this should never happen", string(currentTxn.PublicKey))
 	}
-	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
-	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
-	// Sanity-check that it exists.
-	if nftBidEntry == nil || nftBidEntry.isDeleted {
-		return fmt.Errorf("_disconnectNFTBid: Bid entry for "+
-			"nftBidKey %v doesn't exist; this should never happen", nftBidKey)
-	}
+	// If there isn't a previous NFT entry, we're dealing with a bid on a non-BuyNow NFT.
+	if operationData.PrevNFTEntry == nil {
 
-	// Delete the existing NFT bid entry.
-	bav._deleteNFTBidEntryMappings(nftBidEntry)
+		nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+		nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
+		// Sanity-check that it exists.
+		if nftBidEntry == nil || nftBidEntry.isDeleted {
+			return fmt.Errorf("_disconnectNFTBid: Bid entry for "+
+				"nftBidKey %v doesn't exist; this should never happen", nftBidKey)
+		}
 
-	// If a previous entry exists, set it.
-	if operationData.PrevNFTBidEntry != nil {
-		bav._setNFTBidEntryMappings(operationData.PrevNFTBidEntry)
+		// Delete the existing NFT bid entry.
+		bav._deleteNFTBidEntryMappings(nftBidEntry)
+
+		// If a previous entry exists, set it.
+		if operationData.PrevNFTBidEntry != nil {
+			bav._setNFTBidEntryMappings(operationData.PrevNFTBidEntry)
+		}
+	} else {
+		// If there is a previous NFT entry, that means the NFT entry was modified and that only happens for Buy Now NFTs when bidding.
+		if err := bav._helpDisconnectNFTSold(operationData, txMeta.NFTPostHash); err != nil {
+			return errors.Wrapf(err, "_disconnectNFTBid: ")
+		}
+		// Additionally, we need to delete the NFT bid since it did not exist before this transaction and was added back
+		// when we added back the DeletedNFTBidEntries
+		nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+		nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
+		// Sanity-check that it exists.
+		if nftBidEntry == nil || nftBidEntry.isDeleted {
+			return fmt.Errorf("_disconnectNFTBid: Bid entry for "+
+				"nftBidKey %v doesn't exist; this should never happen", nftBidKey)
+		}
+
+		// Delete the existing NFT bid entry.
+		bav._deleteNFTBidEntryMappings(nftBidEntry)
 	}
 
 	// Now revert the basic transfer with the remaining operations.
@@ -7214,6 +7237,7 @@ func (bav *UtxoView) _connectNFTBid(
 		}
 		return totalInput, totalOutput, utxoOpsForTxn, nil
 	}
+
 }
 
 type HelpConnectNFTSoldStruct struct {
@@ -7562,11 +7586,17 @@ func (bav *UtxoView) _helpConnectNFTSold(txMeta HelpConnectNFTSoldStruct) (
 	}
 
 	if txMeta.IsNFTBid {
-		//prevNFTBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 		// Add an operation to the list at the end indicating we've connected an NFT bid.
 		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-			Type:            OperationTypeNFTBid,
-			PrevNFTBidEntry: nftBidEntry,
+			Type:                      OperationTypeNFTBid,
+			PrevNFTBidEntry:           nftBidEntry,
+			PrevNFTEntry:              prevNFTEntry,
+			PrevPostEntry:             prevPostEntry,
+			PrevCoinEntry:             &prevCoinEntry,
+			DeletedNFTBidEntries:      deletedBidEntries,
+			NFTPaymentUtxoKeys:        nftPaymentUtxoKeys,
+			NFTSpentUtxoEntries:       spentUtxoEntries,
+			PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 		})
 	}
 
