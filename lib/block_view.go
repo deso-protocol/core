@@ -708,7 +708,7 @@ type UtxoView struct {
 	// Utxo data
 	NumUtxoEntries              uint64
 	UtxoKeyToUtxoEntry          map[UtxoKey]*UtxoEntry
-	PublicKeyToDeSoBalanceNanos map[PkMapKey]uint64
+	PublicKeyToDeSoBalanceNanos map[PublicKey]uint64
 
 	// BitcoinExchange data
 	NanosPurchased     uint64
@@ -966,7 +966,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry)
 	// TODO: Deprecate this value
 	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle)
-	bav.PublicKeyToDeSoBalanceNanos = make(map[PkMapKey]uint64)
+	bav.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64)
 
 	// BitcoinExchange data
 	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle)
@@ -1029,7 +1029,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.NumUtxoEntries = bav.NumUtxoEntries
 
 	// Copy the public key to balance data
-	newView.PublicKeyToDeSoBalanceNanos = make(map[PkMapKey]uint64, len(bav.PublicKeyToDeSoBalanceNanos))
+	newView.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64, len(bav.PublicKeyToDeSoBalanceNanos))
 	for pkMapKey, desoBalance := range bav.PublicKeyToDeSoBalanceNanos {
 		newView.PublicKeyToDeSoBalanceNanos[pkMapKey] = desoBalance
 	}
@@ -1282,7 +1282,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 }
 
 func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
-	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(publicKey)]
+	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
 	}
@@ -1299,7 +1299,7 @@ func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, 
 	}
 
 	// Add the balance to memory for future references.
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(publicKey)] = balanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)] = balanceNanos
 
 	return balanceNanos, nil
 }
@@ -1334,7 +1334,7 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 		return errors.Wrap(err, "_unSpendUtxo: ")
 	}
 	desoBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntryy.PublicKey)] = desoBalanceNanos
 
 	return nil
 }
@@ -1368,7 +1368,7 @@ func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
 		return nil, errors.Wrapf(err, "_spendUtxo: ")
 	}
 	desoBalanceNanos -= utxoEntry.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntry.PublicKey)] = desoBalanceNanos
 
 	// Record a UtxoOperation in case we want to roll this back in the
 	// future. At this point, the UtxoEntry passed in still has all of its
@@ -1414,7 +1414,7 @@ func (bav *UtxoView) _unAddUtxo(utxoKey *UtxoKey) error {
 		return errors.Wrapf(err, "_unAddUtxo: ")
 	}
 	desoBalanceNanos -= utxoEntry.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntry.PublicKey)] = desoBalanceNanos
 
 	return nil
 }
@@ -1465,7 +1465,7 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 		return nil, errors.Wrapf(err, "_addUtxo: ")
 	}
 	desoBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntryy.PublicKey)] = desoBalanceNanos
 
 	// Finally record a UtxoOperation in case we want to roll back this ADD
 	// in the future. Note that Entry data isn't required for an ADD operation.
@@ -9503,7 +9503,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 }
 
 func (bav *UtxoView) ConnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool) (
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager) (
 	[][]*UtxoOperation, error) {
 
 	glog.Debugf("ConnectBlock: Connecting block %v", desoBlock)
@@ -9547,6 +9547,16 @@ func (bav *UtxoView) ConnectBlock(
 
 		// Add the utxo operations to our list for all the txns.
 		utxoOps = append(utxoOps, utxoOpsForTxn)
+
+		// Call the event manager
+		if eventManager != nil {
+			eventManager.transactionConnected(&TransactionEvent{
+				Txn:      txn,
+				TxnHash:  txHash,
+				UtxoView: bav,
+				UtxoOps:  utxoOpsForTxn,
+			})
+		}
 	}
 
 	// We should now have computed totalFees. Use this to check that

@@ -406,16 +406,7 @@ type Blockchain struct {
 	trustedBlockProducerPublicKeys  map[PkMapKey]bool
 	trustedBlockProducerStartHeight uint64
 	params                          *DeSoParams
-	// This is a backlink to a Server object. It can be null. When it
-	// is set,  then whenever a block is connected to the main chain,
-	// disconnected from the main chain, or accepted (not necessarily
-	// onto the main chain), the Server is notified. This
-	// is necessary so that the Server know that it can/should relay messages
-	// for the corresponding block to other peers, among other things.
-	//
-	// TODO: I really didn't want to create this backlink, but it was the
-	// easiest way to achieve this.
-	server *Server
+	eventManager                    *EventManager
 
 	// Protects most of the fields below this point.
 	ChainLock deadlock.RWMutex
@@ -583,7 +574,7 @@ func NewBlockchain(
 	timeSource chainlib.MedianTimeSource,
 	db *badger.DB,
 	postgres *Postgres,
-	server *Server,
+	eventManager *EventManager,
 ) (*Blockchain, error) {
 
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
@@ -602,7 +593,7 @@ func NewBlockchain(
 		trustedBlockProducerPublicKeys:  trustedBlockProducerPublicKeys,
 		trustedBlockProducerStartHeight: trustedBlockProducerStartHeight,
 		params:                          params,
-		server:                          server,
+		eventManager:                    eventManager,
 
 		blockIndex:   make(map[BlockHash]*BlockNode),
 		bestChainMap: make(map[BlockHash]*BlockNode),
@@ -1927,7 +1918,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
 		}
 
-		utxoOpsForBlock, err := utxoView.ConnectBlock(desoBlock, txHashes, verifySignatures)
+		utxoOpsForBlock, err := utxoView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
 		if err != nil {
 			if IsRuleError(err) {
 				// If we have a RuleError, mark the block as invalid before
@@ -2023,9 +2014,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		//   - The utxo operations performed for this block should also be stored so we
 		//     can roll the block back in the future if needed.
 
-		// If a Server object is set, then call its function.
-		if bc.server != nil {
-			bc.server._handleBlockMainChainConnectedd(desoBlock)
+		// Notify any listeners.
+		if bc.eventManager != nil {
+			bc.eventManager.blockConnected(&BlockEvent{
+				Block:    desoBlock,
+				UtxoView: utxoView,
+				UtxoOps:  utxoOpsForBlock,
+			})
 		}
 
 	} else if nodeToValidate.CumWork.Cmp(currentTip.CumWork) <= 0 {
@@ -2161,7 +2156,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Initialize the utxo operations slice.
 			utxoOps, err := utxoView.ConnectBlock(
-				blockToAttach, txHashes, verifySignatures)
+				blockToAttach, txHashes, verifySignatures, nil)
 			if err != nil {
 				if IsRuleError(err) {
 					// If we have a RuleError, mark the block as invalid. But don't return
@@ -2272,8 +2267,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// If we have a Server object then call its function
-			if bc.server != nil {
-				bc.server._handleBlockMainChainDisconnectedd(blockToDetach)
+			if bc.eventManager != nil {
+				bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
 			}
 		}
 		for _, attachNode := range attachBlocks {
@@ -2286,14 +2281,15 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 					"block (%v) during attach in server signal", attachNode)
 			}
 			// If we have a Server object then call its function
-			if bc.server != nil {
-				bc.server._handleBlockMainChainConnectedd(blockToAttach)
+			if bc.eventManager != nil {
+				bc.eventManager.blockConnected(&BlockEvent{Block: blockToAttach})
 			}
 		}
 
 		// If we have a Server object then call its function
-		if bc.server != nil {
-			bc.server._handleBlockMainChainConnectedd(desoBlock)
+		// TODO: Is this duplicated / necessary?
+		if bc.eventManager != nil {
+			bc.eventManager.blockConnected(&BlockEvent{Block: desoBlock})
 		}
 	}
 
@@ -2306,14 +2302,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// accepted the block
 
 	// Signal the server that we've accepted this block in some way.
-	if bc.server != nil {
-		go func() {
-			bc.server.incomingMessages <- &ServerMessage{
-				Msg: &MsgDeSoBlockAccepted{
-					block: desoBlock,
-				},
-			}
-		}()
+	if bc.eventManager != nil {
+		bc.eventManager.blockAccepted(&BlockEvent{Block: desoBlock})
 	}
 
 	// At this point, the block we were processing originally should have been added
@@ -2887,7 +2877,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	}
 
 	// The spend amount should equal to the additional fees for profile submissions.
-	if err = amountEqualsAdditionalOutputs(spendAmount - AdditionalFees, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount-AdditionalFees, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
 	}
 
@@ -3621,9 +3611,9 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 		PublicKey: SenderPublicKey,
 		TxnMeta:   &BasicTransferMetadata{},
 		TxOutputs: append(additionalOutputs, &DeSoOutput{
-				PublicKey:   diamondPostEntry.PosterPublicKey,
-				AmountNanos: desoToTransferNanos,
-			}),
+			PublicKey:   diamondPostEntry.PosterPublicKey,
+			AmountNanos: desoToTransferNanos,
+		}),
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
 	}
@@ -3667,9 +3657,9 @@ func (bc *Blockchain) CreateMaxSpend(
 		// underestimate the fee. Note it must be a max size output because outputs
 		// are encoded as uvarints.
 		TxOutputs: append(additionalOutputs, &DeSoOutput{
-				PublicKey:   recipientPkBytes,
-				AmountNanos: math.MaxUint64,
-			}),
+			PublicKey:   recipientPkBytes,
+			AmountNanos: math.MaxUint64,
+		}),
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
 	}

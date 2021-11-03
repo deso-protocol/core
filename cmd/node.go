@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
-	"github.com/deso-protocol/core/lib"
-	"github.com/deso-protocol/core/migrate"
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/migrate"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
@@ -138,6 +138,9 @@ func (node *Node) Start() {
 		}
 	}
 
+	// Setup eventManager
+	eventManager := lib.NewEventManager()
+
 	// Setup the server
 	node.Server, err = lib.NewServer(
 		node.Params,
@@ -167,6 +170,7 @@ func (node *Node) Start() {
 		node.Config.BlockProducerSeed,
 		node.Config.TrustedBlockProducerPublicKeys,
 		node.Config.TrustedBlockProducerStartHeight,
+		eventManager,
 	)
 	if err != nil {
 		panic(err)
