@@ -3930,7 +3930,6 @@ type CreateNFTMetadata struct {
 	MinBidAmountNanos              uint64
 	NFTRoyaltyToCreatorBasisPoints uint64
 	NFTRoyaltyToCoinBasisPoints    uint64
-	IsBuyNow                       bool
 }
 
 func (txnData *CreateNFTMetadata) GetTxnType() TxnType {
@@ -4031,7 +4030,6 @@ type UpdateNFTMetadata struct {
 	SerialNumber      uint64
 	IsForSale         bool
 	MinBidAmountNanos uint64
-	IsBuyNow          bool
 }
 
 func (txnData *UpdateNFTMetadata) GetTxnType() TxnType {
@@ -4251,7 +4249,7 @@ type NFTBidMetadata struct {
 	BidAmountNanos uint64
 
 	// these are only specified for a Buy Now NFt.
-	BidderInputs   []*DeSoInput
+	//BidderInputs   []*DeSoInput
 }
 
 func (txnData *NFTBidMetadata) GetTxnType() TxnType {

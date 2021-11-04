@@ -3035,10 +3035,16 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTFee uint64,
 	NFTRoyaltyToCreatorBasisPoints uint64,
 	NFTRoyaltyToCoinBasisPoints uint64,
+	IsBuyNow bool,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
+	extraData := make(map[string][]byte)
+
+	if IsBuyNow {
+		extraData[IsBuyNowKey] = []byte{BoolToByte(true)}
+	}
 	// Create a transaction containing the create NFT fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,
@@ -3050,11 +3056,15 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 			MinBidAmountNanos,
 			NFTRoyaltyToCreatorBasisPoints,
 			NFTRoyaltyToCoinBasisPoints,
-			false,
 		},
 		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
+	}
+
+	// Only set extra data if there is something in it.
+	if len(extraData) > 0 {
+		txn.ExtraData = extraData
 	}
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
@@ -3125,70 +3135,6 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
-	if SerialNumber == 0 {
-		return bc.addInputsAndChangeForCreateNFTBidTxn(
-			UpdaterPublicKey,
-			NFTPostHash,
-			SerialNumber,
-			BidAmountNanos,
-			[]*DeSoInput{},
-			minFeeRateNanosPerKB,
-			mempool,
-			additionalOutputs)
-	}
-	// Create a new UtxoView. If we have access to a mempool object, use it to
-	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateNFTBidTxn: Problem creating new utxo view: ")
-	}
-	if mempool != nil {
-		utxoView, err = mempool.GetAugmentedUniversalView()
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err,
-				"Blockchain.CreateNFTBidTxn: Problem getting augmented UtxoView from mempool: ")
-		}
-	}
-
-	nftKey := MakeNFTKey(NFTPostHash, SerialNumber)
-	nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
-
-	if nftEntry == nil || !nftEntry.IsBuyNow {
-		return bc.addInputsAndChangeForCreateNFTBidTxn(
-			UpdaterPublicKey,
-			NFTPostHash,
-			SerialNumber,
-			BidAmountNanos,
-			[]*DeSoInput{},
-			minFeeRateNanosPerKB,
-			mempool,
-			additionalOutputs)
-	}
-
-	bidderInputs, err := bc.GetInputsToCoverAmount(UpdaterPublicKey, utxoView, BidAmountNanos)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateNFTBidTxn: ")
-	}
-	return bc.addInputsAndChangeForCreateNFTBidTxn(
-		UpdaterPublicKey,
-		NFTPostHash,
-		SerialNumber,
-		BidAmountNanos,
-		bidderInputs,
-		minFeeRateNanosPerKB,
-		mempool,
-		additionalOutputs)
-}
-
-func (bc *Blockchain) addInputsAndChangeForCreateNFTBidTxn(UpdaterPublicKey []byte,
-	NFTPostHash *BlockHash,
-	SerialNumber uint64,
-	BidAmountNanos uint64,
-	BidderInputs []*DeSoInput,
-// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput)(
-	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 	// Create a transaction containing the NFT bid fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,
@@ -3196,7 +3142,6 @@ func (bc *Blockchain) addInputsAndChangeForCreateNFTBidTxn(UpdaterPublicKey []by
 			NFTPostHash,
 			SerialNumber,
 			BidAmountNanos,
-			BidderInputs,
 		},
 		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
@@ -3407,9 +3352,16 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	SerialNumber uint64,
 	IsForSale bool,
 	MinBidAmountNanos uint64,
+	IsBuyNow bool,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	extraData := make(map[string][]byte)
+
+	if IsBuyNow {
+		extraData[IsBuyNowKey] = []byte{BoolToByte(true)}
+	}
 
 	// Create a transaction containing the update NFT fields.
 	txn := &MsgDeSoTxn{
@@ -3419,11 +3371,15 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 			SerialNumber,
 			IsForSale,
 			MinBidAmountNanos,
-			false,
 		},
 		TxOutputs: additionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
+	}
+
+	// Only set extra data if there is something in it.
+	if len(extraData) > 0 {
+		txn.ExtraData = extraData
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
@@ -3843,6 +3799,33 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			spendAmount += txMeta.DeSoToSellNanos
 		}
 	}
+	// If this is a NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
+	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
+		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
+		// Create a new UtxoView. If we have access to a mempool object, use it to
+		// get an augmented view that factors in pending transactions.
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+		if err != nil {
+			return 0, 0, 0, 0, errors.Wrapf(err,
+				"_computeInputsForTxn: Problem creating new utxo view: ")
+		}
+		if mempool != nil {
+			utxoView, err = mempool.GetAugmentedUniversalView()
+			if err != nil {
+				return 0, 0, 0, 0, errors.Wrapf(err,
+					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
+			}
+		}
+
+		nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+		nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
+
+		if nftEntry != nil && nftEntry.IsBuyNow {
+			spendAmount += txMeta.BidAmountNanos
+		}
+	}
+
+
 
 	// Add additional fees to the spend amount.
 	spendAmount += additionalFees
