@@ -93,6 +93,7 @@ func TestBasicTransfer(t *testing.T) {
 
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -133,6 +134,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		_signTxn(t, txn, recipientPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -142,7 +144,7 @@ func TestBasicTransfer(t *testing.T) {
 		if blockHeight < BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
 		} else {
-			require.Contains(err.Error(), RuleErrorBalanceModelDoesNotUseUTXOInputs)
+			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
 		}
 	}
 
@@ -244,7 +246,9 @@ func TestBasicTransfer(t *testing.T) {
 		if blockHeight < BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
 		} else {
-			require.Contains(err.Error(), RuleErrorBalanceModelDoesNotUseUTXOInputs)
+			// AddInputsAndChange() does not add inputs in the balance model case so this
+			// transaction fails with a different error.
+			require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
 		}
 	}
 
@@ -271,10 +275,8 @@ func TestBasicTransfer(t *testing.T) {
 	// A block with less than the max block reward should be OK.
 	{
 		minerBalanceBefore := _getBalance(t, chain, nil, senderPkString)
-		glog.Infof("XXXX >>> Miner balance before: %d", minerBalanceBefore)
 
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward - 1
-		glog.Infof("XXXX >>> Block reward: %d", blockToMine.Txns[0].TxOutputs[0].AmountNanos)
 		// One iteration should be sufficient to find us a good block.
 		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000)
 		require.NoError(err)
@@ -289,7 +291,6 @@ func TestBasicTransfer(t *testing.T) {
 		utxoView.FlushToDb()
 
 		minerBalanceAfter := _getBalance(t, chain, nil, senderPkString)
-		glog.Infof("XXXX >>> Miner balance after: %d", minerBalanceAfter)
 
 		// The miner starts with one DESO.
 		require.Equal(uint64(1000000000), minerBalanceBefore)
@@ -297,6 +298,37 @@ func TestBasicTransfer(t *testing.T) {
 		require.Equal(uint64(999999999), blockToMine.Txns[0].TxOutputs[0].AmountNanos)
 		// Therefore the balance after mining should be 1.999999999 DESO.
 		require.Equal(uint64(1999999999), minerBalanceAfter)
+	}
+
+	// A regular (non-BlockReward) basic transfer with sufficient balance should work.
+	{
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{},
+			TxOutputs: []*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1,
+				},
+			},
+			PublicKey: senderPkBytes,
+			TxnMeta:   &BasicTransferMetadata{},
+		}
+
+		totalInput, spendAmount, changeAmount, fees, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+		require.NoError(err)
+		require.Equal(totalInput, spendAmount+changeAmount+fees)
+		require.Greater(totalInput, uint64(0))
+
+		_signTxn(t, txn, senderPrivString)
+		utxoView, _ := NewUtxoView(db, params, nil)
+		txHash := txn.Hash()
+		blockHeight := chain.blockTip().Height + 1
+		_, _, _, _, err =
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
+				true /*verifySignature*/, false /*ignoreUtxos*/)
+		require.NoError(err)
 	}
 }
 

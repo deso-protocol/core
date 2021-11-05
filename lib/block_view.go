@@ -797,6 +797,8 @@ const (
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
+	OperationTypeAddToBalance                 OperationType = 24
+	OperationTypeSpendBalance                 OperationType = 25
 
 	// NEXT_TAG = 24
 )
@@ -862,6 +864,14 @@ func (op OperationType) String() string {
 	case OperationTypeAuthorizeDerivedKey:
 		{
 			return "OperationTypeAuthorizeDerivedKey"
+		}
+	case OperationTypeAddToBalance:
+		{
+			return "OperationTypeAddToBalance"
+		}
+	case OperationTypeSpendBalance:
+		{
+			return "OperationTypeSpendBalance"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -952,6 +962,10 @@ type UtxoOperation struct {
 	// Save the global params when making an update.
 	PrevGlobalParamsEntry    *GlobalParamsEntry
 	PrevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
+
+	// When we add to or spend balance, we keep track of the public key and amount.
+	BalancePublicKey []byte
+	AmountNanos      uint64
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -1475,30 +1489,52 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 	}, nil
 }
 
-func (bav *UtxoView) _addToBalance(amountNanos uint64, balancePubKey []byte,
+func (bav *UtxoView) _addToBalance(amountNanos uint64, balancePublicKey []byte,
 ) (*UtxoOperation, error) {
-
-	// Bump the number of entries since we just added this one at the end.
-	bav.NumUtxoEntries++
-
-	// Add the utxo back to the spender's balance.
-	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(utxoEntryy.PublicKey)
+	// Get the current balance and then update it on the view.
+	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_addUtxo: ")
+		return nil, errors.Wrapf(err, "_addToBalance: ")
 	}
-	desoBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = desoBalanceNanos
+	desoBalanceNanos += amountNanos
+	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(balancePublicKey)] = desoBalanceNanos
 
 	// Finally record a UtxoOperation in case we want to roll back this ADD
 	// in the future. Note that Entry data isn't required for an ADD operation.
 	return &UtxoOperation{
-		Type: OperationTypeAddUtxo,
-		// We don't technically need these in order to be able to roll back the
-		// transaction but they're useful for callers of connectTransaction to
-		// determine implicit outputs that were created like those that get created
-		// in a Bitcoin burn transaction.
-		Key:   utxoEntryCopy.UtxoKey,
-		Entry: &utxoEntryCopy,
+		Type:             OperationTypeAddToBalance,
+		BalancePublicKey: balancePublicKey,
+		AmountNanos:      amountNanos,
+	}, nil
+}
+
+func (bav *UtxoView) _spendBalance(
+	amountNanos uint64, balancePublicKey []byte, tipHeight uint32,
+) (*UtxoOperation, error) {
+	// First we must check that the public key has sufficient spendable balance.
+	spendableBalanceNanos, err :=
+		bav.GetSpendableDeSoBalanceNanosForPublicKey(balancePublicKey, tipHeight)
+	if spendableBalanceNanos < amountNanos {
+		return nil, fmt.Errorf(
+			"_spendBalance: amountNanos (%d) exceeds spendable balance (%d) at tipHeight (%d)",
+			amountNanos, spendableBalanceNanos, tipHeight,
+		)
+	}
+
+	// Now that we know we can spend amountNanos, get the current balance and spend it.
+	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_spendBalance: ")
+	}
+	desoBalanceNanos -= amountNanos
+	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(balancePublicKey)] = desoBalanceNanos
+
+	// Finally record a UtxoOperation in case we want to roll back this ADD
+	// in the future. Note that Entry data isn't required for an ADD operation.
+	return &UtxoOperation{
+		Type:             OperationTypeSpendBalance,
+		BalancePublicKey: balancePublicKey,
+		AmountNanos:      amountNanos,
 	}, nil
 }
 
@@ -3554,8 +3590,9 @@ func (bav *UtxoView) _connectBasicTransfer(
 	// After the BalanceModelBlockHeight, we no longer spend UTXO inputs. Instead, we must
 	// spend the sender's balance. Note that we don't need to explicitly check that the
 	// sender's balance is sufficient because _spendBalance will error if it is insufficient.
-	if blockHeight >= BalanceModelBlockHeight {
-		newUtxoOp, err := bav._spendBalance(totalOutput, txn.PublicKey)
+	// Note that for block reward transactions, we don't spend any balance; DESO is printed.
+	if blockHeight >= BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		newUtxoOp, err := bav._spendBalance(totalOutput, txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending balance")
 		}
@@ -9501,7 +9538,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	// Do some extra processing for non-block-reward transactions. Block reward transactions
 	// will return zero for their fees.
 	fees := uint64(0)
-	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+	if blockHeight < BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		// If this isn't a block reward transaction, make sure the total input does
 		// not exceed the total output. If it does, mark the block as invalid and
 		// return an error.

@@ -2345,8 +2345,20 @@ func (desoOutput *DeSoOutput) String() string {
 }
 
 type MsgDeSoTxn struct {
+	// TxnVersion 0: UTXO model transactions.
+	// TxnVersion 1: balance model transactions, which include a nonce and fee nanos.
+	TxnVersion uint64
+
 	TxInputs  []*DeSoInput
 	TxOutputs []*DeSoOutput
+
+	// In the UTXO model, a transaction's "fee" is simply the DESO input nanos that aren't
+	// spent in the transaction outputs. Since the balance model does not use inputs, each
+	// transaction must explicitly its fee nanos.
+	TxnFeeNanos uint64
+	// In the balance model, a unique nonce is required for each transaction that a single
+	// public key makes.  This prevents transactions from being used in replay attacks.
+	TxnNonce uint64
 
 	// DeSoTxnMetadata is an interface type that will give us information on how
 	// we should handle the transaction, including what type of transaction this
@@ -2490,6 +2502,14 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	// before a signature is present such as during transaction fee computations.
 	data = append(data, UintToBuf(uint64(len(sigBytes)))...)
 	data = append(data, sigBytes...)
+
+	// If txnFee is non-zero, this is a post-UTXO model transaction and we must encode the
+	// fee and the nonce.
+	if msg.TxnVersion != 0 {
+		data = append(data, UintToBuf(msg.TxnVersion)...)
+		data = append(data, UintToBuf(msg.TxnFeeNanos)...)
+		data = append(data, UintToBuf(msg.TxnNonce)...)
+	}
 
 	return data, nil
 }
@@ -2663,6 +2683,31 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 		// If everything worked, we set the ret signature to the original.
 		ret.Signature = sig
 	}
+
+	// The txn version, fee and nonce were not included before switching to the balance
+	// model. Therefore, we must make sure that we haven't reached EOF before proceeding.
+	txnVersion, err := ReadUvarint(rr)
+	if err == io.EOF {
+		return ret, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(
+			err, "_readTransaction: Problem parsing DeSoTxn.TxnVersion bytes")
+	}
+	ret.TxnVersion = txnVersion
+
+	txnFeeNanos, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(
+			err, "_readTransaction: Problem parsing DeSoTxn.TxnFeeNanos bytes")
+	}
+	ret.TxnFeeNanos = txnFeeNanos
+
+	txnNonce, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(
+			err, "_readTransaction: Problem parsing DeSoTxn.TxnNonce bytes")
+	}
+	ret.TxnNonce = txnNonce
 
 	return ret, nil
 }

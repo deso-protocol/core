@@ -3808,11 +3808,20 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: Problem getting spendable UtxoEntrys: ")
 	}
 
+	totalInput := inputSubsidy
+
+	// At this point, if we are constructing a balance model transaction, we can bail. Since
+	// balance model transactions don't use UTXOs, they don't require change to be paid.
+	blockHeight := bc.blockTip().Height + 1
+	if blockHeight >= BalanceModelBlockHeight {
+		totalInput += spendAmount
+		return totalInput, totalInput, 0, 0, nil
+	}
+
 	// Add input utxos to the transaction until we have enough total input to cover
 	// the amount we want to spend plus the maximum fee (or until we've exhausted
 	// all the utxos available).
 	utxoEntriesBeingUsed := []*UtxoEntry{}
-	totalInput := inputSubsidy
 	for _, utxoEntry := range spendableUtxos {
 		// As an optimization, don't worry about the fee until the total input has
 		// definitively exceeded the amount we want to spend. We do this because computing
