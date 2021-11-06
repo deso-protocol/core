@@ -1515,7 +1515,7 @@ func (bav *UtxoView) _spendBalance(
 	spendableBalanceNanos, err :=
 		bav.GetSpendableDeSoBalanceNanosForPublicKey(balancePublicKey, tipHeight)
 	if spendableBalanceNanos < amountNanos {
-		return nil, fmt.Errorf(
+		return nil, errors.Wrapf(RuleErrorInsufficientBalance,
 			"_spendBalance: amountNanos (%d) exceeds spendable balance (%d) at tipHeight (%d)",
 			amountNanos, spendableBalanceNanos, tipHeight,
 		)
@@ -3592,7 +3592,8 @@ func (bav *UtxoView) _connectBasicTransfer(
 	// sender's balance is sufficient because _spendBalance will error if it is insufficient.
 	// Note that for block reward transactions, we don't spend any balance; DESO is printed.
 	if blockHeight >= BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		newUtxoOp, err := bav._spendBalance(totalOutput, txn.PublicKey, blockHeight-1)
+		totalSpend := totalOutput + txn.TxnFeeNanos
+		newUtxoOp, err := bav._spendBalance(totalSpend, txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending balance")
 		}

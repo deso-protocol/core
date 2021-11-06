@@ -3814,8 +3814,22 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	// balance model transactions don't use UTXOs, they don't require change to be paid.
 	blockHeight := bc.blockTip().Height + 1
 	if blockHeight >= BalanceModelBlockHeight {
+		// First check that we have the right txn version so fees are computed properly.
+		if txArg.TxnVersion != 1 {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"AddInputsAndChangeToTransaction: Incompatible txn version for balance model: %d",
+				txArg.TxnVersion)
+		}
+
+		feeAmountNanos := uint64(0)
+		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			feeAmountNanos = _computeMaxTxFee(txArg, minFeeRateNanosPerKB)
+		}
+		txArg.TxnFeeNanos = feeAmountNanos
+
 		totalInput += spendAmount
-		return totalInput, totalInput, 0, 0, nil
+		totalInput += feeAmountNanos
+		return totalInput, spendAmount, 0, feeAmountNanos, nil
 	}
 
 	// Add input utxos to the transaction until we have enough total input to cover

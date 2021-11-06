@@ -121,6 +121,11 @@ func TestBasicTransfer(t *testing.T) {
 			TxnMeta:   &BasicTransferMetadata{},
 		}
 
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight >= BalanceModelBlockHeight {
+			txn.TxnVersion = 1
+		}
+
 		totalInput, spendAmount, changeAmount, fees, err :=
 			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 		require.NoError(err)
@@ -136,7 +141,6 @@ func TestBasicTransfer(t *testing.T) {
 		utxoView, _ := NewUtxoView(db, params, nil)
 		utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignatures*/, false /*ignoreUtxos*/)
@@ -144,7 +148,7 @@ func TestBasicTransfer(t *testing.T) {
 		if blockHeight < BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
 		} else {
-			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
 		}
 	}
 
@@ -170,6 +174,8 @@ func TestBasicTransfer(t *testing.T) {
 			require.NoError(err)
 			require.Equal(totalInput, spendAmount+changeAmount+fees)
 			require.Greater(totalInput, uint64(0))
+		} else {
+			txn.TxnVersion = 1
 		}
 
 		// Sign the transaction with the recipient's key rather than the
@@ -200,10 +206,15 @@ func TestBasicTransfer(t *testing.T) {
 				ExtraData: []byte{0x00, 0x01},
 			},
 		}
+
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight >= BalanceModelBlockHeight {
+			txn.TxnVersion = 1
+		}
+
 		_signTxn(t, txn, senderPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -229,6 +240,11 @@ func TestBasicTransfer(t *testing.T) {
 			},
 		}
 
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight >= BalanceModelBlockHeight {
+			txn.TxnVersion = 1
+		}
+
 		totalInput, spendAmount, changeAmount, fees, err :=
 			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 		require.NoError(err)
@@ -238,7 +254,6 @@ func TestBasicTransfer(t *testing.T) {
 		_signTxn(t, txn, senderPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -274,7 +289,8 @@ func TestBasicTransfer(t *testing.T) {
 
 	// A block with less than the max block reward should be OK.
 	{
-		minerBalanceBefore := _getBalance(t, chain, nil, senderPkString)
+		utxoView, _ := NewUtxoView(db, params, nil)
+		minerBalanceBefore, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
 
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward - 1
 		// One iteration should be sufficient to find us a good block.
@@ -284,20 +300,21 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ = NewUtxoView(db, params, nil)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/)
 		require.NoError(err)
 
-		utxoView.FlushToDb()
+		minerBalanceAfter, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
 
-		minerBalanceAfter := _getBalance(t, chain, nil, senderPkString)
-
-		// The miner starts with one DESO.
-		require.Equal(uint64(1000000000), minerBalanceBefore)
-		// Then mines a block reward worth .999999999 DESO.
+		// The miner starts with two DESO from two blocks being mined.
+		require.Equal(uint64(2000000000), minerBalanceBefore)
+		// Then mines another block reward worth .999999999 DESO.
 		require.Equal(uint64(999999999), blockToMine.Txns[0].TxOutputs[0].AmountNanos)
-		// Therefore the balance after mining should be 1.999999999 DESO.
-		require.Equal(uint64(1999999999), minerBalanceAfter)
+		// Therefore the balance after mining should be 2.999999999 DESO.
+		require.Equal(uint64(2999999999), minerBalanceAfter)
+
+		err = utxoView.FlushToDb()
+		require.NoError(err)
 	}
 
 	// A regular (non-BlockReward) basic transfer with sufficient balance should work.
@@ -315,6 +332,11 @@ func TestBasicTransfer(t *testing.T) {
 			TxnMeta:   &BasicTransferMetadata{},
 		}
 
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight >= BalanceModelBlockHeight {
+			txn.TxnVersion = 1
+		}
+
 		totalInput, spendAmount, changeAmount, fees, err :=
 			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 		require.NoError(err)
@@ -324,11 +346,15 @@ func TestBasicTransfer(t *testing.T) {
 		_signTxn(t, txn, senderPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.NoError(err)
+
+		senderBalance, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
+		recipientBalance, _ := utxoView.GetDeSoBalanceNanosForPublicKey(recipientPkBytes)
+		require.Equal(uint64(2999999997), senderBalance)
+		require.Equal(uint64(1), recipientBalance)
 	}
 }
 
