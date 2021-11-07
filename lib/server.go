@@ -1037,7 +1037,11 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 
 	// Don't do anything mempool-related until our best block chain is done
 	// syncing.
-	if srv.blockchain.isSyncing() {
+	//
+	// We add a second check as an edge-case to protect against when
+	// this function is called with an uninitialized blockchain object. This
+	// can happen during initChain() for example.
+	if srv.blockchain == nil || !srv.blockchain.isInitialized || srv.blockchain.isSyncing() {
 		return
 	}
 

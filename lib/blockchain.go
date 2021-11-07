@@ -407,6 +407,9 @@ type Blockchain struct {
 	trustedBlockProducerStartHeight uint64
 	params                          *DeSoParams
 	eventManager                    *EventManager
+	// Returns true once all of the housekeeping in creating the
+	// blockchain is complete. This includes setting up the genesis block.
+	isInitialized bool
 
 	// Protects most of the fields below this point.
 	ChainLock deadlock.RWMutex
@@ -488,7 +491,7 @@ func (bc *Blockchain) _initChain() error {
 		if bc.postgres != nil {
 			err = bc.postgres.InitGenesisBlock(bc.params, bc.db)
 		} else {
-			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db)
+			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager)
 		}
 		if err != nil {
 			return errors.Wrapf(err, "_initChain: Problem initializing db with genesis block")
@@ -558,6 +561,8 @@ func (bc *Blockchain) _initChain() error {
 			bc.bestHeaderChainMap[*bestHeaderChainNode.Hash] = bestHeaderChainNode
 		}
 	}
+
+	bc.isInitialized = true
 
 	return nil
 }
@@ -1587,10 +1592,15 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// built on it.
 
 	// If all went well with storing the header, set it in our in-memory
-	// index.
-	newBlockIndex := bc.CopyBlockIndex()
-	newBlockIndex[*newNode.Hash] = newNode
-	bc.blockIndex = newBlockIndex
+	// index. If we're still syncing then it's safe to just set it. Otherwise, we
+	// need to make a copy first since there could be some concurrency issues.
+	if bc.isSyncing() {
+		bc.blockIndex[*newNode.Hash] = newNode
+	} else {
+		newBlockIndex := bc.CopyBlockIndex()
+		newBlockIndex[*newNode.Hash] = newNode
+		bc.blockIndex = newBlockIndex
+	}
 
 	// Update the header chain if this header has more cumulative work than
 	// the header chain's tip. Note that we can assume all ancestors of this
@@ -1993,10 +2003,17 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				"added to tip (%v)", bestChainHash, nodeToValidate.Header.PrevBlockHash)
 		}
 
-		newBestChain, newBestChainMap := bc.CopyBestChain()
-		newBestChain = append(newBestChain, nodeToValidate)
-		newBestChainMap[*nodeToValidate.Hash] = nodeToValidate
-		bc.bestChain, bc.bestChainMap = newBestChain, newBestChainMap
+		// If we're syncing there's no risk of concurrency issues. Otherwise, we
+		// need to make a copy in order to be save.
+		if bc.isSyncing() {
+			bc.bestChain = append(bc.bestChain, nodeToValidate)
+			bc.bestChainMap[*nodeToValidate.Hash] = nodeToValidate
+		} else {
+			newBestChain, newBestChainMap := bc.CopyBestChain()
+			newBestChain = append(newBestChain, nodeToValidate)
+			newBestChainMap[*nodeToValidate.Hash] = nodeToValidate
+			bc.bestChain, bc.bestChainMap = newBestChain, newBestChainMap
+		}
 
 		// This node is on the main chain so set this variable.
 		isMainChain = true
@@ -2268,6 +2285,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// If we have a Server object then call its function
 			if bc.eventManager != nil {
+				// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
+				// For now it's fine because reorgs are virtually impossible.
 				bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
 			}
 		}
@@ -2282,6 +2301,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 			// If we have a Server object then call its function
 			if bc.eventManager != nil {
+				// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
+				// For now it's fine because reorgs are virtually impossible.
 				bc.eventManager.blockConnected(&BlockEvent{Block: blockToAttach})
 			}
 		}
@@ -2289,6 +2310,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// If we have a Server object then call its function
 		// TODO: Is this duplicated / necessary?
 		if bc.eventManager != nil {
+			// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
+			// For now it's fine because reorgs are virtually impossible.
 			bc.eventManager.blockConnected(&BlockEvent{Block: desoBlock})
 		}
 	}
