@@ -1956,6 +1956,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Write the modified utxo set to the view.
+			// FIXME: This codepath breaks the balance computation in handleBlock for Rosetta
+			// because it clears the UtxoView before balances can be snapshotted.
 			if err := utxoView.FlushToDb(); err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem flushing view to db")
 			}
