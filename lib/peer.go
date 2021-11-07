@@ -30,7 +30,7 @@ type ExpectedResponse struct {
 
 type DeSoMessageMeta struct {
 	DeSoMessage DeSoMessage
-	Inbound         bool
+	Inbound     bool
 }
 
 // Peer is an object that holds all of the state for a connection to another node.
@@ -148,7 +148,7 @@ func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
 
 	pp.messagQueue = append(pp.messagQueue, &DeSoMessageMeta{
 		DeSoMessage: desoMessage,
-		Inbound:         inbound,
+		Inbound:     inbound,
 	})
 }
 
@@ -977,7 +977,7 @@ out:
 			// Measure the ping time when we receive a pong.
 			pp.handlePongMsg(msg)
 
-		case *MsgDeSoNewPeer, *MsgDeSoDonePeer, *MsgDeSoBlockAccepted,
+		case *MsgDeSoNewPeer, *MsgDeSoDonePeer,
 			*MsgDeSoBitcoinManagerUpdate, *MsgDeSoQuit:
 
 			// We should never receive control messages from a Peer. Disconnect if we do.

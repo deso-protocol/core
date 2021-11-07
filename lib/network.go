@@ -715,22 +715,6 @@ func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
 }
 
-type MsgDeSoBlockAccepted struct {
-	block *MsgDeSoBlock
-}
-
-func (msg *MsgDeSoBlockAccepted) GetMsgType() MsgType {
-	return MsgTypeBlockAccepted
-}
-
-func (msg *MsgDeSoBlockAccepted) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoBlockAccepted.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoBlockAccepted) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoBlockAccepted.FromBytes not implemented")
-}
-
 type MsgDeSoBitcoinManagerUpdate struct {
 	// Keep it simple for now. A BitcoinManagerUpdate just signals that
 	// the BitcoinManager has added at least one block or done a reorg.
