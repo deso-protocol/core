@@ -1093,7 +1093,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	}
 
 	// Calculate metadata
-	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, tx.Hash(), totalNanosPurchasedBefore,
+	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
 		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps)
 	if err == nil {
 		mempoolTx.TxMeta = txnMeta
@@ -1111,7 +1111,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 	var err error
 	txnMeta := &TransactionMetadata{
-		BlockHashHex:    hex.EncodeToString(blockHash[:]),
 		TxnIndexInBlock: txnIndexInBlock,
 		TxnType:         txn.TxnMeta.GetTxnType().String(),
 
@@ -1134,6 +1133,10 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		},
 
 		TxnOutputs: txn.TxOutputs,
+	}
+
+	if blockHash != nil {
+		txnMeta.BlockHashHex = hex.EncodeToString(blockHash[:])
 	}
 
 	extraData := txn.ExtraData
