@@ -7328,10 +7328,15 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	}
 
+	// We don't do a royalty if the number of coins in circulation is too low.
+	if existingProfileEntry.CoinsInCirculationNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+		creatorCoinRoyaltyNanos = 0
+	}
+
 	// (6) Add creator coin royalties to deso locked. If the number of coins in circulation is
 	// less than the "auto sell threshold" we burn the deso.
 	newCoinEntry := prevCoinEntry
-	if creatorCoinRoyaltyNanos > 0 && existingProfileEntry.CoinsInCirculationNanos >= bav.Params.CreatorCoinAutoSellThresholdNanos {
+	if creatorCoinRoyaltyNanos > 0 {
 		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
 		newCoinEntry.DeSoLockedNanos += creatorCoinRoyaltyNanos
 		existingProfileEntry.CoinEntry = newCoinEntry
