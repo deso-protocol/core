@@ -64,7 +64,7 @@ const (
 	RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey        RuleError = "RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey"
 	RuleErrorBlockRewardTxnNotAllowedToHaveInputs               RuleError = "RuleErrorBlockRewardTxnNotAllowedToHaveInputs"
 	RuleErrorBlockRewardTxnNotAllowedToHaveSignature            RuleError = "RuleErrorBlockRewardTxnNotAllowedToHaveSignature"
-	RuleErrorDeflationBombForbidsMintingAnyMoreDeSo         RuleError = "RuleErrorDeflationBombForbidsMintingAnyMoreDeSo"
+	RuleErrorDeflationBombForbidsMintingAnyMoreDeSo             RuleError = "RuleErrorDeflationBombForbidsMintingAnyMoreDeSo"
 	RuleErrorBitcoinExchangeShouldNotHaveInputs                 RuleError = "RuleErrorBitcoinExchangeShouldNotHaveInputs"
 	RuleErrorBitcoinExchangeShouldNotHaveOutputs                RuleError = "RuleErrorBitcoinExchangeShouldNotHaveOutputs"
 	RuleErrorBitcoinExchangeShouldNotHavePublicKey              RuleError = "RuleErrorBitcoinExchangeShouldNotHavePublicKey"
@@ -130,10 +130,10 @@ const (
 	RuleErrorSubmitPostPostModificationNotAuthorized RuleError = "RuleErrorSubmitPostPostModificationNotAuthorized"
 	RuleErrorSubmitPostInvalidParentStakeIDLength    RuleError = "RuleErrorSubmitPostInvalidParentStakeIDLength"
 	RuleErrorSubmitPostParentNotFound                RuleError = "RuleErrorSubmitPostParentNotFound"
-	RuleErrorSubmitPostRepostPostNotFound           RuleError = "RuleErrorSubmitPostRepostPostNotFound"
-	RuleErrorSubmitPostRepostOfRepost              RuleError = "RuleErrorSubmitPostRepostOfRepost"
-	RuleErrorSubmitPostUpdateRepostHash             RuleError = "RuleErrorSubmitPostUpdateRepostHash"
-	RuleErrorSubmitPostUpdateIsQuotedRepost         RuleError = "RuleErrorSubmitPostUpdateIsQuotedRepost"
+	RuleErrorSubmitPostRepostPostNotFound            RuleError = "RuleErrorSubmitPostRepostPostNotFound"
+	RuleErrorSubmitPostRepostOfRepost                RuleError = "RuleErrorSubmitPostRepostOfRepost"
+	RuleErrorSubmitPostUpdateRepostHash              RuleError = "RuleErrorSubmitPostUpdateRepostHash"
+	RuleErrorSubmitPostUpdateIsQuotedRepost          RuleError = "RuleErrorSubmitPostUpdateIsQuotedRepost"
 	RuleErrorSubmitPostCannotUpdateNFT               RuleError = "RuleErrorSubmitPostCannotUpdateNFT"
 
 	RuleErrorInvalidStakeID                      RuleError = "RuleErrorInvalidStakeID"
@@ -170,7 +170,7 @@ const (
 	RuleErrorBasicTransferDiamondPostEntryDoesNotExist            RuleError = "RuleErrorBasicTransferDiamondPostEntryDoesNotExist"
 	RuleErrorBasicTransferInsufficientCreatorCoinsForDiamondLevel RuleError = "RuleErrorBasicTransferInsufficientCreatorCoinsForDiamondLevel"
 	RuleErrorBasicTransferDiamondCannotTransferToSelf             RuleError = "RuleErrorBasicTransferDiamondCannotTransferToSelf"
-	RuleErrorBasicTransferInsufficientDeSoForDiamondLevel     RuleError = "RuleErrorBasicTransferInsufficientDeSoForDiamondLevel"
+	RuleErrorBasicTransferInsufficientDeSoForDiamondLevel         RuleError = "RuleErrorBasicTransferInsufficientDeSoForDiamondLevel"
 
 	RuleErrorCreatorCoinTransferRequiresNonZeroInput                    RuleError = "RuleErrorCreatorCoinTransferRequiresNonZeroInput"
 	RuleErrorCreatorCoinTransferInvalidProfilePubKeySize                RuleError = "RuleErrorCreatorCoinTransferInvalidProfilePubKeySize"
@@ -186,7 +186,7 @@ const (
 	RuleErrorCreatorCoinTransferInvalidLengthForPostHashBytes           RuleError = "RuleErrorCreatorCoinTransferInvalidLengthForPostHashBytes"
 	RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel RuleError = "RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel"
 	RuleErrorCreatorCoinTransferHasInvalidDiamondLevel                  RuleError = "RuleErrorCreatorCoinTransferHasInvalidDiamondLevel"
-	RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight     RuleError = "RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight"
+	RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight         RuleError = "RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight"
 	RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds        RuleError = "RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds"
 	RuleErrorCreatorCoinTransferDiamondsCantHaveNegativeNanos           RuleError = "RuleErrorCreatorCoinTransferDiamondsCantHaveNegativeNanos"
 	RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist            RuleError = "RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist"
@@ -194,12 +194,12 @@ const (
 	RuleErrorCreatorCoinRequiresNonZeroInput                           RuleError = "RuleErrorCreatorCoinRequiresNonZeroInput"
 	RuleErrorCreatorCoinInvalidPubKeySize                              RuleError = "RuleErrorCreatorCoinInvalidPubKeySize"
 	RuleErrorCreatorCoinOperationOnNonexistentProfile                  RuleError = "RuleErrorCreatorCoinOperationOnNonexistentProfile"
-	RuleErrorCreatorCoinBuyMustTradeNonZeroDeSo                    RuleError = "RuleErrorCreatorCoinBuyMustTradeNonZeroDeSo"
+	RuleErrorCreatorCoinBuyMustTradeNonZeroDeSo                        RuleError = "RuleErrorCreatorCoinBuyMustTradeNonZeroDeSo"
 	RuleErrorCreatorCoinTxnOutputWithInvalidBuyAmount                  RuleError = "RuleErrorCreatorCoinTxnOutputWithInvalidBuyAmount"
 	RuleErrorCreatorCoinTxnOutputExceedsInput                          RuleError = "RuleErrorCreatorCoinTxnOutputExceedsInput"
 	RuleErrorCreatorCoinLessThanMinimumSetByUser                       RuleError = "RuleErrorCreatorCoinLessThanMinimumSetByUser"
-	RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFees           RuleError = "RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFees"
-	RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFounderReward  RuleError = "RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFounderReward"
+	RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFees               RuleError = "RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFees"
+	RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFounderReward      RuleError = "RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFounderReward"
 	RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanos           RuleError = "RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanos"
 	RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForCreator RuleError = "RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForCreator"
 	RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForBuyer   RuleError = "RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForBuyer"
@@ -208,8 +208,8 @@ const (
 	RuleErrorCreatorCoinSellMustTradeNonZeroCreatorCoin                RuleError = "RuleErrorCreatorCoinSellMustTradeNonZeroCreatorCoin"
 	RuleErrorCreatorCoinSellerBalanceEntryDoesNotExist                 RuleError = "RuleErrorCreatorCoinSellerBalanceEntryDoesNotExist"
 	RuleErrorCreatorCoinSellInsufficientCoins                          RuleError = "RuleErrorCreatorCoinSellInsufficientCoins"
-	RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked           RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked"
-	RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller              RuleError = "RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller"
+	RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked               RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked"
+	RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller                  RuleError = "RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
@@ -267,8 +267,8 @@ const (
 	RuleErrorZeroBidOnBuyNowNFT                            RuleError = "RuleErrorZeroBidOnBuyNowNFT"
 
 	// NFT Transfers
-	RuleErrorNFTTranserBeforeBlockHeight                  RuleError = "RuleErrorNFTTranserBeforeBlockHeight"
-	RuleErrorAcceptNFTTranserBeforeBlockHeight            RuleError = "RuleErrorAcceptNFTTranserBeforeBlockHeight"
+	RuleErrorNFTTransferBeforeBlockHeight                 RuleError = "RuleErrorNFTTranserBeforeBlockHeight"
+	RuleErrorAcceptNFTTransferBeforeBlockHeight           RuleError = "RuleErrorAcceptNFTTranserBeforeBlockHeight"
 	RuleErrorNFTTransferInvalidReceiverPubKeySize         RuleError = "RuleErrorNFTTransferInvalidReceiverPubKeySize"
 	RuleErrorNFTTransferCannotTransferToSelf              RuleError = "RuleErrorNFTTransferCannotTransferToSelf"
 	RuleErrorCannotTransferNonExistentNFT                 RuleError = "RuleErrorCannotTransferNonExistentNFT"
@@ -328,7 +328,7 @@ func IsRuleError(err error) bool {
 	// type of RuleError randomly as the error gets passed up the stack. Nevertheless,
 	// eventually we should clean this up and get rid of the string comparison both
 	// for the code's sake but also for the sake of our tests.
-	return (strings.Contains(err.Error(), "RuleError") ||
-		strings.Contains(err.Error(), "HeaderError") ||
-		strings.Contains(err.Error(), "TxError"))
+	return strings.Contains(err.Error(), "RuleError") ||
+			strings.Contains(err.Error(), "HeaderError") ||
+			strings.Contains(err.Error(), "TxError")
 }

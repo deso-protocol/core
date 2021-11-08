@@ -247,7 +247,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
 		utxoView, _ := NewUtxoView(db, params, nil)
-		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/)
+		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
 	}
@@ -263,7 +263,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
 		utxoView, _ := NewUtxoView(db, params, nil)
-		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/)
+		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil)
 		require.NoError(err)
 	}
 }
@@ -927,9 +927,10 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// We should have one SPEND UtxoOperation for each input, one SPEND
+	// operation for each BidderInpout, one ADD operation
 	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
-	numInputs := len(txn.TxInputs)
+	numInputs := len(txn.TxInputs) + len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
 	numOps := len(utxoOps)
 	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)

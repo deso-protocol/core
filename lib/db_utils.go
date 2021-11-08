@@ -2670,7 +2670,7 @@ func DbBulkDeleteHeightHashToNodeInfo(
 
 // InitDbWithGenesisBlock initializes the database to contain only the genesis
 // block.
-func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB) error {
+func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventManager *EventManager) error {
 	// Construct a node for the genesis block. Its height is zero and it has
 	// no parents. Its difficulty should be set to the initial
 	// difficulty specified in the parameters and it should be assumed to be
@@ -2750,6 +2750,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB) error {
 	}
 
 	// Add the seed txns to the view
+	utxoOpsForBlock := [][]*UtxoOperation{}
 	for txnIndex, txnHex := range params.SeedTxns {
 		txnBytes, err := hex.DecodeString(txnHex)
 		if err != nil {
@@ -2769,7 +2770,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB) error {
 		// processed, which is important.
 		// Set txnSizeBytes to 0 here as the minimum network fee is 0 at genesis block, so there is no need to serialize
 		// these transactions to check if they meet the minimum network fee requirement.
-		_, _, _, _, err = utxoView.ConnectTransaction(
+		var utxoOpsForTxn []*UtxoOperation
+		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(
 			txn, txn.Hash(), 0, 0 /*blockHeight*/, false /*verifySignatures*/, true /*ignoreUtxos*/)
 		if err != nil {
 			return fmt.Errorf(
@@ -2777,7 +2779,19 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB) error {
 					"txn index: %v, txn hex: %v",
 				err, txnIndex, txnHex)
 		}
+		utxoOpsForBlock = append(utxoOpsForBlock, utxoOpsForTxn)
 	}
+
+	// If we have an event manager, initialize the genesis block with the current
+	// state of the view.
+	if eventManager != nil {
+		eventManager.blockConnected(&BlockEvent{
+			Block: genesisBlock,
+			UtxoView: utxoView,
+			UtxoOps: utxoOpsForBlock,
+		})
+	}
+
 	// Flush all the data in the view.
 	err = utxoView.FlushToDb()
 	if err != nil {
