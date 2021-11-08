@@ -976,10 +976,17 @@ type UtxoOperation struct {
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
-	// in order to get these values.
+	// in order to get these values for Accept NFT bid transactions.
 	AcceptNFTBidCreatorPublicKey []byte
 	AcceptNFTBidBidderPublicKey []byte
 	AcceptNFTBidCreatorRoyaltyNanos uint64
+
+	// These values are used by Rosetta in order to create input and output
+	// operations. They make it so that we don't have to reconnect all txns
+	// in order to get these values for NFT bid transactions on Buy Now NFTs.
+	NFTBidCreatorPublicKey []byte
+	NFTBidBidderPublicKey []byte
+	NFTBidCreatorRoyaltyNanos uint64
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -7691,9 +7698,9 @@ func (bav *UtxoView) _helpConnectNFTSold(txMeta HelpConnectNFTSoldStruct) (
 			NFTSpentUtxoEntries:       spentUtxoEntries,
 			PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 			// Rosetta fields.
-			AcceptNFTBidCreatorPublicKey: nftPostEntry.PosterPublicKey,
-			AcceptNFTBidBidderPublicKey: bidderPublicKey,
-			AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
+			NFTBidCreatorPublicKey: nftPostEntry.PosterPublicKey,
+			NFTBidBidderPublicKey: bidderPublicKey,
+			NFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
 		})
 	}
 
