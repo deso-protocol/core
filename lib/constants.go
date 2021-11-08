@@ -789,7 +789,7 @@ const (
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
 
-	//
+	// Key in transaction's extra data map. If true, the NFT is now a "Buy Now" NFT.
 	IsBuyNowKey = "IsBuyNow"
 )
 

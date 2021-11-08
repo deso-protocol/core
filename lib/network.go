@@ -4231,9 +4231,6 @@ type NFTBidMetadata struct {
 	NFTPostHash    *BlockHash
 	SerialNumber   uint64
 	BidAmountNanos uint64
-
-	// these are only specified for a Buy Now NFt.
-	//BidderInputs   []*DeSoInput
 }
 
 func (txnData *NFTBidMetadata) GetTxnType() TxnType {
