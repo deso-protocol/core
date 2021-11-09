@@ -3055,11 +3055,6 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	extraData := make(map[string][]byte)
-
-	if IsBuyNow {
-		extraData[IsBuyNowKey] = []byte{BoolToByte(true)}
-	}
 	// Create a transaction containing the create NFT fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,
@@ -3077,8 +3072,10 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 		// inputs and change.
 	}
 
-	// Only set extra data if there is something in it.
-	if len(extraData) > 0 {
+	// If this transactions creates a Buy Now NFT, set the extra data appropriately.
+	if IsBuyNow {
+		extraData := make(map[string][]byte)
+		extraData[IsBuyNowKey] = []byte{BoolToByte(true)}
 		txn.ExtraData = extraData
 	}
 
@@ -3372,12 +3369,6 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	extraData := make(map[string][]byte)
-
-	if IsBuyNow {
-		extraData[IsBuyNowKey] = []byte{BoolToByte(true)}
-	}
-
 	// Create a transaction containing the update NFT fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,
@@ -3392,8 +3383,10 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 		// inputs and change.
 	}
 
-	// Only set extra data if there is something in it.
-	if len(extraData) > 0 {
+	// If this update makes the NFT a Buy Now NFT, set the extra data appropriately.
+	if IsBuyNow {
+		extraData := make(map[string][]byte)
+		extraData[IsBuyNowKey] = []byte{BoolToByte(true)}
 		txn.ExtraData = extraData
 	}
 

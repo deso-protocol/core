@@ -7416,6 +7416,9 @@ func (bav *UtxoView) _helpConnectNFTSold(txMeta HelpConnectNFTSoldStruct) (
 	bidderChangeNanos := uint64(0)
 	spentUtxoEntries := []*UtxoEntry{}
 	utxoOpsForTxn := []*UtxoOperation{}
+	// We only need to validate the bidder UTXOs when connecting an AcceptNFTBid transaction since the transactor and
+	// the bidder are different users.  For NFTBid transactions on Buy Now NFTs, there are additional inputs to cover
+	// the bid amount. We do not need to make explicitly make change for the bidder in that situation either.
 	if txMeta.IsAcceptNFTBid {
 		//
 		// Validate bidder UTXOs.
@@ -7864,7 +7867,6 @@ func (bav *UtxoView) _connectNFTTransfer(
 	newNFTEntry.OwnerPKID = receiverPKID.PKID
 	newNFTEntry.UnlockableText = txMeta.UnlockableText
 	newNFTEntry.IsPending = true
-	// TODO: do we need to set IsForSale to false?
 	newNFTEntry.IsBuyNow = false
 
 	// Set the new entry in the view.
