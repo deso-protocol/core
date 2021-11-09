@@ -234,7 +234,6 @@ type NFTEntry struct {
 
 	// If an NFT does not have unlockable content, it can be sold instantly at the MinBidAmountNanos.
 	IsBuyNow bool
-	//BuyNowPrice uint64
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
