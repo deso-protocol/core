@@ -3263,6 +3263,7 @@ type NFTBidTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
 	BidAmountNanos uint64
+	IsBuyNowBid    bool
 }
 
 type AcceptNFTBidTxindexMetadata struct {
