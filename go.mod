@@ -21,7 +21,6 @@ require (
 	github.com/dgraph-io/ristretto v0.1.0 // indirect
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/gernest/mention v2.0.0+incompatible
-	github.com/go-pg/pg/v10 v10.10.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/golang/glog v0.0.0-20210429001901-424d2337a529
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -33,8 +32,6 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/laser/go-merkle-tree v0.0.0-20180821204614-16c2f6ea4444
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/onsi/ginkgo v1.15.0 // indirect
-	github.com/onsi/gomega v1.10.5 // indirect
 	github.com/pelletier/go-toml v1.7.0 // indirect
 	github.com/philhofer/fwd v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1
@@ -47,9 +44,9 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/tyler-smith/go-bip39 v1.0.2
 	github.com/unrolled/secure v1.0.8
-	github.com/uptrace/bun v1.0.14
-	github.com/uptrace/bun/dialect/mysqldialect v1.0.14
-	github.com/uptrace/bun/extra/bundebug v1.0.14
+	github.com/uptrace/bun v1.0.16
+	github.com/uptrace/bun/dialect/mysqldialect v1.0.16
+	github.com/uptrace/bun/extra/bundebug v1.0.16 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b
 	golang.org/x/net v0.0.0-20210614182718-04defd469f4e // indirect

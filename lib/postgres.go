@@ -4,11 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
 	"github.com/uptrace/bun"
-	"reflect"
 	"strings"
 )
 
@@ -29,18 +26,13 @@ func NewPostgres(db *bun.DB) *Postgres {
 	}
 }
 
-// LogSelect is a helpful utility when developing or debugging queries. Simply call
-// LogSelect(query) instead of query.Select() to get a log of the raw query.
-func LogSelect(query *orm.Query) error {
-	selectQuery := orm.NewSelectQuery(query)
-	fmter := orm.NewFormatter().WithModel(selectQuery)
-	queryStr, _ := selectQuery.AppendQuery(fmter, nil)
-	glog.Info(string(queryStr))
-	return query.Select()
-}
-
 func LogError(err error) {
-	glog.Info(reflect.TypeOf(err))
+	// Skip non-errors
+	if err.Error() == "sql: no rows in result set" {
+		return
+	}
+
+	glog.Error(err)
 }
 
 const (
@@ -476,7 +468,6 @@ type PGPost struct {
 
 func (post *PGPost) NewPostEntry() *PostEntry {
 	postEntry := &PostEntry{
-		ID:                             post.ID,
 		PostHash:                       post.PostHash,
 		PosterPublicKey:                post.PosterPublicKey,
 		Body:                           []byte(post.Body),
@@ -525,7 +516,6 @@ type PGLike struct {
 
 func (like *PGLike) NewLikeEntry() *LikeEntry {
 	return &LikeEntry{
-		ID:            like.ID,
 		LikerPubKey:   like.LikerPublicKey,
 		LikedPostHash: like.LikedPostHash,
 	}
@@ -541,7 +531,6 @@ type PGFollow struct {
 
 func (follow *PGFollow) NewFollowEntry() *FollowEntry {
 	return &FollowEntry{
-		ID:           follow.ID,
 		FollowerPKID: follow.FollowerPKID,
 		FollowedPKID: follow.FollowedPKID,
 	}
@@ -586,7 +575,6 @@ type PGCreatorCoinBalance struct {
 
 func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 	return &BalanceEntry{
-		ID:           balance.ID,
 		HODLerPKID:   balance.HolderPKID,
 		CreatorPKID:  balance.CreatorPKID,
 		BalanceNanos: balance.BalanceNanos,
@@ -655,7 +643,6 @@ type PGNFT struct {
 
 func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 	return &NFTEntry{
-		ID:                         nft.ID,
 		LastOwnerPKID:              nft.LastOwnerPKID,
 		OwnerPKID:                  nft.OwnerPKID,
 		NFTPostHash:                nft.NFTPostHash,
@@ -682,7 +669,6 @@ type PGNFTBid struct {
 
 func (bid *PGNFTBid) NewNFTBidEntry() *NFTBidEntry {
 	return &NFTBidEntry{
-		ID:             bid.ID,
 		BidderPKID:     bid.BidderPKID,
 		NFTPostHash:    bid.NFTPostHash,
 		SerialNumber:   bid.SerialNumber,
@@ -703,7 +689,6 @@ type PGDerivedKey struct {
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
 	return &DerivedKeyEntry{
-		ID:               key.ID,
 		OwnerPublicKey:   key.OwnerPublicKey,
 		DerivedPublicKey: key.DerivedPublicKey,
 		ExpirationBlock:  key.ExpirationBlock,
@@ -795,6 +780,7 @@ func (postgres *Postgres) GetChain(name string) *PGChain {
 
 	err := postgres.db.NewSelect().Model(chain).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 
@@ -1306,7 +1292,7 @@ func (postgres *Postgres) flushUtxos(tx bun.Tx, view *UtxoView) error {
 
 func (postgres *Postgres) flushProfiles(tx bun.Tx, view *UtxoView) error {
 	var insertProfiles []*PGProfile
-	var deleteProfiles []*PKID
+	var deleteProfiles []*PGProfile
 	for _, pkidEntry := range view.PublicKeyToPKIDEntry {
 		pkid := pkidEntry.PKID
 
@@ -1328,7 +1314,7 @@ func (postgres *Postgres) flushProfiles(tx bun.Tx, view *UtxoView) error {
 		}
 
 		if pkidEntry.isDeleted {
-			deleteProfiles = append(deleteProfiles, profile.PKID)
+			deleteProfiles = append(deleteProfiles, profile)
 		} else {
 			insertProfiles = append(insertProfiles, profile)
 		}
@@ -1342,7 +1328,7 @@ func (postgres *Postgres) flushProfiles(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deleteProfiles) > 0 {
-		_, err := tx.NewDelete().Model((*PGProfile)(nil)).Where("pkid IN (?)", bun.In(deleteProfiles)).Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteProfiles).WherePK("pkid").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1360,7 +1346,6 @@ func (postgres *Postgres) flushPosts(tx bun.Tx, view *UtxoView) error {
 		}
 
 		post := &PGPost{
-			ID:                        postEntry.ID,
 			PostHash:                  postEntry.PostHash,
 			PosterPublicKey:           postEntry.PosterPublicKey,
 			Body:                      string(postEntry.Body),
@@ -1403,7 +1388,7 @@ func (postgres *Postgres) flushPosts(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deletePosts) > 0 {
-		_, err := tx.NewDelete().Model(&deletePosts).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deletePosts).WherePK("post_hash").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1421,7 +1406,6 @@ func (postgres *Postgres) flushLikes(tx bun.Tx, view *UtxoView) error {
 		}
 
 		like := &PGLike{
-			ID:             likeEntry.ID,
 			LikerPublicKey: likeEntry.LikerPubKey,
 			LikedPostHash:  likeEntry.LikedPostHash,
 		}
@@ -1442,7 +1426,7 @@ func (postgres *Postgres) flushLikes(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deleteLikes) > 0 {
-		_, err := tx.NewDelete().Model(&deleteLikes).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteLikes).WherePK("liker_public_key", "liked_post_hash").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1460,7 +1444,6 @@ func (postgres *Postgres) flushFollows(tx bun.Tx, view *UtxoView) error {
 		}
 
 		follow := &PGFollow{
-			ID:           followEntry.ID,
 			FollowerPKID: followEntry.FollowerPKID,
 			FollowedPKID: followEntry.FollowedPKID,
 		}
@@ -1474,14 +1457,14 @@ func (postgres *Postgres) flushFollows(tx bun.Tx, view *UtxoView) error {
 
 	if len(insertFollows) > 0 {
 		// No-op update on duplicate key
-		_, err := tx.NewInsert().Model(&insertFollows).Exec(postgres.ctx)
+		_, err := tx.NewInsert().Model(&insertFollows).On("DUPLICATE KEY UPDATE follower_pkid=follower_pkid").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
 	}
 
 	if len(deleteFollows) > 0 {
-		_, err := tx.NewDelete().Model(&deleteFollows).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteFollows).WherePK("follower_pkid", "followed_pkid").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1495,7 +1478,6 @@ func (postgres *Postgres) flushDiamonds(tx bun.Tx, view *UtxoView) error {
 	var deleteDiamonds []*PGDiamond
 	for _, diamondEntry := range view.DiamondKeyToDiamondEntry {
 		diamond := &PGDiamond{
-			ID:              diamondEntry.ID,
 			SenderPKID:      diamondEntry.SenderPKID,
 			ReceiverPKID:    diamondEntry.ReceiverPKID,
 			DiamondPostHash: diamondEntry.DiamondPostHash,
@@ -1517,7 +1499,7 @@ func (postgres *Postgres) flushDiamonds(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deleteDiamonds) > 0 {
-		_, err := tx.NewDelete().Model(&deleteDiamonds).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteDiamonds).WherePK("sender_pkid", "receiver_pkid", "diamond_post_hash").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1546,7 +1528,7 @@ func (postgres *Postgres) flushMessages(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deleteMessages) > 0 {
-		_, err := tx.NewDelete().Model(&deleteMessages).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteMessages).WherePK("message_hash").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1564,7 +1546,6 @@ func (postgres *Postgres) flushCreatorCoinBalances(tx bun.Tx, view *UtxoView) er
 		}
 
 		balance := &PGCreatorCoinBalance{
-			ID:           balanceEntry.ID,
 			HolderPKID:   balanceEntry.HODLerPKID,
 			CreatorPKID:  balanceEntry.CreatorPKID,
 			BalanceNanos: balanceEntry.BalanceNanos,
@@ -1586,7 +1567,7 @@ func (postgres *Postgres) flushCreatorCoinBalances(tx bun.Tx, view *UtxoView) er
 	}
 
 	if len(deleteBalances) > 0 {
-		_, err := tx.NewDelete().Model(&deleteBalances).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteBalances).WherePK("holder_pkid", "creator_pkid").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1624,7 +1605,6 @@ func (postgres *Postgres) flushForbiddenKeys(tx bun.Tx, view *UtxoView) error {
 	var deleteKeys []*PGForbiddenKey
 	for _, keyEntry := range view.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		balance := &PGForbiddenKey{
-			ID:        keyEntry.ID,
 			PublicKey: NewPublicKey(keyEntry.PubKey),
 		}
 
@@ -1643,7 +1623,7 @@ func (postgres *Postgres) flushForbiddenKeys(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deleteKeys) > 0 {
-		_, err := tx.NewDelete().Model(&deleteKeys).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteKeys).WherePK("public_key").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1657,7 +1637,6 @@ func (postgres *Postgres) flushNFTs(tx bun.Tx, view *UtxoView) error {
 	var deleteNFTs []*PGNFT
 	for _, nftEntry := range view.NFTKeyToNFTEntry {
 		nft := &PGNFT{
-			ID:                         nftEntry.ID,
 			NFTPostHash:                nftEntry.NFTPostHash,
 			SerialNumber:               nftEntry.SerialNumber,
 			LastOwnerPKID:              nftEntry.LastOwnerPKID,
@@ -1684,7 +1663,7 @@ func (postgres *Postgres) flushNFTs(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deleteNFTs) > 0 {
-		_, err := tx.NewDelete().Model(&deleteNFTs).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteNFTs).WherePK("nft_post_hash", "serial_number").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1698,7 +1677,6 @@ func (postgres *Postgres) flushNFTBids(tx bun.Tx, view *UtxoView) error {
 	var deleteBids []*PGNFTBid
 	for _, bidEntry := range view.NFTBidKeyToNFTBidEntry {
 		nft := &PGNFTBid{
-			ID:             bidEntry.ID,
 			BidderPKID:     bidEntry.BidderPKID,
 			NFTPostHash:    bidEntry.NFTPostHash,
 			SerialNumber:   bidEntry.SerialNumber,
@@ -1722,7 +1700,7 @@ func (postgres *Postgres) flushNFTBids(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deleteBids) > 0 {
-		_, err := tx.NewDelete().Model(&deleteBids).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteBids).WherePK("bidder_pkid", "nft_post_hash", "serial_number").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1736,7 +1714,6 @@ func (postgres *Postgres) flushDerivedKeys(tx bun.Tx, view *UtxoView) error {
 	var deleteKeys []*PGDerivedKey
 	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
 		key := &PGDerivedKey{
-			ID:               keyEntry.ID,
 			OwnerPublicKey:   keyEntry.OwnerPublicKey,
 			DerivedPublicKey: keyEntry.DerivedPublicKey,
 			ExpirationBlock:  keyEntry.ExpirationBlock,
@@ -1758,7 +1735,7 @@ func (postgres *Postgres) flushDerivedKeys(tx bun.Tx, view *UtxoView) error {
 	}
 
 	if len(deleteKeys) > 0 {
-		_, err := tx.NewDelete().Model(&deleteKeys).WherePK().Returning("NULL").Exec(postgres.ctx)
+		_, err := tx.NewDelete().Model(&deleteKeys).WherePK("owner_public_key", "derived_public_key").Returning("NULL").Exec(postgres.ctx)
 		if err != nil {
 			return err
 		}
@@ -1777,6 +1754,7 @@ func (postgres *Postgres) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	err := postgres.db.NewSelect().Model(utxo).Where("output_hash = ?", &utxoKey.TxID).
 		Where("output_index = ?", utxoKey.Index).Where("spent = ?", false).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 
@@ -1787,6 +1765,7 @@ func (postgres *Postgres) GetUtxoEntriesForPublicKey(publicKey []byte) []*UtxoEn
 	var transactionOutputs []*PGTransactionOutput
 	err := postgres.db.NewSelect().Model(&transactionOutputs).Where("public_key = ?", publicKey).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 
@@ -1799,88 +1778,20 @@ func (postgres *Postgres) GetUtxoEntriesForPublicKey(publicKey []byte) []*UtxoEn
 }
 
 func (postgres *Postgres) GetOutputs(outputs []*PGTransactionOutput) []*PGTransactionOutput {
-	err := postgres.db.NewSelect().Model(&outputs).Where(postgres.whereColumns(outputs, "OutputHash", "OutputIndex", "Spent")).Scan(postgres.ctx)
+	err := postgres.db.NewSelect().Model(&outputs).WherePK("output_hash", "output_index", "spent").Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return outputs
 }
 
-func (postgres *Postgres) whereColumns(slice interface{}, columns ...string) string {
-	query := []byte("(")
-
-	vals := reflect.ValueOf(slice)
-	numVals := vals.Len()
-
-	numColumns := len(columns)
-	for ii, column := range columns {
-		query = append(query, Underscore(column)...)
-
-		if ii != numColumns-1 {
-			query = append(query, ',')
-		}
-	}
-
-	query = append(query, ") IN ("...)
-
-	for ii := 0; ii < numVals; ii++ {
-		query = append(query, '(')
-
-		for jj, column := range columns {
-			val := vals.Index(ii).Elem().FieldByName(column)
-			query = postgres.db.Formatter().AppendValue(query, val)
-			if jj != numColumns-1 {
-				query = append(query, ',')
-			}
-		}
-
-		query = append(query, ')')
-
-		if ii != numVals-1 {
-			query = append(query, ',')
-		}
-	}
-
-	query = append(query, ')')
-
-	//glog.Info(string(query))
-
-	return string(query)
-}
-
-func Underscore(s string) string {
-	r := make([]byte, 0, len(s)+5)
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if IsUpper(c) {
-			if i > 0 && i+1 < len(s) && (IsLower(s[i-1]) || IsLower(s[i+1])) {
-				r = append(r, '_', ToLower(c))
-			} else {
-				r = append(r, ToLower(c))
-			}
-		} else {
-			r = append(r, c)
-		}
-	}
-	return string(r)
-}
-
-func IsUpper(c byte) bool {
-	return c >= 'A' && c <= 'Z'
-}
-
-func IsLower(c byte) bool {
-	return c >= 'a' && c <= 'z'
-}
-
-func ToLower(c byte) byte {
-	return c + 32
-}
 func (postgres *Postgres) GetBlockRewardsForPublicKey(publicKey *PublicKey, startHeight uint32, endHeight uint32) []*PGTransactionOutput {
 	var transactionOutputs []*PGTransactionOutput
 	err := postgres.db.NewSelect().Model(&transactionOutputs).Where("public_key = ?", publicKey).
 		Where("height >= ?", startHeight).Where("height <= ?", endHeight).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return transactionOutputs
@@ -1971,14 +1882,16 @@ func (postgres *Postgres) GetPost(postHash *BlockHash) *PGPost {
 	var post PGPost
 	err := postgres.db.NewSelect().Model(&post).Where("post_hash = ?", postHash).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &post
 }
 
 func (postgres *Postgres) GetPosts(posts []*PGPost) []*PGPost {
-	err := postgres.db.NewSelect().Model(&posts).Where(postgres.whereColumns(posts, "PostHash")).Scan(postgres.ctx)
+	err := postgres.db.NewSelect().Model(&posts).WherePK("post_hash").Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return posts
@@ -1991,6 +1904,7 @@ func (postgres *Postgres) GetPostsForPublicKey(publicKey []byte, startTime uint6
 		Where("hidden IS NULL").Where("parent_post_hash IS NULL").
 		OrderExpr("timestamp DESC").Limit(int(limit)).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return posts
@@ -2005,6 +1919,7 @@ func (postgres *Postgres) GetComments(parentPostHash *BlockHash) []*PGPost {
 	var posts []*PGPost
 	err := postgres.db.NewSelect().Model(&posts).Where("parent_post_hash = ?", parentPostHash).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return posts
@@ -2014,6 +1929,7 @@ func (postgres *Postgres) GetMessage(messageHash *BlockHash) *PGMessage {
 	var message PGMessage
 	err := postgres.db.NewSelect().Model(&message).Where("message_hash = ?", messageHash).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &message
@@ -2028,14 +1944,16 @@ func (postgres *Postgres) GetLike(likerPublicKey []byte, likedPostHash *BlockHas
 	err := postgres.db.NewSelect().Model(&like).Where("liker_public_key = ?", likerPublicKey).
 		Where("liked_post_hash = ?", likedPostHash).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &like
 }
 
 func (postgres *Postgres) GetLikes(likes []*PGLike) []*PGLike {
-	err := postgres.db.NewSelect().Model(&likes).Where(postgres.whereColumns(likes, "LikerPublicKey", "LikedPostHash")).Scan(postgres.ctx)
+	err := postgres.db.NewSelect().Model(&likes).WherePK("liker_public_key", "liked_post_hash").Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return likes
@@ -2045,6 +1963,7 @@ func (postgres *Postgres) GetLikesForPost(postHash *BlockHash) []*PGLike {
 	var likes []*PGLike
 	err := postgres.db.NewSelect().Model(&likes).Where("liked_post_hash = ?", postHash).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return likes
@@ -2059,14 +1978,16 @@ func (postgres *Postgres) GetFollow(followerPkid *PKID, followedPkid *PKID) *PGF
 	err := postgres.db.NewSelect().Model(&follow).Where("follower_pkid = ?", followerPkid).
 		Where("followed_pkid = ?", followedPkid).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &follow
 }
 
 func (postgres *Postgres) GetFollows(follows []*PGFollow) []*PGFollow {
-	err := postgres.db.NewSelect().Model(&follows).Where(postgres.whereColumns(follows, "FollowerPKID", "FollowedPKID")).Scan(postgres.ctx)
+	err := postgres.db.NewSelect().Model(&follows).WherePK("follower_pkid", "followed_pkid").Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return follows
@@ -2076,6 +1997,7 @@ func (postgres *Postgres) GetFollowing(pkid *PKID) []*PGFollow {
 	var follows []*PGFollow
 	err := postgres.db.NewSelect().Model(&follows).Where("follower_pkid = ?", pkid).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return follows
@@ -2085,6 +2007,7 @@ func (postgres *Postgres) GetFollowers(pkid *PKID) []*PGFollow {
 	var follows []*PGFollow
 	err := postgres.db.NewSelect().Model(&follows).Where("followed_pkid = ?", pkid).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return follows
@@ -2095,6 +2018,7 @@ func (postgres *Postgres) GetDiamond(senderPkid *PKID, receiverPkid *PKID, postH
 	err := postgres.db.NewSelect().Model(&diamond).Where("sender_pkid = ?", senderPkid).
 		Where("receiver_pkid = ?", receiverPkid).Where("diamond_post_hash = ?", postHash).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &diamond
@@ -2105,8 +2029,9 @@ func (postgres *Postgres) GetDiamond(senderPkid *PKID, receiverPkid *PKID, postH
 //
 
 func (postgres *Postgres) GetCreatorCoinBalances(balances []*PGCreatorCoinBalance) []*PGCreatorCoinBalance {
-	err := postgres.db.NewSelect().Model(&balances).Where(postgres.whereColumns(balances, "HolderPKID", "CreatorPKID")).Scan(postgres.ctx)
+	err := postgres.db.NewSelect().Model(&balances).WherePK("holder_pkid", "creator_pkid").Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return balances
@@ -2117,6 +2042,7 @@ func (postgres *Postgres) GetCreatorCoinBalance(holderPkid *PKID, creatorPkid *P
 	err := postgres.db.NewSelect().Model(&balance).Where("holder_pkid = ?", holderPkid).
 		Where("creator_pkid = ?", creatorPkid).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &balance
@@ -2126,6 +2052,7 @@ func (postgres *Postgres) GetHoldings(pkid *PKID) []*PGCreatorCoinBalance {
 	var holdings []*PGCreatorCoinBalance
 	err := postgres.db.NewSelect().Model(&holdings).Where("holder_pkid = ?", pkid).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return holdings
@@ -2135,6 +2062,7 @@ func (postgres *Postgres) GetHolders(pkid *PKID) []*PGCreatorCoinBalance {
 	var holdings []*PGCreatorCoinBalance
 	err := postgres.db.NewSelect().Model(&holdings).Where("creator_pkid = ?", pkid).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return holdings
@@ -2149,6 +2077,7 @@ func (postgres *Postgres) GetNFT(nftPostHash *BlockHash, serialNumber uint64) *P
 	err := postgres.db.NewSelect().Model(&nft).Where("nft_post_hash = ?", nftPostHash).
 		Where("serial_number = ?", serialNumber).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &nft
@@ -2158,6 +2087,7 @@ func (postgres *Postgres) GetNFTsForPostHash(nftPostHash *BlockHash) []*PGNFT {
 	var nfts []*PGNFT
 	err := postgres.db.NewSelect().Model(&nfts).Where("nft_post_hash = ?", nftPostHash).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return nfts
@@ -2167,6 +2097,7 @@ func (postgres *Postgres) GetNFTsForPKID(pkid *PKID) []*PGNFT {
 	var nfts []*PGNFT
 	err := postgres.db.NewSelect().Model(&nfts).Where("owner_pkid = ?", pkid).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return nfts
@@ -2176,6 +2107,7 @@ func (postgres *Postgres) GetNFTBidsForPKID(pkid *PKID) []*PGNFTBid {
 	var nftBids []*PGNFTBid
 	err := postgres.db.NewSelect().Model(&nftBids).Where("bidder_pkid = ?", pkid).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return nftBids
@@ -2186,6 +2118,7 @@ func (postgres *Postgres) GetNFTBidsForSerial(nftPostHash *BlockHash, serialNumb
 	err := postgres.db.NewSelect().Model(&nftBids).Where("nft_post_hash = ?", nftPostHash).
 		Where("serial_number = ?", serialNumber).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return nftBids
@@ -2196,6 +2129,7 @@ func (postgres *Postgres) GetNFTBid(nftPostHash *BlockHash, bidderPKID *PKID, se
 	err := postgres.db.NewSelect().Model(&bid).Where("nft_post_hash = ?", nftPostHash).Where("bidder_pkid = ?", bidderPKID).
 		Where("serial_number = ?", serialNumber).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &bid
@@ -2210,6 +2144,7 @@ func (postgres *Postgres) GetDerivedKey(ownerPublicKey *PublicKey, derivedPublic
 	err := postgres.db.NewSelect().Model(&key).Where("owner_public_key = ?", ownerPublicKey).
 		Where("derived_public_key = ?", derivedPublicKey).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return &key
@@ -2219,6 +2154,7 @@ func (postgres *Postgres) GetAllDerivedKeysForOwner(ownerPublicKey *PublicKey) [
 	var keys []*PGDerivedKey
 	err := postgres.db.NewSelect().Model(&keys).Where("owner_public_key = ?", *ownerPublicKey).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return nil
 	}
 	return keys
@@ -2232,6 +2168,7 @@ func (postgres *Postgres) GetBalance(publicKey *PublicKey) uint64 {
 	balance := PGBalance{}
 	err := postgres.db.NewSelect().Model(&balance).Where("public_key = ?", publicKey).Limit(1).Scan(postgres.ctx)
 	if err != nil {
+		LogError(err)
 		return 0
 	}
 	return balance.BalanceNanos
@@ -2241,7 +2178,7 @@ func (postgres *Postgres) GetBalance(publicKey *PublicKey) uint64 {
 // PGChain Init
 //
 
-func (postgres *Postgres) InitGenesisBlock(params *DeSoParams, db *badger.DB) error {
+func (postgres *Postgres) InitGenesisBlock(params *DeSoParams) error {
 	// Construct a node for the genesis block. Its height is zero and it has no parents. Its difficulty should be
 	// set to the initial difficulty specified in the parameters and it should be assumed to be
 	// valid and stored by the end of this function.

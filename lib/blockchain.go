@@ -489,7 +489,7 @@ func (bc *Blockchain) _initChain() error {
 		var err error
 
 		if bc.postgres != nil {
-			err = bc.postgres.InitGenesisBlock(bc.params, bc.db)
+			err = bc.postgres.InitGenesisBlock(bc.params)
 		} else {
 			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager)
 		}
@@ -1915,10 +1915,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		}
 
 		// Preload the view with almost all of the data it will need to connect the block
-		//err = utxoView.Preload(desoBlock)
-		//if err != nil {
-		//	glog.Errorf("ProcessBlock: Problem preloading the view: %v", err)
-		//}
+		err = utxoView.Preload(desoBlock)
+		if err != nil {
+			glog.Errorf("ProcessBlock: Problem preloading the view: %v", err)
+		}
 
 		// Verify that the utxo view is pointing to the current tip.
 		if *utxoView.TipHash != *currentTip.Hash {

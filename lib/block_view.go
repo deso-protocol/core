@@ -176,7 +176,6 @@ type MessageEntry struct {
 
 // Entry for a public key forbidden from signing blocks.
 type ForbiddenPubKeyEntry struct {
-	ID     uint64
 	PubKey []byte
 
 	// Whether or not this entry is deleted in the view.
@@ -197,7 +196,6 @@ type LikeKey struct {
 
 // LikeEntry stores the content of a like transaction.
 type LikeEntry struct {
-	ID            uint64
 	LikerPubKey   []byte
 	LikedPostHash *BlockHash
 
@@ -221,7 +219,6 @@ type NFTKey struct {
 // postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
 // defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
 type NFTEntry struct {
-	ID                         uint64
 	LastOwnerPKID              *PKID // This is needed to decrypt unlockable text.
 	OwnerPKID                  *PKID
 	NFTPostHash                *BlockHash
@@ -254,7 +251,6 @@ type NFTBidKey struct {
 
 // This struct defines a single bid on an NFT.
 type NFTBidEntry struct {
-	ID             uint64
 	BidderPKID     *PKID
 	NFTPostHash    *BlockHash
 	SerialNumber   uint64
@@ -265,8 +261,6 @@ type NFTBidEntry struct {
 }
 
 type DerivedKeyEntry struct {
-	ID uint64
-
 	// Owner public key
 	OwnerPublicKey PublicKey
 
@@ -313,7 +307,6 @@ type FollowKey struct {
 
 // FollowEntry stores the content of a follow transaction.
 type FollowEntry struct {
-	ID uint64
 	// Note: It's a little redundant to have these in the entry because they're
 	// already used as the key in the DB but it doesn't hurt for now.
 	FollowerPKID *PKID
@@ -345,7 +338,6 @@ func (mm *DiamondKey) String() string {
 
 // DiamondEntry stores the number of diamonds given by a sender to a post.
 type DiamondEntry struct {
-	ID              uint64
 	SenderPKID      *PKID
 	ReceiverPKID    *PKID
 	DiamondPostHash *BlockHash
@@ -479,9 +471,6 @@ func (bav *UtxoView) GetRepostPostEntryStateForReader(readerPK []byte, postHash 
 }
 
 type PostEntry struct {
-	// MySQL ID
-	ID uint64
-
 	// The hash of this post entry. Used as the ID for the entry.
 	PostHash *BlockHash
 
@@ -614,8 +603,6 @@ func (mm BalanceEntryMapKey) String() string {
 // that looks as follows:
 // <HodlerPKID, CreatorPKID> -> HODLerEntry
 type BalanceEntry struct {
-	ID uint64
-
 	// The PKID of the HODLer. This should never change after it's set initially.
 	HODLerPKID *PKID
 	// The PKID of the creator. This should never change after it's set initially.
@@ -980,13 +967,13 @@ type UtxoOperation struct {
 	// encounter a SwapIdentity txn. This makes it so that we don't have to
 	// reconnect all txns in order to get these values.
 	SwapIdentityFromDESOLockedNanos uint64
-	SwapIdentityToDESOLockedNanos uint64
+	SwapIdentityToDESOLockedNanos   uint64
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values.
-	AcceptNFTBidCreatorPublicKey []byte
-	AcceptNFTBidBidderPublicKey []byte
+	AcceptNFTBidCreatorPublicKey    []byte
+	AcceptNFTBidBidderPublicKey     []byte
 	AcceptNFTBidCreatorRoyaltyNanos uint64
 }
 
@@ -7381,8 +7368,8 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 
 		// Rosetta fields.
-		AcceptNFTBidCreatorPublicKey: nftPostEntry.PosterPublicKey,
-		AcceptNFTBidBidderPublicKey: bidderPublicKey,
+		AcceptNFTBidCreatorPublicKey:    nftPostEntry.PosterPublicKey,
+		AcceptNFTBidBidderPublicKey:     bidderPublicKey,
 		AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
 	})
 
@@ -8001,7 +7988,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 		Type: OperationTypeSwapIdentity,
 		// Rosetta fields
 		SwapIdentityFromDESOLockedNanos: fromNanos,
-		SwapIdentityToDESOLockedNanos: toNanos,
+		SwapIdentityToDESOLockedNanos:   toNanos,
 
 		// Note that we don't need any metadata on this operation, since the swap is reversible
 		// without it.
@@ -8714,7 +8701,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// and it's much more efficient to compute it here than it is to recompute
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing " +
+		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing "+
 			"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
@@ -8723,12 +8710,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevBuyerBalanceEntry,
-		PrevCreatorBalanceEntry:    &prevCreatorBalanceEntry,
-		FounderRewardUtxoKey:       outputKey,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevBuyerBalanceEntry,
+		PrevCreatorBalanceEntry:        &prevCreatorBalanceEntry,
+		FounderRewardUtxoKey:           outputKey,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	return totalInput, totalOutput, coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, utxoOpsForTxn, nil
@@ -8994,8 +8981,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, 0, nil, errors.Wrapf(
-			err, "HelpConnectCreatorCoinSell: Error computing " +
-			"desoLockedNanosDiff: Missing profile")
+			err, "HelpConnectCreatorCoinSell: Error computing "+
+				"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
@@ -9003,11 +8990,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
-		PrevCreatorBalanceEntry:    nil,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevTransactorBalanceEntry,
+		PrevCreatorBalanceEntry:        nil,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	// The DeSo that the user gets from selling their creator coin counts
