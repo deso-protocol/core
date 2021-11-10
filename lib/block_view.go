@@ -4487,7 +4487,6 @@ func (bav *UtxoView) GetDiamondEntryForDiamondKey(diamondKey *DiamondKey) *Diamo
 		diamond := bav.Postgres.GetDiamond(&diamondKey.SenderPKID, &diamondKey.ReceiverPKID, &diamondKey.DiamondPostHash)
 		if diamond != nil {
 			diamondEntry = &DiamondEntry{
-				ID:              diamond.ID,
 				SenderPKID:      diamond.SenderPKID,
 				ReceiverPKID:    diamond.ReceiverPKID,
 				DiamondPostHash: diamond.DiamondPostHash,
