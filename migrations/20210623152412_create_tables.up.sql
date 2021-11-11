@@ -512,7 +512,8 @@ CREATE TABLE pg_metadata_burn_nft (
 --bun:split
 
 CREATE TABLE pg_trends (
-    pkid                 BYTEA,
+    id                   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    pkid                 BINARY(33),
     block_height         BIGINT,
     founder_reward_nanos BIGINT,
     diamond_nanos        BIGINT,
@@ -524,5 +525,5 @@ CREATE TABLE pg_trends (
     balance_nanos        BIGINT,
     holding_nanos        BIGINT,
 
-    PRIMARY KEY (pkid, block_height)
+    UNIQUE INDEX (pkid)
 );

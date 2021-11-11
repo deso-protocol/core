@@ -134,7 +134,7 @@ func (node *Node) Start() {
 		sqldb.SetMaxIdleConns(10)
 
 		db = bun.NewDB(sqldb, mysqldialect.New())
-		node.Postgres = lib.NewPostgres(db)
+		node.Postgres = lib.NewPostgres(db, true)
 		//if IsDebug() {
 		//db.AddQueryHook(bundebug.NewQueryHook(bundebug.WithVerbose(true)))
 		//}
