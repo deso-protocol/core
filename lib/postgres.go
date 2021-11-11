@@ -1309,9 +1309,11 @@ func (postgres *Postgres) flushUtxos(tx bun.Tx, view *UtxoView) error {
 		})
 	}
 
-	_, err := tx.NewInsert().Model(&outputs).On("DUPLICATE KEY UPDATE").Exec(postgres.ctx)
-	if err != nil {
-		return err
+	if len(outputs) > 0 {
+		_, err := tx.NewInsert().Model(&outputs).On("DUPLICATE KEY UPDATE").Exec(postgres.ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

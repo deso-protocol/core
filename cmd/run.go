@@ -167,34 +167,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"enforces that all blocks after genesis must be signed by a trusted block producer. The default "+
 			"value was chosen to be in-line with the default trusted public keys chosen.")
 
-	// Add all the backend flags
-	runCmd.PersistentFlags().Uint64("api-port", 0,
-		"When set, determines the port on which this node will listen for json "+
-			"requests. If unset, the port will default to what is present in the DeSoParams set.")
-
-	// Onboarding
-	runCmd.PersistentFlags().String("starter-deso-seed", "",
-		"Send a small amount of DeSo from this seed to new users.")
-	runCmd.PersistentFlags().Uint64("min-satoshis-for-profile", 50000,
-		"Users won't be able to create a profile unless they buy this "+
-			"amount of satoshis or provide a phone number.")
-
-	// User Interface
-	runCmd.PersistentFlags().Bool("show-processing-spinners", false,
-		"Show processing spinners for unmined posts / DeSo / creator coins")
-
-	// Web Security
-	runCmd.PersistentFlags().StringSlice("access-control-allow-origins", []string{"*"},
-		"Accepts a comma-separated lists of origin domains that will be allowed as the "+
-			"Access-Control-Allow-Origin HTTP header. Defaults to * if not set.")
-	runCmd.PersistentFlags().StringSlice("secure-header-allow-hosts", []string{},
-		"This is the domain that our secure middleware will accept requests from. We also set the "+
-			"HTTP Access-Control-Allow-Origin")
-	runCmd.PersistentFlags().Bool("secure-header-development", true,
-		"If set, runs our secure header middleware in development mode, which disables some "+
-			"of the options. The default is true to make it easy to run a node locally. "+
-			"See https://github.com/unrolled/secure for more info. Note that")
-
 	// Logging
 	cmd.PersistentFlags().String("log-dir", "", "The directory for logs")
 	cmd.PersistentFlags().Uint64("glog-v", 0, "The log level. 0 = INFO, 1 = DEBUG, 2 = TRACE. Defaults to zero")
