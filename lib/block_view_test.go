@@ -82,7 +82,64 @@ var (
 func TestBalanceModel(t *testing.T) {
 	BalanceModelBlockHeight = 0
 
+	// Basic transfers.
 	TestBasicTransfer(t)
+	TestBasicTransferReorg(t)
+	TestValidateBasicTransfer(t)
+
+	// Diamonds.
+	TestDeSoDiamonds(t)
+	TestDeSoDiamondErrorCases(t)
+
+	// Global params.
+	TestUpdateGlobalParams(t)
+
+	// Posts, profiles, likes, follows, messages.
+	TestSubmitPost(t)
+	TestUpdateProfile(t)
+	TestSpamUpdateProfile(t)
+	TestUpdateProfileChangeBack(t)
+	// TestLikeTxns(t)
+	//	TestFollowTxns(t)
+	//	TestPrivateMessage(t)
+	//
+	//	// Creator coins.
+	//	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
+	//	TestCreatorCoinTransferWithSwapIdentity(t)
+	//	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+	//	TestCreatorCoinTransferWithMaxTransfers(t)
+	//	TestCreatorCoinTransferBelowMinThreshold(t)
+	//	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
+	//	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
+	//	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
+	//	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
+	//	TestCreatorCoinAroundThresholdBuySellAmounts(t)
+	//	TestSalomonSequence(t)
+	//	TestCreatorCoinBigBuyAfterSmallBuy(t)
+	//	TestCreatorCoinBigBigBuyBigSell(t)
+	//
+	//	// Swap identity.
+	//	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
+	//	TestSwapIdentityCreatorCoinBuySimple(t)
+	//	TestSwapIdentityFailureCases(t)
+	//	TestSwapIdentityMain(t)
+	//	TestSwapIdentityWithFollows(t)
+	//
+	//	// NFTs.
+	//	TestNFTBasic(t)
+	//	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
+	//	TestNFTSerialNumberZeroBid(t)
+	//	TestNFTMinimumBidAmount(t)
+	//	TestNFTCreatedIsNotForSale(t)
+	//	TestNFTMoreErrorCases(t)
+	//	TestNFTBidsAreCanceledAfterAccept(t)
+	//	TestNFTDifferentMinBidAmountSerialNumbers(t)
+	//	TestNFTMaxCopiesGlobalParam(t)
+	//	TestNFTPreviousOwnersCantAcceptBids(t)
+	//	TestNFTTransfersAndBurns(t)
+	//
+	//	// Derived keys.
+	//	TestAuthorizeDerivedKeyBasic(t)
 }
 
 func TestBasicTransfer(t *testing.T) {
@@ -122,9 +179,6 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		blockHeight := chain.blockTip().Height + 1
-		if blockHeight >= BalanceModelBlockHeight {
-			txn.TxnVersion = 1
-		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
 			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
@@ -208,9 +262,6 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		blockHeight := chain.blockTip().Height + 1
-		if blockHeight >= BalanceModelBlockHeight {
-			txn.TxnVersion = 1
-		}
 
 		_signTxn(t, txn, senderPrivString)
 		utxoView, _ := NewUtxoView(db, params, nil)
@@ -241,9 +292,6 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		blockHeight := chain.blockTip().Height + 1
-		if blockHeight >= BalanceModelBlockHeight {
-			txn.TxnVersion = 1
-		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
 			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
@@ -333,9 +381,6 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		blockHeight := chain.blockTip().Height + 1
-		if blockHeight >= BalanceModelBlockHeight {
-			txn.TxnVersion = 1
-		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
 			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
@@ -383,12 +428,20 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 	require.GreaterOrEqual(totalOutput, amountNanos)
 	require.Equal(totalInput, totalOutput+fees)
 
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs), len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
-	}
-	for ii := len(txn.TxInputs); ii < len(txn.TxInputs)+len(txn.TxOutputs); ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs), len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ii := len(txn.TxInputs); ii < len(txn.TxInputs)+len(txn.TxOutputs); ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(0, len(txn.TxInputs))
+		for ii := 0; ii < len(txn.TxOutputs); ii++ {
+			require.Equal(OperationTypeAddBalance, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeSpendBalance, utxoOps[len(txn.TxOutputs)].Type)
 	}
 
 	require.NoError(utxoView.FlushToDb())
@@ -518,14 +571,19 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypePrivateMessage operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(
+			OperationTypeUpdateGlobalParams, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeUpdateGlobalParams, utxoOps[1].Type)
 	}
-	require.Equal(
-		OperationTypeUpdateGlobalParams, utxoOps[len(utxoOps)-1].Type)
 	if flushToDb {
 		require.NoError(utxoView.FlushToDb())
 	}
@@ -619,6 +677,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
+	utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the
@@ -629,12 +688,19 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeSubmitPost operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		// Under the balance model, the UTXO ops should only include a spend and a submit post.
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeSubmitPost, utxoOps[1].Type)
 	}
+
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
@@ -841,13 +907,19 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	require.Equal(t, totalInput, totalOutput+fees)
 	require.Equal(t, totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeDeSoDiamond operation at the end.
-	require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeDeSoDiamond operation at the end.
+		require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(t, OperationTypeAddBalance, utxoOps[0].Type)
+		require.Equal(t, OperationTypeSpendBalance, utxoOps[1].Type)
+		require.Equal(t, OperationTypeDeSoDiamond, utxoOps[2].Type)
 	}
-	require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(t, utxoView.FlushToDb())
 
@@ -1551,13 +1623,18 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeSwapIdentity operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeSwapIdentity operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeSwapIdentity, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1568,7 +1645,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, profilePubKey []byte, newUsername string,
 	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
-	newStakeMultipleBasisPoints uint64, isHidden bool) (
+	newStakeMultipleBasisPoints uint64, isHidden bool, forceZeroAdditionalFee bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -1582,6 +1659,15 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	if utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB == 0 {
+		utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
+	}
+
+	additionalFees := utxoView.GlobalParamsEntry.CreateProfileFeeNanos
+	if forceZeroAdditionalFee {
+		additionalFees = 0
+	}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
 		updaterPkBytes,
 		profilePubKey,
@@ -1591,7 +1677,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		newCreatorBasisPoints,
 		newStakeMultipleBasisPoints,
 		isHidden,
-		0,
+		additionalFees,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
 		[]*DeSoOutput{})
@@ -1618,13 +1704,18 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateProfile operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateProfile operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeUpdateProfile, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -1652,7 +1743,7 @@ func _updateProfileWithTestMeta(
 		feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, profilePubKey, newUsername,
 		newDescription, newProfilePic, newCreatorBasisPoints,
-		newStakeMultipleBasisPoints, isHidden)
+		newStakeMultipleBasisPoints, isHidden, false)
 
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -2162,13 +2253,18 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeLike operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeLike operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeLike, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeLike, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeLike, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -2320,7 +2416,7 @@ func TestSubmitPost(t *testing.T) {
 			feeRateNanosPerKB, updaterPkBase58Check,
 			updaterPrivBase58Check, profilePubKey, newUsername,
 			newDescription, newProfilePic, newCreatorBasisPoints,
-			newStakeMultipleBasisPoints, isHidden)
+			newStakeMultipleBasisPoints, isHidden, false)
 
 		require.NoError(err)
 
@@ -2431,7 +2527,7 @@ func TestSubmitPost(t *testing.T) {
 	// Creating a post from a registered profile should succeed
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -2459,7 +2555,7 @@ func TestSubmitPost(t *testing.T) {
 
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m3Pub,         /*updaterPkBase58Check*/
 			m3Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -2516,7 +2612,12 @@ func TestSubmitPost(t *testing.T) {
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+		}
 	}
 
 	// PostHashToModify with bad length
@@ -3682,7 +3783,7 @@ func TestUpdateProfile(t *testing.T) {
 			feeRateNanosPerKB, updaterPkBase58Check,
 			updaterPrivBase58Check, profilePubKey, newUsername,
 			newDescription, newProfilePic, newCreatorBasisPoints,
-			newStakeMultipleBasisPoints, isHidden)
+			newStakeMultipleBasisPoints, isHidden, false)
 
 		require.NoError(err)
 
@@ -3732,9 +3833,14 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		blockHeight := chain.blockTip().Height
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+		}
 	}
 
 	// Username too long should fail.
@@ -3752,7 +3858,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameTooLong)
 	}
@@ -3772,7 +3878,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,       /*newProfilePic*/
 			10*100,         /*newCreatorBasisPoints*/
 			2*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileDescriptionTooLong)
 	}
@@ -3790,7 +3896,7 @@ func TestUpdateProfile(t *testing.T) {
 			longPic,       /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxProfilePicSize)
 	}
@@ -3808,7 +3914,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			100*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
@@ -3826,7 +3932,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			.99*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
@@ -3844,7 +3950,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			101*100,       /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileCreatorPercentageSize)
 	}
@@ -3862,7 +3968,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,        /*newProfilePic*/
 			10*100,          /*newCreatorBasisPoints*/
 			1.25*100*100,    /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		// This returned RuleErrorProfilePubKeyNotAuthorized for me once
 		// "ConnectTransaction: : _connectUpdateProfile: ... RuleErrorProfilePubKeyNotAuthorized"
@@ -3882,7 +3988,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -3890,7 +3996,7 @@ func TestUpdateProfile(t *testing.T) {
 	// A simple registration should succeed
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m0Pub,         /*updaterPkBase58Check*/
 			m0Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -3915,7 +4021,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3930,7 +4036,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,          /*newProfilePic*/
 			10*100,            /*newCreatorBasisPoints*/
 			1.25*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3945,7 +4051,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,            /*newProfilePic*/
 			10*100,              /*newCreatorBasisPoints*/
 			1.25*100*100,        /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3960,7 +4066,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3975,7 +4081,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 	}
@@ -3993,7 +4099,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -4010,13 +4116,13 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
 		// Register m1 and then try to steal the username
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m1Pub,         /*updaterPkBase58Check*/
 			m1Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -4038,7 +4144,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -4055,7 +4161,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -4072,7 +4178,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 	}
@@ -4080,7 +4186,7 @@ func TestUpdateProfile(t *testing.T) {
 	// Register m2 (should succeed)
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -4110,7 +4216,7 @@ func TestUpdateProfile(t *testing.T) {
 	// An update followed by a reversion should result in no change.
 	{
 		updateProfile(
-			1,                    /*feeRateNanosPerKB*/
+			10,                   /*feeRateNanosPerKB*/
 			m2Pub,                /*updaterPkBase58Check*/
 			m2Priv,               /*updaterPrivBase58Check*/
 			[]byte{},             /*profilePubKey*/
@@ -4122,7 +4228,7 @@ func TestUpdateProfile(t *testing.T) {
 			true /*isHidden*/)
 
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,            /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -4137,7 +4243,7 @@ func TestUpdateProfile(t *testing.T) {
 	// A normal user updating their profile should succeed.
 	{
 		updateProfile(
-			1,                  /*feeRateNanosPerKB*/
+			10,                 /*feeRateNanosPerKB*/
 			m1Pub,              /*updaterPkBase58Check*/
 			m1Priv,             /*updaterPrivBase58Check*/
 			[]byte{},           /*profilePubKey*/
@@ -4162,7 +4268,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,         /*newProfilePic*/
 			10*100,           /*newCreatorBasisPoints*/
 			1.25*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false /*isHidden*/, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -4170,7 +4276,7 @@ func TestUpdateProfile(t *testing.T) {
 	// ParamUpdater updating another user's profile should succeed.
 	{
 		updateProfile(
-			1,                            /*feeRateNanosPerKB*/
+			10,                           /*feeRateNanosPerKB*/
 			m3Pub,                        /*updaterPkBase58Check*/
 			m3Priv,                       /*updaterPrivBase58Check*/
 			m0PkBytes,                    /*profilePubKey*/
@@ -4185,7 +4291,7 @@ func TestUpdateProfile(t *testing.T) {
 	// ParamUpdater creating another user's profile should succeed.
 	{
 		updateProfile(
-			1,                            /*feeRateNanosPerKB*/
+			10,                           /*feeRateNanosPerKB*/
 			m3Pub,                        /*updaterPkBase58Check*/
 			m3Priv,                       /*updaterPrivBase58Check*/
 			m5PkBytes,                    /*profilePubKey*/
@@ -4220,11 +4326,46 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,
 			11*100,
 			1.5*100*100,
-			false)
+			false, false)
+		blockHeight := chain.blockTip().Height + 1
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
-		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		}
 
+		// For the balance model, check the new RuleErrorCreateProfileTxnWithInsufficientFee
+		if blockHeight >= BalanceModelBlockHeight {
+			// Reduce the minimum network fee to 1 nanos per kb but make the create profile fee 50.
+			updateGlobalParamsEntry(
+				100,
+				m3Pub,
+				m3Priv,
+				int64(InitialUSDCentsPerBitcoinExchangeRate),
+				1,
+				50)
+
+			// Update profile fails as the fee is too low
+			_, _, _, err = _updateProfile(
+				t, chain, db, params,
+				10,
+				m4Pub,
+				m4Priv,
+				m4PkBytes,
+				"m4_username",
+				"m4 description",
+				otherShortPic,
+				11*100,
+				1.5*100*100,
+				false,
+				true, /*forceZeroAdditionalFees*/
+			)
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorCreateProfileTxnWithInsufficientFee)
+		}
+
+		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
 		updateGlobalParamsEntry(
 			100,
 			m3Pub,
@@ -4245,10 +4386,11 @@ func TestUpdateProfile(t *testing.T) {
 			otherShortPic,
 			11*100,
 			1.5*100*100,
-			false,
+			false, false,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+
 		// Update succeeds because fee is high enough and user has enough to meet fee.
 		updateProfile(
 			10,
@@ -5679,7 +5821,7 @@ func TestFollowTxns(t *testing.T) {
 			feeRateNanosPerKB, updaterPkBase58Check,
 			updaterPrivBase58Check, profilePubKey, newUsername,
 			newDescription, newProfilePic, newCreatorBasisPoints,
-			newStakeMultipleBasisPoints, isHidden)
+			newStakeMultipleBasisPoints, isHidden, false)
 
 		require.NoError(err)
 
@@ -9748,7 +9890,7 @@ func _helpTestCreatorCoinBuySell(
 				testData.UpdaterPrivateKeyBase58Check, profilePkBytes, testData.ProfileUsername,
 				testData.ProfileDescription, testData.ProfilePic,
 				testData.ProfileCreatorBasisPoints, /*CreatorBasisPoints*/
-				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
+				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/, false)
 			require.NoError(err)
 		} else if testData.TxnType == TxnTypeFollow {
 			utxoOps, txn, _, err = _doFollowTxn(
@@ -10310,7 +10452,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			m0Priv, nil, "m0",
 			"m0 profile", "",
 			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 		require.NoError(err)
 	}
 	// Create a profile for m1
@@ -10321,7 +10463,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			m1Priv, nil, "m1",
 			"m1 profile", "",
 			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 		require.NoError(err)
 	}
 
@@ -10706,7 +10848,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			m0Priv, nil, "m0",
 			"m0 profile", "",
 			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 		require.NoError(err)
 	}
 	// Create a profile for m1.
@@ -10717,7 +10859,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			m1Priv, nil, "m1",
 			"m1 profile", "",
 			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 		require.NoError(err)
 	}
 
@@ -11649,7 +11791,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		t, chain, db, params,
 		feeRateNanosPerKB /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
 		"i am m0", "m0 profile pic", 2500, /*CreatorBasisPoints*/
-		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/, false)
 	require.NoError(err)
 
 	// m1 buys some m0 creator coin.
@@ -20136,7 +20278,8 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 
 		// We want our transaction to have at least one input, even if it all
 		// goes to change. This ensures that the transaction will not be "replayable."
-		if len(txn.TxInputs) == 0 {
+		blockHeight := chain.blockTip().Height + 1
+		if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 			return fmt.Errorf(
 				"giveCustomDeSoDiamondTxn: BasicTransfer txn must have at" +
 					" least one input but had zero inputs instead. Try increasing the fee rate.")
@@ -20148,7 +20291,6 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
 		// get mined into the next block.
-		blockHeight := chain.blockTip().Height + 1
 		utxoOps, totalInput, totalOutput, fees, err :=
 			utxoView.ConnectTransaction(
 				txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -20157,13 +20299,19 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		}
 		require.Equal(t, totalInput, totalOutput+fees)
 
-		// We should have one SPEND UtxoOperation for each input, one ADD operation
-		// for each output, and one OperationTypeDeSoDiamond operation at the end.
-		require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-		for ii := 0; ii < len(txn.TxInputs); ii++ {
-			require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+		if blockHeight < BalanceModelBlockHeight {
+			// We should have one SPEND UtxoOperation for each input, one ADD operation
+			// for each output, and one OperationTypeDeSoDiamond operation at the end.
+			require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+			for ii := 0; ii < len(txn.TxInputs); ii++ {
+				require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+			}
+			require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
+		} else {
+			require.Equal(t, OperationTypeAddBalance, utxoOps[0].Type)
+			require.Equal(t, OperationTypeSpendBalance, utxoOps[1].Type)
+			require.Equal(t, OperationTypeDeSoDiamond, utxoOps[2].Type)
 		}
-		require.Equal(OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
 
 		require.NoError(utxoView.FlushToDb())
 

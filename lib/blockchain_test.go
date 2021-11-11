@@ -969,10 +969,10 @@ func TestValidateBasicTransfer(t *testing.T) {
 		txn := _assembleBasicTransferTxnFullySigned(t, chain, spendAmount, feeRateNanosPerKB,
 			senderPkString, recipientPkString, senderPrivString, nil)
 		{
-			senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+			recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
 			require.NoError(err)
 			txn.TxOutputs = append(txn.TxOutputs, &DeSoOutput{
-				PublicKey: senderPkBytes,
+				PublicKey: recipientPkBytes,
 				// Guaranteed to be more than we're allowed to spend.
 				AmountNanos: firstBlockReward,
 			})
@@ -980,9 +980,15 @@ func TestValidateBasicTransfer(t *testing.T) {
 			_signTxn(t, txn, senderPrivString)
 		}
 
+		blockHeight := chain.blockTip().Height + 1
+
 		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnOutputExceedsInput)
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnOutputExceedsInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		}
 	}
 
 	// Verify that a transaction spending an immature block reward is shot down.
@@ -1001,9 +1007,14 @@ func TestValidateBasicTransfer(t *testing.T) {
 		})
 		// Re-sign the transaction.
 		_signTxn(t, txn, senderPrivString)
+		blockHeight := chain.blockTip().Height + 1
 		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInputSpendsImmatureBlockReward)
+		if blockHeight < BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorInputSpendsImmatureBlockReward)
+		} else {
+			require.Contains(err.Error(), RuleErrorBalanceModelDoesNotUseUTXOInputs)
+		}
 	}
 }
 

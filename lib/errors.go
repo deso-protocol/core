@@ -173,8 +173,9 @@ const (
 	RuleErrorBasicTransferInsufficientDeSoForDiamondLevel         RuleError = "RuleErrorBasicTransferInsufficientDeSoForDiamondLevel"
 
 	// Balance Model
-	RuleErrorBalanceModelDoesNotUseUTXOInputs RuleError = "RuleErrorBalanceModelDoesNotUseUTXOInputs"
-	RuleErrorInsufficientBalance              RuleError = "RuleErrorInsufficientBalance"
+	RuleErrorBalanceModelDoesNotUseUTXOInputs    RuleError = "RuleErrorBalanceModelDoesNotUseUTXOInputs"
+	RuleErrorInsufficientBalance                 RuleError = "RuleErrorInsufficientBalance"
+	RuleErrorCreateProfileTxnWithInsufficientFee RuleError = "RuleErrorCreateProfileTxnWithInsufficientFee"
 
 	RuleErrorCreatorCoinTransferRequiresNonZeroInput                    RuleError = "RuleErrorCreatorCoinTransferRequiresNonZeroInput"
 	RuleErrorCreatorCoinTransferInvalidProfilePubKeySize                RuleError = "RuleErrorCreatorCoinTransferInvalidProfilePubKeySize"

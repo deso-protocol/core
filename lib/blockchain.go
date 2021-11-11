@@ -80,6 +80,9 @@ const (
 	StatusBitcoinHeaderValidateFailed
 )
 
+// RPH-FIXME: Implement real nonce.
+var GlobalTxnNonce uint64
+
 func (blockStatus BlockStatus) String() string {
 	if blockStatus == 0 {
 		return "NONE"
@@ -1337,8 +1340,8 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32) error {
 		glog.Tracef("CheckTransactionSanity: Txn needs at least one input: %v", spew.Sdump(txn))
 		return RuleErrorTxnMustHaveAtLeastOneInput
 	}
-	// Every txn must have at least one output unless it is one of the following transaction
-	// types.
+	// Prior to the switch from UTXOs to a balance model, every txn was required to  have at
+	// least one output unless it is one of the following transaction types.
 	// - BitcoinExchange transactions are deduped using the hash of the Bitcoin transaction
 	//   embedded in them and having an output adds no value because the output is implied
 	//   by the Bitcoin transaction embedded in it. In particular, the output is automatically
@@ -1350,7 +1353,8 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32) error {
 	//   balance on a creator coin)
 	canHaveZeroOutputs := (txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange ||
 		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage ||
-		txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin) // TODO: add a test for this case
+		txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin || // TODO: add a test for this case
+		blockHeight >= BalanceModelBlockHeight)
 
 	if len(txn.TxOutputs) == 0 && !canHaveZeroOutputs {
 		glog.Tracef("CheckTransactionSanity: Txn needs at least one output: %v", spew.Sdump(txn))
@@ -3648,9 +3652,9 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, 0, fmt.Errorf(
-			"CreateBasicTransferTxnWithDiamonds: CreatorCoinTransfer txn must have at" +
+			"CreateBasicTransferTxnWithDiamonds: Txn must have at" +
 				" least one input but had zero inputs instead. Try increasing the fee rate.")
 	}
 
@@ -3814,22 +3818,25 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	// balance model transactions don't use UTXOs, they don't require change to be paid.
 	blockHeight := bc.blockTip().Height + 1
 	if blockHeight >= BalanceModelBlockHeight {
-		// First check that we have the right txn version so fees are computed properly.
-		if txArg.TxnVersion != 1 {
-			return 0, 0, 0, 0, fmt.Errorf(
-				"AddInputsAndChangeToTransaction: Incompatible txn version for balance model: %d",
-				txArg.TxnVersion)
-		}
+		txArg.TxnVersion = 1
+		GlobalTxnNonce++
+		txArg.TxnNonce = GlobalTxnNonce
 
 		feeAmountNanos := uint64(0)
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 			feeAmountNanos = _computeMaxTxFee(txArg, minFeeRateNanosPerKB)
 		}
-		txArg.TxnFeeNanos = feeAmountNanos
+		txArg.TxnFeeNanos = feeAmountNanos + additionalFees
 
-		totalInput += spendAmount
-		totalInput += feeAmountNanos
-		return totalInput, spendAmount, 0, feeAmountNanos, nil
+		// Prior to the BalanceModelBlockHeight, "additionalFees" such as the create profile
+		// fee were backed into the spend amount in order to create an "implicit" fee. However,
+		// in the balance model, all outputs and fees must be set explicitly so it is included
+		// in TxnFeeNanos here instead.
+		explicitSpendAmount := spendAmount - additionalFees
+
+		totalInput += explicitSpendAmount
+		totalInput += txArg.TxnFeeNanos
+		return totalInput, spendAmount, 0, txArg.TxnFeeNanos, nil
 	}
 
 	// Add input utxos to the transaction until we have enough total input to cover
