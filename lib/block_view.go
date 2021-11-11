@@ -9699,8 +9699,8 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		return nil
 	}
 
-	// One iteration for all the PKIDs
-	// NOTE: Work in progress. Testing with follows for now.
+	// One iteration for all the PKIDs to load relevant profiles
+	// TODO: Uniqueness
 	var publicKeys []*PublicKey
 	for _, txn := range desoBlock.Txns {
 		if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
@@ -9739,10 +9739,11 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 	}
 
 	// One iteration for everything else
-	// TODO: For some reason just fetching follows from the DB causes consensus issues??
+	// TODO: Uniqueness
+	var balances []*PGBalance
 	var outputs []*PGTransactionOutput
 	var follows []*PGFollow
-	var balances []*PGCreatorCoinBalance
+	var creatorCoinBalances []*PGCreatorCoinBalance
 	var likes []*PGLike
 	var posts []*PGPost
 	var lowercaseUsernames []string
@@ -9751,11 +9752,22 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		// Preload all the inputs
 		for _, txInput := range txn.TxInputs {
 			output := &PGTransactionOutput{
-				OutputHash:  &txInput.TxID,
+				OutputHash:  NewBlockHash(txInput.TxID.ToBytes()),
 				OutputIndex: txInput.Index,
 				Spent:       false,
 			}
 			outputs = append(outputs, output)
+		}
+
+		// Preload balances for all transaction public keys
+		if len(txn.PublicKey) > 0 {
+			balancePublicKey := NewPublicKey(txn.PublicKey)
+			balances = append(balances, &PGBalance{
+				PublicKey: balancePublicKey,
+			})
+
+			// We cache balances as zero and then fill them in later
+			bav.PublicKeyToDeSoBalanceNanos[*balancePublicKey] = 0
 		}
 
 		if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
@@ -9777,7 +9789,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 				HolderPKID:  bav.GetPKIDForPublicKey(txn.PublicKey).PKID.NewPKID(),
 				CreatorPKID: bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 			}
-			balances = append(balances, balance)
+			creatorCoinBalances = append(creatorCoinBalances, balance)
 
 			// We cache the balances as not present and then fill them in later
 			balanceEntryKey := MakeCreatorCoinBalanceKey(balance.HolderPKID, balance.CreatorPKID)
@@ -9789,7 +9801,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 					HolderPKID:  bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 					CreatorPKID: bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 				}
-				balances = append(balances, balance)
+				creatorCoinBalances = append(creatorCoinBalances, balance)
 
 				// We cache the balances as not present and then fill them in later
 				balanceEntryKey = MakeCreatorCoinBalanceKey(balance.HolderPKID, balance.CreatorPKID)
@@ -9846,13 +9858,13 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 	}
 
 	if len(outputs) > 0 {
-		//foundOutputs := bav.Postgres.GetOutputs(outputs)
-		//for _, output := range foundOutputs {
-		//	err := bav._setUtxoMappings(output.NewUtxoEntry())
-		//	if err != nil {
-		//		return err
-		//	}
-		//}
+		foundOutputs := bav.Postgres.GetOutputs(outputs)
+		for _, output := range foundOutputs {
+			err := bav._setUtxoMappings(output.NewUtxoEntry())
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	if len(follows) > 0 {
@@ -9863,8 +9875,8 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		}
 	}
 
-	if len(balances) > 0 {
-		foundBalances := bav.Postgres.GetCreatorCoinBalances(balances)
+	if len(creatorCoinBalances) > 0 {
+		foundBalances := bav.Postgres.GetCreatorCoinBalances(creatorCoinBalances)
 		for _, balance := range foundBalances {
 			balanceEntry := balance.NewBalanceEntry()
 			bav._setBalanceEntryMappings(balanceEntry)
@@ -9890,6 +9902,13 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		foundProfiles := bav.Postgres.GetProfilesForUsername(lowercaseUsernames)
 		for _, profile := range foundProfiles {
 			bav.setProfileMappings(profile)
+		}
+	}
+
+	if len(balances) > 0 {
+		foundBalances := bav.Postgres.GetBalances(balances)
+		for _, balance := range foundBalances {
+			bav.PublicKeyToDeSoBalanceNanos[*balance.PublicKey] = balance.BalanceNanos
 		}
 	}
 

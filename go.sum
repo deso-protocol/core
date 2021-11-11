@@ -586,6 +586,8 @@ github.com/unrolled/secure v1.0.8/go.mod h1:fO+mEan+FLB0CdEnHf6Q4ZZVNqG+5fuLFnP8
 github.com/uptrace/bun v1.0.14/go.mod h1:rs7qARtH6aqLtcfmloWM6qn90iyY53N2ScLQssIrevw=
 github.com/uptrace/bun v1.0.16 h1:tqxmeQvYxiJgH2kL8MWuMvXQRr+fs3Aagu5jbfj6YXc=
 github.com/uptrace/bun v1.0.16/go.mod h1:rs7qARtH6aqLtcfmloWM6qn90iyY53N2ScLQssIrevw=
+github.com/uptrace/bun v1.0.17 h1:ti3IyOieIKaBO2pmxB1Rj8R1WpXw7utaRmr5kL9WrSs=
+github.com/uptrace/bun v1.0.17/go.mod h1:rs7qARtH6aqLtcfmloWM6qn90iyY53N2ScLQssIrevw=
 github.com/uptrace/bun/dialect/mysqldialect v1.0.14 h1:n6ii9CB0tQKGV5ZVLs2EZmFVVYrjfDyjWI5NbzhMxvQ=
 github.com/uptrace/bun/dialect/mysqldialect v1.0.14/go.mod h1:hU8kY4kaM+316hV6pOQesgfJxfZuXrFfuYZuCMHwQZc=
 github.com/uptrace/bun/dialect/mysqldialect v1.0.16 h1:OOQIlF3+CoILqCeGcMReADDwqM+iqJl3QP46T4AGrYA=

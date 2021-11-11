@@ -2174,6 +2174,15 @@ func (postgres *Postgres) GetBalance(publicKey *PublicKey) uint64 {
 	return balance.BalanceNanos
 }
 
+func (postgres *Postgres) GetBalances(balances []*PGBalance) []*PGBalance {
+	err := postgres.db.NewSelect().Model(&balances).WherePK("public_key").Scan(postgres.ctx)
+	if err != nil {
+		LogError(err)
+		return nil
+	}
+	return balances
+}
+
 //
 // PGChain Init
 //
