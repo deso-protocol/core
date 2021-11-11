@@ -9636,7 +9636,10 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	// enough fees to get mined into the Bitcoin blockchain itself then they're almost certainly not spam.
 	// If the transaction size was set to 0, skip validating the fee is above the minimum.
 	// If the current minimum network fee per kb is set to 0, that indicates we should not assess a minimum fee.
-	if txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange && txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
+	// Similarly, BlockReward transactions do not require a fee.
+	isFeeExempt := (txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange || txn.TxnMeta.GetTxnType() == TxnTypeBlockReward)
+
+	if !isFeeExempt && txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
 		// Make sure there isn't overflow in the fee.
 		if fees != ((fees * 1000) / 1000) {
 			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation

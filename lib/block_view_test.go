@@ -100,10 +100,10 @@ func TestBalanceModel(t *testing.T) {
 	TestSpamUpdateProfile(t)
 	TestUpdateProfileChangeBack(t)
 	TestLikeTxns(t)
-	// TestFollowTxns(t)
-	// TestPrivateMessage(t)
-	//
-	//	// Creator coins.
+	TestFollowTxns(t)
+	TestPrivateMessage(t)
+
+	// Creator coins.
 	//	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
 	//	TestCreatorCoinTransferWithSwapIdentity(t)
 	//	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
@@ -5032,9 +5032,15 @@ func TestPrivateMessage(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
-		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)),
+		)
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 7)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 1)),
+		)
 	}
 
 	// Roll back the block and make sure we don't hit any errors.
@@ -5729,9 +5735,15 @@ func TestLikeTxns(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
-		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)),
+		)
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 7)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 1)),
+		)
 	}
 
 	testConnectedState()
@@ -6382,9 +6394,15 @@ func TestFollowTxns(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
-		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)),
+		)
+		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 7)))
+		require.Equal(
+			int64(4)+int64(_balanceModelDiff(chain, 2)),
+			int64(chain.EstimateDefaultFeeRateNanosPerKB(.005, 1)),
+		)
 	}
 
 	testConnectedState()
