@@ -16,6 +16,7 @@ type Config struct {
 	TXIndex              bool
 	Regtest              bool
 	PostgresURI          string
+	Trends               bool
 
 	// Peers
 	ConnectIPs          []string
@@ -84,6 +85,7 @@ func LoadConfig() *Config {
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
+	config.Trends = viper.GetBool("trends")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
