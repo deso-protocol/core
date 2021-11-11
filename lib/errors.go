@@ -244,6 +244,7 @@ const (
 	RuleErrorNFTRoyaltyHasTooManyBasisPoints      RuleError = "RuleErrorNFTRoyaltyHasTooManyBasisPoints"
 	RuleErrorNFTRoyaltyOverflow                   RuleError = "RuleErrorNFTRoyaltyOverflow"
 	RuleErrorNFTUpdateMustUpdateIsForSaleStatus   RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
+	RuleErrorBuyNowNFTBeforeBlockHeight           RuleError = "RuleErrorBuyNowNFTBeforeBlockHeight"
 
 	// NFT Bids
 	RuleErrorNFTBidRequiresNonZeroInput                    RuleError = "RuleErrorNFTBidRequiresNonZeroInput"

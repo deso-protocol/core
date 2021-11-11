@@ -6821,14 +6821,21 @@ func (bav *UtxoView) _connectCreateNFT(
 	if postEntry.IsNFT {
 		return 0, 0, nil, RuleErrorCreateNFTOnPostThatAlreadyIsNFT
 	}
-	// We can't encrypt unlockable content if Buy Now is enabled.
-	if txMeta.HasUnlockable && isBuyNow {
-		return 0, 0, nil, RuleErrorCannotHaveUnlockableAndBuyNowNFT
+	if isBuyNow && blockHeight < BuyNowNFTBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowNFTBeforeBlockHeight, "_connectCreateNFT: ")
 	}
-	// We can't sell an NFT for 0.
-	if isBuyNow && txMeta.MinBidAmountNanos == 0 {
-		return 0, 0, nil, RuleErrorBuyNowMustHaveMinBidAmountNanos
+	// We only need to make these checks if we are past the BuyNowNFTBlockHeight
+	if blockHeight >= BuyNowNFTBlockHeight {
+		// We can't encrypt unlockable content if Buy Now is enabled.
+		if txMeta.HasUnlockable && isBuyNow {
+			return 0, 0, nil, errors.Wrapf(RuleErrorCannotHaveUnlockableAndBuyNowNFT, "_connectCreateNFT: ")
+		}
+		// We can't sell an NFT for 0.
+		if isBuyNow && txMeta.MinBidAmountNanos == 0 {
+			return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowMustHaveMinBidAmountNanos, "_connectCreateNFT: ")
+		}
 	}
+
 	profileEntry := bav.GetProfileEntryForPublicKey(postEntry.PosterPublicKey)
 	if profileEntry == nil || profileEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCantCreateNFTWithoutProfileEntry
@@ -6949,13 +6956,21 @@ func (bav *UtxoView) _connectUpdateNFT(
 			txMeta.NFTPostHash.String())
 	}
 
-	if postEntry.HasUnlockable && isBuyNow {
-		return 0, 0, nil, errors.Wrapf(RuleErrorCannotHaveUnlockableAndBuyNowNFT, "_connectUpdateNFT: ")
+	if isBuyNow && blockHeight < BuyNowNFTBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowNFTBeforeBlockHeight, "_connectUpdateNFT: ")
 	}
 
-	if isBuyNow && txMeta.MinBidAmountNanos == 0 {
-		return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowMustHaveMinBidAmountNanos, "_connectUpdateNFT")
+	// We only need to make these checks if we are past the Buy Now NFT Block Height
+	if blockHeight >= BuyNowNFTBlockHeight {
+		if postEntry.HasUnlockable && isBuyNow {
+			return 0, 0, nil, errors.Wrapf(RuleErrorCannotHaveUnlockableAndBuyNowNFT, "_connectUpdateNFT: ")
+		}
+
+		if isBuyNow && txMeta.MinBidAmountNanos == 0 {
+			return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowMustHaveMinBidAmountNanos, "_connectUpdateNFT")
+		}
 	}
+
 
 	// Verify that the updater is the owner of the NFT.
 	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
@@ -7223,6 +7238,10 @@ func (bav *UtxoView) _connectNFTBid(
 		}
 		if nftEntry.IsBuyNow && txMeta.BidAmountNanos == 0 {
 			return 0, 0, nil, RuleErrorZeroBidOnBuyNowNFT
+		}
+		// Verify that we are not bidding on a Buy Now NFT before the Buy Now NFT Block Height. This should never happen.
+		if nftEntry.IsBuyNow && blockHeight < BuyNowNFTBlockHeight {
+			return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowNFTBeforeBlockHeight, "_connectNFTBid: ")
 		}
 		if nftEntry.IsBuyNow && txMeta.BidAmountNanos >= nftEntry.MinBidAmountNanos {
 			isBuyNowBid = true
