@@ -15326,7 +15326,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 
 func TestNFTBasic(t *testing.T) {
 	BrokenNFTBidsFixBlockHeight = uint32(0)
-
+	BuyNowNFTBlockHeight = uint32(0)
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -19001,6 +19001,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 }
 
 func TestNFTBuyNow(t *testing.T) {
+	BuyNowNFTBlockHeight = uint32(0)
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
