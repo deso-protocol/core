@@ -103,6 +103,9 @@ func TestBalanceModel(t *testing.T) {
 	TestFollowTxns(t)
 	TestPrivateMessage(t)
 
+	// Derived keys.
+	TestAuthorizeDerivedKeyBasic(t)
+
 	// Creator coins.
 	//	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
 	//	TestCreatorCoinTransferWithSwapIdentity(t)
@@ -137,9 +140,6 @@ func TestBalanceModel(t *testing.T) {
 	//	TestNFTMaxCopiesGlobalParam(t)
 	//	TestNFTPreviousOwnersCantAcceptBids(t)
 	//	TestNFTTransfersAndBurns(t)
-	//
-	//	// Derived keys.
-	//	TestAuthorizeDerivedKeyBasic(t)
 }
 
 func TestBasicTransfer(t *testing.T) {
@@ -1855,13 +1855,18 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInput)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateProfile operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateProfile operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeAuthorizeDerivedKey, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeAuthorizeDerivedKey, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeAuthorizeDerivedKey, utxoOps[len(utxoOps)-1].Type)
 
 	return utxoOps, txn, blockHeight, nil
 }
