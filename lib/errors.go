@@ -176,6 +176,7 @@ const (
 	RuleErrorBalanceModelDoesNotUseUTXOInputs    RuleError = "RuleErrorBalanceModelDoesNotUseUTXOInputs"
 	RuleErrorInsufficientBalance                 RuleError = "RuleErrorInsufficientBalance"
 	RuleErrorCreateProfileTxnWithInsufficientFee RuleError = "RuleErrorCreateProfileTxnWithInsufficientFee"
+	RuleErrorCreateNFTTxnWithInsufficientFee     RuleError = "RuleErrorCreateNFTTxnWithInsufficientFee"
 
 	RuleErrorCreatorCoinTransferRequiresNonZeroInput                    RuleError = "RuleErrorCreatorCoinTransferRequiresNonZeroInput"
 	RuleErrorCreatorCoinTransferInvalidProfilePubKeySize                RuleError = "RuleErrorCreatorCoinTransferInvalidProfilePubKeySize"

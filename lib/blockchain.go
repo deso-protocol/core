@@ -2980,7 +2980,8 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreatorCoinTxn: CreatorCoin txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -3022,7 +3023,8 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreatorCoinTransferTxn: CreatorCoinTransfer txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -3071,7 +3073,8 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreateNFTTxn: CreateNFT txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -3111,7 +3114,8 @@ func (bc *Blockchain) CreateNFTBidTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateNFTBidTxn: NFTBid txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -3153,7 +3157,8 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateNFTTransferTxn: NFTTransfer txn must have " +
 			"at least one input but had zero inputs instead. Try increasing the fee rate.")
 	}
@@ -3191,7 +3196,8 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf(
 			"CreateAcceptNFTTransferTxn: AcceptNFTTransfer txn must have at least one input" +
 				" but had zero inputs instead. Try increasing the fee rate.")
@@ -3229,7 +3235,8 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateBurnNFTTxn: BurnNFT txn must have at least " +
 			"one input but had zero inputs instead. Try increasing the fee rate.")
 	}
@@ -3328,7 +3335,8 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateAcceptNFTBidTxn: AcceptNFTBid txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -3371,7 +3379,8 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	blockHeight := bc.blockTip().Height + 1
+	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateNFTTxn: AcceptNFTBid txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")

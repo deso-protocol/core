@@ -6916,8 +6916,15 @@ func (bav *UtxoView) _connectCreateNFT(
 	if math.MaxUint64-totalOutput < nftFee {
 		return 0, 0, nil, fmt.Errorf("_connectCreateNFTFee: nft Fee overflow")
 	}
-	totalOutput += nftFee
-	if totalInput < totalOutput {
+	// Prior to the BalanceModelBlockHeight, the nftFee was returned as part of the
+	// "totalOutput" returned by _connectCreateNFT. However, for the balance model,
+	// this fee is baked into the "TxnFeeNanos".
+	if blockHeight < BalanceModelBlockHeight {
+		totalOutput += nftFee
+	} else if blockHeight >= BalanceModelBlockHeight && txn.TxnFeeNanos < nftFee {
+		return 0, 0, nil, RuleErrorCreateNFTTxnWithInsufficientFee
+	}
+	if totalInput < totalOutput+txn.TxnFeeNanos {
 		return 0, 0, nil, RuleErrorCreateNFTWithInsufficientFunds
 	}
 
