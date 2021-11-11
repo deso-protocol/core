@@ -508,3 +508,21 @@ CREATE TABLE pg_metadata_burn_nft (
 
     UNIQUE INDEX (transaction_hash)
 );
+
+--bun:split
+
+CREATE TABLE pg_trends (
+    pkid                 BYTEA,
+    block_height         BIGINT,
+    founder_reward_nanos BIGINT,
+    diamond_nanos        BIGINT,
+    nft_seller_nanos     BIGINT,
+    nft_royalty_nanos    BIGINT,
+    num_holders          BIGINT,
+    coins_in_circulation BIGINT,
+    locked_nanos         BIGINT,
+    balance_nanos        BIGINT,
+    holding_nanos        BIGINT,
+
+    PRIMARY KEY (pkid, block_height)
+);

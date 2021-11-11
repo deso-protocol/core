@@ -37,3 +37,4 @@ DROP TABLE pg_derived_keys;
 DROP TABLE pg_metadata_nft_transfer;
 DROP TABLE pg_metadata_accept_nft_transfer;
 DROP TABLE pg_metadata_burn_nft;
+DROP TABLE pg_trends;
