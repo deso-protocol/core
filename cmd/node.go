@@ -135,7 +135,7 @@ func (node *Node) Start() {
 
 		db = bun.NewDB(sqldb, mysqldialect.New())
 		node.Postgres = lib.NewPostgres(db)
-		//db.AddQueryHook(bundebug.NewQueryHook(bundebug.WithVerbose(true)))
+		db.AddQueryHook(lib.NewQueryHook(lib.WithVerbose(true)))
 
 		migrator := migrate.NewMigrator(db, migrations.Migrations)
 

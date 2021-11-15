@@ -1223,9 +1223,9 @@ func (postgres *Postgres) UpsertBlockAndTransactions(blockNode *BlockNode, desoB
 
 func (postgres *Postgres) FlushView(view *UtxoView) error {
 	return postgres.db.RunInTx(postgres.ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if err := postgres.flushUtxos(tx, view); err != nil {
-			return err
-		}
+		//if err := postgres.flushUtxos(tx, view); err != nil {
+		//	return err
+		//}
 		if err := postgres.flushProfiles(tx, view); err != nil {
 			return err
 		}

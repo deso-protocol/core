@@ -1274,7 +1274,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the
 	// db.
 	if !ok {
-		if bav.Postgres != nil {
+		if false {
 			utxoEntry = bav.Postgres.GetUtxoEntryForUtxoKey(utxoKey)
 		} else {
 			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
@@ -9741,7 +9741,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 	// One iteration for everything else
 	// TODO: Uniqueness
 	var balances []*PGBalance
-	var outputs []*PGTransactionOutput
+	//var outputs []*PGTransactionOutput
 	var follows []*PGFollow
 	var creatorCoinBalances []*PGCreatorCoinBalance
 	var likes []*PGLike
@@ -9750,14 +9750,14 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 
 	for _, txn := range desoBlock.Txns {
 		// Preload all the inputs
-		for _, txInput := range txn.TxInputs {
-			output := &PGTransactionOutput{
-				OutputHash:  NewBlockHash(txInput.TxID.ToBytes()),
-				OutputIndex: txInput.Index,
-				Spent:       false,
-			}
-			outputs = append(outputs, output)
-		}
+		//for _, txInput := range txn.TxInputs {
+		//	output := &PGTransactionOutput{
+		//		OutputHash:  NewBlockHash(txInput.TxID.ToBytes()),
+		//		OutputIndex: txInput.Index,
+		//		Spent:       false,
+		//	}
+		//	outputs = append(outputs, output)
+		//}
 
 		// Preload balances for all transaction public keys
 		if len(txn.PublicKey) > 0 {
@@ -9857,15 +9857,15 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		}
 	}
 
-	if len(outputs) > 0 {
-		foundOutputs := bav.Postgres.GetOutputs(outputs)
-		for _, output := range foundOutputs {
-			err := bav._setUtxoMappings(output.NewUtxoEntry())
-			if err != nil {
-				return err
-			}
-		}
-	}
+	//if len(outputs) > 0 {
+	//	foundOutputs := bav.Postgres.GetOutputs(outputs)
+	//	for _, output := range foundOutputs {
+	//		err := bav._setUtxoMappings(output.NewUtxoEntry())
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
+	//}
 
 	if len(follows) > 0 {
 		foundFollows := bav.Postgres.GetFollows(follows)
@@ -11411,9 +11411,6 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
-		if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
-			return err
-		}
 		if err := bav._flushProfileEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
@@ -11456,6 +11453,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	// Always flush to BadgerDB.
+	if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
+		return err
+	}
 	if err := bav._flushBitcoinExchangeDataWithTxn(txn); err != nil {
 		return err
 	}

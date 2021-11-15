@@ -20,6 +20,7 @@ require (
 	github.com/dgraph-io/badger/v3 v3.2103.0
 	github.com/dgraph-io/ristretto v0.1.0 // indirect
 	github.com/ethereum/go-ethereum v1.9.25
+	github.com/fatih/color v1.13.0 // indirect
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/golang/glog v0.0.0-20210429001901-424d2337a529

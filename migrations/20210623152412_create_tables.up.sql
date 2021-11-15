@@ -56,6 +56,7 @@ CREATE TABLE pg_transaction_outputs (
     input_index  INT,
 
     UNIQUE INDEX (output_hash, output_index),
+    INDEX (output_hash, output_index, spent),
     INDEX (public_key)
 );
 
