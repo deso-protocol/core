@@ -1,7 +1,7 @@
 CREATE TABLE pg_chains (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name     TEXT(32) NOT NULL,
-    tip_hash BINARY(32) NOT NULL,
+    tip_hash VARCHAR(54) NOT NULL,
 
     UNIQUE INDEX (name(32))
 );
@@ -10,13 +10,13 @@ CREATE TABLE pg_chains (
 
 CREATE TABLE pg_blocks (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    hash              BINARY(32) NOT NULL,
-    parent_hash       BINARY(32),
+    hash              VARCHAR(54) NOT NULL,
+    parent_hash       VARCHAR(54),
     height            BIGINT NOT NULL,
-    difficulty_target BINARY(32)  NOT NULL,
-    cum_work          BINARY(32)  NOT NULL,
+    difficulty_target VARCHAR(54)  NOT NULL,
+    cum_work          VARCHAR(54)  NOT NULL,
     status            TEXT   NOT NULL,
-    tx_merkle_root    BINARY(32)  NOT NULL,
+    tx_merkle_root    VARCHAR(54)  NOT NULL,
     timestamp         BIGINT NOT NULL,
     nonce             BIGINT NOT NULL,
     extra_nonce       BIGINT,
@@ -30,13 +30,13 @@ CREATE TABLE pg_blocks (
 
 CREATE TABLE pg_transactions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    hash       BINARY(32),
-    block_hash BINARY(32) NOT NULL,
+    hash       VARCHAR(54),
+    block_hash VARCHAR(54) NOT NULL,
     type       SMALLINT NOT NULL,
-    public_key BINARY(33),
+    public_key VARCHAR(56),
     extra_data JSON,
-    r          BINARY(32),
-    s          BINARY(32),
+    r          VARCHAR(54),
+    s          VARCHAR(54),
 
     UNIQUE INDEX (hash)
 );
@@ -45,14 +45,14 @@ CREATE TABLE pg_transactions (
 
 CREATE TABLE pg_transaction_outputs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    output_hash  BINARY(32)    NOT NULL,
+    output_hash  VARCHAR(54)    NOT NULL,
     output_index INT      NOT NULL,
     output_type  SMALLINT NOT NULL,
     height       BIGINT   NOT NULL,
-    public_key   BINARY(33)    NOT NULL,
+    public_key   VARCHAR(56)    NOT NULL,
     amount_nanos BIGINT   NOT NULL,
     spent        BOOL     NOT NULL,
-    input_hash   BINARY(32),
+    input_hash   VARCHAR(54),
     input_index  INT,
 
     UNIQUE INDEX (output_hash, output_index),
@@ -64,8 +64,8 @@ CREATE TABLE pg_transaction_outputs (
 
 CREATE TABLE pg_metadata_block_rewards (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
-    extra_data       BINARY(32) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
+    extra_data       VARCHAR(54) NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
 );
@@ -74,9 +74,9 @@ CREATE TABLE pg_metadata_block_rewards (
 
 CREATE TABLE pg_metadata_bitcoin_exchanges (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash    BINARY(32) NOT NULL,
-    bitcoin_block_hash  BINARY(32) NOT NULL,
-    bitcoin_merkle_root BINARY(32) NOT NULL,
+    transaction_hash    VARCHAR(54) NOT NULL,
+    bitcoin_block_hash  VARCHAR(54) NOT NULL,
+    bitcoin_merkle_root VARCHAR(54) NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
 );
@@ -85,8 +85,8 @@ CREATE TABLE pg_metadata_bitcoin_exchanges (
 
 CREATE TABLE pg_metadata_private_messages (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash     BINARY(32)  NOT NULL,
-    recipient_public_key BINARY(33)  NOT NULL,
+    transaction_hash     VARCHAR(54)  NOT NULL,
+    recipient_public_key VARCHAR(56)  NOT NULL,
     encrypted_text       MEDIUMBLOB  NOT NULL,
     timestamp_nanos      BIGINT NOT NULL,
 
@@ -97,9 +97,9 @@ CREATE TABLE pg_metadata_private_messages (
 
 CREATE TABLE pg_metadata_submit_posts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash    BINARY(32)  NOT NULL,
-    post_hash_to_modify BINARY(32)  NOT NULL,
-    parent_stake_id     BINARY(32)  NOT NULL,
+    transaction_hash    VARCHAR(54)  NOT NULL,
+    post_hash_to_modify VARCHAR(54)  NOT NULL,
+    parent_stake_id     VARCHAR(54)  NOT NULL,
     body                MEDIUMTEXT  NOT NULL,
     timestamp_nanos     BIGINT NOT NULL,
     is_hidden           BOOL   NOT NULL,
@@ -111,7 +111,7 @@ CREATE TABLE pg_metadata_submit_posts (
 
 CREATE TABLE pg_metadata_update_exchange_rates (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash      BINARY(32) NOT NULL,
+    transaction_hash      VARCHAR(54) NOT NULL,
     usd_cents_per_bitcoin BIGINT NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
@@ -121,10 +121,10 @@ CREATE TABLE pg_metadata_update_exchange_rates (
 
 CREATE TABLE pg_metadata_update_profiles (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash         BINARY(32) NOT NULL,
-    profile_public_key       BINARY(33),
-    new_username             BINARY(32),
-    new_description          BINARY(32),
+    transaction_hash         VARCHAR(54) NOT NULL,
+    profile_public_key       VARCHAR(56),
+    new_username             VARCHAR(54),
+    new_description          VARCHAR(54),
     new_profile_pic          MEDIUMBLOB,
     new_creator_basis_points BIGINT NOT NULL,
 
@@ -135,8 +135,8 @@ CREATE TABLE pg_metadata_update_profiles (
 
 CREATE TABLE pg_metadata_follows (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash    BINARY(32) NOT NULL,
-    followed_public_key BINARY(33) NOT NULL,
+    transaction_hash    VARCHAR(54) NOT NULL,
+    followed_public_key VARCHAR(56) NOT NULL,
     is_unfollow         BOOL NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
@@ -146,8 +146,8 @@ CREATE TABLE pg_metadata_follows (
 
 CREATE TABLE pg_metadata_likes (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
-    liked_post_hash  BINARY(32) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
+    liked_post_hash  VARCHAR(54) NOT NULL,
     is_unlike        BOOL NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
@@ -157,8 +157,8 @@ CREATE TABLE pg_metadata_likes (
 
 CREATE TABLE pg_metadata_creator_coins (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash                BINARY(32) NOT NULL,
-    profile_public_key              BINARY(33) NOT NULL,
+    transaction_hash                VARCHAR(54) NOT NULL,
+    profile_public_key              VARCHAR(56) NOT NULL,
     operation_type                  SMALLINT NOT NULL,
     deso_to_sell_nanos              BIGINT NOT NULL,
     creator_coin_to_sell_nanos      BIGINT NOT NULL,
@@ -173,9 +173,9 @@ CREATE TABLE pg_metadata_creator_coins (
 
 CREATE TABLE pg_metadata_swap_identities (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
-    from_public_key  BINARY(33) NOT NULL,
-    to_public_key    BINARY(33) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
+    from_public_key  VARCHAR(56) NOT NULL,
+    to_public_key    VARCHAR(56) NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
 );
@@ -184,10 +184,10 @@ CREATE TABLE pg_metadata_swap_identities (
 
 CREATE TABLE pg_metadata_creator_coin_transfers (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash               BINARY(32) NOT NULL,
-    profile_public_key             BINARY(33) NOT NULL,
+    transaction_hash               VARCHAR(54) NOT NULL,
+    profile_public_key             VARCHAR(56) NOT NULL,
     creator_coin_to_transfer_nanos BIGINT NOT NULL,
-    receiver_public_key            BINARY(33) NOT NULL,
+    receiver_public_key            VARCHAR(56) NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
 );
@@ -196,8 +196,8 @@ CREATE TABLE pg_metadata_creator_coin_transfers (
 
 CREATE TABLE pg_metadata_create_nfts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash             BINARY(32) NOT NULL,
-    nft_post_hash                BINARY(32) NOT NULL,
+    transaction_hash             VARCHAR(54) NOT NULL,
+    nft_post_hash                VARCHAR(54) NOT NULL,
     num_copies                   BIGINT NOT NULL,
     has_unlockable               BOOL NOT NULL,
     is_for_sale                  BOOL NOT NULL,
@@ -212,8 +212,8 @@ CREATE TABLE pg_metadata_create_nfts (
 
 CREATE TABLE pg_metadata_update_nfts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash     BINARY(32) NOT NULL,
-    nft_post_hash        BINARY(32) NOT NULL,
+    transaction_hash     VARCHAR(54) NOT NULL,
+    nft_post_hash        VARCHAR(54) NOT NULL,
     serial_number        BIGINT NOT NULL,
     is_for_sale          BOOL NOT NULL,
     min_bid_amount_nanos BIGINT NOT NULL,
@@ -225,12 +225,12 @@ CREATE TABLE pg_metadata_update_nfts (
 
 CREATE TABLE pg_metadata_accept_nft_bids (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
-    nft_post_hash    BINARY(32) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
+    nft_post_hash    VARCHAR(54) NOT NULL,
     serial_number    BIGINT NOT NULL,
-    bidder_pkid      BINARY(33) NOT NULL,
+    bidder_pkid      VARCHAR(56) NOT NULL,
     bid_amount_nanos BIGINT NOT NULL,
-    unlockable_text  BINARY(32) NOT NULL,
+    unlockable_text  VARCHAR(54) NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
 );
@@ -239,8 +239,8 @@ CREATE TABLE pg_metadata_accept_nft_bids (
 
 CREATE TABLE pg_metadata_bid_inputs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
-    input_hash       BINARY(32) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
+    input_hash       VARCHAR(54) NOT NULL,
     input_index      BIGINT NOT NULL,
 
     UNIQUE INDEX (transaction_hash, input_hash, input_index)
@@ -250,8 +250,8 @@ CREATE TABLE pg_metadata_bid_inputs (
 
 CREATE TABLE pg_metadata_nft_bids (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
-    nft_post_hash    BINARY(32) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
+    nft_post_hash    VARCHAR(54) NOT NULL,
     serial_number    BIGINT NOT NULL,
     bid_amount_nanos BIGINT NOT NULL
 );
@@ -260,14 +260,14 @@ CREATE TABLE pg_metadata_nft_bids (
 
 CREATE TABLE pg_notifications (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
     mined            BOOL NOT NULL,
-    to_user          BINARY(32) NOT NULL,
-    from_user        BINARY(32) NOT NULL,
-    other_user       BINARY(32),
+    to_user          VARCHAR(54) NOT NULL,
+    from_user        VARCHAR(54) NOT NULL,
+    other_user       VARCHAR(54),
     type             SMALLINT NOT NULL,
     amount           BIGINT,
-    post_hash        BINARY(32),
+    post_hash        VARCHAR(54),
     timestamp        BIGINT NOT NULL
 );
 
@@ -275,8 +275,8 @@ CREATE TABLE pg_notifications (
 
 CREATE TABLE pg_profiles (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    pkid                       BINARY(33) NOT NULL,
-    public_key                 BINARY(33) NOT NULL,
+    pkid                       VARCHAR(56) NOT NULL,
+    public_key                 VARCHAR(56) NOT NULL,
     username                   TEXT(25),
     description                TEXT,
     profile_pic                MEDIUMBLOB,
@@ -296,11 +296,11 @@ CREATE TABLE pg_profiles (
 
 CREATE TABLE pg_posts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    post_hash                    BINARY(32) NOT NULL,
-    poster_public_key            BINARY(33) NOT NULL,
-    parent_post_hash             BINARY(32),
+    post_hash                    VARCHAR(54) NOT NULL,
+    poster_public_key            VARCHAR(56) NOT NULL,
+    parent_post_hash             VARCHAR(54),
     body                         MEDIUMTEXT,
-    reposted_post_hash           BINARY(32),
+    reposted_post_hash           VARCHAR(54),
     quoted_repost                BOOL,
     timestamp                    BIGINT,
     hidden                       BOOL,
@@ -326,8 +326,8 @@ CREATE TABLE pg_posts (
 
 CREATE TABLE pg_likes (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    liker_public_key BINARY(33) NOT NULL,
-    liked_post_hash  BINARY(32) NOT NULL,
+    liker_public_key VARCHAR(56) NOT NULL,
+    liked_post_hash  VARCHAR(54) NOT NULL,
 
     UNIQUE INDEX (liker_public_key, liked_post_hash)
 );
@@ -336,8 +336,8 @@ CREATE TABLE pg_likes (
 
 CREATE TABLE pg_follows (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    follower_pkid BINARY(33) NOT NULL,
-    followed_pkid BINARY(33) NOT NULL,
+    follower_pkid VARCHAR(56) NOT NULL,
+    followed_pkid VARCHAR(56) NOT NULL,
 
     UNIQUE INDEX (follower_pkid, followed_pkid)
 );
@@ -346,9 +346,9 @@ CREATE TABLE pg_follows (
 
 CREATE TABLE pg_diamonds (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    sender_pkid       BINARY(33) NOT NULL,
-    receiver_pkid     BINARY(33) NOT NULL,
-    diamond_post_hash BINARY(32) NOT NULL,
+    sender_pkid       VARCHAR(56) NOT NULL,
+    receiver_pkid     VARCHAR(56) NOT NULL,
+    diamond_post_hash VARCHAR(54) NOT NULL,
     diamond_level     SMALLINT,
 
     UNIQUE INDEX (sender_pkid, receiver_pkid, diamond_post_hash)
@@ -358,9 +358,9 @@ CREATE TABLE pg_diamonds (
 
 CREATE TABLE pg_messages (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    message_hash         BINARY(32) NOT NULL,
-    sender_public_key    BINARY(33),
-    recipient_public_key BINARY(33),
+    message_hash         VARCHAR(54) NOT NULL,
+    sender_public_key    VARCHAR(56),
+    recipient_public_key VARCHAR(56),
     encrypted_text       MEDIUMBLOB,
     timestamp_nanos      BIGINT,
 
@@ -371,8 +371,8 @@ CREATE TABLE pg_messages (
 
 CREATE TABLE pg_creator_coin_balances (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    holder_pkid   BINARY(33) NOT NULL,
-    creator_pkid  BINARY(33) NOT NULL,
+    holder_pkid   VARCHAR(56) NOT NULL,
+    creator_pkid  VARCHAR(56) NOT NULL,
     balance_nanos BIGINT UNSIGNED,
     has_purchased BOOL,
 
@@ -383,7 +383,7 @@ CREATE TABLE pg_creator_coin_balances (
 
 CREATE TABLE pg_balances (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    public_key    BINARY(33) NOT NULL,
+    public_key    VARCHAR(56) NOT NULL,
     balance_nanos BIGINT UNSIGNED,
 
     UNIQUE INDEX (public_key)
@@ -404,9 +404,9 @@ CREATE TABLE pg_global_params (
 
 CREATE TABLE pg_reposts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    reposter_public_key BINARY(33) NOT NULL,
-    reposted_post_hash  BINARY(32) NOT NULL,
-    repost_post_hash    BINARY(32),
+    reposter_public_key VARCHAR(56) NOT NULL,
+    reposted_post_hash  VARCHAR(54) NOT NULL,
+    repost_post_hash    VARCHAR(54),
 
     UNIQUE INDEX (reposter_public_key, reposted_post_hash)
 );
@@ -415,7 +415,7 @@ CREATE TABLE pg_reposts (
 
 CREATE TABLE pg_forbidden_keys (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    public_key BINARY(33) NOT NULL,
+    public_key VARCHAR(56) NOT NULL,
 
     UNIQUE INDEX (public_key)
 );
@@ -424,10 +424,10 @@ CREATE TABLE pg_forbidden_keys (
 
 CREATE TABLE pg_nfts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    nft_post_hash                  BINARY(32) NOT NULL,
+    nft_post_hash                  VARCHAR(54) NOT NULL,
     serial_number                  BIGINT NOT NULL,
-    last_owner_pkid                BINARY(33),
-    owner_pkid                     BINARY(33),
+    last_owner_pkid                VARCHAR(56),
+    owner_pkid                     VARCHAR(56),
     for_sale                       BOOL,
     min_bid_amount_nanos           BIGINT,
     unlockable_text                TEXT,
@@ -441,8 +441,8 @@ CREATE TABLE pg_nfts (
 
 CREATE TABLE pg_nft_bids (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    bidder_pkid      BINARY(33) NOT NULL,
-    nft_post_hash    BINARY(32) NOT NULL,
+    bidder_pkid      VARCHAR(56) NOT NULL,
+    nft_post_hash    VARCHAR(54) NOT NULL,
     serial_number    BIGINT NOT NULL,
     bid_amount_nanos BIGINT,
     accepted         BOOL,
@@ -454,11 +454,11 @@ CREATE TABLE pg_nft_bids (
 
 CREATE TABLE pg_metadata_derived_keys (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash   BINARY(32) NOT NULL,
-    derived_public_key BINARY(33) NOT NULL,
+    transaction_hash   VARCHAR(54) NOT NULL,
+    derived_public_key VARCHAR(56) NOT NULL,
     expiration_block   BIGINT NOT NULL,
     operation_type     SMALLINT NOT NULL,
-    access_signature   BINARY(32) NOT NULL,
+    access_signature   VARCHAR(54) NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
 );
@@ -467,8 +467,8 @@ CREATE TABLE pg_metadata_derived_keys (
 
 CREATE TABLE pg_derived_keys (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    owner_public_key   BINARY(33) NOT NULL,
-    derived_public_key BINARY(33) NOT NULL,
+    owner_public_key   VARCHAR(56) NOT NULL,
+    derived_public_key VARCHAR(56) NOT NULL,
     expiration_block   BIGINT NOT NULL,
     operation_type     SMALLINT NOT NULL,
 
@@ -479,11 +479,11 @@ CREATE TABLE pg_derived_keys (
 
 CREATE TABLE pg_metadata_nft_transfer (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash    BINARY(32) NOT NULL,
-    nft_post_hash       BINARY(32) NOT NULL,
+    transaction_hash    VARCHAR(54) NOT NULL,
+    nft_post_hash       VARCHAR(54) NOT NULL,
     serial_number       BIGINT NOT NULL,
-    receiver_public_key BINARY(33) NOT NULL,
-    unlockable_text     BINARY(32) NOT NULL,
+    receiver_public_key VARCHAR(56) NOT NULL,
+    unlockable_text     VARCHAR(54) NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
 );
@@ -492,8 +492,8 @@ CREATE TABLE pg_metadata_nft_transfer (
 
 CREATE TABLE pg_metadata_accept_nft_transfer (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
-    nft_post_hash    BINARY(32) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
+    nft_post_hash    VARCHAR(54) NOT NULL,
     serial_number    BIGINT NOT NULL,
 
     UNIQUE INDEX (transaction_hash)
@@ -503,8 +503,8 @@ CREATE TABLE pg_metadata_accept_nft_transfer (
 
 CREATE TABLE pg_metadata_burn_nft (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_hash BINARY(32) NOT NULL,
-    nft_post_hash    BINARY(32) NOT NULL,
+    transaction_hash VARCHAR(54) NOT NULL,
+    nft_post_hash    VARCHAR(54) NOT NULL,
     serial_number    BIGINT NOT NULL,
 
     UNIQUE INDEX (transaction_hash)

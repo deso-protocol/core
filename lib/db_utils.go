@@ -272,7 +272,7 @@ func (pkid *PKID) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	return pkid.ToBytes(), nil
+	return PkToStringMainnet(pkid.ToBytes()), nil
 }
 
 // SQL support
@@ -281,7 +281,11 @@ func (pkid *PKID) Scan(src interface{}) error {
 	if !ok {
 		return errors.New("bad []byte type assertion")
 	}
-	*pkid = *NewPKID(v)
+	res, _, err := Base58CheckDecode(string(v))
+	if err != nil {
+		return err
+	}
+	*pkid = *NewPKID(res)
 	return nil
 }
 
@@ -304,7 +308,7 @@ func (pk *PublicKey) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	return pk.ToBytes(), nil
+	return PkToStringMainnet(pk.ToBytes()), nil
 }
 
 // SQL support
@@ -313,7 +317,11 @@ func (pk *PublicKey) Scan(src interface{}) error {
 	if !ok {
 		return errors.New("bad []byte type assertion")
 	}
-	*pk = *NewPublicKey(v)
+	res, _, err := Base58CheckDecode(string(v))
+	if err != nil {
+		return err
+	}
+	*pk = *NewPublicKey(res)
 	return nil
 }
 

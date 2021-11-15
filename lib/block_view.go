@@ -5804,8 +5804,8 @@ func (bav *UtxoView) _connectPrivateMessage(
 	if bav.Postgres != nil {
 		message := &PGMessage{
 			MessageHash:        txn.Hash(),
-			SenderPublicKey:    txn.PublicKey,
-			RecipientPublicKey: txMeta.RecipientPublicKey,
+			SenderPublicKey:    NewPublicKey(txn.PublicKey),
+			RecipientPublicKey: NewPublicKey(txMeta.RecipientPublicKey),
 			EncryptedText:      txMeta.EncryptedText,
 			TimestampNanos:     txMeta.TimestampNanos,
 		}
@@ -9810,13 +9810,13 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
 			txnMeta := txn.TxnMeta.(*LikeMetadata)
 			like := &PGLike{
-				LikerPublicKey: txn.PublicKey,
+				LikerPublicKey: NewPublicKey(txn.PublicKey),
 				LikedPostHash:  txnMeta.LikedPostHash.NewBlockHash(),
 			}
 			likes = append(likes, like)
 
 			// We cache the likes as not present and then fill them in later
-			likeKey := MakeLikeKey(like.LikerPublicKey, *like.LikedPostHash)
+			likeKey := MakeLikeKey(like.LikerPublicKey.ToBytes(), *like.LikedPostHash)
 			bav.LikeKeyToLikeEntry[likeKey] = nil
 
 			post := &PGPost{

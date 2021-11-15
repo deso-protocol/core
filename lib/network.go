@@ -83,7 +83,7 @@ func (bh *BlockHash) Value() (driver.Value, error) {
 		return nil, nil
 	}
 
-	return bh.ToBytes(), nil
+	return PkToStringMainnet(bh.ToBytes()), nil
 }
 
 // SQL support
@@ -92,7 +92,11 @@ func (bh *BlockHash) Scan(src interface{}) error {
 	if !ok {
 		return errors.New("bad []byte type assertion")
 	}
-	*bh = *NewBlockHash(v)
+	res, _, err := Base58CheckDecode(string(v))
+	if err != nil {
+		return err
+	}
+	*bh = *NewBlockHash(res)
 	return nil
 }
 

@@ -63,7 +63,7 @@ type PGChain struct {
 	ID            uint64
 
 	Name    string
-	TipHash *BlockHash `bun:",type:binary"`
+	TipHash *BlockHash
 }
 
 // PGBlock represents BlockNode and MsgDeSoHeader
@@ -72,17 +72,17 @@ type PGBlock struct {
 	ID            uint64
 
 	// BlockNode and MsgDeSoHeader
-	Hash       *BlockHash `bun:",type:binary"`
-	ParentHash *BlockHash `bun:",type:binary"`
+	Hash       *BlockHash
+	ParentHash *BlockHash
 	Height     uint64
 
 	// BlockNode
-	DifficultyTarget *BlockHash  `bun:",type:binary"`
-	CumWork          *BlockHash  `bun:",type:binary"`
+	DifficultyTarget *BlockHash
+	CumWork          *BlockHash
 	Status           BlockStatus // TODO: Refactor
 
 	// MsgDeSoHeader
-	TxMerkleRoot *BlockHash `bun:",type:binary"`
+	TxMerkleRoot *BlockHash
 	Version      uint32
 	Timestamp    uint64
 	Nonce        uint64
@@ -97,13 +97,13 @@ type PGTransaction struct {
 	bun.BaseModel `bun:"pg_transactions"`
 	ID            uint64
 
-	Hash      *BlockHash `bun:"type:binary"`
-	BlockHash *BlockHash `bun:",type:binary"`
+	Hash      *BlockHash
+	BlockHash *BlockHash
 	Type      TxnType
-	PublicKey []byte `bun:",type:binary"`
+	PublicKey []byte
 	ExtraData map[string][]byte
-	R         *BlockHash `bun:",type:binary"`
-	S         *BlockHash `bun:",type:binary"`
+	R         *BlockHash
+	S         *BlockHash
 
 	// Relationships
 	Outputs                     []*PGTransactionOutput         `bun:"rel:has-many,join:hash=output_hash"`
@@ -164,8 +164,8 @@ type PGMetadataBlockReward struct {
 	bun.BaseModel `bun:"pg_metadata_block_rewards"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
-	ExtraData       []byte     `bun:",type:binary"`
+	TransactionHash *BlockHash
+	ExtraData       []byte
 }
 
 // PGMetadataBitcoinExchange represents BitcoinExchangeMetadata
@@ -173,9 +173,9 @@ type PGMetadataBitcoinExchange struct {
 	bun.BaseModel `bun:"pg_metadata_bitcoin_exchanges"`
 	ID            uint64
 
-	TransactionHash   *BlockHash `bun:"type:binary"`
-	BitcoinBlockHash  *BlockHash `bun:",type:binary"`
-	BitcoinMerkleRoot *BlockHash `bun:",type:binary"`
+	TransactionHash   *BlockHash
+	BitcoinBlockHash  *BlockHash
+	BitcoinMerkleRoot *BlockHash
 	// Not storing BitcoinTransaction *wire.MsgTx
 	// Not storing BitcoinMerkleProof []*merkletree.ProofPart
 }
@@ -185,9 +185,9 @@ type PGMetadataPrivateMessage struct {
 	bun.BaseModel `bun:"pg_metadata_private_messages"`
 	ID            uint64
 
-	TransactionHash    *BlockHash `bun:"type:binary"`
-	RecipientPublicKey []byte     `bun:",type:binary"`
-	EncryptedText      []byte     `bun:",type:binary"`
+	TransactionHash    *BlockHash
+	RecipientPublicKey []byte
+	EncryptedText      []byte
 	TimestampNanos     uint64
 }
 
@@ -196,9 +196,9 @@ type PGMetadataSubmitPost struct {
 	bun.BaseModel `bun:"pg_metadata_submit_posts"`
 	ID            uint64
 
-	TransactionHash  *BlockHash `bun:"type:binary"`
-	PostHashToModify *BlockHash `bun:",type:binary"`
-	ParentStakeID    *BlockHash `bun:",type:binary"`
+	TransactionHash  *BlockHash
+	PostHashToModify *BlockHash
+	ParentStakeID    *BlockHash
 	Body             string
 	TimestampNanos   uint64
 	IsHidden         bool
@@ -209,7 +209,7 @@ type PGMetadataUpdateExchangeRate struct {
 	bun.BaseModel `bun:"pg_metadata_update_exchange_rates"`
 	ID            uint64
 
-	TransactionHash    *BlockHash `bun:"type:binary"`
+	TransactionHash    *BlockHash
 	USDCentsPerBitcoin uint64
 }
 
@@ -218,11 +218,11 @@ type PGMetadataUpdateProfile struct {
 	bun.BaseModel `bun:"pg_metadata_update_profiles"`
 	ID            uint64
 
-	TransactionHash       *BlockHash `bun:"type:binary"`
-	ProfilePublicKey      []byte     `bun:",type:binary"`
-	NewUsername           []byte     `bun:",type:binary"`
-	NewDescription        []byte     `bun:",type:binary"`
-	NewProfilePic         []byte     `bun:",type:binary"`
+	TransactionHash       *BlockHash
+	ProfilePublicKey      []byte
+	NewUsername           []byte
+	NewDescription        []byte
+	NewProfilePic         []byte
 	NewCreatorBasisPoints uint64
 }
 
@@ -231,8 +231,8 @@ type PGMetadataFollow struct {
 	bun.BaseModel `bun:"pg_metadata_follows"`
 	ID            uint64
 
-	TransactionHash   *BlockHash `bun:"type:binary"`
-	FollowedPublicKey []byte     `bun:",type:binary"`
+	TransactionHash   *BlockHash
+	FollowedPublicKey []byte
 	IsUnfollow        bool
 }
 
@@ -241,8 +241,8 @@ type PGMetadataLike struct {
 	bun.BaseModel `bun:"pg_metadata_likes"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
-	LikedPostHash   *BlockHash `bun:",type:binary"`
+	TransactionHash *BlockHash
+	LikedPostHash   *BlockHash
 	IsUnlike        bool
 }
 
@@ -251,8 +251,8 @@ type PGMetadataCreatorCoin struct {
 	bun.BaseModel `bun:"pg_metadata_creator_coins"`
 	ID            uint64
 
-	TransactionHash             *BlockHash `bun:"type:binary"`
-	ProfilePublicKey            []byte     `bun:",type:binary"`
+	TransactionHash             *BlockHash
+	ProfilePublicKey            []byte
 	OperationType               CreatorCoinOperationType
 	DESOToSellNanos             uint64
 	CreatorCoinToSellNanos      uint64
@@ -266,10 +266,10 @@ type PGMetadataCreatorCoinTransfer struct {
 	bun.BaseModel `bun:"pg_metadata_creator_coin_transfers"`
 	ID            uint64
 
-	TransactionHash            *BlockHash `bun:"type:binary"`
-	ProfilePublicKey           []byte     `bun:",type:binary"`
+	TransactionHash            *BlockHash
+	ProfilePublicKey           []byte
 	CreatorCoinToTransferNanos uint64
-	ReceiverPublicKey          []byte `bun:",type:binary"`
+	ReceiverPublicKey          []byte
 }
 
 // PGMetadataSwapIdentity represents SwapIdentityMetadataa
@@ -277,9 +277,9 @@ type PGMetadataSwapIdentity struct {
 	bun.BaseModel `bun:"pg_metadata_swap_identities"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
-	FromPublicKey   []byte     `bun:",type:binary"`
-	ToPublicKey     []byte     `bun:",type:binary"`
+	TransactionHash *BlockHash
+	FromPublicKey   []byte
+	ToPublicKey     []byte
 }
 
 // PGMetadataCreateNFT represents CreateNFTMetadata
@@ -287,8 +287,8 @@ type PGMetadataCreateNFT struct {
 	bun.BaseModel `bun:"pg_metadata_create_nfts"`
 	ID            uint64
 
-	TransactionHash           *BlockHash `bun:"type:binary"`
-	NFTPostHash               *BlockHash `bun:",type:binary"`
+	TransactionHash           *BlockHash
+	NFTPostHash               *BlockHash
 	NumCopies                 uint64
 	HasUnlockable             bool
 	IsForSale                 bool
@@ -302,8 +302,8 @@ type PGMetadataUpdateNFT struct {
 	bun.BaseModel `bun:"pg_metadata_update_nfts"`
 	ID            uint64
 
-	TransactionHash   *BlockHash `bun:"type:binary"`
-	NFTPostHash       *BlockHash `bun:",type:binary"`
+	TransactionHash   *BlockHash
+	NFTPostHash       *BlockHash
 	SerialNumber      uint64
 	IsForSale         bool
 	MinBidAmountNanos uint64
@@ -314,12 +314,12 @@ type PGMetadataAcceptNFTBid struct {
 	bun.BaseModel `bun:"pg_metadata_accept_nft_bids"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
-	NFTPostHash     *BlockHash `bun:",type:binary"`
+	TransactionHash *BlockHash
+	NFTPostHash     *BlockHash
 	SerialNumber    uint64
-	BidderPKID      *PKID `bun:",type:binary"`
+	BidderPKID      *PKID
 	BidAmountNanos  uint64
-	UnlockableText  []byte                `bun:",type:binary"`
+	UnlockableText  []byte
 	BidderInputs    []*PGMetadataBidInput `bun:"rel:has-many,join:id=transaction_hash"`
 }
 
@@ -327,9 +327,9 @@ type PGMetadataBidInput struct {
 	bun.BaseModel `bun:"pg_metadata_bid_inputs"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
-	InputHash       *BlockHash `bun:"type:binary"`
-	InputIndex      uint32     `bun:",pk"`
+	TransactionHash *BlockHash
+	InputHash       *BlockHash
+	InputIndex      uint32 `bun:",pk"`
 }
 
 // PGMetadataNFTBid represents NFTBidMetadata
@@ -337,8 +337,8 @@ type PGMetadataNFTBid struct {
 	bun.BaseModel `bun:"pg_metadata_nft_bids"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
-	NFTPostHash     *BlockHash `bun:",type:binary"`
+	TransactionHash *BlockHash
+	NFTPostHash     *BlockHash
 	SerialNumber    uint64
 	BidAmountNanos  uint64
 }
@@ -348,11 +348,11 @@ type PGMetadataNFTTransfer struct {
 	bun.BaseModel `bun:"pg_metadata_nft_transfer"`
 	ID            uint64
 
-	TransactionHash   *BlockHash `bun:"type:binary"`
-	NFTPostHash       *BlockHash `bun:"type:binary"`
+	TransactionHash   *BlockHash
+	NFTPostHash       *BlockHash
 	SerialNumber      uint64
-	ReceiverPublicKey []byte `bun:"type:binary"`
-	UnlockableText    []byte `bun:",type:binary"`
+	ReceiverPublicKey []byte
+	UnlockableText    []byte
 }
 
 // PGMetadataAcceptNFTTransfer represents AcceptNFTTransferMetadata
@@ -360,8 +360,8 @@ type PGMetadataAcceptNFTTransfer struct {
 	bun.BaseModel `bun:"pg_metadata_accept_nft_transfer"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
-	NFTPostHash     *BlockHash `bun:"type:binary"`
+	TransactionHash *BlockHash
+	NFTPostHash     *BlockHash
 	SerialNumber    uint64
 }
 
@@ -370,8 +370,8 @@ type PGMetadataBurnNFT struct {
 	bun.BaseModel `bun:"pg_metadata_burn_nft"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
-	NFTPostHash     *BlockHash `bun:"type:binary"`
+	TransactionHash *BlockHash
+	NFTPostHash     *BlockHash
 	SerialNumber    uint64
 }
 
@@ -380,25 +380,25 @@ type PGMetadataDerivedKey struct {
 	bun.BaseModel `bun:"pg_metadata_derived_keys"`
 	ID            uint64
 
-	TransactionHash  *BlockHash `bun:"type:binary"`
-	DerivedPublicKey PublicKey  `bun:",type:binary"`
+	TransactionHash  *BlockHash
+	DerivedPublicKey PublicKey
 	ExpirationBlock  uint64
 	OperationType    AuthorizeDerivedKeyOperationType
-	AccessSignature  []byte `bun:",type:binary"`
+	AccessSignature  []byte
 }
 
 type PGNotification struct {
 	bun.BaseModel `bun:"pg_notifications"`
 	ID            uint64
 
-	TransactionHash *BlockHash `bun:"type:binary"`
+	TransactionHash *BlockHash
 	Mined           bool
-	ToUser          []byte `bun:",type:binary"`
-	FromUser        []byte `bun:",type:binary"`
-	OtherUser       []byte `bun:",type:binary"`
+	ToUser          []byte
+	FromUser        []byte
+	OtherUser       []byte
 	Type            NotificationType
 	Amount          uint64
-	PostHash        *BlockHash `bun:",type:binary"`
+	PostHash        *BlockHash
 	Timestamp       uint64
 }
 
@@ -422,8 +422,8 @@ type PGProfile struct {
 	bun.BaseModel `bun:"pg_profiles"`
 	ID            uint64
 
-	PKID                    *PKID      `bun:"type:binary"`
-	PublicKey               *PublicKey `bun:",type:binary"`
+	PKID                    *PKID
+	PublicKey               *PublicKey
 	Username                string
 	Description             string
 	ProfilePic              []byte
@@ -442,11 +442,11 @@ type PGPost struct {
 	bun.BaseModel `bun:"pg_posts"`
 	ID            uint64
 
-	PostHash                  *BlockHash `bun:"type:binary"`
-	PosterPublicKey           []byte
-	ParentPostHash            *BlockHash `bun:",type:binary"`
+	PostHash                  *BlockHash
+	PosterPublicKey           *PublicKey
+	ParentPostHash            *BlockHash
 	Body                      string
-	RepostedPostHash          *BlockHash `bun:",type:binary"`
+	RepostedPostHash          *BlockHash
 	QuotedRepost              bool
 	Timestamp                 uint64
 	Hidden                    bool
@@ -469,7 +469,7 @@ type PGPost struct {
 func (post *PGPost) NewPostEntry() *PostEntry {
 	postEntry := &PostEntry{
 		PostHash:                       post.PostHash,
-		PosterPublicKey:                post.PosterPublicKey,
+		PosterPublicKey:                post.PosterPublicKey.ToBytes(),
 		Body:                           []byte(post.Body),
 		RepostedPostHash:               post.RepostedPostHash,
 		IsQuotedRepost:                 post.QuotedRepost,
@@ -510,13 +510,13 @@ type PGLike struct {
 	bun.BaseModel `bun:"pg_likes"`
 	ID            uint64
 
-	LikerPublicKey []byte     `bun:"type:binary"`
-	LikedPostHash  *BlockHash `bun:"type:binary"`
+	LikerPublicKey *PublicKey
+	LikedPostHash  *BlockHash
 }
 
 func (like *PGLike) NewLikeEntry() *LikeEntry {
 	return &LikeEntry{
-		LikerPubKey:   like.LikerPublicKey,
+		LikerPubKey:   like.LikerPublicKey.ToBytes(),
 		LikedPostHash: like.LikedPostHash,
 	}
 }
@@ -525,8 +525,8 @@ type PGFollow struct {
 	bun.BaseModel `bun:"pg_follows"`
 	ID            uint64
 
-	FollowerPKID *PKID `bun:"type:binary"`
-	FollowedPKID *PKID `bun:"type:binary"`
+	FollowerPKID *PKID
+	FollowedPKID *PKID
 }
 
 func (follow *PGFollow) NewFollowEntry() *FollowEntry {
@@ -540,9 +540,9 @@ type PGDiamond struct {
 	bun.BaseModel `bun:"pg_diamonds"`
 	ID            uint64
 
-	SenderPKID      *PKID      `bun:"type:binary"`
-	ReceiverPKID    *PKID      `bun:"type:binary"`
-	DiamondPostHash *BlockHash `bun:"type:binary"`
+	SenderPKID      *PKID
+	ReceiverPKID    *PKID
+	DiamondPostHash *BlockHash
 	DiamondLevel    uint8
 }
 
@@ -552,9 +552,9 @@ type PGMessage struct {
 	bun.BaseModel `bun:"pg_messages"`
 	ID            uint64
 
-	MessageHash        *BlockHash `bun:"type:binary"`
-	SenderPublicKey    []byte
-	RecipientPublicKey []byte
+	MessageHash        *BlockHash
+	SenderPublicKey    *PublicKey
+	RecipientPublicKey *PublicKey
 	EncryptedText      []byte
 	TimestampNanos     uint64
 	// TODO: Version
@@ -567,8 +567,8 @@ type PGCreatorCoinBalance struct {
 	bun.BaseModel `bun:"pg_creator_coin_balances"`
 	ID            uint64
 
-	HolderPKID   *PKID `bun:"type:binary"`
-	CreatorPKID  *PKID `bun:"type:binary"`
+	HolderPKID   *PKID
+	CreatorPKID  *PKID
 	BalanceNanos uint64
 	HasPurchased bool
 }
@@ -587,7 +587,7 @@ type PGBalance struct {
 	bun.BaseModel `bun:"pg_balances"`
 	ID            uint64
 
-	PublicKey    *PublicKey `bun:"type:binary"`
+	PublicKey    *PublicKey
 	BalanceNanos uint64
 }
 
@@ -607,9 +607,9 @@ type PGRepost struct {
 	bun.BaseModel `bun:"pg_reposts"`
 	ID            uint64
 
-	ReposterPublickey *PublicKey `bun:"type:binary"`
-	RepostedPostHash  *BlockHash `bun:"type:binary"`
-	RepostPostHash    *BlockHash `bun:",type:binary"`
+	ReposterPublickey *PublicKey
+	RepostedPostHash  *BlockHash
+	RepostPostHash    *BlockHash
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -620,7 +620,7 @@ type PGForbiddenKey struct {
 	bun.BaseModel `bun:"pg_forbidden_keys"`
 	ID            uint64
 
-	PublicKey *PublicKey `bun:"type:binary"`
+	PublicKey *PublicKey
 }
 
 // PGNFT represents NFTEntry
@@ -628,12 +628,12 @@ type PGNFT struct {
 	bun.BaseModel `bun:"pg_nfts"`
 	ID            uint64
 
-	NFTPostHash  *BlockHash `bun:"type:binary"`
-	SerialNumber uint64     `bun:",pk"`
+	NFTPostHash  *BlockHash
+	SerialNumber uint64 `bun:",pk"`
 
 	// This is needed to decrypt unlockable text.
-	LastOwnerPKID              *PKID `bun:",type:binary"`
-	OwnerPKID                  *PKID `bun:",type:binary"`
+	LastOwnerPKID              *PKID
+	OwnerPKID                  *PKID
 	ForSale                    bool
 	MinBidAmountNanos          uint64
 	UnlockableText             string
@@ -660,9 +660,9 @@ type PGNFTBid struct {
 	bun.BaseModel `bun:"pg_nft_bids"`
 	ID            uint64
 
-	BidderPKID     *PKID      `bun:"type:binary"`
-	NFTPostHash    *BlockHash `bun:"type:binary"`
-	SerialNumber   uint64     `bun:",pk"`
+	BidderPKID     *PKID
+	NFTPostHash    *BlockHash
+	SerialNumber   uint64 `bun:",pk"`
 	BidAmountNanos uint64
 	Accepted       bool
 }
@@ -681,8 +681,8 @@ type PGDerivedKey struct {
 	bun.BaseModel `bun:"pg_derived_keys"`
 	ID            uint64
 
-	OwnerPublicKey   PublicKey `bun:"type:binary"`
-	DerivedPublicKey PublicKey `bun:"type:binary"`
+	OwnerPublicKey   PublicKey
+	DerivedPublicKey PublicKey
 	ExpirationBlock  uint64
 	OperationType    AuthorizeDerivedKeyOperationType
 }
@@ -1208,10 +1208,10 @@ func (postgres *Postgres) UpsertBlockAndTransactions(blockNode *BlockNode, desoB
 			return err
 		}
 
-		err = postgres.InsertTransactionsTx(tx, desoBlock.Txns, blockNode)
-		if err != nil {
-			return err
-		}
+		//err = postgres.InsertTransactionsTx(tx, desoBlock.Txns, blockNode)
+		//if err != nil {
+		//	return err
+		//}
 
 		return nil
 	})
@@ -1347,7 +1347,7 @@ func (postgres *Postgres) flushPosts(tx bun.Tx, view *UtxoView) error {
 
 		post := &PGPost{
 			PostHash:                  postEntry.PostHash,
-			PosterPublicKey:           postEntry.PosterPublicKey,
+			PosterPublicKey:           NewPublicKey(postEntry.PosterPublicKey),
 			Body:                      string(postEntry.Body),
 			RepostedPostHash:          postEntry.RepostedPostHash,
 			QuotedRepost:              postEntry.IsQuotedRepost,
@@ -1406,7 +1406,7 @@ func (postgres *Postgres) flushLikes(tx bun.Tx, view *UtxoView) error {
 		}
 
 		like := &PGLike{
-			LikerPublicKey: likeEntry.LikerPubKey,
+			LikerPublicKey: NewPublicKey(likeEntry.LikerPubKey),
 			LikedPostHash:  likeEntry.LikedPostHash,
 		}
 
@@ -1814,7 +1814,7 @@ func (postgres *Postgres) GetProfileForUsername(nonLowercaseUsername string) *PG
 
 func (postgres *Postgres) GetProfileForPublicKey(publicKey []byte) *PGProfile {
 	var profile PGProfile
-	err := postgres.db.NewSelect().Model(&profile).Where("public_key = ?", publicKey).Limit(1).Scan(postgres.ctx)
+	err := postgres.db.NewSelect().Model(&profile).Where("public_key = ?", NewPublicKey(publicKey)).Limit(1).Scan(postgres.ctx)
 	if err != nil {
 		LogError(err)
 		return nil
@@ -1900,7 +1900,7 @@ func (postgres *Postgres) GetPosts(posts []*PGPost) []*PGPost {
 func (postgres *Postgres) GetPostsForPublicKey(publicKey []byte, startTime uint64, limit uint64) []*PGPost {
 	var posts []*PGPost
 	err := postgres.db.NewSelect().Model(&posts).
-		Where("poster_public_key = ?", publicKey).Where("timestamp < ?", startTime).
+		Where("poster_public_key = ?", NewPublicKey(publicKey)).Where("timestamp < ?", startTime).
 		Where("hidden IS NULL").Where("parent_post_hash IS NULL").
 		OrderExpr("timestamp DESC").Limit(int(limit)).Scan(postgres.ctx)
 	if err != nil {
@@ -1941,7 +1941,7 @@ func (postgres *Postgres) GetMessage(messageHash *BlockHash) *PGMessage {
 
 func (postgres *Postgres) GetLike(likerPublicKey []byte, likedPostHash *BlockHash) *PGLike {
 	like := PGLike{}
-	err := postgres.db.NewSelect().Model(&like).Where("liker_public_key = ?", likerPublicKey).
+	err := postgres.db.NewSelect().Model(&like).Where("liker_public_key = ?", NewPublicKey(likerPublicKey)).
 		Where("liked_post_hash = ?", likedPostHash).Limit(1).Scan(postgres.ctx)
 	if err != nil {
 		LogError(err)
@@ -2220,18 +2220,18 @@ func (postgres *Postgres) InitGenesisBlock(params *DeSoParams) error {
 		return fmt.Errorf("InitGenesisBlock: Error upserting block: %v", err)
 	}
 
-	for index, txOutput := range params.SeedBalances {
-		_, err := postgres.db.NewInsert().Model(&PGTransactionOutput{
-			OutputHash:  &BlockHash{},
-			OutputIndex: uint32(index),
-			OutputType:  UtxoTypeOutput,
-			AmountNanos: txOutput.AmountNanos,
-			PublicKey:   txOutput.PublicKey,
-		}).Returning("NULL").Exec(postgres.ctx)
-		if err != nil {
-			return err
-		}
-	}
+	//for index, txOutput := range params.SeedBalances {
+	//	_, err := postgres.db.NewInsert().Model(&PGTransactionOutput{
+	//		OutputHash:  &BlockHash{},
+	//		OutputIndex: uint32(index),
+	//		OutputType:  UtxoTypeOutput,
+	//		AmountNanos: txOutput.AmountNanos,
+	//		PublicKey:   txOutput.PublicKey,
+	//	}).Returning("NULL").Exec(postgres.ctx)
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
 
 	return nil
 }

@@ -86,9 +86,9 @@ func (h *QueryHook) AfterQuery(ctx context.Context, event *bun.QueryEvent) {
 	dur := now.Sub(event.StartTime)
 
 	queryLen := len(event.Query)
-	if queryLen > 2000 {
-		queryLen = 2000
-	}
+	//if queryLen > 2000 {
+	//	queryLen = 2000
+	//}
 	query := event.Query[:queryLen]
 
 	args := []interface{}{
@@ -107,7 +107,7 @@ func (h *QueryHook) AfterQuery(ctx context.Context, event *bun.QueryEvent) {
 		)
 	}
 
-	if dur.Milliseconds() > 500 {
+	if dur.Milliseconds() > 200 {
 		fmt.Println(args...)
 	}
 }
