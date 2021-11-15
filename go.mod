@@ -45,7 +45,7 @@ require (
 	github.com/tyler-smith/go-bip39 v1.0.2
 	github.com/unrolled/secure v1.0.8
 	github.com/uptrace/bun v1.0.17
-	github.com/uptrace/bun/dialect/mysqldialect v1.0.16
+	github.com/uptrace/bun/dialect/mysqldialect v1.0.17
 	github.com/uptrace/bun/extra/bundebug v1.0.16 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b
