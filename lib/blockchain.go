@@ -2951,6 +2951,8 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
+	blockHeight := bc.blockTip().Height + 1
+
 	// Create a transaction containing the creator coin fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,
@@ -2968,19 +2970,33 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 		// inputs and change.
 	}
 
-	// We don't need to make any tweaks to the amount because it's basically
-	// a standard "pay per kilobyte" transaction.
-	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(
-			txn, minFeeRateNanosPerKB, mempool)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
+	var err error
+	totalInput := uint64(0)
+	spendAmount := uint64(0)
+	changeAmount := uint64(0)
+	fees := uint64(0)
+	if blockHeight >= BalanceModelBlockHeight {
+		// After the BalanceModelBlockHeight, there are no "implicit" fees. Instead, all fees
+		// must be baked into the TxnFeeNanos.  Therefore we add "additionalFees" here.
+		totalInput, spendAmount, changeAmount, fees, err =
+			bc.AddInputsAndChangeToTransactionWithSubsidy(
+				txn, minFeeRateNanosPerKB, 0, mempool, DeSoToSellNanos)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
+		}
+	} else {
+		// We don't need to make any tweaks to the amount because it's basically
+		// a standard "pay per kilobyte" transaction.
+		totalInput, spendAmount, changeAmount, fees, err =
+			bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
+		}
 	}
 	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	blockHeight := bc.blockTip().Height + 1
 	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreatorCoinTxn: CreatorCoin txn " +
 			"must have at least one input but had zero inputs " +
@@ -3255,6 +3271,8 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
+	blockHeight := bc.blockTip().Height + 1
+
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
@@ -3270,44 +3288,56 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 		}
 	}
 
-	// Get the spendable UtxoEntrys.
 	bidderPkBytes := utxoView.GetPublicKeyForPKID(BidderPKID)
-	bidderSpendableUtxos, err := bc.GetSpendableUtxosForPublicKey(bidderPkBytes, nil, utxoView)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAcceptNFTBidTxn: Problem getting spendable UtxoEntrys: ")
-	}
-
-	// Add input utxos to the transaction until we have enough total input to cover
-	// the amount we want to spend plus the maximum fee (or until we've exhausted
-	// all the utxos available).
 	bidderInputs := []*DeSoInput{}
-	totalBidderInput := uint64(0)
-	for _, utxoEntry := range bidderSpendableUtxos {
-
-		// If the amount of input we have isn't enough to cover the bid amount, add an input and continue.
-		if totalBidderInput < BidAmountNanos {
-			bidderInputs = append(bidderInputs, (*DeSoInput)(utxoEntry.UtxoKey))
-
-			amountToAdd := utxoEntry.AmountNanos
-			// For Bitcoin burns, we subtract a tiny amount of slippage to the amount we can
-			// spend. This makes reorderings more forgiving.
-			if utxoEntry.UtxoType == UtxoTypeBitcoinBurn {
-				amountToAdd = uint64(float64(amountToAdd) * .999)
-			}
-
-			totalBidderInput += amountToAdd
-			continue
+	if blockHeight >= BalanceModelBlockHeight {
+		bidderSpendableBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(bidderPkBytes, blockHeight-1)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAcceptNFTBidTxn: Problem getting spendable balance: ")
+		}
+		if bidderSpendableBalance < BidAmountNanos {
+			return nil, 0, 0, 0, fmt.Errorf(
+				"Blockchain.CreateAcceptNFTBidTxn: Spendable balance (%d) insufficient for bid amount (%d): ",
+				bidderSpendableBalance, BidAmountNanos)
+		}
+	} else {
+		// Get the spendable UtxoEntrys
+		bidderSpendableUtxos, err := bc.GetSpendableUtxosForPublicKey(bidderPkBytes, nil, utxoView)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAcceptNFTBidTxn: Problem getting spendable UtxoEntrys: ")
 		}
 
-		// If we get here, we know we have enough input to cover the upper bound
-		// estimate of our amount needed so break.
-		break
-	}
+		// Add input utxos to the transaction until we have enough total input to cover
+		// the amount we want to spend plus the maximum fee (or until we've exhausted
+		// all the utxos available).
+		totalBidderInput := uint64(0)
+		for _, utxoEntry := range bidderSpendableUtxos {
 
-	// If we get here and we don't have sufficient input to cover the bid, error.
-	if totalBidderInput < BidAmountNanos {
-		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateAcceptNFTBidTxn: Bidder has insufficient "+
-			"UTXOs (%d total) to cover BidAmountNanos %d: ", totalBidderInput, BidAmountNanos)
+			// If the amount of input we have isn't enough to cover the bid amount, add an input and continue.
+			if totalBidderInput < BidAmountNanos {
+				bidderInputs = append(bidderInputs, (*DeSoInput)(utxoEntry.UtxoKey))
+
+				amountToAdd := utxoEntry.AmountNanos
+				// For Bitcoin burns, we subtract a tiny amount of slippage to the amount we can
+				// spend. This makes reorderings more forgiving.
+				if utxoEntry.UtxoType == UtxoTypeBitcoinBurn {
+					amountToAdd = uint64(float64(amountToAdd) * .999)
+				}
+
+				totalBidderInput += amountToAdd
+				continue
+			}
+
+			// If we get here, we know we have enough input to cover the upper bound
+			// estimate of our amount needed so break.
+			break
+		}
+
+		// If we get here and we don't have sufficient input to cover the bid, error.
+		if totalBidderInput < BidAmountNanos {
+			return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateAcceptNFTBidTxn: Bidder has insufficient "+
+				"UTXOs (%d total) to cover BidAmountNanos %d: ", totalBidderInput, BidAmountNanos)
+		}
 	}
 
 	// Create a transaction containing the accept nft bid fields.
@@ -3335,7 +3365,6 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	blockHeight := bc.blockTip().Height + 1
 	if len(txn.TxInputs) == 0 && blockHeight < BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateAcceptNFTBidTxn: AcceptNFTBid txn " +
 			"must have at least one input but had zero inputs " +

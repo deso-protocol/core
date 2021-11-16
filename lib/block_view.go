@@ -7373,7 +7373,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		// The position will be set in the call to _addUtxo.
 	}
 
-	// Create a new scope to avoid name collisions
+	// Create a new scope to avoid name collisions.
 	{
 		utxoOp, err := bav._addUtxo(&utxoEntry)
 		if err != nil {
@@ -8445,10 +8445,14 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			RuleErrorCreatorCoinTxnOutputWithInvalidBuyAmount,
 			"_connectCreatorCoin: %v", desoBeforeFeesNanos)
 	}
-	totalOutput += desoBeforeFeesNanos
+	if blockHeight < BalanceModelBlockHeight {
+		totalOutput += desoBeforeFeesNanos
+	} else if blockHeight >= BalanceModelBlockHeight && txn.TxnFeeNanos < desoBeforeFeesNanos {
+		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyWithInsufficientFee
+	}
 	// It's assumed the caller code will check that things like output <= input,
 	// but we check it here just in case...
-	if totalInput < totalOutput {
+	if totalInput < totalOutput+txn.TxnFeeNanos {
 		return 0, 0, 0, 0, nil, errors.Wrapf(
 			RuleErrorCreatorCoinTxnOutputExceedsInput,
 			"_connectCreatorCoin: Input: %v, Output: %v", totalInput, totalOutput)

@@ -107,12 +107,12 @@ func TestBalanceModel(t *testing.T) {
 	TestAuthorizeDerivedKeyBasic(t)
 
 	// Creator coins.
+	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
 	//	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
 	//	TestCreatorCoinTransferWithSwapIdentity(t)
 	//	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
 	//	TestCreatorCoinTransferWithMaxTransfers(t)
 	//	TestCreatorCoinTransferBelowMinThreshold(t)
-	//	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
 	//	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
 	//	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
 	//	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
@@ -125,10 +125,10 @@ func TestBalanceModel(t *testing.T) {
 	//	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
 	//	TestSwapIdentityCreatorCoinBuySimple(t)
 	//	TestSwapIdentityFailureCases(t)
-	// TestSwapIdentityMain(t)
+	//  TestSwapIdentityMain(t)
 	//	TestSwapIdentityWithFollows(t)
 	//
-	//	// NFTs.
+	// NFTs.
 	// TestNFTBasic(t)
 	//	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
 	//	TestNFTSerialNumberZeroBid(t)

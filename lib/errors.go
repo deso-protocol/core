@@ -177,6 +177,7 @@ const (
 	RuleErrorInsufficientBalance                 RuleError = "RuleErrorInsufficientBalance"
 	RuleErrorCreateProfileTxnWithInsufficientFee RuleError = "RuleErrorCreateProfileTxnWithInsufficientFee"
 	RuleErrorCreateNFTTxnWithInsufficientFee     RuleError = "RuleErrorCreateNFTTxnWithInsufficientFee"
+	RuleErrorCreatorCoinBuyWithInsufficientFee   RuleError = "RuleErrorCreatorCoinBuyWithInsufficientFee"
 
 	RuleErrorCreatorCoinTransferRequiresNonZeroInput                    RuleError = "RuleErrorCreatorCoinTransferRequiresNonZeroInput"
 	RuleErrorCreatorCoinTransferInvalidProfilePubKeySize                RuleError = "RuleErrorCreatorCoinTransferInvalidProfilePubKeySize"
