@@ -1536,7 +1536,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
 	require.NoError(err)
 	txn, _, _, _, err := chain.CreateUpdateGlobalParamsTxn(
-		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil)
+		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil, []*DeSoOutput{})
 	require.NoError(err)
 
 	// Mine a few blocks to give the senderPkString some money.
@@ -1552,6 +1552,10 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 		true /*verifySignatures*/)
 	require.NoError(err)
 	require.Equal(1, len(txDescsAdded))
+
+	// Make sure that the forbidden pub key made it into the mempool properly.
+	_, entryExists := mempool.universalUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(blockSignerPkBytes)]
+	require.True(entryExists)
 
 	// Mine the transaction.
 	forbiddenPubKeyBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

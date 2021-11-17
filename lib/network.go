@@ -251,55 +251,161 @@ const (
 	// NEXT_ID = 23
 )
 
+type TxnString string
+
+const (
+	TxnStringUnset                        TxnString = "UNSET"
+	TxnStringBlockReward                  TxnString = "BLOCK_REWARD"
+	TxnStringBasicTransfer                TxnString = "BASIC_TRANSFER"
+	TxnStringBitcoinExchange              TxnString = "BITCOIN_EXCHANGE"
+	TxnStringPrivateMessage               TxnString = "PRIVATE_MESSAGE"
+	TxnStringSubmitPost                   TxnString = "SUBMIT_POST"
+	TxnStringUpdateProfile                TxnString = "UPDATE_PROFILE"
+	TxnStringUpdateBitcoinUSDExchangeRate TxnString = "UPDATE_BITCOIN_USD_EXCHANGE_RATE"
+	TxnStringFollow                       TxnString = "FOLLOW"
+	TxnStringLike                         TxnString = "LIKE"
+	TxnStringCreatorCoin                  TxnString = "CREATOR_COIN"
+	TxnStringSwapIdentity                 TxnString = "SWAP_IDENTITY"
+	TxnStringUpdateGlobalParams           TxnString = "UPDATE_GLOBAL_PARAMS"
+	TxnStringCreatorCoinTransfer          TxnString = "CREATOR_COIN_TRANSFER"
+	TxnStringCreateNFT                    TxnString = "CREATE_NFT"
+	TxnStringUpdateNFT                    TxnString = "UPDATE_NFT"
+	TxnStringAcceptNFTBid                 TxnString = "ACCEPT_NFT_BID"
+	TxnStringNFTBid                       TxnString = "NFT_BID"
+	TxnStringNFTTransfer                  TxnString = "NFT_TRANSFER"
+	TxnStringAcceptNFTTransfer            TxnString = "ACCEPT_NFT_TRANSFER"
+	TxnStringBurnNFT                      TxnString = "BURN_NFT"
+	TxnStringAuthorizeDerivedKey          TxnString = "AUTHORIZE_DERIVED_KEY"
+	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
+)
+
+var (
+	AllTxnTypes = []TxnType{
+		TxnTypeUnset, TxnTypeBlockReward, TxnTypeBasicTransfer, TxnTypeBitcoinExchange, TxnTypePrivateMessage,
+		TxnTypeSubmitPost, TxnTypeUpdateProfile, TxnTypeUpdateBitcoinUSDExchangeRate, TxnTypeFollow, TxnTypeLike,
+		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
+		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
+		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey,
+	}
+	AllTxnString = []TxnString{
+		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
+		TxnStringSubmitPost, TxnStringUpdateProfile, TxnStringUpdateBitcoinUSDExchangeRate, TxnStringFollow, TxnStringLike,
+		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
+		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
+		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey,
+	}
+)
+
 func (txnType TxnType) String() string {
+	txnString := txnType.GetTxnString()
+	if txnString == TxnStringUndefined {
+		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure GetTxnString() is up to date", txnType)
+	}
+	return string(txnString)
+}
+
+func (txnType TxnType) GetTxnString() TxnString {
 	switch txnType {
 	case TxnTypeUnset:
-		return "UNSET"
+		return TxnStringUnset
 	case TxnTypeBlockReward:
-		return "BLOCK_REWARD"
+		return TxnStringBlockReward
 	case TxnTypeBasicTransfer:
-		return "BASIC_TRANSFER"
+		return TxnStringBasicTransfer
 	case TxnTypeBitcoinExchange:
-		return "BITCOIN_EXCHANGE"
+		return TxnStringBitcoinExchange
 	case TxnTypePrivateMessage:
-		return "PRIVATE_MESSAGE"
+		return TxnStringPrivateMessage
 	case TxnTypeSubmitPost:
-		return "SUBMIT_POST"
+		return TxnStringSubmitPost
 	case TxnTypeUpdateProfile:
-		return "UPDATE_PROFILE"
+		return TxnStringUpdateProfile
 	case TxnTypeUpdateBitcoinUSDExchangeRate:
-		return "UPDATE_BITCOIN_USD_EXCHANGE_RATE"
+		return TxnStringUpdateBitcoinUSDExchangeRate
 	case TxnTypeFollow:
-		return "FOLLOW"
+		return TxnStringFollow
 	case TxnTypeLike:
-		return "LIKE"
+		return TxnStringLike
 	case TxnTypeCreatorCoin:
-		return "CREATOR_COIN"
+		return TxnStringCreatorCoin
 	case TxnTypeCreatorCoinTransfer:
-		return "CREATOR_COIN_TRANSFER"
+		return TxnStringCreatorCoinTransfer
 	case TxnTypeSwapIdentity:
-		return "SWAP_IDENTITY"
+		return TxnStringSwapIdentity
 	case TxnTypeUpdateGlobalParams:
-		return "UPDATE_GLOBAL_PARAMS"
+		return TxnStringUpdateGlobalParams
 	case TxnTypeCreateNFT:
-		return "CREATE_NFT"
+		return TxnStringCreateNFT
 	case TxnTypeUpdateNFT:
-		return "UPDATE_NFT"
+		return TxnStringUpdateNFT
 	case TxnTypeAcceptNFTBid:
-		return "ACCEPT_NFT_BID"
+		return TxnStringAcceptNFTBid
 	case TxnTypeNFTBid:
-		return "NFT_BID"
+		return TxnStringNFTBid
 	case TxnTypeNFTTransfer:
-		return "NFT_TRANSFER"
+		return TxnStringNFTTransfer
 	case TxnTypeAcceptNFTTransfer:
-		return "ACCEPT_NFT_TRANSFER"
+		return TxnStringAcceptNFTTransfer
 	case TxnTypeBurnNFT:
-		return "BURN_NFT"
+		return TxnStringBurnNFT
 	case TxnTypeAuthorizeDerivedKey:
-		return "AUTHORIZE_DERIVED_KEY"
+		return TxnStringAuthorizeDerivedKey
 
 	default:
-		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", txnType)
+		return TxnStringUndefined
+	}
+}
+
+func GetTxnTypeFromString(txnString TxnString) TxnType {
+	switch txnString {
+	case TxnStringUnset:
+		return TxnTypeUnset
+	case TxnStringBlockReward:
+		return TxnTypeBlockReward
+	case TxnStringBasicTransfer:
+		return TxnTypeBasicTransfer
+	case TxnStringBitcoinExchange:
+		return TxnTypeBitcoinExchange
+	case TxnStringPrivateMessage:
+		return TxnTypePrivateMessage
+	case TxnStringSubmitPost:
+		return TxnTypeSubmitPost
+	case TxnStringUpdateProfile:
+		return TxnTypeUpdateProfile
+	case TxnStringUpdateBitcoinUSDExchangeRate:
+		return TxnTypeUpdateBitcoinUSDExchangeRate
+	case TxnStringFollow:
+		return TxnTypeFollow
+	case TxnStringLike:
+		return TxnTypeLike
+	case TxnStringCreatorCoin:
+		return TxnTypeCreatorCoin
+	case TxnStringCreatorCoinTransfer:
+		return TxnTypeCreatorCoinTransfer
+	case TxnStringSwapIdentity:
+		return TxnTypeSwapIdentity
+	case TxnStringUpdateGlobalParams:
+		return TxnTypeUpdateGlobalParams
+	case TxnStringCreateNFT:
+		return TxnTypeCreateNFT
+	case TxnStringUpdateNFT:
+		return TxnTypeUpdateNFT
+	case TxnStringAcceptNFTBid:
+		return TxnTypeAcceptNFTBid
+	case TxnStringNFTBid:
+		return TxnTypeNFTBid
+	case TxnStringNFTTransfer:
+		return TxnTypeNFTTransfer
+	case TxnStringAcceptNFTTransfer:
+		return TxnTypeNFTTransfer
+	case TxnStringBurnNFT:
+		return TxnTypeBurnNFT
+	case TxnStringAuthorizeDerivedKey:
+		return TxnTypeAuthorizeDerivedKey
+
+	default:
+		// TxnTypeUnset means we couldn't find a matching txn type
+		return TxnTypeUnset
 	}
 }
 
@@ -609,22 +715,6 @@ func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
 }
 
-type MsgDeSoBlockAccepted struct {
-	block *MsgDeSoBlock
-}
-
-func (msg *MsgDeSoBlockAccepted) GetMsgType() MsgType {
-	return MsgTypeBlockAccepted
-}
-
-func (msg *MsgDeSoBlockAccepted) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoBlockAccepted.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoBlockAccepted) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoBlockAccepted.FromBytes not implemented")
-}
-
 type MsgDeSoBitcoinManagerUpdate struct {
 	// Keep it simple for now. A BitcoinManagerUpdate just signals that
 	// the BitcoinManager has added at least one block or done a reorg.
@@ -860,7 +950,7 @@ func (msg *MsgDeSoGetBlocks) String() string {
 // DeSoBodySchema Within a post, the body typically has a particular
 // schema defined below.
 type DeSoBodySchema struct {
-	Body      string `json:",omitempty"`
+	Body      string   `json:",omitempty"`
 	ImageURLs []string `json:",omitempty"`
 	VideoURLs []string `json:",omitempty"`
 }
@@ -2632,7 +2722,7 @@ func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error)
 // SignTransactionWithDerivedKey the signature contains solution iteration,
 // which allows us to recover signer public key from the signature.
 // Returns (new txn bytes, txn signature, error)
-func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error){
+func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error) {
 	// As we're signing the transaction using a derived key, we
 	// pass the key to extraData.
 	rr := bytes.NewReader(txnBytes)
@@ -3622,8 +3712,8 @@ func (txnData *UpdateBitcoinUSDExchangeRateMetadataa) New() DeSoTxnMetadata {
 type CreatorCoinOperationType uint8
 
 const (
-	CreatorCoinOperationTypeBuy         CreatorCoinOperationType = 0
-	CreatorCoinOperationTypeSell        CreatorCoinOperationType = 1
+	CreatorCoinOperationTypeBuy     CreatorCoinOperationType = 0
+	CreatorCoinOperationTypeSell    CreatorCoinOperationType = 1
 	CreatorCoinOperationTypeAddDeSo CreatorCoinOperationType = 2
 )
 
@@ -3643,16 +3733,16 @@ type CreatorCoinMetadataa struct {
 	// CreatorCoinToSellNanos will be converted into DeSo. In an AddDeSo
 	// operation, DeSoToAddNanos will be aded for the user. This allows us to
 	// support multiple transaction types with same meta field.
-	DeSoToSellNanos    uint64
+	DeSoToSellNanos        uint64
 	CreatorCoinToSellNanos uint64
-	DeSoToAddNanos     uint64
+	DeSoToAddNanos         uint64
 
 	// When a user converts DeSo into CreatorCoin, MinCreatorCoinExpectedNanos
 	// specifies the minimum amount of creator coin that the user expects from their
 	// transaction. And vice versa when a user is converting CreatorCoin for DeSo.
 	// Specifying these fields prevents the front-running of users' buy/sell. Setting
 	// them to zero turns off the check. Give it your best shot, Ivan.
-	MinDeSoExpectedNanos    uint64
+	MinDeSoExpectedNanos        uint64
 	MinCreatorCoinExpectedNanos uint64
 }
 

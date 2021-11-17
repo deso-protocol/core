@@ -247,7 +247,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
 		utxoView, _ := NewUtxoView(db, params, nil)
-		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/)
+		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
 	}
@@ -263,7 +263,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
 		utxoView, _ := NewUtxoView(db, params, nil)
-		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/)
+		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil)
 		require.NoError(err)
 	}
 }
@@ -337,7 +337,8 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 		updaterPkBytes,
 		usdCentsPerBitcoin,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -399,7 +400,8 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 		minimumNetworkFeesNanosPerKB,
 		nil,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -512,7 +514,8 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 		postExtraData,
 		isHidden,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -622,7 +625,7 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 		nftRoyaltyToCreatorBasisPoints,
 		nftRoyaltyToCoinBasisPoints,
 		feeRateNanosPerKB,
-		nil)
+		nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -720,7 +723,8 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 		diamondPostHash,
 		diamondLevel,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -807,7 +811,8 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 		serialNumber,
 		bidAmountNanos,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -896,7 +901,8 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 		bidAmountNanos,
 		[]byte(unencryptedUnlockableText),
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -918,9 +924,10 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// We should have one SPEND UtxoOperation for each input, one SPEND
+	// operation for each BidderInpout, one ADD operation
 	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
-	numInputs := len(txn.TxInputs)
+	numInputs := len(txn.TxInputs) + len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
 	numOps := len(utxoOps)
 	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -986,7 +993,8 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 		isForSale,
 		minBidAmountNanos,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1073,7 +1081,8 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 		serialNumber,
 		[]byte(unlockableText),
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1155,7 +1164,8 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 		nftPostHash,
 		serialNumber,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1233,7 +1243,8 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 		nftPostHash,
 		serialNumber,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1426,7 +1437,8 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 		fromPublicKey,
 		toPublicKey,
 		feeRateNanosPerKB,
-		nil)
+		nil,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1492,7 +1504,8 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		isHidden,
 		0,
 		feeRateNanosPerKB,
-		nil /*mempool*/)
+		nil /*mempool*/,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1608,7 +1621,8 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		accessSignature,
 		deleteKey,
 		feeRateNanosPerKB,
-		nil /*mempool*/)
+		nil /*mempool*/,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1683,7 +1697,8 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		MinDeSoExpectedNanos,
 		MinCreatorCoinExpectedNanos,
 		feeRateNanosPerKB,
-		nil /*mempool*/)
+		nil /*mempool*/,
+		[]*DeSoOutput{})
 
 	if err != nil {
 		return nil, nil, 0, err
@@ -1786,7 +1801,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 		receiverPkBytes,
 		DiamondPostHash,
 		DiamondLevel,
-		feeRateNanosPerKB, nil)
+		feeRateNanosPerKB, nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1853,7 +1868,8 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		CreatorCoinToTransferNanos,
 		receiverPkBytes,
 		feeRateNanosPerKB,
-		nil /*mempool*/)
+		nil /*mempool*/,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1920,7 +1936,8 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		extraData,
 		isHidden,
 		feeRateNanosPerKB,
-		nil /*mempool*/)
+		nil /*mempool*/,
+		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1977,7 +1994,7 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
-		tstampNanos, feeRateNanosPerKB, nil)
+		tstampNanos, feeRateNanosPerKB, nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -2031,7 +2048,7 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateLikeTxn(
-		senderPkBytes, likedPostHash, isUnfollow, feeRateNanosPerKB, nil)
+		senderPkBytes, likedPostHash, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -2089,7 +2106,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateFollowTxn(
-		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil)
+		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -7989,7 +8006,8 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 					0,
 					nil,
 					100, /*feeRateNanosPerKB*/
-					nil)
+					nil,
+					[]*DeSoOutput{})
 				require.NoError(err)
 				// Sign the transaction now that its inputs are set up.
 				_signTxn(t, rateUpdateTxn, moneyPrivString)
@@ -10263,7 +10281,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil)
+			feeRateNanosPerKB, nil, []*DeSoOutput{})
 		require.NoError(err)
 
 		delete(txn.ExtraData, DiamondLevelKey)
@@ -10297,7 +10315,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil)
+			feeRateNanosPerKB, nil, []*DeSoOutput{})
 		require.NoError(err)
 
 		txn.ExtraData[DiamondLevelKey] = IntToBuf(15)
@@ -10330,7 +10348,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil)
+			feeRateNanosPerKB, nil, []*DeSoOutput{})
 		require.NoError(err)
 
 		txn.ExtraData[DiamondLevelKey] = IntToBuf(0)
@@ -10363,7 +10381,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil)
+			feeRateNanosPerKB, nil, []*DeSoOutput{})
 		require.NoError(err)
 
 		txn.TxnMeta.(*CreatorCoinTransferMetadataa).ProfilePublicKey = receiverPkBytes
@@ -10396,7 +10414,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil)
+			feeRateNanosPerKB, nil, []*DeSoOutput{})
 		require.NoError(err)
 
 		txn.TxnMeta.(*CreatorCoinTransferMetadataa).ReceiverPublicKey = senderPkBytes
@@ -10429,7 +10447,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil)
+			feeRateNanosPerKB, nil, []*DeSoOutput{})
 		require.NoError(err)
 
 		emptyHash := &BlockHash{}
@@ -10463,7 +10481,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			senderPkBytes,
 			postTxn.Hash(),
 			1,
-			feeRateNanosPerKB, nil)
+			feeRateNanosPerKB, nil, []*DeSoOutput{})
 		require.NoError(err)
 
 		txn.ExtraData[DiamondLevelKey] = IntToBuf(7)
@@ -10498,7 +10516,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 				receiverPkBytes,
 				postTxn.Hash(),
 				3,
-				feeRateNanosPerKB, nil)
+				feeRateNanosPerKB, nil, []*DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -10527,7 +10545,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 				receiverPkBytes,
 				postTxn.Hash(),
 				5,
-				feeRateNanosPerKB, mempool)
+				feeRateNanosPerKB, mempool, []*DeSoOutput{})
 			require.NoError(err)
 
 			txn.ExtraData[DiamondLevelKey] = IntToBuf(3)
@@ -10660,7 +10678,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			2,
-			feeRateNanosPerKB, nil)
+			feeRateNanosPerKB, nil, []*DeSoOutput{})
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -13232,7 +13250,8 @@ func TestSpamUpdateProfile(t *testing.T) {
 			false, /*isHidden*/
 			0,
 			feeRateNanosPerKB, /*feeRateNanosPerKB*/
-			mempool /*mempool*/)
+			mempool /*mempool*/,
+			[]*DeSoOutput{})
 		require.NoError(err)
 		_signTxn(t, txn, moneyPrivString)
 		fmt.Printf("Creating txn took: %v seconds\n", time.Since(startTimeCreateTxn).Seconds())
@@ -15108,7 +15127,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/)
+				mempool /*mempool*/,
+				[]*DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -15132,7 +15152,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/)
+				mempool /*mempool*/,
+				[]*DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -15163,7 +15184,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/)
+				mempool /*mempool*/,
+				[]*DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -15188,7 +15210,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/)
+				mempool /*mempool*/,
+				[]*DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -15221,7 +15244,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/)
+				mempool /*mempool*/,
+				[]*DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -15252,7 +15276,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/)
+				mempool /*mempool*/,
+				[]*DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -15277,7 +15302,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool /*mempool*/)
+				mempool /*mempool*/,
+				[]*DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
