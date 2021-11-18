@@ -305,19 +305,29 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr 
 	return creatorProfile.DeSoLockedNanos, creatorProfile.CoinsInCirculationNanos
 }
 
-func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {
+func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pkStr string) uint64 {
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
 	utxoEntriesFound, err := utxoView.GetUnspentUtxoEntrysForPublicKey(pkBytes)
 	require.NoError(t, err)
 
-	totalBalanceNanos := uint64(0)
+	totalUtxoBalanceNanos := uint64(0)
 	for _, utxoEntry := range utxoEntriesFound {
-		totalBalanceNanos += utxoEntry.AmountNanos
+		totalUtxoBalanceNanos += utxoEntry.AmountNanos
 	}
 
-	return totalBalanceNanos
+	balanceNanos, err := utxoView.GetDeSoBalanceNanosForPublicKey(pkBytes)
+	require.NoError(t, err)
+
+	blockHeight := chain.blockTip().Height + 1
+
+	if blockHeight < BalanceModelBlockHeight {
+		// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
+		require.Equal(t, totalUtxoBalanceNanos, balanceNanos)
+	}
+
+	return balanceNanos
 }
 
 func TestBasicTransferReorg(t *testing.T) {
