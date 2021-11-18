@@ -4404,7 +4404,7 @@ func TestUpdateProfile(t *testing.T) {
 				true, /*forceZeroAdditionalFees*/
 			)
 			require.Error(err)
-			require.Contains(err.Error(), RuleErrorCreateProfileTxnWithInsufficientFee)
+			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
 		}
 
 		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb

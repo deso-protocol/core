@@ -6716,16 +6716,8 @@ func (bav *UtxoView) _connectUpdateProfile(
 	// If we are creating a profile for the first time, assess the create profile fee.
 	if existingProfileEntry == nil {
 		createProfileFeeNanos := bav.GlobalParamsEntry.CreateProfileFeeNanos
-
-		// Prior to the BalanceModelBlockHeight, the createProfileFeeNanos was returned as
-		// part of the "totalOutput" return by _connectUpdateProfile. However, for the
-		// balance model, this fee is baked into the "TxnFeeNanos".
-		if blockHeight < BalanceModelBlockHeight {
-			totalOutput += createProfileFeeNanos
-		} else if blockHeight >= BalanceModelBlockHeight && txn.TxnFeeNanos < createProfileFeeNanos {
-			return 0, 0, nil, RuleErrorCreateProfileTxnWithInsufficientFee
-		}
-		if totalInput < totalOutput+txn.TxnFeeNanos {
+		totalOutput += createProfileFeeNanos
+		if totalInput < totalOutput {
 			return 0, 0, nil, RuleErrorCreateProfileTxnOutputExceedsInput
 		}
 	}
@@ -8445,14 +8437,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			RuleErrorCreatorCoinTxnOutputWithInvalidBuyAmount,
 			"_connectCreatorCoin: %v", desoBeforeFeesNanos)
 	}
-	if blockHeight < BalanceModelBlockHeight {
-		totalOutput += desoBeforeFeesNanos
-	} else if blockHeight >= BalanceModelBlockHeight && txn.TxnFeeNanos < desoBeforeFeesNanos {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyWithInsufficientFee
-	}
+	totalOutput += desoBeforeFeesNanos
+
 	// It's assumed the caller code will check that things like output <= input,
 	// but we check it here just in case...
-	if totalInput < totalOutput+txn.TxnFeeNanos {
+	if totalInput < totalOutput {
 		return 0, 0, 0, 0, nil, errors.Wrapf(
 			RuleErrorCreatorCoinTxnOutputExceedsInput,
 			"_connectCreatorCoin: Input: %v, Output: %v", totalInput, totalOutput)
@@ -9623,7 +9612,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	// Do some extra processing for non-block-reward transactions. Block reward transactions
 	// will return zero for their fees.
 	fees := uint64(0)
-	if blockHeight < BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		// If this isn't a block reward transaction, make sure the total input does
 		// not exceed the total output. If it does, mark the block as invalid and
 		// return an error.
@@ -9631,8 +9620,6 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			return nil, 0, 0, 0, RuleErrorTxnOutputExceedsInput
 		}
 		fees = totalInput - totalOutput
-	} else if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		fees = txn.TxnFeeNanos
 	}
 
 	// BitcoinExchange transactions have their own special fee that is computed as a function of how much
