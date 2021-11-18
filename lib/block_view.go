@@ -8745,7 +8745,14 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Finally, if the creator is getting a deso founder reward, add a UTXO for it.
 	var outputKey *UtxoKey
 	if blockHeight > DeSoFounderRewardBlockHeight {
-		if desoFounderRewardNanos > 0 {
+		if desoFounderRewardNanos > 0 && blockHeight >= BalanceModelBlockHeight {
+			// Add the founder reward to the creator's balance.
+			utxoOp, err := bav._addBalance(desoFounderRewardNanos, existingProfileEntry.PublicKey)
+			if err != nil {
+				return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Problem adding to balance")
+			}
+			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+		} else if desoFounderRewardNanos > 0 {
 			// Create a new entry for this output and add it to the view. It should be
 			// added at the end of the utxo list.
 			outputKey = &UtxoKey{

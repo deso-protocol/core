@@ -2970,28 +2970,11 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 		// inputs and change.
 	}
 
-	var err error
-	totalInput := uint64(0)
-	spendAmount := uint64(0)
-	changeAmount := uint64(0)
-	fees := uint64(0)
-	if blockHeight >= BalanceModelBlockHeight {
-		// After the BalanceModelBlockHeight, there are no "implicit" fees. Instead, all fees
-		// must be baked into the TxnFeeNanos.  Therefore we add "additionalFees" here.
-		totalInput, spendAmount, changeAmount, fees, err =
-			bc.AddInputsAndChangeToTransactionWithSubsidy(
-				txn, minFeeRateNanosPerKB, 0, mempool, DeSoToSellNanos)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
-		}
-	} else {
-		// We don't need to make any tweaks to the amount because it's basically
-		// a standard "pay per kilobyte" transaction.
-		totalInput, spendAmount, changeAmount, fees, err =
-			bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
-		}
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransactionWithSubsidy(
+			txn, minFeeRateNanosPerKB, 0, mempool, DeSoToSellNanos)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
 	}
 	_ = spendAmount
 
@@ -3804,17 +3787,6 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	spendAmount := uint64(0)
 	for _, desoOutput := range txArg.TxOutputs {
 		spendAmount += desoOutput.AmountNanos
-	}
-	// If this is a CreatorCoin buy transaction, add the amount of DeSo the
-	// user wants to spend on the buy to the amount of output we're asking this
-	// function to provide for us.
-	if txArg.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
-		txMeta := txArg.TxnMeta.(*CreatorCoinMetadataa)
-		if txMeta.OperationType == CreatorCoinOperationTypeBuy {
-			// If this transaction is a buy then we need enough DeSo to
-			// cover the buy.
-			spendAmount += txMeta.DeSoToSellNanos
-		}
 	}
 
 	// Add additional fees to the spend amount.

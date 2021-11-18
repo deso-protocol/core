@@ -1916,7 +1916,10 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 
-	if OperationType == CreatorCoinOperationTypeBuy {
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	if OperationType == CreatorCoinOperationTypeBuy && blockHeight < BalanceModelBlockHeight {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake+DeSoToSellNanos))
 	} else {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake))
@@ -1926,9 +1929,6 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	_signTxn(t, txn, UpdaterPrivateKeyBase58Check)
 
 	txHash := txn.Hash()
-	// Always use height+1 for validation since it's assumed the transaction will
-	// get mined into the next block.
-	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the
@@ -1939,17 +1939,29 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.GreaterOrEqual(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreatorCoin operation at the end.
-	numInputs := len(txn.TxInputs)
 	numOps := len(utxoOps)
-	for ii := 0; ii < numInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreatorCoin operation at the end.
+		numInputs := len(txn.TxInputs)
+		for ii := 0; ii < numInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ii := numInputs; ii < numOps-1; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		if numOps == 3 {
+			// Founder reward case.
+			require.Equal(OperationTypeAddBalance, utxoOps[1].Type)
+			require.Equal(OperationTypeCreatorCoin, utxoOps[2].Type)
+		} else {
+			// No founder reward case.
+			require.Equal(OperationTypeCreatorCoin, utxoOps[1].Type)
+		}
 	}
-	for ii := numInputs; ii < numOps-1; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
-	}
-	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
 
 	require.NoError(utxoView.FlushToDb())
 
