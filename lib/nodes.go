@@ -6,6 +6,19 @@ type DeSoNode struct {
 	Owner string
 }
 
+//
+// This list of nodes is maintained by the core DeSo developer team.
+//
+// If you run a DeSo node that has been online for at least one month you may submit a pull request to add your
+// node to the list of nodes.
+//
+// When submitting a post, add the following to PostExtraData:
+//   "Node": "ID"
+//
+// If your node is in the list then other nodes will be able to know where users are posting and can include
+// a link to your node and give you free advertising.
+//
+
 var NODES = map[uint64]DeSoNode{
 	1: {
 		Name:  "DeSo",
