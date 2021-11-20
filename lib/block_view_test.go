@@ -119,14 +119,14 @@ func TestBalanceModel(t *testing.T) {
 	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
 	TestCreatorCoinTransferBelowMinThreshold(t)
 	TestCreatorCoinTransferWithMaxTransfers(t)
-	//	TestCreatorCoinTransferWithSwapIdentity(t)
+	TestCreatorCoinTransferWithSwapIdentity(t)
 
 	// Swap identity.
-	//  TestSwapIdentityMain(t)
-	//	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
-	//	TestSwapIdentityCreatorCoinBuySimple(t)
-	//	TestSwapIdentityFailureCases(t)
-	//	TestSwapIdentityWithFollows(t)
+	TestSwapIdentityMain(t)
+	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
+	TestSwapIdentityCreatorCoinBuySimple(t)
+	TestSwapIdentityFailureCases(t)
+	TestSwapIdentityWithFollows(t)
 
 	// NFTs.
 	TestNFTBasic(t)
@@ -11427,7 +11427,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 	_, _ = assert, require
 
 	creatorCoinTests := []*_CreatorCoinTestData{
-		// Create a profile for m0
+		// [0] Create a profile for m0
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -11441,7 +11441,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 
 			SkipChecks: true,
 		},
-		// Have m1 buy some of m0's coins
+		// [1] Have m1 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -11465,10 +11465,10 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876542,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
 			m2DeSoBalance:           6000000000,
 		},
-		// Have m2 buy some of m0's coins
+		// [2] Have m2 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
@@ -11492,10 +11492,10 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876542,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Have m1 transfer 1e9 creator coins to m2
+		// [3] Have m1 transfer 1e9 creator coins to m2
 		{
 			TxnType: TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
@@ -11516,10 +11516,10 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m2CCBalance:             2977342329,
 			m2HasPurchased:          true,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876540,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Swap m0 and m3
+		// [4] Swap m0 and m3
 		{
 			TxnType:       TxnTypeSwapIdentity,
 			FromPublicKey: m0PkBytes,
@@ -11542,10 +11542,10 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876540,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Have m2 transfer 2e9 creator coins (now attached to m3Pub's profile) to m0
+		// [5] Have m2 transfer 2e9 creator coins (now attached to m3Pub's profile) to m0
 		{
 			TxnType: TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
@@ -11568,8 +11568,8 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876540,
-			m2DeSoBalance:           4827626813,
+			m1DeSoBalance:           4728876540 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626813 + _balanceModelDiffNaive(1),
 		},
 	}
 
@@ -13601,7 +13601,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 
 	creatorCoinTests := []*_CreatorCoinTestData{
-		// Create a profile for m0
+		// [0] Create a profile for m0
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -13615,7 +13615,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 
 			SkipChecks: true,
 		},
-		// Have m1 buy some of m0's coins
+		// [1] Have m1 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -13639,10 +13639,10 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876542,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
 			m2DeSoBalance:           6000000000,
 		},
-		// Have m2 buy some of m0's coins
+		// [2] Have m2 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
@@ -13666,10 +13666,10 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876542,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Have m1 sell half of their stake
+		// [3] Have m1 sell half of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -13693,11 +13693,11 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 			m3DeSoBalance:           6000000000,
 		},
-		// Swap m0 and m3
+		// [4] Swap m0 and m3
 		// State after swapping:
 		// m0Pk: m3 profile
 		// m3Pk: m0 profile (the one with the profile)
@@ -13723,11 +13723,11 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 			m3DeSoBalance:           6000000000,
 		},
-		// Swap m3 and m1
+		// [5] Swap m3 and m1
 		// State after swapping:
 		// m0Pk: m3 profile
 		// m1Pk: m0 profile (the one with the profile)
@@ -13754,11 +13754,11 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             4000655948, // This becomes what m1 had a moment ago.
 			m3HasPurchased:          true,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 			m3DeSoBalance:           6000000000,
 		},
-		// Swap m0 and m1. Should restore m0's profile to it.
+		// [6] Swap m0 and m1. Should restore m0's profile to it.
 		// State after swapping:
 		// m0Pk: m0 profile (the one with the profile)
 		// m1Pk: m3 profile
@@ -13785,11 +13785,11 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             4000655948, // This is still what m1 started with.
 			m3HasPurchased:          true,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 			m3DeSoBalance:           6000000000,
 		},
-		// Swap m1 and m3. Should restore everything back to normal.
+		// [7] Swap m1 and m3. Should restore everything back to normal.
 		// State after swapping:
 		// m0Pk: m0 profile
 		// m1Pk: m1 profile (the one with the profile)
@@ -13816,11 +13816,11 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             0, // This goes back to zero as we started with.
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 			m3DeSoBalance:           6000000000,
 		},
-		// Have m2 sell all of their stake
+		// [8] Have m2 sell all of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
@@ -13844,10 +13844,10 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           5243756077,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
-		// Have m1 buy more, m0 should receive 25% of the minted coins as a founders reward
+		// [9] Have m1 buy more, m0 should receive 25% of the minted coins as a founders reward
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -13871,11 +13871,11 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4232379830,
-			m2DeSoBalance:           5243756077,
+			m1DeSoBalance:           4232379830 + _balanceModelDiffNaive(3),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 sell the rest of their stake
+		// [10] Have m1 sell the rest of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -13899,11 +13899,11 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6635615128,
-			m2DeSoBalance:           5243756077,
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m0 sell all of their stake except leave 1 DeSo locked
+		// [11] Have m0 sell all of their stake except leave 1 DeSo locked
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -13926,13 +13926,13 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:           6119715429,
-			m1DeSoBalance:           6635615128,
-			m2DeSoBalance:           5243756077,
+			m0DeSoBalance:           6119715429 + _balanceModelDiffNaive(1),
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
 		{
-			// Have m0 sell all of their remaining stake except for 1 CreatorCoin nano
+			// [12] Have m0 sell all of their remaining stake except for 1 CreatorCoin nano
 			// This will trigger an autosell.
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
@@ -13954,12 +13954,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:           6119715427,
-			m1DeSoBalance:           6635615128,
-			m2DeSoBalance:           5243756077,
+			m0DeSoBalance:           6119715427 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 buy a little more, m0 should receieve some
+		// [13] Have m1 buy a little more, m0 should receieve some
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -13982,12 +13982,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          true,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:           6119715427,
-			m1DeSoBalance:           4512158337,
-			m2DeSoBalance:           5243756077,
+			m0DeSoBalance:           6119715427 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           4512158337 + _balanceModelDiffNaive(5),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 sell their creator coins. m0 should be the only one left with coins.
+		// [14] Have m1 sell their creator coins. m0 should be the only one left with coins.
 		// Meaning m0 is effectively being left with their founders reward, even after all
 		// their supporters have sold.
 		{
@@ -14012,9 +14012,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1HasPurchased:          false,
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
-			m0DeSoBalance:           6119715427,
-			m1DeSoBalance:           6602018090,
-			m2DeSoBalance:           5243756077,
+			m0DeSoBalance:           6119715427 + _balanceModelDiffNaive(2),
+			m1DeSoBalance:           6602018090 + _balanceModelDiffNaive(6),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 	}
 
@@ -14028,7 +14028,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 	_, _ = assert, require
 
 	creatorCoinTests := []*_CreatorCoinTestData{
-		// Create a profile for m0
+		// [0] Create a profile for m0
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -14042,7 +14042,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 
 			SkipChecks: true,
 		},
-		// Have m1 buy some of m0's coins
+		// [1] Have m1 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -14066,10 +14066,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             0,
 			m2HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876542,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
 			m2DeSoBalance:           6000000000,
 		},
-		// Have m2 buy some of m0's coins
+		// [2] Have m2 buy some of m0's coins
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
@@ -14093,10 +14093,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4728876542,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
-		// Have m1 sell half of their stake
+		// [3] Have m1 sell half of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -14120,11 +14120,11 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2CCBalance:             1977342329,
 			m2HasPurchased:          true,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
 
-		// Swap m0 and m3
+		// [4] Swap m0 and m3
 		{
 			TxnType:       TxnTypeSwapIdentity,
 			FromPublicKey: m0PkBytes,
@@ -14147,11 +14147,11 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           4827626815,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           4827626815 + _balanceModelDiffNaive(1),
 		},
 
-		// Have m2 sell all of their stake
+		// [5] Have m2 sell all of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
@@ -14177,10 +14177,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             3367151687,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6355836621,
-			m2DeSoBalance:           5243756077,
+			m1DeSoBalance:           6355836621 + _balanceModelDiffNaive(2),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
-		// Have m1 buy more, m3 should receieve a founders reward
+		// [6] Have m1 buy more, m3 should receieve a founders reward
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -14206,11 +14206,11 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             4928685843,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4232379830,
-			m2DeSoBalance:           5243756077,
+			m1DeSoBalance:           4232379830 + _balanceModelDiffNaive(3),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 sell the rest of their stake
+		// [7] Have m1 sell the rest of their stake
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -14236,11 +14236,11 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             4928685843,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6635615128,
-			m2DeSoBalance:           5243756077,
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m3 sell all of their stake except leave 1 DeSo locked
+		// [8] Have m3 sell all of their stake except leave 1 DeSo locked
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m3Pub,
@@ -14266,13 +14266,13 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             3000014,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6635615128,
-			m2DeSoBalance:           5243756077,
-			m3DeSoBalance:           6119715431,
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
+			m3DeSoBalance:           6119715431 + _balanceModelDiffNaive(1),
 		},
 
 		{
-			// Have m3 sell all of their remaining stake except for 1 CreatorCoin nano
+			// [9] Have m3 sell all of their remaining stake except for 1 CreatorCoin nano
 			// This should trigger the CreatorCoinAutoSellThresholdNanos threshold leaving
 			// m3 with no CreatorCoins.
 			UpdaterPublicKeyBase58Check:  m3Pub,
@@ -14298,12 +14298,12 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             0,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6635615128,
-			m2DeSoBalance:           5243756077,
-			m3DeSoBalance:           6119715429,
+			m1DeSoBalance:           6635615128 + _balanceModelDiffNaive(4),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
+			m3DeSoBalance:           6119715429 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 buy a little more, m3 should receieve a founders reward
+		// [10] Have m1 buy a little more, m3 should receieve a founders reward
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -14329,12 +14329,12 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             3213215926,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           4512158337,
-			m2DeSoBalance:           5243756077,
-			m3DeSoBalance:           6119715429,
+			m1DeSoBalance:           4512158337 + _balanceModelDiffNaive(5),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
+			m3DeSoBalance:           6119715429 + _balanceModelDiffNaive(2),
 		},
 
-		// Have m1 sell their creator coins except CreatorCoinAutoSellThresholdNanos - 1. This should
+		// [11] Have m1 sell their creator coins except CreatorCoinAutoSellThresholdNanos - 1. This should
 		// cause an auto sell and m1 back to zero.
 		{
 			// These are the transaction params
@@ -14361,9 +14361,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m3CCBalance:             3213215926,
 			m3HasPurchased:          false,
 			m0DeSoBalance:           5999999998,
-			m1DeSoBalance:           6602018090,
-			m2DeSoBalance:           5243756077,
-			m3DeSoBalance:           6119715429,
+			m1DeSoBalance:           6602018090 + _balanceModelDiffNaive(6),
+			m2DeSoBalance:           5243756077 + _balanceModelDiffNaive(2),
+			m3DeSoBalance:           6119715429 + _balanceModelDiffNaive(2),
 		},
 	}
 
@@ -14435,7 +14435,7 @@ func TestSwapIdentityMain(t *testing.T) {
 	_, _ = assert, require
 
 	creatorCoinTests := []*_CreatorCoinTestData{
-		// Create a profile for m0 so we can check creator coin balances easily.
+		// [0] Create a profile for m0 so we can check creator coin balances easily.
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
@@ -14449,7 +14449,7 @@ func TestSwapIdentityMain(t *testing.T) {
 
 			SkipChecks: true,
 		},
-		// Swap m1 and m2, which don't have profiles yet. This should work.
+		// [1] Swap m1 and m2, which don't have profiles yet. This should work.
 		{
 			TxnType:       TxnTypeSwapIdentity,
 			FromPublicKey: m1PkBytes,
@@ -14489,7 +14489,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckPublicKeysBase58Check: []string{m1Pub, m2Pub},
 			ProfilesToCheckUsernames:             []string{"", ""},
 		},
-		// Create a profile for m3
+		// [2] Create a profile for m3
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m3Pub,
@@ -14533,7 +14533,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic"},
 		},
-		// Have m5 buy coins for m3
+		// [3] Have m5 buy coins for m3
 		{
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
@@ -14568,7 +14568,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           6000000000,
 			m3DeSoBalance:           5999999998,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876542,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
 			m6DeSoBalance:           6000000000,
 
 			// Profile check
@@ -14577,7 +14577,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic"},
 		},
-		// Swap m2 and m3. Everything should stay the same except m2 should be the
+		// [4] Swap m2 and m3. Everything should stay the same except m2 should be the
 		// creator everyone owns a piece of
 		{
 			TxnType:       TxnTypeSwapIdentity,
@@ -14610,7 +14610,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           6000000000,
 			m3DeSoBalance:           5999999998,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876542,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
 			m6DeSoBalance:           6000000000,
 
 			// Profile check. Note m2 is the public key that owns the profile now.
@@ -14619,7 +14619,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", ""},
 		},
-		// Create a profile for m3 again. This should work, since m3 lost its
+		// [5] Create a profile for m3 again. This should work, since m3 lost its
 		// profile to m2 easrlier
 		{
 			TxnType:                      TxnTypeUpdateProfile,
@@ -14655,7 +14655,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           6000000000,
 			m3DeSoBalance:           5999999996,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876542,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
 			m6DeSoBalance:           6000000000,
 
 			// Profile check
@@ -14664,7 +14664,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Have m6 buy some coins in m3
+		// [6] Have m6 buy some coins in m3
 		{
 			UpdaterPublicKeyBase58Check:  m6Pub,
 			UpdaterPrivateKeyBase58Check: m6Priv,
@@ -14699,8 +14699,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           6000000000,
 			m3DeSoBalance:           5999999996,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876542,
-			m6DeSoBalance:           3999999997,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:           3999999997 + _balanceModelDiffNaive(1),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -14708,7 +14708,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Have m6 buy a tiny amount of m2.
+		// [7] Have m6 buy a tiny amount of m2.
 		// This should fail the AutoSellThreshold test if you set it to 2 DeSoToSellNanos
 		{
 			UpdaterPublicKeyBase58Check:  m6Pub,
@@ -14743,8 +14743,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           6000000000,
 			m3DeSoBalance:           5999999996,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876542,
-			m6DeSoBalance:           3999999985,
+			m5DeSoBalance:           4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -14752,7 +14752,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Swap m2 and m3 again.
+		// [8] Swap m2 and m3 again.
 		{
 			TxnType:       TxnTypeSwapIdentity,
 			FromPublicKey: m2PkBytes,
@@ -14785,8 +14785,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:  6000000000,
 			m3DeSoBalance:  5999999996,
 			m4DeSoBalance:  6000000000,
-			m5DeSoBalance:  4728876542,
-			m6DeSoBalance:  3999999985,
+			m5DeSoBalance:  4728876542 + _balanceModelDiffNaive(1),
+			m6DeSoBalance:  3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check. Note m2 is the public key that owns the profile now.
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub},
@@ -14794,7 +14794,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Have m5 buy a small amount of m3 and check the cap table
+		// [9] Have m5 buy a small amount of m3 and check the cap table
 		// If you set the DeSoToSellNanos to 2, this will also fail the autosell threshold.
 		{
 			UpdaterPublicKeyBase58Check:  m5Pub,
@@ -14829,8 +14829,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           6000000000,
 			m3DeSoBalance:           5999999996,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876530,
-			m6DeSoBalance:           3999999985,
+			m5DeSoBalance:           4728876530 + _balanceModelDiffNaive(2),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub},
@@ -14838,7 +14838,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic"},
 		},
-		// Swap m3 for m4 and check the m4 cap table. It should be identical to
+		// [10] Swap m3 for m4 and check the m4 cap table. It should be identical to
 		// the m3 cap table from before.
 		{
 			TxnType:       TxnTypeSwapIdentity,
@@ -14871,8 +14871,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           6000000000,
 			m3DeSoBalance:           5999999996,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876530,
-			m6DeSoBalance:           3999999985,
+			m5DeSoBalance:           4728876530 + _balanceModelDiffNaive(2),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m4Pub, m2Pub, m3Pub},
@@ -14880,7 +14880,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", ""},
 		},
-		// Swap m2 for m3 and check the m3 cap table. It should be identical to
+		// [11] Swap m2 for m3 and check the m3 cap table. It should be identical to
 		// the m2 cap table from before.
 		{
 			TxnType:       TxnTypeSwapIdentity,
@@ -14913,8 +14913,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:  6000000000,
 			m3DeSoBalance:  5999999996,
 			m4DeSoBalance:  6000000000,
-			m5DeSoBalance:  4728876530,
-			m6DeSoBalance:  3999999985,
+			m5DeSoBalance:  4728876530 + _balanceModelDiffNaive(2),
+			m6DeSoBalance:  3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m4Pub, m3Pub, m2Pub},
@@ -14922,7 +14922,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", ""},
 		},
-		// Swap m4 and m3 and check the m4 cap table. It should be identical to the above.
+		// [12] Swap m4 and m3 and check the m4 cap table. It should be identical to the above.
 		{
 			TxnType:                     TxnTypeSwapIdentity,
 			FromPublicKey:               m3PkBytes,
@@ -14952,8 +14952,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:  6000000000,
 			m3DeSoBalance:  5999999996,
 			m4DeSoBalance:  6000000000,
-			m5DeSoBalance:  4728876530,
-			m6DeSoBalance:  3999999985,
+			m5DeSoBalance:  4728876530 + _balanceModelDiffNaive(2),
+			m6DeSoBalance:  3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -14961,7 +14961,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", ""},
 		},
-		// Do a small m3 buy and check that the cap table lines up.
+		// [13] Do a small m3 buy and check that the cap table lines up.
 		{
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
@@ -14995,8 +14995,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           6000000000,
 			m3DeSoBalance:           5999999996,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876518,
-			m6DeSoBalance:           3999999985,
+			m5DeSoBalance:           4728876518 + _balanceModelDiffNaive(3),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -15004,7 +15004,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", ""},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", ""},
 		},
-		// Create a profile for m2
+		// [14] Create a profile for m2
 		{
 			TxnType:                      TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m2Pub,
@@ -15039,8 +15039,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           5999999998,
 			m3DeSoBalance:           5999999996,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876518,
-			m6DeSoBalance:           3999999985,
+			m5DeSoBalance:           4728876518 + _balanceModelDiffNaive(3),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -15048,7 +15048,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", "i am the new m2"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", "the new m2 profile pic"},
 		},
-		// Swap m2 and m4 and verify that m4 now has the zeros
+		// [15] Swap m2 and m4 and verify that m4 now has the zeros
 		{
 			TxnType:                     TxnTypeSwapIdentity,
 			FromPublicKey:               m2PkBytes,
@@ -15078,8 +15078,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:  5999999998,
 			m3DeSoBalance:  5999999996,
 			m4DeSoBalance:  6000000000,
-			m5DeSoBalance:  4728876518,
-			m6DeSoBalance:  3999999985,
+			m5DeSoBalance:  4728876518 + _balanceModelDiffNaive(3),
+			m6DeSoBalance:  3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub, m4Pub},
@@ -15087,7 +15087,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			ProfilesToCheckDescriptions:          []string{"i am m0", "i am m3", "i am the real m3", "i am the new m2"},
 			ProfilesToCheckProfilePic:            []string{"m0 profile pic", "m3 profile pic", "the real m3 profile pic", "the new m2 profile pic"},
 		},
-		// Do a small m2 buy and make sure that the m4 cap table is what we have
+		// [16] Do a small m2 buy and make sure that the m4 cap table is what we have
 		// Setting DeSoToSellNanos to zero will cause an RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanos
 		// rule exception.
 		{
@@ -15123,8 +15123,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2DeSoBalance:           5999999998,
 			m3DeSoBalance:           5999999996,
 			m4DeSoBalance:           6000000000,
-			m5DeSoBalance:           4728876506,
-			m6DeSoBalance:           3999999985,
+			m5DeSoBalance:           4728876506 + _balanceModelDiffNaive(4),
+			m6DeSoBalance:           3999999985 + _balanceModelDiffNaive(2),
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub, m4Pub},
