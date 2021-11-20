@@ -70,4 +70,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://members.giftclout.com",
 		Owner: "RajLahoti",
 	},
+	12:{
+		Name:  "NFTz",
+		URL:   "https://nftz.zone",
+		Owner: "mvanhalen",
+	}
 }
