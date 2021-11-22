@@ -75,4 +75,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://desocialworld.com",
 		Owner: "edokoevoet",
 	},
+	12: {
+		Name:  "NFTz",
+		URL:   "https://nftz.zone",
+		Owner: "mvanhalen",
+	}
 }
