@@ -10776,10 +10776,8 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Sanity-check that one of the MessageKey computed from the MEssageEntry is
 		// equal to the MessageKey that maps to that entry.
-		senderMessageKeyInEntry := MakeMessageKey(
-			messageEntry.SenderPublicKey, messageEntry.TstampNanos)
-		recipientMessageKeyInEntry := MakeMessageKey(
-			messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
+		senderMessageKeyInEntry := MakeMessageKey(messageEntry.SenderPublicKey, messageEntry.TstampNanos)
+		recipientMessageKeyInEntry := MakeMessageKey(messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
 		if senderMessageKeyInEntry != messageKey && recipientMessageKeyInEntry != messageKey {
 			return fmt.Errorf("_flushMessageEntriesToDbWithTxn: MessageEntry has "+
 				"SenderMessageKey: %v and RecipientMessageKey %v, neither of which match "+
@@ -10787,21 +10785,13 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 				&senderMessageKeyInEntry, &recipientMessageKeyInEntry, &messageKey)
 		}
 
-		// Delete the existing mappings in the db for this MessageKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteMessageEntryMappingsWithTxn(
-			txn, messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushMessageEntriesToDbWithTxn: Problem deleting mappings "+
-					"for MessageKey: %v: ", &messageKey)
-		}
-	}
-	// Go through all the entries in the MessageKeyToMessageEntry map.
-	for _, messageEntry := range bav.MessageKeyToMessageEntry {
 		if messageEntry.isDeleted {
-			// If the MessageEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this MessageKey. They will be re-added
+			// if the corresponding entry in memory has isDeleted=false.
+			if err := DbDeleteMessageEntryMappingsWithTxn(txn, messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
+				return errors.Wrapf(err, "_flushMessageEntriesToDbWithTxn: Problem deleting mappings "+
+					"for MessageKey: %v: ", &messageKey)
+			}
 		} else {
 			// If the MessageEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
@@ -10824,8 +10814,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 		// Make a copy of the iterator since we make references to it below.
 		repostKey := repostKeyIter
 
-		// Sanity-check that the RepostKey computed from the RepostEntry is
-		// equal to the RepostKey that maps to that entry.
+		// Sanity-check that the RepostKey computed from the RepostEntry is equal to the RepostKey for that entry.
 		repostKeyInEntry := MakeRepostKey(repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash)
 		if repostKeyInEntry != repostKey {
 			return fmt.Errorf("_flushRepostEntriesToDbWithTxn: RepostEntry has "+
@@ -10833,23 +10822,16 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 				&repostKeyInEntry, &repostKey)
 		}
 
-		// Delete the existing mappings in the db for this RepostKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteRepostMappingsWithTxn(
-			txn, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushRepostEntriesToDbWithTxn: Problem deleting mappings "+
-					"for RepostKey: %v: ", &repostKey)
-		}
-	}
-	for _, repostEntry := range bav.RepostKeyToRepostEntry {
 		if repostEntry.isDeleted {
-			// If the RepostedEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this RepostKey.
+			if err := DbDeleteRepostMappingsWithTxn(txn, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash); err != nil {
+
+				return errors.Wrapf(
+					err, "_flushRepostEntriesToDbWithTxn: Problem deleting mappings "+
+						"for RepostKey: %v: ", &repostKey)
+			}
 		} else {
-			// If the RepostEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the RepostEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DbPutRepostMappingsWithTxn(
 				txn, repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry); err != nil {
 				return err
@@ -10869,8 +10851,7 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 		// Make a copy of the iterator since we make references to it below.
 		likeKey := likeKeyIter
 
-		// Sanity-check that the LikeKey computed from the LikeEntry is
-		// equal to the LikeKey that maps to that entry.
+		// Sanity-check that the LikeKey computed from the LikeEntry is equal to the LikeKey for that entry.
 		likeKeyInEntry := MakeLikeKey(likeEntry.LikerPubKey, *likeEntry.LikedPostHash)
 		if likeKeyInEntry != likeKey {
 			return fmt.Errorf("_flushLikeEntriesToDbWithTxn: LikeEntry has "+
@@ -10878,28 +10859,16 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 				&likeKeyInEntry, &likeKey)
 		}
 
-		// Delete the existing mappings in the db for this LikeKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteLikeMappingsWithTxn(
-			txn, likeKey.LikerPubKey[:], likeKey.LikedPostHash); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushLikeEntriesToDbWithTxn: Problem deleting mappings "+
-					"for LikeKey: %v: ", &likeKey)
-		}
-	}
-
-	// Go through all the entries in the LikeKeyToLikeEntry map.
-	for _, likeEntry := range bav.LikeKeyToLikeEntry {
-
 		if likeEntry.isDeleted {
-			// If the LikeEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this LikeKey.
+			if err := DbDeleteLikeMappingsWithTxn(txn, likeKey.LikerPubKey[:], likeKey.LikedPostHash); err != nil {
+				return errors.Wrapf(
+					err, "_flushLikeEntriesToDbWithTxn: Problem deleting mappings "+
+						"for LikeKey: %v: ", &likeKey)
+			}
 		} else {
-			// If the LikeEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
-			if err := DbPutLikeMappingsWithTxn(
-				txn, likeEntry.LikerPubKey, *likeEntry.LikedPostHash); err != nil {
+			// If the LikeEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
+			if err := DbPutLikeMappingsWithTxn(txn, likeEntry.LikerPubKey, *likeEntry.LikedPostHash); err != nil {
 
 				return err
 			}
@@ -10916,38 +10885,24 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 		// Make a copy of the iterator since we make references to it below.
 		followKey := followKeyIter
 
-		// Sanity-check that the FollowKey computed from the FollowEntry is
-		// equal to the FollowKey that maps to that entry.
-		followKeyInEntry := MakeFollowKey(
-			followEntry.FollowerPKID, followEntry.FollowedPKID)
+		// Sanity-check that the FollowKey computed from the FollowEntry is equal to the FollowKey for that entry.
+		followKeyInEntry := MakeFollowKey(followEntry.FollowerPKID, followEntry.FollowedPKID)
 		if followKeyInEntry != followKey {
 			return fmt.Errorf("_flushFollowEntriesToDbWithTxn: FollowEntry has "+
 				"FollowKey: %v, which doesn't match the FollowKeyToFollowEntry map key %v",
 				&followKeyInEntry, &followKey)
 		}
 
-		// Delete the existing mappings in the db for this FollowKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteFollowMappingsWithTxn(
-			txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushFollowEntriesToDbWithTxn: Problem deleting mappings "+
-					"for FollowKey: %v: ", &followKey)
-		}
-	}
-
-	// Go through all the entries in the FollowKeyToFollowEntry map.
-	for _, followEntry := range bav.FollowKeyToFollowEntry {
+		// Delete the existing mappings in the db for this FollowKey
 		if followEntry.isDeleted {
-			// If the FollowEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			if err := DbDeleteFollowMappingsWithTxn(txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
+				return errors.Wrapf(
+					err, "_flushFollowEntriesToDbWithTxn: Problem deleting mappings "+
+						"for FollowKey: %v: ", &followKey)
+			}
 		} else {
-			// If the FollowEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
-			if err := DbPutFollowMappingsWithTxn(
-				txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
-
+			// If the FollowEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
+			if err := DbPutFollowMappingsWithTxn(txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
 				return err
 			}
 		}
@@ -10963,8 +10918,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
 
-		// Sanity-check that the NFTKey computed from the NFTEntry is
-		// equal to the NFTKey that maps to that entry.
+		// Sanity-check that the NFTKey computed from the NFTEntry is  equal to the NFTKey for that entry.
 		nftKeyInEntry := MakeNFTKey(nftEntry.NFTPostHash, nftEntry.SerialNumber)
 		if nftKeyInEntry != nftKey {
 			return fmt.Errorf("_flushNFTEntriesToDbWithTxn: NFTEntry has "+
@@ -10972,24 +10926,15 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 				&nftKeyInEntry, &nftKey)
 		}
 
-		// Delete the existing mappings in the db for this NFTKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
-					"for NFTKey: %v: ", &nftKey)
-		}
-	}
-
-	// Add back all of the entries that aren't deleted.
-	for _, nftEntry := range bav.NFTKeyToNFTEntry {
 		if nftEntry.isDeleted {
-			// If the NFTEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this NFTKey.
+			if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+				return errors.Wrapf(
+					err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
+						"for NFTKey: %v: ", &nftKey)
+			}
 		} else {
-			// If the NFTEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the NFTEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutNFTEntryMappingsWithTxn(txn, nftEntry); err != nil {
 				return err
 			}
@@ -11002,28 +10947,21 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
 	// Go through and delete all the entries so they can be added back fresh.
-	for nftKeyIter, _ := range bav.NFTKeyToAcceptedNFTBidHistory {
+	for nftKeyIter, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
 
 		// We skip the standard sanity check.  Since it is possible to accept a bid on serial number 0, it is possible
 		// that none of the accepted bids have the same serial number as the key.
 
-		// Delete the existing mappings in the db for this NFTKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, &nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushAcceptedBidEntriesToDbWithTxn: Problem deleting mappings "+
-					"for NFTKey: %v: ", &nftKey)
-		}
-	}
-
-	// Add back all of the entries that aren't nil or of length 0
-	for nftKey, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
 		if acceptedNFTBidEntries == nil || len(*acceptedNFTBidEntries) == 0 {
-			// If the acceptedNFTBidEntries is nil or has length 0 then there's nothing to do because
-			// we already deleted the entry above. length 0 means that there are no accepted bids yet.
+			// If the acceptedNFTBidEntries is nil or has length 0 then we delete the entry.
+			// Length 0 means that there are no accepted bids yet.
+			if err := DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, &nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
+				return errors.Wrapf(
+					err, "_flushAcceptedBidEntriesToDbWithTxn: Problem deleting mappings "+
+						"for NFTKey: %v: ", &nftKey)
+			}
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
@@ -11031,6 +10969,7 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 				return err
 			}
 		}
+
 	}
 
 	return nil
@@ -11045,36 +10984,27 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Sanity-check that the NFTBidKey computed from the NFTBidEntry is
 		// equal to the NFTBidKey that maps to that entry.
-		nftBidKeyInEntry := MakeNFTBidKey(
-			nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)
+		nftBidKeyInEntry := MakeNFTBidKey(nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)
 		if nftBidKeyInEntry != nftBidKey {
 			return fmt.Errorf("_flushNFTBidEntriesToDbWithTxn: NFTBidEntry has "+
 				"NFTBidKey: %v, which doesn't match the NFTBidKeyToNFTEntry map key %v",
 				&nftBidKeyInEntry, &nftBidKey)
 		}
 
-		// Delete the existing mappings in the db for this NFTBidKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
-					"for NFTBidKey: %v: ", &nftBidKey)
-		}
-	}
-
-	// Add back all of the entries that aren't deleted.
-	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
 		if nftBidEntry.isDeleted {
-			// If the NFTEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this NFTBidKey.
+			if err := DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
+				return errors.Wrapf(
+					err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
+						"for NFTBidKey: %v: ", &nftBidKey)
+			}
 		} else {
-			// If the NFTEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the NFTEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutNFTBidEntryMappingsWithTxn(txn, nftBidEntry); err != nil {
 				return err
 			}
 		}
+
 	}
 
 	return nil
