@@ -10632,10 +10632,6 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 }
 
 func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
-
-	numDeleted := 0
-	numPut := 0
 
 	for utxoKeyIter, utxoEntry := range bav.UtxoKeyToUtxoEntry {
 		// Make a copy of the iterator since it might change from under us.
@@ -10649,46 +10645,28 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 				utxoEntry, utxoKey, utxoEntry.UtxoKey)
 		}
 
-		// Delete the entry if it was spent
 		if utxoEntry.isSpent {
-			numDeleted++
-
+			// Delete the entry if it was spent
 			if err := DeleteUnmodifiedMappingsForUtxoWithTxn(txn, &utxoKey); err != nil {
 				return err
 			}
-		}
-	}
-
-	for utxoKeyIter, utxoEntry := range bav.UtxoKeyToUtxoEntry {
-		// Make a copy of the iterator since it might change from under us.
-		utxoKey := utxoKeyIter
-
-		// If the entry is unspent, then we need to re-set its mappings in the db appropriately.
-		if !utxoEntry.isSpent {
-			numPut++
+		} else {
+			// If the entry is unspent, then we need to re-set its mappings in the db appropriately.
 			if err := PutMappingsForUtxoWithTxn(txn, &utxoKey, utxoEntry); err != nil {
 				return err
 			}
 		}
 	}
 
-	glog.Debugf("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-
 	// Now update the number of entries in the db with confidence.
 	if err := PutUtxoNumEntriesWithTxn(txn, bav.NumUtxoEntries); err != nil {
 		return err
 	}
 
-	// At this point, the db's position index should be updated and the (key -> entry)
-	// index should be updated to remove all spent utxos. The number of entries field
-	// in the db should also be accurate.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
-		len(bav.PublicKeyToDeSoBalanceNanos))
 
 	for pubKeyIter, balanceNanos := range bav.PublicKeyToDeSoBalanceNanos {
 		// Make a copy of the iterator since it might change from under us.
@@ -10718,7 +10696,6 @@ func (bav *UtxoView) _flushGlobalParamsEntryToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the KeyTorepostEntry map.
 	for _, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		// Delete the existing mappings in the db for this ForbiddenPubKeyEntry. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
@@ -10782,12 +10759,11 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 			"Problem putting USDCentsPerBitcoin %d to db", bav.USDCentsPerBitcoin)
 	}
 
-	// DB should be fully up to date as far as BitcoinBurnTxIDs and NanosPurchased go.
 	return nil
 }
 
 func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
-	// Go through all the entries in the MessageKeyToMessageEntry map.
+
 	for messageKeyIter, messageEntry := range bav.MessageKeyToMessageEntry {
 		// Make a copy of the iterator since we take references to it below.
 		messageKey := messageKeyIter
@@ -10820,14 +10796,11 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// At this point all of the MessageEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the repostKeyTorepostEntry map.
 	for repostKeyIter, repostEntry := range bav.RepostKeyToRepostEntry {
 		// Make a copy of the iterator since we make references to it below.
 		repostKey := repostKeyIter
@@ -10857,14 +10830,11 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// At this point all of the RepostEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the LikeKeyToLikeEntry map.
 	for likeKeyIter, likeEntry := range bav.LikeKeyToLikeEntry {
 		// Make a copy of the iterator since we make references to it below.
 		likeKey := likeKeyIter
@@ -10898,7 +10868,6 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the FollowKeyToFollowEntry map.
 	for followKeyIter, followEntry := range bav.FollowKeyToFollowEntry {
 		// Make a copy of the iterator since we make references to it below.
 		followKey := followKeyIter
@@ -10931,7 +10900,6 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through and delete all the entries so they can be added back fresh.
 	for nftKeyIter, nftEntry := range bav.NFTKeyToNFTEntry {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
@@ -10964,7 +10932,6 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through and delete all the entries so they can be added back fresh.
 	for nftKeyIter, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
@@ -10995,7 +10962,6 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 
 func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through and delete all the entries so they can be added back fresh.
 	for nftBidKeyIter, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
 		// Make a copy of the iterator since we make references to it below.
 		nftBidKey := nftBidKeyIter
@@ -11031,7 +10997,6 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through and delete all the entries so they can be added back fresh.
 	for diamondKeyIter, diamondEntry := range bav.DiamondKeyToDiamondEntry {
 		// Make a copy of the iterator since we make references to it below.
 		diamondKey := diamondKeyIter
@@ -11066,7 +11031,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
-	// Go through all the entries in the PostHashToPostEntry map.
+
 	for postHashIter, postEntry := range bav.PostHashToPostEntry {
 		// Make a copy of the iterator since we take references to it below.
 		postHash := postHashIter
@@ -11098,7 +11063,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
-	// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
+
 	for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
 		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
 		copy(pubKeyCopy, pubKeyIter[:])
@@ -11146,6 +11111,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
+
 	for profilePKIDIter, profileEntry := range bav.ProfilePKIDToProfileEntry {
 		// Make a copy of the iterator since we take references to it below.
 		profilePKID := profilePKIDIter
@@ -11180,17 +11146,13 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 
-	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
 	for balanceKeyIter, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
 		// Make a copy of the iterator since we take references to it below.
 		balanceKey := balanceKeyIter
 
-		// Sanity-check that the balance key in the map is the same
-		// as the public key in the entry.
-		computedBalanceKey := MakeCreatorCoinBalanceKey(
-			balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
+		// Sanity-check that the balance key in the map is the same as the public key in the entry.
+		computedBalanceKey := MakeCreatorCoinBalanceKey(balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
 		if !reflect.DeepEqual(balanceKey, computedBalanceKey) {
 			return fmt.Errorf("_flushBalanceEntriesToDbWithTxn: BalanceEntry has "+
 				"map key: %v which does not match match "+
@@ -11198,29 +11160,17 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 				balanceKey, computedBalanceKey)
 		}
 
-		// Delete the existing mappings in the db for this balance key. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
-			txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), bav.Params); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushBalanceEntriesToDbWithTxn: Problem deleting mappings "+
-					"for public key: %v: ", balanceKey)
-		}
-	}
-	numDeleted := 0
-	numPut := 0
-	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
-	for _, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
-		// Make a copy of the iterator since we take references to it below.
 		if balanceEntry.isDeleted {
-			numDeleted++
-			// If the ProfileEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this balance key.
+			if err := DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
+				txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), bav.Params); err != nil {
+
+				return errors.Wrapf(
+					err, "_flushBalanceEntriesToDbWithTxn: Problem deleting mappings "+
+						"for public key: %v: ", balanceKey)
+			}
 		} else {
-			numPut++
-			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the ProfileEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 				txn, balanceEntry, bav.Params); err != nil {
 
@@ -11229,31 +11179,19 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	glog.Debugf("_flushBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-
-	// At this point all of the PostEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
 
-	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the DB.
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
-		// Delete the existing mapping in the DB for this map key, this will be re-added
-		// later if isDeleted=false.
-		if err := DBDeleteDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
-			derivedKeyMapKey.DerivedPublicKey); err != nil {
-			return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
-				"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
-		}
-
-		numDeleted := 0
-		numPut := 0
 		if derivedKeyEntry.isDeleted {
-			// Since entry is deleted, there's nothing to do.
-			numDeleted++
+			// Delete the existing mapping in the DB for this map key
+			if err := DBDeleteDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
+				derivedKeyMapKey.DerivedPublicKey); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
+					"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
+			}
 		} else {
 			// In this case we add the mapping to the DB.
 			if err := DBPutDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
@@ -11261,9 +11199,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 					"Problem putting DerivedKeyEntry %v to db", *derivedKeyEntry)
 			}
-			numPut++
 		}
-		glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
 
 	return nil
