@@ -660,6 +660,7 @@ type PKIDEntry struct {
 	PublicKey []byte
 
 	isDeleted bool
+	isDirty   bool
 }
 
 func (pkid *PKIDEntry) String() string {
@@ -4878,11 +4879,17 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKey []byte) *PKIDEntry {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry
 	} else {
-		dbPKIDEntry := DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
-		if dbPKIDEntry != nil {
-			bav._setPKIDMappings(dbPKIDEntry)
+		pkidEntry := DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
+		if pkidEntry == nil {
+			pkidEntry = &PKIDEntry{
+				PKID:      PublicKeyToPKID(publicKey),
+				PublicKey: publicKey,
+			}
 		}
-		return dbPKIDEntry
+
+		bav._setPKIDMappings(pkidEntry)
+
+		return pkidEntry
 	}
 }
 
@@ -4914,14 +4921,17 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry.PublicKey
 	} else {
-		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
-		if len(dbPublicKey) != 0 {
-			bav._setPKIDMappings(&PKIDEntry{
-				PKID:      pkid,
-				PublicKey: dbPublicKey,
-			})
+		publicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
+		if len(publicKey) == 0 {
+			publicKey = pkid.ToBytes()
 		}
-		return dbPublicKey
+
+		bav._setPKIDMappings(&PKIDEntry{
+			PKID:      pkid,
+			PublicKey: publicKey,
+		})
+
+		return publicKey
 	}
 }
 
@@ -7933,6 +7943,12 @@ func (bav *UtxoView) _connectSwapIdentity(
 	// Create copies of the old PKID's so we can safely update the mappings.
 	newFromPKIDEntry := *oldFromPKIDEntry
 	newToPKIDEntry := *oldToPKIDEntry
+
+	// Mark as dirty so they get flushed
+	oldFromPKIDEntry.isDirty = true
+	oldToPKIDEntry.isDirty = true
+	newFromPKIDEntry.isDirty = true
+	newToPKIDEntry.isDirty = true
 
 	// Swap the PKID's on the entry copies.
 	newFromPKIDEntry.PKID = oldToPKIDEntry.PKID
@@ -10992,6 +11008,7 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 
 		// Delete the existing mappings in the db for this NFTBidKey.
+		// TODO: Why do we need to delete these even if isDeleted is false?
 		if err := DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
 			return errors.Wrapf(
 				err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
@@ -11079,28 +11096,24 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
-	for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
-		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
-		copy(pubKeyCopy, pubKeyIter[:])
-
-		// Delete the existing mappings in the db for this PKID. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeletePKIDMappingsWithTxn(txn, pubKeyCopy, bav.Params); err != nil {
-			return errors.Wrapf(
-				err, "_flushPKIDEntriesToDbWithTxn: Problem deleting mappings "+
-					"for pkid: %v, public key: %v: ", PkToString(pkidEntry.PKID[:], bav.Params),
-				PkToString(pubKeyCopy, bav.Params))
-		}
-	}
-
 	// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
 	for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
 		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
 		copy(pubKeyCopy, pubKeyIter[:])
 
+		// Only flush dirty PKID entries
+		if !pkidEntry.isDirty {
+			continue
+		}
+
 		if pkidEntry.isDeleted {
-			// If the ProfileEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this PKID
+			if err := DBDeletePKIDMappingsWithTxn(txn, pubKeyCopy, bav.Params); err != nil {
+				return errors.Wrapf(
+					err, "_flushPKIDEntriesToDbWithTxn: Problem deleting mappings "+
+						"for pkid: %v, public key: %v: ", PkToString(pkidEntry.PKID[:], bav.Params),
+					PkToString(pubKeyCopy, bav.Params))
+			}
 		} else {
 			// Sanity-check that the public key in the entry matches the public key in
 			// the mapping.
@@ -11119,8 +11132,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 					PkToString(pubKeyCopy, bav.Params))
 			}
 
-			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the ProfileEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutPKIDMappingsWithTxn(txn, pubKeyCopy, pkidEntry, bav.Params); err != nil {
 				return err
 			}
