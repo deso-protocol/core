@@ -10672,16 +10672,6 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 	glog.Debugf("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
 		len(bav.PublicKeyToDeSoBalanceNanos))
 
-	for pubKeyIter := range bav.PublicKeyToDeSoBalanceNanos {
-		// Make a copy of the iterator since it might change from under us.
-		pubKey := pubKeyIter[:]
-
-		// Start by deleting the pre-existing mappings in the db for this key if they
-		// have not yet been modified.
-		if err := DbDeletePublicKeyToDeSoBalanceWithTxn(txn, pubKey); err != nil {
-			return err
-		}
-	}
 	for pubKeyIter, balanceNanos := range bav.PublicKeyToDeSoBalanceNanos {
 		// Make a copy of the iterator since it might change from under us.
 		pubKey := pubKeyIter[:]
@@ -10718,6 +10708,7 @@ func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) er
 					"forbidden public key: %v: ", &forbiddenPubKeyEntry.PubKey)
 		}
 	}
+
 	for _, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		if forbiddenPubKeyEntry.isDeleted {
 			// If the ForbiddenPubKeyEntry has isDeleted=true then there's nothing to do because
