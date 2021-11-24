@@ -11146,36 +11146,20 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushProfilesToDbWithTxn: flushing %d mappings", len(bav.ProfilePKIDToProfileEntry))
-
-	// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
-	for profilePKIDIter, profileEntry := range bav.ProfilePKIDToProfileEntry {
-		// Make a copy of the iterator since we take references to it below.
-		profilePKID := profilePKIDIter
-
-		// Delete the existing mappings in the db for this PKID. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteProfileEntryMappingsWithTxn(txn, &profilePKID, bav.Params); err != nil {
-			return errors.Wrapf(
-				err, "_flushProfileEntriesToDbWithTxn: Problem deleting mappings "+
-					"for pkid: %v, public key: %v: ", PkToString(profilePKID[:], bav.Params),
-				PkToString(profileEntry.PublicKey, bav.Params))
-		}
-	}
-	numDeleted := 0
-	numPut := 0
 	for profilePKIDIter, profileEntry := range bav.ProfilePKIDToProfileEntry {
 		// Make a copy of the iterator since we take references to it below.
 		profilePKID := profilePKIDIter
 
 		if profileEntry.isDeleted {
-			numDeleted++
-			// If the ProfileEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this PKID.
+			if err := DBDeleteProfileEntryMappingsWithTxn(txn, &profilePKID, bav.Params); err != nil {
+				return errors.Wrapf(
+					err, "_flushProfileEntriesToDbWithTxn: Problem deleting mappings "+
+						"for pkid: %v, public key: %v: ", PkToString(profilePKID[:], bav.Params),
+					PkToString(profileEntry.PublicKey, bav.Params))
+			}
 		} else {
-			numPut++
-			// Get the PKID according to another map in the view and
-			// sanity-check that it lines up.
+			// Get the PKID according to another map in the view and sanity-check that it lines up.
 			viewPKIDEntry := bav.GetPKIDForPublicKey(profileEntry.PublicKey)
 			if viewPKIDEntry == nil || viewPKIDEntry.isDeleted || *viewPKIDEntry.PKID != profilePKID {
 				return fmt.Errorf("_flushProfileEntriesToDbWithTxn: Sanity-check failed: PKID %v does "+
@@ -11184,19 +11168,13 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 					PkToString(profileEntry.PublicKey, bav.Params))
 			}
 
-			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
-			if err := DBPutProfileEntryMappingsWithTxn(
-				txn, profileEntry, &profilePKID, bav.Params); err != nil {
+			// If the ProfileEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
+			if err := DBPutProfileEntryMappingsWithTxn(txn, profileEntry, &profilePKID, bav.Params); err != nil {
 
 				return err
 			}
 		}
 	}
-
-	glog.Debugf("_flushProfilesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-
-	// At this point all of the PostEntry mappings in the db should be up-to-date.
 
 	return nil
 }
