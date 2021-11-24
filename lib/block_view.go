@@ -2200,6 +2200,10 @@ func (bav *UtxoView) _disconnectSwapIdentity(
 	oldFromPKIDEntry := bav.GetPKIDForPublicKey(txMeta.FromPublicKey)
 	oldToPKIDEntry := bav.GetPKIDForPublicKey(txMeta.ToPublicKey)
 
+	// Mark all the entries as dirty so they get flushed. This marks the new entries as dirty too.
+	oldFromPKIDEntry.isDirty = true
+	oldToPKIDEntry.isDirty = true
+
 	// Create copies of the old entries with swapped PKIDs.
 	newFromPKIDEntry := *oldFromPKIDEntry
 	newFromPKIDEntry.PKID = oldToPKIDEntry.PKID
@@ -7940,15 +7944,13 @@ func (bav *UtxoView) _connectSwapIdentity(
 	// At this point, we are certain that the *from* and the *to* public keys
 	// have valid PKID's.
 
+	// Mark all the entries as dirty so they get flushed. This marks the new entries as dirty too.
+	oldFromPKIDEntry.isDirty = true
+	oldToPKIDEntry.isDirty = true
+
 	// Create copies of the old PKID's so we can safely update the mappings.
 	newFromPKIDEntry := *oldFromPKIDEntry
 	newToPKIDEntry := *oldToPKIDEntry
-
-	// Mark as dirty so they get flushed
-	oldFromPKIDEntry.isDirty = true
-	oldToPKIDEntry.isDirty = true
-	newFromPKIDEntry.isDirty = true
-	newToPKIDEntry.isDirty = true
 
 	// Swap the PKID's on the entry copies.
 	newFromPKIDEntry.PKID = oldToPKIDEntry.PKID
