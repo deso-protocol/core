@@ -10680,6 +10680,10 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 			if err := DbPutDeSoBalanceForPublicKeyWithTxn(txn, pubKey, balanceNanos); err != nil {
 				return err
 			}
+		} else {
+			if err := DbDeletePublicKeyToDeSoBalanceWithTxn(txn, pubKey); err != nil {
+				return err
+			}
 		}
 	}
 
