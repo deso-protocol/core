@@ -11116,6 +11116,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 		// Make a copy of the iterator since we take references to it below.
 		profilePKID := profilePKIDIter
 
+		// TODO: This is definitely broken??
 		if profileEntry.isDeleted {
 			// Delete the existing mappings in the db for this PKID.
 			if err := DBDeleteProfileEntryMappingsWithTxn(txn, &profilePKID, bav.Params); err != nil {

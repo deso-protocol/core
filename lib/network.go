@@ -129,7 +129,7 @@ const (
 	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
 	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
 	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
-	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4
+	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
 
 	// NEXT_TAG = 7
 )
@@ -713,25 +713,6 @@ func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
 
 func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
-}
-
-type MsgDeSoBitcoinManagerUpdate struct {
-	// Keep it simple for now. A BitcoinManagerUpdate just signals that
-	// the BitcoinManager has added at least one block or done a reorg.
-	// No serialization because we don't want this sent on the wire ever.
-	TransactionsFound []*MsgDeSoTxn
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) GetMsgType() MsgType {
-	return MsgTypeBitcoinManagerUpdate
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoBitcoinManagerUpdate.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoBitcoinManagerUpdate.FromBytes not implemented")
 }
 
 // ==================================================================

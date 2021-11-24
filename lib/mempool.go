@@ -941,13 +941,8 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// that we can do this because _findMempoolDependencies returns the transactions in
 	// sorted order based on when transactions were added.
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
+
 	// Don't verify signatures since this transaction is already in the mempool.
-	//
-	// Additionally mempool verification does not require that BitcoinExchange
-	// transactions meet the MinBurnWork requirement. Note that a BitcoinExchange
-	// transaction will only get this far once we are positive the BitcoinManager
-	// has the block corresponding to the transaction.
-	// We skip verifying txn size for bitcoin exchange transactions.
 	_, _, _, txFee, err := utxoView._connectTransaction(
 		tx, txHash, 0, bestHeight, false, false)
 	if err != nil {

@@ -2786,9 +2786,9 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 	// state of the view.
 	if eventManager != nil {
 		eventManager.blockConnected(&BlockEvent{
-			Block: genesisBlock,
+			Block:    genesisBlock,
 			UtxoView: utxoView,
-			UtxoOps: utxoOpsForBlock,
+			UtxoOps:  utxoOpsForBlock,
 		})
 	}
 
@@ -4623,11 +4623,11 @@ func DBDeleteDerivedKeyMappingWithTxn(
 
 	// First check that a mapping exists for the passed in public keys.
 	// If one doesn't exist then there's nothing to do.
-	derivedKeyEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
-		txn, ownerPublicKey, derivedPublicKey)
-	if derivedKeyEntry == nil {
-		return nil
-	}
+	//derivedKeyEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
+	//	txn, ownerPublicKey, derivedPublicKey)
+	//if derivedKeyEntry == nil {
+	//	return nil
+	//}
 
 	// When a mapping exists, delete it.
 	if err := txn.Delete(_dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)); err != nil {
@@ -4801,14 +4801,6 @@ func DBDeleteProfileEntryMappingsWithTxn(
 	}
 
 	return nil
-}
-
-func DBDeleteProfileEntryMappings(
-	handle *badger.DB, pkid *PKID, params *DeSoParams) error {
-
-	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteProfileEntryMappingsWithTxn(txn, pkid, params)
-	})
 }
 
 func DBPutProfileEntryMappingsWithTxn(
@@ -5004,11 +4996,11 @@ func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 
 	// First pull up the mappings that exists for the keys passed in.
 	// If one doesn't exist then there's nothing to do.
-	balanceEntry := DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
-		txn, hodlerPKID, creatorPKID)
-	if balanceEntry == nil {
-		return nil
-	}
+	//balanceEntry := DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
+	//	txn, hodlerPKID, creatorPKID)
+	//if balanceEntry == nil {
+	//	return nil
+	//}
 
 	// When an entry exists, delete the mappings for it.
 	if err := txn.Delete(_dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID)); err != nil {

@@ -375,8 +375,6 @@ func (txi *TXIndex) Update() error {
 
 		// We use a view to simulate adding transactions to our chain. This allows
 		// us to extract custom metadata fields that we can show in our block explorer.
-		//
-		// Only set a BitcoinManager if we have one. This makes some tests pass.
 		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil)
 		if err != nil {
 			return fmt.Errorf(

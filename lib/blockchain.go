@@ -69,15 +69,8 @@ const (
 	StatusBlockValidated
 	StatusBlockValidateFailed
 
-	// These statuses are only used for Bitcoin header blocks in the BitcoinManager,
-	// not DeSo blocks. As such, you should only see these referenced in the BitcoinManager.
-	// We include them here because overloading the DeSo data structures to make it
-	// so that the BitcoinManager can use them is easier than defining whole new data
-	// structures that are incompatible with existing methods like LatestLocator(). If
-	// Go supported generics, this would probably not be necessary but it doesn't and
-	// so this is the path of least resistance.
-	StatusBitcoinHeaderValidated
-	StatusBitcoinHeaderValidateFailed
+	StatusBitcoinHeaderValidated      // Deprecated
+	StatusBitcoinHeaderValidateFailed // Deprecated
 )
 
 func (blockStatus BlockStatus) String() string {
@@ -1630,15 +1623,6 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	return bc.processHeader(blockHeader, headerHash)
 }
 
-// Note: It is the caller's responsibility to ensure that the BitcoinManager is
-// time-current prior to calling ProcessBlock on any transactions that require the
-// BitcoinManager for validation (e.g. BitcoinExchange transactions). Failure to
-// do so will cause ProcessBlock to error on blocks that could otherwise be valid
-// if a time-current BitcoinManager were available. If it is known for sure that
-// no BitcoinExchange transactions need to be validated then it is OK for the
-// BitcoinManager to not be time-current and even for it to be nil entirely. This
-// is useful e.g. for tests where we want to exercise ProcessBlock without setting
-// up a time-current BitcoinManager.
 func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
 	// TODO: Move this to be more isolated.
 	bc.ChainLock.Lock()

@@ -834,110 +834,6 @@ func (srv *Server) _cleanupDonePeerPeerState(pp *Peer) {
 	}, false)
 }
 
-func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUpdate) {
-	glog.Debugf("Server._handleBitcoinManagerUpdate: Being called")
-
-	// Regardless of whether the DeSo chain is in-sync, consider adding any BitcoinExchange
-	// transactions we've found to our mempool. We do this to minimize the chances that the
-	// network ever loses track of someone's BitcoinExchange.
-	if len(bmUpdate.TransactionsFound) > 0 {
-		go func() {
-			glog.Tracef("Server._handleBitcoinManagerUpdate: BitcoinManager "+
-				"found %d BitcoinExchange transactions for us to consider",
-				len(bmUpdate.TransactionsFound))
-
-			// Put all the transactions through some validation to see if they're
-			// worth our time. This saves us from getting spammed by _addNewTxnAndRelay
-			// when processing stale blocks.
-			//
-			// Note that we pass a nil mempool in order to avoid considering transactions
-			// that are in the mempool but lacking a merkle proof. If transactions are
-			// invalid then a separate mempool check later will catch them.
-			validTransactions := []*MsgDeSoTxn{}
-			for _, burnTxn := range bmUpdate.TransactionsFound {
-				err := srv.blockchain.ValidateTransaction(
-					burnTxn, srv.blockchain.blockTip().Height+1, true, /*verifySignatures*/
-					nil /*mempool*/)
-				if err == nil {
-					validTransactions = append(validTransactions, burnTxn)
-				} else {
-					glog.Debugf("Server._handleBitcoinManagerUpdate: Problem adding Bitcoin "+
-						"burn transaction: %v", err)
-				}
-			}
-
-			glog.Tracef("Server._handleBitcoinManagerUpdate: Processing %d out of %d "+
-				"transactions that were actually valid", len(validTransactions),
-				len(bmUpdate.TransactionsFound))
-
-			totalAdded := 0
-			for _, validTx := range validTransactions {
-				// This shouldn't care about the min burn work because it tries to add to
-				// the mempool directly. We should never get an error here because we've already
-				// validated all of the transactions.
-				//
-				// Note we set rateLimit=false because we have a global minimum txn fee that should
-				// prevent spam on its own.
-				mempoolTxs, err := srv._addNewTxn(
-					nil, validTx, false /*rateLimit*/, true /*verifySignatures*/)
-				totalAdded += len(mempoolTxs)
-
-				if err != nil {
-					glog.Debugf("Server._handleBitcoinManagerUpdate: Problem adding Bitcoin "+
-						"burn transaction during _addNewTxnAndRelay: %v", err)
-				}
-			}
-
-			// If we're fully current after accepting all the BitcoinExchange txns then let the
-			// peer start sending us INV messages
-			srv._maybeRequestSync(nil)
-
-			glog.Tracef("Server._handleBitcoinManagerUpdate: Successfully added %d out of %d "+
-				"transactions", totalAdded, len(bmUpdate.TransactionsFound))
-		}()
-	}
-
-	// If we don't have a SyncPeer right now, kick off a sync if we can. No need to
-	// check if we're syncing or not since all this does is send a getheaders to a
-	// Peer who's available.
-	if srv.SyncPeer == nil {
-		glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is nil; calling startSync")
-		srv._startSync()
-		return
-	}
-
-	if !srv.blockchain.isSyncing() {
-
-		//glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil and " +
-		//	"BitcoinManager is time-current; sending " +
-		//	"DeSo getheaders for good measure")
-		glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil; sending " +
-			"DeSo getheaders for good measure")
-		locator := srv.blockchain.LatestHeaderLocator()
-		srv.SyncPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
-			StopHash:     &BlockHash{},
-			BlockLocator: locator,
-		}, false)
-	}
-
-	// Note there is an edge case where we may be stuck in state SyncingBlocks. Calilng
-	// GetBlocks when we're in this state fixes the edge case and doesn't have any
-	// negative side-effects otherwise.
-	if srv.blockchain.chainState() == SyncStateSyncingBlocks ||
-		srv.blockchain.chainState() == SyncStateNeedBlocksss {
-
-		glog.Debugf("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil and " +
-			"BitcoinManager is time-current; node is in SyncStateSyncingBlocks. Calling " +
-			"GetBlocks for good measure.")
-		// Setting maxHeight = -1 gets us as many blocks as we can get from our
-		// peer, which is OK because we can assume the peer has all of them when
-		// we're syncing.
-		maxHeight := -1
-		srv.GetBlocks(srv.SyncPeer, maxHeight)
-		return
-	}
-}
-
 func (srv *Server) _handleDonePeer(pp *Peer) {
 	glog.Debugf("Server._handleDonePeer: Processing DonePeer: %v", pp)
 
@@ -1470,14 +1366,12 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 }
 
 func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_shouldQuit bool) {
-	switch msg := serverMessage.Msg.(type) {
+	switch _ := serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
 	case *MsgDeSoNewPeer:
 		srv._handleNewPeer(serverMessage.Peer)
 	case *MsgDeSoDonePeer:
 		srv._handleDonePeer(serverMessage.Peer)
-	case *MsgDeSoBitcoinManagerUpdate:
-		srv._handleBitcoinManagerUpdate(msg)
 	case *MsgDeSoQuit:
 		return true
 	}
