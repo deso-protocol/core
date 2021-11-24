@@ -10991,14 +10991,14 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 				&nftBidKeyInEntry, &nftBidKey)
 		}
 
-		if nftBidEntry.isDeleted {
-			// Delete the existing mappings in the db for this NFTBidKey.
-			if err := DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
-				return errors.Wrapf(
-					err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
-						"for NFTBidKey: %v: ", &nftBidKey)
-			}
-		} else {
+		// Delete the existing mappings in the db for this NFTBidKey.
+		if err := DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
+			return errors.Wrapf(
+				err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
+					"for NFTBidKey: %v: ", &nftBidKey)
+		}
+
+		if !nftBidEntry.isDeleted {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutNFTBidEntryMappingsWithTxn(txn, nftBidEntry); err != nil {
 				return err
@@ -11027,48 +11027,32 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 				&diamondKeyInEntry, &diamondKey)
 		}
 
-		// Delete the existing mappings in the db for this DiamondKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushDiamondEntriesToDbWithTxn: Problem deleting mappings "+
-					"for DiamondKey: %v: ", &diamondKey)
-		}
-	}
-
-	// Add back all of the entries that aren't deleted.
-	for _, diamondEntry := range bav.DiamondKeyToDiamondEntry {
 		if diamondEntry.isDeleted {
-			// If the DiamondEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this DiamondKey.
+			if err := DbDeleteDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
+				return errors.Wrapf(
+					err, "_flushDiamondEntriesToDbWithTxn: Problem deleting mappings "+
+						"for DiamondKey: %v: ", &diamondKey)
+			}
 		} else {
 			// If the DiamondEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutDiamondMappingsWithTxn(
-				txn,
-				diamondEntry); err != nil {
+			if err := DbPutDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
 				return err
 			}
 		}
 	}
 
-	// At this point all of the MessageEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
-	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
-	glog.Debugf("_flushPostEntriesToDbWithTxn: flushing %d mappings", len(bav.PostHashToPostEntry))
-
 	// Go through all the entries in the PostHashToPostEntry map.
 	for postHashIter, postEntry := range bav.PostHashToPostEntry {
 		// Make a copy of the iterator since we take references to it below.
 		postHash := postHashIter
 
-		// Sanity-check that the hash in the post is the same as the hash in the
-		// entry
+		// Sanity-check that the hash in the post is the same as the hash in the entry
 		if postHash != *postEntry.PostHash {
 			return fmt.Errorf("_flushPostEntriesToDbWithTxn: PostEntry has "+
 				"PostHash: %v, neither of which match "+
@@ -11076,36 +11060,21 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 				postHash, postEntry.PostHash)
 		}
 
-		// Delete the existing mappings in the db for this PostHash. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeletePostEntryMappingsWithTxn(txn, &postHash, bav.Params); err != nil {
-			return errors.Wrapf(
-				err, "_flushPostEntriesToDbWithTxn: Problem deleting mappings "+
-					"for PostHash: %v: ", postHash)
-		}
-	}
-	numDeleted := 0
-	numPut := 0
-	for _, postEntry := range bav.PostHashToPostEntry {
 		if postEntry.isDeleted {
-			numDeleted++
-			// If the PostEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this PostHash.
+			if err := DBDeletePostEntryMappingsWithTxn(txn, &postHash, bav.Params); err != nil {
+				return errors.Wrapf(
+					err, "_flushPostEntriesToDbWithTxn: Problem deleting mappings "+
+						"for PostHash: %v: ", postHash)
+			}
 		} else {
-			numPut++
-			// If the PostEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the PostEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutPostEntryMappingsWithTxn(txn, postEntry, bav.Params); err != nil {
 
 				return err
 			}
 		}
 	}
-
-	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
-	glog.Debugf("_flushPostEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-
-	// At this point all of the PostEntry mappings in the db should be up-to-date.
 
 	return nil
 }
