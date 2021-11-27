@@ -3562,7 +3562,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 
 	extraData := make(map[string][]byte)
 	if derivedKeySignature {
-		extraData["DerivedPublicKey"] = derivedPublicKey
+		extraData[DerivedPublicKey] = derivedPublicKey
 	}
 
 	// Create a transaction containing the authorize derived key fields.
