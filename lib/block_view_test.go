@@ -1620,6 +1620,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		expirationBlock,
 		accessSignature,
 		deleteKey,
+		false,
 		feeRateNanosPerKB,
 		nil /*mempool*/,
 		[]*DeSoOutput{})
