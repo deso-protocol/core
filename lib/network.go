@@ -109,15 +109,16 @@ const (
 	MsgTypeGetBlocks       MsgType = 11
 	MsgTypeGetTransactions MsgType = 12
 	// MsgTypeTransactionBundle contains transactions from a peer.
-	MsgTypeTransactionBundle MsgType = 13
-	MsgTypeMempool           MsgType = 14
+	MsgTypeTransactionBundle   MsgType = 13
+	MsgTypeTransactionBundleV2 MsgType = 18
+	MsgTypeMempool             MsgType = 14
 	// MsgTypeAddr is used by peers to share addresses of nodes they're aware about
 	// with other peers.
 	MsgTypeAddr MsgType = 15
 	// MsgTypeGetAddr is used to solicit Addr messages from peers.
 	MsgTypeGetAddr MsgType = 16
 
-	// NEXT_TAG = 18
+	// NEXT_TAG = 19
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -639,6 +640,10 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		{
 			return &MsgDeSoTransactionBundle{}
 		}
+	case MsgTypeTransactionBundleV2:
+		{
+			return &MsgDeSoTransactionBundleV2{}
+		}
 	case MsgTypeMempool:
 		{
 			return &MsgDeSoMempool{}
@@ -1029,7 +1034,8 @@ func (msg *MsgDeSoGetTransactions) String() string {
 }
 
 // ==================================================================
-// TransactionBundle message
+// (DEPRECATED) TransactionBundle message
+// 	- After the BalanceModelBlockHeight, nodes shouls rely on TransactionBundleV2.
 // ==================================================================
 
 type MsgDeSoTransactionBundle struct {
@@ -1070,8 +1076,9 @@ func (msg *MsgDeSoTransactionBundle) FromBytes(data []byte) error {
 
 	// Read in all of the transactions.
 	for ii := uint64(0); ii < numTransactions; ii++ {
-		retTransaction, err := _readTransaction(rr)
-		if err != nil {
+		retTransaction := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+
+		if err := _readBasicTransactionFields(rr, retTransaction); err != nil {
 			return errors.Wrapf(err, "MsgDeSoTransaction.FromBytes: ")
 		}
 
@@ -1083,6 +1090,82 @@ func (msg *MsgDeSoTransactionBundle) FromBytes(data []byte) error {
 }
 
 func (msg *MsgDeSoTransactionBundle) String() string {
+	return fmt.Sprintf("Num txns: %v, Txns: %v", len(msg.Transactions), msg.Transactions)
+}
+
+// ==================================================================
+// TransactionBundleV2 message
+//   - Note that the crucial difference between the original TransactionBundle and
+//     TransactionBundleV2 is that TransactionBundleV2 includes the number of bytes per
+//     transaction in the transaction serialization.
+// ==================================================================
+
+type MsgDeSoTransactionBundleV2 struct {
+	Transactions []*MsgDeSoTxn
+}
+
+func (msg *MsgDeSoTransactionBundleV2) GetMsgType() MsgType {
+	return MsgTypeTransactionBundleV2
+}
+
+func (msg *MsgDeSoTransactionBundleV2) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Encode the number of transactions in the bundle.
+	data = append(data, UintToBuf(uint64(len(msg.Transactions)))...)
+
+	// Encode all the transactions.
+	for _, transaction := range msg.Transactions {
+		transactionBytes, err := transaction.ToBytes(preSignature)
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoTransactionBundleV2.ToBytes: Problem encoding transaction")
+		}
+		data = append(data, UintToBuf(uint64(len(transactionBytes)))...)
+		data = append(data, transactionBytes...)
+	}
+
+	return data, nil
+}
+
+func (msg *MsgDeSoTransactionBundleV2) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+	retBundle := NewMessage(MsgTypeTransactionBundleV2).(*MsgDeSoTransactionBundleV2)
+
+	// Read in the number of transactions in the bundle.
+	numTransactions, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoTransactionBundleV2.FromBytes: Problem decoding number of transaction")
+	}
+
+	retBundle.Transactions = make([]*MsgDeSoTxn, 0)
+	for ii := uint64(0); ii < numTransactions; ii++ {
+		txBytesLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn length")
+		}
+		if txBytesLen > MaxMessagePayload {
+			return fmt.Errorf(
+				"MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d",
+				ii, txBytesLen, MaxMessagePayload)
+		}
+		txBytes := make([]byte, txBytesLen)
+		_, err = io.ReadFull(rr, txBytes)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading tx bytes")
+		}
+		currentTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+		err = currentTxn.FromBytes(txBytes)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn")
+		}
+		retBundle.Transactions = append(retBundle.Transactions, currentTxn)
+	}
+
+	*msg = *retBundle
+	return nil
+}
+
+func (msg *MsgDeSoTransactionBundleV2) String() string {
 	return fmt.Sprintf("Num txns: %v, Txns: %v", len(msg.Transactions), msg.Transactions)
 }
 
@@ -2222,7 +2305,7 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn length")
 		}
 		if txBytesLen > MaxMessagePayload {
-			return fmt.Errorf("MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d", ii, hdrLen, MaxMessagePayload)
+			return fmt.Errorf("MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d", ii, txBytesLen, MaxMessagePayload)
 		}
 		txBytes := make([]byte, txBytesLen)
 		_, err = io.ReadFull(rr, txBytes)
@@ -2517,23 +2600,44 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	ret := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 
+	// When the DeSo blockchain switched from UTXOs to a balance model, new fields had to be
+	// added to the transaction struct (ie. TxnFeeNanos and TxnNonce). In order to maintain
+	// backwards compatibility, these fields were added to the end of the serialized
+	// transaction and we only attempt to read them if we have not reached EOF after reading
+	// the original "basic" transaction fields. Thus, we split the _readTransaction
+	// deserialization process into these two steps below.
+	if err := _readBasicTransactionFields(rr, ret); err != nil {
+		return nil, errors.Wrapf(err, "_readTransaction: Problem reading basic transaction fields")
+	}
+	if err := _maybeReadExtraTransactionFields(rr, ret); err != nil {
+		return nil, errors.Wrapf(err, "_readTransaction: Problem reading extra transaction fields")
+	}
+	return ret, nil
+}
+
+// This function deserializes the original pre-Balance Model transaction fields from
+// the passed buffer and then stops reading. It exists in order to maintain support
+// for TransactionBundles, which expect transactions to only include these fields. After
+// the balance model block height nodes will rely on the new TransactionBundleV2 struct,
+// which will allow transactions to contain arbitrary fields.
+func _readBasicTransactionFields(rr io.Reader, ret *MsgDeSoTxn) error {
 	// De-serialize the inputs
 	numInputs, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem converting len(msg.TxInputs)")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem converting len(msg.TxInputs)")
 	}
 	for ii := uint64(0); ii < numInputs; ii++ {
 		currentInput := NewDeSoInput()
 		_, err = io.ReadFull(rr, currentInput.TxID[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem converting input txid")
+			return errors.Wrapf(err, "_readBasicTransactionFields: Problem converting input txid")
 		}
 		inputIndex, err := ReadUvarint(rr)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem converting input index")
+			return errors.Wrapf(err, "_readBasicTransactionFields: Problem converting input index")
 		}
 		if inputIndex > uint64(^uint32(0)) {
-			return nil, fmt.Errorf("_readTransaction: Input index (%d) must not exceed (%d)", inputIndex, ^uint32(0))
+			return fmt.Errorf("_readBasicTransactionFields: Input index (%d) must not exceed (%d)", inputIndex, ^uint32(0))
 		}
 		currentInput.Index = uint32(inputIndex)
 
@@ -2543,19 +2647,19 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	// De-serialize the outputs
 	numOutputs, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem converting len(msg.TxOutputs)")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem converting len(msg.TxOutputs)")
 	}
 	for ii := uint64(0); ii < numOutputs; ii++ {
 		currentOutput := &DeSoOutput{}
 		currentOutput.PublicKey = make([]byte, btcec.PubKeyBytesLenCompressed)
 		_, err = io.ReadFull(rr, currentOutput.PublicKey)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoOutput.PublicKey")
+			return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading DeSoOutput.PublicKey")
 		}
 
 		amountNanos, err := ReadUvarint(rr)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoOutput.AmountNanos")
+			return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading DeSoOutput.AmountNanos")
 		}
 		currentOutput.AmountNanos = amountNanos
 
@@ -2567,56 +2671,56 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	// Encode the type as a uvarint.
 	txnMetaType, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading MsgDeSoTxn.TxnType")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading MsgDeSoTxn.TxnType")
 	}
 	ret.TxnMeta, err = NewTxnMetadata(TxnType(txnMetaType))
 	if err != nil {
-		return nil, fmt.Errorf("_readTransaction: Problem initializing metadata: %v", err)
+		return fmt.Errorf("_readBasicTransactionFields: Problem initializing metadata: %v", err)
 	}
 	if ret.TxnMeta == nil {
-		return nil, fmt.Errorf("_readTransaction: Metadata was nil: %v", ret.TxnMeta)
+		return fmt.Errorf("_readBasicTransactionFields: Metadata was nil: %v", ret.TxnMeta)
 	}
 	metaLen, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(TxnMeta)")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading len(TxnMeta)")
 	}
 	if metaLen > MaxMessagePayload {
-		return nil, fmt.Errorf("_readTransaction.FromBytes: metaLen length %d longer than max %d", metaLen, MaxMessagePayload)
+		return fmt.Errorf("_readBasicTransactionFields: metaLen length %d longer than max %d", metaLen, MaxMessagePayload)
 	}
 	metaBuf := make([]byte, metaLen)
 	_, err = io.ReadFull(rr, metaBuf)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading TxnMeta")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading TxnMeta")
 	}
 	err = ret.TxnMeta.FromBytes(metaBuf)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem decoding TxnMeta: ")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem decoding TxnMeta: ")
 	}
 
 	// De-serialize the public key if there is one
 	pkLen, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.PublicKey)")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading len(DeSoTxn.PublicKey)")
 	}
 	if pkLen > MaxMessagePayload {
-		return nil, fmt.Errorf("_readTransaction.FromBytes: pkLen length %d longer than max %d", pkLen, MaxMessagePayload)
+		return fmt.Errorf("_readBasicTransactionFields: pkLen length %d longer than max %d", pkLen, MaxMessagePayload)
 	}
 	ret.PublicKey = nil
 	if pkLen != 0 {
 		ret.PublicKey = make([]byte, pkLen)
 		_, err = io.ReadFull(rr, ret.PublicKey)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoTxn.PublicKey")
+			return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading DeSoTxn.PublicKey")
 		}
 	}
 
 	// De-serialize the ExtraData
 	extraDataLen, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.ExtraData)")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading len(DeSoTxn.ExtraData)")
 	}
 	if extraDataLen > MaxMessagePayload {
-		return nil, fmt.Errorf("_readTransaction.FromBytes: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
+		return fmt.Errorf("_readBasicTransactionFields: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
 	}
 	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
 	if extraDataLen != 0 {
@@ -2627,31 +2731,31 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 			var keyLen uint64
 			keyLen, err = ReadUvarint(rr)
 			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
+				return fmt.Errorf("_readBasicTransactionFields: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
 			}
 			// De-serialize the key
 			keyBytes := make([]byte, keyLen)
 			_, err = io.ReadFull(rr, keyBytes)
 			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading key #{ii}")
+				return fmt.Errorf("_readBasicTransactionFields: Problem reading key #{ii}")
 			}
 			// Convert the key to a string and check if it already exists in the map.
 			// If it already exists in the map, this is an error as a map cannot have duplicate keys.
 			key := string(keyBytes)
 			if _, keyExists := ret.ExtraData[key]; keyExists {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Key [#{ii}] ({key}) already exists in ExtraData")
+				return fmt.Errorf("_readBasicTransactionFields: Key [#{ii}] ({key}) already exists in ExtraData")
 			}
 			// De-serialize the length of the value
 			var valueLen uint64
 			valueLen, err = ReadUvarint(rr)
 			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
+				return fmt.Errorf("_readBasicTransactionFields: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
 			}
 			// De-serialize the value
 			value := make([]byte, valueLen)
 			_, err = io.ReadFull(rr, value)
 			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem read value #{ii}")
+				return fmt.Errorf("_readBasicTransactionFields: Problem read value #{ii}")
 			}
 			// Map the key to the value
 			ret.ExtraData[key] = value
@@ -2661,10 +2765,10 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	// De-serialize the signature if there is one.
 	sigLen, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.Signature)")
+		return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading len(DeSoTxn.Signature)")
 	}
 	if sigLen > MaxMessagePayload {
-		return nil, fmt.Errorf("_readTransaction.FromBytes: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
+		return fmt.Errorf("_readBasicTransactionFields: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
 	}
 
 	ret.Signature = nil
@@ -2672,44 +2776,49 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 		sigBytes := make([]byte, sigLen)
 		_, err = io.ReadFull(rr, sigBytes)
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoTxn.Signature")
+			return errors.Wrapf(err, "_readBasicTransactionFields: Problem reading DeSoTxn.Signature")
 		}
 
 		// Verify that the signature is valid.
 		sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing DeSoTxn.Signature bytes")
+			return errors.Wrapf(err, "_readBasicTransactionFields: Problem parsing DeSoTxn.Signature bytes")
 		}
 		// If everything worked, we set the ret signature to the original.
 		ret.Signature = sig
 	}
 
-	// The txn version, fee and nonce were not included before switching to the balance
-	// model. Therefore, we must make sure that we haven't reached EOF before proceeding.
+	return nil
+}
+
+// This function takes an io.Reader and attempts to read the transaction fields that were
+// added after the BalanceModelBlockHeight, if the has not reached EOF. See the comments
+// in _readTransaction() and above _readBasicTransactionFields() for more info.
+func _maybeReadExtraTransactionFields(rr io.Reader, ret *MsgDeSoTxn) error {
 	txnVersion, err := ReadUvarint(rr)
 	if err == io.EOF {
-		return ret, nil
+		return nil
 	} else if err != nil {
-		return nil, errors.Wrapf(
-			err, "_readTransaction: Problem parsing DeSoTxn.TxnVersion bytes")
+		return errors.Wrapf(
+			err, "_maybeReadExtraTransactionFields: Problem parsing DeSoTxn.TxnVersion bytes")
 	}
 	ret.TxnVersion = txnVersion
 
 	txnFeeNanos, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(
-			err, "_readTransaction: Problem parsing DeSoTxn.TxnFeeNanos bytes")
+		return errors.Wrapf(
+			err, "_maybeReadExtraTransactionFields: Problem parsing DeSoTxn.TxnFeeNanos bytes")
 	}
 	ret.TxnFeeNanos = txnFeeNanos
 
 	txnNonce, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(
-			err, "_readTransaction: Problem parsing DeSoTxn.TxnNonce bytes")
+		return errors.Wrapf(
+			err, "_maybeReadExtraTransactionFields: Problem parsing DeSoTxn.TxnNonce bytes")
 	}
 	ret.TxnNonce = txnNonce
 
-	return ret, nil
+	return nil
 }
 
 func (msg *MsgDeSoTxn) FromBytes(data []byte) error {

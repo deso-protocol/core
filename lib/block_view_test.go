@@ -79,8 +79,14 @@ var (
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
 
+func resetBlockHeightGlobals() {
+	BalanceModelBlockHeight = 1000000
+	DeSoDiamondsBlockHeight = 1000000
+}
+
 func TestBalanceModel(t *testing.T) {
 	BalanceModelBlockHeight = 0
+	defer resetBlockHeightGlobals()
 
 	// Basic transfers.
 	TestBasicTransfer(t)
@@ -1735,7 +1741,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 
-	require.Equal(totalInputMake, changeAmountMake+feesMake)
+	require.Equal(totalInputMake, changeAmountMake+feesMake+additionalFees)
 
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
@@ -4412,7 +4418,8 @@ func TestUpdateProfile(t *testing.T) {
 		blockHeight := chain.blockTip().Height + 1
 		require.Error(err)
 		if blockHeight < BalanceModelBlockHeight {
-			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
+			require.Contains(err.Error(),
+				"Total input 70 is not sufficient to cover the spend amount (=100) plus the fee")
 		} else {
 			require.Contains(err.Error(), RuleErrorInsufficientBalance)
 		}
@@ -10899,6 +10906,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	// Set the DeSoDiamondsBlockHeight so that it is immediately hit.
 	DeSoDiamondsBlockHeight = uint32(0)
+	defer resetBlockHeightGlobals()
 
 	// Set up a blockchain.
 	assert := assert.New(t)
@@ -20114,6 +20122,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 func TestDeSoDiamonds(t *testing.T) {
 	DeSoDiamondsBlockHeight = 0
+	defer resetBlockHeightGlobals()
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
 	assert := assert.New(t)
@@ -20323,6 +20332,7 @@ func TestDeSoDiamonds(t *testing.T) {
 
 func TestDeSoDiamondErrorCases(t *testing.T) {
 	DeSoDiamondsBlockHeight = 0
+	defer resetBlockHeightGlobals()
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
 	assert := assert.New(t)
