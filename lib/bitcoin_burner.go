@@ -519,9 +519,7 @@ func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherA
 	return false, nil
 }
 
-func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
-	_isDoubleSpend bool, _err error) {
-
+func GetBlockCypherTxnResponse(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (*BlockCypherAPITxnResponse, error) {
 	URL := fmt.Sprintf("http://api.blockcypher.com/v1/btc/main/txs/%s", txnHash.String())
 	if IsBitcoinTestnet(params) {
 		URL = fmt.Sprintf("http://api.blockcypher.com/v1/btc/test3/txs/%s", txnHash.String())
@@ -548,16 +546,15 @@ func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIK
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("CheckBitcoinDoubleSpend: Problem with HTTP request %s: %v", URL, err)
+		return nil, fmt.Errorf("CheckBitcoinDoubleSpend: Problem with HTTP request %s: %v", URL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 404 {
-		glog.Tracef("CheckBitcoinDoubleSpend: Bitcoin txn with hash %v was not found in BlockCypher", txnHash)
-		return true, nil
+		return nil, nil
 	} else if resp.StatusCode != 200 {
 		body, _ := ioutil.ReadAll(resp.Body)
-		return false, fmt.Errorf("CheckBitcoinDoubleSpend: Error code returned "+
+		return nil, fmt.Errorf("CheckBitcoinDoubleSpend: Error code returned "+
 			"from BlockCypher: %v %v", resp.StatusCode, string(body))
 	}
 
@@ -566,15 +563,66 @@ func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIK
 	responseData := &BlockCypherAPITxnResponse{}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	if err := decoder.Decode(responseData); err != nil {
-		return false, fmt.Errorf("CheckBitcoinDoubleSpend: Problem decoding response JSON into "+
+		return nil, fmt.Errorf("CheckBitcoinDoubleSpend: Problem decoding response JSON into "+
 			"interface %v, response: %v, error: %v", responseData, resp, err)
 	}
-	//glog.Tracef("UtxoSource: Received response: %v", responseData)
+
+	return responseData, nil
+}
+
+func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
+	_isDoubleSpend bool, _err error) {
+
+	glog.Debugf("CheckBitcoinDoubleSpend: Checking txn %v for double-spend", txnHash)
+	responseData, err := GetBlockCypherTxnResponse(txnHash, blockCypherAPIKey, params)
+	if err != nil {
+		return false, errors.Wrapf(err, "BlockCypherCheckBitcoinDoubleSpend: Error fetching txn: ")
+	}
+
+	// If we didn't find the txn in BlockCypher then we consider this a double-spend
+	if responseData == nil {
+		glog.Tracef("CheckBitcoinDoubleSpend: Bitcoin txn with hash %v was not found in BlockCypher", txnHash)
+		return true, nil
+	}
 
 	if responseData.DoubleSpend {
 		glog.Tracef("CheckBitcoinDoubleSpend: Bitcoin txn with hash %v was a double spend", txnHash)
 		return true, nil
 	}
+
+	// If the transaction is not mined, then we need to recursively check
+	// its inputs to determine whether they are double-spends.
+	if responseData.Confirmations == 0 {
+		// If there are too many inputs on this txn, then just mark it as a double-spend.
+		// This avoids us having to use our API quota unnecessarily.
+		if len(responseData.Inputs) > 25 {
+			glog.Warningf("CheckBitcoinDoubleSpend: Unmined bitcoin txn with hash %v had %v inputs, " +
+				"which made us label it as a double-spend. If this is happening a lot, consider " +
+				"increasing the limit on this if statement", txnHash, len(responseData.Inputs))
+			return true, nil
+		}
+		// Recursively scan through the unmined inputs one at a time to see
+		// if any ancestors contain double-spends. If they do, then this txn is
+		// a double-spend by transitivity.
+		for _, txIn := range responseData.Inputs {
+			inputTxHash, err := chainhash.NewHashFromStr(txIn.PrevTxIDHex)
+			if err != nil {
+				return false, errors.Wrapf(
+					err, "BlockCypherCheckBitcoinDoubleSpend: Error parsing INPUT txn hash: %v", inputTxHash)
+			}
+			glog.Debugf("CheckBitcoinDoubleSpend: Checking INPUT %v for double-spend", inputTxHash)
+			inputIsDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(inputTxHash, blockCypherAPIKey, params)
+			if err != nil {
+				return false, errors.Wrapf(
+					err, "BlockCypherCheckBitcoinDoubleSpend: Error fetching INPUT txn: %v", inputTxHash)
+			}
+			if inputIsDoubleSpend {
+				return true, nil
+			}
+		}
+	}
+	// If we get here, it means that this txn wasn't a double-spend *and*
+	// none of its unmined inputs were double-spends either.
 
 	return false, nil
 }
@@ -648,7 +696,8 @@ func BlockCypherPushAndWaitForTxn(txnHex string, txnHash *chainhash.Hash,
 		}
 		if isDoubleSpend {
 			return fmt.Errorf("PushAndWaitForTxn: Error: double-spend detected. Your " +
-				"transaction will go through once it mines into the next Bitcoin block")
+				"transaction will go through once it mines into the next Bitcoin block, which " +
+				"should take about ten minutes.")
 		}
 	}
 
