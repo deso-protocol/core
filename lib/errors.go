@@ -249,6 +249,9 @@ const (
 	// NFT Bids
 	RuleErrorNFTBidRequiresNonZeroInput                    RuleError = "RuleErrorNFTBidRequiresNonZeroInput"
 	RuleErrorAcceptNFTBidRequiresNonZeroInput              RuleError = "RuleErrorAcceptNFTBidRequiresNonZeroInput"
+	RuleErrorNFTBidTxnOutputWithInvalidBidAmount           RuleError = "RuleErrorNFTBidTxnOutputWithInvalidBidAmount"
+	RuleErrorBuyNowNFTBidTxnOutputExceedsInput             RuleError = "RuleErrorBuyNowNFTBidTxnOutputExceedsInput"
+	RuleErrorBuyNowNFTBidMustBidNonZeroDeSo                RuleError = "RuleErrorBuyNowNFTBidMustBidNonZeroDeSo"
 	RuleErrorNFTBidOnNonExistentPost                       RuleError = "RuleErrorNFTBidOnNonExistentPost"
 	RuleErrorNFTBidOnPostThatIsNotAnNFT                    RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
 	RuleErrorNFTBidOnInvalidSerialNumber                   RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"

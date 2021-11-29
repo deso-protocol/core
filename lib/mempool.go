@@ -1465,21 +1465,16 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		_ = realTxMeta
 
 		isBuyNow := false
-		// Check if the Bid is on a Buy Now NFT.
-		if val, exists := txn.ExtraData[IsBuyNowKey]; exists && reflect.DeepEqual(val, []byte{BoolToByte(true)}) {
-			isBuyNow = true
-		}
-		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
-			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber:   realTxMeta.SerialNumber,
-			BidAmountNanos: realTxMeta.BidAmountNanos,
-			IsBuyNowBid: isBuyNow,
-		}
 
 		// We don't send notifications for standing offers.
 		if realTxMeta.SerialNumber != 0 {
 			nftKey := MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
 			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
+
+			bidderPKID := utxoView.GetPKIDForPublicKey(txn.PublicKey)
+			if reflect.DeepEqual(nftEntry.OwnerPKID, bidderPKID) {
+				isBuyNow = true
+			}
 			ownerAtTimeOfBid := nftEntry.OwnerPKID
 			if isBuyNow {
 				ownerAtTimeOfBid = nftEntry.LastOwnerPKID
@@ -1488,6 +1483,13 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(ownerAtTimeOfBid), utxoView.Params),
 				Metadata:             "NFTOwnerPublicKeyBase58Check",
 			})
+		}
+
+		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:   realTxMeta.SerialNumber,
+			BidAmountNanos: realTxMeta.BidAmountNanos,
+			IsBuyNowBid: isBuyNow,
 		}
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {

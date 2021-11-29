@@ -3837,11 +3837,6 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		if nftEntry != nil && nftEntry.IsBuyNow {
 			spendAmount += txMeta.BidAmountNanos
-			if txArg.ExtraData == nil {
-				txArg.ExtraData = make(map[string][]byte)
-			}
-			// We also set IsBuyNow to true in extra data
-			txArg.ExtraData[IsBuyNowKey] = []byte{BoolToByte(true)}
 		}
 	}
 
