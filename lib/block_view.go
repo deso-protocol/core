@@ -11078,6 +11078,11 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 					PkToString(pubKeyCopy, bav.Params))
 			}
 		}
+	}
+
+	for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
+		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
+		copy(pubKeyCopy, pubKeyIter[:])
 
 		// Only flush dirty pkid entries
 		if pkidEntry.isDirty {
@@ -11123,6 +11128,11 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 					"for pkid: %v, public key: %v: ", PkToString(profilePKID[:], bav.Params),
 				PkToString(profileEntry.PublicKey, bav.Params))
 		}
+	}
+
+	for profilePKIDIter, profileEntry := range bav.ProfilePKIDToProfileEntry {
+		// Make a copy of the iterator since we take references to it below.
+		profilePKID := profilePKIDIter
 
 		if !profileEntry.isDeleted {
 			// Get the PKID according to another map in the view and sanity-check that it lines up.
