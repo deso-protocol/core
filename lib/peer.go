@@ -2,12 +2,13 @@ package lib
 
 import (
 	"fmt"
-	"github.com/decred/dcrd/lru"
 	"math"
 	"net"
 	"sort"
 	"sync/atomic"
 	"time"
+
+	"github.com/decred/dcrd/lru"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang/glog"
@@ -30,7 +31,7 @@ type ExpectedResponse struct {
 
 type DeSoMessageMeta struct {
 	DeSoMessage DeSoMessage
-	Inbound         bool
+	Inbound     bool
 }
 
 // Peer is an object that holds all of the state for a connection to another node.
@@ -148,7 +149,7 @@ func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
 
 	pp.messagQueue = append(pp.messagQueue, &DeSoMessageMeta{
 		DeSoMessage: desoMessage,
-		Inbound:         inbound,
+		Inbound:     inbound,
 	})
 }
 
@@ -196,19 +197,33 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 		return mempoolTxs[ii].Added.Before(mempoolTxs[jj].Added)
 	})
 
-	// Add all of the fetched transactions to a response.
-	res := &MsgDeSoTransactionBundle{}
+	// Create a list of the fetched transactions.
+	txnList := []*MsgDeSoTxn{}
 	for _, mempoolTx := range mempoolTxs {
-		res.Transactions = append(res.Transactions, mempoolTx.Tx)
+		txnList = append(txnList, mempoolTx.Tx)
 	}
 
-	// At this point the response should have all of the transactions that
+	// At this point the txnList should have all of the transactions that
 	// we had available from the request. It should also be below the limit
 	// for number of transactions since the request itself was below the
 	// limit. So push the bundle to the Peer.
 	glog.Debugf("Peer._handleGetTransactions: Sending txn bundle with size %v to peer %v",
-		len(res.Transactions), pp)
-	pp.QueueMessage(res)
+		len(txnList), pp)
+
+	// Now we must enqueue the transactions in a transaction bundle. The type of transaction
+	// bundle we enqueue depends on the blockheight. If the next block is going to be a
+	// balance model block, the transactions will include TxnFeeNanos, TxnNonce, and
+	// TxnVersion. These fields are only supported by the TransactionBundleV2.
+	nextBlockHeight := pp.srv.blockchain.blockTip().Height + 1
+	if nextBlockHeight >= BalanceModelBlockHeight {
+		res := &MsgDeSoTransactionBundleV2{}
+		res.Transactions = txnList
+		pp.QueueMessage(res)
+	} else {
+		res := &MsgDeSoTransactionBundle{}
+		res.Transactions = txnList
+		pp.QueueMessage(res)
+	}
 }
 
 func (pp *Peer) HandleTransactionBundleMessage(msg *MsgDeSoTransactionBundle) {
@@ -220,7 +235,27 @@ func (pp *Peer) HandleTransactionBundleMessage(msg *MsgDeSoTransactionBundle) {
 	glog.Debugf("Received TransactionBundle "+
 		"message of size %v from Peer %v", len(msg.Transactions), pp)
 
-	transactionsToRelay := pp.srv._processTransactions(pp, msg)
+	pp._processTransactionsAndMaybeRemoveRequests(msg.Transactions)
+
+	pp.srv.hasProcessedFirstTransactionBundle = true
+}
+
+func (pp *Peer) HandleTransactionBundleMessageV2(msg *MsgDeSoTransactionBundleV2) {
+	// TODO: I think making it so that we can't process more than one TransactionBundle at
+	// a time would reduce transaction reorderings. Right now, if you get multiple bundles
+	// from multiple peers they'll be processed all at once, potentially interleaving with
+	// one another.
+
+	glog.Debugf("Received TransactionBundleV2 "+
+		"message of size %v from Peer %v", len(msg.Transactions), pp)
+
+	pp._processTransactionsAndMaybeRemoveRequests(msg.Transactions)
+
+	pp.srv.hasProcessedFirstTransactionBundle = true
+}
+
+func (pp *Peer) _processTransactionsAndMaybeRemoveRequests(transactions []*MsgDeSoTxn) {
+	transactionsToRelay := pp.srv._processTransactions(pp, transactions)
 	glog.Debugf("Server._handleTransactionBundle: Accepted %v txns from Peer %v",
 		len(transactionsToRelay), pp)
 
@@ -231,15 +266,11 @@ func (pp *Peer) HandleTransactionBundleMessage(msg *MsgDeSoTransactionBundle) {
 	// since that will guard against reprocessing transactions that had errors while
 	// processing.
 	pp.srv.dataLock.Lock()
-	for _, txn := range msg.Transactions {
+	for _, txn := range transactions {
 		txHash := txn.Hash()
 		delete(pp.srv.requestedTransactionsMap, *txHash)
 	}
 	pp.srv.dataLock.Unlock()
-
-	// At this point we should have attempted to add all the transactions to our
-	// mempool.
-	pp.srv.hasProcessedFirstTransactionBundle = true
 }
 
 func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
@@ -434,6 +465,12 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 					"type %v with num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
 					len(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle).Transactions), pp)
 				pp.HandleTransactionBundleMessage(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle))
+
+			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeTransactionBundleV2 {
+				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+					"type %v with num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
+					len(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundleV2).Transactions), pp)
+				pp.HandleTransactionBundleMessageV2(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundleV2))
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeInv {
 				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
@@ -686,10 +723,18 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	// Server handles situations in which we request certain hashes but only get
 	// back a subset of them in the response (i.e. a case in which we received a
 	// timely reply but the reply was incomplete).
+	//
+	// NOTE: at the BalanceModelBlockHeight, MsgTypeTransactionBundle is replaced by
+	// the more capable MsgTypeTransactionBundleV2.
+	nextBlockHeight := pp.srv.blockchain.blockTip().Height + 1
+	expectedMsgType := MsgTypeTransactionBundle
+	if nextBlockHeight >= BalanceModelBlockHeight {
+		expectedMsgType = MsgTypeTransactionBundleV2
+	}
 	if msg.GetMsgType() == MsgTypeGetTransactions {
 		pp._addExpectedResponse(&ExpectedResponse{
 			TimeExpected: time.Now().Add(stallTimeout),
-			MessageType:  MsgTypeTransactionBundle,
+			MessageType:  expectedMsgType,
 			// The Server handles situations in which the Peer doesn't send us all of
 			// the hashes we were expecting using timeouts on requested hashes.
 		})
@@ -876,7 +921,8 @@ func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 	msgType := rmsg.GetMsgType()
 	if msgType == MsgTypeBlock ||
 		msgType == MsgTypeHeaderBundle ||
-		msgType == MsgTypeTransactionBundle {
+		msgType == MsgTypeTransactionBundle ||
+		msgType == MsgTypeTransactionBundleV2 {
 
 		expectedResponse := pp._removeEarliestExpectedResponse(msgType)
 		if expectedResponse == nil {
