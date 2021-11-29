@@ -704,7 +704,7 @@ var DeSoTestnetParams = DeSoParams{
 	// We set this to be lower initially to avoid winding up with really big
 	// spam blocks in the event someone tries to abuse the initially low min
 	// fee rates.
-	MinerMaxBlockSizeBytes: 200000,
+	MinerMaxBlockSizeBytes: 1000000,
 
 	Base58PrefixPublicKey:  [3]byte{0x11, 0xc2, 0x0},
 	Base58PrefixPrivateKey: [3]byte{0x4f, 0x6, 0x1b},
