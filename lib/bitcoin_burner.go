@@ -573,7 +573,7 @@ func GetBlockCypherTxnResponse(txnHash *chainhash.Hash, blockCypherAPIKey string
 func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
 	_isDoubleSpend bool, _err error) {
 
-	glog.Debugf("CheckBitcoinDoubleSpend: Checking txn %v for double-spend", txnHash)
+	glog.Infof("CheckBitcoinDoubleSpend: Checking txn %v for double-spend", txnHash)
 	responseData, err := GetBlockCypherTxnResponse(txnHash, blockCypherAPIKey, params)
 	if err != nil {
 		return false, errors.Wrapf(err, "BlockCypherCheckBitcoinDoubleSpend: Error fetching txn: ")
