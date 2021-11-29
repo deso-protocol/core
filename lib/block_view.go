@@ -11215,64 +11215,64 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) FlushToDbWithTxn() error {
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
-		if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushUtxosToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushProfileEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushProfileEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushPKIDEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushPKIDEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushPostEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushPostEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushLikeEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushLikeEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushFollowEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushFollowEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushDiamondEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushDiamondEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushMessageEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushMessageEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushBalanceEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushBalanceEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushDeSoBalancesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushDeSoBalancesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushForbiddenPubKeyEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushForbiddenPubKeyEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushNFTEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushNFTEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushNFTBidEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushNFTBidEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushDerivedKeyEntryToDbWithTxn); err != nil {
 			return err
 		}
 	}
 
 	// Always flush to BadgerDB.
-	if err := bav._flushBitcoinExchangeDataWithTxn(txn); err != nil {
+	if err := bav.Handle.Update(bav._flushBitcoinExchangeDataWithTxn); err != nil {
 		return err
 	}
-	if err := bav._flushGlobalParamsEntryToDbWithTxn(txn); err != nil {
+	if err := bav.Handle.Update(bav._flushGlobalParamsEntryToDbWithTxn); err != nil {
 		return err
 	}
-	if err := bav._flushAcceptedBidEntriesToDbWithTxn(txn); err != nil {
+	if err := bav.Handle.Update(bav._flushAcceptedBidEntriesToDbWithTxn); err != nil {
 		return err
 	}
-	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
+	if err := bav.Handle.Update(bav._flushRepostEntriesToDbWithTxn); err != nil {
 		return err
 	}
 
@@ -11289,9 +11289,7 @@ func (bav *UtxoView) FlushToDb() error {
 		}
 	}
 
-	err = bav.Handle.Update(func(txn *badger.Txn) error {
-		return bav.FlushToDbWithTxn(txn)
-	})
+	err = bav.FlushToDbWithTxn()
 	if err != nil {
 		return err
 	}

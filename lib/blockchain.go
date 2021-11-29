@@ -424,6 +424,10 @@ type Blockchain struct {
 	// are not written to disk and are only cached in memory. Moreover we only keep
 	// up to MaxOrphansInMemory of them in order to prevent memory exhaustion.
 	orphanList *list.List
+
+	// We connect many blocks in the same view and flush every X number of blocks
+	blockView    *UtxoView
+	blocksInView uint64
 }
 
 func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
@@ -1893,26 +1897,33 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output.
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
-		if err != nil {
-			return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
+
+		if bc.blockView == nil {
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+			if err != nil {
+				return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
+			}
+
+			bc.blockView = utxoView
 		}
 
 		// Preload the view with almost all of the data it will need to connect the block
-		err = utxoView.Preload(desoBlock)
+		err := bc.blockView.Preload(desoBlock)
 		if err != nil {
 			glog.Errorf("ProcessBlock: Problem preloading the view: %v", err)
 		}
 
 		// Verify that the utxo view is pointing to the current tip.
-		if *utxoView.TipHash != *currentTip.Hash {
+		if *bc.blockView.TipHash != *currentTip.Hash {
 			//return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
 			//	"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
-			glog.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
-				"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
+			glog.Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
+				"not the current tip hash (%v)", bc.blockView.TipHash, currentTip.Hash)
 		}
 
-		utxoOpsForBlock, err := utxoView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
+		bc.blocksInView += 1
+
+		utxoOpsForBlock, err := bc.blockView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
 		if err != nil {
 			if IsRuleError(err) {
 				// If we have a RuleError, mark the block as invalid before
@@ -1942,7 +1953,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// Write the modified utxo set to the view.
 			// FIXME: This codepath breaks the balance computation in handleBlock for Rosetta
 			// because it clears the UtxoView before balances can be snapshotted.
-			if err := utxoView.FlushToDb(); err != nil {
+			if err := bc.blockView.FlushToDb(); err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem flushing view to db")
 			}
 		} else {
@@ -1960,8 +1971,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				}
 
 				// Write the modified utxo set to the view.
-				if err := utxoView.FlushToDbWithTxn(txn); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+				if bc.blocksInView%1000 == 0 {
+					if err := bc.blockView.FlushToDbWithTxn(); err != nil {
+						return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+					}
 				}
 
 				// Write the utxo operations for this block to the db so we can have the
@@ -2021,9 +2034,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		if bc.eventManager != nil {
 			bc.eventManager.blockConnected(&BlockEvent{
 				Block:    desoBlock,
-				UtxoView: utxoView,
+				UtxoView: bc.blockView,
 				UtxoOps:  utxoOpsForBlock,
 			})
+		}
+
+		if bc.blocksInView%1000 == 0 {
+			bc.blockView = nil
 		}
 
 	} else if nodeToValidate.CumWork.Cmp(currentTip.CumWork) <= 0 {
@@ -2236,7 +2253,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Write the modified utxo set to the view.
-			if err := utxoView.FlushToDbWithTxn(txn); err != nil {
+			if err := utxoView.FlushToDbWithTxn(); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem flushing to db")
 			}
 
