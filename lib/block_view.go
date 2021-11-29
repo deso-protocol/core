@@ -11068,12 +11068,8 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
 		copy(pubKeyCopy, pubKeyIter[:])
 
-		// Only flush dirty PKID entries
-		if !pkidEntry.isDirty {
-			continue
-		}
-
-		if pkidEntry.isDeleted {
+		// Delete deleted or dirty PKIDs
+		if pkidEntry.isDeleted || pkidEntry.isDirty {
 			// Delete the existing mappings in the db for this PKID
 			if err := DBDeletePKIDMappingsWithTxn(txn, pubKeyCopy, bav.Params); err != nil {
 				return errors.Wrapf(
@@ -11081,7 +11077,10 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 						"for pkid: %v, public key: %v: ", PkToString(pkidEntry.PKID[:], bav.Params),
 					PkToString(pubKeyCopy, bav.Params))
 			}
-		} else {
+		}
+
+		// Only flush dirty pkid entries
+		if pkidEntry.isDirty {
 			// Sanity-check that the public key in the entry matches the public key in
 			// the mapping.
 			if !reflect.DeepEqual(pubKeyCopy, pkidEntry.PublicKey) {
@@ -11116,16 +11115,16 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 		// Make a copy of the iterator since we take references to it below.
 		profilePKID := profilePKIDIter
 
-		// TODO: This is definitely broken??
-		if profileEntry.isDeleted {
-			// Delete the existing mappings in the db for this PKID.
-			if err := DBDeleteProfileEntryMappingsWithTxn(txn, &profilePKID, bav.Params); err != nil {
-				return errors.Wrapf(
-					err, "_flushProfileEntriesToDbWithTxn: Problem deleting mappings "+
-						"for pkid: %v, public key: %v: ", PkToString(profilePKID[:], bav.Params),
-					PkToString(profileEntry.PublicKey, bav.Params))
-			}
-		} else {
+		// Delete the existing mappings in the db for this PKID
+		// TODO: A number of things need to change so we can be smarter about deletions.
+		if err := DBDeleteProfileEntryMappingsWithTxn(txn, &profilePKID, bav.Params); err != nil {
+			return errors.Wrapf(
+				err, "_flushProfileEntriesToDbWithTxn: Problem deleting mappings "+
+					"for pkid: %v, public key: %v: ", PkToString(profilePKID[:], bav.Params),
+				PkToString(profileEntry.PublicKey, bav.Params))
+		}
+
+		if !profileEntry.isDeleted {
 			// Get the PKID according to another map in the view and sanity-check that it lines up.
 			viewPKIDEntry := bav.GetPKIDForPublicKey(profileEntry.PublicKey)
 			if viewPKIDEntry == nil || viewPKIDEntry.isDeleted || *viewPKIDEntry.PKID != profilePKID {
