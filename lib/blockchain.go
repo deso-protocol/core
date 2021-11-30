@@ -1907,6 +1907,16 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			bc.blockView = utxoView
 		}
 
+		// We need to do this cuz RPH said so
+		if nodeToValidate.Height <= BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight {
+			for _, entry := range bc.blockView.HODLerPKIDCreatorPKIDToBalanceEntry {
+				if entry.isDeleted {
+					entry.isDeleted = false
+					entry.BalanceNanos = 0
+				}
+			}
+		}
+
 		// Preload the view with almost all of the data it will need to connect the block
 		err := bc.blockView.Preload(desoBlock)
 		if err != nil {

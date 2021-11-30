@@ -317,7 +317,8 @@ func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDE
 	// So return that pkid.
 	pkidEntryObj := &PKIDEntry{}
 	err = pkidItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(pkidEntryObj)
+		pkidEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DBGetPKIDEntryForPublicKeyWithTxn: Problem reading "+
@@ -375,12 +376,9 @@ func DBPutPKIDMappingsWithTxn(
 
 	// Set the main pub key -> pkid mapping.
 	{
-		pkidDataBuf := bytes.NewBuffer([]byte{})
-		gob.NewEncoder(pkidDataBuf).Encode(pkidEntry)
-
 		prefix := append([]byte{}, _PrefixPublicKeyToPKID...)
 		pubKeyToPkidKey := append(prefix, publicKey...)
-		if err := txn.Set(pubKeyToPkidKey, pkidDataBuf.Bytes()); err != nil {
+		if err := txn.Set(pubKeyToPkidKey, pkidEntry.Encode()); err != nil {
 
 			return errors.Wrapf(err, "DBPutPKIDMappingsWithTxn: Problem "+
 				"adding mapping for pkid: %v public key: %v",
@@ -3575,7 +3573,8 @@ func DBGetPostEntryByPostHashWithTxn(
 		return nil
 	}
 	err = postEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(postEntryObj)
+		postEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DBGetPostEntryByPostHashWithTxn: Problem reading "+
@@ -3691,11 +3690,8 @@ func DBDeletePostEntryMappings(
 func DBPutPostEntryMappingsWithTxn(
 	txn *badger.Txn, postEntry *PostEntry, params *DeSoParams) error {
 
-	postDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(postDataBuf).Encode(postEntry)
-
 	if err := txn.Set(_dbKeyForPostEntryHash(
-		postEntry.PostHash), postDataBuf.Bytes()); err != nil {
+		postEntry.PostHash), postEntry.Encode()); err != nil {
 
 		return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 			"adding mapping for post: %v", postEntry.PostHash)
@@ -4748,7 +4744,8 @@ func DBGetProfileEntryForPKIDWithTxn(
 		return nil
 	}
 	err = profileEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(profileEntryObj)
+		profileEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DBGetProfileEntryForPubKeyWithTxnhWithTxn: Problem reading "+
@@ -4806,11 +4803,8 @@ func DBDeleteProfileEntryMappingsWithTxn(
 func DBPutProfileEntryMappingsWithTxn(
 	txn *badger.Txn, profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
 
-	profileDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(profileDataBuf).Encode(profileEntry)
-
 	// Set the main PKID -> profile entry mapping.
-	if err := txn.Set(_dbKeyForPKIDToProfileEntry(pkid), profileDataBuf.Bytes()); err != nil {
+	if err := txn.Set(_dbKeyForPKIDToProfileEntry(pkid), profileEntry.Encode()); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile: %v", PkToString(pkid[:], params))
