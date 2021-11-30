@@ -719,7 +719,7 @@ func (pe *PostEntry) Encode() []byte {
 	if pe.RepostedPostHash != nil {
 		data = append(data, EncodeByteArray(pe.RepostedPostHash.ToBytes())...)
 	} else {
-		data = append(data, Uvarint())
+		data = append(data, UintToBuf(0)...)
 	}
 	data = append(data, BoolToByte(pe.IsQuotedRepost))
 	data = append(data, UintToBuf(pe.CreatorBasisPoints)...)
@@ -751,7 +751,12 @@ func (pe *PostEntry) Decode(data []byte) {
 	pe.PosterPublicKey = DecodeByteArray(rr)
 	pe.ParentStakeID = DecodeByteArray(rr)
 	pe.Body = DecodeByteArray(rr)
-	pe.RepostedPostHash = NewBlockHash(DecodeByteArray(rr))
+
+	repostedPostHash := DecodeByteArray(rr)
+	if repostedPostHash != nil {
+		pe.RepostedPostHash = NewBlockHash(repostedPostHash)
+	}
+
 	pe.IsQuotedRepost = ReadBoolByte(rr)
 	pe.CreatorBasisPoints, _ = ReadUvarint(rr)
 	pe.StakeMultipleBasisPoints, _ = ReadUvarint(rr)
@@ -974,14 +979,19 @@ func DecodeByteArray(reader *bytes.Reader) []byte {
 		return nil
 	}
 
-	result := make([]byte, pkLen)
-	_, err = io.ReadFull(reader, result)
-	if err != nil {
-		glog.Errorf("DecodeByteArray: ReadFull: %v", err)
+	if pkLen > 0 {
+		result := make([]byte, pkLen)
+
+		_, err = io.ReadFull(reader, result)
+		if err != nil {
+			glog.Errorf("DecodeByteArray: ReadFull: %v", err)
+			return nil
+		}
+
+		return result
+	} else {
 		return nil
 	}
-
-	return result
 }
 
 // EncodeExtraData is used in consensus so don't change it
