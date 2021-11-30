@@ -80,9 +80,6 @@ const (
 	StatusBitcoinHeaderValidateFailed
 )
 
-// RPH-FIXME: Implement real nonce.
-var GlobalTxnNonce uint64
-
 func (blockStatus BlockStatus) String() string {
 	if blockStatus == 0 {
 		return "NONE"
@@ -2441,6 +2438,30 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 	return rootHash, txHashes, nil
 }
 
+func (bc *Blockchain) GetNextNonceForPublicKey(
+	publicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView,
+) (uint64, error) {
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	if err != nil {
+		return 0, errors.Wrapf(err, "Blockchain.GetNextNonceForPublicKey: Problem initializing UtxoView: ")
+	}
+	// Use the reference UtxoView if provided. Otherwise try to get one from the mempool.
+	// This improves efficiency when we have a UtxoView already handy.
+	if referenceUtxoView != nil {
+		utxoView = referenceUtxoView
+	} else {
+		if mempool != nil {
+			utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(publicKeyBytes, nil)
+			if err != nil {
+				return 0, errors.Wrapf(
+					err, "Blockchain.GetNextNonceForPublicKey: Problem getting augmented UtxoView from mempool: ")
+			}
+		}
+	}
+
+	return utxoView.GetNextNonceForPublicKey(publicKeyBytes)
+}
+
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
@@ -3829,8 +3850,14 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	blockHeight := bc.blockTip().Height + 1
 	if blockHeight >= BalanceModelBlockHeight {
 		txArg.TxnVersion = 1
-		GlobalTxnNonce++
-		txArg.TxnNonce = GlobalTxnNonce
+		nextNonce, err := bc.GetNextNonceForPublicKey(txArg.PublicKey, mempool, nil)
+		if err != nil {
+			return 0, 0, 0, 0, errors.Wrapf(
+				err, "AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",
+				PkToStringBoth(txArg.PublicKey),
+			)
+		}
+		txArg.TxnNonce = nextNonce
 
 		feeAmountNanos := uint64(0)
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {

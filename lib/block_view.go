@@ -758,6 +758,9 @@ type UtxoView struct {
 	// Derived Key entries. Map key is a combination of owner and derived public keys.
 	DerivedKeyToDerivedEntry map[DerivedKeyMapKey]*DerivedKeyEntry
 
+	// Derived Key entries. Map key is a combination of owner and derived public keys.
+	PublicKeyToNextNonce map[PkMapKey]uint64
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -1185,6 +1188,12 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for entryKey, entry := range bav.DerivedKeyToDerivedEntry {
 		newEntry := *entry
 		newView.DerivedKeyToDerivedEntry[entryKey] = &newEntry
+	}
+
+	// Copy the nonce data
+	newView.PublicKeyToNextNonce = make(map[PkMapKey]uint64, len(bav.PublicKeyToNextNonce))
+	for pubKey, nextNonce := range bav.PublicKeyToNextNonce {
+		newView.PublicKeyToNextNonce[pubKey] = nextNonce
 	}
 
 	return newView, nil
@@ -10650,6 +10659,17 @@ func IsRestrictedPubKey(userGraylistState []byte, userBlacklistState []byte, mod
 	}
 }
 
+func (bav *UtxoView) GetNextNonceForPublicKey(pkBytes []byte) (uint64, error) {
+	var err error
+	nextNonce, nonceFound := bav.PublicKeyToNextNonce[MakePkMapKey(pkBytes)]
+	if !nonceFound {
+		nextNonce, err = DbGetNextNonceForPublicKey(bav.Handle, pkBytes)
+		return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPublicKey: Problem fetching "+
+			"next nonce for public key %s", PkToString(pkBytes, bav.Params))
+	}
+	return nextNonce, nil
+}
+
 // GetUnspentUtxoEntrysForPublicKey returns the UtxoEntrys corresponding to the
 // passed-in public key that are currently unspent. It does this while factoring
 // in any transactions that have already been connected to it. This is useful,
@@ -11006,6 +11026,20 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	// At this point all of the RepostEntry mappings in the db should be up-to-date.
+
+	return nil
+}
+
+func (bav *UtxoView) _flushNextNoncesToDbWithTxn(txn *badger.Txn) error {
+
+	// Go through all the entries in the PublicKeyToNextNonce map and update the database.
+	// Note that there is no need to delete the mappings first since we never delete
+	// nonce mappings.
+	for pkMapKey, nextNonce := range bav.PublicKeyToNextNonce {
+		if err := DbPutNextNonceForPublicKeyWithTxn(txn, pkMapKey[:], nextNonce); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -11584,6 +11618,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		return err
 	}
 	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+	if err := bav._flushNextNoncesToDbWithTxn(txn); err != nil {
 		return err
 	}
 
