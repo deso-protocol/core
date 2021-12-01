@@ -85,4 +85,34 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://nftz.zone",
 		Owner: "mvanhalen",
 	},
+	13: {
+		Name:  "Cloutible",
+		URL:   "https://cloutible.club",
+		Owner: "DawaynePerza",
+	},
+	14: {
+		Name:  "Agbegbe",
+		URL:   "https://agbegbe.org",
+		Owner: "TheParkerazzi",
+	},
+	15: {
+		Name:  "CloutingAround",
+		URL:   "https://cloutingaround.dev",
+		Owner: "TheParkerazzi",
+	},
+	16: {
+		Name:  "MediaTech",
+		URL:   "https://deso.mediatech.ventures",
+		Owner: "paulobrien",
+	},
+	17: {
+		Name:  "Mousai",
+		URL:   "https://deso.mousai.stream",
+		Owner: "marlonjm2k",
+	},
+	18: {
+		Name:  "KoalaTBooks",
+		URL:   "https://koalatbooks.com",
+		Owner: "chriscelaya",
+	},
 }
