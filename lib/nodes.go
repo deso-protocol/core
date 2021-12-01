@@ -25,11 +25,6 @@ type DeSoNode struct {
 //
 
 var NODES = map[uint64]DeSoNode{
-	1: {
-		Name:  "DeSo",
-		URL:   "https://node.deso.org",
-		Owner: "diamondhands",
-	},
 	2: {
 		Name:  "BitClout",
 		URL:   "https://bitclout.com",
