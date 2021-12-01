@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"crypto/rand"
+	"database/sql/driver"
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
@@ -265,6 +266,29 @@ func (pkid *PKID) NewPKID() *PKID {
 	return newPkid
 }
 
+// SQL support
+func (pkid *PKID) Value() (driver.Value, error) {
+	if pkid == nil {
+		return nil, nil
+	}
+
+	return PkToStringMainnet(pkid.ToBytes()), nil
+}
+
+// SQL support
+func (pkid *PKID) Scan(src interface{}) error {
+	v, ok := src.([]byte)
+	if !ok {
+		return errors.New("bad []byte type assertion")
+	}
+	res, _, err := Base58CheckDecode(string(v))
+	if err != nil {
+		return err
+	}
+	*pkid = *NewPKID(res)
+	return nil
+}
+
 func NewPublicKey(publicKeyBytes []byte) *PublicKey {
 	if len(publicKeyBytes) == 0 {
 		return nil
@@ -274,8 +298,31 @@ func NewPublicKey(publicKeyBytes []byte) *PublicKey {
 	return publicKey
 }
 
-func (publicKey *PublicKey) ToBytes() []byte {
-	return publicKey[:]
+func (pk *PublicKey) ToBytes() []byte {
+	return pk[:]
+}
+
+// SQL support
+func (pk *PublicKey) Value() (driver.Value, error) {
+	if pk == nil {
+		return nil, nil
+	}
+
+	return PkToStringMainnet(pk.ToBytes()), nil
+}
+
+// SQL support
+func (pk *PublicKey) Scan(src interface{}) error {
+	v, ok := src.([]byte)
+	if !ok {
+		return errors.New("bad []byte type assertion")
+	}
+	res, _, err := Base58CheckDecode(string(v))
+	if err != nil {
+		return err
+	}
+	*pk = *NewPublicKey(res)
+	return nil
 }
 
 func PublicKeyToPKID(publicKey []byte) *PKID {
@@ -2786,9 +2833,9 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 	// state of the view.
 	if eventManager != nil {
 		eventManager.blockConnected(&BlockEvent{
-			Block: genesisBlock,
+			Block:    genesisBlock,
 			UtxoView: utxoView,
-			UtxoOps: utxoOpsForBlock,
+			UtxoOps:  utxoOpsForBlock,
 		})
 	}
 

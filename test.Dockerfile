@@ -16,7 +16,7 @@ COPY desohash desohash
 COPY cmd       cmd
 COPY lib       lib
 COPY test_data test_data
-COPY migrate   migrate
+COPY migrations migrations
 COPY main.go   .
 
 # build backend

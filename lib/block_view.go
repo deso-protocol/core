@@ -967,13 +967,13 @@ type UtxoOperation struct {
 	// encounter a SwapIdentity txn. This makes it so that we don't have to
 	// reconnect all txns in order to get these values.
 	SwapIdentityFromDESOLockedNanos uint64
-	SwapIdentityToDESOLockedNanos uint64
+	SwapIdentityToDESOLockedNanos   uint64
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values.
-	AcceptNFTBidCreatorPublicKey []byte
-	AcceptNFTBidBidderPublicKey []byte
+	AcceptNFTBidCreatorPublicKey    []byte
+	AcceptNFTBidBidderPublicKey     []byte
 	AcceptNFTBidCreatorRoyaltyNanos uint64
 }
 
@@ -1274,7 +1274,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the
 	// db.
 	if !ok {
-		if bav.Postgres != nil {
+		if false {
 			utxoEntry = bav.Postgres.GetUtxoEntryForUtxoKey(utxoKey)
 		} else {
 			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
@@ -2710,7 +2710,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	//  (2) Add back all of the bids that were deleted.
 	//  (3) Disconnect payment UTXOs.
 	//  (4) Unspend bidder UTXOs.
-	//  (5) Revert profileEntry to undo royalties added to DeSoLockedNanos.
+	//  (5) Revert profileEntry to undo royalties added to DESOLockedNanos.
 	//  (6) Revert the postEntry since NumNFTCopiesForSale was decremented.
 
 	// (1) Set the old NFT entry.
@@ -3746,20 +3746,23 @@ func (bav *UtxoView) _getLikeEntryForLikeKey(likeKey *LikeKey) *LikeEntry {
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	likeExists := false
 	if bav.Postgres != nil {
-		likeExists = bav.Postgres.GetLike(likeKey.LikerPubKey[:], &likeKey.LikedPostHash) != nil
-	} else {
-		likeExists = DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
-	}
-
-	if likeExists {
-		likeEntry := LikeEntry{
-			LikerPubKey:   likeKey.LikerPubKey[:],
-			LikedPostHash: &likeKey.LikedPostHash,
+		like := bav.Postgres.GetLike(likeKey.LikerPubKey[:], &likeKey.LikedPostHash)
+		if like != nil {
+			likeEntry := like.NewLikeEntry()
+			bav._setLikeEntryMappings(likeEntry)
+			return likeEntry
 		}
-		bav._setLikeEntryMappings(&likeEntry)
-		return &likeEntry
+	} else {
+		likeExists := DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
+		if likeExists {
+			likeEntry := LikeEntry{
+				LikerPubKey:   likeKey.LikerPubKey[:],
+				LikedPostHash: &likeKey.LikedPostHash,
+			}
+			bav._setLikeEntryMappings(&likeEntry)
+			return &likeEntry
+		}
 	}
 
 	return nil
@@ -3854,20 +3857,23 @@ func (bav *UtxoView) _getFollowEntryForFollowKey(followKey *FollowKey) *FollowEn
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	followExists := false
 	if bav.Postgres != nil {
-		followExists = bav.Postgres.GetFollow(&followKey.FollowerPKID, &followKey.FollowedPKID) != nil
-	} else {
-		followExists = DbGetFollowerToFollowedMapping(bav.Handle, &followKey.FollowerPKID, &followKey.FollowedPKID) != nil
-	}
-
-	if followExists {
-		followEntry := FollowEntry{
-			FollowerPKID: &followKey.FollowerPKID,
-			FollowedPKID: &followKey.FollowedPKID,
+		follow := bav.Postgres.GetFollow(&followKey.FollowerPKID, &followKey.FollowedPKID)
+		if follow != nil {
+			followEntry := follow.NewFollowEntry()
+			bav._setFollowEntryMappings(followEntry)
+			return followEntry
 		}
-		bav._setFollowEntryMappings(&followEntry)
-		return &followEntry
+	} else {
+		followExists := DbGetFollowerToFollowedMapping(bav.Handle, &followKey.FollowerPKID, &followKey.FollowedPKID) != nil
+		if followExists {
+			followEntry := FollowEntry{
+				FollowerPKID: &followKey.FollowerPKID,
+				FollowedPKID: &followKey.FollowedPKID,
+			}
+			bav._setFollowEntryMappings(&followEntry)
+			return &followEntry
+		}
 	}
 
 	return nil
@@ -4901,7 +4907,7 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 	// isDeleted on the view. If not for isDeleted, we wouldn't need the PKIDEntry
 	// wrapper.
 	if bav.Postgres != nil {
-		profile := bav.Postgres.GetProfile(*pkid)
+		profile := bav.Postgres.GetProfile(pkid)
 		if profile == nil {
 			pkidEntry := &PKIDEntry{
 				PKID:      pkid,
@@ -4970,7 +4976,7 @@ func (bav *UtxoView) GetProfileEntryForPKID(pkid *PKID) *ProfileEntry {
 	// nil.
 	if bav.Postgres != nil {
 		// Note: We should never get here but writing this code just in case
-		profile := bav.Postgres.GetProfile(*pkid)
+		profile := bav.Postgres.GetProfile(pkid)
 		if profile == nil {
 			return nil
 		}
@@ -5138,7 +5144,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 			ProfilePic:  profile.ProfilePic,
 			CoinEntry: CoinEntry{
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
-				DeSoLockedNanos:         profile.DeSoLockedNanos,
+				DeSoLockedNanos:         profile.DESOLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
 				CoinsInCirculationNanos: profile.CoinsInCirculationNanos,
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
@@ -5798,8 +5804,8 @@ func (bav *UtxoView) _connectPrivateMessage(
 	if bav.Postgres != nil {
 		message := &PGMessage{
 			MessageHash:        txn.Hash(),
-			SenderPublicKey:    txn.PublicKey,
-			RecipientPublicKey: txMeta.RecipientPublicKey,
+			SenderPublicKey:    NewPublicKey(txn.PublicKey),
+			RecipientPublicKey: NewPublicKey(txMeta.RecipientPublicKey),
 			EncryptedText:      txMeta.EncryptedText,
 			TimestampNanos:     txMeta.TimestampNanos,
 		}
@@ -7361,8 +7367,8 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 
 		// Rosetta fields.
-		AcceptNFTBidCreatorPublicKey: nftPostEntry.PosterPublicKey,
-		AcceptNFTBidBidderPublicKey: bidderPublicKey,
+		AcceptNFTBidCreatorPublicKey:    nftPostEntry.PosterPublicKey,
+		AcceptNFTBidBidderPublicKey:     bidderPublicKey,
 		AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
 	})
 
@@ -7981,7 +7987,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 		Type: OperationTypeSwapIdentity,
 		// Rosetta fields
 		SwapIdentityFromDESOLockedNanos: fromNanos,
-		SwapIdentityToDESOLockedNanos: toNanos,
+		SwapIdentityToDESOLockedNanos:   toNanos,
 
 		// Note that we don't need any metadata on this operation, since the swap is reversible
 		// without it.
@@ -8452,11 +8458,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// a direct copy is OK.
 	prevCoinEntry := existingProfileEntry.CoinEntry
 
-	// Increment DeSoLockedNanos. Sanity-check that we're not going to
+	// Increment DESOLockedNanos. Sanity-check that we're not going to
 	// overflow.
 	if existingProfileEntry.DeSoLockedNanos > math.MaxUint64-desoRemainingNanos {
 		return 0, 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Overflow while summing"+
-			"DeSoLockedNanos and desoAfterFounderRewardNanos: %v %v",
+			"DESOLockedNanos and desoAfterFounderRewardNanos: %v %v",
 			existingProfileEntry.DeSoLockedNanos, desoRemainingNanos)
 	}
 	existingProfileEntry.DeSoLockedNanos += desoRemainingNanos
@@ -8694,7 +8700,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// and it's much more efficient to compute it here than it is to recompute
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing " +
+		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing "+
 			"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
@@ -8703,12 +8709,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevBuyerBalanceEntry,
-		PrevCreatorBalanceEntry:    &prevCreatorBalanceEntry,
-		FounderRewardUtxoKey:       outputKey,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevBuyerBalanceEntry,
+		PrevCreatorBalanceEntry:        &prevCreatorBalanceEntry,
+		FounderRewardUtxoKey:           outputKey,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	return totalInput, totalOutput, coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, utxoOpsForTxn, nil
@@ -8890,7 +8896,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		existingProfileEntry.NumberOfHolders -= 1
 	}
 
-	// If the number of holders has reached zero, we clear all the DeSoLockedNanos and
+	// If the number of holders has reached zero, we clear all the DESOLockedNanos and
 	// creatorCoinToSellNanos to ensure that the profile is reset to its normal initial state.
 	// It's okay to modify these values because they are saved in the PrevCoinEntry.
 	if existingProfileEntry.NumberOfHolders == 0 {
@@ -8974,8 +8980,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, 0, nil, errors.Wrapf(
-			err, "HelpConnectCreatorCoinSell: Error computing " +
-			"desoLockedNanosDiff: Missing profile")
+			err, "HelpConnectCreatorCoinSell: Error computing "+
+				"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
@@ -8983,11 +8989,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
-		PrevCreatorBalanceEntry:    nil,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevTransactorBalanceEntry,
+		PrevCreatorBalanceEntry:        nil,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	// The DeSo that the user gets from selling their creator coin counts
@@ -9693,8 +9699,8 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		return nil
 	}
 
-	// One iteration for all the PKIDs
-	// NOTE: Work in progress. Testing with follows for now.
+	// One iteration for all the PKIDs to load relevant profiles
+	// TODO: Uniqueness
 	var publicKeys []*PublicKey
 	for _, txn := range desoBlock.Txns {
 		if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
@@ -9733,23 +9739,35 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 	}
 
 	// One iteration for everything else
-	// TODO: For some reason just fetching follows from the DB causes consensus issues??
-	var outputs []*PGTransactionOutput
+	// TODO: Uniqueness
+	var balances []*PGBalance
+	//var outputs []*PGTransactionOutput
 	var follows []*PGFollow
-	var balances []*PGCreatorCoinBalance
+	var creatorCoinBalances []*PGCreatorCoinBalance
 	var likes []*PGLike
 	var posts []*PGPost
 	var lowercaseUsernames []string
 
 	for _, txn := range desoBlock.Txns {
 		// Preload all the inputs
-		for _, txInput := range txn.TxInputs {
-			output := &PGTransactionOutput{
-				OutputHash:  &txInput.TxID,
-				OutputIndex: txInput.Index,
-				Spent:       false,
-			}
-			outputs = append(outputs, output)
+		//for _, txInput := range txn.TxInputs {
+		//	output := &PGTransactionOutput{
+		//		OutputHash:  NewBlockHash(txInput.TxID.ToBytes()),
+		//		OutputIndex: txInput.Index,
+		//		Spent:       false,
+		//	}
+		//	outputs = append(outputs, output)
+		//}
+
+		// Preload balances for all transaction public keys
+		if len(txn.PublicKey) > 0 {
+			balancePublicKey := NewPublicKey(txn.PublicKey)
+			balances = append(balances, &PGBalance{
+				PublicKey: balancePublicKey,
+			})
+
+			// We cache balances as zero and then fill them in later
+			bav.PublicKeyToDeSoBalanceNanos[*balancePublicKey] = 0
 		}
 
 		if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
@@ -9771,7 +9789,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 				HolderPKID:  bav.GetPKIDForPublicKey(txn.PublicKey).PKID.NewPKID(),
 				CreatorPKID: bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 			}
-			balances = append(balances, balance)
+			creatorCoinBalances = append(creatorCoinBalances, balance)
 
 			// We cache the balances as not present and then fill them in later
 			balanceEntryKey := MakeCreatorCoinBalanceKey(balance.HolderPKID, balance.CreatorPKID)
@@ -9783,7 +9801,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 					HolderPKID:  bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 					CreatorPKID: bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 				}
-				balances = append(balances, balance)
+				creatorCoinBalances = append(creatorCoinBalances, balance)
 
 				// We cache the balances as not present and then fill them in later
 				balanceEntryKey = MakeCreatorCoinBalanceKey(balance.HolderPKID, balance.CreatorPKID)
@@ -9792,13 +9810,13 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
 			txnMeta := txn.TxnMeta.(*LikeMetadata)
 			like := &PGLike{
-				LikerPublicKey: txn.PublicKey,
+				LikerPublicKey: NewPublicKey(txn.PublicKey),
 				LikedPostHash:  txnMeta.LikedPostHash.NewBlockHash(),
 			}
 			likes = append(likes, like)
 
 			// We cache the likes as not present and then fill them in later
-			likeKey := MakeLikeKey(like.LikerPublicKey, *like.LikedPostHash)
+			likeKey := MakeLikeKey(like.LikerPublicKey.ToBytes(), *like.LikedPostHash)
 			bav.LikeKeyToLikeEntry[likeKey] = nil
 
 			post := &PGPost{
@@ -9839,15 +9857,15 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		}
 	}
 
-	if len(outputs) > 0 {
-		//foundOutputs := bav.Postgres.GetOutputs(outputs)
-		//for _, output := range foundOutputs {
-		//	err := bav._setUtxoMappings(output.NewUtxoEntry())
-		//	if err != nil {
-		//		return err
-		//	}
-		//}
-	}
+	//if len(outputs) > 0 {
+	//	foundOutputs := bav.Postgres.GetOutputs(outputs)
+	//	for _, output := range foundOutputs {
+	//		err := bav._setUtxoMappings(output.NewUtxoEntry())
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
+	//}
 
 	if len(follows) > 0 {
 		foundFollows := bav.Postgres.GetFollows(follows)
@@ -9857,8 +9875,8 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		}
 	}
 
-	if len(balances) > 0 {
-		foundBalances := bav.Postgres.GetCreatorCoinBalances(balances)
+	if len(creatorCoinBalances) > 0 {
+		foundBalances := bav.Postgres.GetCreatorCoinBalances(creatorCoinBalances)
 		for _, balance := range foundBalances {
 			balanceEntry := balance.NewBalanceEntry()
 			bav._setBalanceEntryMappings(balanceEntry)
@@ -9884,6 +9902,13 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		foundProfiles := bav.Postgres.GetProfilesForUsername(lowercaseUsernames)
 		for _, profile := range foundProfiles {
 			bav.setProfileMappings(profile)
+		}
+	}
+
+	if len(balances) > 0 {
+		foundBalances := bav.Postgres.GetBalances(balances)
+		for _, balance := range foundBalances {
+			bav.PublicKeyToDeSoBalanceNanos[*balance.PublicKey] = balance.BalanceNanos
 		}
 	}
 
@@ -11386,9 +11411,6 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
-		if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
-			return err
-		}
 		if err := bav._flushProfileEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
@@ -11431,6 +11453,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	// Always flush to BadgerDB.
+	if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
+		return err
+	}
 	if err := bav._flushBitcoinExchangeDataWithTxn(txn); err != nil {
 		return err
 	}

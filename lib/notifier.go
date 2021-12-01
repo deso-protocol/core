@@ -1,11 +1,12 @@
 package lib
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gernest/mention"
-	"github.com/go-pg/pg/v10"
+	"github.com/uptrace/bun"
 	"reflect"
 	"strings"
 	"time"
@@ -17,8 +18,9 @@ type Notifier struct {
 	coreChain *Blockchain
 	postgres  *Postgres
 
-	// Shortcut to postgres.db
-	db *pg.DB
+	// Shortcut to postgres
+	db  *bun.DB
+	ctx context.Context
 
 	// Shortcut to coreChain.db
 	badger *badger.DB
@@ -29,6 +31,7 @@ func NewNotifier(coreChain *Blockchain, postgres *Postgres) *Notifier {
 		coreChain: coreChain,
 		postgres:  postgres,
 		db:        postgres.db,
+		ctx:       postgres.ctx,
 		badger:    coreChain.db,
 	}
 }
@@ -36,7 +39,7 @@ func NewNotifier(coreChain *Blockchain, postgres *Postgres) *Notifier {
 func (notifier *Notifier) Update() error {
 	// Fetch all the blocks we haven't processed notifications for in groups of 10,000
 	var blocks []*PGBlock
-	err := notifier.db.Model(&blocks).Where("notified = false").Limit(10_000).Select()
+	_, err := notifier.db.NewSelect().Model(&blocks).Where("notified = false").Limit(10_000).Exec(notifier.ctx)
 	if err != nil {
 		return err
 	}
@@ -44,10 +47,10 @@ func (notifier *Notifier) Update() error {
 	for _, block := range blocks {
 		var notifications []*PGNotification
 		var transactions []*PGTransaction
-		err = notifier.db.Model(&transactions).Where("block_hash = ?", block.Hash).
+		_, err = notifier.db.NewSelect().Model(&transactions).Where("block_hash = ?", block.Hash).
 			Relation("Outputs").Relation("PGMetadataLike").Relation("PGMetadataFollow").
 			Relation("PGMetadataCreatorCoin").Relation("PGMetadataCreatorCoinTransfer").
-			Relation("PGMetadataSubmitPost").Select()
+			Relation("PGMetadataSubmitPost").Exec(notifier.ctx)
 		// TODO: Add NFTs
 		if err != nil {
 			return err
@@ -117,7 +120,7 @@ func (notifier *Notifier) Update() error {
 						ToUser:          meta.ProfilePublicKey,
 						FromUser:        transaction.PublicKey,
 						Type:            NotificationCoinPurchase,
-						Amount:          meta.DeSoToSellNanos,
+						Amount:          meta.DESOToSellNanos,
 						Timestamp:       block.Timestamp,
 					})
 				}
@@ -173,11 +176,10 @@ func (notifier *Notifier) Update() error {
 
 				// Process mentions
 				bodyObj := &DeSoBodySchema{}
-				if err := json.Unmarshal(meta.Body, &bodyObj); err == nil {
+				if err := json.Unmarshal([]byte(meta.Body), &bodyObj); err == nil {
 					terminators := []rune(" ,.\n&*()-+~'\"[]{}")
 					dollarTagsFound := mention.GetTagsAsUniqueStrings('$', string(bodyObj.Body), terminators...)
 					atTagsFound := mention.GetTagsAsUniqueStrings('@', string(bodyObj.Body), terminators...)
-					
 					tagsFound := append(dollarTagsFound, atTagsFound...)
 					for _, tag := range tagsFound {
 
@@ -221,7 +223,8 @@ func (notifier *Notifier) Update() error {
 
 		// Insert the new notifications if we created any
 		if len(notifications) > 0 {
-			_, err = notifier.db.Model(&notifications).OnConflict("DO NOTHING").Returning("NULL").Insert()
+			_, err = notifier.db.NewInsert().Model(&notifications).On("CONFLICT DO NOTHING").
+				Returning("NULL").Exec(notifier.ctx)
 			if err != nil {
 				return err
 			}
@@ -229,7 +232,8 @@ func (notifier *Notifier) Update() error {
 
 		// Mark the block as notified
 		block.Notified = true
-		_, err = notifier.db.Model(block).WherePK().Column("notified").Returning("NULL").Update()
+		_, err = notifier.db.NewUpdate().Model(block).WherePK().Column("notified").
+			Returning("NULL").Exec(notifier.ctx)
 		if err != nil {
 			return err
 		}

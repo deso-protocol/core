@@ -489,10 +489,12 @@ func (bc *Blockchain) _initChain() error {
 		var err error
 
 		if bc.postgres != nil {
-			err = bc.postgres.InitGenesisBlock(bc.params, bc.db)
-		} else {
-			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager)
+			err = bc.postgres.InitGenesisBlock(bc.params)
+			if err != nil {
+				return errors.Wrapf(err, "_initChain: Problem initializing db with genesis block")
+			}
 		}
+		err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager)
 		if err != nil {
 			return errors.Wrapf(err, "_initChain: Problem initializing db with genesis block")
 		}
@@ -1771,7 +1773,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// it more gracefully).
 	nodeToValidate.Status |= StatusBlockProcessed
 
-	if bc.postgres != nil {
+	if false {
 		if err := bc.postgres.UpsertBlock(nodeToValidate); err != nil {
 			return false, false, errors.Wrapf(err,
 				"ProcessBlock: Problem saving block with StatusBlockProcessed")
@@ -1864,7 +1866,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// basic validation.
 	nodeToValidate.Status |= StatusBlockStored
 
-	if bc.postgres != nil {
+	if false {
 		if err = bc.postgres.UpsertBlock(nodeToValidate); err != nil {
 			err = errors.Wrapf(err, "ProcessBlock: Problem saving block with StatusBlockStored")
 		}

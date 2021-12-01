@@ -14,7 +14,7 @@ RUN go mod download
 COPY desohash desohash
 COPY cmd       cmd
 COPY lib       lib
-COPY migrate   migrate
+COPY migrations migrations
 COPY test_data test_data
 COPY main.go   .
 

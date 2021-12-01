@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
+	"database/sql/driver"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -74,6 +75,29 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	newBlockhash := &BlockHash{}
 	copy(newBlockhash[:], bh[:])
 	return newBlockhash
+}
+
+// SQL support
+func (bh *BlockHash) Value() (driver.Value, error) {
+	if bh == nil {
+		return nil, nil
+	}
+
+	return PkToStringMainnet(bh.ToBytes()), nil
+}
+
+// SQL support
+func (bh *BlockHash) Scan(src interface{}) error {
+	v, ok := src.([]byte)
+	if !ok {
+		return errors.New("bad []byte type assertion")
+	}
+	res, _, err := Base58CheckDecode(string(v))
+	if err != nil {
+		return err
+	}
+	*bh = *NewBlockHash(res)
+	return nil
 }
 
 // The MsgType is usually sent on the wire to indicate what type of
@@ -3760,15 +3784,15 @@ func (txnData *CreatorCoinMetadataa) ToBytes(preSignature bool) ([]byte, error) 
 	// OperationType byte
 	data = append(data, byte(txnData.OperationType))
 
-	// DeSoToSellNanos    uint64
+	// DESOToSellNanos    uint64
 	data = append(data, UintToBuf(uint64(txnData.DeSoToSellNanos))...)
 
 	// CreatorCoinToSellNanos uint64
 	data = append(data, UintToBuf(uint64(txnData.CreatorCoinToSellNanos))...)
-	// DeSoToAddNanos     uint64
+	// DESOToAddNanos     uint64
 	data = append(data, UintToBuf(uint64(txnData.DeSoToAddNanos))...)
 
-	// MinDeSoExpectedNanos    uint64
+	// MinDESOExpectedNanos    uint64
 	data = append(data, UintToBuf(uint64(txnData.MinDeSoExpectedNanos))...)
 	// MinCreatorCoinExpectedNanos uint64
 	data = append(data, UintToBuf(uint64(txnData.MinCreatorCoinExpectedNanos))...)
@@ -3796,10 +3820,10 @@ func (txnData *CreatorCoinMetadataa) FromBytes(dataa []byte) error {
 	}
 	ret.OperationType = CreatorCoinOperationType(operationType)
 
-	// DeSoToSellNanos    uint64
+	// DESOToSellNanos    uint64
 	ret.DeSoToSellNanos, err = ReadUvarint(rr)
 	if err != nil {
-		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading DeSoToSellNanos: %v", err)
+		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading DESOToSellNanos: %v", err)
 	}
 
 	// CreatorCoinToSellNanos uint64
@@ -3808,16 +3832,16 @@ func (txnData *CreatorCoinMetadataa) FromBytes(dataa []byte) error {
 		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading CreatorCoinToSellNanos: %v", err)
 	}
 
-	// DeSoToAddNanos     uint64
+	// DESOToAddNanos     uint64
 	ret.DeSoToAddNanos, err = ReadUvarint(rr)
 	if err != nil {
-		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading DeSoToAddNanos: %v", err)
+		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading DESOToAddNanos: %v", err)
 	}
 
-	// MinDeSoExpectedNanos    uint64
+	// MinDESOExpectedNanos    uint64
 	ret.MinDeSoExpectedNanos, err = ReadUvarint(rr)
 	if err != nil {
-		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading MinDeSoExpectedNanos: %v", err)
+		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading MinDESOExpectedNanos: %v", err)
 	}
 
 	// MinCreatorCoinExpectedNanos uint64

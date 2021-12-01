@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"context"
+	"database/sql"
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/deso-protocol/core/migrations"
+	"github.com/uptrace/bun"
 	"net"
 	"os"
 	"time"
@@ -13,14 +17,15 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/core/lib"
-	"github.com/deso-protocol/core/migrate"
 	"github.com/dgraph-io/badger/v3"
-	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
-	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/sasha-s/go-deadlock"
+	"github.com/uptrace/bun/dialect/mysqldialect"
+	"github.com/uptrace/bun/migrate"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 type Node struct {
@@ -116,25 +121,38 @@ func (node *Node) Start() {
 	}
 
 	// Setup postgres using a remote URI
-	var db *pg.DB
+	var db *bun.DB
 	if node.Config.PostgresURI != "" {
-		options, err := pg.ParseURL(node.Config.PostgresURI)
+		sqldb, err := sql.Open("mysql", node.Config.PostgresURI)
 		if err != nil {
 			panic(err)
 		}
 
-		db = pg.Connect(options)
+		// See https://github.com/go-sql-driver/mysql/#important-settings
+		sqldb.SetConnMaxLifetime(time.Minute * 3)
+		sqldb.SetMaxOpenConns(10)
+		sqldb.SetMaxIdleConns(10)
+
+		db = bun.NewDB(sqldb, mysqldialect.New())
 		node.Postgres = lib.NewPostgres(db)
+		//db.AddQueryHook(lib.NewQueryHook(lib.WithVerbose(true)))
 
-		// LoadMigrations registers all the migration files in the migrate package.
-		// See LoadMigrations for more info.
-		migrate.LoadMigrations()
+		migrator := migrate.NewMigrator(db, migrations.Migrations)
 
-		// Migrate the database after loading all the migrations. This is equivalent
-		// to running "go run migrate.go migrate". See migrate.go for a migrations CLI tool
-		err = migrations.Run(db, "migrate", []string{"", "migrate"})
+		err = migrator.Init(context.Background())
 		if err != nil {
 			panic(err)
+		}
+
+		group, err := migrator.Migrate(context.Background())
+		if err != nil {
+			panic(err)
+		}
+
+		if group.ID == 0 {
+			fmt.Printf("there are no new migrations to run\n")
+		} else {
+			fmt.Printf("migrated to %s\n", group)
 		}
 	}
 
