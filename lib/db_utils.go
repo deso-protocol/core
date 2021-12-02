@@ -231,6 +231,7 @@ var (
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix, OwnerPublicKey [33]byte> -> <>
+	// FUUUCK THERE IS ANOTHER PREFIX STARTING WITH 54
 	_PrefixAuthorizeDerivedKey = []byte{54}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
@@ -2833,7 +2834,7 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNo
 				return err
 			}
 
-			// If we got hear it means we read a blockNode successfully. Store it
+			// If we got here it means we read a blockNode successfully. Store it
 			// into our node index.
 			blockIndex[*blockNode.Hash] = blockNode
 
@@ -5647,6 +5648,8 @@ func LogDBSummarySnapshot(db *badger.DB) {
 
 func StartDBSummarySnapshots(db *badger.DB) {
 	// Periodically count the number of keys for each prefix in the DB and log.
+	// Note: every 30 seconds? That's a looot of DB scans. Should remove
+	// This is interesting
 	go func() {
 		for {
 			// Figure out how many keys there are for each prefix and log.

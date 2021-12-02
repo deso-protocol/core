@@ -422,6 +422,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		rateLimit := false
 		unconnectedTxns := true
 		verifySignatures := false
+		// NOTE: Extremely inefficient.
 		_, err := newPool.processTransaction(unconnectedTx.tx, unconnectedTxns, rateLimit, unconnectedTx.peerID, verifySignatures)
 		if err != nil {
 			glog.Warning(errors.Wrapf(err, "UpdateAfterConnectBlock: "))

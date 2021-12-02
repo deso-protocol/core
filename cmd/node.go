@@ -51,6 +51,7 @@ func (node *Node) Start() {
 
 	// Print config
 	node.Config.Print()
+	glog.Errorf("Start() | After node config")
 
 	// Check for regtest mode
 	if node.Config.Regtest {
@@ -79,6 +80,8 @@ func (node *Node) Start() {
 	desoAddrMgr := addrmgr.New(node.Config.DataDirectory, net.LookupIP)
 	desoAddrMgr.Start()
 
+	// COMMENT: This just gets localhost listening addresses on port 18000
+	// like [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs
 	listeningAddrs, listeners := getAddrsToListenOn(node.Config.ProtocolPort)
 
 	for _, addr := range listeningAddrs {
@@ -86,6 +89,8 @@ func (node *Node) Start() {
 		_ = desoAddrMgr.AddLocalAddress(netAddr, addrmgr.BoundPrio)
 	}
 
+	// If no --connect-ips is passed, we will connect the addresses from
+	// --add-ips, DNSSeeds, and DNSSeedGenerators.
 	if len(node.Config.ConnectIPs) == 0 {
 		for _, host := range node.Config.AddIPs {
 			addIPsForHost(desoAddrMgr, host, node.Params)
@@ -95,6 +100,7 @@ func (node *Node) Start() {
 			addIPsForHost(desoAddrMgr, host, node.Params)
 		}
 
+		// This is where we seed deso-seed-*.io
 		if !node.Config.PrivateMode {
 			go addSeedAddrsFromPrefixes(desoAddrMgr, node.Params)
 		}
@@ -154,6 +160,7 @@ func (node *Node) Start() {
 		node.Config.MinerPublicKeys,
 		node.Config.NumMiningThreads,
 		node.Config.OneInboundPerIp,
+		node.Config.HyperSync,
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,
 		node.Config.StallTimeoutSeconds,
@@ -291,7 +298,6 @@ func getAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
 		listeners = append(listeners, listener)
 		listeningAddrs = append(listeningAddrs, netAddr)
 	}
-
 	return listeningAddrs, listeners
 }
 

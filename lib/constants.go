@@ -122,7 +122,7 @@ var (
 	// NFTTransfersBlockHeight defines the height at which NFT transfer txns, accept NFT
 	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
 	// Triggers: 12PM PT on 9/15/2021
-	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 )
 
 func (nt NetworkType) String() string {
@@ -454,7 +454,7 @@ var DeSoMainnetParams = DeSoParams{
 
 	// We use a start node that is near the tip of the Bitcoin header chain. Doing
 	// this allows us to bootstrap Bitcoin transactions much more quickly without
-	// comrpomising on security because, if this node ends up not being on the best
+	// compromising on security because, if this node ends up not being on the best
 	// chain one day (which would be completely ridiculous anyhow because it would mean that
 	// days or months of bitcoin transactions got reverted), our code will still be
 	// able to robustly switch to an alternative chain that has more work. It's just
@@ -462,9 +462,9 @@ var DeSoMainnetParams = DeSoParams{
 	// to the --assumevalid Bitcoin flag).
 	//
 	// Process for generating this config:
-	// - Find a node config from the test_nodes folder (we used fe0)
+	// - Find a node config from the scripts/nodes folder (we used n0)
 	// - Make sure the logging for bitcoin_manager is set to 2. --vmodule="bitcoin_manager=2"
-	// - Run the node config (./fe0)
+	// - Run the node config (./n0)
 	// - A line should print every time there's a difficulty adjustment with the parameters
 	//   required below (including "DiffBits"). Just copy those into the below and
 	//   everything should work.
@@ -490,7 +490,7 @@ var DeSoMainnetParams = DeSoParams{
 
 	BitcoinExchangeFeeBasisPoints:   10,
 	BitcoinDoubleSpendWaitSeconds:   5.0,
-	DeSoNanosPurchasedAtGenesis: uint64(6000000000000000),
+	DeSoNanosPurchasedAtGenesis:     uint64(6000000000000000),
 	DefaultSocketPort:               uint16(17000),
 	DefaultJSONPort:                 uint16(17001),
 
@@ -554,10 +554,10 @@ var DeSoMainnetParams = DeSoParams{
 
 	// Set the stake fee to 10%
 	StakeFeeBasisPoints: 10 * 100,
-	// TODO(performance): We're currently storing posts using HTML, which
-	// basically 2x as verbose as it needs to be for basically no reason.
-	// We should consider storing stuff as markdown instead, which we can
-	// do with the richtext editor thing that we have.
+	// TODO(performance): We're currently storing posts using HTML, which is
+	// basically 2x as verbose as it needs to be for no reason. We should
+	// consider storing stuff as markdown instead, which we can do with
+	// the richtext editor thing that we have.
 	MaxPostBodyLengthBytes: 20000,
 	MaxPostSubLengthBytes:  140,
 	// 10x is the max for the truly highly motivated individuals.

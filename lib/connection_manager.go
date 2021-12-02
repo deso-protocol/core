@@ -54,6 +54,9 @@ type ConnectionManager struct {
 	// among other things.
 	limitOneInboundConnectionPerIP bool
 
+	// When --hyper-sync is set to true we will attempt fast block synchronization
+	hyperSync bool
+
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
 	sentNonces lru.Cache
@@ -120,6 +123,7 @@ func NewConnectionManager(
 	_connectIps []string, _timeSource chainlib.MedianTimeSource,
 	_targetOutboundPeers uint32, _maxInboundPeers uint32,
 	_limitOneInboundConnectionPerIP bool,
+	_hyperSync bool,
 	_stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
 	_serverMessageQueue chan *ServerMessage,
@@ -152,6 +156,7 @@ func NewConnectionManager(
 		targetOutboundPeers:            _targetOutboundPeers,
 		maxInboundPeers:                _maxInboundPeers,
 		limitOneInboundConnectionPerIP: _limitOneInboundConnectionPerIP,
+		hyperSync:                      _hyperSync,
 		serverMessageQueue:             _serverMessageQueue,
 		stallTimeoutSeconds:            _stallTimeoutSeconds,
 		minFeeRateNanosPerKB:           _minFeeRateNanosPerKB,
@@ -267,7 +272,7 @@ func (cmgr *ConnectionManager) enoughOutboundPeers() bool {
 	return false
 }
 
-// Chooses a random address and tries to connect to it. Repeats this proocess until
+// Chooses a random address and tries to connect to it. Repeats this process until
 // it finds a peer that can pass version negotiation.
 func (cmgr *ConnectionManager) _getOutboundConn(persistentAddr *wire.NetAddress) net.Conn {
 	// If a persistentAddr was provided then the connection is a persistent
@@ -379,12 +384,14 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.N
 	isPersistent := (persistentAddr != nil)
 	retryCount := 0
 	for {
+		// If the peer is persistent use exponential back off delay before retrying.
 		if isPersistent {
 			_delayRetry(retryCount, persistentAddr)
 		}
 		retryCount++
 
 		// If this is an outbound peer, create an outbound connection.
+		// TEMP: This blocks until it finds an outbound peer or returns nil
 		if isOutbound {
 			conn = cmgr._getOutboundConn(persistentAddr)
 		}

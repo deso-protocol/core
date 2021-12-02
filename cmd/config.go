@@ -16,6 +16,7 @@ type Config struct {
 	TXIndex              bool
 	Regtest              bool
 	PostgresURI          string
+	HyperSync            bool
 
 	// Peers
 	ConnectIPs          []string
@@ -84,6 +85,7 @@ func LoadConfig() *Config {
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
+	config.HyperSync = viper.GetBool("hyper-sync")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
@@ -140,6 +142,10 @@ func (config *Config) Print() {
 
 	if config.PostgresURI != "" {
 		glog.Infof("Postgres URI: %s", config.PostgresURI)
+	}
+
+	if config.HyperSync {
+		glog.Infof("Hyper Sync: ON")
 	}
 
 	if len(config.ConnectIPs) > 0 {

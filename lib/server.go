@@ -251,14 +251,14 @@ func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 //   just acting as a router.
 // - When the Server receives a message from a peer, it can do any of the following:
 //   * Take no action.
-//   * Use the Blockchain data structure to validate the transaction or update the.
+//   * Use the Blockchain data structure to validate the transaction or update the
 //     Blockchain data structure.
 //   * Send a new message. This can be a message directed back to that actually sent this
 //     message or it can be a message to another peer for whatever reason. When a message
 //     is sent in this way it can also have a deadline on it that the peer needs to
 //     respond by or else it will be disconnected.
 //   * Disconnect the peer. In this case the ConnectionManager gets notified about the
-//     disconnection and may opt to replace the now-disconnected peer with a  new peer.
+//     disconnection and may opt to replace the now-disconnected peer with a new peer.
 //     This happens for example when an outbound peer is disconnected in order to
 //     maintain TargetOutboundPeers.
 // - The server could also receive a control message that a peer has been disconnected.
@@ -279,6 +279,7 @@ func NewServer(
 	_minerPublicKeys []string,
 	_numMiningThreads uint64,
 	_limitOneInboundConnectionPerIP bool,
+	_hyperSync bool,
 	_rateLimitFeerateNanosPerKB uint64,
 	_minFeeRateNanosPerKB uint64,
 	_stallTimeoutSeconds uint64,
@@ -316,7 +317,7 @@ func NewServer(
 	_cmgr := NewConnectionManager(
 		_params, _desoAddrMgr, _listeners, _connectIps, timesource,
 		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
-		_stallTimeoutSeconds, _minFeeRateNanosPerKB,
+		_hyperSync, _stallTimeoutSeconds, _minFeeRateNanosPerKB,
 		_incomingMessages, srv)
 
 	// Set up the blockchain data structure. This is responsible for accepting new
@@ -432,6 +433,7 @@ func NewServer(
 
 	// This will initialize the request queues.
 	srv.ResetRequestQueues()
+	glog.Infof("Server.NewServer Hyper Sync %v", srv.cmgr.hyperSync)
 
 	return srv, nil
 }
@@ -1050,8 +1052,7 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	// need each mempool update to happen in the same order as that in which
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
-	newlyAcceptedTxns := srv.mempool.UpdateAfterConnectBlock(blk)
-	_ = newlyAcceptedTxns
+	_ = srv.mempool.UpdateAfterConnectBlock(blk)
 
 	blockHash, _ := blk.Header.Hash()
 	glog.Debugf("_handleBlockMainChainConnected: Block %s height %d connected to "+
@@ -1110,6 +1111,7 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 	// that now. This covers the case where our node is behind when it boots
 	// up, making it so that right at the end of the node's initial sync, after
 	// everything has been connected, we then bootstrap our mempool.
+	// NOTE: THIS LOOKS POINTLESS
 	srv._maybeRequestSync(nil)
 
 	// Construct an inventory vector to relay to peers.
@@ -1706,10 +1708,13 @@ func (srv *Server) Start() {
 	// finds some Peers.
 	glog.Info("Server.Start: Starting Server")
 	srv.waitGroup.Add(1)
+	// Probably wanna add some shit to this function
 	go srv.messageHandler()
 
+	// Most likely nothing to do here
 	go srv._startAddressRelayer()
 
+	// Most likely nothing to do here
 	go srv._startTransactionRelayer()
 
 	// Once the ConnectionManager is started, peers will be found and connected to and
