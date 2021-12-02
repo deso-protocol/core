@@ -122,7 +122,7 @@ func TestCheckForPrefixOverlap(t *testing.T) {
 			}
 
 			err = errors.Errorf("Didn't find DB prefix at %v, did you forget to add " +
-				"your newly-added prefix to CheckForPrefixOverlap()?", ii)
+				"your newly-added prefix to TestCheckForPrefixOverlap()?", ii)
 		} else {
 			// Make sure we didn't forget to increment NEXT_PREFIX.
 			if ii == NEXT_PREFIX {
