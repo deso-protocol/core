@@ -1,6 +1,10 @@
 package lib
 
 import (
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"github.com/pkg/errors"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -13,6 +17,128 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestCheckForPrefixOverlap tests for overlapping BadgerDb prefixes.
+// A prefix overlap can lead to potential exploits, so we want to ensure they are disjoint.
+func TestCheckForPrefixOverlap(t *testing.T) {
+	require := require.New(t)
+	var err error
+
+	prefixList := [][]byte{
+		_PrefixBlockHashToBlock,
+		_PrefixHeightHashToNodeInfo,
+		_PrefixBitcoinHeightHashToNodeInfo,
+		_KeyBestDeSoBlockHash,
+		_KeyBestBitcoinHeaderHash,
+		_PrefixUtxoKeyToUtxoEntry,
+		_PrefixPubKeyUtxoKey,
+		_KeyUtxoNumEntries,
+		_PrefixBlockHashToUtxoOperations,
+		_KeyNanosPurchased,
+		_KeyUSDCentsPerBitcoinExchangeRate,
+		_KeyGlobalParams,
+		_PrefixBitcoinBurnTxIDs,
+		_PrefixPublicKeyTimestampToPrivateMessage,
+		_KeyTransactionIndexTip,
+		_PrefixTransactionIDToMetadata,
+		_PrefixPublicKeyIndexToTransactionIDs,
+		_PrefixPublicKeyToNextIndex,
+		_PrefixPostHashToPostEntry,
+		_PrefixPosterPublicKeyPostHash,
+		_PrefixTstampNanosPostHash,
+		_PrefixCreatorBpsPostHash,
+		_PrefixMultipleBpsPostHash,
+		_PrefixCommentParentStakeIDToPostHash,
+		_PrefixPKIDToProfileEntry,
+		_PrefixProfileUsernameToPKID,
+		_PrefixCreatorDeSoLockedNanosCreatorPKID,
+		_PrefixStakeIDTypeAmountStakeIDIndex,
+		_PrefixFollowerPKIDToFollowedPKID,
+		_PrefixFollowedPKIDToFollowerPKID,
+		_PrefixLikerPubKeyToLikedPostHash,
+		_PrefixLikedPostHashToLikerPubKey,
+		_PrefixHODLerPKIDCreatorPKIDToBalanceEntry,
+		_PrefixCreatorPKIDHODLerPKIDToBalanceEntry,
+		_PrefixPosterPublicKeyTimestampPostHash,
+		_PrefixPublicKeyToPKID,
+		_PrefixPKIDToPublicKey,
+		_PrefixMempoolTxnHashToMsgDeSoTxn,
+		_PrefixReposterPubKeyRepostedPostHashToRepostPostHash,
+		_PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash,
+		_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash,
+		_PrefixForbiddenBlockSignaturePubKeys,
+		_PrefixRepostedPostHashReposterPubKey,
+		_PrefixRepostedPostHashReposterPubKeyRepostPostHash,
+		_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel,
+		_PrefixPostHashSerialNumberToNFTEntry,
+		_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry,
+		_PrefixPostHashSerialNumberBidNanosBidderPKID,
+		_PrefixBidderPKIDPostHashSerialNumberToBidNanos,
+		_PrefixPostHashSerialNumberToAcceptedBidEntries,
+		_PrefixPublicKeyToDeSoBalanceNanos,
+		_PrefixPublicKeyBlockHashToBlockReward,
+		_PrefixAuthorizeDerivedKey,
+	}
+
+	// If we skipped some prefix, add it here.
+	prefixExceptions := [][]byte{
+		{6},
+		{13},
+		{24},
+		{54},
+	}
+
+	// Make sure there is no overlap among added prefixes.
+	prefixMap := make(map[string]bool)
+	for _, prefix := range prefixList {
+		key := hex.EncodeToString(prefix)
+		if _, exists := prefixMap[key]; exists {
+			err = errors.Errorf("Found DB prefix conflict at %v", prefix)
+		}
+		prefixMap[key] = true
+	}
+
+	// Make sure we didn't forget to add the new prefix to prefixList.
+	// We iterate through all prefixes from 0 to NEXT_PREFIX to see if we missed something.
+	for i := uint32(0); i <= NEXT_PREFIX; i++ {
+		// Encode i to Little Endian []byte and remove trailing zeros.
+		iBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint32(iBytes, i)
+		for ;len(iBytes) > 1 && iBytes[len(iBytes) - 1] == 0; {
+			iBytes = iBytes[:len(iBytes)-1]
+		}
+
+		// There are some exceptions, so we skip those prefixes.
+		exception := false
+		for _, v := range prefixExceptions {
+			if bytes.Equal(iBytes, v) {
+				exception = true
+			}
+		}
+
+
+		if _, exists := prefixMap[hex.EncodeToString(iBytes)]; !exists {
+			if exception || i == NEXT_PREFIX {
+				continue
+			}
+
+			err = errors.Errorf("Didn't find DB prefix at %v, did you forget to add " +
+				"your newly-added prefix to CheckForPrefixOverlap()?", i)
+		} else {
+			// Make sure we didn't forget to increment NEXT_PREFIX.
+			if i == NEXT_PREFIX {
+				err = errors.Errorf("NEXT_PREFIX should not be equal to an existing prefix, " +
+					"make sure to increment it from %v.", NEXT_PREFIX)
+			}
+			if exception {
+				err = errors.Errorf("There is an exception added for the existing prefix at %v, " +
+					"you must modify this prefix.", i)
+			}
+		}
+	}
+
+	require.NoError(err)
+}
 
 func _GetTestBlockNode() *BlockNode {
 	bs := BlockNode{}
