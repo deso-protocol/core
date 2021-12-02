@@ -708,7 +708,7 @@ type UtxoView struct {
 	// Utxo data
 	NumUtxoEntries              uint64
 	UtxoKeyToUtxoEntry          map[UtxoKey]*UtxoEntry
-	PublicKeyToDeSoBalanceNanos map[PkMapKey]uint64
+	PublicKeyToDeSoBalanceNanos map[PublicKey]uint64
 
 	// BitcoinExchange data
 	NanosPurchased     uint64
@@ -952,6 +952,29 @@ type UtxoOperation struct {
 	// Save the global params when making an update.
 	PrevGlobalParamsEntry    *GlobalParamsEntry
 	PrevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
+
+	// This value is used by Rosetta to adjust for a bug whereby a ParamUpdater
+	// CoinEntry could get clobbered if updating a profile on someone else's
+	// behalf. This is super confusing.
+	ClobberedProfileBugDESOLockedNanos uint64
+
+	// This value is used by Rosetta to return the amount of DESO that was added
+	// or removed from a profile during a CreatorCoin transaction. It's needed
+	// in order to avoid having to reconnect all transactions.
+	CreatorCoinDESOLockedNanosDiff int64
+
+	// This value is used by Rosetta to create a proper input/output when we
+	// encounter a SwapIdentity txn. This makes it so that we don't have to
+	// reconnect all txns in order to get these values.
+	SwapIdentityFromDESOLockedNanos uint64
+	SwapIdentityToDESOLockedNanos uint64
+
+	// These values are used by Rosetta in order to create input and output
+	// operations. They make it so that we don't have to reconnect all txns
+	// in order to get these values.
+	AcceptNFTBidCreatorPublicKey []byte
+	AcceptNFTBidBidderPublicKey []byte
+	AcceptNFTBidCreatorRoyaltyNanos uint64
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -961,7 +984,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry)
 	// TODO: Deprecate this value
 	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle)
-	bav.PublicKeyToDeSoBalanceNanos = make(map[PkMapKey]uint64)
+	bav.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64)
 
 	// BitcoinExchange data
 	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle)
@@ -1024,7 +1047,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.NumUtxoEntries = bav.NumUtxoEntries
 
 	// Copy the public key to balance data
-	newView.PublicKeyToDeSoBalanceNanos = make(map[PkMapKey]uint64, len(bav.PublicKeyToDeSoBalanceNanos))
+	newView.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64, len(bav.PublicKeyToDeSoBalanceNanos))
 	for pkMapKey, desoBalance := range bav.PublicKeyToDeSoBalanceNanos {
 		newView.PublicKeyToDeSoBalanceNanos[pkMapKey] = desoBalance
 	}
@@ -1277,7 +1300,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 }
 
 func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
-	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(publicKey)]
+	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
 	}
@@ -1294,7 +1317,7 @@ func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, 
 	}
 
 	// Add the balance to memory for future references.
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(publicKey)] = balanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)] = balanceNanos
 
 	return balanceNanos, nil
 }
@@ -1329,7 +1352,7 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 		return errors.Wrap(err, "_unSpendUtxo: ")
 	}
 	desoBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntryy.PublicKey)] = desoBalanceNanos
 
 	return nil
 }
@@ -1363,7 +1386,7 @@ func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
 		return nil, errors.Wrapf(err, "_spendUtxo: ")
 	}
 	desoBalanceNanos -= utxoEntry.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntry.PublicKey)] = desoBalanceNanos
 
 	// Record a UtxoOperation in case we want to roll this back in the
 	// future. At this point, the UtxoEntry passed in still has all of its
@@ -1409,7 +1432,7 @@ func (bav *UtxoView) _unAddUtxo(utxoKey *UtxoKey) error {
 		return errors.Wrapf(err, "_unAddUtxo: ")
 	}
 	desoBalanceNanos -= utxoEntry.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntry.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntry.PublicKey)] = desoBalanceNanos
 
 	return nil
 }
@@ -1460,7 +1483,7 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 		return nil, errors.Wrapf(err, "_addUtxo: ")
 	}
 	desoBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[MakePkMapKey(utxoEntryy.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntryy.PublicKey)] = desoBalanceNanos
 
 	// Finally record a UtxoOperation in case we want to roll back this ADD
 	// in the future. Note that Entry data isn't required for an ADD operation.
@@ -3220,10 +3243,16 @@ func (bav *UtxoView) DisconnectBlock(
 
 	// Verify the number of ADD and SPEND operations in the utxOps list is equal
 	// to the number of outputs and inputs in the block respectively.
+	//
+	// There is a special case, which is that BidderInputs count as inputs in a
+	// txn and they result in SPEND operations being created.
 	numInputs := 0
 	numOutputs := 0
 	for _, txn := range desoBlock.Txns {
 		numInputs += len(txn.TxInputs)
+		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+			numInputs += len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
+		}
 		numOutputs += len(txn.TxOutputs)
 	}
 	numSpendOps := 0
@@ -5608,7 +5637,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
 	if _, exists := extraData[ForbiddenBlockSignaturePubKeyKey]; exists {
-		forbiddenPubKey := extraData[ForbiddenBlockSignaturePubKeyKey]
+		forbiddenPubKey = extraData[ForbiddenBlockSignaturePubKeyKey]
 
 		if len(forbiddenPubKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, RuleErrorForbiddenPubKeyLength
@@ -6574,6 +6603,11 @@ func (bav *UtxoView) _connectUpdateProfile(
 		*prevProfileEntry = *existingProfileEntry
 	}
 
+	// This is an adjustment factor that we track for Rosetta. It adjusts
+	// the amount of DeSo to make up for a bug whereby a profile's DeSo locked
+	// could get clobbered during a ParamUpdater txn.
+	clobberedProfileBugDeSoAdjustment := uint64(0)
+
 	// If a profile already exists then we only update fields that are set.
 	var newProfileEntry ProfileEntry
 	if existingProfileEntry != nil && !existingProfileEntry.isDeleted {
@@ -6634,6 +6668,19 @@ func (bav *UtxoView) _connectUpdateProfile(
 		profileEntryPublicKey := txn.PublicKey
 		if blockHeight > ParamUpdaterProfileUpdateFixBlockHeight {
 			profileEntryPublicKey = profilePublicKey
+		} else if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) {
+			// In this case a clobbering will occur if there was a pre-existing profile
+			// associated with txn.PublicKey. In this case, we save the
+			// DESO locked of the previous profile associated with the
+			// txn.PublicKey. Sorry this is confusing...
+
+			// Look up the profile of the txn.PublicKey
+			clobberedProfileEntry := bav.GetProfileEntryForPublicKey(txn.PublicKey)
+			// Save the amount of DESO locked in the profile since this is going to
+			// be clobbered.
+			if clobberedProfileEntry != nil && !clobberedProfileEntry.isDeleted {
+				clobberedProfileBugDeSoAdjustment = clobberedProfileEntry.CoinEntry.DeSoLockedNanos
+			}
 		}
 
 		newProfileEntry = ProfileEntry{
@@ -6649,6 +6696,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 				// appropriate default value for all of them.
 			},
 		}
+
 	}
 	// At this point the newProfileEntry should be set to what we actually
 	// want to store in the db.
@@ -6670,8 +6718,9 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 	// Add an operation to the list at the end indicating we've updated a profile.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:             OperationTypeUpdateProfile,
-		PrevProfileEntry: prevProfileEntry,
+		Type:                               OperationTypeUpdateProfile,
+		PrevProfileEntry:                   prevProfileEntry,
+		ClobberedProfileBugDESOLockedNanos: clobberedProfileBugDeSoAdjustment,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -7060,6 +7109,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 	}
 	totalBidderInput := uint64(0)
 	spentUtxoEntries := []*UtxoEntry{}
+	utxoOpsForTxn := []*UtxoOperation{}
 	for _, bidderInput := range txMeta.BidderInputs {
 		bidderUtxoKey := UtxoKey(*bidderInput)
 		bidderUtxoEntry := bav.GetUtxoEntryForUtxoKey(&bidderUtxoKey)
@@ -7080,11 +7130,14 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		totalBidderInput += bidderUtxoEntry.AmountNanos
 
 		// Make sure we spend the utxo so that the bidder can't reuse it.
-		_, err := bav._spendUtxo(&bidderUtxoKey)
+		utxoOp, err := bav._spendUtxo(&bidderUtxoKey)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem spending bidder utxo")
 		}
 		spentUtxoEntries = append(spentUtxoEntries, bidderUtxoEntry)
+
+		// Track the UtxoOperations so we can rollback, and for Rosetta
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	}
 
 	if totalBidderInput < txMeta.BidAmountNanos {
@@ -7121,11 +7174,13 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+	totalInput, totalOutput, utxoOpsFromBasicTransfer, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: ")
 	}
+	// Append the basic transfer utxoOps to our list
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsFromBasicTransfer...)
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
@@ -7273,10 +7328,15 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	}
 
+	// We don't do a royalty if the number of coins in circulation is too low.
+	if existingProfileEntry.CoinsInCirculationNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+		creatorCoinRoyaltyNanos = 0
+	}
+
 	// (6) Add creator coin royalties to deso locked. If the number of coins in circulation is
 	// less than the "auto sell threshold" we burn the deso.
 	newCoinEntry := prevCoinEntry
-	if creatorCoinRoyaltyNanos > 0 && existingProfileEntry.CoinsInCirculationNanos >= bav.Params.CreatorCoinAutoSellThresholdNanos {
+	if creatorCoinRoyaltyNanos > 0 {
 		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
 		newCoinEntry.DeSoLockedNanos += creatorCoinRoyaltyNanos
 		existingProfileEntry.CoinEntry = newCoinEntry
@@ -7299,6 +7359,11 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		NFTPaymentUtxoKeys:        nftPaymentUtxoKeys,
 		NFTSpentUtxoEntries:       spentUtxoEntries,
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
+
+		// Rosetta fields.
+		AcceptNFTBidCreatorPublicKey: nftPostEntry.PosterPublicKey,
+		AcceptNFTBidBidderPublicKey: bidderPublicKey,
+		AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
 	})
 
 	// HARDCORE SANITY CHECK:
@@ -7480,7 +7545,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
-		return 0, 0, nil, RuleErrorNFTTranserBeforeBlockHeight
+		return 0, 0, nil, RuleErrorNFTTransferBeforeBlockHeight
 	}
 
 	// Check that the transaction has the right TxnType.
@@ -7605,7 +7670,7 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
-		return 0, 0, nil, RuleErrorAcceptNFTTranserBeforeBlockHeight
+		return 0, 0, nil, RuleErrorAcceptNFTTransferBeforeBlockHeight
 	}
 
 	// Check that the transaction has the right TxnType.
@@ -7899,9 +7964,24 @@ func (bav *UtxoView) _connectSwapIdentity(
 		}
 	}
 
+	// Rosetta needs to know the current locked deso in each profile so it can model the swap of
+	// the creator coins. Rosetta models a swap identity as two INPUTs and two OUTPUTs effectively
+	// swapping the balances of total deso locked. If no profile exists, from/to is zero.
+	fromNanos := uint64(0)
+	if fromProfileEntry != nil {
+		fromNanos = fromProfileEntry.CoinEntry.DeSoLockedNanos
+	}
+	toNanos := uint64(0)
+	if toProfileEntry != nil {
+		toNanos = toProfileEntry.CoinEntry.DeSoLockedNanos
+	}
+
 	// Add an operation to the list at the end indicating we've swapped identities.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypeSwapIdentity,
+		// Rosetta fields
+		SwapIdentityFromDESOLockedNanos: fromNanos,
+		SwapIdentityToDESOLockedNanos: toNanos,
 
 		// Note that we don't need any metadata on this operation, since the swap is reversible
 		// without it.
@@ -8610,6 +8690,15 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		}
 	}
 
+	// Compute the change in DESO locked. This information is needed by Rosetta
+	// and it's much more efficient to compute it here than it is to recompute
+	// it later.
+	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
+		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing " +
+			"desoLockedNanosDiff: Missing profile")
+	}
+	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
+
 	// Add an operation to the list at the end indicating we've executed a
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
@@ -8619,6 +8708,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		PrevTransactorBalanceEntry: &prevBuyerBalanceEntry,
 		PrevCreatorBalanceEntry:    &prevCreatorBalanceEntry,
 		FounderRewardUtxoKey:       outputKey,
+		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
 	})
 
 	return totalInput, totalOutput, coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, utxoOpsForTxn, nil
@@ -8879,6 +8969,16 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// Rosetta uses this UtxoOperation to provide INPUT amounts
 	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 
+	// Compute the change in DESO locked. This information is needed by Rosetta
+	// and it's much more efficient to compute it here than it is to recompute
+	// it later.
+	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
+		return 0, 0, 0, nil, errors.Wrapf(
+			err, "HelpConnectCreatorCoinSell: Error computing " +
+			"desoLockedNanosDiff: Missing profile")
+	}
+	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
+
 	// Add an operation to the list at the end indicating we've executed a
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
@@ -8887,6 +8987,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		PrevCoinEntry:              &prevCoinEntry,
 		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
 		PrevCreatorBalanceEntry:    nil,
+		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
 	})
 
 	// The DeSo that the user gets from selling their creator coin counts
@@ -9478,7 +9579,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 }
 
 func (bav *UtxoView) ConnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool) (
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager) (
 	[][]*UtxoOperation, error) {
 
 	glog.Debugf("ConnectBlock: Connecting block %v", desoBlock)
@@ -9522,6 +9623,20 @@ func (bav *UtxoView) ConnectBlock(
 
 		// Add the utxo operations to our list for all the txns.
 		utxoOps = append(utxoOps, utxoOpsForTxn)
+
+		// TODO: This should really be called at the end of _connectTransaction but it's
+		// really annoying to change all the call signatures right now and we don't really
+		// need it just yet.
+		//
+		// Call the event manager
+		if eventManager != nil {
+			eventManager.transactionConnected(&TransactionEvent{
+				Txn:      txn,
+				TxnHash:  txHash,
+				UtxoView: bav,
+				UtxoOps:  utxoOpsForTxn,
+			})
+		}
 	}
 
 	// We should now have computed totalFees. Use this to check that

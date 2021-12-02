@@ -1553,6 +1553,10 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	require.NoError(err)
 	require.Equal(1, len(txDescsAdded))
 
+	// Make sure that the forbidden pub key made it into the mempool properly.
+	_, entryExists := mempool.universalUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(blockSignerPkBytes)]
+	require.True(entryExists)
+
 	// Mine the transaction.
 	forbiddenPubKeyBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)

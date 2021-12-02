@@ -52,6 +52,7 @@ type Server struct {
 	mempool       *DeSoMempool
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
+	eventManager  *EventManager
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -295,6 +296,7 @@ func NewServer(
 	_blockProducerSeed string,
 	_trustedBlockProducerPublicKeys []string,
 	_trustedBlockProducerStartHeight uint64,
+	eventManager *EventManager,
 ) (*Server, error) {
 
 	// Create an empty Server object here so we can pass a reference to it to the
@@ -329,13 +331,18 @@ func NewServer(
 	//
 	// TODO: Would be nice if this heavier-weight operation were moved to Start() to
 	// keep this constructor fast.
+	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
+	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
+	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
+
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys,
 		_trustedBlockProducerStartHeight,
-		_params, timesource, _db, postgres, sqsQueue, srv)
+		_params, timesource, _db, postgres, sqsQueue, eventManager)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain")
 	}
+
 	glog.Debugf("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
 		_chain.headerTip().Height,
 		hex.EncodeToString(_chain.headerTip().Hash[:]),
@@ -1026,11 +1033,16 @@ func (srv *Server) _addNewTxn(
 
 // It's assumed that the caller will hold the ChainLock for reading so
 // that the mempool transactions don't shift under our feet.
-func (srv *Server) _handleBlockMainChainConnectedd(blk *MsgDeSoBlock) {
+func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
+	blk := event.Block
 
 	// Don't do anything mempool-related until our best block chain is done
 	// syncing.
-	if srv.blockchain.isSyncing() {
+	//
+	// We add a second check as an edge-case to protect against when
+	// this function is called with an uninitialized blockchain object. This
+	// can happen during initChain() for example.
+	if srv.blockchain == nil || !srv.blockchain.isInitialized || srv.blockchain.isSyncing() {
 		return
 	}
 
@@ -1049,7 +1061,8 @@ func (srv *Server) _handleBlockMainChainConnectedd(blk *MsgDeSoBlock) {
 
 // It's assumed that the caller will hold the ChainLock for reading so
 // that the mempool transactions don't shift under our feet.
-func (srv *Server) _handleBlockMainChainDisconnectedd(blk *MsgDeSoBlock) {
+func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
+	blk := event.Block
 
 	// Don't do anything mempool-related until our best block chain is done
 	// syncing.
@@ -1085,7 +1098,9 @@ func (srv *Server) _maybeRequestSync(pp *Peer) {
 	}
 }
 
-func (srv *Server) _handleBlockAccepted(blk *MsgDeSoBlock) {
+func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
+	blk := event.Block
+
 	// Don't relay blocks until our best block chain is done syncing.
 	if srv.blockchain.isSyncing() {
 		return
@@ -1462,8 +1477,6 @@ func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_should
 		srv._handleNewPeer(serverMessage.Peer)
 	case *MsgDeSoDonePeer:
 		srv._handleDonePeer(serverMessage.Peer)
-	case *MsgDeSoBlockAccepted:
-		srv._handleBlockAccepted(msg.block)
 	case *MsgDeSoBitcoinManagerUpdate:
 		srv._handleBitcoinManagerUpdate(msg)
 	case *MsgDeSoQuit:
