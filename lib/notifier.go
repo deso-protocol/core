@@ -174,12 +174,14 @@ func (notifier *Notifier) Update() error {
 				// Process mentions
 				bodyObj := &DeSoBodySchema{}
 				if err := json.Unmarshal(meta.Body, &bodyObj); err == nil {
-					dollarTagsFound := mention.GetTagsAsUniqueStrings('$', string(bodyObj.Body))
-					atTagsFound := mention.GetTagsAsUniqueStrings('@', string(bodyObj.Body))
-
+					terminators := []rune(" ,.\n&*()-+~'\"[]{}")
+					dollarTagsFound := mention.GetTagsAsUniqueStrings('$', string(bodyObj.Body), terminators...)
+					atTagsFound := mention.GetTagsAsUniqueStrings('@', string(bodyObj.Body), terminators...)
+					
 					tagsFound := append(dollarTagsFound, atTagsFound...)
 					for _, tag := range tagsFound {
-						profileFound := DBGetProfileEntryForUsername(notifier.badger, []byte(strings.ToLower(tag)))
+
+						profileFound := DBGetProfileEntryForUsername(notifier.badger, []byte(strings.ToLower(strings.Trim(tag, ",.\n&*()-+~'\"[]{}!?^%#"))))
 						// Don't worry about tags that don't line up to a profile.
 						if profileFound == nil {
 							continue

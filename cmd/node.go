@@ -153,6 +153,9 @@ func (node *Node) Start() {
 		node.SQSQueue = lib.NewSQSQueue(client, queueURL)
 	}
 
+	// Setup eventManager
+	eventManager := lib.NewEventManager()
+
 	// Setup the server
 	node.Server, err = lib.NewServer(
 		node.Params,
@@ -183,6 +186,7 @@ func (node *Node) Start() {
 		node.Config.BlockProducerSeed,
 		node.Config.TrustedBlockProducerPublicKeys,
 		node.Config.TrustedBlockProducerStartHeight,
+		eventManager,
 	)
 	if err != nil {
 		panic(err)
