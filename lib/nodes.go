@@ -115,4 +115,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://koalatbooks.com",
 		Owner: "chriscelaya",
 	},
+	19: {
+		Name: "Beyond",
+		URL: "https://beyond.restartu.org",
+		Owner: "RestartU"
+	},
 }
