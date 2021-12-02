@@ -240,6 +240,8 @@ var (
 	// NEXT_TAG: 57
 )
 
+// CheckForPrefixOverlap tests for overlapping BadgerDb prefixes.
+// A prefix overlap can lead to potential exploits, so we want to ensure they are disjoint.
 func CheckForPrefixOverlap() error {
 	prefixList := [][]byte{
 		_PrefixBlockHashToBlock,
