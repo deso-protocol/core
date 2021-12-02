@@ -85,7 +85,7 @@ func resetBlockHeightGlobals() {
 }
 
 func TestBalanceModel(t *testing.T) {
-	BalanceModelBlockHeight = 0
+	BalanceModelBlockHeight = 1 // Skip the genesis block.
 	defer resetBlockHeightGlobals()
 
 	// Basic transfers.
@@ -15668,7 +15668,7 @@ func _balanceModelDiff(bc *Blockchain, diffAmount uint64) uint64 {
 }
 
 func _balanceModelDiffNaive(diffAmount uint64) uint64 {
-	if BalanceModelBlockHeight == 0 {
+	if BalanceModelBlockHeight == 0 || BalanceModelBlockHeight == 1 {
 		return diffAmount
 	} else {
 		return 0

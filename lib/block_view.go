@@ -1022,6 +1022,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Derived Key entries
 	bav.DerivedKeyToDerivedEntry = make(map[DerivedKeyMapKey]*DerivedKeyEntry)
+
+	// Transaction nonce map
+	bav.PublicKeyToNextNonce = make(map[PkMapKey]uint64)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -3270,6 +3273,30 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 
 func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Start by resetting the expected nonce for this txn's public key.
+	if blockHeight >= BalanceModelBlockHeight && currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		// Get the current nextNonce.
+		nextNonce, err := bav.GetNextNonceForPublicKey(currentTxn.PublicKey)
+		if err != nil {
+			return errors.Wrapf(
+				err, "DisconnectTransaction: Error getting current nonce for pub key %s",
+				PkToStringBoth(currentTxn.PublicKey))
+		}
+		// Ensure that nextNonce is non-zero to prevent underflow.
+		if nextNonce == 0 {
+			return fmt.Errorf("DisconnectTransaction: nextNonce was 0, this should never happen.")
+		}
+		// Ensure that the currentTxn's and nextNonce line up correctly.
+		if currentTxn.TxnNonce != nextNonce-1 {
+			return fmt.Errorf(
+				"DisconnectTransaction: Txn nonce %d does not match expected nonce %d for pub key %s",
+				currentTxn.TxnNonce, nextNonce-1, PkToStringBoth(currentTxn.PublicKey))
+		}
+
+		// Now that we've confirmed everything, revert the next nonce.
+		bav.SetNextNonceForPublicKey(currentTxn.PublicKey, currentTxn.TxnNonce)
+	}
 
 	if currentTxn.TxnMeta.GetTxnType() == TxnTypeBlockReward || currentTxn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		return bav._disconnectBasicTransfer(
@@ -9601,6 +9628,24 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
+	// For all transactions other than block rewards, validate the nonce.
+	if blockHeight >= BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		expectedNonce, err := bav.GetNextNonceForPublicKey(txn.PublicKey)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err, "ConnectTransaction: Error getting nonce for pub key %s",
+				PkToStringBoth(txn.PublicKey))
+		}
+		if txn.TxnNonce != expectedNonce {
+			return nil, 0, 0, 0, fmt.Errorf(
+				"ConnectTransaction: Txn nonce %d does not match expected nonce %d for pub key %s",
+				txn.TxnNonce, expectedNonce, PkToStringBoth(txn.PublicKey))
+		}
+
+		// Now that we've confirmed we have the correct nonce, increment.
+		bav.SetNextNonceForPublicKey(txn.PublicKey, expectedNonce+1)
+	}
+
 	var totalInput, totalOutput uint64
 	var utxoOpsForTxn []*UtxoOperation
 	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward || txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
@@ -10664,10 +10709,17 @@ func (bav *UtxoView) GetNextNonceForPublicKey(pkBytes []byte) (uint64, error) {
 	nextNonce, nonceFound := bav.PublicKeyToNextNonce[MakePkMapKey(pkBytes)]
 	if !nonceFound {
 		nextNonce, err = DbGetNextNonceForPublicKey(bav.Handle, pkBytes)
-		return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPublicKey: Problem fetching "+
-			"next nonce for public key %s", PkToString(pkBytes, bav.Params))
+		if err != nil {
+			return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPublicKey: Problem fetching "+
+				"next nonce for public key %s", PkToString(pkBytes, bav.Params))
+		}
 	}
 	return nextNonce, nil
+}
+
+func (bav *UtxoView) SetNextNonceForPublicKey(pkBytes []byte, nextNonce uint64) {
+	bav.PublicKeyToNextNonce[MakePkMapKey(pkBytes)] = nextNonce
+	return
 }
 
 // GetUnspentUtxoEntrysForPublicKey returns the UtxoEntrys corresponding to the

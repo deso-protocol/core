@@ -476,8 +476,8 @@ func TestBasicTransferReorg(t *testing.T) {
 	require.Equal(*lastForkBlockHash, *chain1.blockTip().Hash)
 
 	// After the reorg, all of the transactions should have been undone
-	// expcept the single spend from the sender to the recipient that
-	/// occurred in the fork. As such the fork chain's balance should now
+	// except the single spend from the sender to the recipient that
+	// occurred in the fork. As such the fork chain's balance should now
 	// reflect the updated balance.
 	require.Equal(uint64(5), _getBalance(t, chain1, nil, recipientPkString))
 }
