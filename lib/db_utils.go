@@ -231,7 +231,6 @@ var (
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix, OwnerPublicKey [33]byte> -> <>
-	// FUUUCK THERE IS ANOTHER PREFIX STARTING WITH 54
 	_PrefixAuthorizeDerivedKey = []byte{54}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
