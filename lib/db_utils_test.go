@@ -100,39 +100,39 @@ func TestCheckForPrefixOverlap(t *testing.T) {
 
 	// Make sure we didn't forget to add the new prefix to prefixList.
 	// We iterate through all prefixes from 0 to NEXT_PREFIX to see if we missed something.
-	for i := uint32(0); i <= NEXT_PREFIX; i++ {
+	for ii := uint32(0); ii <= NEXT_PREFIX; ii++ {
 		// Encode i to Little Endian []byte and remove trailing zeros.
-		iBytes := make([]byte, 4)
-		binary.LittleEndian.PutUint32(iBytes, i)
-		for ;len(iBytes) > 1 && iBytes[len(iBytes) - 1] == 0; {
-			iBytes = iBytes[:len(iBytes)-1]
+		iiBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint32(iiBytes, ii)
+		for ;len(iiBytes) > 1 && iiBytes[len(iiBytes) - 1] == 0; {
+			iiBytes = iiBytes[:len(iiBytes)-1]
 		}
 
 		// There are some exceptions, so we skip those prefixes.
 		exception := false
 		for _, v := range prefixExceptions {
-			if bytes.Equal(iBytes, v) {
+			if bytes.Equal(iiBytes, v) {
 				exception = true
 			}
 		}
 
 
-		if _, exists := prefixMap[hex.EncodeToString(iBytes)]; !exists {
-			if exception || i == NEXT_PREFIX {
+		if _, exists := prefixMap[hex.EncodeToString(iiBytes)]; !exists {
+			if exception || ii == NEXT_PREFIX {
 				continue
 			}
 
 			err = errors.Errorf("Didn't find DB prefix at %v, did you forget to add " +
-				"your newly-added prefix to CheckForPrefixOverlap()?", i)
+				"your newly-added prefix to CheckForPrefixOverlap()?", ii)
 		} else {
 			// Make sure we didn't forget to increment NEXT_PREFIX.
-			if i == NEXT_PREFIX {
+			if ii == NEXT_PREFIX {
 				err = errors.Errorf("NEXT_PREFIX should not be equal to an existing prefix, " +
 					"make sure to increment it from %v.", NEXT_PREFIX)
 			}
 			if exception {
 				err = errors.Errorf("There is an exception added for the existing prefix at %v, " +
-					"you must modify this prefix.", i)
+					"you must modify this prefix.", ii)
 			}
 		}
 	}
