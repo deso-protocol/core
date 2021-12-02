@@ -236,11 +236,78 @@ var (
 	// NOTE: Prefix 54 is skipped as there was a point in time at which both
 	// _PrefixPostHashSerialNumberToAcceptedBidEntries and _PrefixAuthorizeDerivedKey occupied the 54 prefix.
 
-	// TODO: This process is a bit error-prone. We should come up with a test or
-	// something to at least catch cases where people have two prefixes with the
-	// same ID.
+	// Make sure to add your prefix at the end of the prefixList in CheckForPrefixOverlap()
 	// NEXT_TAG: 57
 )
+
+func CheckForPrefixOverlap() error {
+	prefixList := [][]byte{
+		_PrefixBlockHashToBlock,
+		_PrefixHeightHashToNodeInfo,
+		_PrefixBitcoinHeightHashToNodeInfo,
+		_KeyBestDeSoBlockHash,
+		_KeyBestBitcoinHeaderHash,
+		_PrefixUtxoKeyToUtxoEntry,
+		_PrefixPubKeyUtxoKey,
+		_KeyUtxoNumEntries,
+		_PrefixBlockHashToUtxoOperations,
+		_KeyNanosPurchased,
+		_KeyUSDCentsPerBitcoinExchangeRate,
+		_KeyGlobalParams,
+		_PrefixBitcoinBurnTxIDs,
+		_PrefixPublicKeyTimestampToPrivateMessage,
+		_KeyTransactionIndexTip,
+		_PrefixTransactionIDToMetadata,
+		_PrefixPublicKeyIndexToTransactionIDs,
+		_PrefixPublicKeyToNextIndex,
+		_PrefixPostHashToPostEntry,
+		_PrefixPosterPublicKeyPostHash,
+		_PrefixTstampNanosPostHash,
+		_PrefixCreatorBpsPostHash,
+		_PrefixMultipleBpsPostHash,
+		_PrefixCommentParentStakeIDToPostHash,
+		_PrefixPKIDToProfileEntry,
+		_PrefixProfileUsernameToPKID,
+		_PrefixCreatorDeSoLockedNanosCreatorPKID,
+		_PrefixStakeIDTypeAmountStakeIDIndex,
+		_PrefixFollowerPKIDToFollowedPKID,
+		_PrefixFollowedPKIDToFollowerPKID,
+		_PrefixLikerPubKeyToLikedPostHash,
+		_PrefixLikedPostHashToLikerPubKey,
+		_PrefixHODLerPKIDCreatorPKIDToBalanceEntry,
+		_PrefixCreatorPKIDHODLerPKIDToBalanceEntry,
+		_PrefixPosterPublicKeyTimestampPostHash,
+		_PrefixPublicKeyToPKID,
+		_PrefixPKIDToPublicKey,
+		_PrefixMempoolTxnHashToMsgDeSoTxn,
+		_PrefixReposterPubKeyRepostedPostHashToRepostPostHash,
+		_PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash,
+		_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash,
+		_PrefixForbiddenBlockSignaturePubKeys,
+		_PrefixRepostedPostHashReposterPubKey,
+		_PrefixRepostedPostHashReposterPubKeyRepostPostHash,
+		_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel,
+		_PrefixPostHashSerialNumberToNFTEntry,
+		_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry,
+		_PrefixPostHashSerialNumberBidNanosBidderPKID,
+		_PrefixBidderPKIDPostHashSerialNumberToBidNanos,
+		_PrefixPostHashSerialNumberToAcceptedBidEntries,
+		_PrefixPublicKeyToDeSoBalanceNanos,
+		_PrefixPublicKeyBlockHashToBlockReward,
+		_PrefixAuthorizeDerivedKey,
+	}
+
+	prefixMap := make(map[string]bool)
+	for _, prefix := range prefixList {
+		key := hex.EncodeToString(prefix)
+		if _, exists := prefixMap[key]; exists {
+			return errors.Errorf("Found DB prefix conflict at %v", prefix)
+		}
+		prefixMap[key] = true
+	}
+
+	return nil
+}
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
 // indexed using the PKID rather than the user's public key directly in order to

@@ -110,6 +110,12 @@ func (node *Node) Start() {
 		panic(err)
 	}
 
+	// Make sure there is no prefix conflict in BadgerDb
+	err = lib.CheckForPrefixOverlap()
+	if err != nil {
+		panic(err)
+	}
+
 	// Setup snapshot logger
 	if node.Config.LogDBSummarySnapshots {
 		lib.StartDBSummarySnapshots(node.chainDB)
