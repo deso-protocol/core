@@ -110,12 +110,11 @@ func TestCheckForPrefixOverlap(t *testing.T) {
 
 		// There are some exceptions, so we skip those prefixes.
 		exception := false
-		for _, v := range prefixExceptions {
-			if bytes.Equal(iiBytes, v) {
+		for _, vv := range prefixExceptions {
+			if bytes.Equal(iiBytes, vv) {
 				exception = true
 			}
 		}
-
 
 		if _, exists := prefixMap[hex.EncodeToString(iiBytes)]; !exists {
 			if exception || ii == NEXT_PREFIX {
