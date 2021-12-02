@@ -236,8 +236,9 @@ var (
 	// NOTE: Prefix 54 is skipped as there was a point in time at which both
 	// _PrefixPostHashSerialNumberToAcceptedBidEntries and _PrefixAuthorizeDerivedKey occupied the 54 prefix.
 
-	// Make sure to add your prefix at the end of the prefixList in CheckForPrefixOverlap()
-	// NEXT_TAG: 57
+	// Make sure to add your prefix at the end of the prefixList in CheckForPrefixOverlap().
+	// If we skipped some prefix, make sure to add it to prefixExceptions.
+	NEXT_PREFIX = uint32(57)
 )
 
 // CheckForPrefixOverlap tests for overlapping BadgerDb prefixes.
@@ -299,6 +300,15 @@ func CheckForPrefixOverlap() error {
 		_PrefixAuthorizeDerivedKey,
 	}
 
+	// If we skipped some prefix, add it here.
+	prefixExceptions := []uint32{
+		6,
+		13,
+		24,
+		54,
+	}
+
+	// Make sure there is no overlap among added prefixes.
 	prefixMap := make(map[string]bool)
 	for _, prefix := range prefixList {
 		key := hex.EncodeToString(prefix)
@@ -306,6 +316,41 @@ func CheckForPrefixOverlap() error {
 			return errors.Errorf("Found DB prefix conflict at %v", prefix)
 		}
 		prefixMap[key] = true
+	}
+
+	// Make sure we didn't forget to add the new prefix to prefixList.
+	// We iterate through all prefixes from 0 to NEXT_PREFIX to see if we missed something.
+	for i := uint32(0); i <= NEXT_PREFIX; i++ {
+		// There are some exceptions, so we skip those prefixes.
+		exception := false
+		for _, v := range prefixExceptions {
+			if i == v {
+				exception = true
+			}
+		}
+		if exception {
+			continue
+		}
+
+		// Encode i to Little Endian []byte and remove trailing zeros.
+		iBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint32(iBytes, i)
+		for ;len(iBytes) > 1 && iBytes[len(iBytes) - 1] == 0; {
+			iBytes = iBytes[:len(iBytes)-1]
+		}
+		if _, exists := prefixMap[hex.EncodeToString(iBytes)]; !exists {
+			if i == NEXT_PREFIX {
+				continue
+			}
+			return errors.Errorf("Didn't find DB prefix at %v, did you forget to add " +
+				"your newly-added prefix to CheckForPrefixOverlap()?", i)
+		} else {
+			// Make sure we didn't forget to increment NEXT_PREFIX.
+			if i == NEXT_PREFIX {
+				return errors.Errorf("NEXT_PREFIX should not be equal to an existing prefix, " +
+					"make sure to increment it from %v", NEXT_PREFIX)
+			}
+		}
 	}
 
 	return nil
