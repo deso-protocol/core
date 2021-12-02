@@ -301,11 +301,11 @@ func CheckForPrefixOverlap() error {
 	}
 
 	// If we skipped some prefix, add it here.
-	prefixExceptions := []uint32{
-		6,
-		13,
-		24,
-		54,
+	prefixExceptions := [][]byte{
+		{6},
+		{13},
+		{24},
+		{54},
 	}
 
 	// Make sure there is no overlap among added prefixes.
@@ -321,10 +321,17 @@ func CheckForPrefixOverlap() error {
 	// Make sure we didn't forget to add the new prefix to prefixList.
 	// We iterate through all prefixes from 0 to NEXT_PREFIX to see if we missed something.
 	for i := uint32(0); i <= NEXT_PREFIX; i++ {
+		// Encode i to Little Endian []byte and remove trailing zeros.
+		iBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint32(iBytes, i)
+		for ;len(iBytes) > 1 && iBytes[len(iBytes) - 1] == 0; {
+			iBytes = iBytes[:len(iBytes)-1]
+		}
+
 		// There are some exceptions, so we skip those prefixes.
 		exception := false
 		for _, v := range prefixExceptions {
-			if i == v {
+			if bytes.Equal(iBytes, v) {
 				exception = true
 			}
 		}
@@ -332,12 +339,6 @@ func CheckForPrefixOverlap() error {
 			continue
 		}
 
-		// Encode i to Little Endian []byte and remove trailing zeros.
-		iBytes := make([]byte, 4)
-		binary.LittleEndian.PutUint32(iBytes, i)
-		for ;len(iBytes) > 1 && iBytes[len(iBytes) - 1] == 0; {
-			iBytes = iBytes[:len(iBytes)-1]
-		}
 		if _, exists := prefixMap[hex.EncodeToString(iBytes)]; !exists {
 			if i == NEXT_PREFIX {
 				continue
