@@ -839,9 +839,25 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeFollow"
 		}
+	case OperationTypeLike:
+		{
+			return "OperationTypeLike"
+		}
 	case OperationTypeCreatorCoin:
 		{
 			return "OperationTypeCreatorCoin"
+		}
+	case OperationTypeSwapIdentity:
+		{
+			return "OperationTypeSwapIdentity"
+		}
+	case OperationTypeUpdateGlobalParams:
+		{
+			return "OperationTypeUpdateGlobalParams"
+		}
+	case OperationTypeCreatorCoinTransfer:
+		{
+			return "OperationTypeCreatorCoinTransfer"
 		}
 	case OperationTypeCreateNFT:
 		{
@@ -858,6 +874,22 @@ func (op OperationType) String() string {
 	case OperationTypeNFTBid:
 		{
 			return "OperationTypeNFTBid"
+		}
+	case OperationTypeDeSoDiamond:
+		{
+		return "OperationTypeDeSoDiamond"
+		}
+	case OperationTypeNFTTransfer:
+		{
+			return "OperationTypeNFTTransfer"
+		}
+	case OperationTypeAcceptNFTTransfer:
+		{
+			return "OperationTypeAcceptNFTTransfer"
+		}
+	case OperationTypeBurnNFT:
+		{
+			return "OperationTypeBurnNFT"
 		}
 	case OperationTypeAuthorizeDerivedKey:
 		{
