@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
 )
@@ -131,4 +132,17 @@ func (bav *UtxoView) _deleteDiamondEntryMappings(diamondEntry *DiamondEntry) {
 
 	// Set the mappings to point to the tombstone entry.
 	bav._setDiamondEntryMappings(&tombstoneDiamondEntry)
+}
+
+func (bav *UtxoView) _setDiamondEntryMappings(diamondEntry *DiamondEntry) {
+	// This function shouldn't be called with nil.
+	if diamondEntry == nil {
+		glog.Errorf("_setDiamondEntryMappings: Called with nil DiamondEntry; " +
+			"this should never happen.")
+		return
+	}
+
+	diamondKey := MakeDiamondKey(
+		diamondEntry.SenderPKID, diamondEntry.ReceiverPKID, diamondEntry.DiamondPostHash)
+	bav.DiamondKeyToDiamondEntry[diamondKey] = diamondEntry
 }
