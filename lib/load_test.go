@@ -3,6 +3,9 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core/block_view"
+	"github.com/deso-protocol/core/network"
+	"github.com/deso-protocol/core/types"
 	"os"
 	"runtime/pprof"
 	"testing"
@@ -31,7 +34,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	numPostsPerProfile := 1000
 	privKeys := []*btcec.PrivateKey{}
 	pubKeys := []*btcec.PublicKey{}
-	txns := []*MsgDeSoTxn{}
+	txns := []*network.MsgDeSoTxn{}
 	for ii := 0; ii < numProfiles; ii++ {
 		fmt.Println("Processing top txn: ", len(txns))
 		// Compute a private/public key pair
@@ -39,9 +42,9 @@ func TestComputeMaxTPS(t *testing.T) {
 		require.NoError(err)
 		privKeys = append(privKeys, privKey)
 		pubKeys = append(pubKeys, privKey.PubKey())
-		currentPubStr := PkToString(
+		currentPubStr := types.PkToString(
 			pubKeys[len(pubKeys)-1].SerializeCompressed(), params)
-		currentPrivStr := PrivToString(
+		currentPrivStr := types.PrivToString(
 			privKeys[len(privKeys)-1].Serialize(), params)
 
 		// Send money to this key
@@ -69,8 +72,8 @@ func TestComputeMaxTPS(t *testing.T) {
 				false,
 				0,
 				10,
-				mempool /*mempool*/,
-				[]*DeSoOutput{})
+				mempool, /*mempool*/
+				[]*network.DeSoOutput{})
 			require.NoError(err)
 			_signTxn(t, txn, currentPrivStr)
 			_, err = mempool.ProcessTransaction(
@@ -79,7 +82,7 @@ func TestComputeMaxTPS(t *testing.T) {
 
 			txns = append(txns, txn)
 		}
-		bodyObj := &DeSoBodySchema{Body: "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" +
+		bodyObj := &network.DeSoBodySchema{Body: "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" +
 			"1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" +
 			"12345678901234567890123456789012345678901234567890123456789012345678901234567890"}
 		bodyBytes, err := json.Marshal(bodyObj)
@@ -100,7 +103,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				false,
 				100,
 				mempool,
-				[]*DeSoOutput{})
+				[]*network.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -128,7 +131,7 @@ func TestComputeMaxTPS(t *testing.T) {
 		require.NoError(err)
 		pprof.StartCPUProfile(ff)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := block_view.NewUtxoView(db, params, nil)
 		require.NoError(err)
 
 		timeStart := time.Now()
@@ -168,7 +171,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	}
 
 	// Mine blocks until the mempool is empty.
-	blocksMined := []*MsgDeSoBlock{}
+	blocksMined := []*network.MsgDeSoBlock{}
 	mempoolTxns, _, err := mempool.GetTransactionsOrderedByTimeAdded()
 	require.NoError(err)
 	for ii := 0; len(mempoolTxns) > 0; ii++ {
@@ -211,7 +214,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 
 	// Mine blocks until the mempool is empty.
 	numBlocksToMine := 10
-	blocksMined := []*MsgDeSoBlock{}
+	blocksMined := []*network.MsgDeSoBlock{}
 	for ii := 0; ii < numBlocksToMine; ii++ {
 		finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 		require.NoError(err)

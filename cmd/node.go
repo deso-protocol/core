@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/deso-protocol/core/db"
+	"github.com/deso-protocol/core/types"
 	"net"
 	"os"
 	"time"
@@ -27,9 +29,9 @@ type Node struct {
 	Server   *lib.Server
 	chainDB  *badger.DB
 	TXIndex  *lib.TXIndex
-	Params   *lib.DeSoParams
+	Params   *types.DeSoParams
 	Config   *Config
-	Postgres *lib.Postgres
+	Postgres *types.Postgres
 }
 
 func NewNode(config *Config) *Node {
@@ -101,7 +103,7 @@ func (node *Node) Start() {
 	}
 
 	// Setup chain database
-	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
+	dbDir := db.GetBadgerDbPath(node.Config.DataDirectory)
 	opts := badger.DefaultOptions(dbDir)
 	opts.ValueDir = dbDir
 	opts.MemTableSize = 1024 << 20
@@ -112,7 +114,7 @@ func (node *Node) Start() {
 
 	// Setup snapshot logger
 	if node.Config.LogDBSummarySnapshots {
-		lib.StartDBSummarySnapshots(node.chainDB)
+		db.StartDBSummarySnapshots(node.chainDB)
 	}
 
 	// Setup postgres using a remote URI
@@ -124,7 +126,7 @@ func (node *Node) Start() {
 		}
 
 		db = pg.Connect(options)
-		node.Postgres = lib.NewPostgres(db)
+		node.Postgres = types.NewPostgres(db)
 
 		// LoadMigrations registers all the migration files in the migrate package.
 		// See LoadMigrations for more info.
@@ -199,7 +201,7 @@ func (node *Node) Stop() {
 	node.chainDB.Close()
 }
 
-func validateParams(params *lib.DeSoParams) {
+func validateParams(params *types.DeSoParams) {
 	if params.BitcoinBurnAddress == "" {
 		glog.Fatalf("The DeSoParams being used are missing the BitcoinBurnAddress field.")
 	}
@@ -295,7 +297,7 @@ func getAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
 	return listeningAddrs, listeners
 }
 
-func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.DeSoParams) {
+func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *types.DeSoParams) {
 	ipAddrs, err := net.LookupIP(host)
 	if err != nil {
 		glog.Tracef("_addSeedAddrs: DNS discovery failed on seed host (continuing on): %s %v\n", host, err)
@@ -322,8 +324,8 @@ func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.De
 			// We initialize addresses with a
 			// randomly selected "last seen time" between 3
 			// and 7 days ago similar to what bitcoind does.
-			time.Now().Add(-1*time.Second*time.Duration(lib.SecondsIn3Days+
-				lib.RandInt32(lib.SecondsIn4Days))),
+			time.Now().Add(-1*time.Second*time.Duration(types.SecondsIn3Days+
+				db.RandInt32(types.SecondsIn4Days))),
 			0,
 			ip,
 			params.DefaultSocketPort)
@@ -339,7 +341,7 @@ func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.De
 // Must be run in a goroutine. This function continuously adds IPs from a DNS seed
 // prefix+suffix by iterating up through all of the possible numeric values, which are typically
 // [0, 10]
-func addSeedAddrsFromPrefixes(desoAddrMgr *addrmgr.AddrManager, params *lib.DeSoParams) {
+func addSeedAddrsFromPrefixes(desoAddrMgr *addrmgr.AddrManager, params *types.DeSoParams) {
 	MaxIterations := 20
 
 	go func() {

@@ -3,6 +3,9 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core/db"
+	"github.com/deso-protocol/core/network"
+	"github.com/deso-protocol/core/types"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gernest/mention"
 	"github.com/go-pg/pg/v10"
@@ -15,7 +18,7 @@ import (
 
 type Notifier struct {
 	coreChain *Blockchain
-	postgres  *Postgres
+	postgres  *types.Postgres
 
 	// Shortcut to postgres.db
 	db *pg.DB
@@ -24,7 +27,7 @@ type Notifier struct {
 	badger *badger.DB
 }
 
-func NewNotifier(coreChain *Blockchain, postgres *Postgres) *Notifier {
+func NewNotifier(coreChain *Blockchain, postgres *types.Postgres) *Notifier {
 	return &Notifier{
 		coreChain: coreChain,
 		postgres:  postgres,
@@ -35,15 +38,15 @@ func NewNotifier(coreChain *Blockchain, postgres *Postgres) *Notifier {
 
 func (notifier *Notifier) Update() error {
 	// Fetch all the blocks we haven't processed notifications for in groups of 10,000
-	var blocks []*PGBlock
+	var blocks []*types.PGBlock
 	err := notifier.db.Model(&blocks).Where("notified = false").Limit(10_000).Select()
 	if err != nil {
 		return err
 	}
 
 	for _, block := range blocks {
-		var notifications []*PGNotification
-		var transactions []*PGTransaction
+		var notifications []*types.PGNotification
+		var transactions []*types.PGTransaction
 		err = notifier.db.Model(&transactions).Where("block_hash = ?", block.Hash).
 			Relation("Outputs").Relation("PGMetadataLike").Relation("PGMetadataFollow").
 			Relation("PGMetadataCreatorCoin").Relation("PGMetadataCreatorCoinTransfer").
@@ -56,75 +59,75 @@ func (notifier *Notifier) Update() error {
 		glog.Infof("Notifier: Found %d transactions in block %v at height %d", len(transactions), block.Hash, block.Height)
 
 		for _, transaction := range transactions {
-			if transaction.Type == TxnTypeBasicTransfer {
+			if transaction.Type == network.TxnTypeBasicTransfer {
 				extraData := transaction.ExtraData
 				for _, output := range transaction.Outputs {
 					if !reflect.DeepEqual(output.PublicKey, transaction.PublicKey) {
-						notification := &PGNotification{
+						notification := &types.PGNotification{
 							TransactionHash: transaction.Hash,
 							Mined:           true,
 							ToUser:          output.PublicKey,
 							FromUser:        transaction.PublicKey,
-							Type:            NotificationSendDESO,
+							Type:            types.NotificationSendDESO,
 							Amount:          output.AmountNanos,
 							Timestamp:       block.Timestamp,
 						}
-						diamondLevelBytes, hasDiamondLevel := extraData[DiamondLevelKey]
-						diamondPostBytes, hasDiamondPost := extraData[DiamondPostHashKey]
+						diamondLevelBytes, hasDiamondLevel := extraData[types.DiamondLevelKey]
+						diamondPostBytes, hasDiamondPost := extraData[types.DiamondPostHashKey]
 						if hasDiamondLevel && hasDiamondPost {
-							diamondLevel, bytesRead := Varint(diamondLevelBytes)
+							diamondLevel, bytesRead := network.Varint(diamondLevelBytes)
 							if bytesRead > 0 {
-								notification.Type = NotificationDESODiamond
+								notification.Type = types.NotificationDESODiamond
 								notification.Amount = uint64(diamondLevel)
-								notification.PostHash = &BlockHash{}
+								notification.PostHash = &types.BlockHash{}
 								copy(notification.PostHash[:], diamondPostBytes)
 							}
 						}
 						notifications = append(notifications, notification)
 					}
 				}
-			} else if transaction.Type == TxnTypeLike {
+			} else if transaction.Type == network.TxnTypeLike {
 				postHash := transaction.MetadataLike.LikedPostHash
-				post := DBGetPostEntryByPostHash(notifier.badger, postHash)
+				post := db.DBGetPostEntryByPostHash(notifier.badger, postHash)
 				if post != nil {
-					notifications = append(notifications, &PGNotification{
+					notifications = append(notifications, &types.PGNotification{
 						TransactionHash: transaction.Hash,
 						Mined:           true,
 						ToUser:          post.PosterPublicKey,
 						FromUser:        transaction.PublicKey,
-						Type:            NotificationLike,
+						Type:            types.NotificationLike,
 						PostHash:        postHash,
 						Timestamp:       block.Timestamp,
 					})
 				}
-			} else if transaction.Type == TxnTypeFollow {
+			} else if transaction.Type == network.TxnTypeFollow {
 				if !transaction.MetadataFollow.IsUnfollow {
-					notifications = append(notifications, &PGNotification{
+					notifications = append(notifications, &types.PGNotification{
 						TransactionHash: transaction.Hash,
 						Mined:           true,
 						ToUser:          transaction.MetadataFollow.FollowedPublicKey,
 						FromUser:        transaction.PublicKey,
-						Type:            NotificationFollow,
+						Type:            types.NotificationFollow,
 						Timestamp:       block.Timestamp,
 					})
 				}
-			} else if transaction.Type == TxnTypeCreatorCoin {
+			} else if transaction.Type == network.TxnTypeCreatorCoin {
 				meta := transaction.MetadataCreatorCoin
-				if meta.OperationType == CreatorCoinOperationTypeBuy {
-					notifications = append(notifications, &PGNotification{
+				if meta.OperationType == network.CreatorCoinOperationTypeBuy {
+					notifications = append(notifications, &types.PGNotification{
 						TransactionHash: transaction.Hash,
 						Mined:           true,
 						ToUser:          meta.ProfilePublicKey,
 						FromUser:        transaction.PublicKey,
-						Type:            NotificationCoinPurchase,
+						Type:            types.NotificationCoinPurchase,
 						Amount:          meta.DeSoToSellNanos,
 						Timestamp:       block.Timestamp,
 					})
 				}
-			} else if transaction.Type == TxnTypeCreatorCoinTransfer {
+			} else if transaction.Type == network.TxnTypeCreatorCoinTransfer {
 				meta := transaction.MetadataCreatorCoinTransfer
 				extraData := transaction.ExtraData
-				notification := &PGNotification{
+				notification := &types.PGNotification{
 					TransactionHash: transaction.Hash,
 					Mined:           true,
 					ToUser:          meta.ReceiverPublicKey,
@@ -133,38 +136,38 @@ func (notifier *Notifier) Update() error {
 					Timestamp:       block.Timestamp,
 				}
 
-				diamondLevelBytes, hasDiamondLevel := extraData[DiamondLevelKey]
-				diamondPostBytes, hasDiamondPost := extraData[DiamondPostHashKey]
+				diamondLevelBytes, hasDiamondLevel := extraData[types.DiamondLevelKey]
+				diamondPostBytes, hasDiamondPost := extraData[types.DiamondPostHashKey]
 				if hasDiamondLevel && hasDiamondPost {
-					diamondLevel, bytesRead := Varint(diamondLevelBytes)
+					diamondLevel, bytesRead := network.Varint(diamondLevelBytes)
 					if bytesRead > 0 {
-						notification.Type = NotificationCoinDiamond
+						notification.Type = types.NotificationCoinDiamond
 						notification.Amount = uint64(diamondLevel)
-						notification.PostHash = &BlockHash{}
+						notification.PostHash = &types.BlockHash{}
 						copy(notification.PostHash[:], diamondPostBytes)
 					}
 				}
 
 				// If we failed to extract diamond metadata record it as a normal transfer
-				if notification.Type == NotificationUnknown {
-					notification.Type = NotificationCoinTransfer
+				if notification.Type == types.NotificationUnknown {
+					notification.Type = types.NotificationCoinTransfer
 					notification.Amount = meta.CreatorCoinToTransferNanos
 				}
 
 				notifications = append(notifications, notification)
-			} else if transaction.Type == TxnTypeSubmitPost {
+			} else if transaction.Type == network.TxnTypeSubmitPost {
 				meta := transaction.MetadataSubmitPost
 
 				// Process replies
-				if len(meta.ParentStakeID) == HashSizeBytes {
-					postEntry := DBGetPostEntryByPostHash(notifier.badger, meta.ParentStakeID)
+				if len(meta.ParentStakeID) == types.HashSizeBytes {
+					postEntry := db.DBGetPostEntryByPostHash(notifier.badger, meta.ParentStakeID)
 					if postEntry != nil {
-						notifications = append(notifications, &PGNotification{
+						notifications = append(notifications, &types.PGNotification{
 							TransactionHash: transaction.Hash,
 							Mined:           true,
 							ToUser:          postEntry.PosterPublicKey,
 							FromUser:        transaction.PublicKey,
-							Type:            NotificationPostReply,
+							Type:            types.NotificationPostReply,
 							PostHash:        meta.ParentStakeID,
 							Timestamp:       block.Timestamp,
 						})
@@ -172,27 +175,27 @@ func (notifier *Notifier) Update() error {
 				}
 
 				// Process mentions
-				bodyObj := &DeSoBodySchema{}
+				bodyObj := &network.DeSoBodySchema{}
 				if err := json.Unmarshal(meta.Body, &bodyObj); err == nil {
 					terminators := []rune(" ,.\n&*()-+~'\"[]{}")
 					dollarTagsFound := mention.GetTagsAsUniqueStrings('$', string(bodyObj.Body), terminators...)
 					atTagsFound := mention.GetTagsAsUniqueStrings('@', string(bodyObj.Body), terminators...)
-					
+
 					tagsFound := append(dollarTagsFound, atTagsFound...)
 					for _, tag := range tagsFound {
 
-						profileFound := DBGetProfileEntryForUsername(notifier.badger, []byte(strings.ToLower(strings.Trim(tag, ",.\n&*()-+~'\"[]{}!?^%#"))))
+						profileFound := db.DBGetProfileEntryForUsername(notifier.badger, []byte(strings.ToLower(strings.Trim(tag, ",.\n&*()-+~'\"[]{}!?^%#"))))
 						// Don't worry about tags that don't line up to a profile.
 						if profileFound == nil {
 							continue
 						}
 
-						notifications = append(notifications, &PGNotification{
+						notifications = append(notifications, &types.PGNotification{
 							TransactionHash: transaction.Hash,
 							Mined:           true,
 							ToUser:          profileFound.PublicKey,
 							FromUser:        transaction.PublicKey,
-							Type:            NotificationPostMention,
+							Type:            types.NotificationPostMention,
 							PostHash:        meta.PostHashToModify,
 							Timestamp:       block.Timestamp,
 						})
@@ -200,17 +203,17 @@ func (notifier *Notifier) Update() error {
 				}
 
 				// Process reposts
-				if postBytes, isRepost := transaction.ExtraData[RepostedPostHash]; isRepost {
-					postHash := &BlockHash{}
+				if postBytes, isRepost := transaction.ExtraData[types.RepostedPostHash]; isRepost {
+					postHash := &types.BlockHash{}
 					copy(postHash[:], postBytes)
-					post := DBGetPostEntryByPostHash(notifier.badger, postHash)
+					post := db.DBGetPostEntryByPostHash(notifier.badger, postHash)
 					if post != nil {
-						notifications = append(notifications, &PGNotification{
+						notifications = append(notifications, &types.PGNotification{
 							TransactionHash: transaction.Hash,
 							Mined:           true,
 							ToUser:          post.PosterPublicKey,
 							FromUser:        transaction.PublicKey,
-							Type:            NotificationPostRepost,
+							Type:            types.NotificationPostRepost,
 							PostHash:        postHash,
 							Timestamp:       block.Timestamp,
 						})

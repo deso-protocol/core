@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core/types"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -55,8 +56,8 @@ func CreateUnsignedBitcoinSpendTransaction(
 	feeRateSatoshisPerKB uint64,
 	spendAddrString string,
 	recipientAddrString string,
-	params *DeSoParams,
-	utxoSource func(addr string, params *DeSoParams) ([]*BitcoinUtxo, error)) (
+	params *types.DeSoParams,
+	utxoSource func(addr string, params *types.DeSoParams) ([]*BitcoinUtxo, error)) (
 	_txn *wire.MsgTx, _totalInput uint64, _fee uint64, _err error) {
 
 	// Get the utxos for the spend key.
@@ -187,8 +188,8 @@ func CreateUnsignedBitcoinSpendTransaction(
 func CreateBitcoinSpendTransaction(
 	spendAmountSatoshis uint64, feeRateSatoshisPerKB uint64,
 	pubKey *btcec.PublicKey,
-	recipientAddrString string, params *DeSoParams,
-	utxoSource func(addr string, params *DeSoParams) ([]*BitcoinUtxo, error)) (_txn *wire.MsgTx, _totalInput uint64, _fee uint64, _unsignedHashes []string, _err error) {
+	recipientAddrString string, params *types.DeSoParams,
+	utxoSource func(addr string, params *types.DeSoParams) ([]*BitcoinUtxo, error)) (_txn *wire.MsgTx, _totalInput uint64, _fee uint64, _unsignedHashes []string, _err error) {
 
 	// Convert the public key into a Bitcoin address.
 	spendAddrTmp, err := btcutil.NewAddressPubKey(pubKey.SerializeCompressed(), params.BitcoinBtcdParams)
@@ -246,7 +247,7 @@ func CreateBitcoinSpendTransaction(
 	return retTxn, totalInputSatoshis, finalFee, unsignedHashes, nil
 }
 
-func IsBitcoinTestnet(params *DeSoParams) bool {
+func IsBitcoinTestnet(params *types.DeSoParams) bool {
 	return params.BitcoinBtcdParams.Name == "testnet3"
 }
 
@@ -310,11 +311,11 @@ type BlockCypherAPIFullAddressResponse struct {
 }
 
 type BlockchainInfoAPIResponse struct {
-	DoubleSpend   bool                            `json:"double_spend"`
+	DoubleSpend bool `json:"double_spend"`
 }
 
 func BlockCypherExtractBitcoinUtxosFromResponse(
-	apiData *BlockCypherAPIFullAddressResponse, addrString string, params *DeSoParams) (
+	apiData *BlockCypherAPIFullAddressResponse, addrString string, params *types.DeSoParams) (
 	[]*BitcoinUtxo, error) {
 
 	glog.Tracef("BlockCypherExtractBitcoinUtxosFromResponse: Extracting BitcoinUtxos "+
@@ -387,7 +388,7 @@ func BlockCypherExtractBitcoinUtxosFromResponse(
 			bUtxo := &BitcoinUtxo{}
 			bUtxo.AmountSatoshis = output.AmountSatoshis
 			bUtxo.Index = int64(outputIndex)
-			txid := (chainhash.Hash)(*mustDecodeHexBlockHashBitcoin(txn.TxIDHex))
+			txid := (chainhash.Hash)(*types.mustDecodeHexBlockHashBitcoin(txn.TxIDHex))
 			bUtxo.TxID = &txid
 
 			bitcoinUtxos = append(bitcoinUtxos, bUtxo)
@@ -400,7 +401,7 @@ func BlockCypherExtractBitcoinUtxosFromResponse(
 	return bitcoinUtxos, nil
 }
 
-func GetBlockCypherAPIFullAddressResponse(addrString string, params *DeSoParams) (
+func GetBlockCypherAPIFullAddressResponse(addrString string, params *types.DeSoParams) (
 	_apiData *BlockCypherAPIFullAddressResponse, _err error) {
 
 	URL := fmt.Sprintf("http://api.blockcypher.com/v1/btc/main/addrs/%s/full", addrString)
@@ -451,7 +452,7 @@ func GetBlockCypherAPIFullAddressResponse(addrString string, params *DeSoParams)
 	return responseData, nil
 }
 
-func BlockCypherUtxoSource(addrString string, params *DeSoParams) (
+func BlockCypherUtxoSource(addrString string, params *types.DeSoParams) (
 	[]*BitcoinUtxo, error) {
 
 	apiData, err := GetBlockCypherAPIFullAddressResponse(addrString, params)
@@ -467,13 +468,13 @@ func BlockCypherUtxoSource(addrString string, params *DeSoParams) (
 // get rate-limited by the free tier.
 func FrontendBlockCypherUtxoSource(
 	apiData *BlockCypherAPIFullAddressResponse, addrString string,
-	params *DeSoParams) (
+	params *types.DeSoParams) (
 	[]*BitcoinUtxo, error) {
 
 	return BlockCypherExtractBitcoinUtxosFromResponse(apiData, addrString, params)
 }
 
-func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
+func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *types.DeSoParams) (
 	_isDoubleSpend bool, _err error) {
 
 	// Always pass on testnet for simplicity.
@@ -489,13 +490,13 @@ func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherA
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: " +
+		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: "+
 			"Problem with HTTP request %s: %v", URL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin txn with " +
+		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin txn with "+
 			"hash %v was not found in Blockchain.info OR an error occurred: %v", txnHash, spew.Sdump(resp))
 		return true, nil
 	}
@@ -505,13 +506,13 @@ func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherA
 	responseData := &BlockchainInfoAPIResponse{}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	if err := decoder.Decode(responseData); err != nil {
-		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: " +
+		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: "+
 			"Problem decoding response JSON into "+
 			"interface %v, response: %v, error: %v", responseData, resp, err)
 	}
 
 	if responseData.DoubleSpend {
-		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin " +
+		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin "+
 			"txn with hash %v was a double spend", txnHash)
 		return true, nil
 	}
@@ -519,7 +520,7 @@ func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherA
 	return false, nil
 }
 
-func GetBlockCypherTxnResponse(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (*BlockCypherAPITxnResponse, error) {
+func GetBlockCypherTxnResponse(txnHash *chainhash.Hash, blockCypherAPIKey string, params *types.DeSoParams) (*BlockCypherAPITxnResponse, error) {
 	URL := fmt.Sprintf("http://api.blockcypher.com/v1/btc/main/txs/%s", txnHash.String())
 	if IsBitcoinTestnet(params) {
 		URL = fmt.Sprintf("http://api.blockcypher.com/v1/btc/test3/txs/%s", txnHash.String())
@@ -570,7 +571,7 @@ func GetBlockCypherTxnResponse(txnHash *chainhash.Hash, blockCypherAPIKey string
 	return responseData, nil
 }
 
-func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
+func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *types.DeSoParams) (
 	_isDoubleSpend bool, _err error) {
 
 	glog.Infof("CheckBitcoinDoubleSpend: Checking txn %v for double-spend", txnHash)
@@ -596,8 +597,8 @@ func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIK
 		// If there are too many inputs on this txn, then just mark it as a double-spend.
 		// This avoids us having to use our API quota unnecessarily.
 		if len(responseData.Inputs) > 25 {
-			glog.Warningf("CheckBitcoinDoubleSpend: Unmined bitcoin txn with hash %v had %v inputs, " +
-				"which made us label it as a double-spend. If this is happening a lot, consider " +
+			glog.Warningf("CheckBitcoinDoubleSpend: Unmined bitcoin txn with hash %v had %v inputs, "+
+				"which made us label it as a double-spend. If this is happening a lot, consider "+
 				"increasing the limit on this if statement", txnHash, len(responseData.Inputs))
 			return true, nil
 		}
@@ -626,7 +627,7 @@ func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIK
 
 	return false, nil
 }
-func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) (
+func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCypherAPIKey string, params *types.DeSoParams) (
 	_added bool, _err error) {
 
 	URL := fmt.Sprintf("http://api.blockcypher.com/v1/btc/main/txs/push")
@@ -680,7 +681,7 @@ func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCyp
 }
 
 func BlockCypherPushAndWaitForTxn(txnHex string, txnHash *chainhash.Hash,
-	blockCypherAPIKey string, doubleSpendWaitSeconds float64, params *DeSoParams) error {
+	blockCypherAPIKey string, doubleSpendWaitSeconds float64, params *types.DeSoParams) error {
 	_, err := BlockCypherPushTransaction(txnHex, txnHash, blockCypherAPIKey, params)
 	if err != nil {
 		return fmt.Errorf("PushAndWaitForTxn: %v", err)

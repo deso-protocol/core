@@ -2,22 +2,25 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/block_view"
+	"github.com/deso-protocol/core/network"
+	"github.com/deso-protocol/core/types"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func _filterOutBlockRewards(utxoEntries []*UtxoEntry) []*UtxoEntry {
-	nonBlockRewardUtxos := []*UtxoEntry{}
+func _filterOutBlockRewards(utxoEntries []*block_view.UtxoEntry) []*block_view.UtxoEntry {
+	nonBlockRewardUtxos := []*block_view.UtxoEntry{}
 	for _, utxoEntry := range utxoEntries {
-		if utxoEntry.UtxoType != UtxoTypeBlockReward {
+		if utxoEntry.UtxoType != block_view.UtxoTypeBlockReward {
 			nonBlockRewardUtxos = append(nonBlockRewardUtxos, utxoEntry)
 		}
 	}
 	return nonBlockRewardUtxos
 }
 
-func _setupFiveBlocks(t *testing.T) (*Blockchain, *DeSoParams, []byte, []byte) {
+func _setupFiveBlocks(t *testing.T) (*Blockchain, *types.DeSoParams, []byte, []byte) {
 	require := require.New(t)
 	chain, params, db := NewLowDifficultyBlockchain()
 	_ = db
@@ -32,9 +35,9 @@ func _setupFiveBlocks(t *testing.T) (*Blockchain, *DeSoParams, []byte, []byte) {
 	_shouldConnectBlock(blockB5, t, chain)
 
 	// Define a sender and a recipient.
-	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	senderPkBytes, _, err := types.Base58CheckDecode(senderPkString)
 	require.NoError(err)
-	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
+	recipientPkBytes, _, err := types.Base58CheckDecode(recipientPkString)
 	require.NoError(err)
 
 	return chain, params, senderPkBytes, recipientPkBytes
@@ -70,20 +73,20 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 			fmt.Printf("TestMempoolRateLimit: Processing txn %d\n", ii)
 		}
 		prevTxnHash := prevTxn.Hash()
-		newTxn := &MsgDeSoTxn{
-			TxInputs: []*DeSoInput{
-				&DeSoInput{
+		newTxn := &network.MsgDeSoTxn{
+			TxInputs: []*network.DeSoInput{
+				&network.DeSoInput{
 					TxID:  *prevTxnHash,
 					Index: 0,
 				},
 			},
-			TxOutputs: []*DeSoOutput{
-				&DeSoOutput{
+			TxOutputs: []*network.DeSoOutput{
+				&network.DeSoOutput{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
-			TxnMeta:   &BasicTransferMetadata{},
+			TxnMeta:   &network.BasicTransferMetadata{},
 			PublicKey: recipientPkBytes,
 		}
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
@@ -134,13 +137,13 @@ func TestMempoolRateLimit(t *testing.T) {
 		"" /*dataDir*/, "")
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.Error(err)
-	require.Contains(err.Error(), TxErrorInsufficientFeeMinFee)
+	require.Contains(err.Error(), types.TxErrorInsufficientFeeMinFee)
 
 	// It shoud be accepted if we set rateLimit to false.
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.NoError(err)
 
-	txnsCreated := []*MsgDeSoTxn{txn1}
+	txnsCreated := []*network.MsgDeSoTxn{txn1}
 	prevTxn := txn1
 	// Create fewer than the maximum number of dependencies allowed by the
 	// mempool to avoid transactions being rejected.
@@ -149,20 +152,20 @@ func TestMempoolRateLimit(t *testing.T) {
 			fmt.Printf("TestMempoolRateLimit: Processing txn %d\n", ii)
 		}
 		prevTxnHash := prevTxn.Hash()
-		newTxn := &MsgDeSoTxn{
-			TxInputs: []*DeSoInput{
-				&DeSoInput{
+		newTxn := &network.MsgDeSoTxn{
+			TxInputs: []*network.DeSoInput{
+				&network.DeSoInput{
 					TxID:  *prevTxnHash,
 					Index: 0,
 				},
 			},
-			TxOutputs: []*DeSoOutput{
-				&DeSoOutput{
+			TxOutputs: []*network.DeSoOutput{
+				&network.DeSoOutput{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
-			TxnMeta:   &BasicTransferMetadata{},
+			TxnMeta:   &network.BasicTransferMetadata{},
 			PublicKey: recipientPkBytes,
 		}
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
@@ -192,7 +195,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	require.NoError(firstError, "First transaction should not be rate-limited")
 	// If we got rate-limited, there should be at least one transaction in
 	// the list that has the rate-limited error.
-	require.Contains(processingErrors, TxErrorInsufficientFeeRateLimit)
+	require.Contains(processingErrors, types.TxErrorInsufficientFeeRateLimit)
 
 	_, _ = require, senderPkBytes
 }
@@ -214,54 +217,54 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	require.Equal(2, len(txn1.TxOutputs))
 	changeOutput := txn1.TxOutputs[1]
 	require.Equal(senderPkString,
-		Base58CheckEncode(changeOutput.PublicKey, false, chain.params))
+		types.Base58CheckEncode(changeOutput.PublicKey, false, chain.params))
 
 	// Construct a second transaction that depends on the first. Send 1
 	// DeSo to the recipient and set the rest as change.
 	txn1Hash := txn1.Hash()
-	txn2 := &MsgDeSoTxn{
+	txn2 := &network.MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*DeSoInput{
-			&DeSoInput{
+		TxInputs: []*network.DeSoInput{
+			&network.DeSoInput{
 				TxID:  *txn1Hash,
 				Index: 1,
 			},
 		},
-		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+		TxOutputs: []*network.DeSoOutput{
+			&network.DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, &network.DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: changeOutput.AmountNanos - 1,
 			},
 		},
 		PublicKey: senderPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
+		TxnMeta:   &network.BasicTransferMetadata{},
 	}
 	_signTxn(t, txn2, senderPrivString)
 
 	// Construct a third transaction that depends on the second.
 	txn2Hash := txn2.Hash()
-	txn3 := &MsgDeSoTxn{
+	txn3 := &network.MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*DeSoInput{
-			&DeSoInput{
+		TxInputs: []*network.DeSoInput{
+			&network.DeSoInput{
 				TxID:  *txn2Hash,
 				Index: 1,
 			},
 		},
-		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+		TxOutputs: []*network.DeSoOutput{
+			&network.DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, &network.DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: changeOutput.AmountNanos - 2,
 			},
 		},
 		PublicKey: senderPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
+		TxnMeta:   &network.BasicTransferMetadata{},
 	}
 	_signTxn(t, txn3, senderPrivString)
 	txn3Hash := txn3.Hash()
@@ -269,29 +272,29 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	// Construct a fourth transaction that spends an output from the recipient's
 	// key sending the DeSo back to the sender with some change going back to
 	// herself. Make the output come from the first and second transaction above.
-	txn4 := &MsgDeSoTxn{
+	txn4 := &network.MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*DeSoInput{
-			&DeSoInput{
+		TxInputs: []*network.DeSoInput{
+			&network.DeSoInput{
 				TxID:  *txn1Hash,
 				Index: 0,
 			},
-			&DeSoInput{
+			&network.DeSoInput{
 				TxID:  *txn2Hash,
 				Index: 0,
 			},
 		},
-		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+		TxOutputs: []*network.DeSoOutput{
+			&network.DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, &network.DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
 			},
 		},
 		PublicKey: recipientPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
+		TxnMeta:   &network.BasicTransferMetadata{},
 	}
 	_signTxn(t, txn4, recipientPrivString)
 	txn4Hash := txn4.Hash()
@@ -388,7 +391,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 		nonBlockRewardUtxos := _filterOutBlockRewards(utxoEntries)
 		require.Equal(2, len(nonBlockRewardUtxos))
 		// Aggregate the txids and amounts to check them.
-		txids := []BlockHash{}
+		txids := []types.BlockHash{}
 		amounts := []uint64{}
 		for ii, utxoEntry := range nonBlockRewardUtxos {
 			txids = append(txids, utxoEntry.UtxoKey.TxID)
@@ -410,7 +413,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 		// She should have exactly 2 utxos at this point from txn3 and txn4.
 		// Aggregate the txids and amounts to check them.
 		require.Equal(2, len(utxoEntries))
-		txids := []BlockHash{}
+		txids := []types.BlockHash{}
 		for ii, utxoEntry := range utxoEntries {
 			txids = append(txids, utxoEntry.UtxoKey.TxID)
 			require.Equalf(uint64(1), utxoEntry.AmountNanos, "index: %d", ii)

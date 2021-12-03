@@ -7,19 +7,18 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/network"
+	"github.com/deso-protocol/core/types"
 	"math/big"
 	"math/rand"
 	"reflect"
 	"sync/atomic"
 	"time"
 
-	"github.com/deso-protocol/core/desohash"
-	"github.com/btcsuite/btcd/wire"
-
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
-	merkletree "github.com/laser/go-merkle-tree"
 	"github.com/pkg/errors"
 )
 
@@ -29,18 +28,18 @@ type DeSoMiner struct {
 	PublicKeys    []*btcec.PublicKey
 	numThreads    uint32
 	BlockProducer *DeSoBlockProducer
-	params        *DeSoParams
+	params        *types.DeSoParams
 
 	stopping int32
 }
 
 func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
-	_blockProducer *DeSoBlockProducer, _params *DeSoParams) (*DeSoMiner, error) {
+	_blockProducer *DeSoBlockProducer, _params *types.DeSoParams) (*DeSoMiner, error) {
 
 	// Convert the public keys from Base58Check encoding to bytes.
 	_pubKeys := []*btcec.PublicKey{}
 	for _, publicKeyBase58 := range _minerPublicKeys {
-		pkBytes, _, err := Base58CheckDecode(publicKeyBase58)
+		pkBytes, _, err := types.Base58CheckDecode(publicKeyBase58)
 		if err != nil {
 			return nil, errors.Wrapf(err, "NewDeSoMiner: ")
 		}
@@ -64,7 +63,7 @@ func (desoMiner *DeSoMiner) Stop() {
 }
 
 func (desoMiner *DeSoMiner) _getBlockToMine(threadIndex uint32) (
-	_blk *MsgDeSoBlock, _diffTarget *BlockHash, _lastNode *BlockNode, _err error) {
+	_blk *network.MsgDeSoBlock, _diffTarget *types.BlockHash, _lastNode *types.BlockNode, _err error) {
 
 	// Choose a random address to contribute the coins to. Use the extraNonce to
 	// choose the random address since it's random.
@@ -87,7 +86,7 @@ func (desoMiner *DeSoMiner) _getRandomPublicKey() []byte {
 	return desoMiner.PublicKeys[rand.Intn(len(desoMiner.PublicKeys))].SerializeCompressed()
 }
 
-func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *BlockHash, minedBlock *MsgDeSoBlock) {
+func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *types.BlockHash, minedBlock *network.MsgDeSoBlock) {
 	for {
 		// This provides a way for outside processes to pause the miner.
 		if len(desoMiner.PublicKeys) == 0 {
@@ -106,14 +105,14 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		// TODO(miner): Replace with a call to GetBlockTemplate
 		publicKey := desoMiner._getRandomPublicKey()
 		blockID, headerBytes, extraNonces, diffTarget, err := desoMiner.BlockProducer.GetHeadersAndExtraDatas(
-			publicKey, 1 /*numHeaders*/, CurrentHeaderVersion)
+			publicKey, 1 /*numHeaders*/, types.CurrentHeaderVersion)
 		if err != nil {
 			glog.Errorf("DeSoMiner._startThread: Error getting header to "+
 				"hash on; this should never happen unless we're starting up: %v", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		header := &MsgDeSoHeader{}
+		header := &types.MsgDeSoHeader{}
 		if err := header.FromBytes(headerBytes[0]); err != nil {
 			glog.Errorf("DeSoMiner._startThread: Error parsing header to " +
 				"hash on; this should never happen")
@@ -157,7 +156,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		// Swap in the public key and extraNonce. This should make the block consistent with
 		// the header we were just mining on.
 		blockToMine.Txns[0].TxOutputs[0].PublicKey = publicKey
-		blockToMine.Txns[0].TxnMeta.(*BlockRewardMetadataa).ExtraData = UintToBuf(extraNonces[0])
+		blockToMine.Txns[0].TxnMeta.(*network.BlockRewardMetadataa).ExtraData = network.UintToBuf(extraNonces[0])
 
 		// Set the header for the block, which should update the merkle root.
 		blockToMine.Header = header
@@ -171,7 +170,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 	return nil, nil
 }
 
-func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoolToUpdate *DeSoMempool) (_block *MsgDeSoBlock, _err error) {
+func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoolToUpdate *DeSoMempool) (_block *network.MsgDeSoBlock, _err error) {
 	// Add a call to update the BlockProducer.
 	// TODO(performance): We shouldn't have to do this, it just makes tests pass right now.
 	if err := desoMiner.BlockProducer.UpdateLatestBlockTemplate(); err != nil {
@@ -209,7 +208,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		return nil, err
 	}
 	glog.Debugf("Block bytes hex %d: %s", blockToMine.Header.Height, hex.EncodeToString(blockBytes))
-	blockFromBytes := &MsgDeSoBlock{}
+	blockFromBytes := &network.MsgDeSoBlock{}
 	err = blockFromBytes.FromBytes(blockBytes)
 	if err != nil || !reflect.DeepEqual(*blockToMine, *blockFromBytes) {
 		glog.Error(err)
@@ -255,10 +254,10 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 
 	decimalPlaces := int64(1000)
 	diffTargetBaseline, _ := hex.DecodeString(desoMiner.params.MinDifficultyTargetHex)
-	diffTargetBaselineBlockHash := BlockHash{}
+	diffTargetBaselineBlockHash := types.BlockHash{}
 	copy(diffTargetBaselineBlockHash[:], diffTargetBaseline)
-	diffTargetBaselineBigint := big.NewInt(0).Mul(HashToBigint(&diffTargetBaselineBlockHash), big.NewInt(decimalPlaces))
-	diffTargetBigint := HashToBigint(diffTarget)
+	diffTargetBaselineBigint := big.NewInt(0).Mul(types.HashToBigint(&diffTargetBaselineBlockHash), big.NewInt(decimalPlaces))
+	diffTargetBigint := types.HashToBigint(diffTarget)
 	glog.Debugf("Difficulty factor (1 = 1 core running): %v", float32(big.NewInt(0).Div(diffTargetBaselineBigint, diffTargetBigint).Int64())/float32(decimalPlaces))
 
 	if atomic.LoadInt32(&desoMiner.stopping) == 1 {
@@ -291,7 +290,7 @@ func (desoMiner *DeSoMiner) Start() {
 	glog.Infof("DeSoMiner.Start: Starting miner with difficulty target %s", desoMiner.params.MinDifficultyTargetHex)
 	blockTip := desoMiner.BlockProducer.chain.blockTip()
 	glog.Infof("DeSoMiner.Start: Block tip height %d, cum work %v, and difficulty %v",
-		blockTip.Header.Height, BigintToHash(blockTip.CumWork), blockTip.DifficultyTarget)
+		blockTip.Header.Height, types.BigintToHash(blockTip.CumWork), blockTip.DifficultyTarget)
 	// Start a bunch of threads to mine for blocks.
 	for threadIndex := uint32(0); threadIndex < desoMiner.numThreads; threadIndex++ {
 		go func(threadIndex uint32) {
@@ -301,103 +300,15 @@ func (desoMiner *DeSoMiner) Start() {
 	}
 }
 
-func CopyBytesIntoBlockHash(data []byte) *BlockHash {
-	if len(data) != HashSizeBytes {
-		errorStr := fmt.Sprintf("CopyBytesIntoBlockHash: Got data of size %d for BlockHash of size %d", len(data), HashSizeBytes)
+func CopyBytesIntoBlockHash(data []byte) *types.BlockHash {
+	if len(data) != types.HashSizeBytes {
+		errorStr := fmt.Sprintf("CopyBytesIntoBlockHash: Got data of size %d for BlockHash of size %d", len(data), types.HashSizeBytes)
 		glog.Error(errorStr)
 		return nil
 	}
-	var blockHash BlockHash
+	var blockHash types.BlockHash
 	copy(blockHash[:], data)
 	return &blockHash
-}
-
-// ProofOfWorkHash is a hash function designed for computing DeSo block hashes.
-// It seems the optimal hash function is one that satisfies two properties:
-// 1) It is not computable by any existing ASICs. If this property isn't satisfied
-//    then miners with pre-existing investments in ASICs for other coins can very
-//    cheaply mine on our chain for a short period of time to pull off a 51% attack.
-//    This has actually happened with "merge-mined" coins like Namecoin.
-// 2) If implemented on an ASIC, there is an "orders of magnitude" speed-up over
-//    using a CPU or GPU. This is because ASICs require some amount of capital
-//    expenditure up-front in order to mine, which then aligns the owner of the
-//    ASIC to care about the health of the network over a longer period of time. In
-//    contrast, a hash function that is CPU or GPU-mineable can be attacked with
-//    an AWS fleet early on. This also may result in a more eco-friendly chain, since
-//    the hash power will be more bottlenecked by up-front CapEx rather than ongoing
-//    electricity cost, as is the case with GPU-mined coins.
-//
-// Note that our pursuit of (2) above runs counter to existing dogma which seeks to
-// prioritize "ASIC-resistance" in hash functions.
-//
-// Given the above, the hash function chosen is a simple twist on sha3
-// that we don't think any ASIC exists for currently. Note that creating an ASIC for
-// this should be relatively straightforward, however, which allows us to satisfy
-// property (2) above.
-func ProofOfWorkHash(inputBytes []byte, version uint32) *BlockHash {
-	output := BlockHash{}
-
-	if version == HeaderVersion0 {
-		hashBytes := desohash.DeSoHashV0(inputBytes)
-		copy(output[:], hashBytes[:])
-	} else if version == HeaderVersion1 {
-		hashBytes := desohash.DeSoHashV1(inputBytes)
-		copy(output[:], hashBytes[:])
-	} else {
-		// If we don't recognize the version, we return the v0 hash. We do
-		// this to avoid having to return an error or panic.
-		hashBytes := desohash.DeSoHashV0(inputBytes)
-		copy(output[:], hashBytes[:])
-	}
-
-	return &output
-}
-
-func Sha256DoubleHash(input []byte) *BlockHash {
-	hashBytes := merkletree.Sha256DoubleHash(input)
-	ret := &BlockHash{}
-	copy(ret[:], hashBytes[:])
-	return ret
-}
-
-func HashToBigint(hash *BlockHash) *big.Int {
-	// No need to check errors since the string is necessarily a valid hex
-	// string.
-	val, itWorked := new(big.Int).SetString(hex.EncodeToString(hash[:]), 16)
-	if !itWorked {
-		glog.Errorf("Failed in converting []byte (%#v) to bigint.", hash)
-	}
-	return val
-}
-
-func BigintToHash(bigint *big.Int) *BlockHash {
-	hexStr := bigint.Text(16)
-	if len(hexStr)%2 != 0 {
-		// If we have an odd number of bytes add one to the beginning (remember
-		// the bigints are big-endian.
-		hexStr = "0" + hexStr
-	}
-	hexBytes, err := hex.DecodeString(hexStr)
-	if err != nil {
-		glog.Errorf("Failed in converting bigint (%#v) with hex "+
-			"string (%s) to hash.", bigint, hexStr)
-	}
-	if len(hexBytes) > HashSizeBytes {
-		glog.Errorf("BigintToHash: Bigint %v overflows the hash size %d", bigint, HashSizeBytes)
-		return nil
-	}
-
-	var retBytes BlockHash
-	copy(retBytes[HashSizeBytes-len(hexBytes):], hexBytes)
-	return &retBytes
-}
-
-func BytesToBigint(bb []byte) *big.Int {
-	val, itWorked := new(big.Int).SetString(hex.EncodeToString(bb), 16)
-	if !itWorked {
-		glog.Errorf("Failed in converting []byte (%#v) to bigint.", bb)
-	}
-	return val
 }
 
 func BigintToBytes(bigint *big.Int) []byte {
@@ -422,8 +333,8 @@ func BigintToBytes(bigint *big.Int) []byte {
 // of the passed blockHeader field as it iterates. This makes it easy to
 // continue a subsequent batch of iterations after we return.
 func FindLowestHash(
-	blockHeaderr *MsgDeSoHeader, iterations uint64) (
-	lowestHash *BlockHash, lowestNonce uint64, ee error) {
+	blockHeaderr *types.MsgDeSoHeader, iterations uint64) (
+	lowestHash *types.BlockHash, lowestNonce uint64, ee error) {
 	//// Compute a hash of the header with the current nonce value.
 	bestNonce := blockHeaderr.Nonce
 	bestHash, err := blockHeaderr.Hash()
@@ -456,7 +367,7 @@ func FindLowestHash(
 	return bestHash, bestNonce, nil
 }
 
-func LessThan(aa *BlockHash, bb *BlockHash) bool {
+func LessThan(aa *types.BlockHash, bb *types.BlockHash) bool {
 	aaBigint := new(big.Int)
 	aaBigint.SetBytes(aa[:])
 	bbBigint := new(big.Int)

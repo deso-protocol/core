@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/types"
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
 	"os"
@@ -9,7 +9,7 @@ import (
 
 type Config struct {
 	// Core
-	Params               *lib.DeSoParams
+	Params               *types.DeSoParams
 	ProtocolPort         uint16
 	DataDirectory        string
 	MempoolDumpDirectory string
@@ -62,9 +62,9 @@ func LoadConfig() *Config {
 	// Core
 	testnet := viper.GetBool("testnet")
 	if testnet {
-		config.Params = &lib.DeSoTestnetParams
+		config.Params = &types.DeSoTestnetParams
 	} else {
-		config.Params = &lib.DeSoMainnetParams
+		config.Params = &types.DeSoMainnetParams
 	}
 
 	config.ProtocolPort = uint16(viper.GetUint64("protocol-port"))
@@ -74,7 +74,7 @@ func LoadConfig() *Config {
 
 	config.DataDirectory = viper.GetString("data-dir")
 	if config.DataDirectory == "" {
-		config.DataDirectory = lib.GetDataDir(config.Params)
+		config.DataDirectory = types.GetDataDir(config.Params)
 	}
 	if err := os.MkdirAll(config.DataDirectory, os.ModePerm); err != nil {
 		glog.Fatalf("Could not create data directories (%s): %v", config.DataDirectory, err)

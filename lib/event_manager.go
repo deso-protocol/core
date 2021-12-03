@@ -1,23 +1,29 @@
 package lib
 
+import (
+	"github.com/deso-protocol/core/block_view"
+	"github.com/deso-protocol/core/network"
+	"github.com/deso-protocol/core/types"
+)
+
 type TransactionEventFunc func(event *TransactionEvent)
 type BlockEventFunc func(event *BlockEvent)
 
 type TransactionEvent struct {
-	Txn     *MsgDeSoTxn
-	TxnHash *BlockHash
+	Txn     *network.MsgDeSoTxn
+	TxnHash *types.BlockHash
 
 	// Optional
-	UtxoView *UtxoView
-	UtxoOps  []*UtxoOperation
+	UtxoView *block_view.UtxoView
+	UtxoOps  []*block_view.UtxoOperation
 }
 
 type BlockEvent struct {
-	Block *MsgDeSoBlock
+	Block *network.MsgDeSoBlock
 
 	// Optional
-	UtxoView *UtxoView
-	UtxoOps  [][]*UtxoOperation
+	UtxoView *block_view.UtxoView
+	UtxoOps  [][]*block_view.UtxoOperation
 }
 
 type EventManager struct {

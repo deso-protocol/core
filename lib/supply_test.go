@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/types"
 	"math"
 	"testing"
 	"time"
@@ -19,12 +20,12 @@ func TestTotalMiningSupply(t *testing.T) {
 
 	// Sum all of the mining intervals to make sure there is no overflow.
 	totalMiningSupply := uint64(0)
-	for intervalIndex, currentInterval := range MiningSupplyIntervals {
+	for intervalIndex, currentInterval := range types.MiningSupplyIntervals {
 		if intervalIndex == 0 {
 			// Skip the first index
 			continue
 		}
-		prevInterval := MiningSupplyIntervals[intervalIndex-1]
+		prevInterval := types.MiningSupplyIntervals[intervalIndex-1]
 		blockRewardNanos := prevInterval.BlockRewardNanos
 		numBlocksInInterval := currentInterval.StartBlockHeight - prevInterval.StartBlockHeight
 
@@ -37,80 +38,80 @@ func TestTotalMiningSupply(t *testing.T) {
 func TestCalcBlockReward(t *testing.T) {
 	require := require.New(t)
 
-	blocksPerYear := (time.Hour * 24 * 365 / DeSoMainnetParams.TimeBetweenBlocks)
-	require.Equal(int64(blocksPerYear), int64(BlocksPerYear))
+	blocksPerYear := (time.Hour * 24 * 365 / types.DeSoMainnetParams.TimeBetweenBlocks)
+	require.Equal(int64(blocksPerYear), int64(types.BlocksPerYear))
 
-	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(0))
-	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(1))
+	require.Equal(1*types.NanosPerUnit, types.CalcBlockRewardNanos(0))
+	require.Equal(1*types.NanosPerUnit, types.CalcBlockRewardNanos(1))
 
 	// .75
-	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight-1))
-	require.Equal(int64(float64(NanosPerUnit) * .75), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight)))
+	require.Equal(1*types.NanosPerUnit, types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight-1))
+	require.Equal(int64(float64(types.NanosPerUnit)*.75), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight)))
 	// .5
-	require.Equal(int64(float64(NanosPerUnit) * .75), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 288 - 1)))
-	require.Equal(int64(float64(NanosPerUnit) * .5), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 288)))
+	require.Equal(int64(float64(types.NanosPerUnit)*.75), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight+288-1)))
+	require.Equal(int64(float64(types.NanosPerUnit)*.5), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight+288)))
 	// .25
-	require.Equal(int64(float64(NanosPerUnit) * .5), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 2*288 - 1)))
-	require.Equal(int64(float64(NanosPerUnit) * .25), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 2*288)))
+	require.Equal(int64(float64(types.NanosPerUnit)*.5), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight+2*288-1)))
+	require.Equal(int64(float64(types.NanosPerUnit)*.25), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight+2*288)))
 	// .125
-	require.Equal(int64(float64(NanosPerUnit) * .25), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 3*288 - 1)))
-	require.Equal(int64(float64(NanosPerUnit) * .125), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 3*288)))
+	require.Equal(int64(float64(types.NanosPerUnit)*.25), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight+3*288-1)))
+	require.Equal(int64(float64(types.NanosPerUnit)*.125), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight+3*288)))
 	// .1
-	require.Equal(int64(float64(NanosPerUnit) * .125), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 4*288 - 1)))
-	require.Equal(int64(float64(NanosPerUnit) * .1), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight + 4*288)))
+	require.Equal(int64(float64(types.NanosPerUnit)*.125), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight+4*288-1)))
+	require.Equal(int64(float64(types.NanosPerUnit)*.1), int64(types.CalcBlockRewardNanos(types.DeflationBombBlockRewardAdjustmentBlockHeight+4*288)))
 
 	// .05
-	require.Equal(int64(1*NanosPerUnit/10), int64(CalcBlockRewardNanos(15*BlocksPerYear-1)))
-	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(15*BlocksPerYear))
-	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(15*BlocksPerYear+1))
+	require.Equal(int64(1*types.NanosPerUnit/10), int64(types.CalcBlockRewardNanos(15*types.BlocksPerYear-1)))
+	require.Equal(types.NanosPerUnit/20, types.CalcBlockRewardNanos(15*types.BlocksPerYear))
+	require.Equal(types.NanosPerUnit/20, types.CalcBlockRewardNanos(15*types.BlocksPerYear+1))
 	// 0
-	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(32*BlocksPerYear-1))
-	require.Equal(uint64(0), CalcBlockRewardNanos(32*BlocksPerYear))
-	require.Equal(uint64(0), CalcBlockRewardNanos(32*BlocksPerYear+1))
-	require.Equal(uint64(0), CalcBlockRewardNanos(35*BlocksPerYear+1))
-	require.Equal(uint64(0), CalcBlockRewardNanos(math.MaxUint32))
+	require.Equal(types.NanosPerUnit/20, types.CalcBlockRewardNanos(32*types.BlocksPerYear-1))
+	require.Equal(uint64(0), types.CalcBlockRewardNanos(32*types.BlocksPerYear))
+	require.Equal(uint64(0), types.CalcBlockRewardNanos(32*types.BlocksPerYear+1))
+	require.Equal(uint64(0), types.CalcBlockRewardNanos(35*types.BlocksPerYear+1))
+	require.Equal(uint64(0), types.CalcBlockRewardNanos(math.MaxUint32))
 }
 
 func TestGetPrice(t *testing.T) {
-	oldInitialUSDCentsPerBitcoinExchangeRate := InitialUSDCentsPerBitcoinExchangeRate
-	InitialUSDCentsPerBitcoinExchangeRate = 1350000
+	oldInitialUSDCentsPerBitcoinExchangeRate := types.InitialUSDCentsPerBitcoinExchangeRate
+	types.InitialUSDCentsPerBitcoinExchangeRate = 1350000
 	defer func() {
-		InitialUSDCentsPerBitcoinExchangeRate = oldInitialUSDCentsPerBitcoinExchangeRate
+		types.InitialUSDCentsPerBitcoinExchangeRate = oldInitialUSDCentsPerBitcoinExchangeRate
 	}()
 	assert := assert.New(t)
 	{
-		startPriceSatoshis := GetStartPriceSatoshisPerDeSo(InitialUSDCentsPerBitcoinExchangeRate)
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(0, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(10, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1000, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1000000000, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(10000000000, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(100000000000, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis+2), int64(GetSatoshisPerUnitExchangeRate(1000*NanosPerUnit, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(2*startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1000000*NanosPerUnit, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(16135), int64(GetSatoshisPerUnitExchangeRate(2123456*NanosPerUnit, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(8*startPriceSatoshis-1), int64(GetSatoshisPerUnitExchangeRate(3000000*NanosPerUnit, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(8*startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(3000001*NanosPerUnit, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(262144*startPriceSatoshis-1), int64(GetSatoshisPerUnitExchangeRate(18000000*NanosPerUnit, InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(33554432*startPriceSatoshis-1), int64(GetSatoshisPerUnitExchangeRate(25000000*NanosPerUnit, InitialUSDCentsPerBitcoinExchangeRate)))
+		startPriceSatoshis := types.GetStartPriceSatoshisPerDeSo(types.InitialUSDCentsPerBitcoinExchangeRate)
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(0, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(1, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(10, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(1000, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(1000000000, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(10000000000, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(100000000000, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis+2), int64(types.GetSatoshisPerUnitExchangeRate(1000*types.NanosPerUnit, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(2*startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(1000000*types.NanosPerUnit, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(16135), int64(types.GetSatoshisPerUnitExchangeRate(2123456*types.NanosPerUnit, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(8*startPriceSatoshis-1), int64(types.GetSatoshisPerUnitExchangeRate(3000000*types.NanosPerUnit, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(8*startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(3000001*types.NanosPerUnit, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(262144*startPriceSatoshis-1), int64(types.GetSatoshisPerUnitExchangeRate(18000000*types.NanosPerUnit, types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(33554432*startPriceSatoshis-1), int64(types.GetSatoshisPerUnitExchangeRate(25000000*types.NanosPerUnit, types.InitialUSDCentsPerBitcoinExchangeRate)))
 	}
 	// Doubling the exchange rate should double the price outputted.
 	{
-		startPriceSatoshis := GetStartPriceSatoshisPerDeSo(2 * InitialUSDCentsPerBitcoinExchangeRate)
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(0, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(10, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1000, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1000000000, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(10000000000, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(100000000000, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(startPriceSatoshis+1), int64(GetSatoshisPerUnitExchangeRate(1000*NanosPerUnit, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(2*startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1000000*NanosPerUnit, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(16135/2-2), int64(GetSatoshisPerUnitExchangeRate(2123456*NanosPerUnit, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(8*startPriceSatoshis-1), int64(GetSatoshisPerUnitExchangeRate(3000000*NanosPerUnit, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(262144*startPriceSatoshis-1), int64(GetSatoshisPerUnitExchangeRate(18000000*NanosPerUnit, 2*InitialUSDCentsPerBitcoinExchangeRate)))
-		assert.Equal(int64(33554432*startPriceSatoshis-1), int64(GetSatoshisPerUnitExchangeRate(25000000*NanosPerUnit, 2*InitialUSDCentsPerBitcoinExchangeRate)))
+		startPriceSatoshis := types.GetStartPriceSatoshisPerDeSo(2 * types.InitialUSDCentsPerBitcoinExchangeRate)
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(0, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(1, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(10, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(1000, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(1000000000, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(10000000000, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(100000000000, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(startPriceSatoshis+1), int64(types.GetSatoshisPerUnitExchangeRate(1000*types.NanosPerUnit, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(2*startPriceSatoshis), int64(types.GetSatoshisPerUnitExchangeRate(1000000*types.NanosPerUnit, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(16135/2-2), int64(types.GetSatoshisPerUnitExchangeRate(2123456*types.NanosPerUnit, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(8*startPriceSatoshis-1), int64(types.GetSatoshisPerUnitExchangeRate(3000000*types.NanosPerUnit, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(262144*startPriceSatoshis-1), int64(types.GetSatoshisPerUnitExchangeRate(18000000*types.NanosPerUnit, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
+		assert.Equal(int64(33554432*startPriceSatoshis-1), int64(types.GetSatoshisPerUnitExchangeRate(25000000*types.NanosPerUnit, 2*types.InitialUSDCentsPerBitcoinExchangeRate)))
 	}
 }
 
@@ -118,10 +119,10 @@ func TestCalcNanosToCreate(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	oldInitialUSDCentsPerBitcoinExchangeRate := InitialUSDCentsPerBitcoinExchangeRate
-	InitialUSDCentsPerBitcoinExchangeRate = 1350000
+	oldInitialUSDCentsPerBitcoinExchangeRate := types.InitialUSDCentsPerBitcoinExchangeRate
+	types.InitialUSDCentsPerBitcoinExchangeRate = 1350000
 	defer func() {
-		InitialUSDCentsPerBitcoinExchangeRate = oldInitialUSDCentsPerBitcoinExchangeRate
+		types.InitialUSDCentsPerBitcoinExchangeRate = oldInitialUSDCentsPerBitcoinExchangeRate
 	}()
 
 	// Comment this in to test specific fields.
@@ -129,7 +130,7 @@ func TestCalcNanosToCreate(t *testing.T) {
 	startNanos := uint64(8157483223947843)
 	//satoshisToBurn := uint64(500000000)
 	usdCentsPerBitcoin := uint64(5400000)
-	xxx := float64(GetSatoshisPerUnitExchangeRate(startNanos, usdCentsPerBitcoin)) / 1e8 * float64(5700000) / 100.0
+	xxx := float64(types.GetSatoshisPerUnitExchangeRate(startNanos, usdCentsPerBitcoin)) / 1e8 * float64(5700000) / 100.0
 	fmt.Println(xxx)
 	return
 
@@ -202,7 +203,7 @@ func TestCalcNanosToCreate(t *testing.T) {
 
 	{
 		for ii := 0; ii < len(randomStartNanos); ii++ {
-			nanosToCreate := CalcNanosToCreate(
+			nanosToCreate := types.CalcNanosToCreate(
 				randomStartNanos[ii] /*startNanos*/, randomSatoshisToBurn[ii] /*satoshisToBurn*/, randomUsdCentsPerBitcoinExchangeRate[ii] /*usdCentsPerBitcoin*/)
 
 			//if nanosToCreate == 7129365 {
@@ -260,106 +261,106 @@ func TestCalcNanosToCreate(t *testing.T) {
 
 	{
 		// Zero satoshi means zero nanos
-		nanosToCreate := CalcNanosToCreate(
+		nanosToCreate := types.CalcNanosToCreate(
 			945603607309490 /*startNanos*/, 650000000 /*satoshisToBurn*/, 1550000 /*usdCentsPerBitcoin*/)
 		assert.Equal(int64(101026173281102), int64(nanosToCreate))
 	}
 	{
 		// Zero satoshi means zero nanos
-		nanosToCreate := CalcNanosToCreate(
+		nanosToCreate := types.CalcNanosToCreate(
 			1046606985637137 /*startNanos*/, 1287001287 /*satoshisToBurn*/, 1554000 /*usdCentsPerBitcoin*/)
 		assert.Equal(int64(181730399315476), int64(nanosToCreate))
 	}
 	{
 		// Zero satoshi means zero nanos
-		nanosToCreate := CalcNanosToCreate(0, 0, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(0, 0, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(uint64(0), nanosToCreate)
 	}
 	{
 		// This amount of satoshis should print zero nanos at this price.
-		nanosToCreate := CalcNanosToCreate(10, 0, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(10, 0, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(uint64(0), nanosToCreate)
 	}
 	{
 		// Zero satoshi means zero nanos: second tranche
-		nanosToCreate := CalcNanosToCreate(1000001*NanosPerUnit, 0, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(1000001*types.NanosPerUnit, 0, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(uint64(0), nanosToCreate)
 	}
 	{
 		// Zero satoshis should print zero nanos, even when the supply is very large.
-		nanosToCreate := CalcNanosToCreate(18000001*NanosPerUnit, 0, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(18000001*types.NanosPerUnit, 0, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(uint64(0), nanosToCreate)
 	}
 	{
 		// Zero satoshis should print zero nanos, even when the supply is very large.
-		nanosToCreate := CalcNanosToCreate(25000001*NanosPerUnit, 0, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(25000001*types.NanosPerUnit, 0, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(uint64(0), nanosToCreate)
 	}
 	{
 		// One satoshi should print zero nanos when the supply is large.
-		nanosToCreate := CalcNanosToCreate(18000001*NanosPerUnit, 1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(18000001*types.NanosPerUnit, 1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(uint64(0), nanosToCreate)
 	}
 	{
-		nanosToCreate := CalcNanosToCreate(10000001*NanosPerUnit, 1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(10000001*types.NanosPerUnit, 1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(262), int64(nanosToCreate))
 	}
 	{
 		// <131 satoshis should not hurdle the threshold.
-		nanosToCreate := CalcNanosToCreate(20000001*NanosPerUnit, 125, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(20000001*types.NanosPerUnit, 125, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
 		// >131 satoshis should hurdle the threshold and print some.
-		nanosToCreate := CalcNanosToCreate(18000001*NanosPerUnit, 135, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(18000001*types.NanosPerUnit, 135, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(140), int64(nanosToCreate))
 	}
 	{
 		// One satoshi should print zero nanos when the supply is large.
-		nanosToCreate := CalcNanosToCreate(25000001*NanosPerUnit, 1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(25000001*types.NanosPerUnit, 1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(uint64(0), nanosToCreate)
 	}
 	{
 		// One satoshi should print X minus the discount initially.
-		nanosToCreate := CalcNanosToCreate(0*NanosPerUnit, 1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(0*types.NanosPerUnit, 1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(270051), int64(nanosToCreate))
 	}
 	{
 		// One satoshi should print X minus the discount initially.
-		nanosToCreate := CalcNanosToCreate(10*NanosPerUnit, 10, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(10*types.NanosPerUnit, 10, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(2700494), int64(nanosToCreate))
 	}
 	{
 		// Print 1 BTC at the beginning. Should be about 10k DeSo, but less
 		// than that because the price is increasing slightly as they buy it.
-		nanosToCreate := CalcNanosToCreate(0*NanosPerUnit, satoshisPerBitcoin+1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(0*types.NanosPerUnit, satoshisPerBitcoin+1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(26755493480681), int64(nanosToCreate))
 	}
 	{
 		// The first purchase should work even if it's large.
-		nanosToCreate := CalcNanosToCreate(0*NanosPerUnit, 200*satoshisPerBitcoin+1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(0*types.NanosPerUnit, 200*satoshisPerBitcoin+1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(2246014623084247), int64(nanosToCreate))
 	}
 	{
 		// Making a purchase part-way through the first tranche should work. Should
 		// cost <10k but not too much less than that.
-		nanosToCreate := CalcNanosToCreate(200001*NanosPerUnit, satoshisPerBitcoin+1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(200001*types.NanosPerUnit, satoshisPerBitcoin+1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(23319824667603), int64(nanosToCreate))
 	}
 	{
 		// Make a large purchase partway through the first tranche.
-		nanosToCreate := CalcNanosToCreate(200001*NanosPerUnit, 200*satoshisPerBitcoin+1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(200001*types.NanosPerUnit, 200*satoshisPerBitcoin+1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(2090542905078737), int64(nanosToCreate))
 	}
 	{
 		// A purchase part-way through a middle tranche should work.
-		nanosToCreate := CalcNanosToCreate(6123456123456789, 5712345678, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(6123456123456789, 5712345678, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(21958743502996), int64(nanosToCreate))
 	}
 
 	{
 		startVal := uint64(6123456123456789)
-		nanosToCreate := CalcNanosToCreate(startVal, 560988080987, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 560988080987, types.InitialUSDCentsPerBitcoinExchangeRate)
 		// Be careful: Your calculator will lose precision when you try to calculate this
 		// to check it if you let it do floating point at any step.
 		assert.Equal(int64(7448955216307525), int64(nanosToCreate)+int64(startVal))
@@ -370,20 +371,20 @@ func TestCalcNanosToCreate(t *testing.T) {
 		// at the end of a tranche and the purchaser tries to buy zero satoshis. This should
 		// result in zero nanos being created.
 		startVal := uint64(7000000000000000 - 99)
-		nanosToCreate := CalcNanosToCreate(startVal, 0, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 0, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
 		// Try a weird situation where there is less than one satoshi left worth of nanos
 		// at the end of a tranche and the purchaser tries to buy one satoshi worth of nanos.
 		startVal := uint64(7000000000000000 - 99)
-		nanosToCreate := CalcNanosToCreate(startVal, 1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(2111), int64(nanosToCreate))
 	}
 	{
 		startVal := uint64(16000000123456789)
 		satoshisToCleanOutTranche := uint64(655359919091358)
-		nanosToCreate := CalcNanosToCreate(startVal, satoshisToCleanOutTranche, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, satoshisToCleanOutTranche, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(17521981851378602), int64(startVal+nanosToCreate))
 	}
 	{
@@ -392,7 +393,7 @@ func TestCalcNanosToCreate(t *testing.T) {
 		startVal := uint64(16999999999999998)
 		// satoshisPerUnit := uint64(655360000)
 		// (17000000*NanosPerUnit - startVal) * satoshisPerUnit / NanosPerUnit
-		nanosToCreate := CalcNanosToCreate(startVal, 0, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 0, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
@@ -400,7 +401,7 @@ func TestCalcNanosToCreate(t *testing.T) {
 		// and 1 satoshi is burned. This should result in zero since it doesn't hurdle
 		// the floating point threshold.
 		startVal := uint64(16999999999999998)
-		nanosToCreate := CalcNanosToCreate(startVal, 1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
@@ -409,14 +410,14 @@ func TestCalcNanosToCreate(t *testing.T) {
 		startVal := uint64(16999999999999998)
 		// satoshisPerUnit := uint64(655360000)
 		// (17000000*NanosPerUnit - startVal) * satoshisPerUnit / NanosPerUnit
-		nanosToCreate := CalcNanosToCreate(startVal, 2, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 2, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
 		// Try a situation where a user starts in the last tranche right at the end
 		// and 3 satoshi is burned. In this case we should not cross the threshold.
 		startVal := uint64(16999999999999998)
-		nanosToCreate := CalcNanosToCreate(startVal, 3, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 3, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
@@ -426,7 +427,7 @@ func TestCalcNanosToCreate(t *testing.T) {
 		// satoshisPerUnit := uint64(655360000)
 		// (17000000*NanosPerUnit - startVal) * satoshisPerUnit / NanosPerUnit
 		satoshisToCleanOutTranche := uint64(655359919091359)
-		nanosToCreate := CalcNanosToCreate(startVal, satoshisToCleanOutTranche, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, satoshisToCleanOutTranche, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(17521981851378602), int64(startVal+nanosToCreate))
 	}
 	{
@@ -436,35 +437,35 @@ func TestCalcNanosToCreate(t *testing.T) {
 		// satoshisPerUnit := uint64(655360000)
 		// (17000000*NanosPerUnit - startVal) * satoshisPerUnit / NanosPerUnit
 		satoshisToCleanOutTranche := uint64(665359919091359)
-		nanosToCreate := CalcNanosToCreate(startVal, satoshisToCleanOutTranche, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, satoshisToCleanOutTranche, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(17536259392211874), int64(startVal+nanosToCreate))
 	}
 	{
 		// Try a situation where a user starts at the end and buys zero. Should result
 		// in no nanos being created.
 		startVal := uint64(17000000000000000)
-		nanosToCreate := CalcNanosToCreate(startVal, 0, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 0, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
 		// Try a situation where a user starts at the end and burns one satoshi. Should result
 		// in no nanos being created.
 		startVal := uint64(17000000000000000)
-		nanosToCreate := CalcNanosToCreate(startVal, 1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
 		// Try a situation where a user starts beyond the end and burns one satoshi.
 		// Should never happen but should result in no nanos being created nevertheless.
 		startVal := uint64(17000000000000001)
-		nanosToCreate := CalcNanosToCreate(startVal, 1, InitialUSDCentsPerBitcoinExchangeRate)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 1, types.InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(0), int64(nanosToCreate))
 	}
 	{
 		// Spending a million Bitcoin at the max should be near-zero
-		startVal := uint64(MaxNanos)
-		nanosToCreate := CalcNanosToCreate(startVal, 1000000*100000000, InitialUSDCentsPerBitcoinExchangeRate)
-		assert.Greater(int64(100*NanosPerUnit), int64(nanosToCreate))
+		startVal := uint64(types.MaxNanos)
+		nanosToCreate := types.CalcNanosToCreate(startVal, 1000000*100000000, types.InitialUSDCentsPerBitcoinExchangeRate)
+		assert.Greater(int64(100*types.NanosPerUnit), int64(nanosToCreate))
 	}
 }
 
@@ -472,7 +473,7 @@ func TestBigFloat(t *testing.T) {
 	//assert := assert.New(t)
 	require := require.New(t)
 
-	require.Equal(NewFloat().SetFloat64(0.33403410169116804), BigFloatPow(NewFloat().SetFloat64(0.6938468198960861), NewFloat().SetUint64(uint64(3))))
+	require.Equal(types.NewFloat().SetFloat64(0.33403410169116804), types.BigFloatPow(types.NewFloat().SetFloat64(0.6938468198960861), types.NewFloat().SetUint64(uint64(3))))
 }
 
 func TestSumBalances(t *testing.T) {
@@ -481,19 +482,19 @@ func TestSumBalances(t *testing.T) {
 	_, _ = assert, require
 
 	// Balances should sum to the amount purchased.
-	params := &DeSoMainnetParams
+	params := &types.DeSoMainnetParams
 	amounts := uint64(0)
 	balancesByPublicKey := make(map[string]int64)
 	for _, seedBal := range params.SeedBalances {
 		amounts += seedBal.AmountNanos
-		pkStr := PkToStringMainnet(seedBal.PublicKey)
+		pkStr := types.PkToStringMainnet(seedBal.PublicKey)
 		if amountFound, exists := balancesByPublicKey[pkStr]; exists {
 			require.Fail(fmt.Sprintf("Public key %v found twice in map: %v %v",
 				pkStr, int64(seedBal.AmountNanos), int64(amountFound)))
 		}
 		balancesByPublicKey[pkStr] = int64(seedBal.AmountNanos)
 	}
-	require.Equal(int64(params.DeSoNanosPurchasedAtGenesis)+int64(2e6*NanosPerUnit), int64(amounts))
+	require.Equal(int64(params.DeSoNanosPurchasedAtGenesis)+int64(2e6*types.NanosPerUnit), int64(amounts))
 
 	// Spot-check a few balances
 	_checkBalance := func(pkStr string, expectedVal int64) {

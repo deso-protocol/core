@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/deso-protocol/core/types"
 	"testing"
 
 	"github.com/golang/glog"
@@ -24,7 +25,7 @@ func TestCheckDoubleSpend(t *testing.T) {
 
 	// Mainnet checks
 	{
-		params := &DeSoMainnetParams
+		params := &types.DeSoMainnetParams
 
 		// This txn is not a double-spend
 		{
@@ -45,7 +46,7 @@ func TestCheckDoubleSpend(t *testing.T) {
 
 	{
 		// Testnet checks
-		params := &DeSoTestnetParams
+		params := &types.DeSoTestnetParams
 
 		// This txn is not a double-spend
 		{
