@@ -120,4 +120,9 @@ var NODES = map[uint64]DeSoNode{
 		URL: "https://beyond.restartu.org",
 		Owner: "RestartU"
 	},
+	20: {
+		Name:  "DeverSo",
+		URL:   "https://deverso.io/",
+		Owner: "Nordian",
+	},
 }
