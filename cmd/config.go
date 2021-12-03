@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"github.com/deso-protocol/core/lib"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	"github.com/spf13/viper"
 	"os"
 )

@@ -1,6 +1,6 @@
 package migrate
 
-import "github.com/golang/glog"
+import "github.com/deso-protocol/glog"
 
 // LoadMigrations forces Go to call init() on all the files in this package.
 // The library we use for migrations, go-pg-migrations, needs to be refactored to

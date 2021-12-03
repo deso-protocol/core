@@ -16,9 +16,9 @@ import (
 	"github.com/deso-protocol/core/migrate"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
-	"github.com/sasha-s/go-deadlock"
+	"github.com/deso-protocol/go-deadlock"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )

@@ -18,7 +18,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	"github.com/pkg/errors"
 )
 

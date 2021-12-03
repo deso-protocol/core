@@ -11,9 +11,9 @@ import (
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrd/lru"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
+	"github.com/deso-protocol/go-deadlock"
 )
 
 // connection_manager.go contains most of the logic for creating and managing

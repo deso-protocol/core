@@ -19,10 +19,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
-	merkletree "github.com/laser/go-merkle-tree"
+	"github.com/deso-protocol/glog"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
+	"github.com/deso-protocol/go-deadlock"
 )
 
 // blockchain.go is the work-horse for validating DeSo blocks and updating the

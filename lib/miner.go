@@ -18,8 +18,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/golang/glog"
-	merkletree "github.com/laser/go-merkle-tree"
+	"github.com/deso-protocol/glog"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/pkg/errors"
 )
 

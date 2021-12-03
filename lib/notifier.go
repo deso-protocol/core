@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 )
 
 type Notifier struct {

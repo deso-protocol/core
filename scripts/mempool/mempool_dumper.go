@@ -14,7 +14,7 @@ import (
 
 	"github.com/deso-protocol/core/lib"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 )
 
 var (

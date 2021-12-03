@@ -21,9 +21,9 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
+	"github.com/deso-protocol/go-deadlock"
 )
 
 // mempool.go contains all of the mempool logic for the DeSo node.

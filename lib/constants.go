@@ -12,7 +12,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	"github.com/shibukawa/configdir"
 )
 

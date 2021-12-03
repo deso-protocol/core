@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/sasha-s/go-deadlock"
+	"github.com/deso-protocol/go-deadlock"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	"github.com/pkg/errors"
 )
 

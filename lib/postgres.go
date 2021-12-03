@@ -6,7 +6,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	"strings"
 )
 

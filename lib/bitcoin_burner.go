@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/deso-protocol/glog"
 	"github.com/pkg/errors"
 
 	"github.com/btcsuite/btcd/btcec"
