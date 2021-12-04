@@ -108,16 +108,10 @@ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/deckarep/golang-set v0.0.0-20180603214616-504e848d77ea/go.mod h1:93vsz/8Wt4joVM7c2AVqh+YRMiUSc14yDtF28KmMOgQ=
 github.com/decred/dcrd/lru v1.0.0 h1:Kbsb1SFDsIlaupWPwsPp+dkxiBY1frcS07PCPgotKz8=
 github.com/decred/dcrd/lru v1.0.0/go.mod h1:mxKOwFd7lFjN2GZYsiz/ecgqR6kkYAl+0pz0tEMk218=
-github.com/deso-protocol/glog v0.0.0-20210429001901-424d2337a529 h1:ZzTqb6AYbvpLD+Lk1QuekYNif5iLSxU9st6bij+qEn0=
-github.com/deso-protocol/glog v0.0.0-20210429001901-424d2337a529/go.mod h1:ZYWkiN7y2aG9imkQiVwgvzgFJduIRM9MkiNm11xL8l8=
 github.com/deso-protocol/glog v1.0.0 h1:pkr9GYJOnVwulQqL3FwxgHkOB40sckwGLmTN05ClGbI=
 github.com/deso-protocol/glog v1.0.0/go.mod h1:EkfPURhQ/uBXBvSb2dRVgw2N6j70jYc2lAkSDHW9sFU=
-github.com/deso-protocol/go-deadlock v0.2.0 h1:pcpUzVHjRJNBgxDWM0W+iudhfwAu2LbUXDsWkRxSwXs=
-github.com/deso-protocol/go-deadlock v0.2.0/go.mod h1:NhLHN+vxB9G6++jzC4cwRviT0/N4Va6rkDpRaEshjsw=
 github.com/deso-protocol/go-deadlock v1.0.0 h1:mw0pHy/19zgC+JFBStuQt1+1Ehv5OKA5NxXqecnL5ic=
 github.com/deso-protocol/go-deadlock v1.0.0/go.mod h1:K0Wd2OV2x7ck7SMYDraWerpKjFKUeBqaFcwz21tmkb8=
-github.com/deso-protocol/go-merkle-tree v0.0.0-20180821204614-16c2f6ea4444 h1:TMOzbHXRiwPClrEQYnb8Mp4tmZVAZoHh7f9KXSoae/I=
-github.com/deso-protocol/go-merkle-tree v0.0.0-20180821204614-16c2f6ea4444/go.mod h1:mXIXPfyYdcpKDkgXX0IyW2dcKicYXdCWDqDIoPYiHkc=
 github.com/deso-protocol/go-merkle-tree v1.0.0 h1:9zkI5dQsITYy77s4kbTGPQmZnhQ+LsH/kRdL5l/Yzvg=
 github.com/deso-protocol/go-merkle-tree v1.0.0/go.mod h1:V/vbg/maaNv6G7zf9VVs645nLFx/jsO2L/awFB/S/ZU=
 github.com/dgraph-io/badger/v3 v3.2103.0 h1:abkD2EnP3+6Tj8h5LI1y00dJ9ICKTIAzvG9WmZ8S2c4=
