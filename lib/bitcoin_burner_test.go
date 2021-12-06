@@ -3,8 +3,6 @@ package lib
 import (
 	"testing"
 
-	"github.com/golang/glog"
-
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,8 +13,6 @@ var (
 )
 
 func TestCheckDoubleSpend(t *testing.T) {
-	glog.Init()
-
 	// Set up a blockchain
 	assert := assert.New(t)
 	require := require.New(t)
@@ -69,7 +65,6 @@ func TestCheckDoubleSpend(t *testing.T) {
 // used within it go stale and return different values after being mined.
 //
 //func TestCheckRBF(t *testing.T) {
-//	glog.Init()
 //
 //	// Set up a blockchain
 //	assert := assert.New(t)

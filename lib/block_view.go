@@ -432,7 +432,7 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	senderPKID := bav.GetPKIDForPublicKey(readerPK)
 	receiverPKID := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
 	if senderPKID == nil || receiverPKID == nil {
-		glog.Debugf(
+		glog.V(1).Infof(
 			"GetPostEntryReaderState: Could not find PKID for reader PK: %s or poster PK: %s",
 			PkToString(readerPK, bav.Params), PkToString(postEntry.PosterPublicKey, bav.Params))
 	} else {
@@ -999,13 +999,13 @@ type UtxoOperation struct {
 	// encounter a SwapIdentity txn. This makes it so that we don't have to
 	// reconnect all txns in order to get these values.
 	SwapIdentityFromDESOLockedNanos uint64
-	SwapIdentityToDESOLockedNanos uint64
+	SwapIdentityToDESOLockedNanos   uint64
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values.
-	AcceptNFTBidCreatorPublicKey []byte
-	AcceptNFTBidBidderPublicKey []byte
+	AcceptNFTBidCreatorPublicKey    []byte
+	AcceptNFTBidBidderPublicKey     []byte
 	AcceptNFTBidCreatorRoyaltyNanos uint64
 }
 
@@ -3450,7 +3450,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// If the utxo is from a block reward txn, make sure enough time has passed to
 		// make it spendable.
 		if _isEntryImmatureBlockReward(utxoEntry, blockHeight, bav.Params) {
-			glog.Debugf("utxoKey: %v, utxoEntry: %v, height: %d", &utxoKey, utxoEntry, blockHeight)
+			glog.V(1).Infof("utxoKey: %v, utxoEntry: %v, height: %d", &utxoKey, utxoEntry, blockHeight)
 			return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
 		}
 
@@ -7393,8 +7393,8 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 
 		// Rosetta fields.
-		AcceptNFTBidCreatorPublicKey: nftPostEntry.PosterPublicKey,
-		AcceptNFTBidBidderPublicKey: bidderPublicKey,
+		AcceptNFTBidCreatorPublicKey:    nftPostEntry.PosterPublicKey,
+		AcceptNFTBidBidderPublicKey:     bidderPublicKey,
 		AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
 	})
 
@@ -8013,7 +8013,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 		Type: OperationTypeSwapIdentity,
 		// Rosetta fields
 		SwapIdentityFromDESOLockedNanos: fromNanos,
-		SwapIdentityToDESOLockedNanos: toNanos,
+		SwapIdentityToDESOLockedNanos:   toNanos,
 
 		// Note that we don't need any metadata on this operation, since the swap is reversible
 		// without it.
@@ -8726,7 +8726,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// and it's much more efficient to compute it here than it is to recompute
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing " +
+		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing "+
 			"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
@@ -8735,12 +8735,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevBuyerBalanceEntry,
-		PrevCreatorBalanceEntry:    &prevCreatorBalanceEntry,
-		FounderRewardUtxoKey:       outputKey,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevBuyerBalanceEntry,
+		PrevCreatorBalanceEntry:        &prevCreatorBalanceEntry,
+		FounderRewardUtxoKey:           outputKey,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	return totalInput, totalOutput, coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, utxoOpsForTxn, nil
@@ -9006,8 +9006,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, 0, nil, errors.Wrapf(
-			err, "HelpConnectCreatorCoinSell: Error computing " +
-			"desoLockedNanosDiff: Missing profile")
+			err, "HelpConnectCreatorCoinSell: Error computing "+
+				"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
@@ -9015,11 +9015,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
-		PrevCreatorBalanceEntry:    nil,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevTransactorBalanceEntry,
+		PrevCreatorBalanceEntry:        nil,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	// The DeSo that the user gets from selling their creator coin counts
@@ -9614,7 +9614,7 @@ func (bav *UtxoView) ConnectBlock(
 	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager) (
 	[][]*UtxoOperation, error) {
 
-	glog.Debugf("ConnectBlock: Connecting block %v", desoBlock)
+	glog.V(1).Infof("ConnectBlock: Connecting block %v", desoBlock)
 
 	// Check that the block being connected references the current tip. ConnectBlock
 	// can only add a block to the current tip. We do this to keep the API simple.
@@ -10646,7 +10646,7 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 }
 
 func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
+	glog.V(1).Infof("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
 
 	for utxoKeyIter, utxoEntry := range bav.UtxoKeyToUtxoEntry {
 		// Make a copy of the iterator since it might change from under us.
@@ -10686,7 +10686,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	glog.Debugf("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(1).Infof("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// Now update the number of entries in the db with confidence.
 	if err := PutUtxoNumEntriesWithTxn(txn, bav.NumUtxoEntries); err != nil {
@@ -10701,7 +10701,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
+	glog.V(1).Infof("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
 		len(bav.PublicKeyToDeSoBalanceNanos))
 
 	for pubKeyIter := range bav.PublicKeyToDeSoBalanceNanos {
@@ -11167,7 +11167,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
-	glog.Debugf("_flushPostEntriesToDbWithTxn: flushing %d mappings", len(bav.PostHashToPostEntry))
+	glog.V(1).Infof("_flushPostEntriesToDbWithTxn: flushing %d mappings", len(bav.PostHashToPostEntry))
 
 	// Go through all the entries in the PostHashToPostEntry map.
 	for postHashIter, postEntry := range bav.PostHashToPostEntry {
@@ -11210,7 +11210,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
-	glog.Debugf("_flushPostEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(1).Infof("_flushPostEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the PostEntry mappings in the db should be up-to-date.
 
@@ -11270,7 +11270,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushProfilesToDbWithTxn: flushing %d mappings", len(bav.ProfilePKIDToProfileEntry))
+	glog.V(1).Infof("_flushProfilesToDbWithTxn: flushing %d mappings", len(bav.ProfilePKIDToProfileEntry))
 
 	// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
 	for profilePKIDIter, profileEntry := range bav.ProfilePKIDToProfileEntry {
@@ -11318,7 +11318,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	glog.Debugf("_flushProfilesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(1).Infof("_flushProfilesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the PostEntry mappings in the db should be up-to-date.
 
@@ -11326,7 +11326,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
+	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 
 	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
 	for balanceKeyIter, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
@@ -11375,7 +11375,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	glog.Debugf("_flushBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the PostEntry mappings in the db should be up-to-date.
 
@@ -11383,7 +11383,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
+	glog.V(1).Infof("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
 
 	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the DB.
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
@@ -11409,7 +11409,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 			}
 			numPut++
 		}
-		glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+		glog.V(1).Infof("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
 
 	return nil

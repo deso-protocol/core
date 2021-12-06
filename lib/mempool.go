@@ -21,9 +21,9 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
 )
 
 // mempool.go contains all of the mempool logic for the DeSo node.
@@ -603,7 +603,7 @@ func (mp *DeSoMempool) limitNumUnconnectedTxns() error {
 
 		numUnconnectedTxns := len(mp.unconnectedTxns)
 		if numExpired := prevNumUnconnectedTxns - numUnconnectedTxns; numExpired > 0 {
-			glog.Debugf("Expired %d unconnectedTxns (remaining: %d)", numExpired, numUnconnectedTxns)
+			glog.V(1).Infof("Expired %d unconnectedTxns (remaining: %d)", numExpired, numUnconnectedTxns)
 		}
 	}
 
@@ -645,7 +645,7 @@ func (mp *DeSoMempool) addUnconnectedTxn(tx *MsgDeSoTxn, peerID uint64) {
 		mp.unconnectedTxnsByPrev[UtxoKey(*txIn)][*txHash] = tx
 	}
 
-	glog.Debugf("Added unconnected transaction %v with total txns: %d)", txHash, len(mp.unconnectedTxns))
+	glog.V(1).Infof("Added unconnected transaction %v with total txns: %d)", txHash, len(mp.unconnectedTxns))
 }
 
 // Consider adding an unconnected txn to the pool. Must be called with the write lock held.
@@ -1060,10 +1060,10 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// If the transaction is bigger than half the maximum allowable size,
 	// then reject it.
-	maxTxnSize := mp.bc.params.MinerMaxBlockSizeBytes/2
+	maxTxnSize := mp.bc.params.MinerMaxBlockSizeBytes / 2
 	if serializedLen > maxTxnSize {
 		mp.rebuildBackupView()
-		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: " +
+		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: "+
 			"Txn size %v exceeds maximum allowable txn size %v", serializedLen, maxTxnSize)
 	}
 
@@ -1089,7 +1089,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		// Update the accumulator and potentially log the state.
 		oldTotal := mp.lowFeeTxSizeAccumulator
 		mp.lowFeeTxSizeAccumulator += float64(serializedLen)
-		glog.Tracef("tryAcceptTransaction: Rate limit current total ~(%v) bytes/10m, nextTotal: ~(%v) bytes/10m, "+
+		glog.V(2).Infof("tryAcceptTransaction: Rate limit current total ~(%v) bytes/10m, nextTotal: ~(%v) bytes/10m, "+
 			"limit ~(%v) bytes/10m", oldTotal, mp.lowFeeTxSizeAccumulator, LowFeeTxLimitBytesPerTenMinutes)
 	}
 
@@ -1108,7 +1108,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		mempoolTx.TxMeta = txnMeta
 	}
 
-	glog.Tracef("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
+	glog.V(2).Infof("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
 		len(mp.poolMap))
 
 	return nil, mempoolTx, nil
@@ -1320,7 +1320,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		bodyObj := &DeSoBodySchema{}
 		if err := json.Unmarshal(realTxMeta.Body, &bodyObj); err != nil {
 			// Don't worry about bad posts unless we're debugging with high verbosity.
-			glog.Tracef("UpdateTxindex: Error parsing post body for @ mentions: "+
+			glog.V(2).Infof("UpdateTxindex: Error parsing post body for @ mentions: "+
 				"%v %v", string(realTxMeta.Body), err)
 		} else {
 			terminators := []rune(" ,.\n&*()-+~'\"[]{}")
@@ -1815,7 +1815,7 @@ func (mp *DeSoMempool) processTransaction(
 	if txHash == nil {
 		return nil, fmt.Errorf("ProcessTransaction: Problem hashing tx")
 	}
-	glog.Tracef("Processing transaction %v", txHash)
+	glog.V(2).Infof("Processing transaction %v", txHash)
 
 	// Run validation and try to add this txn to the pool.
 	missingParents, mempoolTx, err := mp.tryAcceptTransaction(
@@ -1847,7 +1847,7 @@ func (mp *DeSoMempool) processTransaction(
 
 	// Reject the txn if it's an unconnected txn and we're set up to reject unconnectedTxns.
 	if !allowUnconnectedTxn {
-		glog.Tracef("DeSoMempool.processTransaction: TxErrorUnconnectedTxnNotAllowed: %v %v",
+		glog.V(2).Infof("DeSoMempool.processTransaction: TxErrorUnconnectedTxnNotAllowed: %v %v",
 			tx.Hash(), tx.TxnMeta.GetTxnType())
 		return nil, TxErrorUnconnectedTxnNotAllowed
 	}
@@ -1855,7 +1855,7 @@ func (mp *DeSoMempool) processTransaction(
 	// Try to add the the transaction to the pool as an unconnected txn.
 	err = mp.tryAddUnconnectedTxn(tx, peerID)
 	if err != nil {
-		glog.Tracef("DeSoMempool.processTransaction: Error adding transaction as unconnected txn: %v", err)
+		glog.V(2).Infof("DeSoMempool.processTransaction: Error adding transaction as unconnected txn: %v", err)
 	}
 	return nil, err
 }
@@ -2004,19 +2004,19 @@ func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
 		for {
 			select {
 			case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
-				glog.Tracef("StartReadOnlyUtxoViewRegenerator: Woke up!")
+				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Woke up!")
 
 				// When we wake up, only do an update if one didn't occur since before
 				// we slept. Note that the number of transactions being processed can
 				// also trigger an update, which is why this check is necessary.
 				newSeqNum := atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
 				if oldSeqNum == newSeqNum {
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: Updating view at prescribed interval")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Updating view at prescribed interval")
 					// Acquire a read lock when we do this.
 					mp.RegenerateReadOnlyView()
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: Finished view update at prescribed interval")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Finished view update at prescribed interval")
 				} else {
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: View updated while sleeping; nothing to do")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: View updated while sleeping; nothing to do")
 				}
 
 				// Get the sequence number before our timer hits.

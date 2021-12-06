@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deso-protocol/core/lib"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 )
 
@@ -41,9 +41,6 @@ func main() {
 	flag.Parse()
 
 	// Set up logging.
-	glog.Init()
-	log.Printf("Logging to folder: %s", glog.GlogFlags.LogDir)
-	log.Printf("Symlink to latest: %s", glog.GlogFlags.Symlink)
 	log.Println("To log output on commandline, run with -alsologtostderr")
 	glog.CopyStandardLogTo("INFO")
 
@@ -229,8 +226,8 @@ func main() {
 						if err != nil {
 							panic(err)
 						}
-						glog.Debugf("TXN HEX: %v", hex.EncodeToString(bb))
-						glog.Tracef("DETAILS: %v", spew.Sdump(txn))
+						glog.V(1).Infof("TXN HEX: %v", hex.EncodeToString(bb))
+						glog.V(2).Infof("DETAILS: %v", spew.Sdump(txn))
 
 						val, _ := summary[txn.TxnMeta.GetTxnType()]
 						summary[txn.TxnMeta.GetTxnType()] = val + 1

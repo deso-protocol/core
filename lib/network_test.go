@@ -12,7 +12,7 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/bxcodec/faker"
-	merkletree "github.com/laser/go-merkle-tree"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

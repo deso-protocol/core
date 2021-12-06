@@ -241,10 +241,10 @@ type PGMetadataCreatorCoin struct {
 	TransactionHash             *BlockHash               `pg:",pk,type:bytea"`
 	ProfilePublicKey            []byte                   `pg:",type:bytea"`
 	OperationType               CreatorCoinOperationType `pg:",use_zero"`
-	DeSoToSellNanos         uint64                   `pg:",use_zero"`
+	DeSoToSellNanos             uint64                   `pg:",use_zero"`
 	CreatorCoinToSellNanos      uint64                   `pg:",use_zero"`
-	DeSoToAddNanos          uint64                   `pg:",use_zero"`
-	MinDeSoExpectedNanos    uint64                   `pg:",use_zero"`
+	DeSoToAddNanos              uint64                   `pg:",use_zero"`
+	MinDeSoExpectedNanos        uint64                   `pg:",use_zero"`
 	MinCreatorCoinExpectedNanos uint64                   `pg:",use_zero"`
 }
 
@@ -402,7 +402,7 @@ type PGProfile struct {
 	Description             string
 	ProfilePic              []byte
 	CreatorBasisPoints      uint64
-	DeSoLockedNanos     uint64
+	DeSoLockedNanos         uint64
 	NumberOfHolders         uint64
 	CoinsInCirculationNanos uint64
 	CoinWatermarkNanos      uint64
@@ -419,13 +419,13 @@ type PGPost struct {
 	PosterPublicKey           []byte
 	ParentPostHash            *BlockHash `pg:",type:bytea"`
 	Body                      string
-	RepostedPostHash         *BlockHash `pg:",type:bytea"`
-	QuotedRepost             bool       `pg:",use_zero"`
+	RepostedPostHash          *BlockHash `pg:",type:bytea"`
+	QuotedRepost              bool       `pg:",use_zero"`
 	Timestamp                 uint64     `pg:",use_zero"`
 	Hidden                    bool       `pg:",use_zero"`
 	LikeCount                 uint64     `pg:",use_zero"`
-	RepostCount              uint64     `pg:",use_zero"`
-	QuoteRepostCount         uint64     `pg:",use_zero"`
+	RepostCount               uint64     `pg:",use_zero"`
+	QuoteRepostCount          uint64     `pg:",use_zero"`
 	DiamondCount              uint64     `pg:",use_zero"`
 	CommentCount              uint64     `pg:",use_zero"`
 	Pinned                    bool       `pg:",use_zero"`
@@ -444,13 +444,13 @@ func (post *PGPost) NewPostEntry() *PostEntry {
 		PostHash:                       post.PostHash,
 		PosterPublicKey:                post.PosterPublicKey,
 		Body:                           []byte(post.Body),
-		RepostedPostHash:              post.RepostedPostHash,
-		IsQuotedRepost:                post.QuotedRepost,
+		RepostedPostHash:               post.RepostedPostHash,
+		IsQuotedRepost:                 post.QuotedRepost,
 		TimestampNanos:                 post.Timestamp,
 		IsHidden:                       post.Hidden,
 		LikeCount:                      post.LikeCount,
-		RepostCount:                   post.RepostCount,
-		QuoteRepostCount:              post.QuoteRepostCount,
+		RepostCount:                    post.RepostCount,
+		QuoteRepostCount:               post.QuoteRepostCount,
 		DiamondCount:                   post.DiamondCount,
 		CommentCount:                   post.CommentCount,
 		IsPinned:                       post.Pinned,
@@ -907,10 +907,10 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				TransactionHash:             txnHash,
 				ProfilePublicKey:            txMeta.ProfilePublicKey,
 				OperationType:               txMeta.OperationType,
-				DeSoToSellNanos:         txMeta.DeSoToSellNanos,
+				DeSoToSellNanos:             txMeta.DeSoToSellNanos,
 				CreatorCoinToSellNanos:      txMeta.CreatorCoinToSellNanos,
-				DeSoToAddNanos:          txMeta.DeSoToAddNanos,
-				MinDeSoExpectedNanos:    txMeta.MinDeSoExpectedNanos,
+				DeSoToAddNanos:              txMeta.DeSoToAddNanos,
+				MinDeSoExpectedNanos:        txMeta.MinDeSoExpectedNanos,
 				MinCreatorCoinExpectedNanos: txMeta.MinCreatorCoinExpectedNanos,
 			})
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
@@ -997,8 +997,8 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			txMeta := txn.TxnMeta.(*BurnNFTMetadata)
 			metadataBurnNFT = append(metadataBurnNFT, &PGMetadataBurnNFT{
 				TransactionHash: txnHash,
-				NFTPostHash: txMeta.NFTPostHash,
-				SerialNumber: txMeta.SerialNumber,
+				NFTPostHash:     txMeta.NFTPostHash,
+				SerialNumber:    txMeta.SerialNumber,
 			})
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
 			txMeta := txn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
@@ -1311,13 +1311,13 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 			PostHash:                  postEntry.PostHash,
 			PosterPublicKey:           postEntry.PosterPublicKey,
 			Body:                      string(postEntry.Body),
-			RepostedPostHash:         postEntry.RepostedPostHash,
-			QuotedRepost:             postEntry.IsQuotedRepost,
+			RepostedPostHash:          postEntry.RepostedPostHash,
+			QuotedRepost:              postEntry.IsQuotedRepost,
 			Timestamp:                 postEntry.TimestampNanos,
 			Hidden:                    postEntry.IsHidden,
 			LikeCount:                 postEntry.LikeCount,
-			RepostCount:              postEntry.RepostCount,
-			QuoteRepostCount:         postEntry.QuoteRepostCount,
+			RepostCount:               postEntry.RepostCount,
+			QuoteRepostCount:          postEntry.QuoteRepostCount,
 			DiamondCount:              postEntry.DiamondCount,
 			CommentCount:              postEntry.CommentCount,
 			Pinned:                    postEntry.IsPinned,
@@ -1674,10 +1674,10 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 	var deleteKeys []*PGDerivedKey
 	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
 		key := &PGDerivedKey{
-			OwnerPublicKey: keyEntry.OwnerPublicKey,
+			OwnerPublicKey:   keyEntry.OwnerPublicKey,
 			DerivedPublicKey: keyEntry.DerivedPublicKey,
-			ExpirationBlock: keyEntry.ExpirationBlock,
-			OperationType: keyEntry.OperationType,
+			ExpirationBlock:  keyEntry.ExpirationBlock,
+			OperationType:    keyEntry.OperationType,
 		}
 
 		if keyEntry.isDeleted {
@@ -2083,7 +2083,7 @@ func (postgres *Postgres) GetNFTBid(nftPostHash *BlockHash, bidderPKID *PKID, se
 
 func (postgres *Postgres) GetDerivedKey(ownerPublicKey *PublicKey, derivedPublicKey *PublicKey) *PGDerivedKey {
 	key := PGDerivedKey{
-		OwnerPublicKey: *ownerPublicKey,
+		OwnerPublicKey:   *ownerPublicKey,
 		DerivedPublicKey: *derivedPublicKey,
 	}
 	err := postgres.db.Model(&key).WherePK().First()

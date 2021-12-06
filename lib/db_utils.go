@@ -2786,9 +2786,9 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 	// state of the view.
 	if eventManager != nil {
 		eventManager.blockConnected(&BlockEvent{
-			Block: genesisBlock,
+			Block:    genesisBlock,
 			UtxoView: utxoView,
-			UtxoOps: utxoOpsForBlock,
+			UtxoOps:  utxoOpsForBlock,
 		})
 	}
 
