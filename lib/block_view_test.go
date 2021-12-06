@@ -6322,7 +6322,6 @@ func _dumpAndLoadMempool(mempool *DeSoMempool) {
 }
 
 func TestBitcoinExchange(t *testing.T) {
-	glog.Init()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -7020,7 +7019,6 @@ func TestBitcoinExchange(t *testing.T) {
 }
 
 func TestBitcoinExchangeGlobalParams(t *testing.T) {
-	glog.Init()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -7748,7 +7746,6 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 }
 
 func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
-	glog.Init()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -8349,7 +8346,6 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 }
 
 func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
-	glog.Init()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
