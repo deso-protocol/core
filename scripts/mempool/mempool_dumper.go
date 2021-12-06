@@ -226,8 +226,8 @@ func main() {
 						if err != nil {
 							panic(err)
 						}
-						glog.Infof("TXN HEX: %v", hex.EncodeToString(bb))
-						glog.Infof("DETAILS: %v", spew.Sdump(txn))
+						glog.V(1).Infof("TXN HEX: %v", hex.EncodeToString(bb))
+						glog.V(2).Infof("DETAILS: %v", spew.Sdump(txn))
 
 						val, _ := summary[txn.TxnMeta.GetTxnType()]
 						summary[txn.TxnMeta.GetTxnType()] = val + 1
