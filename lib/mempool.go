@@ -1522,6 +1522,21 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "NFTBidderPublicKeyBase58Check",
 		})
 	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+		realTxMeta := txn.TxnMeta.(*NFTTransferMetadata)
+		_ = realTxMeta
+
+		txnMeta.NFTTransferTxindexMetadata = &NFTTransferTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber: realTxMeta.SerialNumber,
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
+			Metadata:             "NFTTransferRecipientPublicKeyBase58Check",
+		})
+
+	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 		diamondPostHash, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
