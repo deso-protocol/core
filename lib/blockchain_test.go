@@ -519,7 +519,6 @@ func TestSeedBalancesTest(t *testing.T) {
 func init() {
 	// Set up logging.
 	flag.Set("alsologtostderr", "true")
-	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
 }
 
