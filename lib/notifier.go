@@ -255,7 +255,7 @@ func (notifier *Notifier) Start() {
 			//		glog.Error(fmt.Errorf("Notifier: Problem running update: %v", err))
 			//	}
 			//} else {
-			//	glog.Debugf("Notifier: Waiting for node to sync before updating")
+			//	glog.V(1).Infof("Notifier: Waiting for node to sync before updating")
 			//}
 
 			err := notifier.Update()
