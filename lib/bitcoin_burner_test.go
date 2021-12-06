@@ -3,7 +3,7 @@ package lib
 import (
 	"testing"
 
-	"github.com/deso-protocol/glog"
+	"github.com/golang/glog"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/stretchr/testify/assert"

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deso-protocol/glog"
+	"github.com/golang/glog"
 )
 
 type Notifier struct {
@@ -177,7 +177,7 @@ func (notifier *Notifier) Update() error {
 					terminators := []rune(" ,.\n&*()-+~'\"[]{}")
 					dollarTagsFound := mention.GetTagsAsUniqueStrings('$', string(bodyObj.Body), terminators...)
 					atTagsFound := mention.GetTagsAsUniqueStrings('@', string(bodyObj.Body), terminators...)
-					
+
 					tagsFound := append(dollarTagsFound, atTagsFound...)
 					for _, tag := range tagsFound {
 

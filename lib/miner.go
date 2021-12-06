@@ -13,13 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/deso-protocol/core/desohash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/desohash"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/deso-protocol/glog"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 

@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/btcsuite/btcutil/base58"
-	"github.com/deso-protocol/glog"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 

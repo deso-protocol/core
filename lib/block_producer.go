@@ -13,7 +13,7 @@ import (
 	"github.com/deso-protocol/go-deadlock"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/deso-protocol/glog"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 

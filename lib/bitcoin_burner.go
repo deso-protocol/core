@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deso-protocol/glog"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -310,7 +310,7 @@ type BlockCypherAPIFullAddressResponse struct {
 }
 
 type BlockchainInfoAPIResponse struct {
-	DoubleSpend   bool                            `json:"double_spend"`
+	DoubleSpend bool `json:"double_spend"`
 }
 
 func BlockCypherExtractBitcoinUtxosFromResponse(
@@ -489,13 +489,13 @@ func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherA
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: " +
+		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: "+
 			"Problem with HTTP request %s: %v", URL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin txn with " +
+		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin txn with "+
 			"hash %v was not found in Blockchain.info OR an error occurred: %v", txnHash, spew.Sdump(resp))
 		return true, nil
 	}
@@ -505,13 +505,13 @@ func BlockchainInfoCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherA
 	responseData := &BlockchainInfoAPIResponse{}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	if err := decoder.Decode(responseData); err != nil {
-		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: " +
+		return false, fmt.Errorf("BlockchainInfoCheckBitcoinDoubleSpend: "+
 			"Problem decoding response JSON into "+
 			"interface %v, response: %v, error: %v", responseData, resp, err)
 	}
 
 	if responseData.DoubleSpend {
-		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin " +
+		glog.Tracef("BlockchainInfoCheckBitcoinDoubleSpend: Bitcoin "+
 			"txn with hash %v was a double spend", txnHash)
 		return true, nil
 	}
@@ -596,8 +596,8 @@ func BlockCypherCheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIK
 		// If there are too many inputs on this txn, then just mark it as a double-spend.
 		// This avoids us having to use our API quota unnecessarily.
 		if len(responseData.Inputs) > 25 {
-			glog.Warningf("CheckBitcoinDoubleSpend: Unmined bitcoin txn with hash %v had %v inputs, " +
-				"which made us label it as a double-spend. If this is happening a lot, consider " +
+			glog.Warningf("CheckBitcoinDoubleSpend: Unmined bitcoin txn with hash %v had %v inputs, "+
+				"which made us label it as a double-spend. If this is happening a lot, consider "+
 				"increasing the limit on this if statement", txnHash, len(responseData.Inputs))
 			return true, nil
 		}

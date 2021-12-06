@@ -21,9 +21,9 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/deso-protocol/glog"
-	"github.com/pkg/errors"
 	"github.com/deso-protocol/go-deadlock"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 // mempool.go contains all of the mempool logic for the DeSo node.
@@ -1060,10 +1060,10 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// If the transaction is bigger than half the maximum allowable size,
 	// then reject it.
-	maxTxnSize := mp.bc.params.MinerMaxBlockSizeBytes/2
+	maxTxnSize := mp.bc.params.MinerMaxBlockSizeBytes / 2
 	if serializedLen > maxTxnSize {
 		mp.rebuildBackupView()
-		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: " +
+		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: "+
 			"Txn size %v exceeds maximum allowable txn size %v", serializedLen, maxTxnSize)
 	}
 

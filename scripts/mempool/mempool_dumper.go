@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deso-protocol/core/lib"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/deso-protocol/glog"
+	"github.com/deso-protocol/core/lib"
+	"github.com/golang/glog"
 )
 
 var (

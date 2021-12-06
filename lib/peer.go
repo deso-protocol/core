@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/glog"
-	"github.com/pkg/errors"
 	"github.com/deso-protocol/go-deadlock"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 // peer.go defines an interface for connecting to and managing an DeSo

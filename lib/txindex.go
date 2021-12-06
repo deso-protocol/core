@@ -10,8 +10,8 @@ import (
 	"time"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/deso-protocol/glog"
 	"github.com/deso-protocol/go-deadlock"
+	"github.com/golang/glog"
 )
 
 type TXIndex struct {

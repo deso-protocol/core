@@ -18,7 +18,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
-	"github.com/deso-protocol/glog"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -967,13 +967,13 @@ type UtxoOperation struct {
 	// encounter a SwapIdentity txn. This makes it so that we don't have to
 	// reconnect all txns in order to get these values.
 	SwapIdentityFromDESOLockedNanos uint64
-	SwapIdentityToDESOLockedNanos uint64
+	SwapIdentityToDESOLockedNanos   uint64
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values.
-	AcceptNFTBidCreatorPublicKey []byte
-	AcceptNFTBidBidderPublicKey []byte
+	AcceptNFTBidCreatorPublicKey    []byte
+	AcceptNFTBidBidderPublicKey     []byte
 	AcceptNFTBidCreatorRoyaltyNanos uint64
 }
 
@@ -7361,8 +7361,8 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 
 		// Rosetta fields.
-		AcceptNFTBidCreatorPublicKey: nftPostEntry.PosterPublicKey,
-		AcceptNFTBidBidderPublicKey: bidderPublicKey,
+		AcceptNFTBidCreatorPublicKey:    nftPostEntry.PosterPublicKey,
+		AcceptNFTBidBidderPublicKey:     bidderPublicKey,
 		AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
 	})
 
@@ -7981,7 +7981,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 		Type: OperationTypeSwapIdentity,
 		// Rosetta fields
 		SwapIdentityFromDESOLockedNanos: fromNanos,
-		SwapIdentityToDESOLockedNanos: toNanos,
+		SwapIdentityToDESOLockedNanos:   toNanos,
 
 		// Note that we don't need any metadata on this operation, since the swap is reversible
 		// without it.
@@ -8694,7 +8694,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// and it's much more efficient to compute it here than it is to recompute
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing " +
+		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing "+
 			"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
@@ -8703,12 +8703,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevBuyerBalanceEntry,
-		PrevCreatorBalanceEntry:    &prevCreatorBalanceEntry,
-		FounderRewardUtxoKey:       outputKey,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevBuyerBalanceEntry,
+		PrevCreatorBalanceEntry:        &prevCreatorBalanceEntry,
+		FounderRewardUtxoKey:           outputKey,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	return totalInput, totalOutput, coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, utxoOpsForTxn, nil
@@ -8974,8 +8974,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, 0, nil, errors.Wrapf(
-			err, "HelpConnectCreatorCoinSell: Error computing " +
-			"desoLockedNanosDiff: Missing profile")
+			err, "HelpConnectCreatorCoinSell: Error computing "+
+				"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
@@ -8983,11 +8983,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
-		PrevCreatorBalanceEntry:    nil,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevTransactorBalanceEntry,
+		PrevCreatorBalanceEntry:        nil,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	// The DeSo that the user gets from selling their creator coin counts

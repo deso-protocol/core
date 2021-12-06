@@ -21,7 +21,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
-	"github.com/deso-protocol/glog"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -2786,9 +2786,9 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 	// state of the view.
 	if eventManager != nil {
 		eventManager.blockConnected(&BlockEvent{
-			Block: genesisBlock,
+			Block:    genesisBlock,
 			UtxoView: utxoView,
-			UtxoOps: utxoOpsForBlock,
+			UtxoOps:  utxoOpsForBlock,
 		})
 	}
 
