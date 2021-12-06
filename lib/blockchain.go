@@ -3532,6 +3532,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	expirationBlock uint64,
 	accessSignature []byte,
 	deleteKey bool,
+	derivedKeySignature bool,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3559,6 +3560,11 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		operationType = AuthorizeDerivedKeyOperationValid
 	}
 
+	extraData := make(map[string][]byte)
+	if derivedKeySignature {
+		extraData[DerivedPublicKey] = derivedPublicKey
+	}
+
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: ownerPublicKey,
@@ -3569,6 +3575,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 			accessSignature,
 		},
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}

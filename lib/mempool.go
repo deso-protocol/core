@@ -1058,6 +1058,15 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		return nil, nil, errors.Wrapf(TxErrorInsufficientFeeMinFee, errRet.Error())
 	}
 
+	// If the transaction is bigger than half the maximum allowable size,
+	// then reject it.
+	maxTxnSize := mp.bc.params.MinerMaxBlockSizeBytes/2
+	if serializedLen > maxTxnSize {
+		mp.rebuildBackupView()
+		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: " +
+			"Txn size %v exceeds maximum allowable txn size %v", serializedLen, maxTxnSize)
+	}
+
 	// If the feerate is below the minimum we've configured for the node, then apply
 	// some rate-limiting logic to avoid stalling in situations in which someone is trying
 	// to flood the network with low-value transacitons. This avoids a form of amplification
