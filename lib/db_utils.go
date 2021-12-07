@@ -655,24 +655,16 @@ func DbPutMessageEntryWithTxn(
 		return fmt.Errorf("DbPutPrivateMessageWithTxn: Recipient public key "+
 			"length %d != %d", len(messageEntry.RecipientPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
-	messageData := &MessageEntry{
-		SenderPublicKey:    messageEntry.SenderPublicKey,
-		RecipientPublicKey: messageEntry.RecipientPublicKey,
-		EncryptedText:      messageEntry.EncryptedText,
-		TstampNanos:        messageEntry.TstampNanos,
-		Version:            messageEntry.Version,
-	}
 
-	messageDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(messageDataBuf).Encode(messageData)
+	messageEntryBytes := messageEntry.Encode()
 
 	if err := txn.Set(_dbKeyForMessageEntry(
-		messageEntry.SenderPublicKey, messageEntry.TstampNanos), messageDataBuf.Bytes()); err != nil {
+		messageEntry.SenderPublicKey, messageEntry.TstampNanos), messageEntryBytes); err != nil {
 
 		return errors.Wrapf(err, "DbPutMessageEntryWithTxn: Problem adding mapping for sender: ")
 	}
 	if err := txn.Set(_dbKeyForMessageEntry(
-		messageEntry.RecipientPublicKey, messageEntry.TstampNanos), messageDataBuf.Bytes()); err != nil {
+		messageEntry.RecipientPublicKey, messageEntry.TstampNanos), messageEntryBytes); err != nil {
 
 		return errors.Wrapf(err, "DbPutMessageEntryWithTxn: Problem adding mapping for recipient: ")
 	}
@@ -697,7 +689,8 @@ func DbGetMessageEntryWithTxn(
 		return nil
 	}
 	err = privateMessageItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj)
+		privateMessageObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DbGetMessageEntryWithTxn: Problem reading "+
@@ -1090,11 +1083,8 @@ func DbPutRepostMappingsWithTxn(
 			"length %d != %d", len(userPubKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	repostDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(repostDataBuf).Encode(repostEntry)
-
 	if err := txn.Set(_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
-		userPubKey, repostedPostHash), repostDataBuf.Bytes()); err != nil {
+		userPubKey, repostedPostHash), repostEntry.Encode()); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutRepostMappingsWithTxn: Problem adding user to reposted post mapping: ")
@@ -1121,7 +1111,8 @@ func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(
 		return nil
 	}
 	err = repostEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(repostEntryObj)
+		repostEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DbGetReposterPubKeyRepostedPostHashToRepostedPostMappingWithTxn: Problem reading "+
@@ -1465,24 +1456,6 @@ func _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID *PKID, senderPKID *P
 	return append(key, senderPKID[:]...)
 }
 
-func _DbBufForDiamondEntry(diamondEntry *DiamondEntry) []byte {
-	diamondEntryBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(diamondEntryBuf).Encode(diamondEntry)
-	return diamondEntryBuf.Bytes()
-}
-
-func _DbDiamondEntryForDbBuf(buf []byte) *DiamondEntry {
-	if len(buf) == 0 {
-		return nil
-	}
-	ret := &DiamondEntry{}
-	if err := gob.NewDecoder(bytes.NewReader(buf)).Decode(&ret); err != nil {
-		glog.Errorf("Error decoding DiamondEntry from DB: %v", err)
-		return nil
-	}
-	return ret
-}
-
 func DbPutDiamondMappingsWithTxn(
 	txn *badger.Txn,
 	diamondEntry *DiamondEntry) error {
@@ -1496,7 +1469,7 @@ func DbPutDiamondMappingsWithTxn(
 			"length %d != %d", len(diamondEntry.SenderPKID), btcec.PubKeyBytesLenCompressed)
 	}
 
-	diamondEntryBytes := _DbBufForDiamondEntry(diamondEntry)
+	diamondEntryBytes := diamondEntry.Encode()
 	if err := txn.Set(_dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry), diamondEntryBytes); err != nil {
 		return errors.Wrapf(
 			err, "DbPutDiamondMappingsWithTxn: Problem adding receiver to giver mapping: ")
@@ -1543,7 +1516,9 @@ func DbGetDiamondMappingsWithTxn(
 	// We return the byte array stored for this diamond mapping. This mapping should only
 	// hold one uint8 with a value between 1 and 5 but the caller is responsible for sanity
 	// checking in order to maintain consistency with other DB functions that do not error.
-	return _DbDiamondEntryForDbBuf(diamondEntryBuf)
+	diamondEntry := &DiamondEntry{}
+	diamondEntry.Decode(diamondEntryBuf)
+	return diamondEntry
 }
 
 func DbGetDiamondMappings(
@@ -1626,7 +1601,8 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 	pkidsToDiamondEntryMap := make(map[PKID][]*DiamondEntry)
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
-		diamondEntry := _DbDiamondEntryForDbBuf(valsFound[ii])
+		diamondEntry := &DiamondEntry{}
+		diamondEntry.Decode(valsFound[ii])
 		if diamondEntry == nil {
 			return nil, fmt.Errorf(
 				"DbGetPKIDsThatDiamondedYouMap: Found nil DiamondEntry for public key %v "+
@@ -1697,7 +1673,8 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 	var diamondEntries []*DiamondEntry
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
-		diamondEntry := _DbDiamondEntryForDbBuf(valsFound[ii])
+		diamondEntry := &DiamondEntry{}
+		diamondEntry.Decode(valsFound[ii])
 		if diamondEntry == nil {
 			return nil, fmt.Errorf(
 				"DbGetDiamondEntriesForGiverToReceiver: Found nil DiamondEntry for receiver key %v "+
@@ -1883,13 +1860,7 @@ func DbPutGlobalParamsEntry(handle *badger.DB, globalParamsEntry GlobalParamsEnt
 }
 
 func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, globalParamsEntry GlobalParamsEntry) error {
-	globalParamsDataBuf := bytes.NewBuffer([]byte{})
-	err := gob.NewEncoder(globalParamsDataBuf).Encode(globalParamsEntry)
-	if err != nil {
-		return errors.Wrapf(err, "DbPutGlobalParamsEntryWithTxn: Problem encoding global params entry: ")
-	}
-
-	err = txn.Set(_KeyGlobalParams, globalParamsDataBuf.Bytes())
+	err := txn.Set(_KeyGlobalParams, globalParamsEntry.Encode())
 	if err != nil {
 		return errors.Wrapf(err, "DbPutGlobalParamsEntryWithTxn: Problem adding global params entry to db: ")
 	}
@@ -1903,11 +1874,11 @@ func DbGetGlobalParamsEntryWithTxn(txn *badger.Txn) *GlobalParamsEntry {
 	}
 	globalParamsEntryObj := &GlobalParamsEntry{}
 	err = globalParamsEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(globalParamsEntryObj)
+		globalParamsEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
-		glog.Errorf("DbGetGlobalParamsEntryWithTxn: Problem reading "+
-			"GlobalParamsEntry: %v", err)
+		glog.Errorf("DbGetGlobalParamsEntryWithTxn: Problem reading GlobalParamsEntry: %v", err)
 		return &InitialGlobalParamsEntry
 	}
 
@@ -2006,22 +1977,16 @@ func _UtxoKeyFromDbKey(utxoDbKey []byte) *UtxoKey {
 	}
 }
 
-func _DbBufForUtxoEntry(utxoEntry *UtxoEntry) []byte {
-	utxoEntryBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(utxoEntryBuf).Encode(utxoEntry)
-	return utxoEntryBuf.Bytes()
-}
-
 func PutUtxoNumEntriesWithTxn(txn *badger.Txn, newNumEntries uint64) error {
 	return txn.Set(_KeyUtxoNumEntries, EncodeUint64(newNumEntries))
 }
 
 func PutUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *UtxoKey, utxoEntry *UtxoEntry) error {
-	return txn.Set(_DbKeyForUtxoKey(utxoKey), _DbBufForUtxoEntry(utxoEntry))
+	return txn.Set(_DbKeyForUtxoKey(utxoKey), utxoEntry.Encode())
 }
 
 func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *UtxoKey) *UtxoEntry {
-	var ret UtxoEntry
+	utxoEntry := &UtxoEntry{}
 	utxoDbKey := _DbKeyForUtxoKey(utxoKey)
 	item, err := txn.Get(utxoDbKey)
 	if err != nil {
@@ -2029,12 +1994,7 @@ func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *UtxoKey) *UtxoEnt
 	}
 
 	err = item.Value(func(valBytes []byte) error {
-		// TODO: Storing with gob is very slow due to reflection. Would be
-		// better if we serialized/deserialized manually.
-		if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(&ret); err != nil {
-			return err
-		}
-
+		utxoEntry.Decode(valBytes)
 		return nil
 	})
 
@@ -2042,7 +2002,7 @@ func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *UtxoKey) *UtxoEnt
 		return nil
 	}
 
-	return &ret
+	return utxoEntry
 }
 
 func DbGetUtxoEntryForUtxoKey(handle *badger.DB, utxoKey *UtxoKey) *UtxoEntry {
@@ -3757,11 +3717,9 @@ func DBPutPostEntryMappingsWithTxn(
 			RepostedPostHash: postEntry.RepostedPostHash,
 			ReposterPubKey:   postEntry.PosterPublicKey,
 		}
-		repostDataBuf := bytes.NewBuffer([]byte{})
-		gob.NewEncoder(repostDataBuf).Encode(repostEntry)
 		if err := txn.Set(
 			_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash),
-			repostDataBuf.Bytes()); err != nil {
+			repostEntry.Encode()); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding mapping for repostPostHash to ReposterPubKey: %v", err)
 		}
 		if err := txn.Set(
@@ -4046,7 +4004,8 @@ func DBGetNFTEntryByPostHashSerialNumberWithTxn(
 		return nil
 	}
 	err = nftEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftEntryObj)
+		nftEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DBGetNFTEntryByPostHashSerialNumberWithTxn: Problem reading "+
@@ -4098,11 +4057,8 @@ func DBDeleteNFTMappings(
 }
 
 func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
+	nftEntryBytes := nftEntry.Encode()
 
-	nftDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(nftDataBuf).Encode(nftEntry)
-
-	nftEntryBytes := nftDataBuf.Bytes()
 	if err := txn.Set(_dbKeyForNFTPostHashSerialNumber(
 		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
 
@@ -4134,7 +4090,7 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
-		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+		currentEntry.Decode(byteString)
 		nftEntries = append(nftEntries, currentEntry)
 	}
 	return nftEntries
@@ -4156,7 +4112,8 @@ func DBGetNFTEntryByNFTOwnershipDetailsWithTxn(
 		return nil
 	}
 	err = nftEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftEntryObj)
+		nftEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DBGetNFTEntryByNFTOwnershipDetailsWithTxn: Problem reading "+
@@ -4177,13 +4134,13 @@ func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSal
 
 // DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
 func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
-	nftEntries := []*NFTEntry{}
+	var nftEntries []*NFTEntry
 	prefix := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
-		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+		currentEntry.Decode(byteString)
 		nftEntries = append(nftEntries, currentEntry)
 	}
 	return nftEntries
@@ -4194,6 +4151,38 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 // NOTE: This index is not essential to running the protocol and should be computed
 // outside of the protocol layer once update to the creation of TxIndex are complete.
 // =======================================================================================
+
+func EncodeAcceptedNFTBidEntries(nftBidEntries *[]*NFTBidEntry) []byte {
+	var data []byte
+
+	if nftBidEntries != nil {
+		numEntries := uint64(len(*nftBidEntries))
+		data = append(data, UintToBuf(numEntries)...)
+
+		for _, entry := range *nftBidEntries {
+			data = append(data, entry.Encode()...)
+		}
+	} else {
+		data = append(data, UintToBuf(0)...)
+	}
+
+	return data
+}
+
+func DecodeAcceptedNFTBidEntries(data []byte) *[]*NFTBidEntry {
+	var bidEntries []*NFTBidEntry
+	rr := bytes.NewReader(data)
+
+	numEntries, _ := ReadUvarint(rr)
+	for ii := uint64(0); ii < numEntries; ii++ {
+		bidEntry := &NFTBidEntry{}
+		bidEntry.DecodeWithReader(rr)
+		bidEntries = append(bidEntries, bidEntry)
+	}
+
+	return &bidEntries
+}
+
 func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
 	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToAcceptedBidEntries...)
 	key := append(prefixCopy, nftPostHash[:]...)
@@ -4202,12 +4191,8 @@ func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, s
 }
 
 func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
-	nftDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(nftDataBuf).Encode(nftBidEntries)
-
-	acceptedNFTBidEntryBytes := nftDataBuf.Bytes()
 	if err := txn.Set(_dbKeyForPostHashSerialNumberToAcceptedBidEntries(
-		&nftKey.NFTPostHash, nftKey.SerialNumber), acceptedNFTBidEntryBytes); err != nil {
+		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeAcceptedNFTBidEntries(nftBidEntries)); err != nil {
 
 		return errors.Wrapf(err, "DBPutAcceptedNFTBidEntriesMappingWithTxn: Problem "+
 			"adding accepted bid mapping for post: %v, serial number: %d", nftKey.NFTPostHash, nftKey.SerialNumber)
@@ -4225,13 +4210,14 @@ func DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(
 	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
 
 	key := _dbKeyForPostHashSerialNumberToAcceptedBidEntries(postHash, serialNumber)
-	nftBidEntriesObj := &[]*NFTBidEntry{}
+	var nftBidEntriesObj *[]*NFTBidEntry
 	nftBidEntriesItem, err := txn.Get(key)
 	if err != nil {
 		return nil
 	}
 	err = nftBidEntriesItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftBidEntriesObj)
+		nftBidEntriesObj = DecodeAcceptedNFTBidEntries(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn: Problem reading "+
@@ -4559,20 +4545,18 @@ func _dbSeekPrefixForDerivedKeyMappings(
 func DBPutDerivedKeyMappingWithTxn(
 	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
 
-	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
+	if len(ownerPublicKey.ToBytes()) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Owner Public Key "+
 			"length %d != %d", len(ownerPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
-	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
+	if len(derivedPublicKey.ToBytes()) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Derived Public Key "+
 			"length %d != %d", len(derivedPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
 
-	derivedKeyEntryBuffer := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(derivedKeyEntryBuffer).Encode(derivedKeyEntry)
-	return txn.Set(key, derivedKeyEntryBuffer.Bytes())
+	return txn.Set(key, derivedKeyEntry.Encode())
 }
 
 func DBPutDerivedKeyMapping(
@@ -4591,13 +4575,10 @@ func DBGetOwnerToDerivedKeyMappingWithTxn(
 	if err != nil {
 		return nil
 	}
-	derivedKeyEntryBytes, err := derivedKeyEntryItem.ValueCopy(nil)
-	if err != nil {
-		return nil
-	}
 	derivedKeyEntry := &DerivedKeyEntry{}
 	err = derivedKeyEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(derivedKeyEntryBytes)).Decode(derivedKeyEntry)
+		derivedKeyEntry.Decode(valBytes)
+		return nil
 	})
 
 	return derivedKeyEntry
@@ -4940,7 +4921,8 @@ func DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
 		return nil
 	}
 	err = balanceEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(balanceEntryObj)
+		balanceEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPubKeysWithTxn: Problem reading "+
@@ -4963,31 +4945,7 @@ func DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(
 	return ret
 }
 
-func DBGetCreatorCoinBalanceEntryForCreatorPKIDAndHODLerPubKeyWithTxn(
-	txn *badger.Txn, creatorPKID *PKID, hodlerPKID *PKID) *BalanceEntry {
-
-	key := _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID)
-	balanceEntryObj := &BalanceEntry{}
-	balanceEntryItem, err := txn.Get(key)
-	if err != nil {
-		return nil
-	}
-	err = balanceEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(balanceEntryObj)
-	})
-	if err != nil {
-		glog.Errorf("DBGetCreatorCoinBalanceEntryForCreatorPubKeyAndHODLerPubKeyWithTxn: Problem reading "+
-			"BalanceEntry for PKIDs %v %v",
-			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
-		return nil
-	}
-	return balanceEntryObj
-}
-
-func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
-	txn *badger.Txn, hodlerPKID *PKID, creatorPKID *PKID,
-	params *DeSoParams) error {
-
+func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(txn *badger.Txn, hodlerPKID *PKID, creatorPKID *PKID) error {
 	// First pull up the mappings that exists for the keys passed in.
 	// If one doesn't exist then there's nothing to do.
 	//balanceEntry := DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
@@ -4999,13 +4957,11 @@ func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 	// When an entry exists, delete the mappings for it.
 	if err := txn.Delete(_dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID)); err != nil {
 		return errors.Wrapf(err, "DbDeleteCreatorCoinBalanceEntryMappingsWithTxn: Deleting "+
-			"mappings with keys: %v %v",
-			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
+			"mappings with keys: %v %v", PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
 	}
 	if err := txn.Delete(_dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID)); err != nil {
 		return errors.Wrapf(err, "DbDeleteCreatorCoinBalanceEntryMappingsWithTxn: Deleting "+
-			"mappings with keys: %v %v",
-			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
+			"mappings with keys: %v %v", PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
 	}
 
 	// Note: We don't update the CreatorDeSoLockedNanosCreatorPubKeyIIndex
@@ -5015,27 +4971,20 @@ func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 	return nil
 }
 
-func DBDeleteCreatorCoinBalanceEntryMappings(
-	handle *badger.DB, hodlerPKID *PKID, creatorPKID *PKID,
-	params *DeSoParams) error {
+func DBDeleteCreatorCoinBalanceEntryMappings(handle *badger.DB, hodlerPKID *PKID, creatorPKID *PKID) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
-			txn, hodlerPKID, creatorPKID, params)
+		return DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(txn, hodlerPKID, creatorPKID)
 	})
 }
 
-func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
-	txn *badger.Txn, balanceEntry *BalanceEntry,
-	params *DeSoParams) error {
-
-	balanceEntryDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(balanceEntryDataBuf).Encode(balanceEntry)
+func DBPutCreatorCoinBalanceEntryMappingsWithTxn(txn *badger.Txn, balanceEntry *BalanceEntry) error {
+	balanceEntryBytes := balanceEntry.Encode()
 
 	// Set the forward direction for the HODLer
 	if err := txn.Set(_dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 		balanceEntry.HODLerPKID, balanceEntry.CreatorPKID),
-		balanceEntryDataBuf.Bytes()); err != nil {
+		balanceEntryBytes); err != nil {
 
 		return errors.Wrapf(err, "DbPutCreatorCoinBalanceEntryMappingsWithTxn: Problem "+
 			"adding forward mappings for pub keys: %v %v",
@@ -5046,7 +4995,7 @@ func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 	// Set the reverse direction for the creator
 	if err := txn.Set(_dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(
 		balanceEntry.CreatorPKID, balanceEntry.HODLerPKID),
-		balanceEntryDataBuf.Bytes()); err != nil {
+		balanceEntryBytes); err != nil {
 
 		return errors.Wrapf(err, "DbPutCreatorCoinBalanceEntryMappingsWithTxn: Problem "+
 			"adding reverse mappings for pub keys: %v %v",
@@ -5057,12 +5006,9 @@ func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 	return nil
 }
 
-func DBPutCreatorCoinBalanceEntryMappings(
-	handle *badger.DB, balanceEntry *BalanceEntry, params *DeSoParams) error {
-
+func DBPutCreatorCoinBalanceEntryMappings(handle *badger.DB, balanceEntry *BalanceEntry) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutCreatorCoinBalanceEntryMappingsWithTxn(
-			txn, balanceEntry, params)
+		return DBPutCreatorCoinBalanceEntryMappingsWithTxn(txn, balanceEntry)
 	})
 }
 
@@ -5110,7 +5056,8 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, holder *PK
 		return nil
 	}
 	err = balanceEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(balanceEntryObj)
+		balanceEntryObj.Decode(valBytes)
+		return nil
 	})
 	if err != nil {
 		glog.Errorf("DbGetReposterPubKeyRepostedPostHashToRepostedPostMappingWithTxn: Problem decoding "+
@@ -5130,7 +5077,7 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
-			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+			currentEntry.Decode(byteString)
 			if filterOutZeroBalances && currentEntry.BalanceNanos == 0 {
 				continue
 			}
@@ -5151,7 +5098,7 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalan
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
-			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+			currentEntry.Decode(byteString)
 			if filterOutZeroBalances && currentEntry.BalanceNanos == 0 {
 				continue
 			}

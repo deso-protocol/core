@@ -10353,7 +10353,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 		if balanceEntry.isDeleted {
 			// Delete the existing mappings in the db for this balance key.
 			if err := DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
-				txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), bav.Params); err != nil {
+				txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID)); err != nil {
 
 				return errors.Wrapf(
 					err, "_flushBalanceEntriesToDbWithTxn: Problem deleting mappings "+
@@ -10361,8 +10361,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 			}
 		} else {
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
-			if err := DBPutCreatorCoinBalanceEntryMappingsWithTxn(
-				txn, balanceEntry, bav.Params); err != nil {
+			if err := DBPutCreatorCoinBalanceEntryMappingsWithTxn(txn, balanceEntry); err != nil {
 
 				return err
 			}

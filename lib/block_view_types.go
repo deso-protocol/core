@@ -283,11 +283,31 @@ type UtxoEntry struct {
 	UtxoKey *UtxoKey
 }
 
-func (utxoEntry *UtxoEntry) String() string {
+func (utxo *UtxoEntry) String() string {
 	return fmt.Sprintf("< PublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
-		"isSpent: %v, utxoKey: %v>", PkToStringMainnet(utxoEntry.PublicKey),
-		utxoEntry.BlockHeight, utxoEntry.AmountNanos,
-		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
+		"isSpent: %v, utxoKey: %v>", PkToStringMainnet(utxo.PublicKey),
+		utxo.BlockHeight, utxo.AmountNanos, utxo.UtxoType, utxo.isSpent, utxo.UtxoKey)
+}
+
+func (utxo *UtxoEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(utxo.AmountNanos)...)
+	data = append(data, EncodeByteArray(utxo.PublicKey)...)
+	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
+	data = append(data, UintToBuf(uint64(utxo.UtxoType))...)
+
+	return data
+}
+
+func (utxo *UtxoEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	utxo.AmountNanos, _ = ReadUvarint(rr)
+	utxo.PublicKey = DecodeByteArray(rr)
+
+	utxoType, _ := ReadUvarint(rr)
+	utxo.UtxoType = UtxoType(utxoType)
 }
 
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
@@ -364,6 +384,30 @@ type MessageEntry struct {
 	Version uint8
 }
 
+func (me *MessageEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(me.SenderPublicKey)...)
+	data = append(data, EncodeByteArray(me.RecipientPublicKey)...)
+	data = append(data, EncodeByteArray(me.EncryptedText)...)
+	data = append(data, UintToBuf(me.TstampNanos)...)
+	data = append(data, UintToBuf(uint64(me.Version))...)
+
+	return data
+}
+
+func (me *MessageEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	me.SenderPublicKey = DecodeByteArray(rr)
+	me.RecipientPublicKey = DecodeByteArray(rr)
+	me.EncryptedText = DecodeByteArray(rr)
+	me.TstampNanos, _ = ReadUvarint(rr)
+
+	version, _ := ReadUvarint(rr)
+	me.Version = uint8(version)
+}
+
 // Entry for a public key forbidden from signing blocks.
 type ForbiddenPubKeyEntry struct {
 	PubKey []byte
@@ -425,6 +469,52 @@ type NFTEntry struct {
 	isDeleted bool
 }
 
+func (nft *NFTEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(nft.LastOwnerPKID.ToBytes())...)
+
+	if nft.OwnerPKID != nil {
+		data = append(data, EncodeByteArray(nft.OwnerPKID.ToBytes())...)
+	} else {
+		data = append(data, UintToBuf(0)...)
+	}
+
+	data = append(data, EncodeByteArray(nft.NFTPostHash.ToBytes())...)
+	data = append(data, UintToBuf(nft.SerialNumber)...)
+	data = append(data, BoolToByte(nft.IsForSale))
+	data = append(data, UintToBuf(nft.MinBidAmountNanos)...)
+	data = append(data, UintToBuf(uint64(len(nft.UnlockableText)))...)
+	data = append(data, nft.UnlockableText...)
+	data = append(data, UintToBuf(nft.LastAcceptedBidAmountNanos)...)
+	data = append(data, BoolToByte(nft.IsPending))
+
+	return data
+}
+
+func (nft *NFTEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	nft.LastOwnerPKID = NewPKID(DecodeByteArray(rr))
+
+	ownerPkid := DecodeByteArray(rr)
+	if ownerPkid != nil {
+		nft.OwnerPKID = NewPKID(ownerPkid)
+	}
+
+	nft.NFTPostHash = NewBlockHash(DecodeByteArray(rr))
+	nft.SerialNumber, _ = ReadUvarint(rr)
+	nft.IsForSale = ReadBoolByte(rr)
+	nft.MinBidAmountNanos, _ = ReadUvarint(rr)
+
+	unlockableLen, _ := ReadUvarint(rr)
+	nft.UnlockableText = make([]byte, unlockableLen)
+	_, _ = io.ReadFull(rr, nft.UnlockableText)
+
+	nft.LastAcceptedBidAmountNanos, _ = ReadUvarint(rr)
+	nft.IsPending = ReadBoolByte(rr)
+}
+
 func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
 	return NFTBidKey{
 		BidderPKID:   *bidderPKID,
@@ -450,6 +540,28 @@ type NFTBidEntry struct {
 	isDeleted bool
 }
 
+func (be *NFTBidEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(be.BidderPKID.ToBytes())...)
+	data = append(data, EncodeByteArray(be.NFTPostHash.ToBytes())...)
+	data = append(data, UintToBuf(be.SerialNumber)...)
+	data = append(data, UintToBuf(be.BidAmountNanos)...)
+
+	return data
+}
+
+func (be *NFTBidEntry) Decode(data []byte) {
+	be.DecodeWithReader(bytes.NewReader(data))
+}
+
+func (be *NFTBidEntry) DecodeWithReader(rr io.Reader) {
+	be.BidderPKID = NewPKID(DecodeByteArray(rr))
+	be.NFTPostHash = NewBlockHash(DecodeByteArray(rr))
+	be.SerialNumber, _ = ReadUvarint(rr)
+	be.BidAmountNanos, _ = ReadUvarint(rr)
+}
+
 type DerivedKeyEntry struct {
 	// Owner public key
 	OwnerPublicKey PublicKey
@@ -466,6 +578,28 @@ type DerivedKeyEntry struct {
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+func (key *DerivedKeyEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(key.OwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(key.DerivedPublicKey.ToBytes())...)
+	data = append(UintToBuf(key.ExpirationBlock))
+	data = append(UintToBuf(uint64(key.OperationType)))
+
+	return data
+}
+
+func (key *DerivedKeyEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	key.OwnerPublicKey = *NewPublicKey(DecodeByteArray(rr))
+	key.DerivedPublicKey = *NewPublicKey(DecodeByteArray(rr))
+	key.ExpirationBlock, _ = ReadUvarint(rr)
+
+	operationType, _ := ReadUvarint(rr)
+	key.OperationType = AuthorizeDerivedKeyOperationType(operationType)
 }
 
 type DerivedKeyMapKey struct {
@@ -537,6 +671,28 @@ type DiamondEntry struct {
 	isDeleted bool
 }
 
+func (de *DiamondEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(de.SenderPKID.ToBytes())...)
+	data = append(data, EncodeByteArray(de.ReceiverPKID.ToBytes())...)
+	data = append(data, EncodeByteArray(de.DiamondPostHash.ToBytes())...)
+	data = append(data, IntToBuf(de.DiamondLevel)...)
+
+	return data
+}
+
+func (de *DiamondEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	de.SenderPKID = NewPKID(DecodeByteArray(rr))
+	de.ReceiverPKID = NewPKID(DecodeByteArray(rr))
+	de.DiamondPostHash = NewBlockHash(DecodeByteArray(rr))
+
+	diamondLevel, _ := ReadVarint(rr)
+	de.DiamondLevel = diamondLevel
+}
+
 func MakeRepostKey(userPk []byte, RepostedPostHash BlockHash) RepostKey {
 	return RepostKey{
 		ReposterPubKey:   MakePkMapKey(userPk),
@@ -564,6 +720,24 @@ type RepostEntry struct {
 	isDeleted bool
 }
 
+func (re *RepostEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(re.ReposterPubKey)...)
+	data = append(data, EncodeByteArray(re.RepostPostHash.ToBytes())...)
+	data = append(data, EncodeByteArray(re.RepostedPostHash.ToBytes())...)
+
+	return data
+}
+
+func (re *RepostEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	re.ReposterPubKey = DecodeByteArray(rr)
+	re.RepostPostHash = NewBlockHash(DecodeByteArray(rr))
+	re.RepostedPostHash = NewBlockHash(DecodeByteArray(rr))
+}
+
 type GlobalParamsEntry struct {
 	// The new exchange rate to set.
 	USDCentsPerBitcoin uint64
@@ -579,6 +753,28 @@ type GlobalParamsEntry struct {
 
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
+}
+
+func (gp *GlobalParamsEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(gp.USDCentsPerBitcoin)...)
+	data = append(data, UintToBuf(gp.CreateProfileFeeNanos)...)
+	data = append(data, UintToBuf(gp.CreateNFTFeeNanos)...)
+	data = append(data, UintToBuf(gp.MaxCopiesPerNFT)...)
+	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
+
+	return data
+}
+
+func (gp *GlobalParamsEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	gp.USDCentsPerBitcoin, _ = ReadUvarint(rr)
+	gp.CreateProfileFeeNanos, _ = ReadUvarint(rr)
+	gp.CreateNFTFeeNanos, _ = ReadUvarint(rr)
+	gp.MaxCopiesPerNFT, _ = ReadUvarint(rr)
+	gp.MinimumNetworkFeeNanosPerKB, _ = ReadUvarint(rr)
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.
@@ -817,6 +1013,26 @@ type BalanceEntry struct {
 	isDeleted bool
 }
 
+func (be *BalanceEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(be.HODLerPKID.ToBytes())...)
+	data = append(data, EncodeByteArray(be.CreatorPKID.ToBytes())...)
+	data = append(data, UintToBuf(be.BalanceNanos)...)
+	data = append(data, BoolToByte(be.HasPurchased))
+
+	return data
+}
+
+func (be *BalanceEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	be.HODLerPKID = NewPKID(DecodeByteArray(rr))
+	be.CreatorPKID = NewPKID(DecodeByteArray(rr))
+	be.BalanceNanos, _ = ReadUvarint(rr)
+	be.HasPurchased = ReadBoolByte(rr)
+}
+
 type PKIDEntry struct {
 	PKID *PKID
 	// We add the public key only so we can reuse this struct to store the reverse
@@ -972,7 +1188,7 @@ func EncodeByteArray(bytes []byte) []byte {
 	return data
 }
 
-func DecodeByteArray(reader *bytes.Reader) []byte {
+func DecodeByteArray(reader io.Reader) []byte {
 	pkLen, err := ReadUvarint(reader)
 	if err != nil {
 		glog.Errorf("DecodeByteArray: ReadUvarint: %v", err)
