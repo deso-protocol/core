@@ -123,6 +123,10 @@ var (
 	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+
+	// Defines the height at which NFTs that are a pending transfer can be resold.
+	// Triggers: TBD
+	AllowPendingNFTSalesBlockHeight = uint32(80000)
 )
 
 func (nt NetworkType) String() string {
