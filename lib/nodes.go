@@ -125,4 +125,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://deverso.io/",
 		Owner: "Nordian",
 	},
+	21: {
+		Name:  "NinjaNode",
+		URL:   "https://node.bitcloutapps.ninja",
+		Owner: "mattpitts",
+	},
 }
