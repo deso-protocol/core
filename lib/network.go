@@ -16,7 +16,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-	merkletree "github.com/laser/go-merkle-tree"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 
 	"github.com/pkg/errors"
 )

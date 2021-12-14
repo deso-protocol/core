@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
@@ -517,11 +518,7 @@ func TestSeedBalancesTest(t *testing.T) {
 
 func init() {
 	// Set up logging.
-	glog.GlogFlags.AlsoToStderr = true
-	glog.Init()
-	log.Printf("Logging to folder: %s", glog.GlogFlags.LogDir)
-	log.Printf("Symlink to latest: %s", glog.GlogFlags.Symlink)
-	log.Println("To log output on commandline, run with -alsologtostderr")
+	flag.Set("alsologtostderr", "true")
 	glog.CopyStandardLogTo("INFO")
 }
 

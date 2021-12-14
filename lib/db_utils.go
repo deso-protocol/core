@@ -2786,9 +2786,9 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 	// state of the view.
 	if eventManager != nil {
 		eventManager.blockConnected(&BlockEvent{
-			Block: genesisBlock,
+			Block:    genesisBlock,
 			UtxoView: utxoView,
-			UtxoOps: utxoOpsForBlock,
+			UtxoOps:  utxoOpsForBlock,
 		})
 	}
 
@@ -3274,6 +3274,11 @@ type AcceptNFTBidTxindexMetadata struct {
 	CreatorPublicKeyBase58Check string
 }
 
+type NFTTransferTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber   uint64
+}
+
 type TransactionMetadata struct {
 	BlockHashHex    string
 	TxnIndexInBlock uint64
@@ -3301,6 +3306,7 @@ type TransactionMetadata struct {
 	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
 	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
 	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
+	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
