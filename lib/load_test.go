@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core/view"
 	"os"
 	"runtime/pprof"
 	"testing"
@@ -69,7 +70,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				false,
 				0,
 				10,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 			_signTxn(t, txn, currentPrivStr)
@@ -128,7 +129,7 @@ func TestComputeMaxTPS(t *testing.T) {
 		require.NoError(err)
 		pprof.StartCPUProfile(ff)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := view.NewUtxoView(db, params, nil)
 		require.NoError(err)
 
 		timeStart := time.Now()

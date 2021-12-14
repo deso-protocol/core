@@ -1,6 +1,9 @@
-package lib
+package core
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/deso-protocol/core/lib"
+)
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
 // indexed using the PKID rather than the user's public key directly in order to
@@ -69,7 +72,7 @@ func NewBlockHash(input []byte) *BlockHash {
 }
 
 func (bh *BlockHash) String() string {
-	return fmt.Sprintf("%064x", HashToBigint(bh))
+	return fmt.Sprintf("%064x", lib.HashToBigint(bh))
 }
 
 func (bh *BlockHash) ToBytes() []byte {
@@ -93,4 +96,20 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	newBlockhash := &BlockHash{}
 	copy(newBlockhash[:], bh[:])
 	return newBlockhash
+}
+
+// UtxoKey is a 32-byte txid with a 4-byte uint32 index
+// identifying the particular output in the transaction where
+// this utxo occurs.
+// When fetching from the db the txid and index are concatenated to
+// form the key, with the index serialized as big-endian.
+type UtxoKey struct {
+	// The 32-byte transaction id where the unspent output occurs.
+	TxID BlockHash
+	// The index within the txn where the unspent output occurs.
+	Index uint32
+}
+
+func (utxoKey *UtxoKey) String() string {
+	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
 }

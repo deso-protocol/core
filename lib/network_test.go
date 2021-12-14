@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"github.com/deso-protocol/core"
 	"reflect"
 	"strings"
 	"testing"
@@ -22,7 +23,7 @@ var pkForTesting1 = []byte{
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2}
 
-var postHashForTesting1 = BlockHash{
+var postHashForTesting1 = core.BlockHash{
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
@@ -81,13 +82,13 @@ func TestVerack(t *testing.T) {
 
 var expectedBlockHeader = &MsgDeSoHeader{
 	Version: 1,
-	PrevBlockHash: &BlockHash{
+	PrevBlockHash: &core.BlockHash{
 		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
 		0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
 		0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31,
 		0x32, 0x33,
 	},
-	TransactionMerkleRoot: &BlockHash{
+	TransactionMerkleRoot: &core.BlockHash{
 		0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
 		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
@@ -158,7 +159,7 @@ func TestGetHeadersSerialization(t *testing.T) {
 
 	getHeaders := &MsgDeSoGetHeaders{
 		StopHash:     hash1,
-		BlockLocator: []*BlockHash{hash1, hash2, hash1},
+		BlockLocator: []*core.BlockHash{hash1, hash2, hash1},
 	}
 
 	messageBytes, err := getHeaders.ToBytes(false)
@@ -382,13 +383,13 @@ var expectedBlock = &MsgDeSoBlock{
 
 var expectedV0Header = &MsgDeSoHeader{
 	Version: 0,
-	PrevBlockHash: &BlockHash{
+	PrevBlockHash: &core.BlockHash{
 		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
 		0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
 		0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31,
 		0x32, 0x33,
 	},
-	TransactionMerkleRoot: &BlockHash{
+	TransactionMerkleRoot: &core.BlockHash{
 		0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
 		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
@@ -472,11 +473,11 @@ func TestSerializeInv(t *testing.T) {
 		InvList: []*InvVect{
 			{
 				Type: InvTypeBlock,
-				Hash: BlockHash{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
+				Hash: core.BlockHash{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 			},
 			{
 				Type: InvTypeTx,
-				Hash: BlockHash{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
+				Hash: core.BlockHash{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
 			},
 		},
 		IsSyncResponse: true,
@@ -521,7 +522,7 @@ func TestSerializeGetBlocks(t *testing.T) {
 	require := require.New(t)
 
 	msg := &MsgDeSoGetBlocks{
-		HashList: []*BlockHash{
+		HashList: []*core.BlockHash{
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 			{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
 			{3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0},
@@ -569,7 +570,7 @@ func TestSerializeGetTransactions(t *testing.T) {
 	require := require.New(t)
 
 	msg := &MsgDeSoGetTransactions{
-		HashList: []*BlockHash{
+		HashList: []*core.BlockHash{
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 			{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
 			{3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0},
@@ -646,8 +647,8 @@ func TestSerializeBitcoinExchange(t *testing.T) {
 
 	txMeta := &BitcoinExchangeMetadata{
 		BitcoinTransaction: &bitcoinTx,
-		BitcoinBlockHash:   &BlockHash{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
-		BitcoinMerkleRoot:  &BlockHash{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
+		BitcoinBlockHash:   &core.BlockHash{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
+		BitcoinMerkleRoot:  &core.BlockHash{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
 		BitcoinMerkleProof: []*merkletree.ProofPart{
 			{
 				IsRight: true,
@@ -876,7 +877,7 @@ func TestSerializeCreateNFT(t *testing.T) {
 	_ = require
 
 	txMeta := &CreateNFTMetadata{}
-	txMeta.NFTPostHash = &BlockHash{
+	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
@@ -904,7 +905,7 @@ func TestSerializeUpdateNFT(t *testing.T) {
 	_ = require
 
 	txMeta := &UpdateNFTMetadata{}
-	txMeta.NFTPostHash = &BlockHash{
+	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
@@ -929,12 +930,12 @@ func TestSerializeAcceptNFTBid(t *testing.T) {
 	_ = require
 
 	txMeta := &AcceptNFTBidMetadata{}
-	txMeta.NFTPostHash = &BlockHash{
+	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
 	txMeta.SerialNumber = uint64(99)
-	txMeta.BidderPKID = PublicKeyToPKID([]byte{
+	txMeta.BidderPKID = core.PublicKeyToPKID([]byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
@@ -981,7 +982,7 @@ func TestSerializeNFTBid(t *testing.T) {
 	_ = require
 
 	txMeta := &NFTBidMetadata{}
-	txMeta.NFTPostHash = &BlockHash{
+	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
@@ -1005,7 +1006,7 @@ func TestSerializeNFTTransfer(t *testing.T) {
 	_ = require
 
 	txMeta := &NFTTransferMetadata{}
-	txMeta.NFTPostHash = &BlockHash{
+	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
@@ -1034,7 +1035,7 @@ func TestAcceptNFTTransfer(t *testing.T) {
 	_ = require
 
 	txMeta := &AcceptNFTTransferMetadata{}
-	txMeta.NFTPostHash = &BlockHash{
+	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
@@ -1057,7 +1058,7 @@ func TestBurnNFT(t *testing.T) {
 	_ = require
 
 	txMeta := &BurnNFTMetadata{}
-	txMeta.NFTPostHash = &BlockHash{
+	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}

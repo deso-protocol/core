@@ -1,10 +1,12 @@
-package lib
+package view
 
 import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -20,12 +22,12 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	_profiles map[PkMapKey]*ProfileEntry,
 	_corePostsByProfilePublicKey map[PkMapKey][]*PostEntry,
 	_commentsByProfilePublicKey map[PkMapKey][]*PostEntry,
-	_postEntryReaderStates map[BlockHash]*PostEntryReaderState, _err error) {
+	_postEntryReaderStates map[core.BlockHash]*PostEntryReaderState, _err error) {
 	// Start by fetching all the profiles we have in the db.
 	//
 	// TODO(performance): This currently fetches all profiles. We should implement
 	// some kind of pagination instead though.
-	_, _, dbProfileEntries, err := DBGetAllProfilesByCoinValue(bav.Handle, true /*fetchEntries*/)
+	_, _, dbProfileEntries, err := lib.DBGetAllProfilesByCoinValue(bav.Handle, true /*fetchEntries*/)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrapf(
 			err, "GetAllProfiles: Problem fetching ProfileEntrys from db: ")
@@ -49,7 +51,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 			continue
 		}
 		commentsByProfilePublicKey[MakePkMapKey(profileEntry.PublicKey)] = []*PostEntry{}
-		_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(
+		_, dbCommentHashes, _, err := lib.DBGetCommentPostHashesForParentStakeID(
 			bav.Handle, profileEntry.PublicKey, false /*fetchEntries*/)
 		if err != nil {
 			return nil, nil, nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching comment PostEntry's from db: ")
@@ -62,7 +64,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	// has made, just go ahead and load *all* the posts into the view so that
 	// they'll get returned in the mapping. Later, we should use the db index
 	// to do this.
-	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
+	_, _, dbPostEntries, err := lib.DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrapf(
 			err, "GetAllPosts: Problem fetching PostEntry's from db: ")
@@ -74,7 +76,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	// Iterate through all the posts loaded into the view and attach them
 	// to the relevant profiles.  Also adds reader state if a reader pubkey is provided.
 	corePostsByPublicKey := make(map[PkMapKey][]*PostEntry)
-	postEntryReaderStates := make(map[BlockHash]*PostEntryReaderState)
+	postEntryReaderStates := make(map[core.BlockHash]*PostEntryReaderState)
 	for _, postEntry := range bav.PostHashToPostEntry {
 		// Ignore deleted or rolled-back posts.
 		if postEntry.isDeleted {
@@ -153,7 +155,7 @@ func (bav *UtxoView) GetProfileEntryForUsername(nonLowercaseUsername []byte) *Pr
 		profileEntry, _ := bav.setProfileMappings(profile)
 		return profileEntry
 	} else {
-		dbProfileEntry := DBGetProfileEntryForUsername(bav.Handle, nonLowercaseUsername)
+		dbProfileEntry := lib.DBGetProfileEntryForUsername(bav.Handle, nonLowercaseUsername)
 		if dbProfileEntry != nil {
 			bav._setProfileEntryMappings(dbProfileEntry)
 		}
@@ -179,7 +181,7 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKey []byte) *PKIDEntry {
 		profile := bav.Postgres.GetProfileForPublicKey(publicKey)
 		if profile == nil {
 			pkidEntry := &PKIDEntry{
-				PKID:      PublicKeyToPKID(publicKey),
+				PKID:      core.PublicKeyToPKID(publicKey),
 				PublicKey: publicKey,
 			}
 			bav._setPKIDMappings(pkidEntry)
@@ -189,7 +191,7 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKey []byte) *PKIDEntry {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry
 	} else {
-		dbPKIDEntry := DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
+		dbPKIDEntry := lib.DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
 		if dbPKIDEntry != nil {
 			bav._setPKIDMappings(dbPKIDEntry)
 		}
@@ -197,7 +199,7 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKey []byte) *PKIDEntry {
 	}
 }
 
-func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
+func (bav *UtxoView) GetPublicKeyForPKID(pkid *core.PKID) []byte {
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	mapValue, existsMapValue := bav.PKIDToPublicKey[*pkid]
 	if existsMapValue {
@@ -216,7 +218,7 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 		if profile == nil {
 			pkidEntry := &PKIDEntry{
 				PKID:      pkid,
-				PublicKey: PKIDToPublicKey(pkid),
+				PublicKey: core.PKIDToPublicKey(pkid),
 			}
 			bav._setPKIDMappings(pkidEntry)
 			return pkidEntry.PublicKey
@@ -225,7 +227,7 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry.PublicKey
 	} else {
-		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
+		dbPublicKey := lib.DBGetPublicKeyForPKID(bav.Handle, pkid)
 		if len(dbPublicKey) != 0 {
 			bav._setPKIDMappings(&PKIDEntry{
 				PKID:      pkid,
@@ -269,7 +271,7 @@ func (bav *UtxoView) GetProfileEntryForPublicKey(publicKey []byte) *ProfileEntry
 	return bav.GetProfileEntryForPKID(pkidEntry.PKID)
 }
 
-func (bav *UtxoView) GetProfileEntryForPKID(pkid *PKID) *ProfileEntry {
+func (bav *UtxoView) GetProfileEntryForPKID(pkid *core.PKID) *ProfileEntry {
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	mapValue, existsMapValue := bav.ProfilePKIDToProfileEntry[*pkid]
 	if existsMapValue {
@@ -289,7 +291,7 @@ func (bav *UtxoView) GetProfileEntryForPKID(pkid *PKID) *ProfileEntry {
 		profileEntry, _ := bav.setProfileMappings(profile)
 		return profileEntry
 	} else {
-		dbProfileEntry := DBGetProfileEntryForPKID(bav.Handle, pkid)
+		dbProfileEntry := lib.DBGetProfileEntryForPKID(bav.Handle, pkid)
 		if dbProfileEntry != nil {
 			bav._setProfileEntryMappings(dbProfileEntry)
 		}
@@ -326,8 +328,8 @@ func (bav *UtxoView) _deleteProfileEntryMappings(profileEntry *ProfileEntry) {
 // _getDerivedKeyMappingForOwner fetches the derived key mapping from the utxoView
 func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
 	// Check if the entry exists in utxoView.
-	ownerPk := NewPublicKey(ownerPublicKey)
-	derivedPk := NewPublicKey(derivedPublicKey)
+	ownerPk := core.NewPublicKey(ownerPublicKey)
+	derivedPk := core.NewPublicKey(derivedPublicKey)
 	derivedKeyMapKey := MakeDerivedKeyMapKey(*ownerPk, *derivedPk)
 	entry, exists := bav.DerivedKeyToDerivedEntry[derivedKeyMapKey]
 	if exists {
@@ -342,7 +344,7 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 			entry = nil
 		}
 	} else {
-		entry = DBGetOwnerToDerivedKeyMapping(bav.Handle, *ownerPk, *derivedPk)
+		entry = lib.DBGetOwnerToDerivedKeyMapping(bav.Handle, *ownerPk, *derivedPk)
 	}
 
 	// If an entry exists, update the UtxoView map.
@@ -355,8 +357,8 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 
 // GetAllDerivedKeyMappingsForOwner fetches all derived key mappings belonging to an owner.
 func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
-	map[PublicKey]*DerivedKeyEntry, error) {
-	derivedKeyMappings := make(map[PublicKey]*DerivedKeyEntry)
+	map[core.PublicKey]*DerivedKeyEntry, error) {
+	derivedKeyMappings := make(map[core.PublicKey]*DerivedKeyEntry)
 
 	// Check for entries in UtxoView.
 	for entryKey, entry := range bav.DerivedKeyToDerivedEntry {
@@ -367,7 +369,7 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 
 	// Check for entries in DB.
 	var dbMappings []*DerivedKeyEntry
-	ownerPk := NewPublicKey(ownerPublicKey)
+	ownerPk := core.NewPublicKey(ownerPublicKey)
 	if bav.Postgres != nil {
 		pgMappings := bav.Postgres.GetAllDerivedKeysForOwner(ownerPk)
 		for _, entry := range pgMappings {
@@ -375,7 +377,7 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 		}
 	} else {
 		var err error
-		dbMappings, err = DBGetAllOwnerToDerivedKeyMappings(bav.Handle, *ownerPk)
+		dbMappings, err = lib.DBGetAllOwnerToDerivedKeyMappings(bav.Handle, *ownerPk)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetAllDerivedKeyMappingsForOwner: problem looking up"+
 				"entries in the DB.")
@@ -428,7 +430,7 @@ func (bav *UtxoView) _deleteDerivedKeyMapping(derivedKeyEntry *DerivedKeyEntry) 
 }
 
 // Takes a Postgres Profile, sets all the mappings on the view, returns the equivalent ProfileEntry and PKIDEntry
-func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKIDEntry) {
+func (bav *UtxoView) setProfileMappings(profile *lib.PGProfile) (*ProfileEntry, *PKIDEntry) {
 	pkidEntry := &PKIDEntry{
 		PKID:      profile.PKID,
 		PublicKey: profile.PublicKey.ToBytes(),
@@ -503,20 +505,20 @@ func (bav *UtxoView) GetProfilesForUsernamePrefixByCoinValue(usernamePrefix stri
 }
 
 func (bav *UtxoView) _connectUpdateProfile(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool,
 	ignoreUtxos bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeUpdateProfile {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeUpdateProfile {
 		return 0, 0, nil, fmt.Errorf("_connectUpdateProfile: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*UpdateProfileMetadata)
+	txMeta := txn.TxnMeta.(*lib.UpdateProfileMetadata)
 
 	// See comment on ForgivenProfileUsernameClaims. This fixes a bug in the blockchain
 	// where users could claim usernames that weren't actually available.
-	if forgivenUsername, exists := ForgivenProfileUsernameClaims[*txHash]; exists {
+	if forgivenUsername, exists := lib.ForgivenProfileUsernameClaims[*txHash]; exists {
 		// Make a copy of txMeta and assign it to the existing txMeta so we avoid
 		// modifying the fields.
 		newTxMeta := *txMeta
@@ -526,48 +528,48 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 	// Validate the fields to make sure they don't exceed our limits.
 	if uint64(len(txMeta.NewUsername)) > bav.Params.MaxUsernameLengthBytes {
-		return 0, 0, nil, RuleErrorProfileUsernameTooLong
+		return 0, 0, nil, lib.RuleErrorProfileUsernameTooLong
 	}
 	if uint64(len(txMeta.NewDescription)) > bav.Params.MaxUserDescriptionLengthBytes {
-		return 0, 0, nil, RuleErrorProfileDescriptionTooLong
+		return 0, 0, nil, lib.RuleErrorProfileDescriptionTooLong
 	}
 	if uint64(len(txMeta.NewProfilePic)) > bav.Params.MaxProfilePicLengthBytes {
-		return 0, 0, nil, RuleErrorMaxProfilePicSize
+		return 0, 0, nil, lib.RuleErrorMaxProfilePicSize
 	}
 	if txMeta.NewCreatorBasisPoints > bav.Params.MaxCreatorBasisPoints || txMeta.NewCreatorBasisPoints < 0 {
-		return 0, 0, nil, RuleErrorProfileCreatorPercentageSize
+		return 0, 0, nil, lib.RuleErrorProfileCreatorPercentageSize
 	}
 	if txMeta.NewStakeMultipleBasisPoints <= 100*100 ||
 		txMeta.NewStakeMultipleBasisPoints > bav.Params.MaxStakeMultipleBasisPoints {
 
-		return 0, 0, nil, RuleErrorProfileStakeMultipleSize
+		return 0, 0, nil, lib.RuleErrorProfileStakeMultipleSize
 	}
 	// If a username is set then it must adhere to a particular regex.
-	if len(txMeta.NewUsername) != 0 && !UsernameRegex.Match(txMeta.NewUsername) {
-		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUsername, "Username: %v", string(txMeta.NewUsername))
+	if len(txMeta.NewUsername) != 0 && !lib.UsernameRegex.Match(txMeta.NewUsername) {
+		return 0, 0, nil, errors.Wrapf(lib.RuleErrorInvalidUsername, "Username: %v", string(txMeta.NewUsername))
 	}
 
 	profilePublicKey := txn.PublicKey
 	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 	if len(txMeta.ProfilePublicKey) != 0 {
 		if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
-			return 0, 0, nil, errors.Wrapf(RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
+			return 0, 0, nil, errors.Wrapf(lib.RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
 		}
 		_, err := btcec.ParsePubKey(txMeta.ProfilePublicKey, btcec.S256())
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(RuleErrorProfileBadPublicKey, "_connectUpdateProfile: %v", err)
+			return 0, 0, nil, errors.Wrapf(lib.RuleErrorProfileBadPublicKey, "_connectUpdateProfile: %v", err)
 		}
 		profilePublicKey = txMeta.ProfilePublicKey
 
-		if blockHeight > UpdateProfileFixBlockHeight {
+		if blockHeight > lib.UpdateProfileFixBlockHeight {
 			// Make sure that either (1) the profile pub key is the txn signer's  public key or
 			// (2) the signer is a param updater
 			if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) && !updaterIsParamUpdater {
 
 				return 0, 0, nil, errors.Wrapf(
-					RuleErrorProfilePubKeyNotAuthorized,
+					lib.RuleErrorProfilePubKeyNotAuthorized,
 					"_connectUpdateProfile: Profile pub key: %v, signer public key: %v",
-					PkToStringBoth(txn.PublicKey), PkToStringBoth(txMeta.ProfilePublicKey))
+					lib.PkToStringBoth(txn.PublicKey), lib.PkToStringBoth(txMeta.ProfilePublicKey))
 			}
 		}
 	}
@@ -581,7 +583,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 			!reflect.DeepEqual(existingProfileEntry.PublicKey, profilePublicKey) {
 
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorProfileUsernameExists, "Username: %v, TxHashHex: %v",
+				lib.RuleErrorProfileUsernameExists, "Username: %v, TxHashHex: %v",
 				string(txMeta.NewUsername), hex.EncodeToString(txHash[:]))
 		}
 	}
@@ -605,7 +607,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// Force the input to be non-zero so that we can prevent replay attacks.
 		if totalInput == 0 {
-			return 0, 0, nil, RuleErrorProfileUpdateRequiresNonZeroInput
+			return 0, 0, nil, lib.RuleErrorProfileUpdateRequiresNonZeroInput
 		}
 	}
 
@@ -616,7 +618,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		createProfileFeeNanos := bav.GlobalParamsEntry.CreateProfileFeeNanos
 		totalOutput += createProfileFeeNanos
 		if totalInput < totalOutput {
-			return 0, 0, nil, RuleErrorCreateProfileTxnOutputExceedsInput
+			return 0, 0, nil, lib.RuleErrorCreateProfileTxnOutputExceedsInput
 		}
 	}
 	// Save a copy of the profile entry so so that we can safely modify it.
@@ -645,11 +647,11 @@ func (bav *UtxoView) _connectUpdateProfile(
 			!updaterIsParamUpdater {
 
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorProfileModificationNotAuthorized,
+				lib.RuleErrorProfileModificationNotAuthorized,
 				"_connectUpdateProfile: Profile: %v, profile public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", existingProfileEntry,
-				PkToStringBoth(existingProfileEntry.PublicKey),
-				PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+				lib.PkToStringBoth(existingProfileEntry.PublicKey),
+				lib.PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
 		}
 
 		// Only set the fields if they have non-zero length. Otherwise leave
@@ -677,7 +679,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// When there's no pre-existing profile entry we need to do more
 		// checks.
 		if len(txMeta.NewUsername) == 0 {
-			return 0, 0, nil, RuleErrorProfileUsernameTooShort
+			return 0, 0, nil, lib.RuleErrorProfileUsernameTooShort
 		}
 		// We allow users to create profiles without a description or picture
 		// in the consensus code. If desired, frontends can filter out profiles
@@ -691,7 +693,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// If below block height, use transaction public key.
 		// If above block height, use ProfilePublicKey if available.
 		profileEntryPublicKey := txn.PublicKey
-		if blockHeight > ParamUpdaterProfileUpdateFixBlockHeight {
+		if blockHeight > lib.ParamUpdaterProfileUpdateFixBlockHeight {
 			profileEntryPublicKey = profilePublicKey
 		} else if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) {
 			// In this case a clobbering will occur if there was a pre-existing profile
@@ -752,21 +754,21 @@ func (bav *UtxoView) _connectUpdateProfile(
 }
 
 func (bav *UtxoView) _connectSwapIdentity(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeSwapIdentity {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeSwapIdentity {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectSwapIdentity: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
+	txMeta := txn.TxnMeta.(*lib.SwapIdentityMetadataa)
 
 	// The txn.PublicKey must be paramUpdater
 	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
-		return 0, 0, nil, RuleErrorSwapIdentityIsParamUpdaterOnly
+		return 0, 0, nil, lib.RuleErrorSwapIdentityIsParamUpdaterOnly
 	}
 
 	// call _connectBasicTransfer to verify signatures
@@ -778,25 +780,25 @@ func (bav *UtxoView) _connectSwapIdentity(
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
-		return 0, 0, nil, RuleErrorProfileUpdateRequiresNonZeroInput
+		return 0, 0, nil, lib.RuleErrorProfileUpdateRequiresNonZeroInput
 	}
 
 	// The "from " public key must be set and valid.
 	fromPublicKey := txMeta.FromPublicKey
 	if len(fromPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorFromPublicKeyIsRequired
+		return 0, 0, nil, lib.RuleErrorFromPublicKeyIsRequired
 	}
 	if _, err := btcec.ParsePubKey(fromPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(RuleErrorInvalidFromPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(lib.RuleErrorInvalidFromPublicKey, err.Error())
 	}
 
 	// The "to" public key must be set and valid.
 	toPublicKey := txMeta.ToPublicKey
 	if len(toPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorToPublicKeyIsRequired
+		return 0, 0, nil, lib.RuleErrorToPublicKeyIsRequired
 	}
 	if _, err := btcec.ParsePubKey(toPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(RuleErrorInvalidToPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(lib.RuleErrorInvalidToPublicKey, err.Error())
 	}
 
 	if verifySignatures {
@@ -825,12 +827,12 @@ func (bav *UtxoView) _connectSwapIdentity(
 	oldFromPKIDEntry := bav.GetPKIDForPublicKey(fromPublicKey)
 	if oldFromPKIDEntry == nil || oldFromPKIDEntry.isDeleted {
 		// This should basically never happen since we never delete PKIDs.
-		return 0, 0, nil, RuleErrorOldFromPublicKeyHasDeletedPKID
+		return 0, 0, nil, lib.RuleErrorOldFromPublicKeyHasDeletedPKID
 	}
 	oldToPKIDEntry := bav.GetPKIDForPublicKey(toPublicKey)
 	if oldToPKIDEntry == nil || oldToPKIDEntry.isDeleted {
 		// This should basically never happen since we never delete PKIDs.
-		return 0, 0, nil, RuleErrorOldToPublicKeyHasDeletedPKID
+		return 0, 0, nil, lib.RuleErrorOldToPublicKeyHasDeletedPKID
 	}
 
 	// At this point, we are certain that the *from* and the *to* public keys
@@ -921,9 +923,9 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	}
 
 	// Compute a hash of derivedPublicKey+expirationBlock.
-	expirationBlockBytes := EncodeUint64(expirationBlock)
+	expirationBlockBytes := lib.EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
-	accessHash := Sha256DoubleHash(accessBytes)
+	accessHash := lib.Sha256DoubleHash(accessBytes)
 
 	// Convert accessSignature to *btcec.Signature.
 	signature, err := btcec.ParseDERSignature(accessSignature, btcec.S256())
@@ -940,56 +942,56 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
-		return 0, 0, nil, RuleErrorDerivedKeyBeforeBlockHeight
+	if blockHeight < lib.NFTTransferOrBurnAndDerivedKeysBlockHeight {
+		return 0, 0, nil, lib.RuleErrorDerivedKeyBeforeBlockHeight
 	}
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeAuthorizeDerivedKey {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeAuthorizeDerivedKey {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
 
-	txMeta := txn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
+	txMeta := txn.TxnMeta.(*lib.AuthorizeDerivedKeyMetadata)
 
 	// Validate the operation type.
-	if txMeta.OperationType != AuthorizeDerivedKeyOperationValid &&
-		txMeta.OperationType != AuthorizeDerivedKeyOperationNotValid {
+	if txMeta.OperationType != lib.AuthorizeDerivedKeyOperationValid &&
+		txMeta.OperationType != lib.AuthorizeDerivedKeyOperationNotValid {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: called with bad OperationType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
 
 	// Make sure transaction hasn't expired.
 	if txMeta.ExpirationBlock <= uint64(blockHeight) {
-		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyExpiredDerivedPublicKey
+		return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyExpiredDerivedPublicKey
 	}
 
 	// Validate the owner public key.
 	ownerPublicKey := txn.PublicKey
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey
+		return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey
 	}
 	if _, err := btcec.ParsePubKey(ownerPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(lib.RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey, err.Error())
 	}
 
 	// Validate the derived public key.
 	derivedPublicKey := txMeta.DerivedPublicKey
 	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey
+		return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey
 	}
 	if _, err := btcec.ParsePubKey(derivedPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(lib.RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey, err.Error())
 	}
 
 	// Verify that the access signature is valid. This means the derived key is authorized.
 	err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
 		txMeta.ExpirationBlock, txMeta.AccessSignature)
 	if err != nil {
-		return 0, 0, nil, errors.Wrap(RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
+		return 0, 0, nil, errors.Wrap(lib.RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 	}
 
 	// Get current (previous) derived key entry. We might revert to it later so we copy it.
@@ -1001,8 +1003,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// To prevent this, the following check completely blocks a derived key once it has been
 	// de-authorized. This makes the lifecycle of a derived key more controllable.
 	if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
-		if prevDerivedKeyEntry.OperationType == AuthorizeDerivedKeyOperationNotValid {
-			return 0, 0, nil, RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey
+		if prevDerivedKeyEntry.OperationType == lib.AuthorizeDerivedKeyOperationNotValid {
+			return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey
 		}
 	}
 
@@ -1020,10 +1022,10 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// transactions. It also resolves issues in situations where the owner account has insufficient
 	// balance to submit an authorize transaction.
 	derivedKeyEntry := DerivedKeyEntry{
-		OwnerPublicKey:   *NewPublicKey(ownerPublicKey),
-		DerivedPublicKey: *NewPublicKey(derivedPublicKey),
+		OwnerPublicKey:   *core.NewPublicKey(ownerPublicKey),
+		DerivedPublicKey: *core.NewPublicKey(derivedPublicKey),
 		ExpirationBlock:  txMeta.ExpirationBlock,
-		OperationType:    AuthorizeDerivedKeyOperationValid,
+		OperationType:    lib.AuthorizeDerivedKeyOperationValid,
 		isDeleted:        false,
 	}
 	bav._setDerivedKeyMapping(&derivedKeyEntry)
@@ -1045,7 +1047,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		// We're doing this manually because we've set a temporary entry in UtxoView.
 		bav._deleteDerivedKeyMapping(&derivedKeyEntry)
 		bav._setDerivedKeyMapping(prevDerivedKeyEntry)
-		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput
+		return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput
 	}
 
 	// Earlier we've set a temporary derived key entry that had OperationType set to Valid.
@@ -1070,7 +1072,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 }
 
 func (bav *UtxoView) _disconnectUpdateProfile(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an UpdateProfile opration
@@ -1086,7 +1088,7 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 	}
 
 	// Now we know the txMeta is UpdateProfile
-	txMeta := currentTxn.TxnMeta.(*UpdateProfileMetadata)
+	txMeta := currentTxn.TxnMeta.(*lib.UpdateProfileMetadata)
 
 	// Extract the public key of the profile from the meta if necessary and run some
 	// sanity checks.
@@ -1108,7 +1110,7 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 	if profileEntry == nil || profileEntry.isDeleted {
 		return fmt.Errorf("_disconnectUpdateProfile: ProfileEntry for "+
 			"public key %v was found to be nil or deleted: %v",
-			PkToString(profilePublicKey, bav.Params),
+			lib.PkToString(profilePublicKey, bav.Params),
 			profileEntry)
 	}
 
@@ -1130,7 +1132,7 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 }
 
 func (bav *UtxoView) _disconnectSwapIdentity(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an SwapIdentity operation
@@ -1146,7 +1148,7 @@ func (bav *UtxoView) _disconnectSwapIdentity(
 	}
 
 	// Now we know the txMeta is SwapIdentity
-	txMeta := currentTxn.TxnMeta.(*SwapIdentityMetadataa)
+	txMeta := currentTxn.TxnMeta.(*lib.SwapIdentityMetadataa)
 
 	// Swap the public keys within the profiles back. Note that this *must* be done
 	// before the swapping of the PKID mappings occurs. Not doing this would cause
@@ -1187,7 +1189,7 @@ func (bav *UtxoView) _disconnectSwapIdentity(
 }
 
 func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a AuthorizeDerivedKey operation.
@@ -1201,7 +1203,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 			utxoOpsForTxn[operationIndex].Type)
 	}
 
-	txMeta := currentTxn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
+	txMeta := currentTxn.TxnMeta.(*lib.AuthorizeDerivedKeyMetadata)
 	prevDerivedKeyEntry := utxoOpsForTxn[operationIndex].PrevDerivedKeyEntry
 
 	// Sanity check that txn public key is valid. Assign this public key to ownerPublicKey.
@@ -1231,7 +1233,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey: DerivedKeyEntry for "+
 			"public key %v, derived key %v was found to be nil or deleted: %v",
-			PkToString(ownerPublicKey, bav.Params), PkToString(derivedPublicKey, bav.Params),
+			lib.PkToString(ownerPublicKey, bav.Params), lib.PkToString(derivedPublicKey, bav.Params),
 			derivedKeyEntry)
 	}
 

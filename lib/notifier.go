@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gernest/mention"
 	"github.com/go-pg/pg/v10"
@@ -76,7 +77,7 @@ func (notifier *Notifier) Update() error {
 							if bytesRead > 0 {
 								notification.Type = NotificationDESODiamond
 								notification.Amount = uint64(diamondLevel)
-								notification.PostHash = &BlockHash{}
+								notification.PostHash = &core.BlockHash{}
 								copy(notification.PostHash[:], diamondPostBytes)
 							}
 						}
@@ -140,7 +141,7 @@ func (notifier *Notifier) Update() error {
 					if bytesRead > 0 {
 						notification.Type = NotificationCoinDiamond
 						notification.Amount = uint64(diamondLevel)
-						notification.PostHash = &BlockHash{}
+						notification.PostHash = &core.BlockHash{}
 						copy(notification.PostHash[:], diamondPostBytes)
 					}
 				}
@@ -156,7 +157,7 @@ func (notifier *Notifier) Update() error {
 				meta := transaction.MetadataSubmitPost
 
 				// Process replies
-				if len(meta.ParentStakeID) == HashSizeBytes {
+				if len(meta.ParentStakeID) == core.HashSizeBytes {
 					postEntry := DBGetPostEntryByPostHash(notifier.badger, meta.ParentStakeID)
 					if postEntry != nil {
 						notifications = append(notifications, &PGNotification{
@@ -201,7 +202,7 @@ func (notifier *Notifier) Update() error {
 
 				// Process reposts
 				if postBytes, isRepost := transaction.ExtraData[RepostedPostHash]; isRepost {
-					postHash := &BlockHash{}
+					postHash := &core.BlockHash{}
 					copy(postHash[:], postBytes)
 					post := DBGetPostEntryByPostHash(notifier.badger, postHash)
 					if post != nil {

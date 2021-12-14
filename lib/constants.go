@@ -3,6 +3,8 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/view"
 	"log"
 	"math/big"
 	"os"
@@ -289,7 +291,7 @@ type DeSoParams struct {
 	MaxStakeMultipleBasisPoints uint64
 	MaxCreatorBasisPoints       uint64
 	MaxNFTRoyaltyBasisPoints    uint64
-	ParamUpdaterPublicKeys      map[PkMapKey]bool
+	ParamUpdaterPublicKeys      map[view.PkMapKey]bool
 
 	// A list of transactions to apply when initializing the chain. Useful in
 	// cases where we want to hard fork or reboot the chain with specific
@@ -361,7 +363,7 @@ func (params *DeSoParams) EnableRegtest() {
 
 	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
 	// Seed: verb find card ship another until version devote guilt strong lemon six
-	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
+	params.ParamUpdaterPublicKeys[view.MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
 }
 
 // GenesisBlock defines the genesis block used for the DeSo maainnet and testnet
@@ -373,7 +375,7 @@ var (
 	GenesisBlock = MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
 			Version:               0,
-			PrevBlockHash:         &BlockHash{},
+			PrevBlockHash:         &core.BlockHash{},
 			TransactionMerkleRoot: mustDecodeHexBlockHash("4b71d103dd6fff1bd6110bc8ed0a2f3118bbe29a67e45c6c7d97546ad126906f"),
 			TstampSecs:            uint64(1610948544),
 			Height:                uint64(0),
@@ -399,15 +401,15 @@ var (
 	GenesisBlockHashHex = "5567c45b7b83b604f9ff5cb5e88dfc9ad7d5a1dd5818dd19e6d02466f47cbd62"
 	GenesisBlockHash    = mustDecodeHexBlockHash(GenesisBlockHashHex)
 
-	ParamUpdaterPublicKeys = map[PkMapKey]bool{
+	ParamUpdaterPublicKeys = map[view.PkMapKey]bool{
 		// 19Hg2mAJUTKFac2F2BBpSEm7BcpkgimrmD
-		MakePkMapKey(MustBase58CheckDecode(ArchitectPubKeyBase58Check)):                                true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLiXwGTte8oXEEVzm4zqtDpGRx44Y4rqbeFeAs5MnzsmqT5RcqkW")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLgGLKjuHUFZZQcNYrdWRrHsDKUofd9MSxDq4NY53x7vGt4H32oZ")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLj8UkNMbCsmTUTx5Z2bhtp8q86csDthRmK6zbYstjjbS5eHoGkr")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
+		view.MakePkMapKey(MustBase58CheckDecode(ArchitectPubKeyBase58Check)):                                true,
+		view.MakePkMapKey(MustBase58CheckDecode("BC1YLiXwGTte8oXEEVzm4zqtDpGRx44Y4rqbeFeAs5MnzsmqT5RcqkW")): true,
+		view.MakePkMapKey(MustBase58CheckDecode("BC1YLgGLKjuHUFZZQcNYrdWRrHsDKUofd9MSxDq4NY53x7vGt4H32oZ")): true,
+		view.MakePkMapKey(MustBase58CheckDecode("BC1YLj8UkNMbCsmTUTx5Z2bhtp8q86csDthRmK6zbYstjjbS5eHoGkr")): true,
+		view.MakePkMapKey(MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
+		view.MakePkMapKey(MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
+		view.MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
 	}
 )
 
@@ -591,19 +593,19 @@ var DeSoMainnetParams = DeSoParams{
 	DeflationBombBlockHeight: 33783,
 }
 
-func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
+func mustDecodeHexBlockHashBitcoin(ss string) *core.BlockHash {
 	hash, err := chainhash.NewHashFromStr(ss)
 	if err != nil {
 		panic(err)
 	}
-	return (*BlockHash)(hash)
+	return (*core.BlockHash)(hash)
 }
 
-func MustDecodeHexBlockHash(ss string) *BlockHash {
+func MustDecodeHexBlockHash(ss string) *core.BlockHash {
 	return mustDecodeHexBlockHash(ss)
 }
 
-func mustDecodeHexBlockHash(ss string) *BlockHash {
+func mustDecodeHexBlockHash(ss string) *core.BlockHash {
 	bb, err := hex.DecodeString(ss)
 	if err != nil {
 		log.Fatalf("Problem decoding hex string to bytes: (%s): %v", ss, err)
@@ -611,7 +613,7 @@ func mustDecodeHexBlockHash(ss string) *BlockHash {
 	if len(bb) != 32 {
 		log.Fatalf("mustDecodeHexBlockHash: Block hash has length (%d) but should be (%d)", len(bb), 32)
 	}
-	ret := BlockHash{}
+	ret := core.BlockHash{}
 	copy(ret[:], bb)
 	return &ret
 }
@@ -802,7 +804,7 @@ var (
 
 // InitialGlobalParamsEntry to be used before ParamUpdater creates the first update.
 var (
-	InitialGlobalParamsEntry = GlobalParamsEntry{
+	InitialGlobalParamsEntry = view.GlobalParamsEntry{
 		// We initialize the USDCentsPerBitcoin to 0 so we can use the value set by the UPDATE_BITCOIN_USD_EXCHANGE_RATE.
 		USDCentsPerBitcoin: 0,
 		// We initialize the MinimumNetworkFeeNanosPerKB to 0 so we do not assess a minimum fee until specified by ParamUpdater.

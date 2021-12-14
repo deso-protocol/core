@@ -7,6 +7,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/view"
 	"io"
 	"math"
 	"net"
@@ -563,8 +565,8 @@ func NewMessage(msgType MsgType) DeSoMessage {
 	case MsgTypeHeader:
 		{
 			return &MsgDeSoHeader{
-				PrevBlockHash:         &BlockHash{},
-				TransactionMerkleRoot: &BlockHash{},
+				PrevBlockHash:         &core.BlockHash{},
+				TransactionMerkleRoot: &core.BlockHash{},
 			}
 		}
 	case MsgTypeBlock:
@@ -701,8 +703,8 @@ func (msg *MsgDeSoBitcoinManagerUpdate) FromBytes(data []byte) error {
 // ==================================================================
 
 type MsgDeSoGetHeaders struct {
-	StopHash     *BlockHash
-	BlockLocator []*BlockHash
+	StopHash     *core.BlockHash
+	BlockLocator []*core.BlockHash
 }
 
 func (msg *MsgDeSoGetHeaders) GetMsgType() MsgType {
@@ -731,7 +733,7 @@ func (msg *MsgDeSoGetHeaders) FromBytes(data []byte) error {
 	retGetHeaders := NewMessage(MsgTypeGetHeaders).(*MsgDeSoGetHeaders)
 
 	// StopHash
-	stopHash := BlockHash{}
+	stopHash := core.BlockHash{}
 	_, err := io.ReadFull(rr, stopHash[:])
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetHeaders.FromBytes: Problem decoding StopHash")
@@ -745,7 +747,7 @@ func (msg *MsgDeSoGetHeaders) FromBytes(data []byte) error {
 	}
 
 	for ii := uint64(0); ii < numHeaders; ii++ {
-		currentHeader := BlockHash{}
+		currentHeader := core.BlockHash{}
 		_, err := io.ReadFull(rr, currentHeader[:])
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoGetHeaders.FromBytes: Problem decoding header hash")
@@ -769,7 +771,7 @@ func (msg *MsgDeSoGetHeaders) String() string {
 
 type MsgDeSoHeaderBundle struct {
 	Headers   []*MsgDeSoHeader
-	TipHash   *BlockHash
+	TipHash   *core.BlockHash
 	TipHeight uint32
 }
 
@@ -822,7 +824,7 @@ func (msg *MsgDeSoHeaderBundle) FromBytes(data []byte) error {
 	}
 
 	// Read in the tip hash.
-	retBundle.TipHash = &BlockHash{}
+	retBundle.TipHash = &core.BlockHash{}
 	_, err = io.ReadFull(rr, retBundle.TipHash[:])
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoHeaderBundle.FromBytes:: Error reading TipHash: ")
@@ -848,7 +850,7 @@ func (msg *MsgDeSoHeaderBundle) String() string {
 // ==================================================================
 
 type MsgDeSoGetBlocks struct {
-	HashList []*BlockHash
+	HashList []*core.BlockHash
 }
 
 func (msg *MsgDeSoGetBlocks) GetMsgType() MsgType {
@@ -888,9 +890,9 @@ func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 	}
 
 	// Read in all the hashes.
-	hashList := []*BlockHash{}
+	hashList := []*core.BlockHash{}
 	for ii := uint64(0); ii < numHashes; ii++ {
-		newHash := BlockHash{}
+		newHash := core.BlockHash{}
 
 		_, err = io.ReadFull(rr, newHash[:])
 		if err != nil {
@@ -922,7 +924,7 @@ type DeSoBodySchema struct {
 // ==================================================================
 
 type MsgDeSoGetTransactions struct {
-	HashList []*BlockHash
+	HashList []*core.BlockHash
 }
 
 func (msg *MsgDeSoGetTransactions) GetMsgType() MsgType {
@@ -953,9 +955,9 @@ func (msg *MsgDeSoGetTransactions) FromBytes(data []byte) error {
 	}
 
 	// Read in all the hashes.
-	hashList := []*BlockHash{}
+	hashList := []*core.BlockHash{}
 	for ii := uint64(0); ii < numHashes; ii++ {
-		newHash := BlockHash{}
+		newHash := core.BlockHash{}
 
 		_, err = io.ReadFull(rr, newHash[:])
 		if err != nil {
@@ -1095,8 +1097,8 @@ func (invtype InvType) String() string {
 // as specified by the Type field, that a peer wants, has, or does not have to
 // another peer.
 type InvVect struct {
-	Type InvType   // Type of data
-	Hash BlockHash // Hash of the data
+	Type InvType        // Type of data
+	Hash core.BlockHash // Hash of the data
 }
 
 func (invVect *InvVect) String() string {
@@ -1152,7 +1154,7 @@ func _readInvList(rr io.Reader) ([]*InvVect, error) {
 		}
 
 		// Read the Hash of the InvVect.
-		invHash := BlockHash{}
+		invHash := core.BlockHash{}
 		_, err = io.ReadFull(rr, invHash[:])
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readInvList:: Error reading Hash for InvVect: ")
@@ -1648,10 +1650,10 @@ type MsgDeSoHeader struct {
 	Version uint32
 
 	// Hash of the previous block in the chain.
-	PrevBlockHash *BlockHash
+	PrevBlockHash *core.BlockHash
 
 	// The merkle root of all the transactions contained within the block.
-	TransactionMerkleRoot *BlockHash
+	TransactionMerkleRoot *core.BlockHash
 
 	// The unix timestamp (in seconds) specifying when this block was
 	// mined.
@@ -1691,14 +1693,14 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion0(preSignature bool) ([]byte, error
 	// PrevBlockHash
 	prevBlockHash := msg.PrevBlockHash
 	if prevBlockHash == nil {
-		prevBlockHash = &BlockHash{}
+		prevBlockHash = &core.BlockHash{}
 	}
 	retBytes = append(retBytes, prevBlockHash[:]...)
 
 	// TransactionMerkleRoot
 	transactionMerkleRoot := msg.TransactionMerkleRoot
 	if transactionMerkleRoot == nil {
-		transactionMerkleRoot = &BlockHash{}
+		transactionMerkleRoot = &core.BlockHash{}
 	}
 	retBytes = append(retBytes, transactionMerkleRoot[:]...)
 
@@ -1740,14 +1742,14 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	// PrevBlockHash
 	prevBlockHash := msg.PrevBlockHash
 	if prevBlockHash == nil {
-		prevBlockHash = &BlockHash{}
+		prevBlockHash = &core.BlockHash{}
 	}
 	retBytes = append(retBytes, prevBlockHash[:]...)
 
 	// TransactionMerkleRoot
 	transactionMerkleRoot := msg.TransactionMerkleRoot
 	if transactionMerkleRoot == nil {
-		transactionMerkleRoot = &BlockHash{}
+		transactionMerkleRoot = &core.BlockHash{}
 	}
 	retBytes = append(retBytes, transactionMerkleRoot[:]...)
 
@@ -1967,7 +1969,7 @@ func (msg *MsgDeSoHeader) GetMsgType() MsgType {
 // Hash is a helper function to compute a hash of the header. Note that the header
 // hash is special in that we always hash it using the ProofOfWorkHash rather than
 // Sha256DoubleHash.
-func (msg *MsgDeSoHeader) Hash() (*BlockHash, error) {
+func (msg *MsgDeSoHeader) Hash() (*core.BlockHash, error) {
 	preSignature := false
 	headerBytes, err := msg.ToBytes(preSignature)
 	if err != nil {
@@ -2216,7 +2218,7 @@ func (msg *MsgDeSoBlock) GetMsgType() MsgType {
 	return MsgTypeBlock
 }
 
-func (msg *MsgDeSoBlock) Hash() (*BlockHash, error) {
+func (msg *MsgDeSoBlock) Hash() (*core.BlockHash, error) {
 	if msg == nil || msg.Header == nil {
 		return nil, fmt.Errorf("MsgDeSoBLock.Hash: nil block or nil header")
 	}
@@ -2234,22 +2236,6 @@ func (msg *MsgDeSoBlock) String() string {
 // TXN Message
 // ==================================================================
 
-// UtxoKey is a 32-byte txid with a 4-byte uint32 index
-// identifying the particular output in the transaction where
-// this utxo occurs.
-// When fetching from the db the txid and index are concatenated to
-// form the key, with the index serialized as big-endian.
-type UtxoKey struct {
-	// The 32-byte transaction id where the unspent output occurs.
-	TxID BlockHash
-	// The index within the txn where the unspent output occurs.
-	Index uint32
-}
-
-func (utxoKey *UtxoKey) String() string {
-	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
-}
-
 const (
 	// MaxDeSoInputSizeBytes is the size required to encode an DeSoInput.
 	// 32 bytes for the TxID and 4 bytes for the Index = 36 bytes. Note
@@ -2266,15 +2252,15 @@ const (
 // DeSoInput represents a single unspent output from a previous txn.
 // For that reason it specifies the previous txn and the index in that txn where
 // the output appears by simply aliasing UtxoKey.
-type DeSoInput UtxoKey
+type DeSoInput core.UtxoKey
 
 func (desoInput *DeSoInput) String() string {
-	return (*UtxoKey)(desoInput).String()
+	return (*core.UtxoKey)(desoInput).String()
 }
 
 func NewDeSoInput() *DeSoInput {
 	return &DeSoInput{
-		TxID: BlockHash{},
+		TxID: core.BlockHash{},
 	}
 }
 
@@ -2338,7 +2324,7 @@ type MsgDeSoTxn struct {
 func (msg *MsgDeSoTxn) String() string {
 	pubKey := msg.PublicKey
 	if msg.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
-		pubKeyObj, err := ExtractBitcoinPublicKeyFromBitcoinTransactionInputs(
+		pubKeyObj, err := view.ExtractBitcoinPublicKeyFromBitcoinTransactionInputs(
 			msg.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction, DeSoMainnetParams.BitcoinBtcdParams)
 		if err != nil {
 			pubKey = msg.PublicKey
@@ -2630,7 +2616,7 @@ func (msg *MsgDeSoTxn) GetMsgType() MsgType {
 
 // Hash is a helper function to compute a hash of the transaction aka a
 // transaction ID.
-func (msg *MsgDeSoTxn) Hash() *BlockHash {
+func (msg *MsgDeSoTxn) Hash() *core.BlockHash {
 	// BitcoinExchange transactions are a special case whereby the hash
 	// of the DeSo transaction is defined as the hash of the Bitcoin
 	// transaction embedded within it. This allows us to use BitcoinExchange
@@ -2638,7 +2624,7 @@ func (msg *MsgDeSoTxn) Hash() *BlockHash {
 	// merkle proof has actually been defined. Thus it allows us to support
 	// the "instant DeSo buy" feature in the UI.
 	if msg.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
-		bitcoinTxHash := (BlockHash)(
+		bitcoinTxHash := (core.BlockHash)(
 			msg.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction.TxHash())
 		return &bitcoinTxHash
 	}
@@ -2916,13 +2902,13 @@ type BitcoinExchangeMetadata struct {
 	// The Bitcoin transaction that sends Bitcoin to the designated burn address.
 	BitcoinTransaction *wire.MsgTx
 	// The hash of the Bitcoin block in which the Bitcoin transaction was mined.
-	BitcoinBlockHash *BlockHash
+	BitcoinBlockHash *core.BlockHash
 	// The Bitcoin mekle root corresponding to the block in which the BitcoinTransaction
 	// above was mined. Note that it is not strictly necessary to include this field
 	// since we can look it up from the Bitcoin header if we know the BitcoinBlockHash.
 	// However, having it here is convenient and allows us to do more validation prior
 	// to looking up the header in the Bitcoin header chain.
-	BitcoinMerkleRoot *BlockHash
+	BitcoinMerkleRoot *core.BlockHash
 	// This is a merkle proof that shows that the BitcoinTransaction above, with
 	// hash equal to BitcoinTransactionHash, exists in the block with hash equal
 	// to BitcoinBlockHash. This is effectively a path through a Merkle tree starting
@@ -2997,14 +2983,14 @@ func (txnData *BitcoinExchangeMetadata) FromBytes(data []byte) error {
 	}
 
 	// BitcoinBlockHash
-	ret.BitcoinBlockHash = &BlockHash{}
+	ret.BitcoinBlockHash = &core.BlockHash{}
 	_, err = io.ReadFull(rr, ret.BitcoinBlockHash[:])
 	if err != nil {
 		return errors.Wrapf(err, "BitcoinExchangeMetadata.FromBytes: Problem reading BitcoinBlockHash: ")
 	}
 
 	// BitcoinMerkleRoot
-	ret.BitcoinMerkleRoot = &BlockHash{}
+	ret.BitcoinMerkleRoot = &core.BlockHash{}
 	_, err = io.ReadFull(rr, ret.BitcoinMerkleRoot[:])
 	if err != nil {
 		return errors.Wrapf(err, "BitcoinExchangeMetadata.FromBytes: Problem reading BitcoinMerkleRoot: ")
@@ -3160,7 +3146,7 @@ type LikeMetadata struct {
 	// top-level transaction.
 
 	// The post hash to like.
-	LikedPostHash *BlockHash
+	LikedPostHash *core.BlockHash
 
 	// Set to true when a user is requesting to unlike a post.
 	IsUnlike bool
@@ -3174,9 +3160,9 @@ func (txnData *LikeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// Validate the metadata before encoding it.
 	//
 	// Post hash must be included and must have the expected length.
-	if len(txnData.LikedPostHash) != HashSizeBytes {
+	if len(txnData.LikedPostHash) != core.HashSizeBytes {
 		return nil, fmt.Errorf("LikeMetadata.ToBytes: LikedPostHash "+
-			"has length %d != %d", len(txnData.LikedPostHash), HashSizeBytes)
+			"has length %d != %d", len(txnData.LikedPostHash), core.HashSizeBytes)
 	}
 
 	data := []byte{}
@@ -3198,7 +3184,7 @@ func (txnData *LikeMetadata) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// LikedPostHash
-	ret.LikedPostHash = &BlockHash{}
+	ret.LikedPostHash = &core.BlockHash{}
 	_, err := io.ReadFull(rr, ret.LikedPostHash[:])
 	if err != nil {
 		return fmt.Errorf(
@@ -3869,7 +3855,7 @@ func (txnData *CreatorCoinTransferMetadataa) New() DeSoTxnMetadata {
 // ==================================================================
 
 type CreateNFTMetadata struct {
-	NFTPostHash                    *BlockHash
+	NFTPostHash                    *core.BlockHash
 	NumCopies                      uint64
 	HasUnlockable                  bool
 	IsForSale                      bool
@@ -3886,9 +3872,9 @@ func (txnData *CreateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// Validate the metadata before encoding it.
 	//
 	// Post hash must be included and must have the expected length.
-	if len(txnData.NFTPostHash) != HashSizeBytes {
+	if len(txnData.NFTPostHash) != core.HashSizeBytes {
 		return nil, fmt.Errorf("CreateNFTMetadata.ToBytes: NFTPostHash "+
-			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+			"has length %d != %d", len(txnData.NFTPostHash), core.HashSizeBytes)
 	}
 
 	data := []byte{}
@@ -3922,7 +3908,7 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	rr := bytes.NewReader(dataa)
 
 	// NFTPostHash
-	ret.NFTPostHash = &BlockHash{}
+	ret.NFTPostHash = &core.BlockHash{}
 	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
 	if err != nil {
 		return fmt.Errorf(
@@ -3972,7 +3958,7 @@ func (txnData *CreateNFTMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type UpdateNFTMetadata struct {
-	NFTPostHash       *BlockHash
+	NFTPostHash       *core.BlockHash
 	SerialNumber      uint64
 	IsForSale         bool
 	MinBidAmountNanos uint64
@@ -3986,9 +3972,9 @@ func (txnData *UpdateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// Validate the metadata before encoding it.
 	//
 	// Post hash must be included and must have the expected length.
-	if len(txnData.NFTPostHash) != HashSizeBytes {
+	if len(txnData.NFTPostHash) != core.HashSizeBytes {
 		return nil, fmt.Errorf("UpdateNFTMetadata.ToBytes: NFTPostHash "+
-			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+			"has length %d != %d", len(txnData.NFTPostHash), core.HashSizeBytes)
 	}
 
 	data := []byte{}
@@ -4013,7 +3999,7 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	rr := bytes.NewReader(dataa)
 
 	// NFTPostHash
-	ret.NFTPostHash = &BlockHash{}
+	ret.NFTPostHash = &core.BlockHash{}
 	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
 	if err != nil {
 		return fmt.Errorf(
@@ -4048,9 +4034,9 @@ func (txnData *UpdateNFTMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type AcceptNFTBidMetadata struct {
-	NFTPostHash    *BlockHash
+	NFTPostHash    *core.BlockHash
 	SerialNumber   uint64
-	BidderPKID     *PKID
+	BidderPKID     *core.PKID
 	BidAmountNanos uint64
 	UnlockableText []byte
 
@@ -4068,9 +4054,9 @@ func (txnData *AcceptNFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) 
 	// Validate the metadata before encoding it.
 	//
 	// Post hash and pub key must be included and must have the expected length.
-	if len(txnData.NFTPostHash) != HashSizeBytes {
+	if len(txnData.NFTPostHash) != core.HashSizeBytes {
 		return nil, fmt.Errorf("AcceptNFTBidMetadata.ToBytes: NFTPostHash "+
-			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+			"has length %d != %d", len(txnData.NFTPostHash), core.HashSizeBytes)
 	}
 	if len(txnData.BidderPKID) != btcec.PubKeyBytesLenCompressed {
 		return nil, fmt.Errorf("AcceptNFTBidMetadata.ToBytes: BidderPublicKey "+
@@ -4111,7 +4097,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 	rr := bytes.NewReader(dataa)
 
 	// NFTPostHash
-	ret.NFTPostHash = &BlockHash{}
+	ret.NFTPostHash = &core.BlockHash{}
 	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
 	if err != nil {
 		return fmt.Errorf(
@@ -4130,7 +4116,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 		return fmt.Errorf(
 			"AcceptNFTBidMetadata.FromBytes: Error reading BidderPublicKey: %v", err)
 	}
-	ret.BidderPKID = PublicKeyToPKID(bidderPKIDBytes)
+	ret.BidderPKID = core.PublicKeyToPKID(bidderPKIDBytes)
 
 	// BidAmountNanos uint64
 	ret.BidAmountNanos, err = ReadUvarint(rr)
@@ -4190,7 +4176,7 @@ func (txnData *AcceptNFTBidMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type NFTBidMetadata struct {
-	NFTPostHash    *BlockHash
+	NFTPostHash    *core.BlockHash
 	SerialNumber   uint64
 	BidAmountNanos uint64
 }
@@ -4203,9 +4189,9 @@ func (txnData *NFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// Validate the metadata before encoding it.
 	//
 	// Post hash must be included and must have the expected length.
-	if len(txnData.NFTPostHash) != HashSizeBytes {
+	if len(txnData.NFTPostHash) != core.HashSizeBytes {
 		return nil, fmt.Errorf("NFTBidMetadata.ToBytes: NFTPostHash "+
-			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+			"has length %d != %d", len(txnData.NFTPostHash), core.HashSizeBytes)
 	}
 
 	data := []byte{}
@@ -4227,7 +4213,7 @@ func (txnData *NFTBidMetadata) FromBytes(dataa []byte) error {
 	rr := bytes.NewReader(dataa)
 
 	// NFTPostHash
-	ret.NFTPostHash = &BlockHash{}
+	ret.NFTPostHash = &core.BlockHash{}
 	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
 	if err != nil {
 		return fmt.Errorf(
@@ -4259,7 +4245,7 @@ func (txnData *NFTBidMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type NFTTransferMetadata struct {
-	NFTPostHash       *BlockHash
+	NFTPostHash       *core.BlockHash
 	SerialNumber      uint64
 	ReceiverPublicKey []byte
 	UnlockableText    []byte
@@ -4273,9 +4259,9 @@ func (txnData *NFTTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// Validate the metadata before encoding it.
 	//
 	// Post hash must be included and must have the expected length.
-	if len(txnData.NFTPostHash) != HashSizeBytes {
+	if len(txnData.NFTPostHash) != core.HashSizeBytes {
 		return nil, fmt.Errorf("NFTTransferMetadata.ToBytes: NFTPostHash "+
-			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+			"has length %d != %d", len(txnData.NFTPostHash), core.HashSizeBytes)
 	}
 
 	data := []byte{}
@@ -4302,7 +4288,7 @@ func (txnData *NFTTransferMetadata) FromBytes(dataa []byte) error {
 	rr := bytes.NewReader(dataa)
 
 	// NFTPostHash
-	ret.NFTPostHash = &BlockHash{}
+	ret.NFTPostHash = &core.BlockHash{}
 	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
 	if err != nil {
 		return fmt.Errorf(
@@ -4351,7 +4337,7 @@ func (txnData *NFTTransferMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type AcceptNFTTransferMetadata struct {
-	NFTPostHash  *BlockHash
+	NFTPostHash  *core.BlockHash
 	SerialNumber uint64
 }
 
@@ -4363,9 +4349,9 @@ func (txnData *AcceptNFTTransferMetadata) ToBytes(preSignature bool) ([]byte, er
 	// Validate the metadata before encoding it.
 	//
 	// Post hash must be included and must have the expected length.
-	if len(txnData.NFTPostHash) != HashSizeBytes {
+	if len(txnData.NFTPostHash) != core.HashSizeBytes {
 		return nil, fmt.Errorf("AcceptNFTTransferMetadata.ToBytes: NFTPostHash "+
-			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+			"has length %d != %d", len(txnData.NFTPostHash), core.HashSizeBytes)
 	}
 
 	data := []byte{}
@@ -4384,7 +4370,7 @@ func (txnData *AcceptNFTTransferMetadata) FromBytes(dataa []byte) error {
 	rr := bytes.NewReader(dataa)
 
 	// NFTPostHash
-	ret.NFTPostHash = &BlockHash{}
+	ret.NFTPostHash = &core.BlockHash{}
 	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
 	if err != nil {
 		return fmt.Errorf(
@@ -4410,7 +4396,7 @@ func (txnData *AcceptNFTTransferMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type BurnNFTMetadata struct {
-	NFTPostHash  *BlockHash
+	NFTPostHash  *core.BlockHash
 	SerialNumber uint64
 }
 
@@ -4422,9 +4408,9 @@ func (txnData *BurnNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// Validate the metadata before encoding it.
 	//
 	// Post hash must be included and must have the expected length.
-	if len(txnData.NFTPostHash) != HashSizeBytes {
+	if len(txnData.NFTPostHash) != core.HashSizeBytes {
 		return nil, fmt.Errorf("BurnNFTMetadata.ToBytes: NFTPostHash "+
-			"has length %d != %d", len(txnData.NFTPostHash), HashSizeBytes)
+			"has length %d != %d", len(txnData.NFTPostHash), core.HashSizeBytes)
 	}
 
 	data := []byte{}
@@ -4443,7 +4429,7 @@ func (txnData *BurnNFTMetadata) FromBytes(dataa []byte) error {
 	rr := bytes.NewReader(dataa)
 
 	// NFTPostHash
-	ret.NFTPostHash = &BlockHash{}
+	ret.NFTPostHash = &core.BlockHash{}
 	_, err := io.ReadFull(rr, ret.NFTPostHash[:])
 	if err != nil {
 		return fmt.Errorf(

@@ -3,6 +3,8 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/view"
 	"net"
 	"runtime"
 	"strings"
@@ -100,7 +102,7 @@ type Server struct {
 
 	// requestedTransactions contains hashes of transactions for which we have
 	// requested data but have not yet received a response.
-	requestedTransactionsMap map[BlockHash]*GetDataRequestInfo
+	requestedTransactionsMap map[core.BlockHash]*GetDataRequestInfo
 
 	// addrsToBroadcast is a list of all the addresses we've received from valid addr
 	// messages that we intend to broadcast to our peers. It is organized as:
@@ -139,11 +141,11 @@ func (srv *Server) ResetRequestQueues() {
 
 	glog.V(2).Infof("Server.ResetRequestQueues: Resetting request queues")
 
-	srv.requestedTransactionsMap = make(map[BlockHash]*GetDataRequestInfo)
+	srv.requestedTransactionsMap = make(map[core.BlockHash]*GetDataRequestInfo)
 }
 
 // dataLock must be acquired for writing before calling this function.
-func (srv *Server) _removeRequest(hash *BlockHash) {
+func (srv *Server) _removeRequest(hash *core.BlockHash) {
 	// Just be lazy and remove the hash from everything indiscriminantly to
 	// make sure it's good and purged.
 	delete(srv.requestedTransactionsMap, *hash)
@@ -489,7 +491,7 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 	}
 
 	// If we're here then we have some blocks to fetch so fetch them.
-	hashList := []*BlockHash{}
+	hashList := []*core.BlockHash{}
 	for _, node := range blockNodesToFetch {
 		hashList = append(hashList, node.Hash)
 
@@ -673,7 +675,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		return
 	}
 	pp.AddDeSoMessage(&MsgDeSoGetHeaders{
-		StopHash:     &BlockHash{},
+		StopHash:     &core.BlockHash{},
 		BlockLocator: locator,
 	}, false)
 	headerTip := srv.blockchain.headerTip()
@@ -746,7 +748,7 @@ func (srv *Server) _startSync() {
 	// many headers as the Peer can give us.
 	locator := srv.blockchain.LatestHeaderLocator()
 	bestPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
-		StopHash:     &BlockHash{},
+		StopHash:     &core.BlockHash{},
 		BlockLocator: locator,
 	}, false)
 	glog.V(1).Infof("Server._startSync: Downloading headers for blocks starting at "+
@@ -810,7 +812,7 @@ func (srv *Server) _cleanupDonePeerPeerState(pp *Peer) {
 	// Now deal with transactions. They don't have a queue and so all we need to do
 	// is reassign the requests that were in-flight to the old Peer and then make
 	// the requests to the newPeer.
-	txnHashesReassigned := []*BlockHash{}
+	txnHashesReassigned := []*core.BlockHash{}
 	for hashIter, requestInfo := range srv.requestedTransactionsMap {
 		// Don't do anything if the requests are not meant for the Peer
 		// we're disconnecting to the new Peer.
@@ -818,7 +820,7 @@ func (srv *Server) _cleanupDonePeerPeerState(pp *Peer) {
 			continue
 		}
 		// Make a copy of the hash so we can take a pointer to it.
-		hashCopy := &BlockHash{}
+		hashCopy := &core.BlockHash{}
 		copy(hashCopy[:], hashIter[:])
 
 		// We will be sending this request to the new peer so update the info
@@ -915,7 +917,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 			"DeSo getheaders for good measure")
 		locator := srv.blockchain.LatestHeaderLocator()
 		srv.SyncPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
-			StopHash:     &BlockHash{},
+			StopHash:     &core.BlockHash{},
 			BlockLocator: locator,
 		}, false)
 	}
@@ -1174,7 +1176,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	// processing their blocks.
 	if len(srv.blockchain.trustedBlockProducerPublicKeys) > 0 && blockHeader.Height >= srv.blockchain.trustedBlockProducerStartHeight {
 		if blk.BlockProducerInfo != nil {
-			_, entryExists := srv.mempool.readOnlyUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(
+			_, entryExists := srv.mempool.readOnlyUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[view.MakePkMapKey(
 				blk.BlockProducerInfo.PublicKey)]
 			if entryExists {
 				srv._logAndDisconnectPeer(pp, blk, "Got forbidden block signature public key.")
@@ -1261,7 +1263,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		//   blocks to request.
 		locator := srv.blockchain.LatestHeaderLocator()
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
-			StopHash:     &BlockHash{},
+			StopHash:     &core.BlockHash{},
 			BlockLocator: locator,
 		}, false)
 		return

@@ -1,5 +1,7 @@
 package lib
 
+import "github.com/deso-protocol/core"
+
 var (
 	// These transactions are simply here to bootstrap the profiles on the network. We had
 	// some people testing things before it went live and wanted to preserve their profiles.
@@ -1966,7 +1968,7 @@ var (
 	// weren't actually available. This map defines exceptions for these cases that
 	// assign a new username to the profile. It maps transaction hashes to new
 	// usernames.
-	ForgivenProfileUsernameClaims = map[BlockHash]string{
+	ForgivenProfileUsernameClaims = map[core.BlockHash]string{
 		*mustDecodeHexBlockHash("1f30c115192d72aa01149f08879db14158e66d859c1bd3bee3a2127cbd6f89fd"): "_nbatopshot",
 		*mustDecodeHexBlockHash("8fe4f1ec5e5c53d610be773aa8e45680a3d7a55abf29aaab4e9ce2482e06c994"): "__nbatopshot",
 		*mustDecodeHexBlockHash("3337781344dd5005541d028e8605bbc0851219d70b28d86a7f352877f3a1fde5"): "___nbatopshot",

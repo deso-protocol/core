@@ -1,9 +1,11 @@
-package lib
+package view
 
 import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -14,22 +16,22 @@ import (
 	"time"
 )
 
-func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+func _submitPost(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, postHashToModify []byte,
 	parentStakeID []byte,
-	bodyObj *DeSoBodySchema,
+	bodyObj *lib.DeSoBodySchema,
 	repostedPostHash []byte,
 	tstampNanos uint64,
 	isHidden bool) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	updaterPkBytes, _, err := lib.Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -55,7 +57,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 		isHidden,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -63,7 +65,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, updaterPrivBase58Check)
+	lib._signTxn(t, txn, updaterPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -99,13 +101,13 @@ func _submitPostWithTestMeta(
 	updaterPrivBase58Check string,
 	postHashToModify []byte,
 	parentStakeID []byte,
-	body *DeSoBodySchema,
+	body *lib.DeSoBodySchema,
 	repostedPostHash []byte,
 	tstampNanos uint64,
 	isHidden bool) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, lib._getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
 
 	currentOps, currentTxn, _, err := _submitPost(
 		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
@@ -124,12 +126,12 @@ func _submitPostWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
+func _giveDeSoDiamonds(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *lib.DeSoParams,
 	feeRateNanosPerKB uint64, senderPkBase58Check string, senderPrivBase58Check string,
-	diamondPostHash *BlockHash, diamondLevel int64, deleteDiamondLevel bool,
-) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	diamondPostHash *core.BlockHash, diamondLevel int64, deleteDiamondLevel bool,
+) (_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
-	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
+	senderPkBytes, _, err := lib.Base58CheckDecode(senderPkBase58Check)
 	require.NoError(t, err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -141,7 +143,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 		diamondLevel,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -150,11 +152,11 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 
 	// For testing purposes.
 	if deleteDiamondLevel {
-		delete(txn.ExtraData, DiamondLevelKey)
+		delete(txn.ExtraData, lib.DiamondLevelKey)
 	}
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, senderPrivBase58Check)
+	lib._signTxn(t, txn, senderPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -186,12 +188,12 @@ func _giveDeSoDiamondsWithTestMeta(
 	feeRateNanosPerKB uint64,
 	senderPkBase58Check string,
 	senderPrivBase58Check string,
-	postHashToModify *BlockHash,
+	postHashToModify *core.BlockHash,
 	diamondLevel int64,
 ) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check))
+		testMeta.expectedSenderBalances, lib._getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check))
 	currentOps, currentTxn, _, err := _giveDeSoDiamonds(
 		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
 		senderPkBase58Check,
@@ -206,22 +208,22 @@ func _giveDeSoDiamondsWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64,
+func _doSubmitPostTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string, UpdaterPrivateKeyBase58Check string,
 	postHashToModify []byte,
 	parentPostHashBytes []byte,
 	body string,
 	extraData map[string][]byte,
 	isHidden bool) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	updaterPkBytes, _, err := Base58CheckDecode(UpdaterPublicKeyBase58Check)
+	updaterPkBytes, _, err := lib.Base58CheckDecode(UpdaterPublicKeyBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -239,13 +241,13 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		isHidden,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, UpdaterPrivateKeyBase58Check)
+	lib._signTxn(t, txn, UpdaterPrivateKeyBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -280,8 +282,8 @@ func TestSubmitPost(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 
@@ -297,7 +299,7 @@ func TestSubmitPost(t *testing.T) {
 
 	// Setup some convenience functions for the test.
 	txnOps := [][]*UtxoOperation{}
-	txns := []*MsgDeSoTxn{}
+	txns := []*lib.MsgDeSoTxn{}
 	expectedSenderBalances := []uint64{}
 
 	// We take the block tip to be the blockchain height rather than the
@@ -306,7 +308,7 @@ func TestSubmitPost(t *testing.T) {
 	registerOrTransfer := func(username string,
 		senderPk string, recipientPk string, senderPriv string) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, senderPk))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, senderPk))
 
 		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
 			t, chain, db, params, senderPk, recipientPk,
@@ -317,18 +319,18 @@ func TestSubmitPost(t *testing.T) {
 	}
 
 	// Fund all the keys.
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
 
 	checkPostsDeleted := func() {
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -355,7 +357,7 @@ func TestSubmitPost(t *testing.T) {
 		newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
 		newStakeMultipleBasisPoints uint64, isHidden bool) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, updaterPkBase58Check))
 
 		currentOps, currentTxn, _, err := _updateProfile(
 			t, chain, db, params,
@@ -376,12 +378,12 @@ func TestSubmitPost(t *testing.T) {
 		updaterPrivBase58Check string,
 		postHashToModify []byte,
 		parentStakeID []byte,
-		body *DeSoBodySchema,
+		body *lib.DeSoBodySchema,
 		repostedPostHash []byte,
 		tstampNanos uint64,
 		isHidden bool) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, updaterPkBase58Check))
 
 		currentOps, currentTxn, _, err := _submitPost(
 			t, chain, db, params, feeRateNanosPerKB,
@@ -407,7 +409,7 @@ func TestSubmitPost(t *testing.T) {
 		fromPkBytes []byte,
 		toPkBytes []byte) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, updaterPkBase58Check))
 
 		currentOps, currentTxn, _, err := _swapIdentity(
 			t, chain, db, params, feeRateNanosPerKB,
@@ -429,7 +431,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post body 1 no profile"}, /*body*/
+			&lib.DeSoBodySchema{Body: "m0 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -445,7 +447,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post body 2 no profile"}, /*body*/
+			&lib.DeSoBodySchema{Body: "m0 post body 2 no profile"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -461,7 +463,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "m1 post body 1 no profile"}, /*body*/
+			&lib.DeSoBodySchema{Body: "m1 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -490,7 +492,7 @@ func TestSubmitPost(t *testing.T) {
 			m2Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "m2 post body 1 WITH profile"}, /*body*/
+			&lib.DeSoBodySchema{Body: "m2 post body 1 WITH profile"}, /*body*/
 			[]byte{},
 			1502947014*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -518,7 +520,7 @@ func TestSubmitPost(t *testing.T) {
 			m3Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "m3 post body 1 WITH profile"}, /*body*/
+			&lib.DeSoBodySchema{Body: "m3 post body 1 WITH profile"}, /*body*/
 			[]byte{},
 			1502947015*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -535,7 +537,7 @@ func TestSubmitPost(t *testing.T) {
 			m2Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "m2 post body 2 WITH profile"}, /*body*/
+			&lib.DeSoBodySchema{Body: "m2 post body 2 WITH profile"}, /*body*/
 			[]byte{},
 			1502947016*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -553,63 +555,63 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
+			&lib.DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		require.Contains(err.Error(), lib.RuleErrorTxnMustHaveAtLeastOneInput)
 	}
 
 	// PostHashToModify with bad length
 	{
 		_, _, _, err := _submitPost(
 			t, chain, db, params,
-			10,                           /*feeRateNanosPerKB*/
-			m0Pub,                        /*updaterPkBase58Check*/
-			m0Priv,                       /*updaterPrivBase58Check*/
-			RandomBytes(HashSizeBytes-1), /*postHashToModify*/
-			[]byte{},                     /*parentStakeID*/
-			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
+			10,                                   /*feeRateNanosPerKB*/
+			m0Pub,                                /*updaterPkBase58Check*/
+			m0Priv,                               /*updaterPrivBase58Check*/
+			db.RandomBytes(core.HashSizeBytes-1), /*postHashToModify*/
+			[]byte{},                             /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostInvalidPostHashToModify)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostInvalidPostHashToModify)
 	}
 
 	// Setting PostHashToModify should fail for a non-existent post
 	{
 		_, _, _, err := _submitPost(
 			t, chain, db, params,
-			10,                         /*feeRateNanosPerKB*/
-			m0Pub,                      /*updaterPkBase58Check*/
-			m0Priv,                     /*updaterPrivBase58Check*/
-			RandomBytes(HashSizeBytes), /*postHashToModify*/
-			[]byte{},                   /*parentStakeID*/
-			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			db.RandomBytes(core.HashSizeBytes), /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostModifyingNonexistentPost)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostModifyingNonexistentPost)
 	}
 
 	// Bad length for parent stake id should fail
 	{
 		_, _, _, err := _submitPost(
 			t, chain, db, params,
-			10,                           /*feeRateNanosPerKB*/
-			m0Pub,                        /*updaterPkBase58Check*/
-			m0Priv,                       /*updaterPrivBase58Check*/
-			[]byte{},                     /*postHashToModify*/
-			RandomBytes(HashSizeBytes-1), /*parentStakeID*/
-			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
+			10,                                   /*feeRateNanosPerKB*/
+			m0Pub,                                /*updaterPkBase58Check*/
+			m0Priv,                               /*updaterPrivBase58Check*/
+			[]byte{},                             /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes-1), /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostInvalidParentStakeIDLength)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostInvalidParentStakeIDLength)
 	}
 
 	// Non-owner modifying post should fail
@@ -621,12 +623,12 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,       /*updaterPrivBase58Check*/
 			post1Hash[:], /*postHashToModify*/
 			[]byte{},     /*parentStakeID*/
-			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
+			&lib.DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
 
 	// Zero timestamp should fail
@@ -638,12 +640,12 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
+			&lib.DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			0, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostTimestampIsZero)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostTimestampIsZero)
 	}
 
 	// User without profile modifying another user without profile's post
@@ -655,14 +657,14 @@ func TestSubmitPost(t *testing.T) {
 			m0Pub,  /*updaterPkBase58Check*/
 			m0Priv, /*updaterPrivBase58Check*/
 			// this belongs to m1 who doesn't have a profile.
-			post3Hash[:],                            /*postHashToModify*/
-			RandomBytes(HashSizeBytes),              /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
+			post3Hash[:],                                /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes),          /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
 
 	// User WITH profile modifying another user without profile's post
@@ -674,14 +676,14 @@ func TestSubmitPost(t *testing.T) {
 			m2Pub,  /*updaterPkBase58Check*/
 			m2Priv, /*updaterPrivBase58Check*/
 			// this belongs to m1 who doesn't have a profile.
-			post1Hash[:],                            /*postHashToModify*/
-			RandomBytes(HashSizeBytes),              /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
+			post1Hash[:],                                /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes),          /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
 
 	// User without profile modifying another user WITH profile's post
@@ -693,14 +695,14 @@ func TestSubmitPost(t *testing.T) {
 			m0Pub,  /*updaterPkBase58Check*/
 			m0Priv, /*updaterPrivBase58Check*/
 			// this belongs to m1 who doesn't have a profile.
-			post4Hash[:],                            /*postHashToModify*/
-			RandomBytes(HashSizeBytes),              /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
+			post4Hash[:],                                /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes),          /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
 
 	// User WITH profile modifying another user WITH profile's post
@@ -712,26 +714,26 @@ func TestSubmitPost(t *testing.T) {
 			m2Pub,  /*updaterPkBase58Check*/
 			m2Priv, /*updaterPrivBase58Check*/
 			// this belongs to m1 who doesn't have a profile.
-			post5Hash[:],                            /*postHashToModify*/
-			RandomBytes(HashSizeBytes),              /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
+			post5Hash[:],                                /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes),          /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
 
 	// Owner without profile modifying post should succeed but all the non-body fields
 	// should be ignored.
 	{
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m0Pub,                      /*updaterPkBase58Check*/
-			m0Priv,                     /*updaterPrivBase58Check*/
-			post1Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post body MODIFIED"}, /*body*/
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			post1Hash[:],                       /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes), /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m0 post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947017*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -741,12 +743,12 @@ func TestSubmitPost(t *testing.T) {
 	// all non-body posts should be unchanged.
 	{
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m2Pub,                      /*updaterPkBase58Check*/
-			m2Priv,                     /*updaterPrivBase58Check*/
-			post4Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
-			&DeSoBodySchema{Body: "m2 post body MODIFIED"}, /*body*/
+			10,                                 /*feeRateNanosPerKB*/
+			m2Pub,                              /*updaterPkBase58Check*/
+			m2Priv,                             /*updaterPrivBase58Check*/
+			post4Hash[:],                       /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes), /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m2 post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947018*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -755,12 +757,12 @@ func TestSubmitPost(t *testing.T) {
 	// ParamUpdater modifying their own post should succeed
 	{
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m3Pub,                      /*updaterPkBase58Check*/
-			m3Priv,                     /*updaterPrivBase58Check*/
-			post5Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
-			&DeSoBodySchema{Body: "paramUpdater post body MODIFIED"}, /*body*/
+			10,                                 /*feeRateNanosPerKB*/
+			m3Pub,                              /*updaterPkBase58Check*/
+			m3Priv,                             /*updaterPrivBase58Check*/
+			post5Hash[:],                       /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes), /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "paramUpdater post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947019*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -769,22 +771,22 @@ func TestSubmitPost(t *testing.T) {
 	// Modifying a post and then modifying it back should work.
 	{
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m1Pub,                      /*updaterPkBase58Check*/
-			m1Priv,                     /*updaterPrivBase58Check*/
-			post3Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
-			&DeSoBodySchema{Body: "sldkfjlskdfjlajflkasjdflkasjdf"}, /*body*/
+			10,                                 /*feeRateNanosPerKB*/
+			m1Pub,                              /*updaterPkBase58Check*/
+			m1Priv,                             /*updaterPrivBase58Check*/
+			post3Hash[:],                       /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes), /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "sldkfjlskdfjlajflkasjdflkasjdf"}, /*body*/
 			[]byte{},
 			1502947022*1e9, /*tstampNanos*/
 			true /*isHidden*/)
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m1Pub,                      /*updaterPkBase58Check*/
-			m1Priv,                     /*updaterPrivBase58Check*/
-			post3Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
-			&DeSoBodySchema{Body: "m1 post body 1 no profile modified back"}, /*body*/
+			10,                                 /*feeRateNanosPerKB*/
+			m1Pub,                              /*updaterPkBase58Check*/
+			m1Priv,                             /*updaterPrivBase58Check*/
+			post3Hash[:],                       /*postHashToModify*/
+			db.RandomBytes(core.HashSizeBytes), /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m1 post body 1 no profile modified back"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -798,7 +800,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,       /*updaterPrivBase58Check*/
 			[]byte{},     /*postHashToModify*/
 			post3Hash[:], /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment 1 from m0 on post3"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment 1 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947001*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -814,7 +816,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,       /*updaterPrivBase58Check*/
 			[]byte{},     /*postHashToModify*/
 			post6Hash[:], /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment 2 from m0 on post3"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment 2 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947002*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -830,7 +832,7 @@ func TestSubmitPost(t *testing.T) {
 			m2Priv,       /*updaterPrivBase58Check*/
 			[]byte{},     /*postHashToModify*/
 			post6Hash[:], /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment 1 from m2 on post6"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment 1 from m2 on post6"}, /*body*/
 			[]byte{},
 			1502947003*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -846,7 +848,7 @@ func TestSubmitPost(t *testing.T) {
 			m3Priv,       /*updaterPrivBase58Check*/
 			[]byte{},     /*postHashToModify*/
 			post6Hash[:], /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment 1 from m3 on post6"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment 1 from m3 on post6"}, /*body*/
 			[]byte{},
 			1502947004*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -866,12 +868,12 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,          /*updaterPrivBase58Check*/
 			comment1Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "modifying comment 1 by m1 should fail"}, /*body*/
+			&lib.DeSoBodySchema{Body: "modifying comment 1 by m1 should fail"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostPostModificationNotAuthorized)
 
 		// Modifying the comment with the proper key should work.
 		submitPost(
@@ -880,7 +882,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,          /*updaterPrivBase58Check*/
 			comment1Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment from m0 on post3 MODIFIED"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -892,7 +894,7 @@ func TestSubmitPost(t *testing.T) {
 			m2Priv,          /*updaterPrivBase58Check*/
 			comment3Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment from m2 on post6 MODIFIED"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment from m2 on post6 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -905,7 +907,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,          /*updaterPrivBase58Check*/
 			comment2Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment from m0 on post3 MODIFIED"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -915,7 +917,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,          /*updaterPrivBase58Check*/
 			comment2Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment 2 from m0 on post3"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment 2 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -930,7 +932,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,    /*updaterPrivBase58Check*/
 			[]byte{},  /*postHashToModify*/
 			m1PkBytes, /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment m0 on profile m1 [1]"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment m0 on profile m1 [1]"}, /*body*/
 			[]byte{},
 			1502947005*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -944,7 +946,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,    /*updaterPrivBase58Check*/
 			[]byte{},  /*postHashToModify*/
 			m2PkBytes, /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment m1 on profile m2 [1]"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment m1 on profile m2 [1]"}, /*body*/
 			[]byte{},
 			1502947006*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -958,7 +960,7 @@ func TestSubmitPost(t *testing.T) {
 			m3Priv,    /*updaterPrivBase58Check*/
 			[]byte{},  /*postHashToModify*/
 			m3PkBytes, /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment m3 on profile m3 [1]"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment m3 on profile m3 [1]"}, /*body*/
 			[]byte{},
 			1502947007*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -972,7 +974,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,    /*updaterPrivBase58Check*/
 			[]byte{},  /*postHashToModify*/
 			m3PkBytes, /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment m0 on profile m3 [2]"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment m0 on profile m3 [2]"}, /*body*/
 			[]byte{},
 			1502947008*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -989,7 +991,7 @@ func TestSubmitPost(t *testing.T) {
 			m0Priv,          /*updaterPrivBase58Check*/
 			comment5Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment 1 from m0 on post3 MODIFIED"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment 1 from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -1001,12 +1003,12 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,          /*updaterPrivBase58Check*/
 			comment5Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "modifying comment 1 by m1 should fail"}, /*body*/
+			&lib.DeSoBodySchema{Body: "modifying comment 1 by m1 should fail"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorSubmitPostPostModificationNotAuthorized)
 
 		// Modify a profile comment then modify it back.
 		submitPost(
@@ -1015,7 +1017,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,          /*updaterPrivBase58Check*/
 			comment6Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment m1 on profile m2 [1] MODIFIED"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment m1 on profile m2 [1] MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -1025,7 +1027,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,          /*updaterPrivBase58Check*/
 			comment6Hash[:], /*postHashToModify*/
 			[]byte{},        /*parentStakeID*/
-			&DeSoBodySchema{Body: "comment m1 on profile m2 [1]"}, /*body*/
+			&lib.DeSoBodySchema{Body: "comment m1 on profile m2 [1]"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -1040,7 +1042,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{},
+			&lib.DeSoBodySchema{},
 			post3Hash[:],
 			15029557050*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -1057,7 +1059,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{},
+			&lib.DeSoBodySchema{},
 			post4Hash[:],
 			15029557051*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -1069,7 +1071,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,         /*updaterPrivBase58Check*/
 			repost2Hash[:], /*postHashToModify*/
 			[]byte{},       /*parentStakeID*/
-			&DeSoBodySchema{},
+			&lib.DeSoBodySchema{},
 			post4Hash[:],
 			15029557052*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -1082,7 +1084,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "quote-post"},
+			&lib.DeSoBodySchema{Body: "quote-post"},
 			post5Hash[:],
 			15029557053*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -1095,7 +1097,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&DeSoBodySchema{Body: "quote-post-hide-me"},
+			&lib.DeSoBodySchema{Body: "quote-post-hide-me"},
 			post6Hash[:],
 			15029557054*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -1107,7 +1109,7 @@ func TestSubmitPost(t *testing.T) {
 			m1Priv,         /*updaterPrivBase58Check*/
 			repost4hash[:], /*postHashToModify*/
 			[]byte{},       /*parentStakeID*/
-			&DeSoBodySchema{Body: "quote-post-hide-me"},
+			&lib.DeSoBodySchema{Body: "quote-post-hide-me"},
 			post6Hash[:],
 			15029557054*1e9, /*tstampNanos*/
 			true /*isHidden*/)
@@ -1122,13 +1124,13 @@ func TestSubmitPost(t *testing.T) {
 				m1Priv,
 				[]byte{},
 				[]byte{},
-				&DeSoBodySchema{},
+				&lib.DeSoBodySchema{},
 				[]byte{1, 2, 3},
 				15029557055,
 				false,
 			)
 			require.Error(err)
-			require.Contains(err.Error(), RuleErrorSubmitPostRepostPostNotFound)
+			require.Contains(err.Error(), lib.RuleErrorSubmitPostRepostPostNotFound)
 		}
 		{
 			// Cannot repost a vanilla repost
@@ -1138,13 +1140,13 @@ func TestSubmitPost(t *testing.T) {
 				m1Priv,
 				[]byte{},
 				[]byte{},
-				&DeSoBodySchema{},
+				&lib.DeSoBodySchema{},
 				repost1Hash[:],
 				15029557055,
 				false,
 			)
 			require.Error(err)
-			require.Contains(err.Error(), RuleErrorSubmitPostRepostOfRepost)
+			require.Contains(err.Error(), lib.RuleErrorSubmitPostRepostOfRepost)
 		}
 		{
 			// Cannot update the repostedPostHashHex
@@ -1154,13 +1156,13 @@ func TestSubmitPost(t *testing.T) {
 				m1Priv,
 				repost1Hash[:],
 				[]byte{},
-				&DeSoBodySchema{},
+				&lib.DeSoBodySchema{},
 				post4Hash[:],
 				15029557055,
 				false,
 			)
 			require.Error(err)
-			require.Contains(err.Error(), RuleErrorSubmitPostUpdateRepostHash)
+			require.Contains(err.Error(), lib.RuleErrorSubmitPostUpdateRepostHash)
 		}
 
 	}
@@ -1208,8 +1210,8 @@ func TestSubmitPost(t *testing.T) {
 	// - repost 4
 	// quote repost post 6 and then hides itself
 
-	comparePostBody := func(postEntry *PostEntry, message string, repostPostHash *BlockHash) {
-		bodyJSONObj := &DeSoBodySchema{}
+	comparePostBody := func(postEntry *PostEntry, message string, repostPostHash *core.BlockHash) {
+		bodyJSONObj := &lib.DeSoBodySchema{}
 		err := json.Unmarshal(postEntry.Body, bodyJSONObj)
 		require.NoError(err)
 		require.Equal(message, bodyJSONObj.Body)
@@ -1278,7 +1280,7 @@ func TestSubmitPost(t *testing.T) {
 		}
 		// m1 should have 1 comment
 		{
-			commentsForPost, err := commentsByPostHash[*NewBlockHash(m1PkBytes)]
+			commentsForPost, err := commentsByPostHash[*core.NewBlockHash(m1PkBytes)]
 			require.True(err)
 			require.Equal(1, len(commentsForPost))
 
@@ -1290,7 +1292,7 @@ func TestSubmitPost(t *testing.T) {
 		}
 		// m2 should have 1 comment
 		{
-			commentsForPost, err := commentsByPostHash[*NewBlockHash(m2PkBytes)]
+			commentsForPost, err := commentsByPostHash[*core.NewBlockHash(m2PkBytes)]
 			require.True(err)
 			require.Equal(1, len(commentsForPost))
 
@@ -1302,7 +1304,7 @@ func TestSubmitPost(t *testing.T) {
 		}
 		// m3 should have 2 comments
 		{
-			commentsForPost, err := commentsByPostHash[*NewBlockHash(m3PkBytes)]
+			commentsForPost, err := commentsByPostHash[*core.NewBlockHash(m3PkBytes)]
 			require.True(err)
 			require.Equal(2, len(commentsForPost))
 
@@ -1432,18 +1434,18 @@ func TestSubmitPost(t *testing.T) {
 	// ===================================================================================
 	// Finish it off with some transactions
 	// ===================================================================================
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
 	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
 	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
 	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
@@ -1476,7 +1478,7 @@ func TestSubmitPost(t *testing.T) {
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
-		require.Equal(expectedSenderBalances[backwardIter], _getBalance(t, chain, nil, PkToStringTestnet(currentTxn.PublicKey)))
+		require.Equal(expectedSenderBalances[backwardIter], lib._getBalance(t, chain, nil, db.PkToStringTestnet(currentTxn.PublicKey)))
 	}
 
 	// Verify that all the profiles have been deleted.
@@ -1488,7 +1490,7 @@ func TestSubmitPost(t *testing.T) {
 		// See comment above on this transaction.
 		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
-		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, PkToStringTestnet(tx.PublicKey)))
+		require.Equal(expectedSenderBalances[ii], lib._getBalance(t, chain, mempool, db.PkToStringTestnet(tx.PublicKey)))
 
 		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
 		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
@@ -1585,7 +1587,7 @@ func TestSubmitPost(t *testing.T) {
 		}
 	}
 	require.NoError(utxoView2.FlushToDb())
-	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
+	require.Equal(expectedSenderBalances[0], lib._getBalance(t, chain, nil, lib.senderPkString))
 
 	// Verify that all the profiles have been deleted.
 	checkPostsDeleted()
@@ -1606,11 +1608,11 @@ func TestSubmitPost(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := db.GetUtxoOperationsForBlock(db, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
-		txHashes, err := ComputeTransactionHashes(block.Txns)
+		txHashes, err := lib.ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
 		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
 
@@ -1622,7 +1624,7 @@ func TestSubmitPost(t *testing.T) {
 	checkPostsDeleted()
 }
 
-func assertCommentCount(utxoView *UtxoView, require *require.Assertions, postHash *BlockHash,
+func assertCommentCount(utxoView *UtxoView, require *require.Assertions, postHash *core.BlockHash,
 	expectedCommentCount int) {
 	corePosts, _, err := utxoView.GetAllPosts()
 	require.NoError(err)
@@ -1631,7 +1633,7 @@ func assertCommentCount(utxoView *UtxoView, require *require.Assertions, postHas
 	require.Equal(uint64(expectedCommentCount), post.CommentCount)
 }
 
-func findPostByPostHash(posts []*PostEntry, targetPostHash *BlockHash) (_targetPost *PostEntry) {
+func findPostByPostHash(posts []*PostEntry, targetPostHash *core.BlockHash) (_targetPost *PostEntry) {
 	var targetPost *PostEntry
 	for _, post := range posts {
 		if reflect.DeepEqual(post.PostHash, targetPostHash) {
@@ -1643,16 +1645,16 @@ func findPostByPostHash(posts []*PostEntry, targetPostHash *BlockHash) (_targetP
 }
 
 func TestDeSoDiamonds(t *testing.T) {
-	DeSoDiamondsBlockHeight = 0
-	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
+	lib.DeSoDiamondsBlockHeight = 0
+	diamondValueMap := lib.GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
@@ -1679,28 +1681,28 @@ func TestDeSoDiamonds(t *testing.T) {
 	}
 
 	// Fund all the keys.
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000000000)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000000000)
+	_registerOrTransferWithTestMeta(testMeta, "", lib.senderPkString, m0Pub, lib.senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", lib.senderPkString, m1Pub, lib.senderPrivString, 1000000000)
+	_registerOrTransferWithTestMeta(testMeta, "", lib.senderPkString, m2Pub, lib.senderPrivString, 1000000000)
 
 	// Get PKIDs for looking up diamond entries.
-	m0PkBytes, _, err := Base58CheckDecode(m0Pub)
+	m0PkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 	require.NoError(err)
-	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
+	m0PKID := db.DBGetPKIDEntryForPublicKey(db, m0PkBytes)
 
-	m1PkBytes, _, err := Base58CheckDecode(m1Pub)
+	m1PkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 	require.NoError(err)
-	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+	m1PKID := db.DBGetPKIDEntryForPublicKey(db, m1PkBytes)
 
-	m2PkBytes, _, err := Base58CheckDecode(m2Pub)
+	m2PkBytes, _, err := lib.Base58CheckDecode(m2Pub)
 	require.NoError(err)
-	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+	m2PKID := db.DBGetPKIDEntryForPublicKey(db, m2PkBytes)
 	_ = m2PKID
 
 	validateDiamondEntry := func(
-		senderPKID *PKID, receiverPKID *PKID, diamondPostHash *BlockHash, diamondLevel int64) {
+		senderPKID *core.PKID, receiverPKID *core.PKID, diamondPostHash *core.BlockHash, diamondLevel int64) {
 
-		diamondEntry := DbGetDiamondMappings(db, receiverPKID, senderPKID, diamondPostHash)
+		diamondEntry := db.DbGetDiamondMappings(db, receiverPKID, senderPKID, diamondPostHash)
 
 		if diamondEntry == nil && diamondLevel > 0 {
 			t.Errorf("validateDiamondEntry: couldn't find diamond entry for diamondLevel %d", diamondLevel)
@@ -1716,12 +1718,12 @@ func TestDeSoDiamonds(t *testing.T) {
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                 /*feeRateNanosPerKB*/
-			m0Pub,                              /*updaterPkBase58Check*/
-			m0Priv,                             /*updaterPrivBase58Check*/
-			[]byte{},                           /*postHashToModify*/
-			[]byte{},                           /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -1732,9 +1734,9 @@ func TestDeSoDiamonds(t *testing.T) {
 	// Have m1 give the post a diamond.
 	{
 		// Balances before.
-		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalBeforeNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999), m0BalBeforeNFT)
-		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalBeforeNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9), m1BalBeforeNFT)
 
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 0)
@@ -1742,18 +1744,18 @@ func TestDeSoDiamonds(t *testing.T) {
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 1)
 
 		// Balances after.
-		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalAfterNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[1]), m0BalAfterNFT)
-		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalAfterNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[1]-2), m1BalAfterNFT)
 	}
 
 	// Upgrade the post from 1 -> 2 diamonds.
 	{
 		// Balances before.
-		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalBeforeNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[1]), m0BalBeforeNFT)
-		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalBeforeNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[1]-2), m1BalBeforeNFT)
 
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 1)
@@ -1761,18 +1763,18 @@ func TestDeSoDiamonds(t *testing.T) {
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 2)
 
 		// Balances after.
-		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalAfterNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[2]), m0BalAfterNFT)
-		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalAfterNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[2]-4), m1BalAfterNFT)
 	}
 
 	// Upgrade the post from 2 -> 3 diamonds.
 	{
 		// Balances before.
-		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalBeforeNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[2]), m0BalBeforeNFT)
-		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalBeforeNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[2]-4), m1BalBeforeNFT)
 
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 2)
@@ -1780,18 +1782,18 @@ func TestDeSoDiamonds(t *testing.T) {
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 3)
 
 		// Balances after.
-		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalAfterNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[3]), m0BalAfterNFT)
-		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalAfterNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[3]-6), m1BalAfterNFT)
 	}
 
 	// Upgrade the post from 3 -> 4 diamonds.
 	{
 		// Balances before.
-		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalBeforeNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[3]), m0BalBeforeNFT)
-		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalBeforeNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[3]-6), m1BalBeforeNFT)
 
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 3)
@@ -1799,18 +1801,18 @@ func TestDeSoDiamonds(t *testing.T) {
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 4)
 
 		// Balances after.
-		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalAfterNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[4]), m0BalAfterNFT)
-		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalAfterNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[4]-8), m1BalAfterNFT)
 	}
 
 	// Upgrade the post from 4 -> 5 diamonds.
 	{
 		// Balances before.
-		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalBeforeNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[4]), m0BalBeforeNFT)
-		m1BalBeforeNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalBeforeNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[4]-8), m1BalBeforeNFT)
 
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 4)
@@ -1818,18 +1820,18 @@ func TestDeSoDiamonds(t *testing.T) {
 		validateDiamondEntry(m1PKID.PKID, m0PKID.PKID, post1Hash, 5)
 
 		// Balances after.
-		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalAfterNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[5]), m0BalAfterNFT)
-		m1BalAfterNFT := _getBalance(t, chain, nil, m1Pub)
+		m1BalAfterNFT := lib._getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(1e9-diamondValueMap[5]-10), m1BalAfterNFT)
 	}
 
 	// Have m2 give the post 5 diamonds right off the bat.
 	{
 		// Balances before.
-		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalBeforeNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[5]), m0BalBeforeNFT)
-		m2BalBeforeNFT := _getBalance(t, chain, nil, m2Pub)
+		m2BalBeforeNFT := lib._getBalance(t, chain, nil, m2Pub)
 		require.Equal(uint64(1e9), m2BalBeforeNFT)
 
 		validateDiamondEntry(m2PKID.PKID, m0PKID.PKID, post1Hash, 0)
@@ -1837,9 +1839,9 @@ func TestDeSoDiamonds(t *testing.T) {
 		validateDiamondEntry(m2PKID.PKID, m0PKID.PKID, post1Hash, 5)
 
 		// Balances after.
-		m0BalAfterNFT := _getBalance(t, chain, nil, m0Pub)
+		m0BalAfterNFT := lib._getBalance(t, chain, nil, m0Pub)
 		require.Equal(uint64(999+diamondValueMap[5]+diamondValueMap[5]), m0BalAfterNFT)
-		m2BalAfterNFT := _getBalance(t, chain, nil, m2Pub)
+		m2BalAfterNFT := lib._getBalance(t, chain, nil, m2Pub)
 		require.Equal(uint64(1e9-diamondValueMap[5]-2), m2BalAfterNFT)
 	}
 
@@ -1852,16 +1854,16 @@ func TestDeSoDiamonds(t *testing.T) {
 }
 
 func TestDeSoDiamondErrorCases(t *testing.T) {
-	DeSoDiamondsBlockHeight = 0
-	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
+	lib.DeSoDiamondsBlockHeight = 0
+	diamondValueMap := lib.GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
@@ -1888,8 +1890,8 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 	}
 
 	// Fund all the keys.
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000000000)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000000000)
+	_registerOrTransferWithTestMeta(testMeta, "", lib.senderPkString, m0Pub, lib.senderPrivString, 1000000000)
+	_registerOrTransferWithTestMeta(testMeta, "", lib.senderPkString, m1Pub, lib.senderPrivString, 1000000000)
 
 	// Since the "CreateBasicTransferTxnWithDiamonds()" function in blockchain.go won't let us
 	// trigger most errors that we want to check, we create another version of the function here
@@ -1898,20 +1900,20 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		senderPkBase58Check string, senderPrivBase58Check string, receiverPkBase58Check string,
 		diamondPostHashBytes []byte, diamondLevel int64, amountNanos uint64) (_err error) {
 
-		senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
+		senderPkBytes, _, err := lib.Base58CheckDecode(senderPkBase58Check)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(receiverPkBase58Check)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(receiverPkBase58Check)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 
 		// Build the basic transfer txn.
-		txn := &MsgDeSoTxn{
+		txn := &lib.MsgDeSoTxn{
 			PublicKey: senderPkBytes,
-			TxnMeta:   &BasicTransferMetadata{},
-			TxOutputs: []*DeSoOutput{
+			TxnMeta:   &lib.BasicTransferMetadata{},
+			TxOutputs: []*lib.DeSoOutput{
 				{
 					PublicKey:   receiverPkBytes,
 					AmountNanos: amountNanos,
@@ -1923,8 +1925,8 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 
 		// Make a map for the diamond extra data and add it.
 		diamondsExtraData := make(map[string][]byte)
-		diamondsExtraData[DiamondLevelKey] = IntToBuf(diamondLevel)
-		diamondsExtraData[DiamondPostHashKey] = diamondPostHashBytes
+		diamondsExtraData[lib.DiamondLevelKey] = lib.IntToBuf(diamondLevel)
+		diamondsExtraData[lib.DiamondPostHashKey] = diamondPostHashBytes
 		txn.ExtraData = diamondsExtraData
 
 		// We don't need to make any tweaks to the amount because it's basically
@@ -1945,7 +1947,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		}
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, senderPrivBase58Check)
+		lib._signTxn(t, txn, senderPrivBase58Check)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1978,12 +1980,12 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			m1Pub,
-			RandomBytes(HashSizeBytes-1),
+			db.RandomBytes(core.HashSizeBytes-1),
 			1,
 			diamondValueMap[1],
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes)
+		require.Contains(err.Error(), lib.RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes)
 	}
 
 	// Error case: non-existent post.
@@ -1992,24 +1994,24 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			m1Pub,
-			RandomBytes(HashSizeBytes),
+			db.RandomBytes(core.HashSizeBytes),
 			1,
 			diamondValueMap[1],
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBasicTransferDiamondPostEntryDoesNotExist)
+		require.Contains(err.Error(), lib.RuleErrorBasicTransferDiamondPostEntryDoesNotExist)
 	}
 
 	// Create a post for testing.
 	{
 		_submitPostWithTestMeta(
 			testMeta,
-			10,                                 /*feeRateNanosPerKB*/
-			m0Pub,                              /*updaterPkBase58Check*/
-			m0Priv,                             /*updaterPrivBase58Check*/
-			[]byte{},                           /*postHashToModify*/
-			[]byte{},                           /*parentStakeID*/
-			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			10,                                     /*feeRateNanosPerKB*/
+			m0Pub,                                  /*updaterPkBase58Check*/
+			m0Priv,                                 /*updaterPrivBase58Check*/
+			[]byte{},                               /*postHashToModify*/
+			[]byte{},                               /*parentStakeID*/
+			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -2028,7 +2030,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 			diamondValueMap[1],
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBasicTransferDiamondCannotTransferToSelf)
+		require.Contains(err.Error(), lib.RuleErrorBasicTransferDiamondCannotTransferToSelf)
 	}
 
 	// Error case: don't include diamond level.
@@ -2043,7 +2045,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 			true, /*deleteDiamondLevel*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel)
+		require.Contains(err.Error(), lib.RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel)
 	}
 
 	// Error case: invalid diamond level.
@@ -2057,7 +2059,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 			diamondValueMap[1],
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBasicTransferHasInvalidDiamondLevel)
+		require.Contains(err.Error(), lib.RuleErrorBasicTransferHasInvalidDiamondLevel)
 	}
 
 	// Error case: insufficient deso.
@@ -2071,6 +2073,6 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 			diamondValueMap[1],
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBasicTransferInsufficientDeSoForDiamondLevel)
+		require.Contains(err.Error(), lib.RuleErrorBasicTransferInsufficientDeSoForDiamondLevel)
 	}
 }

@@ -1,9 +1,11 @@
-package lib
+package view
 
 import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -19,7 +21,7 @@ func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *Mess
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	dbMessageEntry := DbGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
+	dbMessageEntry := lib.DbGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
 	if dbMessageEntry != nil {
 		bav._setMessageEntryMappings(dbMessageEntry)
 	}
@@ -56,7 +58,7 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 // Postgres messages
 //
 
-func (bav *UtxoView) getMessage(messageHash *BlockHash) *PGMessage {
+func (bav *UtxoView) getMessage(messageHash *core.BlockHash) *lib.PGMessage {
 	mapValue, existsMapValue := bav.MessageMap[*messageHash]
 	if existsMapValue {
 		return mapValue
@@ -69,11 +71,11 @@ func (bav *UtxoView) getMessage(messageHash *BlockHash) *PGMessage {
 	return message
 }
 
-func (bav *UtxoView) setMessageMappings(message *PGMessage) {
+func (bav *UtxoView) setMessageMappings(message *lib.PGMessage) {
 	bav.MessageMap[*message.MessageHash] = message
 }
 
-func (bav *UtxoView) deleteMessageMappings(message *PGMessage) {
+func (bav *UtxoView) deleteMessageMappings(message *lib.PGMessage) {
 	deletedMessage := *message
 	deletedMessage.isDeleted = true
 	bav.setMessageMappings(&deletedMessage)
@@ -84,7 +86,7 @@ func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
 	_messageEntries []*MessageEntry, _err error) {
 
 	// Start by fetching all the messages we have in the db.
-	dbMessageEntries, err := DbGetMessageEntriesForPublicKey(bav.Handle, publicKey)
+	dbMessageEntries, err := lib.DbGetMessageEntriesForPublicKey(bav.Handle, publicKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
 	}
@@ -125,7 +127,7 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
 	_messageEntries []*MessageEntry, _err error) {
 
 	// Start by fetching all the messages we have in the db.
-	dbMessageEntries, err := DbGetLimitedMessageEntriesForPublicKey(bav.Handle, publicKey)
+	dbMessageEntries, err := lib.DbGetLimitedMessageEntriesForPublicKey(bav.Handle, publicKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
 	}
@@ -162,20 +164,20 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
 }
 
 func (bav *UtxoView) _connectPrivateMessage(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypePrivateMessage {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypePrivateMessage {
 		return 0, 0, nil, fmt.Errorf("_connectPrivateMessage: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*PrivateMessageMetadata)
+	txMeta := txn.TxnMeta.(*lib.PrivateMessageMetadata)
 
 	// Check the length of the EncryptedText
 	if uint64(len(txMeta.EncryptedText)) > bav.Params.MaxPrivateMessageLengthBytes {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorPrivateMessageEncryptedTextLengthExceedsMax, "_connectPrivateMessage: "+
+			lib.RuleErrorPrivateMessageEncryptedTextLengthExceedsMax, "_connectPrivateMessage: "+
 				"EncryptedTextLen = %d; Max length = %d",
 			len(txMeta.EncryptedText), bav.Params.MaxPrivateMessageLengthBytes)
 	}
@@ -183,20 +185,20 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// Check that a proper public key is provided in the message metadata
 	if len(txMeta.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorPrivateMessageRecipientPubKeyLen, "_connectPrivateMessage: "+
+			lib.RuleErrorPrivateMessageRecipientPubKeyLen, "_connectPrivateMessage: "+
 				"RecipientPubKeyLen = %d; Expected length = %d",
 			len(txMeta.RecipientPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
 	_, err := btcec.ParsePubKey(txMeta.RecipientPublicKey, btcec.S256())
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
+			lib.RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
 	}
 
 	// You can't send a message to yourself.
 	if reflect.DeepEqual(txn.PublicKey, txMeta.RecipientPublicKey) {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey,
+			lib.RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey,
 			"_connectPrivateMessage: Parse error: %v", err)
 	}
 
@@ -204,7 +206,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// the message not get returned when we call Seek() in our db. It's also just
 	// a reasonable sanity check.
 	if txMeta.TimestampNanos == 0 {
-		return 0, 0, nil, RuleErrorPrivateMessageTstampIsZero
+		return 0, 0, nil, lib.RuleErrorPrivateMessageTstampIsZero
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -227,14 +229,14 @@ func (bav *UtxoView) _connectPrivateMessage(
 		senderMessage := bav._getMessageEntryForMessageKey(&senderMessageKey)
 		if senderMessage != nil && !senderMessage.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple,
+				lib.RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple,
 				"_connectPrivateMessage: Message key: %v", &senderMessageKey)
 		}
 		recipientMessageKey := MakeMessageKey(txMeta.RecipientPublicKey, txMeta.TimestampNanos)
 		recipientMessage := bav._getMessageEntryForMessageKey(&recipientMessageKey)
 		if recipientMessage != nil && !recipientMessage.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple,
+				lib.RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple,
 				"_connectPrivateMessage: Message key: %v", &recipientMessageKey)
 		}
 	}
@@ -261,12 +263,12 @@ func (bav *UtxoView) _connectPrivateMessage(
 	//Check if message is encrypted with shared secret
 	extraV, hasExtraV := txn.ExtraData["V"]
 	if hasExtraV {
-		Version, _ := Uvarint(extraV)
+		Version, _ := lib.Uvarint(extraV)
 		messageEntry.Version = uint8(Version)
 	}
 
 	if bav.Postgres != nil {
-		message := &PGMessage{
+		message := &lib.PGMessage{
 			MessageHash:        txn.Hash(),
 			SenderPublicKey:    txn.PublicKey,
 			RecipientPublicKey: txMeta.RecipientPublicKey,
@@ -291,7 +293,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 
 // TODO: Update for postgres
 func (bav *UtxoView) _disconnectPrivateMessage(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a PrivateMessage opration
@@ -306,7 +308,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	}
 
 	// Now we know the txMeta is PrivateMessage
-	txMeta := currentTxn.TxnMeta.(*PrivateMessageMetadata)
+	txMeta := currentTxn.TxnMeta.(*lib.PrivateMessageMetadata)
 
 	// Get the MessageEntry for the sender in the transaction. If we don't find
 	// it or if it has isDeleted=true that's an error.
@@ -323,14 +325,14 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	if !reflect.DeepEqual(messageEntry.SenderPublicKey, currentTxn.PublicKey) {
 		return fmt.Errorf("_disconnectPrivateMessage: Sender public key on "+
 			"MessageEntry was %s but the PublicKey on the txn was %s",
-			PkToString(messageEntry.SenderPublicKey, bav.Params),
-			PkToString(currentTxn.PublicKey, bav.Params))
+			lib.PkToString(messageEntry.SenderPublicKey, bav.Params),
+			lib.PkToString(currentTxn.PublicKey, bav.Params))
 	}
 	if !reflect.DeepEqual(messageEntry.RecipientPublicKey, txMeta.RecipientPublicKey) {
 		return fmt.Errorf("_disconnectPrivateMessage: Recipient public key on "+
 			"MessageEntry was %s but the PublicKey on the TxnMeta was %s",
-			PkToString(messageEntry.RecipientPublicKey, bav.Params),
-			PkToString(txMeta.RecipientPublicKey, bav.Params))
+			lib.PkToString(messageEntry.RecipientPublicKey, bav.Params),
+			lib.PkToString(txMeta.RecipientPublicKey, bav.Params))
 	}
 	// Sanity-check that the MessageEntry TstampNanos matches the transaction.
 	if messageEntry.TstampNanos != txMeta.TimestampNanos {

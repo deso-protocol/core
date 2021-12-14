@@ -3,6 +3,8 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/view"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
@@ -62,8 +64,8 @@ const (
 type PGChain struct {
 	tableName struct{} `pg:"pg_chains"`
 
-	Name    string     `pg:",pk"`
-	TipHash *BlockHash `pg:",type:bytea"`
+	Name    string          `pg:",pk"`
+	TipHash *core.BlockHash `pg:",type:bytea"`
 }
 
 // PGBlock represents BlockNode and MsgDeSoHeader
@@ -71,21 +73,21 @@ type PGBlock struct {
 	tableName struct{} `pg:"pg_blocks"`
 
 	// BlockNode and MsgDeSoHeader
-	Hash       *BlockHash `pg:",pk,type:bytea"`
-	ParentHash *BlockHash `pg:",type:bytea"`
-	Height     uint64     `pg:",use_zero"`
+	Hash       *core.BlockHash `pg:",pk,type:bytea"`
+	ParentHash *core.BlockHash `pg:",type:bytea"`
+	Height     uint64          `pg:",use_zero"`
 
 	// BlockNode
-	DifficultyTarget *BlockHash  `pg:",type:bytea"`
-	CumWork          *BlockHash  `pg:",type:bytea"`
-	Status           BlockStatus `pg:",use_zero"` // TODO: Refactor
+	DifficultyTarget *core.BlockHash `pg:",type:bytea"`
+	CumWork          *core.BlockHash `pg:",type:bytea"`
+	Status           BlockStatus     `pg:",use_zero"` // TODO: Refactor
 
 	// MsgDeSoHeader
-	TxMerkleRoot *BlockHash `pg:",type:bytea"`
-	Version      uint32     `pg:",use_zero"`
-	Timestamp    uint64     `pg:",use_zero"`
-	Nonce        uint64     `pg:",use_zero"`
-	ExtraNonce   uint64     `pg:",use_zero"`
+	TxMerkleRoot *core.BlockHash `pg:",type:bytea"`
+	Version      uint32          `pg:",use_zero"`
+	Timestamp    uint64          `pg:",use_zero"`
+	Nonce        uint64          `pg:",use_zero"`
+	ExtraNonce   uint64          `pg:",use_zero"`
 
 	// Notifications
 	Notified bool `pg:",use_zero"`
@@ -95,13 +97,13 @@ type PGBlock struct {
 type PGTransaction struct {
 	tableName struct{} `pg:"pg_transactions"`
 
-	Hash      *BlockHash `pg:",pk,type:bytea"`
-	BlockHash *BlockHash `pg:",type:bytea"`
-	Type      TxnType    `pg:",use_zero"`
-	PublicKey []byte     `pg:",type:bytea"`
+	Hash      *core.BlockHash `pg:",pk,type:bytea"`
+	BlockHash *core.BlockHash `pg:",type:bytea"`
+	Type      TxnType         `pg:",use_zero"`
+	PublicKey []byte          `pg:",type:bytea"`
 	ExtraData map[string][]byte
-	R         *BlockHash `pg:",type:bytea"`
-	S         *BlockHash `pg:",type:bytea"`
+	R         *core.BlockHash `pg:",type:bytea"`
+	S         *core.BlockHash `pg:",type:bytea"`
 
 	// Relationships
 	Outputs                     []*PGTransactionOutput         `pg:"rel:has-many,join_fk:output_hash"`
@@ -130,25 +132,25 @@ type PGTransaction struct {
 type PGTransactionOutput struct {
 	tableName struct{} `pg:"pg_transaction_outputs"`
 
-	OutputHash  *BlockHash `pg:",pk"`
-	OutputIndex uint32     `pg:",pk,use_zero"`
-	OutputType  UtxoType   `pg:",use_zero"`
-	Height      uint32     `pg:",use_zero"`
+	OutputHash  *core.BlockHash `pg:",pk"`
+	OutputIndex uint32          `pg:",pk,use_zero"`
+	OutputType  view.UtxoType   `pg:",use_zero"`
+	Height      uint32          `pg:",use_zero"`
 	PublicKey   []byte
 	AmountNanos uint64 `pg:",use_zero"`
 	Spent       bool   `pg:",use_zero"`
-	InputHash   *BlockHash
+	InputHash   *core.BlockHash
 	InputIndex  uint32 `pg:",pk,use_zero"`
 }
 
-func (utxo *PGTransactionOutput) NewUtxoEntry() *UtxoEntry {
-	return &UtxoEntry{
+func (utxo *PGTransactionOutput) NewUtxoEntry() *view.UtxoEntry {
+	return &view.UtxoEntry{
 		PublicKey:   utxo.PublicKey,
 		AmountNanos: utxo.AmountNanos,
 		BlockHeight: utxo.Height,
 		UtxoType:    utxo.OutputType,
 		isSpent:     utxo.Spent,
-		UtxoKey: &UtxoKey{
+		UtxoKey: &core.UtxoKey{
 			TxID:  *utxo.OutputHash,
 			Index: utxo.OutputIndex,
 		},
@@ -159,17 +161,17 @@ func (utxo *PGTransactionOutput) NewUtxoEntry() *UtxoEntry {
 type PGMetadataBlockReward struct {
 	tableName struct{} `pg:"pg_metadata_block_rewards"`
 
-	TransactionHash *BlockHash `pg:",pk,type:bytea"`
-	ExtraData       []byte     `pg:",type:bytea"`
+	TransactionHash *core.BlockHash `pg:",pk,type:bytea"`
+	ExtraData       []byte          `pg:",type:bytea"`
 }
 
 // PGMetadataBitcoinExchange represents BitcoinExchangeMetadata
 type PGMetadataBitcoinExchange struct {
 	tableName struct{} `pg:"pg_metadata_bitcoin_exchanges"`
 
-	TransactionHash   *BlockHash `pg:",pk,type:bytea"`
-	BitcoinBlockHash  *BlockHash `pg:",type:bytea"`
-	BitcoinMerkleRoot *BlockHash `pg:",type:bytea"`
+	TransactionHash   *core.BlockHash `pg:",pk,type:bytea"`
+	BitcoinBlockHash  *core.BlockHash `pg:",type:bytea"`
+	BitcoinMerkleRoot *core.BlockHash `pg:",type:bytea"`
 	// Not storing BitcoinTransaction *wire.MsgTx
 	// Not storing BitcoinMerkleProof []*merkletree.ProofPart
 }
@@ -178,9 +180,9 @@ type PGMetadataBitcoinExchange struct {
 type PGMetadataPrivateMessage struct {
 	tableName struct{} `pg:"pg_metadata_private_messages"`
 
-	TransactionHash    *BlockHash `pg:",pk,type:bytea"`
-	RecipientPublicKey []byte     `pg:",type:bytea"`
-	EncryptedText      []byte     `pg:",type:bytea"`
+	TransactionHash    *core.BlockHash `pg:",pk,type:bytea"`
+	RecipientPublicKey []byte          `pg:",type:bytea"`
+	EncryptedText      []byte          `pg:",type:bytea"`
 	TimestampNanos     uint64
 }
 
@@ -188,10 +190,10 @@ type PGMetadataPrivateMessage struct {
 type PGMetadataSubmitPost struct {
 	tableName struct{} `pg:"pg_metadata_submit_posts"`
 
-	TransactionHash  *BlockHash `pg:",pk,type:bytea"`
-	PostHashToModify *BlockHash `pg:",type:bytea"`
-	ParentStakeID    *BlockHash `pg:",type:bytea"`
-	Body             []byte     `pg:",type:bytea"`
+	TransactionHash  *core.BlockHash `pg:",pk,type:bytea"`
+	PostHashToModify *core.BlockHash `pg:",type:bytea"`
+	ParentStakeID    *core.BlockHash `pg:",type:bytea"`
+	Body             []byte          `pg:",type:bytea"`
 	TimestampNanos   uint64
 	IsHidden         bool `pg:",use_zero"`
 }
@@ -200,45 +202,45 @@ type PGMetadataSubmitPost struct {
 type PGMetadataUpdateExchangeRate struct {
 	tableName struct{} `pg:"pg_metadata_update_exchange_rates"`
 
-	TransactionHash    *BlockHash `pg:",pk,type:bytea"`
-	USDCentsPerBitcoin uint64     `pg:",use_zero"`
+	TransactionHash    *core.BlockHash `pg:",pk,type:bytea"`
+	USDCentsPerBitcoin uint64          `pg:",use_zero"`
 }
 
 // PGMetadataUpdateProfile represents UpdateProfileMetadata
 type PGMetadataUpdateProfile struct {
 	tableName struct{} `pg:"pg_metadata_update_profiles"`
 
-	TransactionHash       *BlockHash `pg:",pk,type:bytea"`
-	ProfilePublicKey      []byte     `pg:",type:bytea"`
-	NewUsername           []byte     `pg:",type:bytea"`
-	NewDescription        []byte     `pg:",type:bytea"`
-	NewProfilePic         []byte     `pg:",type:bytea"`
-	NewCreatorBasisPoints uint64     `pg:",use_zero"`
+	TransactionHash       *core.BlockHash `pg:",pk,type:bytea"`
+	ProfilePublicKey      []byte          `pg:",type:bytea"`
+	NewUsername           []byte          `pg:",type:bytea"`
+	NewDescription        []byte          `pg:",type:bytea"`
+	NewProfilePic         []byte          `pg:",type:bytea"`
+	NewCreatorBasisPoints uint64          `pg:",use_zero"`
 }
 
 // PGMetadataFollow represents FollowMetadata
 type PGMetadataFollow struct {
 	tableName struct{} `pg:"pg_metadata_follows"`
 
-	TransactionHash   *BlockHash `pg:",pk,type:bytea"`
-	FollowedPublicKey []byte     `pg:",type:bytea"`
-	IsUnfollow        bool       `pg:",use_zero"`
+	TransactionHash   *core.BlockHash `pg:",pk,type:bytea"`
+	FollowedPublicKey []byte          `pg:",type:bytea"`
+	IsUnfollow        bool            `pg:",use_zero"`
 }
 
 // PGMetadataLike represents LikeMetadata
 type PGMetadataLike struct {
 	tableName struct{} `pg:"pg_metadata_likes"`
 
-	TransactionHash *BlockHash `pg:",pk,type:bytea"`
-	LikedPostHash   *BlockHash `pg:",type:bytea"`
-	IsUnlike        bool       `pg:",use_zero"`
+	TransactionHash *core.BlockHash `pg:",pk,type:bytea"`
+	LikedPostHash   *core.BlockHash `pg:",type:bytea"`
+	IsUnlike        bool            `pg:",use_zero"`
 }
 
 // PGMetadataCreatorCoin represents CreatorCoinMetadataa
 type PGMetadataCreatorCoin struct {
 	tableName struct{} `pg:"pg_metadata_creator_coins"`
 
-	TransactionHash             *BlockHash               `pg:",pk,type:bytea"`
+	TransactionHash             *core.BlockHash          `pg:",pk,type:bytea"`
 	ProfilePublicKey            []byte                   `pg:",type:bytea"`
 	OperationType               CreatorCoinOperationType `pg:",use_zero"`
 	DeSoToSellNanos             uint64                   `pg:",use_zero"`
@@ -252,54 +254,54 @@ type PGMetadataCreatorCoin struct {
 type PGMetadataCreatorCoinTransfer struct {
 	tableName struct{} `pg:"pg_metadata_creator_coin_transfers"`
 
-	TransactionHash            *BlockHash `pg:",pk,type:bytea"`
-	ProfilePublicKey           []byte     `pg:",type:bytea"`
-	CreatorCoinToTransferNanos uint64     `pg:",use_zero"`
-	ReceiverPublicKey          []byte     `pg:",type:bytea"`
+	TransactionHash            *core.BlockHash `pg:",pk,type:bytea"`
+	ProfilePublicKey           []byte          `pg:",type:bytea"`
+	CreatorCoinToTransferNanos uint64          `pg:",use_zero"`
+	ReceiverPublicKey          []byte          `pg:",type:bytea"`
 }
 
 // PGMetadataSwapIdentity represents SwapIdentityMetadataa
 type PGMetadataSwapIdentity struct {
 	tableName struct{} `pg:"pg_metadata_swap_identities"`
 
-	TransactionHash *BlockHash `pg:",pk,type:bytea"`
-	FromPublicKey   []byte     `pg:",type:bytea"`
-	ToPublicKey     []byte     `pg:",type:bytea"`
+	TransactionHash *core.BlockHash `pg:",pk,type:bytea"`
+	FromPublicKey   []byte          `pg:",type:bytea"`
+	ToPublicKey     []byte          `pg:",type:bytea"`
 }
 
 // PGMetadataCreateNFT represents CreateNFTMetadata
 type PGMetadataCreateNFT struct {
 	tableName struct{} `pg:"pg_metadata_create_nfts"`
 
-	TransactionHash           *BlockHash `pg:",pk,type:bytea"`
-	NFTPostHash               *BlockHash `pg:",type:bytea"`
-	NumCopies                 uint64     `pg:",use_zero"`
-	HasUnlockable             bool       `pg:",use_zero"`
-	IsForSale                 bool       `pg:",use_zero"`
-	MinBidAmountNanos         uint64     `pg:",use_zero"`
-	CreatorRoyaltyBasisPoints uint64     `pg:",use_zero"`
-	CoinRoyaltyBasisPoints    uint64     `pg:",use_zero"`
+	TransactionHash           *core.BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash               *core.BlockHash `pg:",type:bytea"`
+	NumCopies                 uint64          `pg:",use_zero"`
+	HasUnlockable             bool            `pg:",use_zero"`
+	IsForSale                 bool            `pg:",use_zero"`
+	MinBidAmountNanos         uint64          `pg:",use_zero"`
+	CreatorRoyaltyBasisPoints uint64          `pg:",use_zero"`
+	CoinRoyaltyBasisPoints    uint64          `pg:",use_zero"`
 }
 
 // PGMetadataUpdateNFT represents UpdateNFTMetadata
 type PGMetadataUpdateNFT struct {
 	tableName struct{} `pg:"pg_metadata_update_nfts"`
 
-	TransactionHash   *BlockHash `pg:",pk,type:bytea"`
-	NFTPostHash       *BlockHash `pg:",type:bytea"`
-	SerialNumber      uint64     `pg:",use_zero"`
-	IsForSale         bool       `pg:",use_zero"`
-	MinBidAmountNanos uint64     `pg:",use_zero"`
+	TransactionHash   *core.BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash       *core.BlockHash `pg:",type:bytea"`
+	SerialNumber      uint64          `pg:",use_zero"`
+	IsForSale         bool            `pg:",use_zero"`
+	MinBidAmountNanos uint64          `pg:",use_zero"`
 }
 
 // PGMetadataAcceptNFTBid represents AcceptNFTBidMetadata
 type PGMetadataAcceptNFTBid struct {
 	tableName struct{} `pg:"pg_metadata_accept_nft_bids"`
 
-	TransactionHash *BlockHash            `pg:",pk,type:bytea"`
-	NFTPostHash     *BlockHash            `pg:",type:bytea"`
+	TransactionHash *core.BlockHash       `pg:",pk,type:bytea"`
+	NFTPostHash     *core.BlockHash       `pg:",type:bytea"`
 	SerialNumber    uint64                `pg:",use_zero"`
-	BidderPKID      *PKID                 `pg:",type:bytea"`
+	BidderPKID      *core.PKID            `pg:",type:bytea"`
 	BidAmountNanos  uint64                `pg:",use_zero"`
 	UnlockableText  []byte                `pg:",type:bytea"`
 	BidderInputs    []*PGMetadataBidInput `pg:"rel:has-many,join_fk:transaction_hash"`
@@ -308,56 +310,56 @@ type PGMetadataAcceptNFTBid struct {
 type PGMetadataBidInput struct {
 	tableName struct{} `pg:"pg_metadata_bid_inputs"`
 
-	TransactionHash *BlockHash `pg:",pk,type:bytea"`
-	InputHash       *BlockHash `pg:",pk,type:bytea"`
-	InputIndex      uint32     `pg:",pk,use_zero"`
+	TransactionHash *core.BlockHash `pg:",pk,type:bytea"`
+	InputHash       *core.BlockHash `pg:",pk,type:bytea"`
+	InputIndex      uint32          `pg:",pk,use_zero"`
 }
 
 // PGMetadataNFTBid represents NFTBidMetadata
 type PGMetadataNFTBid struct {
 	tableName struct{} `pg:"pg_metadata_nft_bids"`
 
-	TransactionHash *BlockHash `pg:",pk,type:bytea"`
-	NFTPostHash     *BlockHash `pg:",type:bytea"`
-	SerialNumber    uint64     `pg:",use_zero"`
-	BidAmountNanos  uint64     `pg:",use_zero"`
+	TransactionHash *core.BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash     *core.BlockHash `pg:",type:bytea"`
+	SerialNumber    uint64          `pg:",use_zero"`
+	BidAmountNanos  uint64          `pg:",use_zero"`
 }
 
 // PGMetadataNFTTransfer represents NFTTransferMetadata
 type PGMetadataNFTTransfer struct {
 	tableName struct{} `pg:"pg_metadata_nft_transfer"`
 
-	TransactionHash   *BlockHash `pg:",pk,type:bytea"`
-	NFTPostHash       *BlockHash `pg:",pk,type:bytea"`
-	SerialNumber      uint64     `pg:",use_zero"`
-	ReceiverPublicKey []byte     `pg:",pk,type:bytea"`
-	UnlockableText    []byte     `pg:",type:bytea"`
+	TransactionHash   *core.BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash       *core.BlockHash `pg:",pk,type:bytea"`
+	SerialNumber      uint64          `pg:",use_zero"`
+	ReceiverPublicKey []byte          `pg:",pk,type:bytea"`
+	UnlockableText    []byte          `pg:",type:bytea"`
 }
 
 // PGMetadataAcceptNFTTransfer represents AcceptNFTTransferMetadata
 type PGMetadataAcceptNFTTransfer struct {
 	tableName struct{} `pg:"pg_metadata_accept_nft_transfer"`
 
-	TransactionHash *BlockHash `pg:",pk,type:bytea"`
-	NFTPostHash     *BlockHash `pg:",pk,type:bytea"`
-	SerialNumber    uint64     `pg:",use_zero"`
+	TransactionHash *core.BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash     *core.BlockHash `pg:",pk,type:bytea"`
+	SerialNumber    uint64          `pg:",use_zero"`
 }
 
 // PGMetadataBurnNFT represents BurnNFTMetadata
 type PGMetadataBurnNFT struct {
 	tableName struct{} `pg:"pg_metadata_burn_nft"`
 
-	TransactionHash *BlockHash `pg:",pk,type:bytea"`
-	NFTPostHash     *BlockHash `pg:",pk,type:bytea"`
-	SerialNumber    uint64     `pg:",use_zero"`
+	TransactionHash *core.BlockHash `pg:",pk,type:bytea"`
+	NFTPostHash     *core.BlockHash `pg:",pk,type:bytea"`
+	SerialNumber    uint64          `pg:",use_zero"`
 }
 
 // PGMetadataDerivedKey represents AuthorizeDerivedKeyMetadata
 type PGMetadataDerivedKey struct {
 	tableName struct{} `pg:"pg_metadata_derived_keys"`
 
-	TransactionHash  *BlockHash                       `pg:",pk,type:bytea"`
-	DerivedPublicKey PublicKey                        `pg:",type:bytea"`
+	TransactionHash  *core.BlockHash                  `pg:",pk,type:bytea"`
+	DerivedPublicKey core.PublicKey                   `pg:",type:bytea"`
 	ExpirationBlock  uint64                           `pg:",use_zero"`
 	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
 	AccessSignature  []byte                           `pg:",type:bytea"`
@@ -366,14 +368,14 @@ type PGMetadataDerivedKey struct {
 type PGNotification struct {
 	tableName struct{} `pg:"pg_notifications"`
 
-	TransactionHash *BlockHash       `pg:",pk,type:bytea"`
+	TransactionHash *core.BlockHash  `pg:",pk,type:bytea"`
 	Mined           bool             `pg:",use_zero"`
 	ToUser          []byte           `pg:",type:bytea"`
 	FromUser        []byte           `pg:",type:bytea"`
 	OtherUser       []byte           `pg:",type:bytea"`
 	Type            NotificationType `pg:",use_zero"`
 	Amount          uint64           `pg:",use_zero"`
-	PostHash        *BlockHash       `pg:",type:bytea"`
+	PostHash        *core.BlockHash  `pg:",type:bytea"`
 	Timestamp       uint64           `pg:",use_zero"`
 }
 
@@ -396,8 +398,8 @@ const (
 type PGProfile struct {
 	tableName struct{} `pg:"pg_profiles"`
 
-	PKID                    *PKID      `pg:",pk,type:bytea"`
-	PublicKey               *PublicKey `pg:",type:bytea"`
+	PKID                    *core.PKID      `pg:",pk,type:bytea"`
+	PublicKey               *core.PublicKey `pg:",type:bytea"`
 	Username                string
 	Description             string
 	ProfilePic              []byte
@@ -415,32 +417,32 @@ func (profile *PGProfile) Empty() bool {
 type PGPost struct {
 	tableName struct{} `pg:"pg_posts"`
 
-	PostHash                  *BlockHash `pg:",pk,type:bytea"`
+	PostHash                  *core.BlockHash `pg:",pk,type:bytea"`
 	PosterPublicKey           []byte
-	ParentPostHash            *BlockHash `pg:",type:bytea"`
+	ParentPostHash            *core.BlockHash `pg:",type:bytea"`
 	Body                      string
-	RepostedPostHash          *BlockHash `pg:",type:bytea"`
-	QuotedRepost              bool       `pg:",use_zero"`
-	Timestamp                 uint64     `pg:",use_zero"`
-	Hidden                    bool       `pg:",use_zero"`
-	LikeCount                 uint64     `pg:",use_zero"`
-	RepostCount               uint64     `pg:",use_zero"`
-	QuoteRepostCount          uint64     `pg:",use_zero"`
-	DiamondCount              uint64     `pg:",use_zero"`
-	CommentCount              uint64     `pg:",use_zero"`
-	Pinned                    bool       `pg:",use_zero"`
-	NFT                       bool       `pg:",use_zero"`
-	NumNFTCopies              uint64     `pg:",use_zero"`
-	NumNFTCopiesForSale       uint64     `pg:",use_zero"`
-	NumNFTCopiesBurned        uint64     `pg:",use_zero"`
-	Unlockable                bool       `pg:",use_zero"`
-	CreatorRoyaltyBasisPoints uint64     `pg:",use_zero"`
-	CoinRoyaltyBasisPoints    uint64     `pg:",use_zero"`
+	RepostedPostHash          *core.BlockHash `pg:",type:bytea"`
+	QuotedRepost              bool            `pg:",use_zero"`
+	Timestamp                 uint64          `pg:",use_zero"`
+	Hidden                    bool            `pg:",use_zero"`
+	LikeCount                 uint64          `pg:",use_zero"`
+	RepostCount               uint64          `pg:",use_zero"`
+	QuoteRepostCount          uint64          `pg:",use_zero"`
+	DiamondCount              uint64          `pg:",use_zero"`
+	CommentCount              uint64          `pg:",use_zero"`
+	Pinned                    bool            `pg:",use_zero"`
+	NFT                       bool            `pg:",use_zero"`
+	NumNFTCopies              uint64          `pg:",use_zero"`
+	NumNFTCopiesForSale       uint64          `pg:",use_zero"`
+	NumNFTCopiesBurned        uint64          `pg:",use_zero"`
+	Unlockable                bool            `pg:",use_zero"`
+	CreatorRoyaltyBasisPoints uint64          `pg:",use_zero"`
+	CoinRoyaltyBasisPoints    uint64          `pg:",use_zero"`
 	ExtraData                 map[string][]byte
 }
 
-func (post *PGPost) NewPostEntry() *PostEntry {
-	postEntry := &PostEntry{
+func (post *PGPost) NewPostEntry() *view.PostEntry {
+	postEntry := &view.PostEntry{
 		PostHash:                       post.PostHash,
 		PosterPublicKey:                post.PosterPublicKey,
 		Body:                           []byte(post.Body),
@@ -482,12 +484,12 @@ func (post *PGPost) HasMedia() bool {
 type PGLike struct {
 	tableName struct{} `pg:"pg_likes"`
 
-	LikerPublicKey []byte     `pg:",pk,type:bytea"`
-	LikedPostHash  *BlockHash `pg:",pk,type:bytea"`
+	LikerPublicKey []byte          `pg:",pk,type:bytea"`
+	LikedPostHash  *core.BlockHash `pg:",pk,type:bytea"`
 }
 
-func (like *PGLike) NewLikeEntry() *LikeEntry {
-	return &LikeEntry{
+func (like *PGLike) NewLikeEntry() *view.LikeEntry {
+	return &view.LikeEntry{
 		LikerPubKey:   like.LikerPublicKey,
 		LikedPostHash: like.LikedPostHash,
 	}
@@ -496,12 +498,12 @@ func (like *PGLike) NewLikeEntry() *LikeEntry {
 type PGFollow struct {
 	tableName struct{} `pg:"pg_follows"`
 
-	FollowerPKID *PKID `pg:",pk,type:bytea"`
-	FollowedPKID *PKID `pg:",pk,type:bytea"`
+	FollowerPKID *core.PKID `pg:",pk,type:bytea"`
+	FollowedPKID *core.PKID `pg:",pk,type:bytea"`
 }
 
-func (follow *PGFollow) NewFollowEntry() *FollowEntry {
-	return &FollowEntry{
+func (follow *PGFollow) NewFollowEntry() *view.FollowEntry {
+	return &view.FollowEntry{
 		FollowerPKID: follow.FollowerPKID,
 		FollowedPKID: follow.FollowedPKID,
 	}
@@ -510,9 +512,9 @@ func (follow *PGFollow) NewFollowEntry() *FollowEntry {
 type PGDiamond struct {
 	tableName struct{} `pg:"pg_diamonds"`
 
-	SenderPKID      *PKID      `pg:",pk,type:bytea"`
-	ReceiverPKID    *PKID      `pg:",pk,type:bytea"`
-	DiamondPostHash *BlockHash `pg:",pk,type:bytea"`
+	SenderPKID      *core.PKID      `pg:",pk,type:bytea"`
+	ReceiverPKID    *core.PKID      `pg:",pk,type:bytea"`
+	DiamondPostHash *core.BlockHash `pg:",pk,type:bytea"`
 	DiamondLevel    uint8
 }
 
@@ -521,7 +523,7 @@ type PGDiamond struct {
 type PGMessage struct {
 	tableName struct{} `pg:"pg_messages"`
 
-	MessageHash        *BlockHash `pg:",pk,type:bytea"`
+	MessageHash        *core.BlockHash `pg:",pk,type:bytea"`
 	SenderPublicKey    []byte
 	RecipientPublicKey []byte
 	EncryptedText      []byte
@@ -535,14 +537,14 @@ type PGMessage struct {
 type PGCreatorCoinBalance struct {
 	tableName struct{} `pg:"pg_creator_coin_balances"`
 
-	HolderPKID   *PKID `pg:",pk,type:bytea"`
-	CreatorPKID  *PKID `pg:",pk,type:bytea"`
+	HolderPKID   *core.PKID `pg:",pk,type:bytea"`
+	CreatorPKID  *core.PKID `pg:",pk,type:bytea"`
 	BalanceNanos uint64
 	HasPurchased bool
 }
 
-func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
-	return &BalanceEntry{
+func (balance *PGCreatorCoinBalance) NewBalanceEntry() *view.BalanceEntry {
+	return &view.BalanceEntry{
 		HODLerPKID:   balance.HolderPKID,
 		CreatorPKID:  balance.CreatorPKID,
 		BalanceNanos: balance.BalanceNanos,
@@ -554,8 +556,8 @@ func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 type PGBalance struct {
 	tableName struct{} `pg:"pg_balances"`
 
-	PublicKey    *PublicKey `pg:",pk,type:bytea"`
-	BalanceNanos uint64     `pg:",use_zero"`
+	PublicKey    *core.PublicKey `pg:",pk,type:bytea"`
+	BalanceNanos uint64          `pg:",use_zero"`
 }
 
 // PGGlobalParams represents GlobalParamsEntry
@@ -574,9 +576,9 @@ type PGGlobalParams struct {
 type PGRepost struct {
 	tableName struct{} `pg:"pg_reposts"`
 
-	ReposterPublickey *PublicKey `pg:",pk,type:bytea"`
-	RepostedPostHash  *BlockHash `pg:",pk,type:bytea"`
-	RepostPostHash    *BlockHash `pg:",type:bytea"`
+	ReposterPublickey *core.PublicKey `pg:",pk,type:bytea"`
+	RepostedPostHash  *core.BlockHash `pg:",pk,type:bytea"`
+	RepostPostHash    *core.BlockHash `pg:",type:bytea"`
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -586,28 +588,28 @@ type PGRepost struct {
 type PGForbiddenKey struct {
 	tableName struct{} `pg:"pg_forbidden_keys"`
 
-	PublicKey *PublicKey `pg:",pk,type:bytea"`
+	PublicKey *core.PublicKey `pg:",pk,type:bytea"`
 }
 
 // PGNFT represents NFTEntry
 type PGNFT struct {
 	tableName struct{} `pg:"pg_nfts"`
 
-	NFTPostHash  *BlockHash `pg:",pk,type:bytea"`
-	SerialNumber uint64     `pg:",pk"`
+	NFTPostHash  *core.BlockHash `pg:",pk,type:bytea"`
+	SerialNumber uint64          `pg:",pk"`
 
 	// This is needed to decrypt unlockable text.
-	LastOwnerPKID              *PKID  `pg:",type:bytea"`
-	OwnerPKID                  *PKID  `pg:",type:bytea"`
-	ForSale                    bool   `pg:",use_zero"`
-	MinBidAmountNanos          uint64 `pg:",use_zero"`
+	LastOwnerPKID              *core.PKID `pg:",type:bytea"`
+	OwnerPKID                  *core.PKID `pg:",type:bytea"`
+	ForSale                    bool       `pg:",use_zero"`
+	MinBidAmountNanos          uint64     `pg:",use_zero"`
 	UnlockableText             string
 	LastAcceptedBidAmountNanos uint64 `pg:",use_zero"`
 	IsPending                  bool   `pg:",use_zero"`
 }
 
-func (nft *PGNFT) NewNFTEntry() *NFTEntry {
-	return &NFTEntry{
+func (nft *PGNFT) NewNFTEntry() *view.NFTEntry {
+	return &view.NFTEntry{
 		LastOwnerPKID:              nft.LastOwnerPKID,
 		OwnerPKID:                  nft.OwnerPKID,
 		NFTPostHash:                nft.NFTPostHash,
@@ -624,15 +626,15 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 type PGNFTBid struct {
 	tableName struct{} `pg:"pg_nft_bids"`
 
-	BidderPKID     *PKID      `pg:",pk,type:bytea"`
-	NFTPostHash    *BlockHash `pg:",pk,type:bytea"`
-	SerialNumber   uint64     `pg:",pk,use_zero"`
-	BidAmountNanos uint64     `pg:",use_zero"`
-	Accepted       bool       `pg:",use_zero"`
+	BidderPKID     *core.PKID      `pg:",pk,type:bytea"`
+	NFTPostHash    *core.BlockHash `pg:",pk,type:bytea"`
+	SerialNumber   uint64          `pg:",pk,use_zero"`
+	BidAmountNanos uint64          `pg:",use_zero"`
+	Accepted       bool            `pg:",use_zero"`
 }
 
-func (bid *PGNFTBid) NewNFTBidEntry() *NFTBidEntry {
-	return &NFTBidEntry{
+func (bid *PGNFTBid) NewNFTBidEntry() *view.NFTBidEntry {
+	return &view.NFTBidEntry{
 		BidderPKID:     bid.BidderPKID,
 		NFTPostHash:    bid.NFTPostHash,
 		SerialNumber:   bid.SerialNumber,
@@ -644,14 +646,14 @@ func (bid *PGNFTBid) NewNFTBidEntry() *NFTBidEntry {
 type PGDerivedKey struct {
 	tableName struct{} `pg:"pg_derived_keys"`
 
-	OwnerPublicKey   PublicKey                        `pg:",pk,type:bytea"`
-	DerivedPublicKey PublicKey                        `pg:",pk,type:bytea"`
+	OwnerPublicKey   core.PublicKey                   `pg:",pk,type:bytea"`
+	DerivedPublicKey core.PublicKey                   `pg:",pk,type:bytea"`
 	ExpirationBlock  uint64                           `pg:",use_zero"`
 	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
 }
 
-func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
-	return &DerivedKeyEntry{
+func (key *PGDerivedKey) NewDerivedKeyEntry() *view.DerivedKeyEntry {
+	return &view.DerivedKeyEntry{
 		OwnerPublicKey:   key.OwnerPublicKey,
 		DerivedPublicKey: key.DerivedPublicKey,
 		ExpirationBlock:  key.ExpirationBlock,
@@ -695,14 +697,14 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 }
 
 // GetBlockIndex gets all the PGBlocks and creates a map of BlockHash to BlockNode as needed by blockchain.go
-func (postgres *Postgres) GetBlockIndex() (map[BlockHash]*BlockNode, error) {
+func (postgres *Postgres) GetBlockIndex() (map[core.BlockHash]*BlockNode, error) {
 	var blocks []PGBlock
 	err := postgres.db.Model(&blocks).Select()
 	if err != nil {
 		return nil, err
 	}
 
-	blockMap := make(map[BlockHash]*BlockNode)
+	blockMap := make(map[core.BlockHash]*BlockNode)
 	for _, block := range blocks {
 		blockMap[*block.Hash] = &BlockNode{
 			Hash:             block.Hash,
@@ -749,13 +751,13 @@ func (postgres *Postgres) GetChain(name string) *PGChain {
 	return chain
 }
 
-func (postgres *Postgres) UpsertChain(name string, tipHash *BlockHash) error {
+func (postgres *Postgres) UpsertChain(name string, tipHash *core.BlockHash) error {
 	return postgres.db.RunInTransaction(postgres.db.Context(), func(tx *pg.Tx) error {
 		return postgres.UpsertChainTx(tx, name, tipHash)
 	})
 }
 
-func (postgres *Postgres) UpsertChainTx(tx *pg.Tx, name string, tipHash *BlockHash) error {
+func (postgres *Postgres) UpsertChainTx(tx *pg.Tx, name string, tipHash *core.BlockHash) error {
 	bestChain := &PGChain{
 		TipHash: tipHash,
 		Name:    name,
@@ -859,8 +861,8 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 			txMeta := txn.TxnMeta.(*SubmitPostMetadata)
 
-			postHashToModify := &BlockHash{}
-			parentStakeId := &BlockHash{}
+			postHashToModify := &core.BlockHash{}
+			parentStakeId := &core.BlockHash{}
 			copy(postHashToModify[:], txMeta.PostHashToModify)
 			copy(parentStakeId[:], txMeta.ParentStakeID)
 
@@ -1004,7 +1006,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			txMeta := txn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 			metadataDerivedKey = append(metadataDerivedKey, &PGMetadataDerivedKey{
 				TransactionHash:  txnHash,
-				DerivedPublicKey: *NewPublicKey(txMeta.DerivedPublicKey),
+				DerivedPublicKey: *core.NewPublicKey(txMeta.DerivedPublicKey),
 				ExpirationBlock:  txMeta.ExpirationBlock,
 				OperationType:    txMeta.OperationType,
 				AccessSignature:  txMeta.AccessSignature,
@@ -1183,7 +1185,7 @@ func (postgres *Postgres) UpsertBlockAndTransactions(blockNode *BlockNode, desoB
 // BlockView Flushing
 //
 
-func (postgres *Postgres) FlushView(view *UtxoView) error {
+func (postgres *Postgres) FlushView(view *view.UtxoView) error {
 	return postgres.db.RunInTransaction(postgres.db.Context(), func(tx *pg.Tx) error {
 		if err := postgres.flushUtxos(tx, view); err != nil {
 			return err
@@ -1229,7 +1231,7 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 	})
 }
 
-func (postgres *Postgres) flushUtxos(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushUtxos(tx *pg.Tx, view *view.UtxoView) error {
 	var outputs []*PGTransactionOutput
 	for utxoKeyIter, utxoEntry := range view.UtxoKeyToUtxoEntry {
 		// Making a copy of the iterator is required
@@ -1252,7 +1254,7 @@ func (postgres *Postgres) flushUtxos(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *view.UtxoView) error {
 	var insertProfiles []*PGProfile
 	var deleteProfiles []*PGProfile
 	for _, pkidEntry := range view.PublicKeyToPKIDEntry {
@@ -1260,7 +1262,7 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 
 		profile := &PGProfile{
 			PKID:      pkid,
-			PublicKey: NewPublicKey(pkidEntry.PublicKey),
+			PublicKey: core.NewPublicKey(pkidEntry.PublicKey),
 		}
 
 		profileEntry := view.ProfilePKIDToProfileEntry[*pkid]
@@ -1299,7 +1301,7 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushPosts(tx *pg.Tx, view *view.UtxoView) error {
 	var insertPosts []*PGPost
 	var deletePosts []*PGPost
 	for _, postEntry := range view.PostHashToPostEntry {
@@ -1332,7 +1334,7 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 		}
 
 		if len(postEntry.ParentStakeID) > 0 {
-			post.ParentPostHash = NewBlockHash(postEntry.ParentStakeID)
+			post.ParentPostHash = core.NewBlockHash(postEntry.ParentStakeID)
 		}
 
 		if postEntry.isDeleted {
@@ -1359,7 +1361,7 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushLikes(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushLikes(tx *pg.Tx, view *view.UtxoView) error {
 	var insertLikes []*PGLike
 	var deleteLikes []*PGLike
 	for _, likeEntry := range view.LikeKeyToLikeEntry {
@@ -1396,7 +1398,7 @@ func (postgres *Postgres) flushLikes(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushFollows(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushFollows(tx *pg.Tx, view *view.UtxoView) error {
 	var insertFollows []*PGFollow
 	var deleteFollows []*PGFollow
 	for _, followEntry := range view.FollowKeyToFollowEntry {
@@ -1433,7 +1435,7 @@ func (postgres *Postgres) flushFollows(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushDiamonds(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushDiamonds(tx *pg.Tx, view *view.UtxoView) error {
 	var insertDiamonds []*PGDiamond
 	var deleteDiamonds []*PGDiamond
 	for _, diamondEntry := range view.DiamondKeyToDiamondEntry {
@@ -1468,7 +1470,7 @@ func (postgres *Postgres) flushDiamonds(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushMessages(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushMessages(tx *pg.Tx, view *view.UtxoView) error {
 	var insertMessages []*PGMessage
 	var deleteMessages []*PGMessage
 	for _, message := range view.MessageMap {
@@ -1497,7 +1499,7 @@ func (postgres *Postgres) flushMessages(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushCreatorCoinBalances(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushCreatorCoinBalances(tx *pg.Tx, view *view.UtxoView) error {
 	var insertBalances []*PGCreatorCoinBalance
 	var deleteBalances []*PGCreatorCoinBalance
 	for _, balanceEntry := range view.HODLerPKIDCreatorPKIDToBalanceEntry {
@@ -1536,14 +1538,14 @@ func (postgres *Postgres) flushCreatorCoinBalances(tx *pg.Tx, view *UtxoView) er
 	return nil
 }
 
-func (postgres *Postgres) flushBalances(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushBalances(tx *pg.Tx, view *view.UtxoView) error {
 	var balances []*PGBalance
 	for pubKeyIter, balanceNanos := range view.PublicKeyToDeSoBalanceNanos {
 		// Make a copy of the iterator since it might change from under us.
 		pubKey := pubKeyIter[:]
 
 		balance := &PGBalance{
-			PublicKey:    NewPublicKey(pubKey),
+			PublicKey:    core.NewPublicKey(pubKey),
 			BalanceNanos: balanceNanos,
 		}
 
@@ -1560,12 +1562,12 @@ func (postgres *Postgres) flushBalances(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushForbiddenKeys(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushForbiddenKeys(tx *pg.Tx, view *view.UtxoView) error {
 	var insertKeys []*PGForbiddenKey
 	var deleteKeys []*PGForbiddenKey
 	for _, keyEntry := range view.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		balance := &PGForbiddenKey{
-			PublicKey: NewPublicKey(keyEntry.PubKey),
+			PublicKey: core.NewPublicKey(keyEntry.PubKey),
 		}
 
 		if keyEntry.isDeleted {
@@ -1592,7 +1594,7 @@ func (postgres *Postgres) flushForbiddenKeys(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushNFTs(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushNFTs(tx *pg.Tx, view *view.UtxoView) error {
 	var insertNFTs []*PGNFT
 	var deleteNFTs []*PGNFT
 	for _, nftEntry := range view.NFTKeyToNFTEntry {
@@ -1632,7 +1634,7 @@ func (postgres *Postgres) flushNFTs(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *view.UtxoView) error {
 	var insertBids []*PGNFTBid
 	var deleteBids []*PGNFTBid
 	for _, bidEntry := range view.NFTBidKeyToNFTBidEntry {
@@ -1669,7 +1671,7 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *view.UtxoView) error {
 	var insertKeys []*PGDerivedKey
 	var deleteKeys []*PGDerivedKey
 	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
@@ -1708,7 +1710,7 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 // UTXOS
 //
 
-func (postgres *Postgres) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
+func (postgres *Postgres) GetUtxoEntryForUtxoKey(utxoKey *core.UtxoKey) *view.UtxoEntry {
 	utxo := &PGTransactionOutput{
 		OutputHash:  &utxoKey.TxID,
 		OutputIndex: utxoKey.Index,
@@ -1723,14 +1725,14 @@ func (postgres *Postgres) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	return utxo.NewUtxoEntry()
 }
 
-func (postgres *Postgres) GetUtxoEntriesForPublicKey(publicKey []byte) []*UtxoEntry {
+func (postgres *Postgres) GetUtxoEntriesForPublicKey(publicKey []byte) []*view.UtxoEntry {
 	var transactionOutputs []*PGTransactionOutput
 	err := postgres.db.Model(&transactionOutputs).Where("public_key = ?", publicKey).Select()
 	if err != nil {
 		return nil
 	}
 
-	var utxoEntries []*UtxoEntry
+	var utxoEntries []*view.UtxoEntry
 	for _, utxo := range transactionOutputs {
 		utxoEntries = append(utxoEntries, utxo.NewUtxoEntry())
 	}
@@ -1746,7 +1748,7 @@ func (postgres *Postgres) GetOutputs(outputs []*PGTransactionOutput) []*PGTransa
 	return outputs
 }
 
-func (postgres *Postgres) GetBlockRewardsForPublicKey(publicKey *PublicKey, startHeight uint32, endHeight uint32) []*PGTransactionOutput {
+func (postgres *Postgres) GetBlockRewardsForPublicKey(publicKey *core.PublicKey, startHeight uint32, endHeight uint32) []*PGTransactionOutput {
 	var transactionOutputs []*PGTransactionOutput
 	err := postgres.db.Model(&transactionOutputs).Where("public_key = ?", publicKey).
 		Where("height >= ?", startHeight).Where("height <= ?", endHeight).Select()
@@ -1778,7 +1780,7 @@ func (postgres *Postgres) GetProfileForPublicKey(publicKey []byte) *PGProfile {
 	return &profile
 }
 
-func (postgres *Postgres) GetProfile(pkid PKID) *PGProfile {
+func (postgres *Postgres) GetProfile(pkid core.PKID) *PGProfile {
 	var profile PGProfile
 	err := postgres.db.Model(&profile).Where("pkid = ?", pkid).First()
 	if err != nil {
@@ -1787,7 +1789,7 @@ func (postgres *Postgres) GetProfile(pkid PKID) *PGProfile {
 	return &profile
 }
 
-func (postgres *Postgres) GetProfilesForPublicKeys(publicKeys []*PublicKey) []*PGProfile {
+func (postgres *Postgres) GetProfilesForPublicKeys(publicKeys []*core.PublicKey) []*PGProfile {
 	var profiles []*PGProfile
 	err := postgres.db.Model(&profiles).WhereIn("public_key IN (?)", publicKeys).Select()
 	if err != nil {
@@ -1829,7 +1831,7 @@ func (postgres *Postgres) GetProfilesForUsername(usernames []string) []*PGProfil
 // Posts
 //
 
-func (postgres *Postgres) GetPost(postHash *BlockHash) *PGPost {
+func (postgres *Postgres) GetPost(postHash *core.BlockHash) *PGPost {
 	var post PGPost
 	err := postgres.db.Model(&post).Where("post_hash = ?", postHash).First()
 	if err != nil {
@@ -1863,7 +1865,7 @@ func (postgres *Postgres) GetPostsForPublicKey(publicKey []byte, startTime uint6
 //
 
 // TODO: Pagination
-func (postgres *Postgres) GetComments(parentPostHash *BlockHash) []*PGPost {
+func (postgres *Postgres) GetComments(parentPostHash *core.BlockHash) []*PGPost {
 	var posts []*PGPost
 	err := postgres.db.Model(&posts).Where("parent_post_hash = ?", parentPostHash).Select()
 	if err != nil {
@@ -1872,7 +1874,7 @@ func (postgres *Postgres) GetComments(parentPostHash *BlockHash) []*PGPost {
 	return posts
 }
 
-func (postgres *Postgres) GetMessage(messageHash *BlockHash) *PGMessage {
+func (postgres *Postgres) GetMessage(messageHash *core.BlockHash) *PGMessage {
 	var message PGMessage
 	err := postgres.db.Model(&message).Where("message_hash = ?", messageHash).First()
 	if err != nil {
@@ -1885,7 +1887,7 @@ func (postgres *Postgres) GetMessage(messageHash *BlockHash) *PGMessage {
 // LIKES
 //
 
-func (postgres *Postgres) GetLike(likerPublicKey []byte, likedPostHash *BlockHash) *PGLike {
+func (postgres *Postgres) GetLike(likerPublicKey []byte, likedPostHash *core.BlockHash) *PGLike {
 	like := PGLike{
 		LikerPublicKey: likerPublicKey,
 		LikedPostHash:  likedPostHash,
@@ -1905,7 +1907,7 @@ func (postgres *Postgres) GetLikes(likes []*PGLike) []*PGLike {
 	return likes
 }
 
-func (postgres *Postgres) GetLikesForPost(postHash *BlockHash) []*PGLike {
+func (postgres *Postgres) GetLikesForPost(postHash *core.BlockHash) []*PGLike {
 	var likes []*PGLike
 	err := postgres.db.Model(&likes).Where("liked_post_hash = ?", postHash).Select()
 	if err != nil {
@@ -1918,7 +1920,7 @@ func (postgres *Postgres) GetLikesForPost(postHash *BlockHash) []*PGLike {
 // Follows
 //
 
-func (postgres *Postgres) GetFollow(followerPkid *PKID, followedPkid *PKID) *PGFollow {
+func (postgres *Postgres) GetFollow(followerPkid *core.PKID, followedPkid *core.PKID) *PGFollow {
 	follow := PGFollow{
 		FollowerPKID: followerPkid,
 		FollowedPKID: followedPkid,
@@ -1938,7 +1940,7 @@ func (postgres *Postgres) GetFollows(follows []*PGFollow) []*PGFollow {
 	return follows
 }
 
-func (postgres *Postgres) GetFollowing(pkid *PKID) []*PGFollow {
+func (postgres *Postgres) GetFollowing(pkid *core.PKID) []*PGFollow {
 	var follows []*PGFollow
 	err := postgres.db.Model(&follows).Where("follower_pkid = ?", pkid).Select()
 	if err != nil {
@@ -1947,7 +1949,7 @@ func (postgres *Postgres) GetFollowing(pkid *PKID) []*PGFollow {
 	return follows
 }
 
-func (postgres *Postgres) GetFollowers(pkid *PKID) []*PGFollow {
+func (postgres *Postgres) GetFollowers(pkid *core.PKID) []*PGFollow {
 	var follows []*PGFollow
 	err := postgres.db.Model(&follows).Where("followed_pkid = ?", pkid).Select()
 	if err != nil {
@@ -1956,7 +1958,7 @@ func (postgres *Postgres) GetFollowers(pkid *PKID) []*PGFollow {
 	return follows
 }
 
-func (postgres *Postgres) GetDiamond(senderPkid *PKID, receiverPkid *PKID, postHash *BlockHash) *PGDiamond {
+func (postgres *Postgres) GetDiamond(senderPkid *core.PKID, receiverPkid *core.PKID, postHash *core.BlockHash) *PGDiamond {
 	diamond := PGDiamond{
 		SenderPKID:      senderPkid,
 		ReceiverPKID:    receiverPkid,
@@ -1981,7 +1983,7 @@ func (postgres *Postgres) GetCreatorCoinBalances(balances []*PGCreatorCoinBalanc
 	return balances
 }
 
-func (postgres *Postgres) GetCreatorCoinBalance(holderPkid *PKID, creatorPkid *PKID) *PGCreatorCoinBalance {
+func (postgres *Postgres) GetCreatorCoinBalance(holderPkid *core.PKID, creatorPkid *core.PKID) *PGCreatorCoinBalance {
 	balance := PGCreatorCoinBalance{
 		HolderPKID:  holderPkid,
 		CreatorPKID: creatorPkid,
@@ -1993,7 +1995,7 @@ func (postgres *Postgres) GetCreatorCoinBalance(holderPkid *PKID, creatorPkid *P
 	return &balance
 }
 
-func (postgres *Postgres) GetHoldings(pkid *PKID) []*PGCreatorCoinBalance {
+func (postgres *Postgres) GetHoldings(pkid *core.PKID) []*PGCreatorCoinBalance {
 	var holdings []*PGCreatorCoinBalance
 	err := postgres.db.Model(&holdings).Where("holder_pkid = ?", pkid).Select()
 	if err != nil {
@@ -2002,7 +2004,7 @@ func (postgres *Postgres) GetHoldings(pkid *PKID) []*PGCreatorCoinBalance {
 	return holdings
 }
 
-func (postgres *Postgres) GetHolders(pkid *PKID) []*PGCreatorCoinBalance {
+func (postgres *Postgres) GetHolders(pkid *core.PKID) []*PGCreatorCoinBalance {
 	var holdings []*PGCreatorCoinBalance
 	err := postgres.db.Model(&holdings).Where("creator_pkid = ?", pkid).Select()
 	if err != nil {
@@ -2015,7 +2017,7 @@ func (postgres *Postgres) GetHolders(pkid *PKID) []*PGCreatorCoinBalance {
 // NFTS
 //
 
-func (postgres *Postgres) GetNFT(nftPostHash *BlockHash, serialNumber uint64) *PGNFT {
+func (postgres *Postgres) GetNFT(nftPostHash *core.BlockHash, serialNumber uint64) *PGNFT {
 	nft := PGNFT{
 		NFTPostHash:  nftPostHash,
 		SerialNumber: serialNumber,
@@ -2027,7 +2029,7 @@ func (postgres *Postgres) GetNFT(nftPostHash *BlockHash, serialNumber uint64) *P
 	return &nft
 }
 
-func (postgres *Postgres) GetNFTsForPostHash(nftPostHash *BlockHash) []*PGNFT {
+func (postgres *Postgres) GetNFTsForPostHash(nftPostHash *core.BlockHash) []*PGNFT {
 	var nfts []*PGNFT
 	err := postgres.db.Model(&nfts).Where("nft_post_hash = ?", nftPostHash).Select()
 	if err != nil {
@@ -2036,7 +2038,7 @@ func (postgres *Postgres) GetNFTsForPostHash(nftPostHash *BlockHash) []*PGNFT {
 	return nfts
 }
 
-func (postgres *Postgres) GetNFTsForPKID(pkid *PKID) []*PGNFT {
+func (postgres *Postgres) GetNFTsForPKID(pkid *core.PKID) []*PGNFT {
 	var nfts []*PGNFT
 	err := postgres.db.Model(&nfts).Where("owner_pkid = ?", pkid).Select()
 	if err != nil {
@@ -2045,7 +2047,7 @@ func (postgres *Postgres) GetNFTsForPKID(pkid *PKID) []*PGNFT {
 	return nfts
 }
 
-func (postgres *Postgres) GetNFTBidsForPKID(pkid *PKID) []*PGNFTBid {
+func (postgres *Postgres) GetNFTBidsForPKID(pkid *core.PKID) []*PGNFTBid {
 	var nftBids []*PGNFTBid
 	err := postgres.db.Model(&nftBids).Where("bidder_pkid = ?", pkid).Select()
 	if err != nil {
@@ -2054,7 +2056,7 @@ func (postgres *Postgres) GetNFTBidsForPKID(pkid *PKID) []*PGNFTBid {
 	return nftBids
 }
 
-func (postgres *Postgres) GetNFTBidsForSerial(nftPostHash *BlockHash, serialNumber uint64) []*PGNFTBid {
+func (postgres *Postgres) GetNFTBidsForSerial(nftPostHash *core.BlockHash, serialNumber uint64) []*PGNFTBid {
 	var nftBids []*PGNFTBid
 	err := postgres.db.Model(&nftBids).Where("nft_post_hash = ?", nftPostHash).
 		Where("serial_number = ?", serialNumber).Select()
@@ -2064,7 +2066,7 @@ func (postgres *Postgres) GetNFTBidsForSerial(nftPostHash *BlockHash, serialNumb
 	return nftBids
 }
 
-func (postgres *Postgres) GetNFTBid(nftPostHash *BlockHash, bidderPKID *PKID, serialNumber uint64) *PGNFTBid {
+func (postgres *Postgres) GetNFTBid(nftPostHash *core.BlockHash, bidderPKID *core.PKID, serialNumber uint64) *PGNFTBid {
 	bid := PGNFTBid{
 		NFTPostHash:  nftPostHash,
 		BidderPKID:   bidderPKID,
@@ -2081,7 +2083,7 @@ func (postgres *Postgres) GetNFTBid(nftPostHash *BlockHash, bidderPKID *PKID, se
 // Derived Keys
 //
 
-func (postgres *Postgres) GetDerivedKey(ownerPublicKey *PublicKey, derivedPublicKey *PublicKey) *PGDerivedKey {
+func (postgres *Postgres) GetDerivedKey(ownerPublicKey *core.PublicKey, derivedPublicKey *core.PublicKey) *PGDerivedKey {
 	key := PGDerivedKey{
 		OwnerPublicKey:   *ownerPublicKey,
 		DerivedPublicKey: *derivedPublicKey,
@@ -2093,7 +2095,7 @@ func (postgres *Postgres) GetDerivedKey(ownerPublicKey *PublicKey, derivedPublic
 	return &key
 }
 
-func (postgres *Postgres) GetAllDerivedKeysForOwner(ownerPublicKey *PublicKey) []*PGDerivedKey {
+func (postgres *Postgres) GetAllDerivedKeysForOwner(ownerPublicKey *core.PublicKey) []*PGDerivedKey {
 	var keys []*PGDerivedKey
 	err := postgres.db.Model(&keys).Where("owner_public_key = ?", *ownerPublicKey).Select()
 	if err != nil {
@@ -2106,7 +2108,7 @@ func (postgres *Postgres) GetAllDerivedKeysForOwner(ownerPublicKey *PublicKey) [
 // Balances
 //
 
-func (postgres *Postgres) GetBalance(publicKey *PublicKey) uint64 {
+func (postgres *Postgres) GetBalance(publicKey *core.PublicKey) uint64 {
 	balance := PGBalance{
 		PublicKey: publicKey,
 	}
@@ -2156,9 +2158,9 @@ func (postgres *Postgres) InitGenesisBlock(params *DeSoParams, db *badger.DB) er
 
 	for index, txOutput := range params.SeedBalances {
 		_, err := postgres.db.Model(&PGTransactionOutput{
-			OutputHash:  &BlockHash{},
+			OutputHash:  &core.BlockHash{},
 			OutputIndex: uint32(index),
-			OutputType:  UtxoTypeOutput,
+			OutputType:  view.UtxoTypeOutput,
 			AmountNanos: txOutput.AmountNanos,
 			PublicKey:   txOutput.PublicKey,
 		}).Returning("NULL").Insert()

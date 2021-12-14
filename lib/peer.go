@@ -3,6 +3,7 @@ package lib
 import (
 	"fmt"
 	"github.com/decred/dcrd/lru"
+	"github.com/deso-protocol/core"
 	"math"
 	"net"
 	"sort"
@@ -118,7 +119,7 @@ type Peer struct {
 	// requests that ultimately don't get delivered. This way the number of blocks
 	// being sent is limited to a multiple of the number of Peers we have.
 	blocksToSendMtx deadlock.Mutex
-	blocksToSend    map[BlockHash]bool
+	blocksToSend    map[core.BlockHash]bool
 
 	// Inventory stuff.
 	// The inventory that we know the peer already has.
@@ -133,7 +134,7 @@ type Peer struct {
 	mtxMessageQueue deadlock.RWMutex
 	messagQueue     []*DeSoMessageMeta
 
-	requestedBlocks map[BlockHash]bool
+	requestedBlocks map[core.BlockHash]bool
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
@@ -250,8 +251,8 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 	// Iterate through the message. Gather the transactions and the
 	// blocks we don't already have into separate inventory lists.
 	glog.V(1).Infof("Server._handleInv: Processing INV message of size %v from peer %v", len(msg.InvList), pp)
-	txHashList := []*BlockHash{}
-	blockHashList := []*BlockHash{}
+	txHashList := []*core.BlockHash{}
+	blockHashList := []*core.BlockHash{}
 
 	for _, invVect := range msg.InvList {
 		// No matter what, add the inv to the peer's known inventory.
@@ -278,7 +279,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 		// Extract a copy of the block hash to avoid the iterator changing the
 		// value underneath us.
-		currentHash := BlockHash{}
+		currentHash := core.BlockHash{}
 		copy(currentHash[:], invVect.Hash[:])
 
 		if invVect.Type == InvTypeTx {
@@ -338,7 +339,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 	if len(blockHashList) > 0 {
 		locator := pp.srv.blockchain.LatestHeaderLocator()
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
-			StopHash:     &BlockHash{},
+			StopHash:     &core.BlockHash{},
 			BlockLocator: locator,
 		}, false /*inbound*/)
 	}
@@ -478,13 +479,13 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		outputQueueChan:        make(chan DeSoMessage),
 		quit:                   make(chan interface{}),
 		knownInventory:         lru.NewCache(maxKnownInventory),
-		blocksToSend:           make(map[BlockHash]bool),
+		blocksToSend:           make(map[core.BlockHash]bool),
 		stallTimeoutSeconds:    _stallTimeoutSeconds,
 		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
 		knownAddressesmap:      make(map[string]bool),
 		Params:                 params,
 		MessageChan:            messageChan,
-		requestedBlocks:        make(map[BlockHash]bool),
+		requestedBlocks:        make(map[core.BlockHash]bool),
 	}
 	if _cmgr != nil {
 		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)

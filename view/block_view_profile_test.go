@@ -1,9 +1,11 @@
-package lib
+package view
 
 import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,17 +16,17 @@ import (
 	"time"
 )
 
-func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+func _swapIdentity(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, fromPublicKey []byte, toPublicKey []byte) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	updaterPkBytes, _, err := lib.Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -36,7 +38,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 		toPublicKey,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -44,7 +46,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, updaterPrivBase58Check)
+	lib._signTxn(t, txn, updaterPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -73,19 +75,19 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
-func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+func _updateProfile(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, profilePubKey []byte, newUsername string,
 	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
 	newStakeMultipleBasisPoints uint64, isHidden bool) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
+	updaterPkBytes, _, err := lib.Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -103,7 +105,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		0,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -111,7 +113,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, updaterPrivBase58Check)
+	lib._signTxn(t, txn, updaterPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -154,7 +156,7 @@ func _updateProfileWithTestMeta(
 	isHidden bool) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, lib._getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
 
 	currentOps, currentTxn, _, err := _updateProfile(
 		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
@@ -169,7 +171,7 @@ func _updateProfileWithTestMeta(
 }
 
 func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.PrivateKey,
-	params *DeSoParams, expirationBlock uint64, isDeleted bool) (*AuthorizeDerivedKeyMetadata,
+	params *lib.DeSoParams, expirationBlock uint64, isDeleted bool) (*lib.AuthorizeDerivedKeyMetadata,
 	*btcec.PrivateKey) {
 	require := require.New(t)
 
@@ -179,20 +181,20 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 	derivedPublicKey := derivedPrivateKey.PubKey().SerializeCompressed()
 
 	// Create access signature
-	expirationBlockByte := EncodeUint64(expirationBlock)
+	expirationBlockByte := lib.EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockByte[:]...)
-	accessSignature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
+	accessSignature, err := ownerPrivateKey.Sign(lib.Sha256DoubleHash(accessBytes)[:])
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadata: Error creating access signature")
 
 	// Determine operation type
-	var operationType AuthorizeDerivedKeyOperationType
+	var operationType lib.AuthorizeDerivedKeyOperationType
 	if isDeleted {
-		operationType = AuthorizeDerivedKeyOperationNotValid
+		operationType = lib.AuthorizeDerivedKeyOperationNotValid
 	} else {
-		operationType = AuthorizeDerivedKeyOperationValid
+		operationType = lib.AuthorizeDerivedKeyOperationValid
 	}
 
-	return &AuthorizeDerivedKeyMetadata{
+	return &lib.AuthorizeDerivedKeyMetadata{
 		derivedPublicKey,
 		expirationBlock,
 		operationType,
@@ -201,11 +203,11 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 }
 
 // Create a new AuthorizeDerivedKey txn and connect it to the utxoView
-func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
+func _doAuthorizeTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
 	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
 	accessSignature []byte, deleteKey bool) (_utxoOps []*UtxoOperation,
-	_txn *MsgDeSoTxn, _height uint32, _err error) {
+	_txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -221,7 +223,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		false,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -231,7 +233,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Sign the transaction now that its inputs are set up.
 	// We have to set the solution byte because we're signing
 	// the transaction with derived key on behalf of the owner.
-	_signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
+	lib._signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -266,16 +268,16 @@ const (
 
 func TestUpdateProfile(t *testing.T) {
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
-	ParamUpdaterProfileUpdateFixBlockHeight = 0
-	UpdateProfileFixBlockHeight = 0
+	lib.ParamUpdaterProfileUpdateFixBlockHeight = 0
+	lib.UpdateProfileFixBlockHeight = 0
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 
@@ -291,7 +293,7 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Setup some convenience functions for the test.
 	txnOps := [][]*UtxoOperation{}
-	txns := []*MsgDeSoTxn{}
+	txns := []*lib.MsgDeSoTxn{}
 	expectedSenderBalances := []uint64{}
 
 	// We take the block tip to be the blockchain height rather than the
@@ -300,7 +302,7 @@ func TestUpdateProfile(t *testing.T) {
 	registerOrTransfer := func(username string,
 		senderPk string, recipientPk string, senderPriv string) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, senderPk))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, senderPk))
 
 		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
 			t, chain, db, params, senderPk, recipientPk,
@@ -311,21 +313,21 @@ func TestUpdateProfile(t *testing.T) {
 	}
 
 	// Fund all the keys.
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
 
 	// Fund key to test CreateProfile fee
-	registerOrTransfer("", senderPkString, m4Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m4Pub, lib.senderPrivString)
 
 	updateProfile := func(
 		feeRateNanosPerKB uint64, updaterPkBase58Check string,
@@ -333,7 +335,7 @@ func TestUpdateProfile(t *testing.T) {
 		newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
 		newStakeMultipleBasisPoints uint64, isHidden bool) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, updaterPkBase58Check))
 
 		currentOps, currentTxn, _, err := _updateProfile(
 			t, chain, db, params,
@@ -356,13 +358,13 @@ func TestUpdateProfile(t *testing.T) {
 		minimumNetworkFeeNanosPerKb int64,
 		createProfileFeeNanos int64) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, updaterPkBase58Check))
 
 		currentOps, currentTxn, _, err := _updateGlobalParamsEntry(t, chain, db, params,
 			feeRateNanosPerKB,
 			updaterPkBase58Check,
 			updaterPrivBase58Check,
-			int64(InitialUSDCentsPerBitcoinExchangeRate),
+			int64(lib.InitialUSDCentsPerBitcoinExchangeRate),
 			minimumNetworkFeeNanosPerKb,
 			createProfileFeeNanos,
 			0,  /*createNFTFeeNanos*/
@@ -392,13 +394,13 @@ func TestUpdateProfile(t *testing.T) {
 			2*100*100,     /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		require.Contains(err.Error(), lib.RuleErrorTxnMustHaveAtLeastOneInput)
 	}
 
 	// Username too long should fail.
 	{
 		badUsername := string(append([]byte("badUsername: "),
-			RandomBytes(int32(params.MaxUsernameLengthBytes))...))
+			db.RandomBytes(int32(params.MaxUsernameLengthBytes))...))
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
 			10,            /*feeRateNanosPerKB*/
@@ -412,13 +414,13 @@ func TestUpdateProfile(t *testing.T) {
 			2*100*100,     /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileUsernameTooLong)
+		require.Contains(err.Error(), lib.RuleErrorProfileUsernameTooLong)
 	}
 
 	// Description too long should fail.
 	{
 		badDescription := string(append([]byte("badDescription: "),
-			RandomBytes(int32(params.MaxUserDescriptionLengthBytes))...))
+			db.RandomBytes(int32(params.MaxUserDescriptionLengthBytes))...))
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
 			2,              /*feeRateNanosPerKB*/
@@ -432,7 +434,7 @@ func TestUpdateProfile(t *testing.T) {
 			2*100*100,      /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileDescriptionTooLong)
+		require.Contains(err.Error(), lib.RuleErrorProfileDescriptionTooLong)
 	}
 
 	// Profile pic too long should fail.
@@ -450,7 +452,7 @@ func TestUpdateProfile(t *testing.T) {
 			2*100*100,     /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorMaxProfilePicSize)
+		require.Contains(err.Error(), lib.RuleErrorMaxProfilePicSize)
 	}
 
 	// Stake multiple too large should fail long too long should fail.
@@ -468,7 +470,7 @@ func TestUpdateProfile(t *testing.T) {
 			100*100*100,   /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
+		require.Contains(err.Error(), lib.RuleErrorProfileStakeMultipleSize)
 	}
 
 	// Stake multiple too small should fail long too long should fail.
@@ -486,7 +488,7 @@ func TestUpdateProfile(t *testing.T) {
 			.99*100*100,   /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
+		require.Contains(err.Error(), lib.RuleErrorProfileStakeMultipleSize)
 	}
 
 	// Creator percentage too large should fail.
@@ -504,27 +506,27 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileCreatorPercentageSize)
+		require.Contains(err.Error(), lib.RuleErrorProfileCreatorPercentageSize)
 	}
 
 	// Invalid profile public key should fail.
 	{
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
-			1,               /*feeRateNanosPerKB*/
-			m0Pub,           /*updaterPkBase58Check*/
-			m0Priv,          /*updaterPrivBase58Check*/
-			RandomBytes(33), /*profilePubKey*/
-			"m0",            /*newUsername*/
-			"i am the m0",   /*newDescription*/
-			shortPic,        /*newProfilePic*/
-			10*100,          /*newCreatorBasisPoints*/
-			1.25*100*100,    /*newStakeMultipleBasisPoints*/
+			1,                  /*feeRateNanosPerKB*/
+			m0Pub,              /*updaterPkBase58Check*/
+			m0Priv,             /*updaterPrivBase58Check*/
+			db.RandomBytes(33), /*profilePubKey*/
+			"m0",               /*newUsername*/
+			"i am the m0",      /*newDescription*/
+			shortPic,           /*newProfilePic*/
+			10*100,             /*newCreatorBasisPoints*/
+			1.25*100*100,       /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
 		// This returned RuleErrorProfilePubKeyNotAuthorized for me once
 		// "ConnectTransaction: : _connectUpdateProfile: ... RuleErrorProfilePubKeyNotAuthorized"
-		require.Contains(err.Error(), RuleErrorProfileBadPublicKey)
+		require.Contains(err.Error(), lib.RuleErrorProfileBadPublicKey)
 	}
 
 	// Profile public key that is not authorized should fail.
@@ -542,7 +544,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorProfilePubKeyNotAuthorized)
 	}
 
 	// A simple registration should succeed
@@ -575,7 +577,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInvalidUsername)
+		require.Contains(err.Error(), lib.RuleErrorInvalidUsername)
 
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
@@ -590,7 +592,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,      /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInvalidUsername)
+		require.Contains(err.Error(), lib.RuleErrorInvalidUsername)
 
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
@@ -605,7 +607,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,        /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInvalidUsername)
+		require.Contains(err.Error(), lib.RuleErrorInvalidUsername)
 
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
@@ -620,7 +622,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInvalidUsername)
+		require.Contains(err.Error(), lib.RuleErrorInvalidUsername)
 
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
@@ -635,7 +637,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInvalidUsername)
+		require.Contains(err.Error(), lib.RuleErrorInvalidUsername)
 	}
 
 	// Trying to take an already-registered username should fail.
@@ -653,7 +655,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
+		require.Contains(err.Error(), lib.RuleErrorProfileUsernameExists)
 
 		// The username should be case-insensitive so creating a duplicate
 		// with different casing should fail.
@@ -670,7 +672,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
+		require.Contains(err.Error(), lib.RuleErrorProfileUsernameExists)
 
 		// Register m1 and then try to steal the username
 		updateProfile(
@@ -698,7 +700,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
+		require.Contains(err.Error(), lib.RuleErrorProfileUsernameExists)
 
 		// The username should be case-insensitive so creating a duplicate
 		// with different casing should fail.
@@ -715,7 +717,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
+		require.Contains(err.Error(), lib.RuleErrorProfileUsernameExists)
 
 		// The username should be case-insensitive so creating a duplicate
 		// with different casing should fail.
@@ -732,7 +734,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
+		require.Contains(err.Error(), lib.RuleErrorProfileUsernameExists)
 	}
 
 	// Register m2 (should succeed)
@@ -822,7 +824,7 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,     /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorProfilePubKeyNotAuthorized)
 	}
 
 	// ParamUpdater updating another user's profile should succeed.
@@ -862,7 +864,7 @@ func TestUpdateProfile(t *testing.T) {
 			100,
 			m3Pub,
 			m3Priv,
-			int64(InitialUSDCentsPerBitcoinExchangeRate),
+			int64(lib.InitialUSDCentsPerBitcoinExchangeRate),
 			0,
 			100)
 
@@ -880,14 +882,14 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,
 			false)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
+		require.Contains(err.Error(), lib.RuleErrorCreateProfileTxnOutputExceedsInput)
 		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
 
 		updateGlobalParamsEntry(
 			100,
 			m3Pub,
 			m3Priv,
-			int64(InitialUSDCentsPerBitcoinExchangeRate),
+			int64(lib.InitialUSDCentsPerBitcoinExchangeRate),
 			5,
 			1)
 
@@ -906,7 +908,7 @@ func TestUpdateProfile(t *testing.T) {
 			false,
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+		require.Contains(err.Error(), lib.RuleErrorTxnFeeBelowNetworkMinimum)
 		// Update succeeds because fee is high enough and user has enough to meet fee.
 		updateProfile(
 			10,
@@ -925,7 +927,7 @@ func TestUpdateProfile(t *testing.T) {
 			100,
 			m3Pub,
 			m3Priv,
-			int64(InitialUSDCentsPerBitcoinExchangeRate),
+			int64(lib.InitialUSDCentsPerBitcoinExchangeRate),
 			0,
 			0)
 
@@ -1006,18 +1008,18 @@ func TestUpdateProfile(t *testing.T) {
 	// ===================================================================================
 	// Finish it off with some transactions
 	// ===================================================================================
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
 	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
 	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
 	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
@@ -1050,7 +1052,7 @@ func TestUpdateProfile(t *testing.T) {
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
-		require.Equal(expectedSenderBalances[backwardIter], _getBalance(t, chain, nil, PkToStringTestnet(currentTxn.PublicKey)))
+		require.Equal(expectedSenderBalances[backwardIter], lib._getBalance(t, chain, nil, db.PkToStringTestnet(currentTxn.PublicKey)))
 	}
 
 	// Verify that all the profiles have been deleted.
@@ -1062,8 +1064,8 @@ func TestUpdateProfile(t *testing.T) {
 		// See comment above on this transaction.
 		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
-		require.Equal(expectedSenderBalances[ii], _getBalance(
-			t, chain, mempool, PkToStringTestnet(tx.PublicKey)))
+		require.Equal(expectedSenderBalances[ii], lib._getBalance(
+			t, chain, mempool, db.PkToStringTestnet(tx.PublicKey)))
 
 		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
 		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
@@ -1104,7 +1106,7 @@ func TestUpdateProfile(t *testing.T) {
 		require.NoError(err)
 	}
 	require.NoError(utxoView2.FlushToDb())
-	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
+	require.Equal(expectedSenderBalances[0], lib._getBalance(t, chain, nil, lib.senderPkString))
 
 	// Verify that all the profiles have been deleted.
 	checkProfilesDeleted()
@@ -1125,11 +1127,11 @@ func TestUpdateProfile(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := db.GetUtxoOperationsForBlock(db, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
-		txHashes, err := ComputeTransactionHashes(block.Txns)
+		txHashes, err := lib.ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
 		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
 
@@ -1153,8 +1155,8 @@ func TestSpamUpdateProfile(t *testing.T) {
 	pprof.StartCPUProfile(f)
 	defer pprof.StopCPUProfile()
 
-	chain, params, _ := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, _ := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
 
@@ -1162,7 +1164,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 	for ii := 0; ii < numTxns; ii++ {
 		fmt.Println("Creating txns: ", ii)
 		startTimeCreateTxn := time.Now()
-		moneyPkBytes, _, _ := Base58CheckDecode(moneyPkString)
+		moneyPkBytes, _, _ := lib.Base58CheckDecode(lib.moneyPkString)
 		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
 			moneyPkBytes,
 			nil,
@@ -1175,9 +1177,9 @@ func TestSpamUpdateProfile(t *testing.T) {
 			0,
 			feeRateNanosPerKB, /*feeRateNanosPerKB*/
 			mempool,           /*mempool*/
-			[]*DeSoOutput{})
+			[]*lib.DeSoOutput{})
 		require.NoError(err)
-		_signTxn(t, txn, moneyPrivString)
+		lib._signTxn(t, txn, lib.moneyPrivString)
 		fmt.Printf("Creating txn took: %v seconds\n", time.Since(startTimeCreateTxn).Seconds())
 
 		fmt.Println("Running txns through mempool: ", ii)
@@ -1196,7 +1198,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -1214,7 +1216,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1241,7 +1243,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1268,7 +1270,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4123456789,
 			DeSoToAddNanos:               0,
@@ -1295,7 +1297,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 		// m0Pk: m3 profile
 		// m3Pk: m0 profile (the one with the profile)
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m0PkBytes,
 			ToPublicKey:   m3PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -1326,7 +1328,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 		// m1Pk: m0 profile (the one with the profile)
 		// m3Pk: m1 profile
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m3PkBytes,
 			ToPublicKey:   m1PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -1357,7 +1359,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 		// m1Pk: m3 profile
 		// m3Pk: m1 profile
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m0PkBytes,
 			ToPublicKey:   m1PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -1388,7 +1390,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 		// m1Pk: m1 profile (the one with the profile)
 		// m3Pk: m3 profile
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m1PkBytes,
 			ToPublicKey:   m3PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -1419,7 +1421,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1977342329,
 			DeSoToAddNanos:               0,
@@ -1446,7 +1448,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1474,7 +1476,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8685258418,
 			DeSoToAddNanos:               0,
@@ -1502,7 +1504,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4925685829,
 			DeSoToAddNanos:               0,
@@ -1530,7 +1532,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       3000013,
 			DeSoToAddNanos:               0,
@@ -1558,7 +1560,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1588,7 +1590,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       9639647781,
 			DeSoToAddNanos:               0,
@@ -1623,7 +1625,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -1641,7 +1643,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1668,7 +1670,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1695,7 +1697,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4123456789,
 			DeSoToAddNanos:               0,
@@ -1719,7 +1721,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 
 		// Swap m0 and m3
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m0PkBytes,
 			ToPublicKey:   m3PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -1750,7 +1752,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1977342329,
 			DeSoToAddNanos:               0,
@@ -1779,7 +1781,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1809,7 +1811,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8685258418,
 			DeSoToAddNanos:               0,
@@ -1839,7 +1841,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m3Pub,
 			UpdaterPrivateKeyBase58Check: m3Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4925685829,
 			DeSoToAddNanos:               0,
@@ -1871,7 +1873,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m3Pub,
 			UpdaterPrivateKeyBase58Check: m3Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       3000013,
 			DeSoToAddNanos:               0,
@@ -1902,7 +1904,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1934,9 +1936,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
-			CreatorCoinToSellNanos:       9639647781 - DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
+			CreatorCoinToSellNanos:       9639647781 - lib.DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
 			DeSoToAddNanos:               0,
 			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
@@ -1969,24 +1971,24 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 	_, _ = assert, require
 
 	// Set up a blockchain
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
 
 	// Send money to people from moneyPk
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, paramUpdaterPub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, paramUpdaterPub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m0Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m0Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m1Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m1Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m2Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m2Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	// Create a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -1998,7 +2000,7 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 		m0Priv,
 		m1PkBytes, m2PkBytes)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorSwapIdentityIsParamUpdaterOnly)
+	require.Contains(err.Error(), lib.RuleErrorSwapIdentityIsParamUpdaterOnly)
 
 	// Swapping identities with a key that is not paramUpdater should fail.
 	// - Case where the transactor is the from public key
@@ -2008,7 +2010,7 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 		m0Priv,
 		m0PkBytes, m2PkBytes)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorSwapIdentityIsParamUpdaterOnly)
+	require.Contains(err.Error(), lib.RuleErrorSwapIdentityIsParamUpdaterOnly)
 
 	// Swapping identities with a key that is not paramUpdater should fail.
 	// - Case where the transactor is the to public key
@@ -2018,7 +2020,7 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 		m0Priv,
 		m2PkBytes, m0PkBytes)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorSwapIdentityIsParamUpdaterOnly)
+	require.Contains(err.Error(), lib.RuleErrorSwapIdentityIsParamUpdaterOnly)
 }
 
 func TestSwapIdentityMain(t *testing.T) {
@@ -2030,7 +2032,7 @@ func TestSwapIdentityMain(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0 so we can check creator coin balances easily.
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -2044,7 +2046,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		},
 		// Swap m1 and m2, which don't have profiles yet. This should work.
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m1PkBytes,
 			ToPublicKey:   m2PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -2084,7 +2086,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		},
 		// Create a profile for m3
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m3Pub,
 			UpdaterPrivateKeyBase58Check: m3Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
@@ -2131,7 +2133,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2173,7 +2175,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		// Swap m2 and m3. Everything should stay the same except m2 should be the
 		// creator everyone owns a piece of
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m2PkBytes,
 			ToPublicKey:   m3PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -2215,7 +2217,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		// Create a profile for m3 again. This should work, since m3 lost its
 		// profile to m2 easrlier
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m3Pub,
 			UpdaterPrivateKeyBase58Check: m3Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
@@ -2262,7 +2264,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m6Pub,
 			UpdaterPrivateKeyBase58Check: m6Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2000000001,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2307,7 +2309,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m6Pub,
 			UpdaterPrivateKeyBase58Check: m6Priv,
 			ProfilePublicKeyBase58Check:  m2Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              10,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2347,7 +2349,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		},
 		// Swap m2 and m3 again.
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m2PkBytes,
 			ToPublicKey:   m3PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -2393,7 +2395,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              10,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2434,7 +2436,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		// Swap m3 for m4 and check the m4 cap table. It should be identical to
 		// the m3 cap table from before.
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m3PkBytes,
 			ToPublicKey:   m4PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -2476,7 +2478,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		// Swap m2 for m3 and check the m3 cap table. It should be identical to
 		// the m2 cap table from before.
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m2PkBytes,
 			ToPublicKey:   m3PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -2517,7 +2519,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		},
 		// Swap m4 and m3 and check the m4 cap table. It should be identical to the above.
 		{
-			TxnType:                     TxnTypeSwapIdentity,
+			TxnType:                     lib.TxnTypeSwapIdentity,
 			FromPublicKey:               m3PkBytes,
 			ToPublicKey:                 m4PkBytes,
 			ProfilePublicKeyBase58Check: m4Pub,
@@ -2559,7 +2561,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
 			ProfilePublicKeyBase58Check:  m3Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              10,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2599,7 +2601,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		},
 		// Create a profile for m2
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m2Pub,
@@ -2643,7 +2645,7 @@ func TestSwapIdentityMain(t *testing.T) {
 		},
 		// Swap m2 and m4 and verify that m4 now has the zeros
 		{
-			TxnType:                     TxnTypeSwapIdentity,
+			TxnType:                     lib.TxnTypeSwapIdentity,
 			FromPublicKey:               m2PkBytes,
 			ToPublicKey:                 m4PkBytes,
 			ProfilePublicKeyBase58Check: m4Pub,
@@ -2687,7 +2689,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m5Pub,
 			UpdaterPrivateKeyBase58Check: m5Priv,
 			ProfilePublicKeyBase58Check:  m2Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              10,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2739,7 +2741,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m1
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m1Pub,
@@ -2753,7 +2755,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		},
 		// Have m0 follow m1
 		{
-			TxnType:                      TxnTypeFollow,
+			TxnType:                      lib.TxnTypeFollow,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			FollowedPublicKey:            m1PkBytes,
@@ -2779,7 +2781,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		},
 		// Swap m0 and m1
 		{
-			TxnType:                     TxnTypeSwapIdentity,
+			TxnType:                     lib.TxnTypeSwapIdentity,
 			FromPublicKey:               m0PkBytes,
 			ToPublicKey:                 m1PkBytes,
 			ProfilePublicKeyBase58Check: m0Pub,
@@ -2805,7 +2807,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		},
 		// Swap m1 and m2. m2 should now be the one following m0
 		{
-			TxnType:                     TxnTypeSwapIdentity,
+			TxnType:                     lib.TxnTypeSwapIdentity,
 			FromPublicKey:               m1PkBytes,
 			ToPublicKey:                 m2PkBytes,
 			ProfilePublicKeyBase58Check: m0Pub,
@@ -2833,7 +2835,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		},
 		// Give m1 a new profile
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m1Pub,
@@ -2851,7 +2853,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		},
 		// Have m2 follow m1
 		{
-			TxnType:                      TxnTypeFollow,
+			TxnType:                      lib.TxnTypeFollow,
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			FollowedPublicKey:            m1PkBytes,
@@ -2881,7 +2883,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		},
 		// Have m0 follow m1
 		{
-			TxnType:                      TxnTypeFollow,
+			TxnType:                      lib.TxnTypeFollow,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			FollowedPublicKey:            m1PkBytes,
@@ -2911,7 +2913,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		},
 		// Have m1 follow m0
 		{
-			TxnType:                      TxnTypeFollow,
+			TxnType:                      lib.TxnTypeFollow,
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			FollowedPublicKey:            m0PkBytes,
@@ -2942,7 +2944,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		// Swap m1 and m2. m2 should now inherit m1's follows
 		// This is a tricky one...
 		{
-			TxnType:                     TxnTypeSwapIdentity,
+			TxnType:                     lib.TxnTypeSwapIdentity,
 			FromPublicKey:               m1PkBytes,
 			ToPublicKey:                 m2PkBytes,
 			ProfilePublicKeyBase58Check: m0Pub,
@@ -2970,7 +2972,7 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 		},
 		// Swap m2 and m0.
 		{
-			TxnType:                     TxnTypeSwapIdentity,
+			TxnType:                     lib.TxnTypeSwapIdentity,
 			FromPublicKey:               m2PkBytes,
 			ToPublicKey:                 m0PkBytes,
 			ProfilePublicKeyBase58Check: m0Pub,
@@ -3010,8 +3012,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 	// This test fails non-deterministically so we wrap it in a loop to make it
 	// not flake.
 	for ii := 0; ii < 10; ii++ {
-		chain, params, db := NewLowDifficultyBlockchain()
-		mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+		chain, params, db := lib.NewLowDifficultyBlockchain()
+		mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 		// Make m3 a paramUpdater for this test
 		params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 
@@ -3026,17 +3028,17 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		require.NoError(err)
 
 		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m0Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+			t, chain, db, params, lib.moneyPkString, m0Pub,
+			lib.moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
 		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m1Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+			t, chain, db, params, lib.moneyPkString, m1Pub,
+			lib.moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
 		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m2Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+			t, chain, db, params, lib.moneyPkString, m2Pub,
+			lib.moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
 		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m3Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+			t, chain, db, params, lib.moneyPkString, m3Pub,
+			lib.moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
 
 		// m0 takes m0
 		{
@@ -3052,11 +3054,11 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				0,
 				100,
 				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				[]*lib.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m0Priv)
+			lib._signTxn(t, txn, m0Priv)
 			require.NoError(err)
 			mempoolTxsAdded, err := mempool.processTransaction(
 				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
@@ -3077,11 +3079,11 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				0,
 				100,
 				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				[]*lib.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
+			lib._signTxn(t, txn, m1Priv)
 			require.NoError(err)
 			mempoolTxsAdded, err := mempool.processTransaction(
 				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
@@ -3109,11 +3111,11 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				0,
 				100,
 				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				[]*lib.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
+			lib._signTxn(t, txn, m1Priv)
 			require.NoError(err)
 			mempoolTxsAdded, err := mempool.processTransaction(
 				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
@@ -3135,11 +3137,11 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				0,
 				100,
 				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				[]*lib.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m0Priv)
+			lib._signTxn(t, txn, m0Priv)
 			require.NoError(err)
 
 			// This ensure that the read-only version of the utxoView accurately reflects the current set of profile names taken.
@@ -3169,11 +3171,11 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				0,
 				100,
 				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				[]*lib.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
+			lib._signTxn(t, txn, m1Priv)
 			require.NoError(err)
 			mempoolTxsAdded, err := mempool.processTransaction(
 				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
@@ -3201,11 +3203,11 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				0,
 				100,
 				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				[]*lib.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m2Priv)
+			lib._signTxn(t, txn, m2Priv)
 			require.NoError(err)
 			mempoolTxsAdded, err := mempool.processTransaction(
 				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
@@ -3227,11 +3229,11 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				0,
 				100,
 				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				[]*lib.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m3Priv)
+			lib._signTxn(t, txn, m3Priv)
 			require.NoError(err)
 			mempoolTxsAdded, err := mempool.processTransaction(
 				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
@@ -3243,15 +3245,15 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 }
 
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {
-	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	lib.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -3259,36 +3261,36 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 
-	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	senderPkBytes, _, err := lib.Base58CheckDecode(lib.senderPkString)
 	require.NoError(err)
-	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	senderPrivBytes, _, err := lib.Base58CheckDecode(lib.senderPrivString)
 	require.NoError(err)
-	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
+	recipientPkBytes, _, err := lib.Base58CheckDecode(lib.recipientPkString)
 	require.NoError(err)
 
 	// Get AuthorizeDerivedKey txn metadata with expiration at block 6
 	senderPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadata(t, senderPriv, params, 6, false)
-	derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
+	derivedPrivBase58Check := lib.Base58CheckEncode(derivedPriv.Serialize(), true, params)
 	derivedPkBytes := derivedPriv.PubKey().SerializeCompressed()
 	fmt.Println("Derived public key:", hex.EncodeToString(derivedPkBytes))
 
 	// We create this inline function for attempting a basic transfer.
 	// This helps us test that the DeSoChain recognizes a derived key.
 	_basicTransfer := func(senderPk []byte, recipientPk []byte, signerPriv string, utxoView *UtxoView,
-		mempool *DeSoMempool, isSignerSender bool) ([]*UtxoOperation, *MsgDeSoTxn, error) {
+		mempool *lib.DeSoMempool, isSignerSender bool) ([]*UtxoOperation, *lib.MsgDeSoTxn, error) {
 
-		txn := &MsgDeSoTxn{
+		txn := &lib.MsgDeSoTxn{
 			// The inputs will be set below.
-			TxInputs: []*DeSoInput{},
-			TxOutputs: []*DeSoOutput{
+			TxInputs: []*lib.DeSoInput{},
+			TxOutputs: []*lib.DeSoOutput{
 				{
 					PublicKey:   recipientPk,
 					AmountNanos: 1,
 				},
 			},
 			PublicKey: senderPk,
-			TxnMeta:   &BasicTransferMetadata{},
+			TxnMeta:   &lib.BasicTransferMetadata{},
 			ExtraData: make(map[string][]byte),
 		}
 
@@ -3300,10 +3302,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 		if isSignerSender {
 			// Sign the transaction with the provided derived key
-			_signTxn(t, txn, signerPriv)
+			lib._signTxn(t, txn, signerPriv)
 		} else {
 			// Sign the transaction with the provided derived key
-			_signTxnWithDerivedKey(t, txn, signerPriv)
+			lib._signTxnWithDerivedKey(t, txn, signerPriv)
 		}
 
 		// Get utxoView if it doesn't exist
@@ -3326,14 +3328,14 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 	// Verify that the balance and expiration block in the db match expectation.
 	_verifyTest := func(derivedPublicKey []byte, expirationBlockExpected uint64,
-		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *DeSoMempool) {
+		balanceExpected uint64, operationTypeExpected lib.AuthorizeDerivedKeyOperationType, mempool *lib.DeSoMempool) {
 		// Verify that expiration block was persisted in the db or is in mempool utxoView
 		if mempool == nil {
-			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
+			derivedKeyEntry := db.DBGetOwnerToDerivedKeyMapping(db, *core.NewPublicKey(senderPkBytes), *core.NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil {
-				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, false}
+				derivedKeyEntry = &DerivedKeyEntry{*core.NewPublicKey(senderPkBytes), *core.NewPublicKey(derivedPublicKey), 0, lib.AuthorizeDerivedKeyOperationValid, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
@@ -3344,19 +3346,19 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil {
-				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, false}
+				derivedKeyEntry = &DerivedKeyEntry{*core.NewPublicKey(senderPkBytes), *core.NewPublicKey(derivedPublicKey), 0, lib.AuthorizeDerivedKeyOperationValid, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
 		}
 
 		// Verify that the balance of recipient is equal to expected balance
-		assert.Equal(_getBalance(t, chain, mempool, recipientPkString), balanceExpected)
+		assert.Equal(lib._getBalance(t, chain, mempool, lib.recipientPkString), balanceExpected)
 	}
 
 	// We will use these to keep track of added utxo ops and txns
 	testUtxoOps := [][]*UtxoOperation{}
-	testTxns := []*MsgDeSoTxn{}
+	testTxns := []*lib.MsgDeSoTxn{}
 
 	// Just for the sake of consistency, we run the _basicTransfer on unauthorized
 	// derived key. It should fail since blockchain hasn't seen this key yet.
@@ -3365,9 +3367,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key")
 	}
 	// Attempt sending an AuthorizeDerivedKey txn signed with an invalid private key.
@@ -3377,7 +3379,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
-		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		randomPrivBase58Check := lib.Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, _, err = _doAuthorizeTxn(
 			t,
 			chain,
@@ -3391,9 +3393,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			authTxnMeta.ExpirationBlock,
 			authTxnMeta.AccessSignature,
 			false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn signed with an unauthorized private key.")
 	}
 	// Attempt sending an AuthorizeDerivedKey txn where access signature is signed with
@@ -3403,9 +3405,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
-		expirationBlockByte := UintToBuf(authTxnMeta.ExpirationBlock)
+		expirationBlockByte := lib.UintToBuf(authTxnMeta.ExpirationBlock)
 		accessBytes := append(authTxnMeta.DerivedPublicKey, expirationBlockByte[:]...)
-		accessSignatureRandom, err := randomPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
+		accessSignatureRandom, err := randomPrivateKey.Sign(lib.Sha256DoubleHash(accessBytes)[:])
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
 			t,
@@ -3422,7 +3424,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			false)
 		require.Error(err)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn signed with an invalid access signature.")
 	}
 	// Check basic transfer signed with still unauthorized derived key.
@@ -3432,9 +3434,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key")
 	}
 	// Now attempt to send the same transaction but signed with the correct derived key.
@@ -3462,7 +3464,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testTxns = append(testTxns, txn)
 
 		// Verify that expiration block was persisted in the db
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed connecting AuthorizeDerivedKey txn signed with an authorized private key. Flushed to Db.")
 	}
 	// Check basic transfer signed by the owner key.
@@ -3471,13 +3473,13 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
-			senderPrivString, utxoView, nil, true)
+			lib.senderPrivString, utxoView, nil, true)
 		require.NoError(err)
 		require.NoError(utxoView.FlushToDb())
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 1, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 1, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed basic transfer signed with owner key. Flushed to Db.")
 	}
 	// Check basic transfer signed with now authorized derived key.
@@ -3492,7 +3494,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed basic transfer signed with authorized derived key. Flushed to Db.")
 	}
 	// Check basic transfer signed with a random key.
@@ -3501,14 +3503,14 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		// Generate a random key pair
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
-		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		randomPrivBase58Check := lib.Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Fail basic transfer signed with random key.")
 	}
 	// Try disconnecting all transactions so that key is deauthorized.
@@ -3532,7 +3534,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed disconnecting all txns. Flushed to Db.")
 	}
 	// After disconnecting, check basic transfer signed with unauthorized derived key.
@@ -3542,9 +3544,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key after disconnecting")
 	}
 	// Connect all txns to a single UtxoView flushing only at the end.
@@ -3566,7 +3568,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(utxoView.FlushToDb())
 
 		// Verify that expiration block and balance was persisted in the db
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed re-connecting all txn to a single utxoView")
 	}
 	// Check basic transfer signed with a random key.
@@ -3575,14 +3577,14 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		// Generate a random key pair
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
-		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		randomPrivBase58Check := lib.Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Fail basic transfer signed with random key.")
 	}
 	// Disconnect all txns on a single UtxoView flushing only at the end
@@ -3603,7 +3605,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(utxoView.FlushToDb())
 
 		// Verify that expiration block and balance was persisted in the db
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed disconnecting all txn on a single utxoView")
 	}
 	// Connect transactions to a single mempool, should pass.
@@ -3617,7 +3619,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		// This will check the expiration block and balances according to the mempool augmented utxoView.
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Passed connecting all txn to the mempool")
 	}
 	// Check basic transfer signed with a random key, when passing mempool.
@@ -3626,12 +3628,12 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		// Generate a random key pair
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
-		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		randomPrivBase58Check := lib.Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, nil, mempool, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Fail basic transfer signed with random key with mempool.")
 	}
 	// Remove all the transactions from the mempool. Should pass.
@@ -3640,7 +3642,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			mempool.inefficientRemoveTransaction(burnTxn)
 		}
 		// This will check the expiration block and balances according to the mempool augmented utxoView.
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, mempool)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Passed removing all txn from the mempool.")
 	}
 	// After disconnecting, check basic transfer signed with unauthorized derived key.
@@ -3648,9 +3650,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	{
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, nil, mempool, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, mempool)
+		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key after disconnecting")
 	}
 	// Re-connect transactions to a single mempool, should pass.
@@ -3664,11 +3666,11 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		// This will check the expiration block and balances according to the mempool augmented utxoView.
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Passed connecting all txn to the mempool.")
 	}
 	// We will be adding some blocks so we define an array to keep track of them.
-	testBlocks := []*MsgDeSoBlock{}
+	testBlocks := []*lib.MsgDeSoBlock{}
 	// Mine a block with all the mempool transactions.
 	{
 		// All the txns should be in the mempool already so mining a block should put
@@ -3679,21 +3681,21 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	}
 	// Reset testUtxoOps and testTxns so we can test more transactions
 	testUtxoOps = [][]*UtxoOperation{}
-	testTxns = []*MsgDeSoTxn{}
+	testTxns = []*lib.MsgDeSoTxn{}
 	// Check basic transfer signed by the owner key.
 	// Should succeed. Flush to db.
 	{
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
-			senderPrivString, utxoView, nil, true)
+			lib.senderPrivString, utxoView, nil, true)
 		require.NoError(err)
 		require.NoError(utxoView.FlushToDb())
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
 		fmt.Println("Passed basic transfer signed with owner key. Flushed to Db.")
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 3, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 3, lib.AuthorizeDerivedKeyOperationValid, nil)
 	}
 	// Check basic transfer signed with authorized derived key. Now the auth txn is persisted in the db.
 	// Should succeed. Flush to db.
@@ -3707,7 +3709,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 4, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed basic transfer signed with authorized derived key. Flushed to Db.")
 	}
 	// Check basic transfer signed with a random key.
@@ -3716,14 +3718,14 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		// Generate a random key pair
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
-		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
+		randomPrivBase58Check := lib.Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 4, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Fail basic transfer signed with random key.")
 	}
 	// Try disconnecting all transactions. Should succeed.
@@ -3746,7 +3748,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed disconnecting all txns. Flushed to Db.")
 	}
 	// Mine a few more blocks so that the authorization should expire
@@ -3764,11 +3766,11 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
-			senderPrivString, utxoView, nil, true)
+			lib.senderPrivString, utxoView, nil, true)
 		require.NoError(err)
 
 		// We're not persisting in the db so balance should remain at 2.
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed basic transfer signed with owner key.")
 	}
 	// Check basic transfer signed with expired authorized derived key.
@@ -3778,19 +3780,19 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Failed a txn signed with an expired derived key.")
 	}
 
 	// Reset testUtxoOps and testTxns so we can test more transactions
 	testUtxoOps = [][]*UtxoOperation{}
-	testTxns = []*MsgDeSoTxn{}
+	testTxns = []*lib.MsgDeSoTxn{}
 	// Get another AuthorizeDerivedKey txn metadata with expiration at block 10
 	// We will try to de-authorize this key with a txn before it expires.
 	authTxnMetaDeAuth, derivedDeAuthPriv := _getAuthorizeDerivedKeyMetadata(t, senderPriv, params, 10, false)
-	derivedPrivDeAuthBase58Check := Base58CheckEncode(derivedDeAuthPriv.Serialize(), true, params)
+	derivedPrivDeAuthBase58Check := lib.Base58CheckEncode(derivedDeAuthPriv.Serialize(), true, params)
 	derivedDeAuthPkBytes := derivedDeAuthPriv.PubKey().SerializeCompressed()
 	fmt.Println("Derived public key:", hex.EncodeToString(derivedDeAuthPkBytes))
 	// Send an authorize transaction signed with the correct derived key.
@@ -3816,7 +3818,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testTxns = append(testTxns, txn)
 
 		// Verify that expiration block was persisted in the db
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, 0, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, 0, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed connecting AuthorizeDerivedKey txn signed with an authorized private key.")
 	}
 	// Re-connect transactions to a single mempool, should pass.
@@ -3830,7 +3832,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		// This will check the expiration block and balances according to the mempool augmented utxoView.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Passed connecting all txn to the mempool.")
 	}
 	// Mine a block so that mempool gets flushed to db
@@ -3842,7 +3844,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	}
 	// Reset testUtxoOps and testTxns so we can test more transactions
 	testUtxoOps = [][]*UtxoOperation{}
-	testTxns = []*MsgDeSoTxn{}
+	testTxns = []*lib.MsgDeSoTxn{}
 	// Check basic transfer signed with new authorized derived key.
 	// Sanity check. Should pass. We're not flushing to the db yet.
 	{
@@ -3856,7 +3858,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testTxns = append(testTxns, txn)
 
 		// We're persisting to the db so balance should change to 3.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed basic transfer signed with derived key.")
 	}
 	// Send a de-authorize transaction signed with a derived key.
@@ -3883,7 +3885,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 		// Verify the expiration block in the db
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, AuthorizeDerivedKeyOperationNotValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, lib.AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Passed connecting AuthorizeDerivedKey txn with isDeleted signed with an authorized private key.")
 	}
 	// Check basic transfer signed with new authorized derived key.
@@ -3893,10 +3895,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
 		// Since this should fail, balance wouldn't change.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, AuthorizeDerivedKeyOperationNotValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 3, lib.AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Failed basic transfer signed with de-authorized derived key.")
 	}
 	// Sanity check basic transfer signed by the owner key.
@@ -3905,14 +3907,14 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
-			senderPrivString, utxoView, nil, true)
+			lib.senderPrivString, utxoView, nil, true)
 		require.NoError(err)
 		require.NoError(utxoView.FlushToDb())
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
 		// Balance should change to 4
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Passed basic transfer signed with owner key.")
 	}
 	// Send an authorize transaction signed with a derived key.
@@ -3933,9 +3935,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			10,
 			authTxnMetaDeAuth.AccessSignature,
 			false)
-		require.Contains(err.Error(), RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
+		require.Contains(err.Error(), lib.RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
 
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn with de-authorized private key.")
 	}
 	// Try disconnecting all transactions. Should succeed.
@@ -3958,7 +3960,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 2, lib.AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed disconnecting all txns. Flushed to Db.")
 	}
 	// Connect transactions to a single mempool, should pass.
@@ -3972,7 +3974,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		// This will check the expiration block and balances according to the mempool augmented utxoView.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationNotValid, mempool)
 		fmt.Println("Passed connecting all txn to the mempool")
 	}
 	// Check adding basic transfer to mempool signed with new authorized derived key.
@@ -3980,10 +3982,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	{
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, nil, mempool, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
 		// Since this should fail, balance wouldn't change.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationNotValid, mempool)
 		fmt.Println("Failed basic transfer signed with de-authorized derived key in mempool.")
 	}
 	// Attempt re-authorizing a previously de-authorized derived key.
@@ -4004,9 +4006,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			10,
 			authTxnMetaDeAuth.AccessSignature,
 			false)
-		require.Contains(err.Error(), RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
+		require.Contains(err.Error(), lib.RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
 
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationNotValid, mempool)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn with de-authorized private key.")
 	}
 	// Mine a block so that mempool gets flushed to db
@@ -4023,10 +4025,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
-		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
+		require.Contains(err.Error(), lib.RuleErrorDerivedKeyNotAuthorized)
 
 		// Since this should fail, balance wouldn't change.
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Failed basic transfer signed with de-authorized derived key.")
 	}
 	// Attempt re-authorizing a previously de-authorized derived key.
@@ -4047,9 +4049,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			10,
 			authTxnMetaDeAuth.AccessSignature,
 			false)
-		require.Contains(err.Error(), RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
+		require.Contains(err.Error(), lib.RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey)
 
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn with de-authorized private key.")
 	}
 	// Sanity check basic transfer signed by the owner key.
@@ -4058,24 +4060,24 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
-			senderPrivString, utxoView, nil, true)
+			lib.senderPrivString, utxoView, nil, true)
 		require.NoError(err)
 
 		// Balance should change to 4
-		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, nil)
+		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, lib.AuthorizeDerivedKeyOperationNotValid, nil)
 		fmt.Println("Passed basic transfer signed with owner key.")
 	}
 	// Roll back the blocks and make sure we don't hit any errors.
-	disconnectSingleBlock := func(blockToDisconnect *MsgDeSoBlock, utxoView *UtxoView) {
+	disconnectSingleBlock := func(blockToDisconnect *lib.MsgDeSoBlock, utxoView *UtxoView) {
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := blockToDisconnect.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := db.GetUtxoOperationsForBlock(db, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
-		txHashes, err := ComputeTransactionHashes(blockToDisconnect.Txns)
+		txHashes, err := lib.ComputeTransactionHashes(blockToDisconnect.Txns)
 		require.NoError(err)
 		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps))
 	}
@@ -4095,6 +4097,6 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	}
 
 	// After we rolled back the blocks, db should reset
-	_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
+	_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, lib.AuthorizeDerivedKeyOperationValid, nil)
 	fmt.Println("Successfuly run TestAuthorizeDerivedKeyBasic()")
 }

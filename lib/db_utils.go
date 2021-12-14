@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/view"
 	"io"
 	"log"
 	"math"
@@ -239,7 +241,7 @@ var (
 	// NEXT_TAG: 55
 )
 
-func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
+func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *view.PKIDEntry {
 	if len(publicKey) == 0 {
 		return nil
 	}
@@ -252,15 +254,15 @@ func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDE
 		// then we use the public key itself as the PKID. Doing this makes
 		// it so that the PKID is generally the *first* public key that the
 		// user ever associated with a particular piece of data.
-		return &PKIDEntry{
-			PKID:      PublicKeyToPKID(publicKey),
+		return &view.PKIDEntry{
+			PKID:      core.PublicKeyToPKID(publicKey),
 			PublicKey: publicKey,
 		}
 	}
 
 	// If we get here then it means we actually had a PKID in the DB.
 	// So return that pkid.
-	pkidEntryObj := &PKIDEntry{}
+	pkidEntryObj := &view.PKIDEntry{}
 	err = pkidItem.Value(func(valBytes []byte) error {
 		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(pkidEntryObj)
 	})
@@ -273,8 +275,8 @@ func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDE
 	return pkidEntryObj
 }
 
-func DBGetPKIDEntryForPublicKey(db *badger.DB, publicKey []byte) *PKIDEntry {
-	var pkid *PKIDEntry
+func DBGetPKIDEntryForPublicKey(db *badger.DB, publicKey []byte) *view.PKIDEntry {
+	var pkid *view.PKIDEntry
 	db.View(func(txn *badger.Txn) error {
 		pkid = DBGetPKIDEntryForPublicKeyWithTxn(txn, publicKey)
 		return nil
@@ -282,7 +284,7 @@ func DBGetPKIDEntryForPublicKey(db *badger.DB, publicKey []byte) *PKIDEntry {
 	return pkid
 }
 
-func DBGetPublicKeyForPKIDWithTxn(txn *badger.Txn, pkidd *PKID) []byte {
+func DBGetPublicKeyForPKIDWithTxn(txn *badger.Txn, pkidd *core.PKID) []byte {
 	prefix := append([]byte{}, _PrefixPKIDToPublicKey...)
 	pkidItem, err := txn.Get(append(prefix, pkidd[:]...))
 
@@ -306,7 +308,7 @@ func DBGetPublicKeyForPKIDWithTxn(txn *badger.Txn, pkidd *PKID) []byte {
 	return pkRet
 }
 
-func DBGetPublicKeyForPKID(db *badger.DB, pkidd *PKID) []byte {
+func DBGetPublicKeyForPKID(db *badger.DB, pkidd *core.PKID) []byte {
 	var publicKey []byte
 	db.View(func(txn *badger.Txn) error {
 		publicKey = DBGetPublicKeyForPKIDWithTxn(txn, pkidd)
@@ -316,7 +318,7 @@ func DBGetPublicKeyForPKID(db *badger.DB, pkidd *PKID) []byte {
 }
 
 func DBPutPKIDMappingsWithTxn(
-	txn *badger.Txn, publicKey []byte, pkidEntry *PKIDEntry, params *DeSoParams) error {
+	txn *badger.Txn, publicKey []byte, pkidEntry *view.PKIDEntry, params *DeSoParams) error {
 
 	// Set the main pub key -> pkid mapping.
 	{
@@ -592,7 +594,7 @@ func _dbSeekPrefixForMessagePublicKey(publicKey []byte) []byte {
 
 // Note that this adds a mapping for the sender *and* the recipient.
 func DbPutMessageEntryWithTxn(
-	txn *badger.Txn, messageEntry *MessageEntry) error {
+	txn *badger.Txn, messageEntry *view.MessageEntry) error {
 
 	if len(messageEntry.SenderPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutPrivateMessageWithTxn: Sender public key "+
@@ -602,7 +604,7 @@ func DbPutMessageEntryWithTxn(
 		return fmt.Errorf("DbPutPrivateMessageWithTxn: Recipient public key "+
 			"length %d != %d", len(messageEntry.RecipientPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
-	messageData := &MessageEntry{
+	messageData := &view.MessageEntry{
 		SenderPublicKey:    messageEntry.SenderPublicKey,
 		RecipientPublicKey: messageEntry.RecipientPublicKey,
 		EncryptedText:      messageEntry.EncryptedText,
@@ -627,7 +629,7 @@ func DbPutMessageEntryWithTxn(
 	return nil
 }
 
-func DbPutMessageEntry(handle *badger.DB, messageEntry *MessageEntry) error {
+func DbPutMessageEntry(handle *badger.DB, messageEntry *view.MessageEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutMessageEntryWithTxn(txn, messageEntry)
@@ -635,10 +637,10 @@ func DbPutMessageEntry(handle *badger.DB, messageEntry *MessageEntry) error {
 }
 
 func DbGetMessageEntryWithTxn(
-	txn *badger.Txn, publicKey []byte, tstampNanos uint64) *MessageEntry {
+	txn *badger.Txn, publicKey []byte, tstampNanos uint64) *view.MessageEntry {
 
 	key := _dbKeyForMessageEntry(publicKey, tstampNanos)
-	privateMessageObj := &MessageEntry{}
+	privateMessageObj := &view.MessageEntry{}
 	privateMessageItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -655,8 +657,8 @@ func DbGetMessageEntryWithTxn(
 	return privateMessageObj
 }
 
-func DbGetMessageEntry(db *badger.DB, publicKey []byte, tstampNanos uint64) *MessageEntry {
-	var ret *MessageEntry
+func DbGetMessageEntry(db *badger.DB, publicKey []byte, tstampNanos uint64) *view.MessageEntry {
+	var ret *view.MessageEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetMessageEntryWithTxn(txn, publicKey, tstampNanos)
 		return nil
@@ -698,7 +700,7 @@ func DbDeleteMessageEntryMappings(handle *badger.DB, publicKey []byte, tstampNan
 }
 
 func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
-	_privateMessages []*MessageEntry, _err error) {
+	_privateMessages []*view.MessageEntry, _err error) {
 
 	// Setting the prefix to a tstamp of zero should return all the messages
 	// for the public key in sorted order since 0 << the minimum timestamp in
@@ -709,9 +711,9 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	// Limit the number of keys to speed up load times.
 	_, valuesFound := _enumerateKeysForPrefix(handle, prefix)
 
-	privateMessages := []*MessageEntry{}
+	privateMessages := []*view.MessageEntry{}
 	for _, valBytes := range valuesFound {
-		privateMessageObj := &MessageEntry{}
+		privateMessageObj := &view.MessageEntry{}
 		if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj); err != nil {
 			return nil, errors.Wrapf(
 				err, "DbGetMessageEntriesForPublicKey: Problem decoding value: ")
@@ -724,7 +726,7 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 }
 
 func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
-	_privateMessages []*MessageEntry, _err error) {
+	_privateMessages []*view.MessageEntry, _err error) {
 
 	// Setting the prefix to a tstamp of zero should return all the messages
 	// for the public key in sorted order since 0 << the minimum timestamp in
@@ -735,9 +737,9 @@ func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte)
 	// Limit the number of keys to speed up load times.
 	_, valuesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefix, uint64(MessagesToFetchPerInboxCall))
 
-	privateMessages := []*MessageEntry{}
+	privateMessages := []*view.MessageEntry{}
 	for _, valBytes := range valuesFound {
-		privateMessageObj := &MessageEntry{}
+		privateMessageObj := &view.MessageEntry{}
 		if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj); err != nil {
 			return nil, errors.Wrapf(
 				err, "DbGetMessageEntriesForPublicKey: Problem decoding value: ")
@@ -832,7 +834,7 @@ func DbDeleteForbiddenBlockSignaturePubKey(handle *badger.DB, publicKey []byte) 
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForLikerPubKeyToLikedPostHashMapping(
-	userPubKey []byte, likedPostHash BlockHash) []byte {
+	userPubKey []byte, likedPostHash core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixLikerPubKeyToLikedPostHash...)
 	key := append(prefixCopy, userPubKey...)
@@ -841,7 +843,7 @@ func _dbKeyForLikerPubKeyToLikedPostHashMapping(
 }
 
 func _dbKeyForLikedPostHashToLikerPubKeyMapping(
-	likedPostHash BlockHash, userPubKey []byte) []byte {
+	likedPostHash core.BlockHash, userPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixLikedPostHashToLikerPubKey...)
 	key := append(prefixCopy, likedPostHash[:]...)
@@ -855,7 +857,7 @@ func _dbSeekPrefixForPostHashesYouLike(yourPubKey []byte) []byte {
 	return append(prefixCopy, yourPubKey...)
 }
 
-func _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash BlockHash) []byte {
+func _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixLikedPostHashToLikerPubKey...)
 	return append(prefixCopy, likedPostHash[:]...)
@@ -863,7 +865,7 @@ func _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash BlockHash) []byte
 
 // Note that this adds a mapping for the user *and* the liked post.
 func DbPutLikeMappingsWithTxn(
-	txn *badger.Txn, userPubKey []byte, likedPostHash BlockHash) error {
+	txn *badger.Txn, userPubKey []byte, likedPostHash core.BlockHash) error {
 
 	if len(userPubKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutLikeMappingsWithTxn: User public key "+
@@ -882,7 +884,7 @@ func DbPutLikeMappingsWithTxn(
 }
 
 func DbPutLikeMappings(
-	handle *badger.DB, userPubKey []byte, likedPostHash BlockHash) error {
+	handle *badger.DB, userPubKey []byte, likedPostHash core.BlockHash) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutLikeMappingsWithTxn(txn, userPubKey, likedPostHash)
@@ -890,7 +892,7 @@ func DbPutLikeMappings(
 }
 
 func DbGetLikerPubKeyToLikedPostHashMappingWithTxn(
-	txn *badger.Txn, userPubKey []byte, likedPostHash BlockHash) []byte {
+	txn *badger.Txn, userPubKey []byte, likedPostHash core.BlockHash) []byte {
 
 	key := _dbKeyForLikerPubKeyToLikedPostHashMapping(userPubKey, likedPostHash)
 	_, err := txn.Get(key)
@@ -904,7 +906,7 @@ func DbGetLikerPubKeyToLikedPostHashMappingWithTxn(
 }
 
 func DbGetLikerPubKeyToLikedPostHashMapping(
-	db *badger.DB, userPubKey []byte, likedPostHash BlockHash) []byte {
+	db *badger.DB, userPubKey []byte, likedPostHash core.BlockHash) []byte {
 	var ret []byte
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetLikerPubKeyToLikedPostHashMappingWithTxn(txn, userPubKey, likedPostHash)
@@ -916,7 +918,7 @@ func DbGetLikerPubKeyToLikedPostHashMapping(
 // Note this deletes the like for the user *and* the liked post since a mapping
 // should exist for each.
 func DbDeleteLikeMappingsWithTxn(
-	txn *badger.Txn, userPubKey []byte, likedPostHash BlockHash) error {
+	txn *badger.Txn, userPubKey []byte, likedPostHash core.BlockHash) error {
 
 	// First check that a mapping exists. If one doesn't exist then there's nothing to do.
 	existingMapping := DbGetLikerPubKeyToLikedPostHashMappingWithTxn(
@@ -943,22 +945,22 @@ func DbDeleteLikeMappingsWithTxn(
 }
 
 func DbDeleteLikeMappings(
-	handle *badger.DB, userPubKey []byte, likedPostHash BlockHash) error {
+	handle *badger.DB, userPubKey []byte, likedPostHash core.BlockHash) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbDeleteLikeMappingsWithTxn(txn, userPubKey, likedPostHash)
 	})
 }
 
 func DbGetPostHashesYouLike(handle *badger.DB, yourPublicKey []byte) (
-	_postHashes []*BlockHash, _err error) {
+	_postHashes []*core.BlockHash, _err error) {
 
 	prefix := _dbSeekPrefixForPostHashesYouLike(yourPublicKey)
 	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
 
-	postHashesYouLike := []*BlockHash{}
+	postHashesYouLike := []*core.BlockHash{}
 	for _, keyBytes := range keysFound {
 		// We must slice off the first byte and userPubKey to get the likedPostHash.
-		postHash := &BlockHash{}
+		postHash := &core.BlockHash{}
 		copy(postHash[:], keyBytes[1+btcec.PubKeyBytesLenCompressed:])
 		postHashesYouLike = append(postHashesYouLike, postHash)
 	}
@@ -966,7 +968,7 @@ func DbGetPostHashesYouLike(handle *badger.DB, yourPublicKey []byte) (
 	return postHashesYouLike, nil
 }
 
-func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash) (
+func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash core.BlockHash) (
 	_pubKeys [][]byte, _err error) {
 
 	prefix := _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash)
@@ -975,7 +977,7 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 	userPubKeys := [][]byte{}
 	for _, keyBytes := range keysFound {
 		// We must slice off the first byte and likedPostHash to get the userPubKey.
-		userPubKey := keyBytes[1+HashSizeBytes:]
+		userPubKey := keyBytes[1+core.HashSizeBytes:]
 		userPubKeys = append(userPubKeys, userPubKey)
 	}
 
@@ -988,7 +990,7 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 // 		<prefix, reposted post BlockHash, user pub key [33]byte> -> <>
 // -------------------------------------------------------------------------------------
 //_PrefixReposterPubKeyRepostedPostHashToRepostPostHash
-func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash) []byte {
+func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
 	key := append(prefixCopy, userPubKey...)
@@ -997,7 +999,7 @@ func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, 
 }
 
 //_PrefixRepostedPostHashReposterPubKey
-func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *BlockHash, reposterPubKey []byte) []byte {
+func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *core.BlockHash, reposterPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixRepostedPostHashReposterPubKey...)
 	key := append(prefixCopy, repostedPostHash[:]...)
@@ -1008,7 +1010,7 @@ func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *BlockHash, repost
 // **For quoted reposts**
 //_PrefixRepostedPostHashReposterPubKeyRepostPostHash
 func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
-	repostedPostHash *BlockHash, reposterPubKey []byte, repostPostHash *BlockHash) []byte {
+	repostedPostHash *core.BlockHash, reposterPubKey []byte, repostPostHash *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
 	key := append(prefixCopy, repostedPostHash[:]...)
@@ -1025,7 +1027,7 @@ func _dbSeekPrefixForPostHashesYouRepost(yourPubKey []byte) []byte {
 
 // Note that this adds a mapping for the user *and* the reposted post.
 func DbPutRepostMappingsWithTxn(
-	txn *badger.Txn, userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry) error {
+	txn *badger.Txn, userPubKey []byte, repostedPostHash core.BlockHash, repostEntry view.RepostEntry) error {
 
 	if len(userPubKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutRepostMappingsWithTxn: User public key "+
@@ -1046,7 +1048,7 @@ func DbPutRepostMappingsWithTxn(
 }
 
 func DbPutRepostMappings(
-	handle *badger.DB, userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry) error {
+	handle *badger.DB, userPubKey []byte, repostedPostHash core.BlockHash, repostEntry view.RepostEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutRepostMappingsWithTxn(txn, userPubKey, repostedPostHash, repostEntry)
@@ -1054,10 +1056,10 @@ func DbPutRepostMappings(
 }
 
 func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(
-	txn *badger.Txn, userPubKey []byte, repostedPostHash BlockHash) *RepostEntry {
+	txn *badger.Txn, userPubKey []byte, repostedPostHash core.BlockHash) *view.RepostEntry {
 
 	key := _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
-	repostEntryObj := &RepostEntry{}
+	repostEntryObj := &view.RepostEntry{}
 	repostEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -1074,8 +1076,8 @@ func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(
 }
 
 func DbReposterPubKeyRepostedPostHashToRepostEntry(
-	db *badger.DB, userPubKey []byte, repostedPostHash BlockHash) *RepostEntry {
-	var ret *RepostEntry
+	db *badger.DB, userPubKey []byte, repostedPostHash core.BlockHash) *view.RepostEntry {
+	var ret *view.RepostEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(txn, userPubKey, repostedPostHash)
 		return nil
@@ -1086,7 +1088,7 @@ func DbReposterPubKeyRepostedPostHashToRepostEntry(
 // Note this deletes the repost for the user *and* the reposted post since a mapping
 // should exist for each.
 func DbDeleteRepostMappingsWithTxn(
-	txn *badger.Txn, userPubKey []byte, repostedPostHash BlockHash) error {
+	txn *badger.Txn, userPubKey []byte, repostedPostHash core.BlockHash) error {
 
 	// First check that a mapping exists. If one doesn't exist then there's nothing to do.
 	existingMapping := DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(
@@ -1105,22 +1107,22 @@ func DbDeleteRepostMappingsWithTxn(
 }
 
 func DbDeleteRepostMappings(
-	handle *badger.DB, userPubKey []byte, repostedPostHash BlockHash) error {
+	handle *badger.DB, userPubKey []byte, repostedPostHash core.BlockHash) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbDeleteRepostMappingsWithTxn(txn, userPubKey, repostedPostHash)
 	})
 }
 
 func DbGetPostHashesYouRepost(handle *badger.DB, yourPublicKey []byte) (
-	_postHashes []*BlockHash, _err error) {
+	_postHashes []*core.BlockHash, _err error) {
 
 	prefix := _dbSeekPrefixForPostHashesYouRepost(yourPublicKey)
 	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
 
-	postHashesYouRepost := []*BlockHash{}
+	postHashesYouRepost := []*core.BlockHash{}
 	for _, keyBytes := range keysFound {
 		// We must slice off the first byte and userPubKey to get the repostedPostHash.
-		postHash := &BlockHash{}
+		postHash := &core.BlockHash{}
 		copy(postHash[:], keyBytes[1+btcec.PubKeyBytesLenCompressed:])
 		postHashesYouRepost = append(postHashesYouRepost, postHash)
 	}
@@ -1135,7 +1137,7 @@ func DbGetPostHashesYouRepost(handle *badger.DB, yourPublicKey []byte) (
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForFollowerToFollowedMapping(
-	followerPKID *PKID, followedPKID *PKID) []byte {
+	followerPKID *core.PKID, followedPKID *core.PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixFollowerPKIDToFollowedPKID...)
 	key := append(prefixCopy, followerPKID[:]...)
@@ -1144,7 +1146,7 @@ func _dbKeyForFollowerToFollowedMapping(
 }
 
 func _dbKeyForFollowedToFollowerMapping(
-	followedPKID *PKID, followerPKID *PKID) []byte {
+	followedPKID *core.PKID, followerPKID *core.PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixFollowedPKIDToFollowerPKID...)
 	key := append(prefixCopy, followedPKID[:]...)
@@ -1152,13 +1154,13 @@ func _dbKeyForFollowedToFollowerMapping(
 	return key
 }
 
-func _dbSeekPrefixForPKIDsYouFollow(yourPKID *PKID) []byte {
+func _dbSeekPrefixForPKIDsYouFollow(yourPKID *core.PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixFollowerPKIDToFollowedPKID...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
-func _dbSeekPrefixForPKIDsFollowingYou(yourPKID *PKID) []byte {
+func _dbSeekPrefixForPKIDsFollowingYou(yourPKID *core.PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixFollowedPKIDToFollowerPKID...)
 	return append(prefixCopy, yourPKID[:]...)
@@ -1166,7 +1168,7 @@ func _dbSeekPrefixForPKIDsFollowingYou(yourPKID *PKID) []byte {
 
 // Note that this adds a mapping for the follower *and* the pub key being followed.
 func DbPutFollowMappingsWithTxn(
-	txn *badger.Txn, followerPKID *PKID, followedPKID *PKID) error {
+	txn *badger.Txn, followerPKID *core.PKID, followedPKID *core.PKID) error {
 
 	if len(followerPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutFollowMappingsWithTxn: Follower PKID "+
@@ -1194,7 +1196,7 @@ func DbPutFollowMappingsWithTxn(
 }
 
 func DbPutFollowMappings(
-	handle *badger.DB, followerPKID *PKID, followedPKID *PKID) error {
+	handle *badger.DB, followerPKID *core.PKID, followedPKID *core.PKID) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutFollowMappingsWithTxn(txn, followerPKID, followedPKID)
@@ -1202,7 +1204,7 @@ func DbPutFollowMappings(
 }
 
 func DbGetFollowerToFollowedMappingWithTxn(
-	txn *badger.Txn, followerPKID *PKID, followedPKID *PKID) []byte {
+	txn *badger.Txn, followerPKID *core.PKID, followedPKID *core.PKID) []byte {
 
 	key := _dbKeyForFollowerToFollowedMapping(followerPKID, followedPKID)
 	_, err := txn.Get(key)
@@ -1215,7 +1217,7 @@ func DbGetFollowerToFollowedMappingWithTxn(
 	return []byte{}
 }
 
-func DbGetFollowerToFollowedMapping(db *badger.DB, followerPKID *PKID, followedPKID *PKID) []byte {
+func DbGetFollowerToFollowedMapping(db *badger.DB, followerPKID *core.PKID, followedPKID *core.PKID) []byte {
 	var ret []byte
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetFollowerToFollowedMappingWithTxn(txn, followerPKID, followedPKID)
@@ -1227,7 +1229,7 @@ func DbGetFollowerToFollowedMapping(db *badger.DB, followerPKID *PKID, followedP
 // Note this deletes the follow for the follower *and* followed since a mapping
 // should exist for each.
 func DbDeleteFollowMappingsWithTxn(
-	txn *badger.Txn, followerPKID *PKID, followedPKID *PKID) error {
+	txn *badger.Txn, followerPKID *core.PKID, followedPKID *core.PKID) error {
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -1253,23 +1255,23 @@ func DbDeleteFollowMappingsWithTxn(
 }
 
 func DbDeleteFollowMappings(
-	handle *badger.DB, followerPKID *PKID, followedPKID *PKID) error {
+	handle *badger.DB, followerPKID *core.PKID, followedPKID *core.PKID) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbDeleteFollowMappingsWithTxn(txn, followerPKID, followedPKID)
 	})
 }
 
-func DbGetPKIDsYouFollow(handle *badger.DB, yourPKID *PKID) (
-	_pkids []*PKID, _err error) {
+func DbGetPKIDsYouFollow(handle *badger.DB, yourPKID *core.PKID) (
+	_pkids []*core.PKID, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsYouFollow(yourPKID)
 	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
 
-	pkidsYouFollow := []*PKID{}
+	pkidsYouFollow := []*core.PKID{}
 	for _, keyBytes := range keysFound {
 		// We must slice off the first byte and followerPKID to get the followedPKID.
 		followedPKIDBytes := keyBytes[1+btcec.PubKeyBytesLenCompressed:]
-		followedPKID := &PKID{}
+		followedPKID := &core.PKID{}
 		copy(followedPKID[:], followedPKIDBytes)
 		pkidsYouFollow = append(pkidsYouFollow, followedPKID)
 	}
@@ -1277,17 +1279,17 @@ func DbGetPKIDsYouFollow(handle *badger.DB, yourPKID *PKID) (
 	return pkidsYouFollow, nil
 }
 
-func DbGetPKIDsFollowingYou(handle *badger.DB, yourPKID *PKID) (
-	_pkids []*PKID, _err error) {
+func DbGetPKIDsFollowingYou(handle *badger.DB, yourPKID *core.PKID) (
+	_pkids []*core.PKID, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsFollowingYou(yourPKID)
 	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
 
-	pkidsFollowingYou := []*PKID{}
+	pkidsFollowingYou := []*core.PKID{}
 	for _, keyBytes := range keysFound {
 		// We must slice off the first byte and followedPKID to get the followerPKID.
 		followerPKIDBytes := keyBytes[1+btcec.PubKeyBytesLenCompressed:]
-		followerPKID := &PKID{}
+		followerPKID := &core.PKID{}
 		copy(followerPKID[:], followerPKIDBytes)
 		pkidsFollowingYou = append(pkidsFollowingYou, followerPKID)
 	}
@@ -1340,7 +1342,7 @@ func DbGetPubKeysFollowingYou(handle *badger.DB, yourPubKey []byte) (
 //  <prefix, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <[]byte{DiamondLevel}>
 // -------------------------------------------------------------------------------------
 
-func _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry *DiamondEntry) []byte {
+func _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry *view.DiamondEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	key := append(prefixCopy, diamondEntry.ReceiverPKID[:]...)
@@ -1350,7 +1352,7 @@ func _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry *DiamondEntry) 
 }
 
 func _dbKeyForDiamondReceiverToDiamondSenderMappingWithoutEntry(
-	diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) []byte {
+	diamondReceiverPKID *core.PKID, diamondSenderPKID *core.PKID, diamondPostHash *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	key := append(prefixCopy, diamondReceiverPKID[:]...)
@@ -1359,7 +1361,7 @@ func _dbKeyForDiamondReceiverToDiamondSenderMappingWithoutEntry(
 	return key
 }
 
-func _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry *DiamondEntry) []byte {
+func _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry *view.DiamondEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	key := append(prefixCopy, diamondEntry.DiamondPostHash[:]...)
@@ -1369,13 +1371,13 @@ func _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry *DiamondEn
 	return key
 }
 
-func _dbSeekPrefixForPKIDsThatDiamondedYou(yourPKID *PKID) []byte {
+func _dbSeekPrefixForPKIDsThatDiamondedYou(yourPKID *core.PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
-func _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry *DiamondEntry) []byte {
+func _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry *view.DiamondEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	key := append(prefixCopy, diamondEntry.SenderPKID[:]...)
@@ -1385,7 +1387,7 @@ func _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry *DiamondEntry) 
 }
 
 func _dbKeyForDiamondSenderToDiamondReceiverMappingWithoutEntry(
-	diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) []byte {
+	diamondReceiverPKID *core.PKID, diamondSenderPKID *core.PKID, diamondPostHash *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	key := append(prefixCopy, diamondSenderPKID[:]...)
@@ -1394,30 +1396,30 @@ func _dbKeyForDiamondSenderToDiamondReceiverMappingWithoutEntry(
 	return key
 }
 
-func _dbSeekPrefixForPKIDsThatYouDiamonded(yourPKID *PKID) []byte {
+func _dbSeekPrefixForPKIDsThatYouDiamonded(yourPKID *core.PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
-func _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID *PKID, senderPKID *PKID) []byte {
+func _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID *core.PKID, senderPKID *core.PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	key := append(prefixCopy, receiverPKID[:]...)
 	return append(key, senderPKID[:]...)
 }
 
-func _DbBufForDiamondEntry(diamondEntry *DiamondEntry) []byte {
+func _DbBufForDiamondEntry(diamondEntry *view.DiamondEntry) []byte {
 	diamondEntryBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(diamondEntryBuf).Encode(diamondEntry)
 	return diamondEntryBuf.Bytes()
 }
 
-func _DbDiamondEntryForDbBuf(buf []byte) *DiamondEntry {
+func _DbDiamondEntryForDbBuf(buf []byte) *view.DiamondEntry {
 	if len(buf) == 0 {
 		return nil
 	}
-	ret := &DiamondEntry{}
+	ret := &view.DiamondEntry{}
 	if err := gob.NewDecoder(bytes.NewReader(buf)).Decode(&ret); err != nil {
 		glog.Errorf("Error decoding DiamondEntry from DB: %v", err)
 		return nil
@@ -1427,7 +1429,7 @@ func _DbDiamondEntryForDbBuf(buf []byte) *DiamondEntry {
 
 func DbPutDiamondMappingsWithTxn(
 	txn *badger.Txn,
-	diamondEntry *DiamondEntry) error {
+	diamondEntry *view.DiamondEntry) error {
 
 	if len(diamondEntry.ReceiverPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutDiamondMappingsWithTxn: Receiver PKID "+
@@ -1459,7 +1461,7 @@ func DbPutDiamondMappingsWithTxn(
 
 func DbPutDiamondMappings(
 	handle *badger.DB,
-	diamondEntry *DiamondEntry) error {
+	diamondEntry *view.DiamondEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutDiamondMappingsWithTxn(
@@ -1468,7 +1470,7 @@ func DbPutDiamondMappings(
 }
 
 func DbGetDiamondMappingsWithTxn(
-	txn *badger.Txn, diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) *DiamondEntry {
+	txn *badger.Txn, diamondReceiverPKID *core.PKID, diamondSenderPKID *core.PKID, diamondPostHash *core.BlockHash) *view.DiamondEntry {
 
 	key := _dbKeyForDiamondReceiverToDiamondSenderMappingWithoutEntry(
 		diamondReceiverPKID, diamondSenderPKID, diamondPostHash)
@@ -1489,8 +1491,8 @@ func DbGetDiamondMappingsWithTxn(
 }
 
 func DbGetDiamondMappings(
-	db *badger.DB, diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) *DiamondEntry {
-	var ret *DiamondEntry
+	db *badger.DB, diamondReceiverPKID *core.PKID, diamondSenderPKID *core.PKID, diamondPostHash *core.BlockHash) *view.DiamondEntry {
+	var ret *view.DiamondEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetDiamondMappingsWithTxn(
 			txn, diamondReceiverPKID, diamondSenderPKID, diamondPostHash)
@@ -1499,7 +1501,7 @@ func DbGetDiamondMappings(
 	return ret
 }
 
-func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, diamondEntry *DiamondEntry) error {
+func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, diamondEntry *view.DiamondEntry) error {
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -1540,7 +1542,7 @@ func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, diamondEntry *DiamondEntry)
 	return nil
 }
 
-func DbDeleteDiamondMappings(handle *badger.DB, diamondEntry *DiamondEntry) error {
+func DbDeleteDiamondMappings(handle *badger.DB, diamondEntry *view.DiamondEntry) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbDeleteDiamondMappingsWithTxn(txn, diamondEntry)
 	})
@@ -1548,8 +1550,8 @@ func DbDeleteDiamondMappings(handle *badger.DB, diamondEntry *DiamondEntry) erro
 
 // This function returns a map of PKIDs that gave diamonds to a list of DiamondEntrys
 // that contain post hashes.
-func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDiamonded bool) (
-	_pkidToDiamondsMap map[PKID][]*DiamondEntry, _err error) {
+func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *core.PKID, fetchYouDiamonded bool) (
+	_pkidToDiamondsMap map[core.PKID][]*view.DiamondEntry, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsThatDiamondedYou(yourPKID)
 	diamondSenderStartIdx := 1 + btcec.PubKeyBytesLenCompressed
@@ -1565,7 +1567,7 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 	}
 	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix)
 
-	pkidsToDiamondEntryMap := make(map[PKID][]*DiamondEntry)
+	pkidsToDiamondEntryMap := make(map[core.PKID][]*view.DiamondEntry)
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
 		diamondEntry := _DbDiamondEntryForDbBuf(valsFound[ii])
@@ -1575,7 +1577,7 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 					"and key bytes %#v when seeking; this should never happen",
 				PkToStringMainnet(yourPKID[:]), keyBytes)
 		}
-		expectedDiamondKeyLen := 1 + 2*btcec.PubKeyBytesLenCompressed + HashSizeBytes
+		expectedDiamondKeyLen := 1 + 2*btcec.PubKeyBytesLenCompressed + core.HashSizeBytes
 		if len(keyBytes) != expectedDiamondKeyLen {
 			return nil, fmt.Errorf(
 				"DbGetPKIDsThatDiamondedYouMap: Invalid key length %v should be %v",
@@ -1587,7 +1589,7 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 
 		// Chop out the diamond sender PKID.
 		diamondSenderPKIDBytes := keyBytes[diamondSenderStartIdx:diamondSenderEndIdx]
-		diamondSenderPKID := &PKID{}
+		diamondSenderPKID := &core.PKID{}
 		copy(diamondSenderPKID[:], diamondSenderPKIDBytes)
 		// It must match what's in the DiamondEntry
 		if !reflect.DeepEqual(diamondSenderPKID, diamondEntry.SenderPKID) {
@@ -1599,7 +1601,7 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 
 		// Chop out the diamond receiver PKID
 		diamondReceiverPKIDBytes := keyBytes[diamondReceiverStartIdx:diamondReceiverEndIdx]
-		diamondReceiverPKID := &PKID{}
+		diamondReceiverPKID := &core.PKID{}
 		copy(diamondReceiverPKID[:], diamondReceiverPKIDBytes)
 		// It must match what's in the DiamondEntry
 		if !reflect.DeepEqual(diamondReceiverPKID, diamondEntry.ReceiverPKID) {
@@ -1611,7 +1613,7 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 
 		// Chop out the diamond post hash.
 		diamondPostHashBytes := keyBytes[1+2*btcec.PubKeyBytesLenCompressed:]
-		diamondPostHash := &BlockHash{}
+		diamondPostHash := &core.BlockHash{}
 		copy(diamondPostHash[:], diamondPostHashBytes)
 		// It must match what's in the entry
 		if *diamondPostHash != *diamondEntry.DiamondPostHash {
@@ -1631,12 +1633,12 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 }
 
 // This function returns a list of DiamondEntrys given by giverPKID to receiverPKID that contain post hashes.
-func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKID, senderPKID *PKID) (
-	_diamondEntries []*DiamondEntry, _err error) {
+func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *core.PKID, senderPKID *core.PKID) (
+	_diamondEntries []*view.DiamondEntry, _err error) {
 
 	prefix := _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID, senderPKID)
 	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix)
-	var diamondEntries []*DiamondEntry
+	var diamondEntries []*view.DiamondEntry
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
 		diamondEntry := _DbDiamondEntryForDbBuf(valsFound[ii])
@@ -1646,7 +1648,7 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 					"and giver key %v when seeking; this should never happen",
 				PkToStringMainnet(receiverPKID[:]), PkToStringMainnet(senderPKID[:]))
 		}
-		expectedDiamondKeyLen := 1 + 2*btcec.PubKeyBytesLenCompressed + HashSizeBytes
+		expectedDiamondKeyLen := 1 + 2*btcec.PubKeyBytesLenCompressed + core.HashSizeBytes
 		if len(keyBytes) != expectedDiamondKeyLen {
 			return nil, fmt.Errorf(
 				"DbGetDiamondEntriesForGiverToReceiver: Invalid key length %v should be %v",
@@ -1658,7 +1660,7 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 
 		// Chop out the diamond sender PKID.
 		diamondSenderPKIDBytes := keyBytes[1+btcec.PubKeyBytesLenCompressed : 1+2*btcec.PubKeyBytesLenCompressed]
-		diamondSenderPKID := &PKID{}
+		diamondSenderPKID := &core.PKID{}
 		copy(diamondSenderPKID[:], diamondSenderPKIDBytes)
 		// It must match what's in the DiamondEntry
 		if !reflect.DeepEqual(diamondSenderPKID, diamondEntry.SenderPKID) {
@@ -1670,7 +1672,7 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 
 		// Chop out the diamond post hash.
 		diamondPostHashBytes := keyBytes[1+2*btcec.PubKeyBytesLenCompressed:]
-		diamondPostHash := &BlockHash{}
+		diamondPostHash := &core.BlockHash{}
 		copy(diamondPostHash[:], diamondPostHashBytes)
 		// It must match what's in the entry
 		if *diamondPostHash != *diamondEntry.DiamondPostHash {
@@ -1690,18 +1692,18 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 // <BitcoinBurnTxID BlockHash> -> <>
 // -------------------------------------------------------------------------------------
 
-func _keyForBitcoinBurnTxID(bitcoinBurnTxID *BlockHash) []byte {
+func _keyForBitcoinBurnTxID(bitcoinBurnTxID *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same
 	// underlying array.
 	prefixCopy := append([]byte{}, _PrefixBitcoinBurnTxIDs...)
 	return append(prefixCopy, bitcoinBurnTxID[:]...)
 }
 
-func DbPutBitcoinBurnTxIDWithTxn(txn *badger.Txn, bitcoinBurnTxID *BlockHash) error {
+func DbPutBitcoinBurnTxIDWithTxn(txn *badger.Txn, bitcoinBurnTxID *core.BlockHash) error {
 	return txn.Set(_keyForBitcoinBurnTxID(bitcoinBurnTxID), []byte{})
 }
 
-func DbExistsBitcoinBurnTxIDWithTxn(txn *badger.Txn, bitcoinBurnTxID *BlockHash) bool {
+func DbExistsBitcoinBurnTxIDWithTxn(txn *badger.Txn, bitcoinBurnTxID *core.BlockHash) bool {
 	// We don't care about the value because we're just checking to see if the key exists.
 	if _, err := txn.Get(_keyForBitcoinBurnTxID(bitcoinBurnTxID)); err != nil {
 		return false
@@ -1709,7 +1711,7 @@ func DbExistsBitcoinBurnTxIDWithTxn(txn *badger.Txn, bitcoinBurnTxID *BlockHash)
 	return true
 }
 
-func DbExistsBitcoinBurnTxID(db *badger.DB, bitcoinBurnTxID *BlockHash) bool {
+func DbExistsBitcoinBurnTxID(db *badger.DB, bitcoinBurnTxID *core.BlockHash) bool {
 	var exists bool
 	db.View(func(txn *badger.Txn) error {
 		exists = DbExistsBitcoinBurnTxIDWithTxn(txn, bitcoinBurnTxID)
@@ -1718,15 +1720,15 @@ func DbExistsBitcoinBurnTxID(db *badger.DB, bitcoinBurnTxID *BlockHash) bool {
 	return exists
 }
 
-func DbDeleteBitcoinBurnTxIDWithTxn(txn *badger.Txn, bitcoinBurnTxID *BlockHash) error {
+func DbDeleteBitcoinBurnTxIDWithTxn(txn *badger.Txn, bitcoinBurnTxID *core.BlockHash) error {
 	return txn.Delete(_keyForBitcoinBurnTxID(bitcoinBurnTxID))
 }
 
-func DbGetAllBitcoinBurnTxIDs(handle *badger.DB) (_bitcoinBurnTxIDs []*BlockHash) {
+func DbGetAllBitcoinBurnTxIDs(handle *badger.DB) (_bitcoinBurnTxIDs []*core.BlockHash) {
 	keysFound, _ := _enumerateKeysForPrefix(handle, _PrefixBitcoinBurnTxIDs)
-	bitcoinBurnTxIDs := []*BlockHash{}
+	bitcoinBurnTxIDs := []*core.BlockHash{}
 	for _, key := range keysFound {
-		bbtxid := &BlockHash{}
+		bbtxid := &core.BlockHash{}
 		copy(bbtxid[:], key[1:])
 		bitcoinBurnTxIDs = append(bitcoinBurnTxIDs, bbtxid)
 	}
@@ -1734,8 +1736,8 @@ func DbGetAllBitcoinBurnTxIDs(handle *badger.DB) (_bitcoinBurnTxIDs []*BlockHash
 	return bitcoinBurnTxIDs
 }
 
-func _getBlockHashForPrefixWithTxn(txn *badger.Txn, prefix []byte) *BlockHash {
-	var ret BlockHash
+func _getBlockHashForPrefixWithTxn(txn *badger.Txn, prefix []byte) *core.BlockHash {
+	var ret core.BlockHash
 	bhItem, err := txn.Get(prefix)
 	if err != nil {
 		return nil
@@ -1748,8 +1750,8 @@ func _getBlockHashForPrefixWithTxn(txn *badger.Txn, prefix []byte) *BlockHash {
 	return &ret
 }
 
-func _getBlockHashForPrefix(handle *badger.DB, prefix []byte) *BlockHash {
-	var ret *BlockHash
+func _getBlockHashForPrefix(handle *badger.DB, prefix []byte) *core.BlockHash {
+	var ret *core.BlockHash
 	err := handle.View(func(txn *badger.Txn) error {
 		ret = _getBlockHashForPrefixWithTxn(txn, prefix)
 		return nil
@@ -1818,13 +1820,13 @@ func DbGetNanosPurchased(handle *badger.DB) uint64 {
 	return nanosPurchased
 }
 
-func DbPutGlobalParamsEntry(handle *badger.DB, globalParamsEntry GlobalParamsEntry) error {
+func DbPutGlobalParamsEntry(handle *badger.DB, globalParamsEntry view.GlobalParamsEntry) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutGlobalParamsEntryWithTxn(txn, globalParamsEntry)
 	})
 }
 
-func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, globalParamsEntry GlobalParamsEntry) error {
+func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, globalParamsEntry view.GlobalParamsEntry) error {
 	globalParamsDataBuf := bytes.NewBuffer([]byte{})
 	err := gob.NewEncoder(globalParamsDataBuf).Encode(globalParamsEntry)
 	if err != nil {
@@ -1838,12 +1840,12 @@ func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, globalParamsEntry GlobalPara
 	return nil
 }
 
-func DbGetGlobalParamsEntryWithTxn(txn *badger.Txn) *GlobalParamsEntry {
+func DbGetGlobalParamsEntryWithTxn(txn *badger.Txn) *view.GlobalParamsEntry {
 	globalParamsEntryItem, err := txn.Get(_KeyGlobalParams)
 	if err != nil {
 		return &InitialGlobalParamsEntry
 	}
-	globalParamsEntryObj := &GlobalParamsEntry{}
+	globalParamsEntryObj := &view.GlobalParamsEntry{}
 	err = globalParamsEntryItem.Value(func(valBytes []byte) error {
 		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(globalParamsEntryObj)
 	})
@@ -1856,8 +1858,8 @@ func DbGetGlobalParamsEntryWithTxn(txn *badger.Txn) *GlobalParamsEntry {
 	return globalParamsEntryObj
 }
 
-func DbGetGlobalParamsEntry(handle *badger.DB) *GlobalParamsEntry {
-	var globalParamsEntry *GlobalParamsEntry
+func DbGetGlobalParamsEntry(handle *badger.DB) *view.GlobalParamsEntry {
+	var globalParamsEntry *view.GlobalParamsEntry
 	handle.View(func(txn *badger.Txn) error {
 		globalParamsEntry = DbGetGlobalParamsEntryWithTxn(txn)
 		return nil
@@ -1920,35 +1922,35 @@ func GetUtxoNumEntries(handle *badger.DB) uint64 {
 	return numEntries
 }
 
-func _SerializeUtxoKey(utxoKey *UtxoKey) []byte {
+func _SerializeUtxoKey(utxoKey *core.UtxoKey) []byte {
 	indexBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(indexBytes, utxoKey.Index)
 	return append(utxoKey.TxID[:], indexBytes...)
 
 }
 
-func _DbKeyForUtxoKey(utxoKey *UtxoKey) []byte {
+func _DbKeyForUtxoKey(utxoKey *core.UtxoKey) []byte {
 	return append(append([]byte{}, _PrefixUtxoKeyToUtxoEntry...), _SerializeUtxoKey(utxoKey)...)
 }
 
 // Implements the reverse of _DbKeyForUtxoKey. This doesn't error-check
 // and caller should make sure they're passing a properly-sized key to
 // this function.
-func _UtxoKeyFromDbKey(utxoDbKey []byte) *UtxoKey {
+func _UtxoKeyFromDbKey(utxoDbKey []byte) *core.UtxoKey {
 	// Read in the TxID, which is at the beginning.
-	txIDBytes := utxoDbKey[:HashSizeBytes]
-	txID := BlockHash{}
+	txIDBytes := utxoDbKey[:core.HashSizeBytes]
+	txID := core.BlockHash{}
 	copy(txID[:], txIDBytes)
 	// Read in the index, which is encoded as a bigint at the end.
-	indexBytes := utxoDbKey[HashSizeBytes:]
+	indexBytes := utxoDbKey[core.HashSizeBytes:]
 	indexValue := binary.BigEndian.Uint32(indexBytes)
-	return &UtxoKey{
+	return &core.UtxoKey{
 		Index: indexValue,
 		TxID:  txID,
 	}
 }
 
-func _DbBufForUtxoEntry(utxoEntry *UtxoEntry) []byte {
+func _DbBufForUtxoEntry(utxoEntry *view.UtxoEntry) []byte {
 	utxoEntryBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(utxoEntryBuf).Encode(utxoEntry)
 	return utxoEntryBuf.Bytes()
@@ -1958,12 +1960,12 @@ func PutUtxoNumEntriesWithTxn(txn *badger.Txn, newNumEntries uint64) error {
 	return txn.Set(_KeyUtxoNumEntries, EncodeUint64(newNumEntries))
 }
 
-func PutUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *UtxoKey, utxoEntry *UtxoEntry) error {
+func PutUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *core.UtxoKey, utxoEntry *view.UtxoEntry) error {
 	return txn.Set(_DbKeyForUtxoKey(utxoKey), _DbBufForUtxoEntry(utxoEntry))
 }
 
-func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *UtxoKey) *UtxoEntry {
-	var ret UtxoEntry
+func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *core.UtxoKey) *view.UtxoEntry {
+	var ret view.UtxoEntry
 	utxoDbKey := _DbKeyForUtxoKey(utxoKey)
 	item, err := txn.Get(utxoDbKey)
 	if err != nil {
@@ -1987,8 +1989,8 @@ func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, utxoKey *UtxoKey) *UtxoEnt
 	return &ret
 }
 
-func DbGetUtxoEntryForUtxoKey(handle *badger.DB, utxoKey *UtxoKey) *UtxoEntry {
-	var ret *UtxoEntry
+func DbGetUtxoEntryForUtxoKey(handle *badger.DB, utxoKey *core.UtxoKey) *view.UtxoEntry {
+	var ret *view.UtxoEntry
 	handle.View(func(txn *badger.Txn) error {
 		ret = DbGetUtxoEntryForUtxoKeyWithTxn(txn, utxoKey)
 		return nil
@@ -1997,11 +1999,11 @@ func DbGetUtxoEntryForUtxoKey(handle *badger.DB, utxoKey *UtxoKey) *UtxoEntry {
 	return ret
 }
 
-func DeleteUtxoEntryForKeyWithTxn(txn *badger.Txn, utxoKey *UtxoKey) error {
+func DeleteUtxoEntryForKeyWithTxn(txn *badger.Txn, utxoKey *core.UtxoKey) error {
 	return txn.Delete(_DbKeyForUtxoKey(utxoKey))
 }
 
-func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, publicKey []byte, utxoKey *UtxoKey) error {
+func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, publicKey []byte, utxoKey *core.UtxoKey) error {
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DeletePubKeyUtxoKeyMappingWithTxn: Public key has improper length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
@@ -2012,13 +2014,13 @@ func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, publicKey []byte, utxoKe
 	return txn.Delete(keyToDelete)
 }
 
-func DbBufForUtxoKey(utxoKey *UtxoKey) []byte {
+func DbBufForUtxoKey(utxoKey *core.UtxoKey) []byte {
 	utxoKeyBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(utxoKeyBuf).Encode(utxoKey)
 	return utxoKeyBuf.Bytes()
 }
 
-func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, publicKey []byte, utxoKey *UtxoKey) error {
+func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, publicKey []byte, utxoKey *core.UtxoKey) error {
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("PutPubKeyUtxoKeyWithTxn: Public key has improper length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
@@ -2032,17 +2034,17 @@ func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, publicKey []byte, utxoKey *UtxoKey
 // DbGetUtxosForPubKey finds the UtxoEntry's corresponding to the public
 // key passed in. It also attaches the UtxoKeys to the UtxoEntry's it
 // returns for easy access.
-func DbGetUtxosForPubKey(publicKey []byte, handle *badger.DB) ([]*UtxoEntry, error) {
+func DbGetUtxosForPubKey(publicKey []byte, handle *badger.DB) ([]*view.UtxoEntry, error) {
 	// Verify the length of the public key.
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return nil, fmt.Errorf("DbGetUtxosForPubKey: Public key has improper "+
 			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
 	// Look up the utxo keys for this public key.
-	utxoEntriesFound := []*UtxoEntry{}
+	utxoEntriesFound := []*view.UtxoEntry{}
 	err := handle.View(func(txn *badger.Txn) error {
 		// Start by looping through to find all the UtxoKeys.
-		utxoKeysFound := []*UtxoKey{}
+		utxoKeysFound := []*core.UtxoKey{}
 		opts := badger.DefaultIteratorOptions
 		nodeIterator := txn.NewIterator(opts)
 		defer nodeIterator.Close()
@@ -2053,10 +2055,10 @@ func DbGetUtxosForPubKey(publicKey []byte, handle *badger.DB) ([]*UtxoEntry, err
 			utxoKeyBytes := pkUtxoKey[len(prefix):]
 			// The size of the utxo key bytes should be equal to the size of a
 			// standard hash (the txid) plus the size of a uint32.
-			if len(utxoKeyBytes) != HashSizeBytes+4 {
+			if len(utxoKeyBytes) != core.HashSizeBytes+4 {
 				return fmt.Errorf("Problem reading <pk, utxoKey> mapping; key size %d "+
 					"is not equal to (prefix_byte=%d + len(publicKey)=%d + len(utxoKey)=%d)=%d. "+
-					"Key found: %#v", len(pkUtxoKey), len(_PrefixPubKeyUtxoKey), len(publicKey), HashSizeBytes+4, len(prefix)+HashSizeBytes+4, pkUtxoKey)
+					"Key found: %#v", len(pkUtxoKey), len(_PrefixPubKeyUtxoKey), len(publicKey), core.HashSizeBytes+4, len(prefix)+core.HashSizeBytes+4, pkUtxoKey)
 			}
 			// Try and convert the utxo key bytes into a utxo key.
 			utxoKey := _UtxoKeyFromDbKey(utxoKeyBytes)
@@ -2092,7 +2094,7 @@ func DbGetUtxosForPubKey(publicKey []byte, handle *badger.DB) ([]*UtxoEntry, err
 	return utxoEntriesFound, nil
 }
 
-func DeleteUnmodifiedMappingsForUtxoWithTxn(txn *badger.Txn, utxoKey *UtxoKey) error {
+func DeleteUnmodifiedMappingsForUtxoWithTxn(txn *badger.Txn, utxoKey *core.UtxoKey) error {
 	// Get the entry for the utxoKey from the db.
 	utxoEntry := DbGetUtxoEntryForUtxoKeyWithTxn(txn, utxoKey)
 	if utxoEntry == nil {
@@ -2116,7 +2118,7 @@ func DeleteUnmodifiedMappingsForUtxoWithTxn(txn *badger.Txn, utxoKey *UtxoKey) e
 	return nil
 }
 
-func PutMappingsForUtxoWithTxn(txn *badger.Txn, utxoKey *UtxoKey, utxoEntry *UtxoEntry) error {
+func PutMappingsForUtxoWithTxn(txn *badger.Txn, utxoKey *core.UtxoKey, utxoEntry *view.UtxoEntry) error {
 	// Put the <utxoKey -> utxoEntry> mapping.
 	if err := PutUtxoEntryForUtxoKeyWithTxn(txn, utxoKey, utxoEntry); err != nil {
 		return nil
@@ -2130,26 +2132,26 @@ func PutMappingsForUtxoWithTxn(txn *badger.Txn, utxoKey *UtxoKey, utxoEntry *Utx
 	return nil
 }
 
-func _DecodeUtxoOperations(data []byte) ([][]*UtxoOperation, error) {
-	ret := [][]*UtxoOperation{}
+func _DecodeUtxoOperations(data []byte) ([][]*view.UtxoOperation, error) {
+	ret := [][]*view.UtxoOperation{}
 	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&ret); err != nil {
 		return nil, err
 	}
 	return ret, nil
 }
 
-func _EncodeUtxoOperations(utxoOp [][]*UtxoOperation) []byte {
+func _EncodeUtxoOperations(utxoOp [][]*view.UtxoOperation) []byte {
 	opBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(opBuf).Encode(utxoOp)
 	return opBuf.Bytes()
 }
 
-func _DbKeyForUtxoOps(blockHash *BlockHash) []byte {
+func _DbKeyForUtxoOps(blockHash *core.BlockHash) []byte {
 	return append(append([]byte{}, _PrefixBlockHashToUtxoOperations...), blockHash[:]...)
 }
 
-func GetUtxoOperationsForBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) ([][]*UtxoOperation, error) {
-	var retOps [][]*UtxoOperation
+func GetUtxoOperationsForBlockWithTxn(txn *badger.Txn, blockHash *core.BlockHash) ([][]*view.UtxoOperation, error) {
+	var retOps [][]*view.UtxoOperation
 	utxoOpsItem, err := txn.Get(_DbKeyForUtxoOps(blockHash))
 	if err != nil {
 		return nil, err
@@ -2170,8 +2172,8 @@ func GetUtxoOperationsForBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) ([]
 	return retOps, err
 }
 
-func GetUtxoOperationsForBlock(handle *badger.DB, blockHash *BlockHash) ([][]*UtxoOperation, error) {
-	var ops [][]*UtxoOperation
+func GetUtxoOperationsForBlock(handle *badger.DB, blockHash *core.BlockHash) ([][]*view.UtxoOperation, error) {
+	var ops [][]*view.UtxoOperation
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
 		ops, err = GetUtxoOperationsForBlockWithTxn(txn, blockHash)
@@ -2181,11 +2183,11 @@ func GetUtxoOperationsForBlock(handle *badger.DB, blockHash *BlockHash) ([][]*Ut
 	return ops, err
 }
 
-func PutUtxoOperationsForBlockWithTxn(txn *badger.Txn, blockHash *BlockHash, utxoOpsForBlock [][]*UtxoOperation) error {
+func PutUtxoOperationsForBlockWithTxn(txn *badger.Txn, blockHash *core.BlockHash, utxoOpsForBlock [][]*view.UtxoOperation) error {
 	return txn.Set(_DbKeyForUtxoOps(blockHash), _EncodeUtxoOperations(utxoOpsForBlock))
 }
 
-func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) error {
+func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, blockHash *core.BlockHash) error {
 	return txn.Delete(_DbKeyForUtxoOps(blockHash))
 }
 
@@ -2227,13 +2229,13 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 
 func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	blockNode := NewBlockNode(
-		nil,          // Parent
-		&BlockHash{}, // Hash
-		0,            // Height
-		&BlockHash{}, // DifficultyTarget
-		nil,          // CumWork
-		nil,          // Header
-		StatusNone,   // Status
+		nil,               // Parent
+		&core.BlockHash{}, // Hash
+		0,                 // Height
+		&core.BlockHash{}, // DifficultyTarget
+		nil,               // CumWork
+		nil,               // Header
+		StatusNone,        // Status
 
 	)
 
@@ -2259,7 +2261,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	}
 
 	// CumWork
-	tmp := BlockHash{}
+	tmp := core.BlockHash{}
 	_, err = io.ReadFull(rr, tmp[:])
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
@@ -2314,7 +2316,7 @@ func _prefixForChainType(chainType ChainType) []byte {
 	return prefix
 }
 
-func DbGetBestHash(handle *badger.DB, chainType ChainType) *BlockHash {
+func DbGetBestHash(handle *badger.DB, chainType ChainType) *core.BlockHash {
 	prefix := _prefixForChainType(chainType)
 	if len(prefix) == 0 {
 		glog.Errorf("DbGetBestHash: Problem getting prefix for ChainType: %d", chainType)
@@ -2323,7 +2325,7 @@ func DbGetBestHash(handle *badger.DB, chainType ChainType) *BlockHash {
 	return _getBlockHashForPrefix(handle, prefix)
 }
 
-func PutBestHashWithTxn(txn *badger.Txn, bh *BlockHash, chainType ChainType) error {
+func PutBestHashWithTxn(txn *badger.Txn, bh *core.BlockHash, chainType ChainType) error {
 	prefix := _prefixForChainType(chainType)
 	if len(prefix) == 0 {
 		glog.Errorf("PutBestHashWithTxn: Problem getting prefix for ChainType: %d", chainType)
@@ -2332,17 +2334,17 @@ func PutBestHashWithTxn(txn *badger.Txn, bh *BlockHash, chainType ChainType) err
 	return txn.Set(prefix, bh[:])
 }
 
-func PutBestHash(bh *BlockHash, handle *badger.DB, chainType ChainType) error {
+func PutBestHash(bh *core.BlockHash, handle *badger.DB, chainType ChainType) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return PutBestHashWithTxn(txn, bh, chainType)
 	})
 }
 
-func BlockHashToBlockKey(blockHash *BlockHash) []byte {
+func BlockHashToBlockKey(blockHash *core.BlockHash) []byte {
 	return append(append([]byte{}, _PrefixBlockHashToBlock...), blockHash[:]...)
 }
 
-func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *BlockHash) []byte {
+func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixPublicKeyBlockHashToBlockReward...)
 	key := append(prefixCopy, publicKey...)
@@ -2350,7 +2352,7 @@ func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *BlockHash) 
 	return key
 }
 
-func GetBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) *MsgDeSoBlock {
+func GetBlockWithTxn(txn *badger.Txn, blockHash *core.BlockHash) *MsgDeSoBlock {
 	hashKey := BlockHashToBlockKey(blockHash)
 	var blockRet *MsgDeSoBlock
 
@@ -2375,7 +2377,7 @@ func GetBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) *MsgDeSoBlock {
 	return blockRet
 }
 
-func GetBlock(blockHash *BlockHash, handle *badger.DB) (*MsgDeSoBlock, error) {
+func GetBlock(blockHash *core.BlockHash, handle *badger.DB) (*MsgDeSoBlock, error) {
 	hashKey := BlockHashToBlockKey(blockHash)
 	var blockRet *MsgDeSoBlock
 	err := handle.View(func(txn *badger.Txn) error {
@@ -2440,9 +2442,9 @@ func PutBlockWithTxn(txn *badger.Txn, desoBlock *MsgDeSoBlock) error {
 		return fmt.Errorf("PutBlockWithTxn: Got block without block reward as first txn %v", desoBlock)
 	}
 	// It's possible the block reward is split across multiple public keys.
-	pubKeyToBlockRewardMap := make(map[PkMapKey]uint64)
+	pubKeyToBlockRewardMap := make(map[view.PkMapKey]uint64)
 	for _, bro := range desoBlock.Txns[0].TxOutputs {
-		pkMapKey := MakePkMapKey(bro.PublicKey)
+		pkMapKey := view.MakePkMapKey(bro.PublicKey)
 		if _, hasKey := pubKeyToBlockRewardMap[pkMapKey]; !hasKey {
 			pubKeyToBlockRewardMap[pkMapKey] = bro.AmountNanos
 		} else {
@@ -2470,7 +2472,7 @@ func PutBlock(desoBlock *MsgDeSoBlock, handle *badger.DB) error {
 	return nil
 }
 
-func DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn *badger.Txn, publicKey []byte, blockHash *BlockHash,
+func DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn *badger.Txn, publicKey []byte, blockHash *core.BlockHash,
 ) (_balance uint64, _err error) {
 	key := PublicKeyBlockHashToBlockRewardKey(publicKey, blockHash)
 	desoBalanceItem, err := txn.Get(key)
@@ -2487,7 +2489,7 @@ func DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn *badger.Txn, publicKey []b
 	return desoBalance, nil
 }
 
-func DbGetBlockRewardForPublicKeyBlockHash(db *badger.DB, publicKey []byte, blockHash *BlockHash,
+func DbGetBlockRewardForPublicKeyBlockHash(db *badger.DB, publicKey []byte, blockHash *core.BlockHash,
 ) (_balance uint64, _err error) {
 	ret := uint64(0)
 	dbErr := db.View(func(txn *badger.Txn) error {
@@ -2513,7 +2515,7 @@ func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
 	return prefix
 }
 
-func _heightHashToNodeIndexKey(height uint32, hash *BlockHash, bitcoinNodes bool) []byte {
+func _heightHashToNodeIndexKey(height uint32, hash *core.BlockHash, bitcoinNodes bool) []byte {
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
 
 	heightBytes := make([]byte, 4)
@@ -2525,7 +2527,7 @@ func _heightHashToNodeIndexKey(height uint32, hash *BlockHash, bitcoinNodes bool
 }
 
 func GetHeightHashToNodeInfoWithTxn(
-	txn *badger.Txn, height uint32, hash *BlockHash, bitcoinNodes bool) *BlockNode {
+	txn *badger.Txn, height uint32, hash *core.BlockHash, bitcoinNodes bool) *BlockNode {
 
 	key := _heightHashToNodeIndexKey(height, hash, bitcoinNodes)
 	nodeValue, err := txn.Get(key)
@@ -2547,7 +2549,7 @@ func GetHeightHashToNodeInfoWithTxn(
 }
 
 func GetHeightHashToNodeInfo(
-	handle *badger.DB, height uint32, hash *BlockHash, bitcoinNodes bool) *BlockNode {
+	handle *badger.DB, height uint32, hash *core.BlockHash, bitcoinNodes bool) *BlockNode {
 
 	var blockNode *BlockNode
 	handle.View(func(txn *badger.Txn) error {
@@ -2660,7 +2662,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 	// think things are initialized because we set the best block hash at the
 	// top. We should fix this at some point so that an error in this step
 	// wipes out the best hash.
-	utxoView, err := NewUtxoView(handle, params, nil)
+	utxoView, err := view.NewUtxoView(handle, params, nil)
 	if err != nil {
 		return fmt.Errorf(
 			"InitDbWithDeSoGenesisBlock: Error initializing UtxoView")
@@ -2668,17 +2670,17 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 
 	// Add the seed balances to the view.
 	for index, txOutput := range params.SeedBalances {
-		outputKey := UtxoKey{
-			TxID:  BlockHash{},
+		outputKey := core.UtxoKey{
+			TxID:  core.BlockHash{},
 			Index: uint32(index),
 		}
-		utxoEntry := UtxoEntry{
+		utxoEntry := view.UtxoEntry{
 			AmountNanos: txOutput.AmountNanos,
 			PublicKey:   txOutput.PublicKey,
 			BlockHeight: 0,
 			// Just make this a normal transaction so that we don't have to wait for
 			// the block reward maturity.
-			UtxoType: UtxoTypeOutput,
+			UtxoType: view.UtxoTypeOutput,
 			UtxoKey:  &outputKey,
 		}
 
@@ -2690,7 +2692,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 	}
 
 	// Add the seed txns to the view
-	utxoOpsForBlock := [][]*UtxoOperation{}
+	utxoOpsForBlock := [][]*view.UtxoOperation{}
 	for txnIndex, txnHex := range params.SeedTxns {
 		txnBytes, err := hex.DecodeString(txnHex)
 		if err != nil {
@@ -2710,7 +2712,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		// processed, which is important.
 		// Set txnSizeBytes to 0 here as the minimum network fee is 0 at genesis block, so there is no need to serialize
 		// these transactions to check if they meet the minimum network fee requirement.
-		var utxoOpsForTxn []*UtxoOperation
+		var utxoOpsForTxn []*view.UtxoOperation
 		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(
 			txn, txn.Hash(), 0, 0 /*blockHeight*/, false /*verifySignatures*/, true /*ignoreUtxos*/)
 		if err != nil {
@@ -2742,8 +2744,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 	return nil
 }
 
-func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNode, error) {
-	blockIndex := make(map[BlockHash]*BlockNode)
+func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[core.BlockHash]*BlockNode, error) {
+	blockIndex := make(map[core.BlockHash]*BlockNode)
 
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
 
@@ -2786,7 +2788,7 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNo
 			// the last node we've iterated over and checking if that node is the
 			// parent. Doing this would avoid an expensive hashmap check to get
 			// the parent by its block hash.
-			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
+			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == core.BlockHash{}) {
 				continue
 			}
 			if parent, ok := blockIndex[*blockNode.Header.PrevBlockHash]; ok {
@@ -2807,7 +2809,7 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNo
 	return blockIndex, nil
 }
 
-func GetBestChain(tipNode *BlockNode, blockIndex map[BlockHash]*BlockNode) ([]*BlockNode, error) {
+func GetBestChain(tipNode *BlockNode, blockIndex map[core.BlockHash]*BlockNode) ([]*BlockNode, error) {
 	reversedBestChain := []*BlockNode{}
 	for tipNode != nil {
 		if (tipNode.Status&StatusBlockValidated) == 0 &&
@@ -2897,15 +2899,15 @@ func PkToStringTestnet(pk []byte) string {
 	return Base58CheckEncode(pk, false, &DeSoTestnetParams)
 }
 
-func DbGetTxindexTip(handle *badger.DB) *BlockHash {
+func DbGetTxindexTip(handle *badger.DB) *core.BlockHash {
 	return _getBlockHashForPrefix(handle, _KeyTransactionIndexTip)
 }
 
-func DbPutTxindexTipWithTxn(dbTxn *badger.Txn, tipHash *BlockHash) error {
+func DbPutTxindexTipWithTxn(dbTxn *badger.Txn, tipHash *core.BlockHash) error {
 	return dbTxn.Set(_KeyTransactionIndexTip, tipHash[:])
 }
 
-func DbPutTxindexTip(handle *badger.DB, tipHash *BlockHash) error {
+func DbPutTxindexTip(handle *badger.DB, tipHash *core.BlockHash) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutTxindexTipWithTxn(txn, tipHash)
 	})
@@ -2924,14 +2926,14 @@ func DbTxindexPublicKeyIndexToTxnKey(publicKey []byte, index uint32) []byte {
 	return append(prefix, _EncodeUint32(index)...)
 }
 
-func DbGetTxindexTxnsForPublicKeyWithTxn(dbTxn *badger.Txn, publicKey []byte) []*BlockHash {
-	txIDs := []*BlockHash{}
+func DbGetTxindexTxnsForPublicKeyWithTxn(dbTxn *badger.Txn, publicKey []byte) []*core.BlockHash {
+	txIDs := []*core.BlockHash{}
 	_, valsFound, err := _enumerateKeysForPrefixWithTxn(dbTxn, DbTxindexPublicKeyPrefix(publicKey))
 	if err != nil {
 		return txIDs
 	}
 	for _, txIDBytes := range valsFound {
-		blockHash := &BlockHash{}
+		blockHash := &core.BlockHash{}
 		copy(blockHash[:], txIDBytes[:])
 		txIDs = append(txIDs, blockHash)
 	}
@@ -2939,8 +2941,8 @@ func DbGetTxindexTxnsForPublicKeyWithTxn(dbTxn *badger.Txn, publicKey []byte) []
 	return txIDs
 }
 
-func DbGetTxindexTxnsForPublicKey(handle *badger.DB, publicKey []byte) []*BlockHash {
-	txIDs := []*BlockHash{}
+func DbGetTxindexTxnsForPublicKey(handle *badger.DB, publicKey []byte) []*core.BlockHash {
+	txIDs := []*core.BlockHash{}
 	handle.Update(func(dbTxn *badger.Txn) error {
 		txIDs = DbGetTxindexTxnsForPublicKeyWithTxn(dbTxn, publicKey)
 		return nil
@@ -3032,7 +3034,7 @@ func DbDeleteTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, publicKey []by
 }
 
 func DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(
-	dbTxn *badger.Txn, publicKey []byte, txID *BlockHash) error {
+	dbTxn *badger.Txn, publicKey []byte, txID *core.BlockHash) error {
 
 	nextIndex := _DbGetTxindexNextIndexForPublicKeyWithTxn(dbTxn, publicKey)
 	if nextIndex == nil {
@@ -3047,7 +3049,7 @@ func DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(
 }
 
 func DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(
-	dbTxn *badger.Txn, publicKey []byte, txID *BlockHash) error {
+	dbTxn *badger.Txn, publicKey []byte, txID *core.BlockHash) error {
 
 	// Get all the mappings corresponding to the public key passed in.
 	// TODO: This is inefficient but reorgs are rare so whatever.
@@ -3093,7 +3095,7 @@ func DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(
 	return nil
 }
 
-func DbTxindexTxIDKey(txID *BlockHash) []byte {
+func DbTxindexTxIDKey(txID *core.BlockHash) []byte {
 	return append(append([]byte{}, _PrefixTransactionIDToMetadata...), txID[:]...)
 }
 
@@ -3108,7 +3110,7 @@ type BasicTransferTxindexMetadata struct {
 	TotalOutputNanos uint64
 	FeeNanos         uint64
 	UtxoOpsDump      string
-	UtxoOps          []*UtxoOperation
+	UtxoOps          []*view.UtxoOperation
 	DiamondLevel     int64
 	PostHashHex      string
 }
@@ -3248,7 +3250,7 @@ type TransactionMetadata struct {
 	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
 }
 
-func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
+func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *core.BlockHash) bool {
 	key := DbTxindexTxIDKey(txID)
 	_, err := txn.Get(key)
 	if err != nil {
@@ -3257,7 +3259,7 @@ func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
 	return true
 }
 
-func DbCheckTxnExistence(handle *badger.DB, txID *BlockHash) bool {
+func DbCheckTxnExistence(handle *badger.DB, txID *core.BlockHash) bool {
 	var exists bool
 	handle.View(func(txn *badger.Txn) error {
 		exists = DBCheckTxnExistenceWithTxn(txn, txID)
@@ -3266,7 +3268,7 @@ func DbCheckTxnExistence(handle *badger.DB, txID *BlockHash) bool {
 	return exists
 }
 
-func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
+func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *core.BlockHash) *TransactionMetadata {
 	key := DbTxindexTxIDKey(txID)
 	valObj := TransactionMetadata{}
 
@@ -3284,7 +3286,7 @@ func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *
 	return &valObj
 }
 
-func DbGetTxindexTransactionRefByTxID(handle *badger.DB, txID *BlockHash) *TransactionMetadata {
+func DbGetTxindexTransactionRefByTxID(handle *badger.DB, txID *core.BlockHash) *TransactionMetadata {
 	var valObj *TransactionMetadata
 	handle.View(func(txn *badger.Txn) error {
 		valObj = DbGetTxindexTransactionRefByTxIDWithTxn(txn, txID)
@@ -3293,7 +3295,7 @@ func DbGetTxindexTransactionRefByTxID(handle *badger.DB, txID *BlockHash) *Trans
 	return valObj
 }
 func DbPutTxindexTransactionWithTxn(
-	txn *badger.Txn, txID *BlockHash, txnMeta *TransactionMetadata) error {
+	txn *badger.Txn, txID *core.BlockHash, txnMeta *TransactionMetadata) error {
 
 	key := append(append([]byte{}, _PrefixTransactionIDToMetadata...), txID[:]...)
 	valBuf := bytes.NewBuffer([]byte{})
@@ -3303,7 +3305,7 @@ func DbPutTxindexTransactionWithTxn(
 }
 
 func DbPutTxindexTransaction(
-	handle *badger.DB, txID *BlockHash, txnMeta *TransactionMetadata) error {
+	handle *badger.DB, txID *core.BlockHash, txnMeta *TransactionMetadata) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutTxindexTransactionWithTxn(txn, txID, txnMeta)
@@ -3311,10 +3313,10 @@ func DbPutTxindexTransaction(
 }
 
 func _getPublicKeysForTxn(
-	txn *MsgDeSoTxn, txnMeta *TransactionMetadata, params *DeSoParams) map[PkMapKey]bool {
+	txn *MsgDeSoTxn, txnMeta *TransactionMetadata, params *DeSoParams) map[view.PkMapKey]bool {
 
 	// Collect the public keys in the transaction.
-	publicKeys := make(map[PkMapKey]bool)
+	publicKeys := make(map[view.PkMapKey]bool)
 
 	// TODO: For AddStake transactions, we don't have a way of getting the implicit
 	// outputs. This means that if you get paid from someone else staking to a post
@@ -3332,7 +3334,7 @@ func _getPublicKeysForTxn(
 				"TransactorPublicKeyBase58Check: %v %v",
 				txnMeta.TransactorPublicKeyBase58Check, err)
 		} else {
-			publicKeys[MakePkMapKey(res)] = true
+			publicKeys[view.MakePkMapKey(res)] = true
 		}
 	}
 
@@ -3343,7 +3345,7 @@ func _getPublicKeysForTxn(
 			glog.Errorf("_getPublicKeysForTxn: Error decoding AffectedPublicKey: %v %v %v",
 				affectedPk.PublicKeyBase58Check, affectedPk.Metadata, err)
 		} else {
-			publicKeys[MakePkMapKey(res)] = true
+			publicKeys[view.MakePkMapKey(res)] = true
 		}
 	}
 
@@ -3426,7 +3428,7 @@ func DbDeleteTxindexTransactionMappings(
 // TODO: This makes lookups inefficient when blocks are large. Shouldn't be a
 // problem for a while, but keep an eye on it.
 func DbGetTxindexFullTransactionByTxID(
-	txindexDBHandle *badger.DB, blockchainDBHandle *badger.DB, txID *BlockHash) (
+	txindexDBHandle *badger.DB, blockchainDBHandle *badger.DB, txID *core.BlockHash) (
 	_txn *MsgDeSoTxn, _txnMeta *TransactionMetadata) {
 
 	var txnFound *MsgDeSoTxn
@@ -3441,7 +3443,7 @@ func DbGetTxindexFullTransactionByTxID(
 			return fmt.Errorf("DbGetTxindexFullTransactionByTxID: Error parsing block "+
 				"hash hex: %v %v", txnMeta.BlockHashHex, err)
 		}
-		blockHash := &BlockHash{}
+		blockHash := &core.BlockHash{}
 		copy(blockHash[:], blockHashBytes)
 		blockFound, err := GetBlock(blockHash, blockchainDBHandle)
 		if blockFound == nil || err != nil {
@@ -3462,20 +3464,20 @@ func DbGetTxindexFullTransactionByTxID(
 // DeSo app code start
 // =======================================================================================
 
-func _dbKeyForPostEntryHash(postHash *BlockHash) []byte {
+func _dbKeyForPostEntryHash(postHash *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixPostHashToPostEntry...)
 	key := append(prefixCopy, postHash[:]...)
 	return key
 }
-func _dbKeyForPublicKeyPostHash(publicKey []byte, postHash *BlockHash) []byte {
+func _dbKeyForPublicKeyPostHash(publicKey []byte, postHash *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	key := append([]byte{}, _PrefixPosterPublicKeyPostHash...)
 	key = append(key, publicKey...)
 	key = append(key, postHash[:]...)
 	return key
 }
-func _dbKeyForPosterPublicKeyTimestampPostHash(publicKey []byte, timestampNanos uint64, postHash *BlockHash) []byte {
+func _dbKeyForPosterPublicKeyTimestampPostHash(publicKey []byte, timestampNanos uint64, postHash *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	key := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
 	key = append(key, publicKey...)
@@ -3483,27 +3485,27 @@ func _dbKeyForPosterPublicKeyTimestampPostHash(publicKey []byte, timestampNanos 
 	key = append(key, postHash[:]...)
 	return key
 }
-func _dbKeyForTstampPostHash(tstampNanos uint64, postHash *BlockHash) []byte {
+func _dbKeyForTstampPostHash(tstampNanos uint64, postHash *core.BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	key := append([]byte{}, _PrefixTstampNanosPostHash...)
 	key = append(key, EncodeUint64(tstampNanos)...)
 	key = append(key, postHash[:]...)
 	return key
 }
-func _dbKeyForCreatorBpsPostHash(creatorBps uint64, postHash *BlockHash) []byte {
+func _dbKeyForCreatorBpsPostHash(creatorBps uint64, postHash *core.BlockHash) []byte {
 	key := append([]byte{}, _PrefixCreatorBpsPostHash...)
 	key = append(key, EncodeUint64(creatorBps)...)
 	key = append(key, postHash[:]...)
 	return key
 }
-func _dbKeyForStakeMultipleBpsPostHash(stakeMultipleBps uint64, postHash *BlockHash) []byte {
+func _dbKeyForStakeMultipleBpsPostHash(stakeMultipleBps uint64, postHash *core.BlockHash) []byte {
 	key := append([]byte{}, _PrefixMultipleBpsPostHash...)
 	key = append(key, EncodeUint64(stakeMultipleBps)...)
 	key = append(key, postHash[:]...)
 	return key
 }
 func _dbKeyForCommentParentStakeIDToPostHash(
-	stakeID []byte, tstampNanos uint64, postHash *BlockHash) []byte {
+	stakeID []byte, tstampNanos uint64, postHash *core.BlockHash) []byte {
 	key := append([]byte{}, _PrefixCommentParentStakeIDToPostHash...)
 	key = append(key, stakeID[:]...)
 	key = append(key, EncodeUint64(tstampNanos)...)
@@ -3512,10 +3514,10 @@ func _dbKeyForCommentParentStakeIDToPostHash(
 }
 
 func DBGetPostEntryByPostHashWithTxn(
-	txn *badger.Txn, postHash *BlockHash) *PostEntry {
+	txn *badger.Txn, postHash *core.BlockHash) *view.PostEntry {
 
 	key := _dbKeyForPostEntryHash(postHash)
-	postEntryObj := &PostEntry{}
+	postEntryObj := &view.PostEntry{}
 	postEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -3531,8 +3533,8 @@ func DBGetPostEntryByPostHashWithTxn(
 	return postEntryObj
 }
 
-func DBGetPostEntryByPostHash(db *badger.DB, postHash *BlockHash) *PostEntry {
-	var ret *PostEntry
+func DBGetPostEntryByPostHash(db *badger.DB, postHash *core.BlockHash) *view.PostEntry {
+	var ret *view.PostEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetPostEntryByPostHashWithTxn(txn, postHash)
 		return nil
@@ -3541,7 +3543,7 @@ func DBGetPostEntryByPostHash(db *badger.DB, postHash *BlockHash) *PostEntry {
 }
 
 func DBDeletePostEntryMappingsWithTxn(
-	txn *badger.Txn, postHash *BlockHash, params *DeSoParams) error {
+	txn *badger.Txn, postHash *core.BlockHash, params *DeSoParams) error {
 
 	// First pull up the mapping that exists for the post hash passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -3560,7 +3562,7 @@ func DBDeletePostEntryMappingsWithTxn(
 	// technically posts but they really should be treated as their own entity.
 	// The only reason they're not actually implemented that way is so that we
 	// get code re-use.
-	isComment := len(postEntry.ParentStakeID) == HashSizeBytes
+	isComment := len(postEntry.ParentStakeID) == core.HashSizeBytes
 	if isComment {
 		// Extend the parent stake ID, which is a block hash, to 33 bytes, which
 		// is the length of a public key and the standard length we use for this
@@ -3602,7 +3604,7 @@ func DBDeletePostEntryMappingsWithTxn(
 	}
 
 	// Delete the repost entries for the post.
-	if IsVanillaRepost(postEntry) {
+	if view.IsVanillaRepost(postEntry) {
 		if err := txn.Delete(
 			_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash)); err != nil {
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem deleting mapping for repostPostHash to ReposterPubKey: %v", err)
@@ -3612,7 +3614,7 @@ func DBDeletePostEntryMappingsWithTxn(
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem adding "+
 				"mapping for _dbKeyForRepostedPostHashReposterPubKey: %v", err)
 		}
-	} else if IsQuotedRepost(postEntry) {
+	} else if view.IsQuotedRepost(postEntry) {
 		// Put quoted repost stuff.
 		if err := txn.Delete(
 			_dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
@@ -3627,7 +3629,7 @@ func DBDeletePostEntryMappingsWithTxn(
 }
 
 func DBDeletePostEntryMappings(
-	handle *badger.DB, postHash *BlockHash, params *DeSoParams) error {
+	handle *badger.DB, postHash *core.BlockHash, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeletePostEntryMappingsWithTxn(txn, postHash, params)
@@ -3635,7 +3637,7 @@ func DBDeletePostEntryMappings(
 }
 
 func DBPutPostEntryMappingsWithTxn(
-	txn *badger.Txn, postEntry *PostEntry, params *DeSoParams) error {
+	txn *badger.Txn, postEntry *view.PostEntry, params *DeSoParams) error {
 
 	postDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(postDataBuf).Encode(postEntry)
@@ -3657,7 +3659,7 @@ func DBPutPostEntryMappingsWithTxn(
 		// is the length of a public key and the standard length we use for this
 		// key.
 		extendedStakeID := append([]byte{}, postEntry.ParentStakeID...)
-		if len(extendedStakeID) == HashSizeBytes {
+		if len(extendedStakeID) == core.HashSizeBytes {
 			extendedStakeID = append(extendedStakeID, 0x00)
 		}
 		if len(extendedStakeID) != btcec.PubKeyBytesLenCompressed {
@@ -3701,8 +3703,8 @@ func DBPutPostEntryMappingsWithTxn(
 	}
 	// We treat reposting the same for both comments and posts.
 	// We only store repost entry mappings for vanilla reposts
-	if IsVanillaRepost(postEntry) {
-		repostEntry := RepostEntry{
+	if view.IsVanillaRepost(postEntry) {
+		repostEntry := view.RepostEntry{
 			RepostPostHash:   postEntry.PostHash,
 			RepostedPostHash: postEntry.RepostedPostHash,
 			ReposterPubKey:   postEntry.PosterPublicKey,
@@ -3720,7 +3722,7 @@ func DBPutPostEntryMappingsWithTxn(
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
 				"mapping for _dbKeyForRepostedPostHashReposterPubKey: %v", err)
 		}
-	} else if IsQuotedRepost(postEntry) {
+	} else if view.IsQuotedRepost(postEntry) {
 		// Put quoted repost stuff.
 		if err := txn.Set(
 			_dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
@@ -3733,7 +3735,7 @@ func DBPutPostEntryMappingsWithTxn(
 	return nil
 }
 
-func DBPutPostEntryMappings(handle *badger.DB, postEntry *PostEntry, params *DeSoParams) error {
+func DBPutPostEntryMappings(handle *badger.DB, postEntry *view.PostEntry, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutPostEntryMappingsWithTxn(txn, postEntry, params)
@@ -3745,11 +3747,11 @@ func DBPutPostEntryMappings(handle *badger.DB, postEntry *PostEntry, params *DeS
 // Setting maxTimestampNanos = 0, will default maxTimestampNanos to the current time.
 func DBGetAllPostsAndCommentsForPublicKeyOrderedByTimestamp(
 	handle *badger.DB, publicKey []byte, fetchEntries bool, minTimestampNanos uint64, maxTimestampNanos uint64) (
-	_tstamps []uint64, _postAndCommentHashes []*BlockHash, _postAndCommentEntries []*PostEntry, _err error) {
+	_tstamps []uint64, _postAndCommentHashes []*core.BlockHash, _postAndCommentEntries []*view.PostEntry, _err error) {
 
 	tstampsFetched := []uint64{}
-	postAndCommentHashesFetched := []*BlockHash{}
-	postAndCommentEntriesFetched := []*PostEntry{}
+	postAndCommentHashesFetched := []*core.BlockHash{}
+	postAndCommentEntriesFetched := []*view.PostEntry{}
 	dbPrefixx := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
 	dbPrefixx = append(dbPrefixx, publicKey...)
 
@@ -3784,10 +3786,10 @@ func DBGetAllPostsAndCommentsForPublicKeyOrderedByTimestamp(
 			timestampSizeBytes := 8
 			keyWithoutPrefix := rawKey[1:]
 			//posterPublicKey := keyWithoutPrefix[:HashSizeBytes]
-			publicKeySizeBytes := HashSizeBytes + 1
+			publicKeySizeBytes := core.HashSizeBytes + 1
 			tstampNanos := DecodeUint64(keyWithoutPrefix[publicKeySizeBytes:(publicKeySizeBytes + timestampSizeBytes)])
 
-			postHash := &BlockHash{}
+			postHash := &core.BlockHash{}
 			copy(postHash[:], keyWithoutPrefix[(publicKeySizeBytes+timestampSizeBytes):])
 
 			if tstampNanos < minTimestampNanos {
@@ -3825,11 +3827,11 @@ func DBGetAllPostsAndCommentsForPublicKeyOrderedByTimestamp(
 // TODO(performance): This currently fetches all posts. We should implement
 // some kind of pagination instead though.
 func DBGetAllPostsByTstamp(handle *badger.DB, fetchEntries bool) (
-	_tstamps []uint64, _postHashes []*BlockHash, _postEntries []*PostEntry, _err error) {
+	_tstamps []uint64, _postHashes []*core.BlockHash, _postEntries []*view.PostEntry, _err error) {
 
 	tstampsFetched := []uint64{}
-	postHashesFetched := []*BlockHash{}
-	postEntriesFetched := []*PostEntry{}
+	postHashesFetched := []*core.BlockHash{}
+	postEntriesFetched := []*view.PostEntry{}
 	dbPrefixx := append([]byte{}, _PrefixTstampNanosPostHash...)
 
 	err := handle.View(func(txn *badger.Txn) error {
@@ -3854,16 +3856,16 @@ func DBGetAllPostsByTstamp(handle *badger.DB, fetchEntries bool) (
 			// a big-endian uint64 then it should be at least eight bytes.
 			tstampPostHashKey := rawKey[1:]
 			uint64BytesLen := len(maxBigEndianUint64Bytes)
-			if len(tstampPostHashKey) != uint64BytesLen+HashSizeBytes {
+			if len(tstampPostHashKey) != uint64BytesLen+core.HashSizeBytes {
 				return fmt.Errorf("DBGetAllPostsByTstamp: Invalid key "+
 					"length %d should be at least %d", len(tstampPostHashKey),
-					uint64BytesLen+HashSizeBytes)
+					uint64BytesLen+core.HashSizeBytes)
 			}
 
 			tstampNanos := DecodeUint64(tstampPostHashKey[:uint64BytesLen])
 
 			// Appended to the tstamp should be the post hash so extract it here.
-			postHash := &BlockHash{}
+			postHash := &core.BlockHash{}
 			copy(postHash[:], tstampPostHashKey[uint64BytesLen:])
 
 			tstampsFetched = append(tstampsFetched, tstampNanos)
@@ -3898,11 +3900,11 @@ func DBGetAllPostsByTstamp(handle *badger.DB, fetchEntries bool) (
 // something where we only get the comments for particular posts instead.
 func DBGetCommentPostHashesForParentStakeID(
 	handle *badger.DB, stakeIDXXX []byte, fetchEntries bool) (
-	_tstamps []uint64, _commentPostHashes []*BlockHash, _commentPostEntryes []*PostEntry, _err error) {
+	_tstamps []uint64, _commentPostHashes []*core.BlockHash, _commentPostEntryes []*view.PostEntry, _err error) {
 
 	tstampsFetched := []uint64{}
-	commentPostHashes := []*BlockHash{}
-	commentEntriesFetched := []*PostEntry{}
+	commentPostHashes := []*core.BlockHash{}
+	commentEntriesFetched := []*view.PostEntry{}
 	dbPrefixx := append([]byte{}, _PrefixCommentParentStakeIDToPostHash...)
 	dbPrefixx = append(dbPrefixx, stakeIDXXX...)
 
@@ -3926,17 +3928,17 @@ func DBGetCommentPostHashesForParentStakeID(
 			// a 33-byte stake id, an 8 byte tstamp, and a 32 byte comment hash.
 			stakeIDTstampPostHashKey := rawKey[1:]
 			uint64BytesLen := len(maxBigEndianUint64Bytes)
-			if len(stakeIDTstampPostHashKey) != btcec.PubKeyBytesLenCompressed+uint64BytesLen+HashSizeBytes {
+			if len(stakeIDTstampPostHashKey) != btcec.PubKeyBytesLenCompressed+uint64BytesLen+core.HashSizeBytes {
 				return fmt.Errorf("DBGetCommentPostHashesForParentStakeID: Invalid key "+
 					"length %d should be at least %d", len(stakeIDTstampPostHashKey),
-					btcec.PubKeyBytesLenCompressed+uint64BytesLen+HashSizeBytes)
+					btcec.PubKeyBytesLenCompressed+uint64BytesLen+core.HashSizeBytes)
 			}
 
 			//stakeID := stakeIDTstampPostHashKey[:btcec.PubKeyBytesLenCompressed]
 			tstampNanos := DecodeUint64(stakeIDTstampPostHashKey[btcec.PubKeyBytesLenCompressed : btcec.PubKeyBytesLenCompressed+uint64BytesLen])
 
 			commentPostHashBytes := stakeIDTstampPostHashKey[btcec.PubKeyBytesLenCompressed+uint64BytesLen:]
-			commentPostHash := &BlockHash{}
+			commentPostHash := &core.BlockHash{}
 			copy(commentPostHash[:], commentPostHashBytes)
 
 			//stakeIDsFetched = append(stakeIDsFetched, stakeID)
@@ -3968,7 +3970,7 @@ func DBGetCommentPostHashesForParentStakeID(
 // =======================================================================================
 // NFTEntry db functions
 // =======================================================================================
-func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint64) []byte {
+func _dbKeyForNFTPostHashSerialNumber(nftPostHash *core.BlockHash, serialNumber uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
 	key := append(prefixCopy, nftPostHash[:]...)
@@ -3976,7 +3978,7 @@ func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint6
 	return key
 }
 
-func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) []byte {
+func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *core.PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *core.BlockHash, serialNumber uint64) []byte {
 	prefixCopy := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	key := append(prefixCopy, pkid[:]...)
 	key = append(key, BoolToByte(isForSale))
@@ -3987,10 +3989,10 @@ func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isF
 }
 
 func DBGetNFTEntryByPostHashSerialNumberWithTxn(
-	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+	txn *badger.Txn, postHash *core.BlockHash, serialNumber uint64) *view.NFTEntry {
 
 	key := _dbKeyForNFTPostHashSerialNumber(postHash, serialNumber)
-	nftEntryObj := &NFTEntry{}
+	nftEntryObj := &view.NFTEntry{}
 	nftEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -4006,8 +4008,8 @@ func DBGetNFTEntryByPostHashSerialNumberWithTxn(
 	return nftEntryObj
 }
 
-func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, serialNumber uint64) *NFTEntry {
-	var ret *NFTEntry
+func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, postHash *core.BlockHash, serialNumber uint64) *view.NFTEntry {
+	var ret *view.NFTEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetNFTEntryByPostHashSerialNumberWithTxn(txn, postHash, serialNumber)
 		return nil
@@ -4015,7 +4017,7 @@ func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, ser
 	return ret
 }
 
-func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *core.BlockHash, serialNumber uint64) error {
 
 	// First pull up the mapping that exists for the post / serial # passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -4040,14 +4042,14 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialN
 }
 
 func DBDeleteNFTMappings(
-	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+	handle *badger.DB, postHash *core.BlockHash, serialNumber uint64) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteNFTMappingsWithTxn(txn, postHash, serialNumber)
 	})
 }
 
-func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
+func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *view.NFTEntry) error {
 
 	nftDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(nftDataBuf).Encode(nftEntry)
@@ -4069,7 +4071,7 @@ func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
 	return nil
 }
 
-func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
+func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *view.NFTEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutNFTEntryMappingsWithTxn(txn, nftEntry)
@@ -4077,13 +4079,13 @@ func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
 }
 
 // DBGetNFTEntriesForPostHash gets NFT Entries *from the DB*. Does not include mempool txns.
-func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nftEntries []*NFTEntry) {
-	nftEntries := []*NFTEntry{}
+func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *core.BlockHash) (_nftEntries []*view.NFTEntry) {
+	nftEntries := []*view.NFTEntry{}
 	prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, nftPostHash[:]...)
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
-		currentEntry := &NFTEntry{}
+		currentEntry := &view.NFTEntry{}
 		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
 		nftEntries = append(nftEntries, currentEntry)
 	}
@@ -4097,10 +4099,10 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 // =======================================================================================
 
 func DBGetNFTEntryByNFTOwnershipDetailsWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+	txn *badger.Txn, ownerPKID *core.PKID, isForSale bool, bidAmountNanos uint64, postHash *core.BlockHash, serialNumber uint64) *view.NFTEntry {
 
 	key := _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
-	nftEntryObj := &NFTEntry{}
+	nftEntryObj := &view.NFTEntry{}
 	nftEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -4116,8 +4118,8 @@ func DBGetNFTEntryByNFTOwnershipDetailsWithTxn(
 	return nftEntryObj
 }
 
-func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
-	var ret *NFTEntry
+func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *core.PKID, isForSale bool, bidAmountNanos uint64, postHash *core.BlockHash, serialNumber uint64) *view.NFTEntry {
+	var ret *view.NFTEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetNFTEntryByNFTOwnershipDetailsWithTxn(txn, ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
 		return nil
@@ -4126,13 +4128,13 @@ func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSal
 }
 
 // DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
-func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
-	nftEntries := []*NFTEntry{}
+func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *core.PKID) (_nftEntries []*view.NFTEntry) {
+	nftEntries := []*view.NFTEntry{}
 	prefix := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
-		currentEntry := &NFTEntry{}
+		currentEntry := &view.NFTEntry{}
 		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
 		nftEntries = append(nftEntries, currentEntry)
 	}
@@ -4144,14 +4146,14 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 // NOTE: This index is not essential to running the protocol and should be computed
 // outside of the protocol layer once update to the creation of TxIndex are complete.
 // =======================================================================================
-func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
+func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *core.BlockHash, serialNumber uint64) []byte {
 	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToAcceptedBidEntries...)
 	key := append(prefixCopy, nftPostHash[:]...)
 	key = append(key, EncodeUint64(serialNumber)...)
 	return key
 }
 
-func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, nftKey view.NFTKey, nftBidEntries *[]*view.NFTBidEntry) error {
 	nftDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(nftDataBuf).Encode(nftBidEntries)
 
@@ -4165,17 +4167,17 @@ func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, nftKey NFTKey, nf
 	return nil
 }
 
-func DBPutAcceptedNFTBidEntriesMapping(handle *badger.DB, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+func DBPutAcceptedNFTBidEntriesMapping(handle *badger.DB, nftKey view.NFTKey, nftBidEntries *[]*view.NFTBidEntry) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, nftKey, nftBidEntries)
 	})
 }
 
 func DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(
-	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
+	txn *badger.Txn, postHash *core.BlockHash, serialNumber uint64) *[]*view.NFTBidEntry {
 
 	key := _dbKeyForPostHashSerialNumberToAcceptedBidEntries(postHash, serialNumber)
-	nftBidEntriesObj := &[]*NFTBidEntry{}
+	nftBidEntriesObj := &[]*view.NFTBidEntry{}
 	nftBidEntriesItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -4191,8 +4193,8 @@ func DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(
 	return nftBidEntriesObj
 }
 
-func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
-	var ret *[]*NFTBidEntry
+func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, postHash *core.BlockHash, serialNumber uint64) *[]*view.NFTBidEntry {
+	var ret *[]*view.NFTBidEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, postHash, serialNumber)
 		return nil
@@ -4200,7 +4202,7 @@ func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, postHash *B
 	return ret
 }
 
-func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, nftPostHash *core.BlockHash, serialNumber uint64) error {
 
 	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
 	nftBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, nftPostHash, serialNumber)
@@ -4218,7 +4220,7 @@ func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, nftPostHash *
 }
 
 func DBDeleteAcceptedNFTBidMappings(
-	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+	handle *badger.DB, postHash *core.BlockHash, serialNumber uint64) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, postHash, serialNumber)
@@ -4229,7 +4231,7 @@ func DBDeleteAcceptedNFTBidMappings(
 // NFTBidEntry db functions
 // =======================================================================================
 
-func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *NFTBidEntry) []byte {
+func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *view.NFTBidEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
 	key := append(prefixCopy, bidEntry.NFTPostHash[:]...)
@@ -4240,7 +4242,7 @@ func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *NFTBidEntry) [
 }
 
 func _dbKeyForNFTBidderPKIDPostHashSerialNumber(
-	bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) []byte {
+	bidderPKID *core.PKID, nftPostHash *core.BlockHash, serialNumber uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
 	key := append(prefixCopy, bidderPKID[:]...)
@@ -4249,7 +4251,7 @@ func _dbKeyForNFTBidderPKIDPostHashSerialNumber(
 	return key
 }
 
-func _dbSeekKeyForNFTBids(nftHash *BlockHash, serialNumber uint64) []byte {
+func _dbSeekKeyForNFTBids(nftHash *core.BlockHash, serialNumber uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
 	key := append(prefixCopy, nftHash[:]...)
@@ -4257,7 +4259,7 @@ func _dbSeekKeyForNFTBids(nftHash *BlockHash, serialNumber uint64) []byte {
 	return key
 }
 
-func DBGetNFTBidEntryForNFTBidKeyWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) *NFTBidEntry {
+func DBGetNFTBidEntryForNFTBidKeyWithTxn(txn *badger.Txn, nftBidKey *view.NFTBidKey) *view.NFTBidEntry {
 
 	key := _dbKeyForNFTBidderPKIDPostHashSerialNumber(
 		&nftBidKey.BidderPKID, &nftBidKey.NFTPostHash, nftBidKey.SerialNumber)
@@ -4278,7 +4280,7 @@ func DBGetNFTBidEntryForNFTBidKeyWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) 
 
 	nftBidAmountNanos := DecodeUint64(nftBidBytes)
 
-	nftBidEntry := &NFTBidEntry{
+	nftBidEntry := &view.NFTBidEntry{
 		BidderPKID:     &nftBidKey.BidderPKID,
 		NFTPostHash:    &nftBidKey.NFTPostHash,
 		SerialNumber:   nftBidKey.SerialNumber,
@@ -4288,8 +4290,8 @@ func DBGetNFTBidEntryForNFTBidKeyWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) 
 	return nftBidEntry
 }
 
-func DBGetNFTBidEntryForNFTBidKey(db *badger.DB, nftBidKey *NFTBidKey) *NFTBidEntry {
-	var ret *NFTBidEntry
+func DBGetNFTBidEntryForNFTBidKey(db *badger.DB, nftBidKey *view.NFTBidKey) *view.NFTBidEntry {
+	var ret *view.NFTBidEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetNFTBidEntryForNFTBidKeyWithTxn(txn, nftBidKey)
 		return nil
@@ -4297,7 +4299,7 @@ func DBGetNFTBidEntryForNFTBidKey(db *badger.DB, nftBidKey *NFTBidKey) *NFTBidEn
 	return ret
 }
 
-func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) error {
+func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, nftBidKey *view.NFTBidKey) error {
 
 	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
 	nftBidEntry := DBGetNFTBidEntryForNFTBidKeyWithTxn(txn, nftBidKey)
@@ -4321,14 +4323,14 @@ func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) error 
 	return nil
 }
 
-func DBDeleteNFTBidMappings(handle *badger.DB, nftBidKey *NFTBidKey) error {
+func DBDeleteNFTBidMappings(handle *badger.DB, nftBidKey *view.NFTBidKey) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteNFTBidMappingsWithTxn(txn, nftBidKey)
 	})
 }
 
-func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, nftBidEntry *NFTBidEntry) error {
+func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, nftBidEntry *view.NFTBidEntry) error {
 	// We store two indexes for NFT bids. (1) sorted by bid amount nanos in the key and
 	// (2) sorted by the bidder PKID. Both come in handy.
 
@@ -4351,15 +4353,15 @@ func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, nftBidEntry *NFTBidEntry) 
 	return nil
 }
 
-func DBPutNFTBidEntryMappings(handle *badger.DB, nftEntry *NFTBidEntry) error {
+func DBPutNFTBidEntryMappings(handle *badger.DB, nftEntry *view.NFTBidEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutNFTBidEntryMappingsWithTxn(txn, nftEntry)
 	})
 }
 
-func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntries []*NFTBidEntry) {
-	nftBidEntries := []*NFTBidEntry{}
+func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *core.PKID) (_nftBidEntries []*view.NFTBidEntry) {
+	nftBidEntries := []*view.NFTBidEntry{}
 	{
 		prefix := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
 		keyPrefix := append(prefix, bidderPKID[:]...)
@@ -4367,20 +4369,20 @@ func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntr
 		bidderPKIDLength := len(bidderPKID[:])
 		for ii, keyFound := range keysFound {
 
-			postHashStartIdx := 1 + bidderPKIDLength           // The length of prefix + length of PKID
-			postHashEndIdx := postHashStartIdx + HashSizeBytes // Add the length of the bid amount (uint64).
+			postHashStartIdx := 1 + bidderPKIDLength                // The length of prefix + length of PKID
+			postHashEndIdx := postHashStartIdx + core.HashSizeBytes // Add the length of the bid amount (uint64).
 
 			// Cut the bid amount out of the key and decode.
 			postHashBytes := keyFound[postHashStartIdx:postHashEndIdx]
 
-			nftHash := &BlockHash{}
+			nftHash := &core.BlockHash{}
 			copy(nftHash[:], postHashBytes)
 
 			serialNumber := DecodeUint64(keyFound[postHashEndIdx:])
 
 			bidAmountNanos := DecodeUint64(valuesFound[ii])
 
-			currentEntry := &NFTBidEntry{
+			currentEntry := &view.NFTBidEntry{
 				NFTPostHash:    nftHash,
 				SerialNumber:   serialNumber,
 				BidderPKID:     bidderPKID,
@@ -4393,17 +4395,17 @@ func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntr
 }
 
 // Get NFT bid Entries *from the DB*. Does not include mempool txns.
-func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber uint64,
-) (_nftBidEntries []*NFTBidEntry) {
-	nftBidEntries := []*NFTBidEntry{}
+func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *core.BlockHash, serialNumber uint64,
+) (_nftBidEntries []*view.NFTBidEntry) {
+	nftBidEntries := []*view.NFTBidEntry{}
 	{
 		prefix := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
 		keyPrefix := append(prefix, nftPostHash[:]...)
 		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
 		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix)
 		for _, keyFound := range keysFound {
-			bidAmountStartIdx := 1 + HashSizeBytes + 8 // The length of prefix + the post hash + the serial #.
-			bidAmountEndIdx := bidAmountStartIdx + 8   // Add the length of the bid amount (uint64).
+			bidAmountStartIdx := 1 + core.HashSizeBytes + 8 // The length of prefix + the post hash + the serial #.
+			bidAmountEndIdx := bidAmountStartIdx + 8        // Add the length of the bid amount (uint64).
 
 			// Cut the bid amount out of the key and decode.
 			bidAmountBytes := keyFound[bidAmountStartIdx:bidAmountEndIdx]
@@ -4413,9 +4415,9 @@ func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber 
 			bidderPKIDBytes := keyFound[bidAmountEndIdx:]
 
 			// Construct the bidder PKID.
-			bidderPKID := PublicKeyToPKID(bidderPKIDBytes)
+			bidderPKID := core.PublicKeyToPKID(bidderPKIDBytes)
 
-			currentEntry := &NFTBidEntry{
+			currentEntry := &view.NFTBidEntry{
 				NFTPostHash:    nftPostHash,
 				SerialNumber:   serialNumber,
 				BidderPKID:     bidderPKID,
@@ -4429,19 +4431,19 @@ func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber 
 
 func DBGetNFTBidEntriesPaginated(
 	handle *badger.DB,
-	nftHash *BlockHash,
+	nftHash *core.BlockHash,
 	serialNumber uint64,
-	startEntry *NFTBidEntry,
+	startEntry *view.NFTBidEntry,
 	limit int,
 	reverse bool,
-) (_bidEntries []*NFTBidEntry) {
+) (_bidEntries []*view.NFTBidEntry) {
 	seekKey := _dbSeekKeyForNFTBids(nftHash, serialNumber)
 	startKey := seekKey
 	if startEntry != nil {
 		startKey = _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(startEntry)
 	}
 	// The key length consists of: (1 prefix byte) + (BlockHash) + (2 x uint64) + (PKID)
-	maxKeyLen := 1 + HashSizeBytes + 16 + btcec.PubKeyBytesLenCompressed
+	maxKeyLen := 1 + core.HashSizeBytes + 16 + btcec.PubKeyBytesLenCompressed
 	keysBytes, _, _ := DBGetPaginatedKeysAndValuesForPrefix(
 		handle,
 		startKey,
@@ -4453,9 +4455,9 @@ func DBGetNFTBidEntriesPaginated(
 	// TODO: We should probably handle the err case for this function.
 
 	// Chop up the keyBytes into bid entries.
-	var bidEntries []*NFTBidEntry
+	var bidEntries []*view.NFTBidEntry
 	for _, keyBytes := range keysBytes {
-		serialNumStartIdx := 1 + HashSizeBytes
+		serialNumStartIdx := 1 + core.HashSizeBytes
 		bidAmountStartIdx := serialNumStartIdx + 8
 		bidderPKIDStartIdx := bidAmountStartIdx + 8
 
@@ -4464,14 +4466,14 @@ func DBGetNFTBidEntriesPaginated(
 		bidAmountBytes := keyBytes[bidAmountStartIdx:bidderPKIDStartIdx]
 		bidderPKIDBytes := keyBytes[bidderPKIDStartIdx:]
 
-		nftHash := &BlockHash{}
+		nftHash := &core.BlockHash{}
 		copy(nftHash[:], nftHashBytes)
 		serialNumber := DecodeUint64(serialNumberBytes)
 		bidAmount := DecodeUint64(bidAmountBytes)
-		bidderPKID := &PKID{}
+		bidderPKID := &core.PKID{}
 		copy(bidderPKID[:], bidderPKIDBytes)
 
-		bidEntry := &NFTBidEntry{
+		bidEntry := &view.NFTBidEntry{
 			NFTPostHash:    nftHash,
 			SerialNumber:   serialNumber,
 			BidAmountNanos: bidAmount,
@@ -4490,7 +4492,7 @@ func DBGetNFTBidEntriesPaginated(
 // ======================================================================================
 
 func _dbKeyForOwnerToDerivedKeyMapping(
-	ownerPublicKey PublicKey, derivedPublicKey PublicKey) []byte {
+	ownerPublicKey core.PublicKey, derivedPublicKey core.PublicKey) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
 	key := append(prefixCopy, ownerPublicKey[:]...)
@@ -4499,7 +4501,7 @@ func _dbKeyForOwnerToDerivedKeyMapping(
 }
 
 func _dbSeekPrefixForDerivedKeyMappings(
-	ownerPublicKey PublicKey) []byte {
+	ownerPublicKey core.PublicKey) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
 	key := append(prefixCopy, ownerPublicKey[:]...)
@@ -4507,7 +4509,7 @@ func _dbSeekPrefixForDerivedKeyMappings(
 }
 
 func DBPutDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+	txn *badger.Txn, ownerPublicKey core.PublicKey, derivedPublicKey core.PublicKey, derivedKeyEntry *view.DerivedKeyEntry) error {
 
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Owner Public Key "+
@@ -4526,7 +4528,7 @@ func DBPutDerivedKeyMappingWithTxn(
 }
 
 func DBPutDerivedKeyMapping(
-	handle *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+	handle *badger.DB, ownerPublicKey core.PublicKey, derivedPublicKey core.PublicKey, derivedKeyEntry *view.DerivedKeyEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey, derivedKeyEntry)
@@ -4534,7 +4536,7 @@ func DBPutDerivedKeyMapping(
 }
 
 func DBGetOwnerToDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
+	txn *badger.Txn, ownerPublicKey core.PublicKey, derivedPublicKey core.PublicKey) *view.DerivedKeyEntry {
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
 	derivedKeyEntryItem, err := txn.Get(key)
@@ -4545,7 +4547,7 @@ func DBGetOwnerToDerivedKeyMappingWithTxn(
 	if err != nil {
 		return nil
 	}
-	derivedKeyEntry := &DerivedKeyEntry{}
+	derivedKeyEntry := &view.DerivedKeyEntry{}
 	err = derivedKeyEntryItem.Value(func(valBytes []byte) error {
 		return gob.NewDecoder(bytes.NewReader(derivedKeyEntryBytes)).Decode(derivedKeyEntry)
 	})
@@ -4554,9 +4556,9 @@ func DBGetOwnerToDerivedKeyMappingWithTxn(
 }
 
 func DBGetOwnerToDerivedKeyMapping(
-	db *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
+	db *badger.DB, ownerPublicKey core.PublicKey, derivedPublicKey core.PublicKey) *view.DerivedKeyEntry {
 
-	var derivedKeyEntry *DerivedKeyEntry
+	var derivedKeyEntry *view.DerivedKeyEntry
 	db.View(func(txn *badger.Txn) error {
 		derivedKeyEntry = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
 		return nil
@@ -4565,7 +4567,7 @@ func DBGetOwnerToDerivedKeyMapping(
 }
 
 func DBDeleteDerivedKeyMappingWithTxn(
-	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
+	txn *badger.Txn, ownerPublicKey core.PublicKey, derivedPublicKey core.PublicKey) error {
 
 	// First check that a mapping exists for the passed in public keys.
 	// If one doesn't exist then there's nothing to do.
@@ -4586,21 +4588,21 @@ func DBDeleteDerivedKeyMappingWithTxn(
 }
 
 func DBDeleteDerivedKeyMapping(
-	handle *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
+	handle *badger.DB, ownerPublicKey core.PublicKey, derivedPublicKey core.PublicKey) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
 	})
 }
 
-func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicKey) (
-	_entries []*DerivedKeyEntry, _err error) {
+func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey core.PublicKey) (
+	_entries []*view.DerivedKeyEntry, _err error) {
 
 	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPublicKey)
 	_, valsFound := _enumerateKeysForPrefix(handle, prefix)
 
-	var derivedEntries []*DerivedKeyEntry
+	var derivedEntries []*view.DerivedKeyEntry
 	for _, keyBytes := range valsFound {
-		derivedKeyEntry := &DerivedKeyEntry{}
+		derivedKeyEntry := &view.DerivedKeyEntry{}
 		err := gob.NewDecoder(bytes.NewReader(keyBytes)).Decode(derivedKeyEntry)
 		if err != nil {
 			return nil, err
@@ -4614,7 +4616,7 @@ func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicK
 // ======================================================================================
 // Profile code
 // ======================================================================================
-func _dbKeyForPKIDToProfileEntry(pkid *PKID) []byte {
+func _dbKeyForPKIDToProfileEntry(pkid *core.PKID) []byte {
 	prefixCopy := append([]byte{}, _PrefixPKIDToProfileEntry...)
 	key := append(prefixCopy, pkid[:]...)
 	return key
@@ -4630,7 +4632,7 @@ func _dbKeyForProfileUsernameToPKID(nonLowercaseUsername []byte) []byte {
 }
 
 // This is the key we use to sort profiles by their amount of DeSo locked
-func _dbKeyForCreatorDeSoLockedNanosCreatorPKID(desoLockedNanos uint64, pkid *PKID) []byte {
+func _dbKeyForCreatorDeSoLockedNanosCreatorPKID(desoLockedNanos uint64, pkid *core.PKID) []byte {
 	key := append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
 	key = append(key, EncodeUint64(desoLockedNanos)...)
 	key = append(key, pkid[:]...)
@@ -4638,7 +4640,7 @@ func _dbKeyForCreatorDeSoLockedNanosCreatorPKID(desoLockedNanos uint64, pkid *PK
 }
 
 func DBGetPKIDForUsernameWithTxn(
-	txn *badger.Txn, username []byte) *PKID {
+	txn *badger.Txn, username []byte) *core.PKID {
 
 	key := _dbKeyForProfileUsernameToPKID(username)
 	profileEntryItem, err := txn.Get(key)
@@ -4652,11 +4654,11 @@ func DBGetPKIDForUsernameWithTxn(
 		return nil
 	}
 
-	return PublicKeyToPKID(pkidBytes)
+	return core.PublicKeyToPKID(pkidBytes)
 }
 
-func DBGetPKIDForUsername(db *badger.DB, username []byte) *PKID {
-	var ret *PKID
+func DBGetPKIDForUsername(db *badger.DB, username []byte) *core.PKID {
+	var ret *core.PKID
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetPKIDForUsernameWithTxn(txn, username)
 		return nil
@@ -4665,7 +4667,7 @@ func DBGetPKIDForUsername(db *badger.DB, username []byte) *PKID {
 }
 
 func DBGetProfileEntryForUsernameWithTxn(
-	txn *badger.Txn, username []byte) *ProfileEntry {
+	txn *badger.Txn, username []byte) *view.ProfileEntry {
 
 	pkid := DBGetPKIDForUsernameWithTxn(txn, username)
 	if pkid == nil {
@@ -4675,8 +4677,8 @@ func DBGetProfileEntryForUsernameWithTxn(
 	return DBGetProfileEntryForPKIDWithTxn(txn, pkid)
 }
 
-func DBGetProfileEntryForUsername(db *badger.DB, username []byte) *ProfileEntry {
-	var ret *ProfileEntry
+func DBGetProfileEntryForUsername(db *badger.DB, username []byte) *view.ProfileEntry {
+	var ret *view.ProfileEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetProfileEntryForUsernameWithTxn(txn, username)
 		return nil
@@ -4685,10 +4687,10 @@ func DBGetProfileEntryForUsername(db *badger.DB, username []byte) *ProfileEntry 
 }
 
 func DBGetProfileEntryForPKIDWithTxn(
-	txn *badger.Txn, pkid *PKID) *ProfileEntry {
+	txn *badger.Txn, pkid *core.PKID) *view.ProfileEntry {
 
 	key := _dbKeyForPKIDToProfileEntry(pkid)
-	profileEntryObj := &ProfileEntry{}
+	profileEntryObj := &view.ProfileEntry{}
 	profileEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -4704,8 +4706,8 @@ func DBGetProfileEntryForPKIDWithTxn(
 	return profileEntryObj
 }
 
-func DBGetProfileEntryForPKID(db *badger.DB, pkid *PKID) *ProfileEntry {
-	var ret *ProfileEntry
+func DBGetProfileEntryForPKID(db *badger.DB, pkid *core.PKID) *view.ProfileEntry {
+	var ret *view.ProfileEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DBGetProfileEntryForPKIDWithTxn(txn, pkid)
 		return nil
@@ -4714,7 +4716,7 @@ func DBGetProfileEntryForPKID(db *badger.DB, pkid *PKID) *ProfileEntry {
 }
 
 func DBDeleteProfileEntryMappingsWithTxn(
-	txn *badger.Txn, pkid *PKID, params *DeSoParams) error {
+	txn *badger.Txn, pkid *core.PKID, params *DeSoParams) error {
 
 	// First pull up the mapping that exists for the profile pub key passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -4750,7 +4752,7 @@ func DBDeleteProfileEntryMappingsWithTxn(
 }
 
 func DBDeleteProfileEntryMappings(
-	handle *badger.DB, pkid *PKID, params *DeSoParams) error {
+	handle *badger.DB, pkid *core.PKID, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteProfileEntryMappingsWithTxn(txn, pkid, params)
@@ -4758,7 +4760,7 @@ func DBDeleteProfileEntryMappings(
 }
 
 func DBPutProfileEntryMappingsWithTxn(
-	txn *badger.Txn, profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
+	txn *badger.Txn, profileEntry *view.ProfileEntry, pkid *core.PKID, params *DeSoParams) error {
 
 	profileDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(profileDataBuf).Encode(profileEntry)
@@ -4792,7 +4794,7 @@ func DBPutProfileEntryMappingsWithTxn(
 }
 
 func DBPutProfileEntryMappings(
-	handle *badger.DB, profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
+	handle *badger.DB, profileEntry *view.ProfileEntry, pkid *core.PKID, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutProfileEntryMappingsWithTxn(txn, profileEntry, pkid, params)
@@ -4805,12 +4807,12 @@ func DBPutProfileEntryMappings(
 // TODO(performance): This currently fetches all profiles. We should implement
 // some kind of pagination instead though.
 func DBGetAllProfilesByCoinValue(handle *badger.DB, fetchEntries bool) (
-	_lockedDeSoNanos []uint64, _profilePublicKeys []*PKID,
-	_profileEntries []*ProfileEntry, _err error) {
+	_lockedDeSoNanos []uint64, _profilePublicKeys []*core.PKID,
+	_profileEntries []*view.ProfileEntry, _err error) {
 
 	lockedDeSoNanosFetched := []uint64{}
-	profilePublicKeysFetched := []*PKID{}
-	profileEntriesFetched := []*ProfileEntry{}
+	profilePublicKeysFetched := []*core.PKID{}
+	profileEntriesFetched := []*view.ProfileEntry{}
 	dbPrefixx := append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
 
 	err := handle.View(func(txn *badger.Txn) error {
@@ -4849,7 +4851,7 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, fetchEntries bool) (
 			copy(profilePKID[:], lockedDeSoPubKeyConcatKey[uint64BytesLen:])
 
 			lockedDeSoNanosFetched = append(lockedDeSoNanosFetched, lockedDeSoNanos)
-			profilePublicKeysFetched = append(profilePublicKeysFetched, PublicKeyToPKID(profilePKID))
+			profilePublicKeysFetched = append(profilePublicKeysFetched, core.PublicKeyToPKID(profilePKID))
 		}
 		return nil
 	})
@@ -4877,13 +4879,13 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, fetchEntries bool) (
 // =====================================================================================
 // Creator coin balance entry code
 // =====================================================================================
-func _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID *PKID, creatorPKID *PKID) []byte {
+func _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID *core.PKID, creatorPKID *core.PKID) []byte {
 	key := append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
 	key = append(key, hodlerPKID[:]...)
 	key = append(key, creatorPKID[:]...)
 	return key
 }
-func _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID *PKID, hodlerPKID *PKID) []byte {
+func _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID *core.PKID, hodlerPKID *core.PKID) []byte {
 	key := append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
 	key = append(key, creatorPKID[:]...)
 	key = append(key, hodlerPKID[:]...)
@@ -4891,10 +4893,10 @@ func _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID *PKID, hodlerPKID 
 }
 
 func DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
-	txn *badger.Txn, hodlerPKID *PKID, creatorPKID *PKID) *BalanceEntry {
+	txn *badger.Txn, hodlerPKID *core.PKID, creatorPKID *core.PKID) *view.BalanceEntry {
 
 	key := _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID)
-	balanceEntryObj := &BalanceEntry{}
+	balanceEntryObj := &view.BalanceEntry{}
 	balanceEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -4912,9 +4914,9 @@ func DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
 }
 
 func DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(
-	handle *badger.DB, hodlerPKID *PKID, creatorPKID *PKID) *BalanceEntry {
+	handle *badger.DB, hodlerPKID *core.PKID, creatorPKID *core.PKID) *view.BalanceEntry {
 
-	var ret *BalanceEntry
+	var ret *view.BalanceEntry
 	handle.View(func(txn *badger.Txn) error {
 		ret = DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
 			txn, hodlerPKID, creatorPKID)
@@ -4924,10 +4926,10 @@ func DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(
 }
 
 func DBGetCreatorCoinBalanceEntryForCreatorPKIDAndHODLerPubKeyWithTxn(
-	txn *badger.Txn, creatorPKID *PKID, hodlerPKID *PKID) *BalanceEntry {
+	txn *badger.Txn, creatorPKID *core.PKID, hodlerPKID *core.PKID) *view.BalanceEntry {
 
 	key := _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID)
-	balanceEntryObj := &BalanceEntry{}
+	balanceEntryObj := &view.BalanceEntry{}
 	balanceEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -4945,7 +4947,7 @@ func DBGetCreatorCoinBalanceEntryForCreatorPKIDAndHODLerPubKeyWithTxn(
 }
 
 func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
-	txn *badger.Txn, hodlerPKID *PKID, creatorPKID *PKID,
+	txn *badger.Txn, hodlerPKID *core.PKID, creatorPKID *core.PKID,
 	params *DeSoParams) error {
 
 	// First pull up the mappings that exists for the keys passed in.
@@ -4976,7 +4978,7 @@ func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 }
 
 func DBDeleteCreatorCoinBalanceEntryMappings(
-	handle *badger.DB, hodlerPKID *PKID, creatorPKID *PKID,
+	handle *badger.DB, hodlerPKID *core.PKID, creatorPKID *core.PKID,
 	params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
@@ -4986,7 +4988,7 @@ func DBDeleteCreatorCoinBalanceEntryMappings(
 }
 
 func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
-	txn *badger.Txn, balanceEntry *BalanceEntry,
+	txn *badger.Txn, balanceEntry *view.BalanceEntry,
 	params *DeSoParams) error {
 
 	balanceEntryDataBuf := bytes.NewBuffer([]byte{})
@@ -5018,7 +5020,7 @@ func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 }
 
 func DBPutCreatorCoinBalanceEntryMappings(
-	handle *badger.DB, balanceEntry *BalanceEntry, params *DeSoParams) error {
+	handle *badger.DB, balanceEntry *view.BalanceEntry, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutCreatorCoinBalanceEntryMappingsWithTxn(
@@ -5028,7 +5030,7 @@ func DBPutCreatorCoinBalanceEntryMappings(
 
 // GetSingleBalanceEntryFromPublicKeys fetchs a single balance entry of a holder's creator coin.
 // Returns nil if the balance entry never existed.
-func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView *UtxoView) (*BalanceEntry, error) {
+func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView *view.UtxoView) (*view.BalanceEntry, error) {
 	holderPKIDEntry := utxoView.GetPKIDForPublicKey(holder)
 	if holderPKIDEntry == nil || holderPKIDEntry.isDeleted {
 		return nil, fmt.Errorf("DbGetSingleBalanceEntryFromPublicKeys: holderPKID was nil or deleted; this should never happen")
@@ -5041,7 +5043,7 @@ func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView
 	creatorPKID := creatorPKIDEntry.PKID
 
 	// Check if there's a balance entry in the view
-	balanceEntryMapKey := BalanceEntryMapKey{HODLerPKID: *holderPKID, CreatorPKID: *creatorPKID}
+	balanceEntryMapKey := view.BalanceEntryMapKey{HODLerPKID: *holderPKID, CreatorPKID: *creatorPKID}
 	balanceEntryFromView, _ := utxoView.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryMapKey]
 	if balanceEntryFromView != nil {
 		return balanceEntryFromView, nil
@@ -5053,8 +5055,8 @@ func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView
 }
 
 // DbGetBalanceEntry returns a balance entry from the database
-func DbGetBalanceEntry(db *badger.DB, holder *PKID, creator *PKID) *BalanceEntry {
-	var ret *BalanceEntry
+func DbGetBalanceEntry(db *badger.DB, holder *core.PKID, creator *core.PKID) *view.BalanceEntry {
+	var ret *view.BalanceEntry
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn, holder, creator)
 		return nil
@@ -5062,9 +5064,9 @@ func DbGetBalanceEntry(db *badger.DB, holder *PKID, creator *PKID) *BalanceEntry
 	return ret
 }
 
-func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, holder *PKID, creator *PKID) *BalanceEntry {
+func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, holder *core.PKID, creator *core.PKID) *view.BalanceEntry {
 	key := _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creator, holder)
-	balanceEntryObj := &BalanceEntry{}
+	balanceEntryObj := &view.BalanceEntry{}
 	balanceEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
@@ -5074,22 +5076,22 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, holder *PK
 	})
 	if err != nil {
 		glog.Errorf("DbGetReposterPubKeyRepostedPostHashToRepostedPostMappingWithTxn: Problem decoding "+
-			"balance entry for holder %v and creator %v", PkToStringMainnet(PKIDToPublicKey(holder)), PkToStringMainnet(PKIDToPublicKey(creator)))
+			"balance entry for holder %v and creator %v", PkToStringMainnet(core.PKIDToPublicKey(holder)), PkToStringMainnet(core.PKIDToPublicKey(creator)))
 		return nil
 	}
 	return balanceEntryObj
 }
 
 // DbGetBalanceEntriesHodlingYou fetchs the BalanceEntries that the passed in pkid holds.
-func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances bool) ([]*BalanceEntry, error) {
+func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *core.PKID, filterOutZeroBalances bool) ([]*view.BalanceEntry, error) {
 	// Get the balance entries for the coins that *you hold*
-	balanceEntriesYouHodl := []*BalanceEntry{}
+	balanceEntriesYouHodl := []*view.BalanceEntry{}
 	{
 		prefix := append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
 		keyPrefix := append(prefix, pkid[:]...)
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
-			currentEntry := &BalanceEntry{}
+			currentEntry := &view.BalanceEntry{}
 			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
 			if filterOutZeroBalances && currentEntry.BalanceNanos == 0 {
 				continue
@@ -5102,15 +5104,15 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances
 }
 
 // DbGetBalanceEntriesHodlingYou fetches the BalanceEntries that hold the pkid passed in.
-func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalances bool) ([]*BalanceEntry, error) {
+func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *core.PKID, filterOutZeroBalances bool) ([]*view.BalanceEntry, error) {
 	// Get the balance entries for the coins that *hold you*
-	balanceEntriesThatHodlYou := []*BalanceEntry{}
+	balanceEntriesThatHodlYou := []*view.BalanceEntry{}
 	{
 		prefix := append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
 		keyPrefix := append(prefix, pkid[:]...)
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
-			currentEntry := &BalanceEntry{}
+			currentEntry := &view.BalanceEntry{}
 			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
 			if filterOutZeroBalances && currentEntry.BalanceNanos == 0 {
 				continue
@@ -5230,9 +5232,9 @@ func DBGetPaginatedKeysAndValuesForPrefix(
 }
 
 func DBGetPaginatedPostsOrderedByTime(
-	db *badger.DB, startPostTimestampNanos uint64, startPostHash *BlockHash,
+	db *badger.DB, startPostTimestampNanos uint64, startPostHash *core.BlockHash,
 	numToFetch int, fetchPostEntries bool, reverse bool) (
-	_postHashes []*BlockHash, _tstampNanos []uint64, _postEntries []*PostEntry,
+	_postHashes []*core.BlockHash, _tstampNanos []uint64, _postEntries []*view.PostEntry,
 	_err error) {
 
 	startPostPrefix := append([]byte{}, _PrefixTstampNanosPostHash...)
@@ -5250,20 +5252,20 @@ func DBGetPaginatedPostsOrderedByTime(
 	maxUint64Tstamp := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
-		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
+		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+core.HashSizeBytes, /*keyLen*/
 		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
 
 	// Cut the post hashes and timestamps out of the returned keys.
-	postHashes := []*BlockHash{}
+	postHashes := []*core.BlockHash{}
 	tstamps := []uint64{}
 	startTstampIndex := len(_PrefixTstampNanosPostHash)
 	hashStartIndex := len(_PrefixTstampNanosPostHash) + len(maxUint64Tstamp)
-	hashEndIndex := hashStartIndex + HashSizeBytes
+	hashEndIndex := hashStartIndex + core.HashSizeBytes
 	for _, postKeyBytes := range postIndexKeys {
-		currentPostHash := &BlockHash{}
+		currentPostHash := &core.BlockHash{}
 		copy(currentPostHash[:], postKeyBytes[hashStartIndex:hashEndIndex])
 		postHashes = append(postHashes, currentPostHash)
 
@@ -5272,7 +5274,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	}
 
 	// Fetch the PostEntries if desired.
-	var postEntries []*PostEntry
+	var postEntries []*view.PostEntry
 	if fetchPostEntries {
 		for _, postHash := range postHashes {
 			postEntry := DBGetPostEntryByPostHash(db, postHash)
@@ -5288,8 +5290,8 @@ func DBGetPaginatedPostsOrderedByTime(
 }
 
 func DBGetProfilesByUsernamePrefixAndDeSoLocked(
-	db *badger.DB, usernamePrefix string, utxoView *UtxoView) (
-	_profileEntries []*ProfileEntry, _err error) {
+	db *badger.DB, usernamePrefix string, utxoView *view.UtxoView) (
+	_profileEntries []*view.ProfileEntry, _err error) {
 
 	startPrefix := append([]byte{}, _PrefixProfileUsernameToPKID...)
 	lowercaseUsernamePrefixString := strings.ToLower(usernamePrefix)
@@ -5307,28 +5309,28 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(
 
 	// Have to do this to convert the PKIDs back into public keys
 	// TODO: We should clean things up around public keys vs PKIDs
-	pubKeysMap := make(map[PkMapKey][]byte)
+	pubKeysMap := make(map[view.PkMapKey][]byte)
 	for _, pkidBytes := range pkidsFound {
 		if len(pkidBytes) != btcec.PubKeyBytesLenCompressed {
 			continue
 		}
-		pkid := &PKID{}
+		pkid := &core.PKID{}
 		copy(pkid[:], pkidBytes)
 		pubKey := DBGetPublicKeyForPKID(db, pkid)
 		if len(pubKey) != 0 {
-			pubKeysMap[MakePkMapKey(pubKey)] = pubKey
+			pubKeysMap[view.MakePkMapKey(pubKey)] = pubKey
 		}
 	}
 
 	for username, profileEntry := range utxoView.ProfileUsernameToProfileEntry {
 		if strings.HasPrefix(string(username[:]), lowercaseUsernamePrefixString) {
-			pkMapKey := MakePkMapKey(profileEntry.PublicKey)
+			pkMapKey := view.MakePkMapKey(profileEntry.PublicKey)
 			pubKeysMap[pkMapKey] = profileEntry.PublicKey
 		}
 	}
 
 	// Sigh.. convert the public keys *back* into PKIDs...
-	profilesFound := []*ProfileEntry{}
+	profilesFound := []*view.ProfileEntry{}
 	for _, pk := range pubKeysMap {
 		pkid := utxoView.GetPKIDForPublicKey(pk).PKID
 		profile := utxoView.GetProfileEntryForPKID(pkid)
@@ -5353,7 +5355,7 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(
 func DBGetPaginatedProfilesByDeSoLocked(
 	db *badger.DB, startDeSoLockedNanos uint64,
 	startProfilePubKeyy []byte, numToFetch int, fetchProfileEntries bool) (
-	_profilePublicKeys [][]byte, _profileEntries []*ProfileEntry, _err error) {
+	_profilePublicKeys [][]byte, _profileEntries []*view.ProfileEntry, _err error) {
 
 	// Convert the start public key to a PKID.
 	pkidEntry := DBGetPKIDEntryForPublicKey(db, startProfilePubKeyy)
@@ -5393,7 +5395,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 
 	profilePubKeys := [][]byte{}
 	for _, pkidBytes := range profilePKIDs {
-		pkid := &PKID{}
+		pkid := &core.PKID{}
 		copy(pkid[:], pkidBytes)
 		profilePubKeys = append(profilePubKeys, DBGetPublicKeyForPKID(db, pkid))
 	}
@@ -5403,9 +5405,9 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	}
 
 	// Fetch the ProfileEntries if desired.
-	var profileEntries []*ProfileEntry
+	var profileEntries []*view.ProfileEntry
 	for _, profilePKID := range profilePKIDs {
-		pkid := &PKID{}
+		pkid := &core.PKID{}
 		copy(pkid[:], profilePKID)
 		profileEntry := DBGetProfileEntryForPKID(db, pkid)
 		if profileEntry == nil {

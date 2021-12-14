@@ -1,6 +1,8 @@
 package lib
 
 import (
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/view"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -18,7 +20,7 @@ func _GetTestBlockNode() *BlockNode {
 	bs := BlockNode{}
 
 	// Hash
-	bs.Hash = &BlockHash{
+	bs.Hash = &core.BlockHash{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
 		0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29,
@@ -29,7 +31,7 @@ func _GetTestBlockNode() *BlockNode {
 	bs.Height = 123456789
 
 	// DifficultyTarget
-	bs.DifficultyTarget = &BlockHash{
+	bs.DifficultyTarget = &core.BlockHash{
 		0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29,
 		0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
@@ -230,7 +232,7 @@ func TestPrivateMessages(t *testing.T) {
 
 	// pk1 -> pk2: message1Str, tstamp1
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
+		db, &view.MessageEntry{
 			SenderPublicKey:    pk1,
 			TstampNanos:        tstamp1,
 			RecipientPublicKey: pk2,
@@ -238,7 +240,7 @@ func TestPrivateMessages(t *testing.T) {
 		}))
 	// pk2 -> pk1: message2Str, tstamp2
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
+		db, &view.MessageEntry{
 			SenderPublicKey:    pk2,
 			TstampNanos:        tstamp2,
 			RecipientPublicKey: pk1,
@@ -246,7 +248,7 @@ func TestPrivateMessages(t *testing.T) {
 		}))
 	// pk3 -> pk1: message3Str, tstamp3
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
+		db, &view.MessageEntry{
 			SenderPublicKey:    pk3,
 			TstampNanos:        tstamp3,
 			RecipientPublicKey: pk1,
@@ -254,7 +256,7 @@ func TestPrivateMessages(t *testing.T) {
 		}))
 	// pk2 -> pk1: message4Str, tstamp4
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
+		db, &view.MessageEntry{
 			SenderPublicKey:    pk2,
 			TstampNanos:        tstamp4,
 			RecipientPublicKey: pk1,
@@ -262,7 +264,7 @@ func TestPrivateMessages(t *testing.T) {
 		}))
 	// pk1 -> pk3: message5Str, tstamp5
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
+		db, &view.MessageEntry{
 			SenderPublicKey:    pk1,
 			TstampNanos:        tstamp5,
 			RecipientPublicKey: pk3,
@@ -270,31 +272,31 @@ func TestPrivateMessages(t *testing.T) {
 		}))
 
 	// Define all the messages as they appear in the db.
-	message1 := &MessageEntry{
+	message1 := &view.MessageEntry{
 		SenderPublicKey:    pk1,
 		RecipientPublicKey: pk2,
 		EncryptedText:      message1Str,
 		TstampNanos:        tstamp1,
 	}
-	message2 := &MessageEntry{
+	message2 := &view.MessageEntry{
 		SenderPublicKey:    pk2,
 		RecipientPublicKey: pk1,
 		EncryptedText:      message2Str,
 		TstampNanos:        tstamp2,
 	}
-	message3 := &MessageEntry{
+	message3 := &view.MessageEntry{
 		SenderPublicKey:    pk3,
 		RecipientPublicKey: pk1,
 		EncryptedText:      message3Str,
 		TstampNanos:        tstamp3,
 	}
-	message4 := &MessageEntry{
+	message4 := &view.MessageEntry{
 		SenderPublicKey:    pk2,
 		RecipientPublicKey: pk1,
 		EncryptedText:      message4Str,
 		TstampNanos:        tstamp4,
 	}
-	message5 := &MessageEntry{
+	message5 := &view.MessageEntry{
 		SenderPublicKey:    pk1,
 		RecipientPublicKey: pk3,
 		EncryptedText:      message5Str,
@@ -316,7 +318,7 @@ func TestPrivateMessages(t *testing.T) {
 		messages, err := DbGetMessageEntriesForPublicKey(db, pk1)
 		require.NoError(err)
 
-		require.Equal([]*MessageEntry{
+		require.Equal([]*view.MessageEntry{
 			message1,
 			message2,
 			message3,
@@ -330,7 +332,7 @@ func TestPrivateMessages(t *testing.T) {
 		messages, err := DbGetMessageEntriesForPublicKey(db, pk2)
 		require.NoError(err)
 
-		require.Equal([]*MessageEntry{
+		require.Equal([]*view.MessageEntry{
 			message1,
 			message2,
 			message4,
@@ -342,7 +344,7 @@ func TestPrivateMessages(t *testing.T) {
 		messages, err := DbGetMessageEntriesForPublicKey(db, pk3)
 		require.NoError(err)
 
-		require.Equal([]*MessageEntry{
+		require.Equal([]*view.MessageEntry{
 			message3,
 			message5,
 		}, messages)
@@ -356,7 +358,7 @@ func TestPrivateMessages(t *testing.T) {
 		messages, err := DbGetMessageEntriesForPublicKey(db, pk1)
 		require.NoError(err)
 
-		require.Equal([]*MessageEntry{
+		require.Equal([]*view.MessageEntry{
 			message1,
 			message2,
 			message4,
@@ -367,7 +369,7 @@ func TestPrivateMessages(t *testing.T) {
 		messages, err := DbGetMessageEntriesForPublicKey(db, pk2)
 		require.NoError(err)
 
-		require.Equal([]*MessageEntry{
+		require.Equal([]*view.MessageEntry{
 			message1,
 			message2,
 			message4,
@@ -377,7 +379,7 @@ func TestPrivateMessages(t *testing.T) {
 		messages, err := DbGetMessageEntriesForPublicKey(db, pk3)
 		require.NoError(err)
 
-		require.Equal([]*MessageEntry{
+		require.Equal([]*view.MessageEntry{
 			message5,
 		}, messages)
 	}

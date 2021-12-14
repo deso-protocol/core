@@ -1,34 +1,35 @@
-package lib
+package view
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
 
-func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
+func _doFollowTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
 	followedPkBase58Check string, senderPrivBase58Check string, isUnfollow bool) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
+	senderPkBytes, _, err := lib.Base58CheckDecode(senderPkBase58Check)
 	require.NoError(err)
 
-	followedPkBytes, _, err := Base58CheckDecode(followedPkBase58Check)
+	followedPkBytes, _, err := lib.Base58CheckDecode(followedPkBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateFollowTxn(
-		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -36,7 +37,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, senderPrivBase58Check)
+	lib._signTxn(t, txn, senderPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -71,8 +72,8 @@ func TestFollowTxns(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 
@@ -88,7 +89,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Setup some convenience functions for the test.
 	txnOps := [][]*UtxoOperation{}
-	txns := []*MsgDeSoTxn{}
+	txns := []*lib.MsgDeSoTxn{}
 	expectedSenderBalances := []uint64{}
 	expectedRecipientBalances := []uint64{}
 
@@ -99,9 +100,9 @@ func TestFollowTxns(t *testing.T) {
 		senderPk string, recipientPk string, senderPriv string) {
 
 		expectedSenderBalances = append(
-			expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
+			expectedSenderBalances, lib._getBalance(t, chain, nil, lib.senderPkString))
 		expectedRecipientBalances = append(
-			expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
+			expectedRecipientBalances, lib._getBalance(t, chain, nil, lib.recipientPkString))
 
 		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
 			t, chain, db, params, senderPk, recipientPk,
@@ -112,31 +113,31 @@ func TestFollowTxns(t *testing.T) {
 	}
 
 	// Fund all the keys.
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
 
 	doFollowTxn := func(
 		senderPkBase58Check string, followedPkBase58Check string,
 		senderPrivBase58Check string, isUnfollow bool, feeRateNanosPerKB uint64) {
 
 		expectedSenderBalances = append(
-			expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
+			expectedSenderBalances, lib._getBalance(t, chain, nil, lib.senderPkString))
 		expectedRecipientBalances = append(
-			expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
+			expectedRecipientBalances, lib._getBalance(t, chain, nil, lib.recipientPkString))
 
 		currentOps, currentTxn, _, err := _doFollowTxn(
 			t, chain, db, params, feeRateNanosPerKB, senderPkBase58Check,
@@ -154,9 +155,9 @@ func TestFollowTxns(t *testing.T) {
 		newStakeMultipleBasisPoints uint64, isHidden bool) {
 
 		expectedSenderBalances = append(
-			expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
+			expectedSenderBalances, lib._getBalance(t, chain, nil, lib.senderPkString))
 		expectedRecipientBalances = append(
-			expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
+			expectedRecipientBalances, lib._getBalance(t, chain, nil, lib.recipientPkString))
 
 		currentOps, currentTxn, _, err := _updateProfile(
 			t, chain, db, params,
@@ -176,7 +177,7 @@ func TestFollowTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, false /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorFollowingNonexistentProfile)
+	require.Contains(err.Error(), lib.RuleErrorFollowingNonexistentProfile)
 
 	// Add profiles so they can be followed.
 	updateProfile(
@@ -223,7 +224,7 @@ func TestFollowTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, false /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorFollowEntryAlreadyExists)
+	require.Contains(err.Error(), lib.RuleErrorFollowEntryAlreadyExists)
 
 	// m2 -> m1
 	doFollowTxn(m2Pub, m1Pub, m2Priv, false /*isUnfollow*/, 10 /*feeRateNanosPerKB*/)
@@ -257,14 +258,14 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0 has no follows.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
+		followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(followPks))
 	}
 
 	// Verify pks following and check like count m1.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
+		followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(followingM1), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -274,7 +275,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m2.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
+		followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(followingM2), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -284,7 +285,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m3.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
+		followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(followingM3), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -312,7 +313,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
+		followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(len(m0Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -322,7 +323,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m1's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
+		followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(m1Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -332,7 +333,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m2's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
+		followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(m2Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -342,7 +343,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m3's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
+		followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(m3Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -363,7 +364,7 @@ func TestFollowTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, true /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorCannotUnfollowNonexistentFollowEntry)
+	require.Contains(err.Error(), lib.RuleErrorCannotUnfollowNonexistentFollowEntry)
 
 	followingM1 = [][]byte{
 		_strToPk(t, m2Pub),
@@ -376,7 +377,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m1.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
+		followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(followingM1), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -386,7 +387,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m2.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
+		followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(followingM2), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -400,14 +401,14 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0 has no follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
+		followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(followPks))
 	}
 
 	// Verify m3's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
+		followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(m3Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -418,18 +419,18 @@ func TestFollowTxns(t *testing.T) {
 	// ===================================================================================
 	// Finish it off with some transactions
 	// ===================================================================================
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
 	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
 	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
 	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
@@ -462,14 +463,14 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m0 has no follows.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
+			followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify pks following and check like count m1.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
+			followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(len(followingM1), len(followPks))
 			for ii := 0; ii < len(followPks); ii++ {
@@ -479,7 +480,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify pks following and check like count m2.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
+			followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(len(followingM2), len(followPks))
 			for ii := 0; ii < len(followPks); ii++ {
@@ -489,7 +490,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify pks following and check like count m3.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
+			followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(len(followingM3), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -512,14 +513,14 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m0 has no follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
+			followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify m1's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
+			followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(len(m1Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -529,7 +530,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m2's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
+			followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(len(m2Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -539,7 +540,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m3's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
+			followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(len(m3Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -567,52 +568,52 @@ func TestFollowTxns(t *testing.T) {
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
-		require.Equal(int64(expectedSenderBalances[backwardIter]), int64(_getBalance(t, chain, nil, senderPkString)))
-		require.Equal(expectedRecipientBalances[backwardIter], _getBalance(t, chain, nil, recipientPkString))
+		require.Equal(int64(expectedSenderBalances[backwardIter]), int64(lib._getBalance(t, chain, nil, lib.senderPkString)))
+		require.Equal(expectedRecipientBalances[backwardIter], lib._getBalance(t, chain, nil, lib.recipientPkString))
 	}
 
 	// This function is used to test the state after all ops are rolled back.
 	testDisconnectedState := func() {
 		// Verify that all the pks following you have been deleted.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
+			followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
+			followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
+			followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
+			followPks, err := db.DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify that all the keys you followed have been deleted.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
+			followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
+			followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
+			followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
+			followPks, err := db.DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
@@ -626,8 +627,8 @@ func TestFollowTxns(t *testing.T) {
 		// See comment above on this transaction.
 		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
-		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, senderPkString))
-		require.Equal(expectedRecipientBalances[ii], _getBalance(t, chain, mempool, recipientPkString))
+		require.Equal(expectedSenderBalances[ii], lib._getBalance(t, chain, mempool, lib.senderPkString))
+		require.Equal(expectedRecipientBalances[ii], lib._getBalance(t, chain, mempool, lib.recipientPkString))
 
 		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
 		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
@@ -666,8 +667,8 @@ func TestFollowTxns(t *testing.T) {
 		require.NoError(err)
 	}
 	require.NoError(utxoView2.FlushToDb())
-	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
-	require.Equal(expectedRecipientBalances[0], _getBalance(t, chain, nil, recipientPkString))
+	require.Equal(expectedSenderBalances[0], lib._getBalance(t, chain, nil, lib.senderPkString))
+	require.Equal(expectedRecipientBalances[0], lib._getBalance(t, chain, nil, lib.recipientPkString))
 
 	testDisconnectedState()
 
@@ -703,11 +704,11 @@ func TestFollowTxns(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := db.GetUtxoOperationsForBlock(db, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
-		txHashes, err := ComputeTransactionHashes(block.Txns)
+		txHashes, err := lib.ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
 		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
 

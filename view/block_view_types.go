@@ -1,10 +1,12 @@
-package lib
+package view
 
 import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"strings"
 )
 
@@ -65,7 +67,7 @@ type UtxoEntry struct {
 	isSpent bool
 
 	// A back-reference to the utxo key associated with this entry.
-	UtxoKey *UtxoKey
+	UtxoKey *core.UtxoKey
 }
 
 type OperationType uint
@@ -229,7 +231,7 @@ type UtxoOperation struct {
 	// TODO: We can probably delete this at some point and save some space. UTXOs
 	// are probably our biggest disk hog so getting rid of this should materially
 	// improve disk usage.
-	Key *UtxoKey
+	Key *core.UtxoKey
 
 	// Used to revert BitcoinExchange transaction.
 	PrevNanosPurchased uint64
@@ -256,7 +258,7 @@ type UtxoOperation struct {
 	PrevNFTEntry              *NFTEntry
 	PrevNFTBidEntry           *NFTBidEntry
 	DeletedNFTBidEntries      []*NFTBidEntry
-	NFTPaymentUtxoKeys        []*UtxoKey
+	NFTPaymentUtxoKeys        []*core.UtxoKey
 	NFTSpentUtxoEntries       []*UtxoEntry
 	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
 
@@ -276,7 +278,7 @@ type UtxoOperation struct {
 	PrevTransactorBalanceEntry *BalanceEntry
 	PrevCreatorBalanceEntry    *BalanceEntry
 	// We use this to revert founder's reward UTXOs created by creator coin buys.
-	FounderRewardUtxoKey *UtxoKey
+	FounderRewardUtxoKey *core.UtxoKey
 
 	// Save balance entries for the sender and receiver when creator coins are transferred.
 	PrevSenderBalanceEntry   *BalanceEntry
@@ -312,14 +314,14 @@ type UtxoOperation struct {
 
 func (utxoEntry *UtxoEntry) String() string {
 	return fmt.Sprintf("< PublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
-		"isSpent: %v, utxoKey: %v>", PkToStringMainnet(utxoEntry.PublicKey),
+		"isSpent: %v, utxoKey: %v>", lib.PkToStringMainnet(utxoEntry.PublicKey),
 		utxoEntry.BlockHeight, utxoEntry.AmountNanos,
 		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
 }
 
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
 // This needs to be in-sync with DeSoMainnetParams.MaxUsernameLengthBytes
-type UsernameMapKey [MaxUsernameLengthBytes]byte
+type UsernameMapKey [lib.MaxUsernameLengthBytes]byte
 
 func MakeUsernameMapKey(nonLowercaseUsername []byte) UsernameMapKey {
 	// Always lowercase the username when we use it as a key in our map. This allows
@@ -334,7 +336,7 @@ func MakeUsernameMapKey(nonLowercaseUsername []byte) UsernameMapKey {
 type PkMapKey [btcec.PubKeyBytesLenCompressed]byte
 
 func (mm PkMapKey) String() string {
-	return PkToStringBoth(mm[:])
+	return lib.PkToStringBoth(mm[:])
 }
 
 func MakePkMapKey(pk []byte) PkMapKey {
@@ -358,12 +360,12 @@ type MessageKey struct {
 
 func (mm *MessageKey) String() string {
 	return fmt.Sprintf("<Public Key: %s, TstampNanos: %d>",
-		PkToStringMainnet(mm.PublicKey[:]), mm.TstampNanos)
+		lib.PkToStringMainnet(mm.PublicKey[:]), mm.TstampNanos)
 }
 
 // StringKey is useful for creating maps that need to be serialized to JSON.
-func (mm *MessageKey) StringKey(params *DeSoParams) string {
-	return PkToString(mm.PublicKey[:], params) + "_" + fmt.Sprint(mm.TstampNanos)
+func (mm *MessageKey) StringKey(params *lib.DeSoParams) string {
+	return lib.PkToString(mm.PublicKey[:], params) + "_" + fmt.Sprint(mm.TstampNanos)
 }
 
 // MessageEntry stores the essential content of a message transaction.
@@ -399,7 +401,7 @@ type ForbiddenPubKeyEntry struct {
 	isDeleted bool
 }
 
-func MakeLikeKey(userPk []byte, LikedPostHash BlockHash) LikeKey {
+func MakeLikeKey(userPk []byte, LikedPostHash core.BlockHash) LikeKey {
 	return LikeKey{
 		LikerPubKey:   MakePkMapKey(userPk),
 		LikedPostHash: LikedPostHash,
@@ -408,19 +410,19 @@ func MakeLikeKey(userPk []byte, LikedPostHash BlockHash) LikeKey {
 
 type LikeKey struct {
 	LikerPubKey   PkMapKey
-	LikedPostHash BlockHash
+	LikedPostHash core.BlockHash
 }
 
 // LikeEntry stores the content of a like transaction.
 type LikeEntry struct {
 	LikerPubKey   []byte
-	LikedPostHash *BlockHash
+	LikedPostHash *core.BlockHash
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
 
-func MakeNFTKey(nftPostHash *BlockHash, serialNumber uint64) NFTKey {
+func MakeNFTKey(nftPostHash *core.BlockHash, serialNumber uint64) NFTKey {
 	return NFTKey{
 		NFTPostHash:  *nftPostHash,
 		SerialNumber: serialNumber,
@@ -428,7 +430,7 @@ func MakeNFTKey(nftPostHash *BlockHash, serialNumber uint64) NFTKey {
 }
 
 type NFTKey struct {
-	NFTPostHash  BlockHash
+	NFTPostHash  core.BlockHash
 	SerialNumber uint64
 }
 
@@ -436,9 +438,9 @@ type NFTKey struct {
 // postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
 // defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
 type NFTEntry struct {
-	LastOwnerPKID              *PKID // This is needed to decrypt unlockable text.
-	OwnerPKID                  *PKID
-	NFTPostHash                *BlockHash
+	LastOwnerPKID              *core.PKID // This is needed to decrypt unlockable text.
+	OwnerPKID                  *core.PKID
+	NFTPostHash                *core.BlockHash
 	SerialNumber               uint64
 	IsForSale                  bool
 	MinBidAmountNanos          uint64
@@ -452,7 +454,7 @@ type NFTEntry struct {
 	isDeleted bool
 }
 
-func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
+func MakeNFTBidKey(bidderPKID *core.PKID, nftPostHash *core.BlockHash, serialNumber uint64) NFTBidKey {
 	return NFTBidKey{
 		BidderPKID:   *bidderPKID,
 		NFTPostHash:  *nftPostHash,
@@ -461,15 +463,15 @@ func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64
 }
 
 type NFTBidKey struct {
-	BidderPKID   PKID
-	NFTPostHash  BlockHash
+	BidderPKID   core.PKID
+	NFTPostHash  core.BlockHash
 	SerialNumber uint64
 }
 
 // This struct defines a single bid on an NFT.
 type NFTBidEntry struct {
-	BidderPKID     *PKID
-	NFTPostHash    *BlockHash
+	BidderPKID     *core.PKID
+	NFTPostHash    *core.BlockHash
 	SerialNumber   uint64
 	BidAmountNanos uint64
 
@@ -479,17 +481,17 @@ type NFTBidEntry struct {
 
 type DerivedKeyEntry struct {
 	// Owner public key
-	OwnerPublicKey PublicKey
+	OwnerPublicKey core.PublicKey
 
 	// Derived public key
-	DerivedPublicKey PublicKey
+	DerivedPublicKey core.PublicKey
 
 	// Expiration Block
 	ExpirationBlock uint64
 
 	// Operation type determines if the derived key is
 	// authorized or de-authorized.
-	OperationType AuthorizeDerivedKeyOperationType
+	OperationType lib.AuthorizeDerivedKeyOperationType
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -497,20 +499,20 @@ type DerivedKeyEntry struct {
 
 type DerivedKeyMapKey struct {
 	// Owner public key
-	OwnerPublicKey PublicKey
+	OwnerPublicKey core.PublicKey
 
 	// Derived public key
-	DerivedPublicKey PublicKey
+	DerivedPublicKey core.PublicKey
 }
 
-func MakeDerivedKeyMapKey(ownerPublicKey PublicKey, derivedPublicKey PublicKey) DerivedKeyMapKey {
+func MakeDerivedKeyMapKey(ownerPublicKey core.PublicKey, derivedPublicKey core.PublicKey) DerivedKeyMapKey {
 	return DerivedKeyMapKey{
 		OwnerPublicKey:   ownerPublicKey,
 		DerivedPublicKey: derivedPublicKey,
 	}
 }
 
-func MakeFollowKey(followerPKID *PKID, followedPKID *PKID) FollowKey {
+func MakeFollowKey(followerPKID *core.PKID, followedPKID *core.PKID) FollowKey {
 	return FollowKey{
 		FollowerPKID: *followerPKID,
 		FollowedPKID: *followedPKID,
@@ -518,28 +520,28 @@ func MakeFollowKey(followerPKID *PKID, followedPKID *PKID) FollowKey {
 }
 
 type FollowKey struct {
-	FollowerPKID PKID
-	FollowedPKID PKID
+	FollowerPKID core.PKID
+	FollowedPKID core.PKID
 }
 
 // FollowEntry stores the content of a follow transaction.
 type FollowEntry struct {
 	// Note: It's a little redundant to have these in the entry because they're
 	// already used as the key in the DB but it doesn't hurt for now.
-	FollowerPKID *PKID
-	FollowedPKID *PKID
+	FollowerPKID *core.PKID
+	FollowedPKID *core.PKID
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
 
 type DiamondKey struct {
-	SenderPKID      PKID
-	ReceiverPKID    PKID
-	DiamondPostHash BlockHash
+	SenderPKID      core.PKID
+	ReceiverPKID    core.PKID
+	DiamondPostHash core.BlockHash
 }
 
-func MakeDiamondKey(senderPKID *PKID, receiverPKID *PKID, diamondPostHash *BlockHash) DiamondKey {
+func MakeDiamondKey(senderPKID *core.PKID, receiverPKID *core.PKID, diamondPostHash *core.BlockHash) DiamondKey {
 	return DiamondKey{
 		SenderPKID:      *senderPKID,
 		ReceiverPKID:    *receiverPKID,
@@ -549,22 +551,22 @@ func MakeDiamondKey(senderPKID *PKID, receiverPKID *PKID, diamondPostHash *Block
 
 func (mm *DiamondKey) String() string {
 	return fmt.Sprintf("<SenderPKID: %v, ReceiverPKID: %v, DiamondPostHash: %v>",
-		PkToStringMainnet(mm.SenderPKID[:]), PkToStringMainnet(mm.ReceiverPKID[:]),
+		lib.PkToStringMainnet(mm.SenderPKID[:]), lib.PkToStringMainnet(mm.ReceiverPKID[:]),
 		hex.EncodeToString(mm.DiamondPostHash[:]))
 }
 
 // DiamondEntry stores the number of diamonds given by a sender to a post.
 type DiamondEntry struct {
-	SenderPKID      *PKID
-	ReceiverPKID    *PKID
-	DiamondPostHash *BlockHash
+	SenderPKID      *core.PKID
+	ReceiverPKID    *core.PKID
+	DiamondPostHash *core.BlockHash
 	DiamondLevel    int64
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
 
-func MakeRepostKey(userPk []byte, RepostedPostHash BlockHash) RepostKey {
+func MakeRepostKey(userPk []byte, RepostedPostHash core.BlockHash) RepostKey {
 	return RepostKey{
 		ReposterPubKey:   MakePkMapKey(userPk),
 		RepostedPostHash: RepostedPostHash,
@@ -574,7 +576,7 @@ func MakeRepostKey(userPk []byte, RepostedPostHash BlockHash) RepostKey {
 type RepostKey struct {
 	ReposterPubKey PkMapKey
 	// Post Hash of post that was reposted
-	RepostedPostHash BlockHash
+	RepostedPostHash core.BlockHash
 }
 
 // RepostEntry stores the content of a Repost transaction.
@@ -582,10 +584,10 @@ type RepostEntry struct {
 	ReposterPubKey []byte
 
 	// BlockHash of the repost
-	RepostPostHash *BlockHash
+	RepostPostHash *core.BlockHash
 
 	// Post Hash of post that was reposted
-	RepostedPostHash *BlockHash
+	RepostedPostHash *core.BlockHash
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -626,7 +628,7 @@ type PostEntryReaderState struct {
 
 type PostEntry struct {
 	// The hash of this post entry. Used as the ID for the entry.
-	PostHash *BlockHash
+	PostHash *core.BlockHash
 
 	// The public key of the user who made the post.
 	PosterPublicKey []byte
@@ -638,7 +640,7 @@ type PostEntry struct {
 	Body []byte
 
 	// The PostHash of the post this post reposts
-	RepostedPostHash *BlockHash
+	RepostedPostHash *core.BlockHash
 
 	// Indicator if this PostEntry is a quoted repost or not
 	IsQuotedRepost bool
@@ -721,7 +723,7 @@ func IsQuotedRepost(postEntry *PostEntry) bool {
 }
 
 func (pe *PostEntry) HasMedia() bool {
-	bodyJSONObj := DeSoBodySchema{}
+	bodyJSONObj := lib.DeSoBodySchema{}
 	err := json.Unmarshal(pe.Body, &bodyJSONObj)
 	//Return true if body json can be parsed and ImageURLs or VideoURLs is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
 	if (err == nil && len(bodyJSONObj.ImageURLs) > 0 || len(bodyJSONObj.VideoURLs) > 0) || len(pe.PostExtraData["EmbedVideoURL"]) > 0 {
@@ -737,11 +739,11 @@ func IsVanillaRepost(postEntry *PostEntry) bool {
 }
 
 type BalanceEntryMapKey struct {
-	HODLerPKID  PKID
-	CreatorPKID PKID
+	HODLerPKID  core.PKID
+	CreatorPKID core.PKID
 }
 
-func MakeCreatorCoinBalanceKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntryMapKey {
+func MakeCreatorCoinBalanceKey(hodlerPKID *core.PKID, creatorPKID *core.PKID) BalanceEntryMapKey {
 	return BalanceEntryMapKey{
 		HODLerPKID:  *hodlerPKID,
 		CreatorPKID: *creatorPKID,
@@ -749,7 +751,7 @@ func MakeCreatorCoinBalanceKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntry
 }
 func (mm BalanceEntryMapKey) String() string {
 	return fmt.Sprintf("BalanceEntryMapKey: <HODLer Pub Key: %v, Creator Pub Key: %v>",
-		PkToStringBoth(mm.HODLerPKID[:]), PkToStringBoth(mm.CreatorPKID[:]))
+		lib.PkToStringBoth(mm.HODLerPKID[:]), lib.PkToStringBoth(mm.CreatorPKID[:]))
 }
 
 // This struct is mainly used to track a user's balance of a particular
@@ -758,9 +760,9 @@ func (mm BalanceEntryMapKey) String() string {
 // <HodlerPKID, CreatorPKID> -> HODLerEntry
 type BalanceEntry struct {
 	// The PKID of the HODLer. This should never change after it's set initially.
-	HODLerPKID *PKID
+	HODLerPKID *core.PKID
 	// The PKID of the creator. This should never change after it's set initially.
-	CreatorPKID *PKID
+	CreatorPKID *core.PKID
 
 	// How much this HODLer owns of a particular creator coin.
 	BalanceNanos uint64
@@ -808,7 +810,7 @@ type CoinEntry struct {
 }
 
 type PKIDEntry struct {
-	PKID *PKID
+	PKID *core.PKID
 	// We add the public key only so we can reuse this struct to store the reverse
 	// mapping of pkid -> public key.
 	PublicKey []byte
@@ -817,7 +819,7 @@ type PKIDEntry struct {
 }
 
 func (pkid *PKIDEntry) String() string {
-	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
+	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", lib.PkToStringMainnet(pkid.PKID[:]), lib.PkToStringMainnet(pkid.PublicKey))
 }
 
 type ProfileEntry struct {

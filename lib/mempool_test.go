@@ -2,15 +2,17 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/view"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func _filterOutBlockRewards(utxoEntries []*UtxoEntry) []*UtxoEntry {
-	nonBlockRewardUtxos := []*UtxoEntry{}
+func _filterOutBlockRewards(utxoEntries []*view.UtxoEntry) []*view.UtxoEntry {
+	nonBlockRewardUtxos := []*view.UtxoEntry{}
 	for _, utxoEntry := range utxoEntries {
-		if utxoEntry.UtxoType != UtxoTypeBlockReward {
+		if utxoEntry.UtxoType != view.UtxoTypeBlockReward {
 			nonBlockRewardUtxos = append(nonBlockRewardUtxos, utxoEntry)
 		}
 	}
@@ -388,7 +390,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 		nonBlockRewardUtxos := _filterOutBlockRewards(utxoEntries)
 		require.Equal(2, len(nonBlockRewardUtxos))
 		// Aggregate the txids and amounts to check them.
-		txids := []BlockHash{}
+		txids := []core.BlockHash{}
 		amounts := []uint64{}
 		for ii, utxoEntry := range nonBlockRewardUtxos {
 			txids = append(txids, utxoEntry.UtxoKey.TxID)
@@ -410,7 +412,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 		// She should have exactly 2 utxos at this point from txn3 and txn4.
 		// Aggregate the txids and amounts to check them.
 		require.Equal(2, len(utxoEntries))
-		txids := []BlockHash{}
+		txids := []core.BlockHash{}
 		for ii, utxoEntry := range utxoEntries {
 			txids = append(txids, utxoEntry.UtxoKey.TxID)
 			require.Equalf(uint64(1), utxoEntry.AmountNanos, "index: %d", ii)

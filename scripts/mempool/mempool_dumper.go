@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/btcsuite/btcd/addrmgr"
+	"github.com/deso-protocol/core"
 	"log"
 	"net"
 	"os"
@@ -78,7 +79,7 @@ func main() {
 		time.Sleep(1 * time.Second)
 		peer.WriteDeSoMessage(&lib.MsgDeSoGetHeaders{
 			StopHash: lib.MustDecodeHexBlockHash("0000000000000000000000000000000000000000000000000000000000000000"),
-			BlockLocator: []*lib.BlockHash{
+			BlockLocator: []*core.BlockHash{
 				lib.MustDecodeHexBlockHash("0000000000f70d7a6dce5502eddb40772fc4b6b1e54e809b21bd38c6bd447e05"),
 				lib.MustDecodeHexBlockHash("0000000000c49db46a5ba1a9d35dfd870c791ea6b695c49e522fe9a7c0f308e8"),
 				lib.MustDecodeHexBlockHash("0000000000597c8ebfe3122c2aa003b6dc0fd67e97e6b4cae437517dd2f500a4"),
@@ -139,7 +140,7 @@ func main() {
 					continue
 				}
 				log.Println("Processing inv of size ", len(invMsg.InvList))
-				hashesToRequest := []*lib.BlockHash{}
+				hashesToRequest := []*core.BlockHash{}
 				for _, inv := range invMsg.InvList {
 					if inv.Type == lib.InvTypeTx {
 						hashesToRequest = append(hashesToRequest, &inv.Hash)
@@ -212,7 +213,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			txnsFound := make(map[lib.BlockHash]*lib.MsgDeSoTxn)
+			txnsFound := make(map[core.BlockHash]*lib.MsgDeSoTxn)
 			if msg.GetMsgType() == lib.MsgTypeTransactionBundle {
 				for _, txn := range msg.(*lib.MsgDeSoTransactionBundle).Transactions {
 					txnsFound[*txn.Hash()] = txn

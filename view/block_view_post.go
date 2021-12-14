@@ -1,10 +1,12 @@
-package lib
+package view
 
 import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -23,7 +25,7 @@ func (bav *UtxoView) _getRepostEntryForRepostKey(repostKey *RepostKey) *RepostEn
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	repostEntry := DbReposterPubKeyRepostedPostHashToRepostEntry(
+	repostEntry := lib.DbReposterPubKeyRepostedPostHashToRepostEntry(
 		bav.Handle, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash)
 	if repostEntry != nil {
 		bav._setRepostEntryMappings(repostEntry)
@@ -103,7 +105,7 @@ func (bav *UtxoView) GetDiamondEntryForDiamondKey(diamondKey *DiamondKey) *Diamo
 			}
 		}
 	} else {
-		diamondEntry = DbGetDiamondMappings(bav.Handle, &diamondKey.ReceiverPKID, &diamondKey.SenderPKID, &diamondKey.DiamondPostHash)
+		diamondEntry = lib.DbGetDiamondMappings(bav.Handle, &diamondKey.ReceiverPKID, &diamondKey.SenderPKID, &diamondKey.DiamondPostHash)
 	}
 
 	if diamondEntry != nil {
@@ -113,7 +115,7 @@ func (bav *UtxoView) GetDiamondEntryForDiamondKey(diamondKey *DiamondKey) *Diamo
 	return diamondEntry
 }
 
-func (bav *UtxoView) GetPostEntryForPostHash(postHash *BlockHash) *PostEntry {
+func (bav *UtxoView) GetPostEntryForPostHash(postHash *core.BlockHash) *PostEntry {
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	mapValue, existsMapValue := bav.PostHashToPostEntry[*postHash]
 	if existsMapValue {
@@ -130,7 +132,7 @@ func (bav *UtxoView) GetPostEntryForPostHash(postHash *BlockHash) *PostEntry {
 		}
 		return nil
 	} else {
-		dbPostEntry := DBGetPostEntryByPostHash(bav.Handle, postHash)
+		dbPostEntry := lib.DBGetPostEntryByPostHash(bav.Handle, postHash)
 		if dbPostEntry != nil {
 			bav._setPostEntryMappings(dbPostEntry)
 		}
@@ -139,10 +141,10 @@ func (bav *UtxoView) GetPostEntryForPostHash(postHash *BlockHash) *PostEntry {
 }
 
 func (bav *UtxoView) GetDiamondEntryMapForPublicKey(publicKey []byte, fetchYouDiamonded bool,
-) (_pkidToDiamondsMap map[PKID][]*DiamondEntry, _err error) {
+) (_pkidToDiamondsMap map[core.PKID][]*DiamondEntry, _err error) {
 	pkidEntry := bav.GetPKIDForPublicKey(publicKey)
 
-	dbPKIDToDiamondsMap, err := DbGetPKIDsThatDiamondedYouMap(bav.Handle, pkidEntry.PKID, fetchYouDiamonded)
+	dbPKIDToDiamondsMap, err := lib.DbGetPKIDsThatDiamondedYouMap(bav.Handle, pkidEntry.PKID, fetchYouDiamonded)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetDiamondEntryMapForPublicKey: Error Getting "+
 			"PKIDs that diamonded you map from the DB.")
@@ -164,7 +166,7 @@ func (bav *UtxoView) GetDiamondEntryMapForPublicKey(publicKey []byte, fetchYouDi
 	}
 
 	// Iterate over all the diamondEntries in the view and build the final map.
-	pkidToDiamondsMap := make(map[PKID][]*DiamondEntry)
+	pkidToDiamondsMap := make(map[core.PKID][]*DiamondEntry)
 	for _, diamondEntry := range bav.DiamondKeyToDiamondEntry {
 		if diamondEntry.isDeleted {
 			continue
@@ -190,7 +192,7 @@ func (bav *UtxoView) GetDiamondEntriesForSenderToReceiver(receiverPublicKey []by
 
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(receiverPublicKey)
 	senderPKIDEntry := bav.GetPKIDForPublicKey(senderPublicKey)
-	dbDiamondEntries, err := DbGetDiamondEntriesForSenderToReceiver(bav.Handle, receiverPKIDEntry.PKID, senderPKIDEntry.PKID)
+	dbDiamondEntries, err := lib.DbGetDiamondEntriesForSenderToReceiver(bav.Handle, receiverPKIDEntry.PKID, senderPKIDEntry.PKID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetDiamondEntriesForGiverToReceiver: Error getting diamond entries from DB.")
 	}
@@ -245,7 +247,7 @@ func (bav *UtxoView) _deletePostEntryMappings(postEntry *PostEntry) {
 	bav._setPostEntryMappings(&tombstonePostEntry)
 }
 
-func (bav *UtxoView) setPostMappings(post *PGPost) *PostEntry {
+func (bav *UtxoView) setPostMappings(post *lib.PGPost) *PostEntry {
 	postEntry := post.NewPostEntry()
 
 	// Add a mapping for the post.
@@ -270,7 +272,7 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	if senderPKID == nil || receiverPKID == nil {
 		glog.V(1).Infof(
 			"GetPostEntryReaderState: Could not find PKID for reader PK: %s or poster PK: %s",
-			PkToString(readerPK, bav.Params), PkToString(postEntry.PosterPublicKey, bav.Params))
+			lib.PkToString(readerPK, bav.Params), lib.PkToString(postEntry.PosterPublicKey, bav.Params))
 	} else {
 		diamondKey := MakeDiamondKey(senderPKID.PKID, receiverPKID.PKID, postEntry.PostHash)
 		diamondEntry := bav.GetDiamondEntryForDiamondKey(&diamondKey)
@@ -282,7 +284,7 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	return postEntryReaderState
 }
 
-func (bav *UtxoView) GetRepostPostEntryStateForReader(readerPK []byte, postHash *BlockHash) (string, bool) {
+func (bav *UtxoView) GetRepostPostEntryStateForReader(readerPK []byte, postHash *core.BlockHash) (string, bool) {
 	repostKey := MakeRepostKey(readerPK, *postHash)
 	repostEntry := bav._getRepostEntryForRepostKey(&repostKey)
 	if repostEntry == nil {
@@ -301,12 +303,12 @@ func (bav *UtxoView) GetRepostPostEntryStateForReader(readerPK []byte, postHash 
 
 func (bav *UtxoView) GetCommentEntriesForParentStakeID(parentStakeID []byte) ([]*PostEntry, error) {
 	if bav.Postgres != nil {
-		posts := bav.Postgres.GetComments(NewBlockHash(parentStakeID))
+		posts := bav.Postgres.GetComments(core.NewBlockHash(parentStakeID))
 		for _, post := range posts {
 			bav.setPostMappings(post)
 		}
 	} else {
-		_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(bav.Handle, parentStakeID, false)
+		_, dbCommentHashes, _, err := lib.DBGetCommentPostHashesForParentStakeID(bav.Handle, parentStakeID, false)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetCommentEntriesForParentStakeID: Problem fetching comments: %v", err)
 		}
@@ -346,13 +348,13 @@ func (bav *UtxoView) GetParentPostEntriesForPostEntry(postEntry *PostEntry, maxD
 	parentPostEntries := []*PostEntry{}
 
 	// If the post passed has no parent or isn't a post, we return the empty list.
-	if len(parentStakeID) != HashSizeBytes {
+	if len(parentStakeID) != core.HashSizeBytes {
 		return parentPostEntries, false
 	}
 
 	iterations := uint32(0)
-	for len(parentStakeID) == HashSizeBytes && iterations < maxDepth {
-		parentPostHash := &BlockHash{}
+	for len(parentStakeID) == core.HashSizeBytes && iterations < maxDepth {
+		parentPostHash := &core.BlockHash{}
 		copy(parentPostHash[:], parentStakeID)
 
 		parentPostEntry := bav.GetPostEntryForPostHash(parentPostHash)
@@ -377,12 +379,12 @@ func (bav *UtxoView) GetParentPostEntriesForPostEntry(postEntry *PostEntry, maxD
 // in the mempool. Then sort them by their timestamp. This can be called
 // on an empty view or a view that already has a lot of transactions
 // applied to it.
-func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash map[BlockHash][]*PostEntry, _err error) {
+func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash map[core.BlockHash][]*PostEntry, _err error) {
 	// Start by fetching all the posts we have in the db.
 	//
 	// TODO(performance): This currently fetches all posts. We should implement
 	// some kind of pagination instead though.
-	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
+	_, _, dbPostEntries, err := lib.DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching PostEntry's from db: ")
 	}
@@ -407,7 +409,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 		// comments.
 
 		if len(postEntry.ParentStakeID) == 0 {
-			_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(
+			_, dbCommentHashes, _, err := lib.DBGetCommentPostHashesForParentStakeID(
 				bav.Handle, postEntry.ParentStakeID, false /*fetchEntries*/)
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching comment PostEntry's from db: ")
@@ -419,7 +421,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	}
 
 	allCorePosts := []*PostEntry{}
-	commentsByPostHash := make(map[BlockHash][]*PostEntry)
+	commentsByPostHash := make(map[core.BlockHash][]*PostEntry)
 	for _, postEntry := range bav.PostHashToPostEntry {
 		// Ignore deleted or rolled-back posts.
 		if postEntry.isDeleted {
@@ -432,9 +434,9 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 			allCorePosts = append(allCorePosts, postEntry)
 		} else {
 			// Add the comment to our map.
-			commentsForPost := commentsByPostHash[*NewBlockHash(postEntry.ParentStakeID)]
+			commentsForPost := commentsByPostHash[*core.NewBlockHash(postEntry.ParentStakeID)]
 			commentsForPost = append(commentsForPost, postEntry)
-			commentsByPostHash[*NewBlockHash(postEntry.ParentStakeID)] = commentsForPost
+			commentsByPostHash[*core.NewBlockHash(postEntry.ParentStakeID)] = commentsForPost
 		}
 	}
 	// Sort all the comment lists as well. Here we put the latest comment at the
@@ -448,7 +450,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	return allCorePosts, commentsByPostHash, nil
 }
 
-func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, nftRequired bool) (_posts []*PostEntry, _err error) {
+func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *core.BlockHash, limit uint64, mediaRequired bool, nftRequired bool) (_posts []*PostEntry, _err error) {
 	if bav.Postgres != nil {
 		var startTime uint64 = math.MaxUint64
 		if startPostHash != nil {
@@ -469,7 +471,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 		}
 	} else {
 		handle := bav.Handle
-		dbPrefix := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
+		dbPrefix := append([]byte{}, lib._PrefixPosterPublicKeyTimestampPostHash...)
 		dbPrefix = append(dbPrefix, publicKey...)
 		var prefix []byte
 		if startPostHash != nil {
@@ -477,7 +479,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			if startPostEntry == nil {
 				return nil, fmt.Errorf("GetPostsPaginatedForPublicKeyOrderedByTimestamp: Invalid start post hash")
 			}
-			prefix = append(dbPrefix, EncodeUint64(startPostEntry.TimestampNanos)...)
+			prefix = append(dbPrefix, lib.EncodeUint64(startPostEntry.TimestampNanos)...)
 			prefix = append(prefix, startPostEntry.PostHash[:]...)
 		} else {
 			maxBigEndianUint64Bytes := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -505,10 +507,10 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 
 				keyWithoutPrefix := rawKey[1:]
 				//posterPublicKey := keyWithoutPrefix[:HashSizeBytes]
-				publicKeySizeBytes := HashSizeBytes + 1
+				publicKeySizeBytes := core.HashSizeBytes + 1
 				//tstampNanos := DecodeUint64(keyWithoutPrefix[publicKeySizeBytes:(publicKeySizeBytes + timestampSizeBytes)])
 
-				postHash := &BlockHash{}
+				postHash := &core.BlockHash{}
 				copy(postHash[:], keyWithoutPrefix[(publicKeySizeBytes+timestampSizeBytes):])
 				postEntry := bav.GetPostEntryForPostHash(postHash)
 				if postEntry == nil {
@@ -563,25 +565,25 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 	return postEntries, nil
 }
 
-func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToDiamondLevel map[PKID]int64, _err error) {
+func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *core.BlockHash) (_pkidToDiamondLevel map[core.PKID]int64, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
+	dbPrefix := append([]byte{}, lib._PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := lib.EnumerateKeysForPrefix(handle, dbPrefix)
 
 	diamondPostEntry := bav.GetPostEntryForPostHash(postHash)
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(diamondPostEntry.PosterPublicKey)
 
 	// Iterate over all the db keys & values and load them into the view.
-	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed + 8
+	expectedKeyLength := 1 + core.HashSizeBytes + btcec.PubKeyBytesLenCompressed + 8
 	for _, key := range keysFound {
 		// Sanity check that this is a reasonable key.
 		if len(key) != expectedKeyLength {
 			return nil, fmt.Errorf("UtxoView.GetDiamondsForPostHash: Invalid key length found: %d", len(key))
 		}
 
-		senderPKID := &PKID{}
-		copy(senderPKID[:], key[1+HashSizeBytes:])
+		senderPKID := &core.PKID{}
+		copy(senderPKID[:], key[1+core.HashSizeBytes:])
 
 		diamondKey := &DiamondKey{
 			SenderPKID:      *senderPKID,
@@ -593,7 +595,7 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 	}
 
 	// Iterate over the view and create the final map to return.
-	pkidToDiamondLevel := make(map[PKID]int64)
+	pkidToDiamondLevel := make(map[core.PKID]int64)
 	for _, diamondEntry := range bav.DiamondKeyToDiamondEntry {
 		if !diamondEntry.isDeleted && reflect.DeepEqual(diamondEntry.DiamondPostHash[:], postHash[:]) {
 			pkidToDiamondLevel[*diamondEntry.SenderPKID] = diamondEntry.DiamondLevel
@@ -603,21 +605,21 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 	return pkidToDiamondLevel, nil
 }
 
-func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKeys [][]byte, _err error) {
+func (bav *UtxoView) GetRepostsForPostHash(postHash *core.BlockHash) (_reposterPubKeys [][]byte, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKey...)
+	dbPrefix := append([]byte{}, lib._PrefixRepostedPostHashReposterPubKey...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := lib.EnumerateKeysForPrefix(handle, dbPrefix)
 
 	// Iterate over all the db keys & values and load them into the view.
-	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
+	expectedKeyLength := 1 + core.HashSizeBytes + btcec.PubKeyBytesLenCompressed
 	for _, key := range keysFound {
 		// Sanity check that this is a reasonable key.
 		if len(key) != expectedKeyLength {
 			return nil, fmt.Errorf("UtxoView.GetRepostersForPostHash: Invalid key length found: %d", len(key))
 		}
 
-		reposterPubKey := key[1+HashSizeBytes:]
+		reposterPubKey := key[1+core.HashSizeBytes:]
 
 		repostKey := &RepostKey{
 			ReposterPubKey:   MakePkMapKey(reposterPubKey),
@@ -638,24 +640,24 @@ func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKey
 	return reposterPubKeys, nil
 }
 
-func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
+func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *core.BlockHash,
 ) (_quoteReposterPubKeys [][]byte, _quoteReposterPubKeyToPosts map[PkMapKey][]*PostEntry, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
+	dbPrefix := append([]byte{}, lib._PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := lib.EnumerateKeysForPrefix(handle, dbPrefix)
 
 	// Iterate over all the db keys & values and load them into the view.
-	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed + HashSizeBytes
+	expectedKeyLength := 1 + core.HashSizeBytes + btcec.PubKeyBytesLenCompressed + core.HashSizeBytes
 
-	repostPostHashIdx := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
+	repostPostHashIdx := 1 + core.HashSizeBytes + btcec.PubKeyBytesLenCompressed
 	for _, key := range keysFound {
 		// Sanity check that this is a reasonable key.
 		if len(key) != expectedKeyLength {
 			return nil, nil, fmt.Errorf("UtxoView.GetQuoteRepostsForPostHash: Invalid key length found: %d", len(key))
 		}
 
-		repostPostHash := &BlockHash{}
+		repostPostHash := &core.BlockHash{}
 		copy(repostPostHash[:], key[repostPostHashIdx:])
 
 		bav.GetPostEntryForPostHash(repostPostHash)
@@ -679,16 +681,16 @@ func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
 }
 
 func (bav *UtxoView) _connectSubmitPost(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32,
 	verifySignatures bool, ignoreUtxos bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeSubmitPost {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeSubmitPost {
 		return 0, 0, nil, fmt.Errorf("_connectSubmitPost: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*SubmitPostMetadata)
+	txMeta := txn.TxnMeta.(*lib.SubmitPostMetadata)
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -709,7 +711,7 @@ func (bav *UtxoView) _connectSubmitPost(
 
 		// Force the input to be non-zero so that we can prevent replay attacks.
 		if totalInput == 0 {
-			return 0, 0, nil, RuleErrorSubmitPostRequiresNonZeroInput
+			return 0, 0, nil, lib.RuleErrorSubmitPostRequiresNonZeroInput
 		}
 	}
 
@@ -722,18 +724,18 @@ func (bav *UtxoView) _connectSubmitPost(
 	}
 	// Set the IsQuotedRepost attribute of postEntry based on extra data
 	isQuotedRepost := false
-	if quotedRepost, hasQuotedRepost := extraData[IsQuotedRepostKey]; hasQuotedRepost {
-		if reflect.DeepEqual(quotedRepost, QuotedRepostVal) {
+	if quotedRepost, hasQuotedRepost := extraData[lib.IsQuotedRepostKey]; hasQuotedRepost {
+		if reflect.DeepEqual(quotedRepost, lib.QuotedRepostVal) {
 			isQuotedRepost = true
 		}
 		// Delete key since it is not needed in the PostExtraData map as IsQuotedRepost is involved in consensus code.
-		delete(extraData, IsQuotedRepostKey)
+		delete(extraData, lib.IsQuotedRepostKey)
 	}
-	var repostedPostHash *BlockHash
-	if repostedPostHashBytes, isRepost := extraData[RepostedPostHash]; isRepost {
-		repostedPostHash = &BlockHash{}
+	var repostedPostHash *core.BlockHash
+	if repostedPostHashBytes, isRepost := extraData[lib.RepostedPostHash]; isRepost {
+		repostedPostHash = &core.BlockHash{}
 		copy(repostedPostHash[:], repostedPostHashBytes)
-		delete(extraData, RepostedPostHash)
+		delete(extraData, lib.RepostedPostHash)
 	}
 
 	// At this point the inputs and outputs have been processed. Now we
@@ -754,19 +756,19 @@ func (bav *UtxoView) _connectSubmitPost(
 	var newRepostEntry *RepostEntry
 	if len(txMeta.PostHashToModify) != 0 {
 		// Make sure the post hash is valid
-		if len(txMeta.PostHashToModify) != HashSizeBytes {
+		if len(txMeta.PostHashToModify) != core.HashSizeBytes {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorSubmitPostInvalidPostHashToModify,
+				lib.RuleErrorSubmitPostInvalidPostHashToModify,
 				"_connectSubmitPost: Bad post hash: %#v", txMeta.PostHashToModify)
 		}
 
 		// Get the existing post entry, which must exist and be undeleted.
-		postHash := &BlockHash{}
+		postHash := &core.BlockHash{}
 		copy(postHash[:], txMeta.PostHashToModify[:])
 		existingPostEntryy := bav.GetPostEntryForPostHash(postHash)
 		if existingPostEntryy == nil || existingPostEntryy.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorSubmitPostModifyingNonexistentPost,
+				lib.RuleErrorSubmitPostModifyingNonexistentPost,
 				"_connectSubmitPost: Post hash: %v", postHash)
 		}
 
@@ -774,29 +776,29 @@ func (bav *UtxoView) _connectSubmitPost(
 		if !reflect.DeepEqual(txn.PublicKey, existingPostEntryy.PosterPublicKey) {
 
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorSubmitPostPostModificationNotAuthorized,
+				lib.RuleErrorSubmitPostPostModificationNotAuthorized,
 				"_connectSubmitPost: Post hash: %v, poster public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", postHash,
-				PkToStringBoth(existingPostEntryy.PosterPublicKey),
-				PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+				lib.PkToStringBoth(existingPostEntryy.PosterPublicKey),
+				lib.PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
 		}
 
 		// Modification of an NFT is not allowed.
 		if existingPostEntryy.IsNFT {
-			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
+			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
 		}
 
 		// It's an error if we are updating the value of RepostedPostHash. A post can only ever repost a single post.
 		if !reflect.DeepEqual(repostedPostHash, existingPostEntryy.RepostedPostHash) {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorSubmitPostUpdateRepostHash,
+				lib.RuleErrorSubmitPostUpdateRepostHash,
 				"_connectSubmitPost: cannot update reposted post hash when updating a post")
 		}
 
 		// It's an error if we are updating the value of IsQuotedRepost.
 		if isQuotedRepost != existingPostEntryy.IsQuotedRepost {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorSubmitPostUpdateIsQuotedRepost,
+				lib.RuleErrorSubmitPostUpdateIsQuotedRepost,
 				"_connectSubmitPost: cannot update isQuotedRepost attribute of post when updating a post")
 		}
 
@@ -928,7 +930,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		if txMeta.StakeMultipleBasisPoints < 100*100 ||
 			txMeta.StakeMultipleBasisPoints > bav.Params.MaxStakeMultipleBasisPoints {
 
-			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostStakeMultipleSize,
+			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostStakeMultipleSize,
 				"_connectSubmitPost: Invalid StakeMultipleSize: %d",
 				txMeta.StakeMultipleBasisPoints)
 		}
@@ -936,22 +938,22 @@ func (bav *UtxoView) _connectSubmitPost(
 		if txMeta.CreatorBasisPoints < 0 ||
 			txMeta.CreatorBasisPoints > bav.Params.MaxCreatorBasisPoints {
 
-			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostCreatorPercentageSize,
+			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostCreatorPercentageSize,
 				"_connectSubmitPost: Invalid CreatorPercentageSize: %d",
 				txMeta.CreatorBasisPoints)
 		}
 		// TstampNanos != 0
 		if txMeta.TimestampNanos == 0 {
-			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostTimestampIsZero,
+			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostTimestampIsZero,
 				"_connectSubmitPost: Invalid Timestamp: %d",
 				txMeta.TimestampNanos)
 		}
 		// The parent stake id should be a block hash or profile public key if it's set.
-		if len(txMeta.ParentStakeID) != 0 && len(txMeta.ParentStakeID) != HashSizeBytes &&
+		if len(txMeta.ParentStakeID) != 0 && len(txMeta.ParentStakeID) != core.HashSizeBytes &&
 			len(txMeta.ParentStakeID) != btcec.PubKeyBytesLenCompressed {
-			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostInvalidParentStakeIDLength,
+			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostInvalidParentStakeIDLength,
 				"_connectSubmitPost: Parent stake ID length %v must be either 0 or %v or %v",
-				len(txMeta.ParentStakeID), HashSizeBytes, btcec.PubKeyBytesLenCompressed)
+				len(txMeta.ParentStakeID), core.HashSizeBytes, btcec.PubKeyBytesLenCompressed)
 		}
 
 		// The PostHash is just the transaction hash.
@@ -959,7 +961,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		existingPostEntry := bav.GetPostEntryForPostHash(postHash)
 		if existingPostEntry != nil && !existingPostEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorPostAlreadyExists,
+				lib.RuleErrorPostAlreadyExists,
 				"_connectSubmitPost: Post hash: %v", postHash)
 		}
 
@@ -967,11 +969,11 @@ func (bav *UtxoView) _connectSubmitPost(
 			newRepostedPostEntry = bav.GetPostEntryForPostHash(repostedPostHash)
 			// It is an error if a post entry attempts to repost a post that does not exist.
 			if newRepostedPostEntry == nil {
-				return 0, 0, nil, RuleErrorSubmitPostRepostPostNotFound
+				return 0, 0, nil, lib.RuleErrorSubmitPostRepostPostNotFound
 			}
 			// It is an error if a post is trying to repost a vanilla repost.
 			if IsVanillaRepost(newRepostedPostEntry) {
-				return 0, 0, nil, RuleErrorSubmitPostRepostOfRepost
+				return 0, 0, nil, lib.RuleErrorSubmitPostRepostOfRepost
 			}
 		}
 
@@ -1081,22 +1083,22 @@ func (bav *UtxoView) _getParentAndGrandparentPostEntry(postEntry *PostEntry) (
 	//
 	// If we ever allow commenting on something else such that the parent is not a post, but where
 	// ParentStakeID is also HashSizeBytes, then this logic would likely need to be changed.
-	if len(postEntry.ParentStakeID) == HashSizeBytes {
-		parentPostEntry = bav.GetPostEntryForPostHash(NewBlockHash(postEntry.ParentStakeID))
+	if len(postEntry.ParentStakeID) == core.HashSizeBytes {
+		parentPostEntry = bav.GetPostEntryForPostHash(core.NewBlockHash(postEntry.ParentStakeID))
 		if parentPostEntry == nil {
 			return nil, nil, errors.Wrapf(
-				RuleErrorSubmitPostParentNotFound,
+				lib.RuleErrorSubmitPostParentNotFound,
 				"_getParentAndGrandparentPostEntry: failed to find parent post for post hash: %v, parentStakeId: %v",
 				postEntry.PostHash, hex.EncodeToString(postEntry.ParentStakeID),
 			)
 		}
 	}
 
-	if parentPostEntry != nil && len(parentPostEntry.ParentStakeID) == HashSizeBytes {
-		grandparentPostEntry = bav.GetPostEntryForPostHash(NewBlockHash(parentPostEntry.ParentStakeID))
+	if parentPostEntry != nil && len(parentPostEntry.ParentStakeID) == core.HashSizeBytes {
+		grandparentPostEntry = bav.GetPostEntryForPostHash(core.NewBlockHash(parentPostEntry.ParentStakeID))
 		if grandparentPostEntry == nil {
 			return nil, nil, errors.Wrapf(
-				RuleErrorSubmitPostParentNotFound,
+				lib.RuleErrorSubmitPostParentNotFound,
 				"_getParentAndGrandparentPostEntry: failed to find grandparent post for post hash: %v, parentStakeId: %v, grandparentStakeId: %v",
 				postEntry.PostHash, postEntry.ParentStakeID, parentPostEntry.ParentStakeID,
 			)
@@ -1146,7 +1148,7 @@ func (bav *UtxoView) _updateParentCommentCountForPost(postEntry *PostEntry, pare
 }
 
 func (bav *UtxoView) _disconnectSubmitPost(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a SubmitPost operation
@@ -1162,13 +1164,13 @@ func (bav *UtxoView) _disconnectSubmitPost(
 	}
 
 	// Now we know the txMeta is SubmitPost
-	txMeta := currentTxn.TxnMeta.(*SubmitPostMetadata)
+	txMeta := currentTxn.TxnMeta.(*lib.SubmitPostMetadata)
 
 	// The post hash is either the transaction hash or the hash set
 	// in the metadata.
 	postHashModified := txnHash
 	if len(txMeta.PostHashToModify) != 0 {
-		postHashModified = &BlockHash{}
+		postHashModified = &core.BlockHash{}
 		copy(postHashModified[:], txMeta.PostHashToModify[:])
 	}
 

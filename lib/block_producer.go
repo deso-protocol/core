@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/view"
 	"github.com/tyler-smith/go-bip39"
 	"math"
 	"sync"
@@ -33,9 +35,9 @@ type DeSoBlockProducer struct {
 	// The most recent N blocks that we've produced indexed by their hash.
 	// Keeping this list allows us to accept a valid header from a miner without
 	// requiring them to download/send the whole block.
-	recentBlockTemplatesProduced map[BlockHash]*MsgDeSoBlock
-	latestBlockTemplateHash      *BlockHash
-	currentDifficultyTarget      *BlockHash
+	recentBlockTemplatesProduced map[core.BlockHash]*MsgDeSoBlock
+	latestBlockTemplateHash      *core.BlockHash
+	currentDifficultyTarget      *core.BlockHash
 
 	latestBlockTemplateStats *BlockTemplateStats
 
@@ -91,7 +93,7 @@ func NewDeSoBlockProducer(
 		minBlockUpdateIntervalSeconds: minBlockUpdateIntervalSeconds,
 		maxBlockTemplatesToCache:      maxBlockTemplatesToCache,
 		blockProducerPrivateKey:       privKey,
-		recentBlockTemplatesProduced:  make(map[BlockHash]*MsgDeSoBlock),
+		recentBlockTemplatesProduced:  make(map[core.BlockHash]*MsgDeSoBlock),
 
 		mempool:             mempool,
 		chain:               chain,
@@ -118,7 +120,7 @@ func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *MsgDeSoBl
 }
 
 func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) (
-	_blk *MsgDeSoBlock, _diffTarget *BlockHash, _lastNode *BlockNode, _err error) {
+	_blk *MsgDeSoBlock, _diffTarget *core.BlockHash, _lastNode *BlockNode, _err error) {
 
 	// Get the current tip of the best block chain. Note that using the tip of the
 	// best block chain as opposed to the best header chain means we'll be mining
@@ -198,13 +200,13 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		currentBlockSize := uint64(len(blockBytes) + MaxVarintLen64)
 
 		// Create a new view object.
-		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
+		utxoView, err := view.NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
 		if err != nil {
 			return nil, nil, nil, errors.Wrapf(err,
 				"DeSoBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
 		}
 
-		txnsAddedToBlock := make(map[BlockHash]bool)
+		txnsAddedToBlock := make(map[core.BlockHash]bool)
 		for ii, mempoolTx := range txnsOrderedByTimeAdded {
 			// If we hit a transaction that's too big to fit into a block then we're done.
 			if mempoolTx.TxSizeBytes+currentBlockSize > desoBlockProducer.params.MinerMaxBlockSizeBytes {
@@ -283,7 +285,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Compute the total fee the BlockProducer should get.
 	totalFeeNanos := uint64(0)
-	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
+	feesUtxoView, err := view.NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf(
 			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
@@ -334,7 +336,7 @@ func (desoBlockProducer *DeSoBlockProducer) Stop() {
 	desoBlockProducer.producerWaitGroup.Wait()
 }
 
-func (desoBlockProducer *DeSoBlockProducer) GetRecentBlock(blockHash *BlockHash) *MsgDeSoBlock {
+func (desoBlockProducer *DeSoBlockProducer) GetRecentBlock(blockHash *core.BlockHash) *MsgDeSoBlock {
 	// Find the block and quickly lock/unlock for reading.
 	desoBlockProducer.mtxRecentBlockTemplatesProduced.RLock()
 	defer desoBlockProducer.mtxRecentBlockTemplatesProduced.RUnlock()
@@ -352,12 +354,12 @@ func (desoBlockProducer *DeSoBlockProducer) GetCopyOfRecentBlock(blockID string)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
 	}
-	if len(blockHashBytes) != HashSizeBytes {
+	if len(blockHashBytes) != core.HashSizeBytes {
 		return nil, fmt.Errorf("Invalid blockID. Length was %v but must "+
-			"be %v", len(blockHashBytes), HashSizeBytes)
+			"be %v", len(blockHashBytes), core.HashSizeBytes)
 	}
 
-	blockHash := &BlockHash{}
+	blockHash := &core.BlockHash{}
 	copy(blockHash[:], blockHashBytes)
 
 	blockFound := desoBlockProducer.GetRecentBlock(blockHash)
@@ -380,7 +382,7 @@ func (desoBlockProducer *DeSoBlockProducer) GetCopyOfRecentBlock(blockID string)
 	return newBlock, nil
 }
 
-func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock, diffTarget *BlockHash) {
+func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock, diffTarget *core.BlockHash) {
 	desoBlockProducer.mtxRecentBlockTemplatesProduced.Lock()
 	defer desoBlockProducer.mtxRecentBlockTemplatesProduced.Unlock()
 
@@ -397,7 +399,7 @@ func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock
 		// second. The fix is to use nanos rather than seconds but we're skipping the work
 		// to do this for now since it doesn't really matter.
 		minTstamp := uint32(math.MaxUint32)
-		var oldestBlockHash *BlockHash
+		var oldestBlockHash *core.BlockHash
 		for _, cachedBlock := range desoBlockProducer.recentBlockTemplatesProduced {
 			if uint32(cachedBlock.Header.TstampSecs) < minTstamp {
 				minTstamp = uint32(cachedBlock.Header.TstampSecs)
@@ -411,7 +413,7 @@ func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock
 
 func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 	publicKeyBytes []byte, numHeaders int64, headerVersion uint32) (
-	_blockID string, _headers [][]byte, _extraNonces []uint64, _diffTarget *BlockHash, _err error) {
+	_blockID string, _headers [][]byte, _extraNonces []uint64, _diffTarget *core.BlockHash, _err error) {
 
 	// If we haven't computed the latest block template, then compute it now to bootstrap.
 	if blockProducer.latestBlockTemplateHash == nil {

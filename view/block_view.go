@@ -1,7 +1,9 @@
-package lib
+package view
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"math"
 	"reflect"
 	"strings"
@@ -27,14 +29,14 @@ import (
 type UtxoView struct {
 	// Utxo data
 	NumUtxoEntries              uint64
-	UtxoKeyToUtxoEntry          map[UtxoKey]*UtxoEntry
-	PublicKeyToDeSoBalanceNanos map[PublicKey]uint64
+	UtxoKeyToUtxoEntry          map[core.UtxoKey]*UtxoEntry
+	PublicKeyToDeSoBalanceNanos map[core.PublicKey]uint64
 
 	// BitcoinExchange data
 	NanosPurchased     uint64
 	USDCentsPerBitcoin uint64
 	GlobalParamsEntry  *GlobalParamsEntry
-	BitcoinBurnTxIDs   map[BlockHash]bool
+	BitcoinBurnTxIDs   map[core.BlockHash]bool
 
 	// Forbidden block signature pubkeys
 	ForbiddenPubKeyToForbiddenPubKeyEntry map[PkMapKey]*ForbiddenPubKeyEntry
@@ -43,7 +45,7 @@ type UtxoView struct {
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
 	// Postgres stores message data slightly differently
-	MessageMap map[BlockHash]*PGMessage
+	MessageMap map[core.BlockHash]*lib.PGMessage
 
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
@@ -63,13 +65,13 @@ type UtxoView struct {
 	RepostKeyToRepostEntry map[RepostKey]*RepostEntry
 
 	// Post data
-	PostHashToPostEntry map[BlockHash]*PostEntry
+	PostHashToPostEntry map[core.BlockHash]*PostEntry
 
 	// Profile data
 	PublicKeyToPKIDEntry map[PkMapKey]*PKIDEntry
 	// The PKIDEntry is only used here to store the public key.
-	PKIDToPublicKey               map[PKID]*PKIDEntry
-	ProfilePKIDToProfileEntry     map[PKID]*ProfileEntry
+	PKIDToPublicKey               map[core.PKID]*PKIDEntry
+	ProfilePKIDToProfileEntry     map[core.PKID]*ProfileEntry
 	ProfileUsernameToProfileEntry map[UsernameMapKey]*ProfileEntry
 
 	// Coin balance entries
@@ -80,41 +82,41 @@ type UtxoView struct {
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
-	TipHash *BlockHash
+	TipHash *core.BlockHash
 
 	Handle   *badger.DB
-	Postgres *Postgres
-	Params   *DeSoParams
+	Postgres *lib.Postgres
+	Params   *lib.DeSoParams
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
 // initialization is full.
 func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Utxo data
-	bav.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry)
+	bav.UtxoKeyToUtxoEntry = make(map[core.UtxoKey]*UtxoEntry)
 	// TODO: Deprecate this value
-	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle)
-	bav.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64)
+	bav.NumUtxoEntries = lib.GetUtxoNumEntries(bav.Handle)
+	bav.PublicKeyToDeSoBalanceNanos = make(map[core.PublicKey]uint64)
 
 	// BitcoinExchange data
-	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle)
-	bav.USDCentsPerBitcoin = DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle)
-	bav.GlobalParamsEntry = DbGetGlobalParamsEntry(bav.Handle)
-	bav.BitcoinBurnTxIDs = make(map[BlockHash]bool)
+	bav.NanosPurchased = lib.DbGetNanosPurchased(bav.Handle)
+	bav.USDCentsPerBitcoin = lib.DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle)
+	bav.GlobalParamsEntry = lib.DbGetGlobalParamsEntry(bav.Handle)
+	bav.BitcoinBurnTxIDs = make(map[core.BlockHash]bool)
 
 	// Forbidden block signature pub key info.
 	bav.ForbiddenPubKeyToForbiddenPubKeyEntry = make(map[PkMapKey]*ForbiddenPubKeyEntry)
 
 	// Post and profile data
-	bav.PostHashToPostEntry = make(map[BlockHash]*PostEntry)
+	bav.PostHashToPostEntry = make(map[core.BlockHash]*PostEntry)
 	bav.PublicKeyToPKIDEntry = make(map[PkMapKey]*PKIDEntry)
-	bav.PKIDToPublicKey = make(map[PKID]*PKIDEntry)
-	bav.ProfilePKIDToProfileEntry = make(map[PKID]*ProfileEntry)
+	bav.PKIDToPublicKey = make(map[core.PKID]*PKIDEntry)
+	bav.ProfilePKIDToProfileEntry = make(map[core.PKID]*ProfileEntry)
 	bav.ProfileUsernameToProfileEntry = make(map[UsernameMapKey]*ProfileEntry)
 
 	// Messages data
 	bav.MessageKeyToMessageEntry = make(map[MessageKey]*MessageEntry)
-	bav.MessageMap = make(map[BlockHash]*PGMessage)
+	bav.MessageMap = make(map[core.BlockHash]*lib.PGMessage)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -149,7 +151,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the UtxoEntry data
 	// Note that using _setUtxoMappings is dangerous because the Pos within
 	// the UtxoEntrys is off.
-	newView.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry, len(bav.UtxoKeyToUtxoEntry))
+	newView.UtxoKeyToUtxoEntry = make(map[core.UtxoKey]*UtxoEntry, len(bav.UtxoKeyToUtxoEntry))
 	for utxoKey, utxoEntry := range bav.UtxoKeyToUtxoEntry {
 		newUtxoEntry := *utxoEntry
 		newView.UtxoKeyToUtxoEntry[utxoKey] = &newUtxoEntry
@@ -157,13 +159,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.NumUtxoEntries = bav.NumUtxoEntries
 
 	// Copy the public key to balance data
-	newView.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64, len(bav.PublicKeyToDeSoBalanceNanos))
+	newView.PublicKeyToDeSoBalanceNanos = make(map[core.PublicKey]uint64, len(bav.PublicKeyToDeSoBalanceNanos))
 	for pkMapKey, desoBalance := range bav.PublicKeyToDeSoBalanceNanos {
 		newView.PublicKeyToDeSoBalanceNanos[pkMapKey] = desoBalance
 	}
 
 	// Copy the BitcoinExchange data
-	newView.BitcoinBurnTxIDs = make(map[BlockHash]bool, len(bav.BitcoinBurnTxIDs))
+	newView.BitcoinBurnTxIDs = make(map[core.BlockHash]bool, len(bav.BitcoinBurnTxIDs))
 	for bh := range bav.BitcoinBurnTxIDs {
 		newView.BitcoinBurnTxIDs[bh] = true
 	}
@@ -175,7 +177,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.GlobalParamsEntry = &newGlobalParamsEntry
 
 	// Copy the post data
-	newView.PostHashToPostEntry = make(map[BlockHash]*PostEntry, len(bav.PostHashToPostEntry))
+	newView.PostHashToPostEntry = make(map[core.BlockHash]*PostEntry, len(bav.PostHashToPostEntry))
 	for postHash, postEntry := range bav.PostHashToPostEntry {
 		if postEntry == nil {
 			continue
@@ -192,14 +194,14 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.PublicKeyToPKIDEntry[pkMapKey] = &newPKID
 	}
 
-	newView.PKIDToPublicKey = make(map[PKID]*PKIDEntry, len(bav.PKIDToPublicKey))
+	newView.PKIDToPublicKey = make(map[core.PKID]*PKIDEntry, len(bav.PKIDToPublicKey))
 	for pkid, pkidEntry := range bav.PKIDToPublicKey {
 		newPKIDEntry := *pkidEntry
 		newView.PKIDToPublicKey[pkid] = &newPKIDEntry
 	}
 
 	// Copy the profile data
-	newView.ProfilePKIDToProfileEntry = make(map[PKID]*ProfileEntry, len(bav.ProfilePKIDToProfileEntry))
+	newView.ProfilePKIDToProfileEntry = make(map[core.PKID]*ProfileEntry, len(bav.ProfilePKIDToProfileEntry))
 	for profilePKID, profileEntry := range bav.ProfilePKIDToProfileEntry {
 		if profileEntry == nil {
 			continue
@@ -225,7 +227,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageKeyToMessageEntry[msgKey] = &newMsgEntry
 	}
 
-	newView.MessageMap = make(map[BlockHash]*PGMessage, len(bav.MessageMap))
+	newView.MessageMap = make(map[core.BlockHash]*lib.PGMessage, len(bav.MessageMap))
 	for txnHash, message := range bav.MessageMap {
 		newMessage := *message
 		newView.MessageMap[txnHash] = &newMessage
@@ -311,8 +313,8 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 func NewUtxoView(
 	_handle *badger.DB,
-	_params *DeSoParams,
-	_postgres *Postgres,
+	_params *lib.DeSoParams,
+	_postgres *lib.Postgres,
 ) (*UtxoView, error) {
 
 	view := UtxoView{
@@ -324,7 +326,7 @@ func NewUtxoView(
 		// whether or not the view is flushed or not. Additionally the utxo view does
 		// not concern itself with the header chain (see comment on GetBestHash for more
 		// info on that).
-		TipHash: DbGetBestHash(_handle, ChainTypeDeSoBlock /* don't get the header chain */),
+		TipHash: lib.DbGetBestHash(_handle, lib.ChainTypeDeSoBlock /* don't get the header chain */),
 
 		Postgres: _postgres,
 		// Set everything else in _ResetViewMappings()
@@ -337,9 +339,9 @@ func NewUtxoView(
 	// not concern itself with the header chain (see comment on GetBestHash for more
 	// info on that).
 	if view.Postgres != nil {
-		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
+		view.TipHash = view.Postgres.GetChain(lib.MAIN_CHAIN).TipHash
 	} else {
-		view.TipHash = DbGetBestHash(view.Handle, ChainTypeDeSoBlock /* don't get the header chain */)
+		view.TipHash = lib.DbGetBestHash(view.Handle, lib.ChainTypeDeSoBlock /* don't get the header chain */)
 	}
 
 	// This function is generally used to reset the view after a flush has been performed
@@ -379,7 +381,7 @@ func (bav *UtxoView) _setUtxoMappings(utxoEntry *UtxoEntry) error {
 	return nil
 }
 
-func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
+func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *core.UtxoKey) *UtxoEntry {
 	utxoEntry, ok := bav.UtxoKeyToUtxoEntry[*utxoKey]
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the
 	// db.
@@ -387,7 +389,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 		if bav.Postgres != nil {
 			utxoEntry = bav.Postgres.GetUtxoEntryForUtxoKey(utxoKey)
 		} else {
-			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
+			utxoEntry = lib.DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
 		}
 		if utxoEntry == nil {
 			// This means the utxo is neither in our map nor in the db so
@@ -410,24 +412,24 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 }
 
 func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
-	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
+	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*core.NewPublicKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
 	}
 
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the db.
 	if bav.Postgres != nil {
-		balanceNanos = bav.Postgres.GetBalance(NewPublicKey(publicKey))
+		balanceNanos = bav.Postgres.GetBalance(core.NewPublicKey(publicKey))
 	} else {
 		var err error
-		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, publicKey)
+		balanceNanos, err = lib.DbGetDeSoBalanceNanosForPublicKey(bav.Handle, publicKey)
 		if err != nil {
 			return uint64(0), errors.Wrap(err, "GetDeSoBalanceNanosForPublicKey: ")
 		}
 	}
 
 	// Add the balance to memory for future references.
-	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)] = balanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*core.NewPublicKey(publicKey)] = balanceNanos
 
 	return balanceNanos, nil
 }
@@ -462,12 +464,12 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 		return errors.Wrap(err, "_unSpendUtxo: ")
 	}
 	desoBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntryy.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*core.NewPublicKey(utxoEntryy.PublicKey)] = desoBalanceNanos
 
 	return nil
 }
 
-func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
+func (bav *UtxoView) _spendUtxo(utxoKey *core.UtxoKey) (*UtxoOperation, error) {
 	// Swap this utxo's position with the utxo in the last position and delete it.
 
 	// Get the entry for this utxo from the view if it's cached,
@@ -496,7 +498,7 @@ func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
 		return nil, errors.Wrapf(err, "_spendUtxo: ")
 	}
 	desoBalanceNanos -= utxoEntry.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntry.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*core.NewPublicKey(utxoEntry.PublicKey)] = desoBalanceNanos
 
 	// Record a UtxoOperation in case we want to roll this back in the
 	// future. At this point, the UtxoEntry passed in still has all of its
@@ -512,7 +514,7 @@ func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
 	}, nil
 }
 
-func (bav *UtxoView) _unAddUtxo(utxoKey *UtxoKey) error {
+func (bav *UtxoView) _unAddUtxo(utxoKey *core.UtxoKey) error {
 	// Get the entry for this utxo from the view if it's cached,
 	// otherwise try and get it from the db.
 	utxoEntry := bav.GetUtxoEntryForUtxoKey(utxoKey)
@@ -542,7 +544,7 @@ func (bav *UtxoView) _unAddUtxo(utxoKey *UtxoKey) error {
 		return errors.Wrapf(err, "_unAddUtxo: ")
 	}
 	desoBalanceNanos -= utxoEntry.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntry.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*core.NewPublicKey(utxoEntry.PublicKey)] = desoBalanceNanos
 
 	return nil
 }
@@ -593,7 +595,7 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 		return nil, errors.Wrapf(err, "_addUtxo: ")
 	}
 	desoBalanceNanos += utxoEntryy.AmountNanos
-	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(utxoEntryy.PublicKey)] = desoBalanceNanos
+	bav.PublicKeyToDeSoBalanceNanos[*core.NewPublicKey(utxoEntryy.PublicKey)] = desoBalanceNanos
 
 	// Finally record a UtxoOperation in case we want to roll back this ADD
 	// in the future. Note that Entry data isn't required for an ADD operation.
@@ -608,21 +610,21 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 	}, nil
 }
 
-func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 	// First we check to see if the last utxoOp was a diamond operation. If it was, we disconnect
 	// the diamond-related changes and decrement the operation index to move past it.
 	operationIndex := len(utxoOpsForTxn) - 1
 	if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeDeSoDiamond {
 		currentOperation := utxoOpsForTxn[operationIndex]
 
-		diamondPostHashBytes, hasDiamondPostHash := currentTxn.ExtraData[DiamondPostHashKey]
+		diamondPostHashBytes, hasDiamondPostHash := currentTxn.ExtraData[lib.DiamondPostHashKey]
 		if !hasDiamondPostHash {
 			return fmt.Errorf("_disconnectBasicTransfer: Found diamond op without diamondPostHash")
 		}
 
 		// Sanity check the post hash bytes before creating the post hash.
-		diamondPostHash := &BlockHash{}
-		if len(diamondPostHashBytes) != HashSizeBytes {
+		diamondPostHash := &core.BlockHash{}
+		if len(diamondPostHashBytes) != core.HashSizeBytes {
 			return fmt.Errorf(
 				"_disconnectBasicTransfer: DiamondPostHashBytes has incorrect length: %d",
 				len(diamondPostHashBytes))
@@ -672,7 +674,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 
 		// Compute the utxo key for this output so we can reference it in our
 		// data structures.
-		outputKey := &UtxoKey{
+		outputKey := &core.UtxoKey{
 			TxID:  *txnHash,
 			Index: uint32(outputIndex),
 		}
@@ -722,7 +724,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 					"that differs from the block we're disconnecting (%d)",
 				outputKey, outputEntry.BlockHeight, blockHeight)
 		}
-		if outputEntry.UtxoType == UtxoTypeBlockReward && (currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward) {
+		if outputEntry.UtxoType == UtxoTypeBlockReward && (currentTxn.TxnMeta.GetTxnType() != lib.TxnTypeBlockReward) {
 
 			return fmt.Errorf(
 				"_disconnectBasicTransfer: Output with key %v is a block reward txn according "+
@@ -742,7 +744,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 		currentInput := currentTxn.TxInputs[inputIndex]
 
 		// Convert this input to a utxo key.
-		inputKey := UtxoKey(*currentInput)
+		inputKey := core.UtxoKey(*currentInput)
 
 		// Get the output entry for this input from the utxoOps that were
 		// passed in and check its type. For every input that we're restoring
@@ -777,7 +779,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 }
 
 func (bav *UtxoView) _disconnectUpdateGlobalParams(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 	// Check that the last operation has the required OperationType
 	operationIndex := len(utxoOpsForTxn) - 1
@@ -797,7 +799,7 @@ func (bav *UtxoView) _disconnectUpdateGlobalParams(
 	// This previous value comes from the UtxoOperation data.
 	prevGlobalParamEntry := operationData.PrevGlobalParamsEntry
 	if prevGlobalParamEntry == nil {
-		prevGlobalParamEntry = &InitialGlobalParamsEntry
+		prevGlobalParamEntry = &lib.InitialGlobalParamsEntry
 	}
 	bav.GlobalParamsEntry = prevGlobalParamEntry
 
@@ -813,86 +815,86 @@ func (bav *UtxoView) _disconnectUpdateGlobalParams(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }
 
-func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+func (bav *UtxoView) DisconnectTransaction(currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	if currentTxn.TxnMeta.GetTxnType() == TxnTypeBlockReward || currentTxn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+	if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeBlockReward || currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeBasicTransfer {
 		return bav._disconnectBasicTransfer(
 			currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeBitcoinExchange {
 		return bav._disconnectBitcoinExchange(
 			OperationTypeBitcoinExchange, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypePrivateMessage {
 		return bav._disconnectPrivateMessage(
 			OperationTypePrivateMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeSubmitPost {
 		return bav._disconnectSubmitPost(
 			OperationTypeSubmitPost, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateProfile {
 		return bav._disconnectUpdateProfile(
 			OperationTypeUpdateProfile, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateBitcoinUSDExchangeRate {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateBitcoinUSDExchangeRate {
 		return bav._disconnectUpdateBitcoinUSDExchangeRate(
 			OperationTypeUpdateBitcoinUSDExchangeRate, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateGlobalParams {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateGlobalParams {
 		return bav._disconnectUpdateGlobalParams(
 			OperationTypeUpdateGlobalParams, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeFollow {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeFollow {
 		return bav._disconnectFollow(
 			OperationTypeFollow, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeLike {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeLike {
 		return bav._disconnectLike(
 			OperationTypeFollow, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeCreatorCoin {
 		return bav._disconnectCreatorCoin(
 			OperationTypeCreatorCoin, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeCreatorCoinTransfer {
 		return bav._disconnectCreatorCoinTransfer(
 			OperationTypeCreatorCoinTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeSwapIdentity {
 		return bav._disconnectSwapIdentity(
 			OperationTypeSwapIdentity, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeCreateNFT {
 		return bav._disconnectCreateNFT(
 			OperationTypeCreateNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateNFT {
 		return bav._disconnectUpdateNFT(
 			OperationTypeUpdateNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeAcceptNFTBid {
 		return bav._disconnectAcceptNFTBid(
 			OperationTypeAcceptNFTBid, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeNFTBid {
 		return bav._disconnectNFTBid(
 			OperationTypeNFTBid, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeNFTTransfer {
 		return bav._disconnectNFTTransfer(
 			OperationTypeNFTTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeAcceptNFTTransfer {
 		return bav._disconnectAcceptNFTTransfer(
 			OperationTypeAcceptNFTTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeBurnNFT {
 		return bav._disconnectBurnNFT(
 			OperationTypeBurnNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
+	} else if currentTxn.TxnMeta.GetTxnType() == lib.TxnTypeAuthorizeDerivedKey {
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
@@ -902,7 +904,7 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 }
 
 func (bav *UtxoView) DisconnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation) error {
+	desoBlock *lib.MsgDeSoBlock, txHashes []*core.BlockHash, utxoOps [][]*UtxoOperation) error {
 
 	glog.Infof("DisconnectBlock: Disconnecting block %v", desoBlock)
 
@@ -925,8 +927,8 @@ func (bav *UtxoView) DisconnectBlock(
 	numOutputs := 0
 	for _, txn := range desoBlock.Txns {
 		numInputs += len(txn.TxInputs)
-		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
-			numInputs += len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
+		if txn.TxnMeta.GetTxnType() == lib.TxnTypeAcceptNFTBid {
+			numInputs += len(txn.TxnMeta.(*lib.AcceptNFTBidMetadata).BidderInputs)
 		}
 		numOutputs += len(txn.TxOutputs)
 	}
@@ -982,7 +984,7 @@ func (bav *UtxoView) DisconnectBlock(
 	return nil
 }
 
-func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, params *DeSoParams) bool {
+func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, params *lib.DeSoParams) bool {
 	if utxoEntry.UtxoType == UtxoTypeBlockReward {
 		blocksPassed := blockHeight - utxoEntry.BlockHeight
 		// Note multiplication is OK here and has no chance of overflowing because
@@ -997,13 +999,13 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 	return false
 }
 
-func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) error {
+func (bav *UtxoView) _verifySignature(txn *lib.MsgDeSoTxn, blockHeight uint32) error {
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
 		return errors.Wrapf(err, "_verifySignature: Problem serializing txn without signature: ")
 	}
-	txHash := Sha256DoubleHash(txBytes)
+	txHash := lib.Sha256DoubleHash(txBytes)
 
 	// Look for the derived key in transaction ExtraData and validate it. For transactions
 	// signed using a derived key, the derived public key is passed to ExtraData.
@@ -1011,11 +1013,11 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) error
 	var derivedPkBytes []byte
 	if txn.ExtraData != nil {
 		var isDerived bool
-		derivedPkBytes, isDerived = txn.ExtraData[DerivedPublicKey]
+		derivedPkBytes, isDerived = txn.ExtraData[lib.DerivedPublicKey]
 		if isDerived {
 			derivedPk, err = btcec.ParsePubKey(derivedPkBytes, btcec.S256())
 			if err != nil {
-				return RuleErrorDerivedKeyInvalidExtraData
+				return lib.RuleErrorDerivedKeyInvalidExtraData
 			}
 		}
 	}
@@ -1038,20 +1040,20 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) error
 		// Look for a derived key entry in UtxoView and DB, check if it exists nor is deleted.
 		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
 		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-			return RuleErrorDerivedKeyNotAuthorized
+			return lib.RuleErrorDerivedKeyNotAuthorized
 		}
 
 		// Sanity-check that transaction public keys line up with looked-up derivedKeyEntry public keys.
 		if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
 			!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
-			return RuleErrorDerivedKeyNotAuthorized
+			return lib.RuleErrorDerivedKeyNotAuthorized
 		}
 
 		// At this point, we know the derivedKeyEntry that we have is matching.
 		// We check if the derived key hasn't been de-authorized or hasn't expired.
-		if derivedKeyEntry.OperationType != AuthorizeDerivedKeyOperationValid ||
+		if derivedKeyEntry.OperationType != lib.AuthorizeDerivedKeyOperationValid ||
 			derivedKeyEntry.ExpirationBlock <= uint64(blockHeight) {
-			return RuleErrorDerivedKeyNotAuthorized
+			return lib.RuleErrorDerivedKeyNotAuthorized
 		}
 
 		// All checks passed so we try to verify the signature.
@@ -1059,14 +1061,14 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) error
 			return nil
 		}
 
-		return RuleErrorDerivedKeyNotAuthorized
+		return lib.RuleErrorDerivedKeyNotAuthorized
 	}
 
-	return RuleErrorInvalidTransactionSignature
+	return lib.RuleErrorInvalidTransactionSignature
 }
 
 func (bav *UtxoView) _connectBasicTransfer(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	var utxoOpsForTxn []*UtxoOperation
@@ -1079,22 +1081,22 @@ func (bav *UtxoView) _connectBasicTransfer(
 	for _, desoInput := range txn.TxInputs {
 		// Fetch the utxoEntry for this input from the view. Make a copy to
 		// avoid having the iterator change under our feet.
-		utxoKey := UtxoKey(*desoInput)
+		utxoKey := core.UtxoKey(*desoInput)
 		utxoEntry := bav.GetUtxoEntryForUtxoKey(&utxoKey)
 		// If the utxo doesn't exist mark the block as invalid and return an error.
 		if utxoEntry == nil {
-			return 0, 0, nil, RuleErrorInputSpendsNonexistentUtxo
+			return 0, 0, nil, lib.RuleErrorInputSpendsNonexistentUtxo
 		}
 		// If the utxo exists but is already spent mark the block as invalid and
 		// return an error.
 		if utxoEntry.isSpent {
-			return 0, 0, nil, RuleErrorInputSpendsPreviouslySpentOutput
+			return 0, 0, nil, lib.RuleErrorInputSpendsPreviouslySpentOutput
 		}
 		// If the utxo is from a block reward txn, make sure enough time has passed to
 		// make it spendable.
 		if _isEntryImmatureBlockReward(utxoEntry, blockHeight, bav.Params) {
 			glog.V(1).Infof("utxoKey: %v, utxoEntry: %v, height: %d", &utxoKey, utxoEntry, blockHeight)
-			return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
+			return 0, 0, nil, lib.RuleErrorInputSpendsImmatureBlockReward
 		}
 
 		// Verify that the input's public key is the same as the public key specified
@@ -1112,15 +1114,15 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// reasons (e.g. reputation is way easier to manage without key rotation),
 		// then I don't think this constraint should pose much of an issue.
 		if !reflect.DeepEqual(utxoEntry.PublicKey, txn.PublicKey) {
-			return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
+			return 0, 0, nil, lib.RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
 		}
 
 		// Sanity check the amount of the input.
-		if utxoEntry.AmountNanos > MaxNanos ||
+		if utxoEntry.AmountNanos > lib.MaxNanos ||
 			totalInput >= (math.MaxUint64-utxoEntry.AmountNanos) ||
-			totalInput+utxoEntry.AmountNanos > MaxNanos {
+			totalInput+utxoEntry.AmountNanos > lib.MaxNanos {
 
-			return 0, 0, nil, RuleErrorInputSpendsOutputWithInvalidAmount
+			return 0, 0, nil, lib.RuleErrorInputSpendsOutputWithInvalidAmount
 		}
 		// Add the amount of the utxo to the total input and add the UtxoEntry to
 		// our list.
@@ -1151,8 +1153,8 @@ func (bav *UtxoView) _connectBasicTransfer(
 	// require that block reward transactions not be signed. If a block reward is
 	// not allowed to have a signature then it should not be trying to spend any
 	// inputs.
-	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward && len(txn.TxInputs) != 0 {
-		return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveInputs
+	if txn.TxnMeta.GetTxnType() == lib.TxnTypeBlockReward && len(txn.TxInputs) != 0 {
+		return 0, 0, nil, lib.RuleErrorBlockRewardTxnNotAllowedToHaveInputs
 	}
 
 	// At this point, all of the utxos corresponding to inputs of this txn
@@ -1163,11 +1165,11 @@ func (bav *UtxoView) _connectBasicTransfer(
 	for outputIndex, desoOutput := range txn.TxOutputs {
 		// Sanity check the amount of the output. Mark the block as invalid and
 		// return an error if it isn't sane.
-		if desoOutput.AmountNanos > MaxNanos ||
+		if desoOutput.AmountNanos > lib.MaxNanos ||
 			totalOutput >= (math.MaxUint64-desoOutput.AmountNanos) ||
-			totalOutput+desoOutput.AmountNanos > MaxNanos {
+			totalOutput+desoOutput.AmountNanos > lib.MaxNanos {
 
-			return 0, 0, nil, RuleErrorTxnOutputWithInvalidAmount
+			return 0, 0, nil, lib.RuleErrorTxnOutputWithInvalidAmount
 		}
 
 		// Since the amount is sane, add it to the total.
@@ -1183,12 +1185,12 @@ func (bav *UtxoView) _connectBasicTransfer(
 
 		// Create a new entry for this output and add it to the view. It should be
 		// added at the end of the utxo list.
-		outputKey := UtxoKey{
+		outputKey := core.UtxoKey{
 			TxID:  *txHash,
 			Index: uint32(outputIndex),
 		}
 		utxoType := UtxoTypeOutput
-		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+		if txn.TxnMeta.GetTxnType() == lib.TxnTypeBlockReward {
 			utxoType = UtxoTypeBlockReward
 		}
 		// A basic transfer cannot create any output other than a "normal" output
@@ -1217,34 +1219,34 @@ func (bav *UtxoView) _connectBasicTransfer(
 	}
 
 	// Now that we have computed the outputs, we can finish processing diamonds if need be.
-	diamondPostHashBytes, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
-	diamondPostHash := &BlockHash{}
-	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
+	diamondPostHashBytes, hasDiamondPostHash := txn.ExtraData[lib.DiamondPostHashKey]
+	diamondPostHash := &core.BlockHash{}
+	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[lib.DiamondLevelKey]
 	var previousDiamondPostEntry *PostEntry
 	var previousDiamondEntry *DiamondEntry
-	if hasDiamondPostHash && blockHeight > DeSoDiamondsBlockHeight &&
-		txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+	if hasDiamondPostHash && blockHeight > lib.DeSoDiamondsBlockHeight &&
+		txn.TxnMeta.GetTxnType() == lib.TxnTypeBasicTransfer {
 		if !hasDiamondLevel {
-			return 0, 0, nil, RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel
+			return 0, 0, nil, lib.RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel
 		}
-		diamondLevel, bytesRead := Varint(diamondLevelBytes)
+		diamondLevel, bytesRead := lib.Varint(diamondLevelBytes)
 		// NOTE: Despite being an int, diamondLevel is required to be non-negative. This
 		// is useful for sorting our dbkeys by diamondLevel.
 		if bytesRead < 0 || diamondLevel < 0 {
-			return 0, 0, nil, RuleErrorBasicTransferHasInvalidDiamondLevel
+			return 0, 0, nil, lib.RuleErrorBasicTransferHasInvalidDiamondLevel
 		}
 
 		// Get the post that is being diamonded.
-		if len(diamondPostHashBytes) != HashSizeBytes {
+		if len(diamondPostHashBytes) != core.HashSizeBytes {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes,
+				lib.RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes,
 				"_connectBasicTransfer: DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
 		}
 		copy(diamondPostHash[:], diamondPostHashBytes[:])
 
 		previousDiamondPostEntry = bav.GetPostEntryForPostHash(diamondPostHash)
 		if previousDiamondPostEntry == nil || previousDiamondPostEntry.isDeleted {
-			return 0, 0, nil, RuleErrorBasicTransferDiamondPostEntryDoesNotExist
+			return 0, 0, nil, lib.RuleErrorBasicTransferDiamondPostEntryDoesNotExist
 		}
 
 		// Store the diamond recipient pub key so we can figure out how much they are paid.
@@ -1252,7 +1254,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 
 		// Check that the diamond sender and receiver public keys are different.
 		if reflect.DeepEqual(txn.PublicKey, diamondRecipientPubKey) {
-			return 0, 0, nil, RuleErrorBasicTransferDiamondCannotTransferToSelf
+			return 0, 0, nil, lib.RuleErrorBasicTransferDiamondCannotTransferToSelf
 		}
 
 		expectedDeSoNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumDeSoNanos(
@@ -1263,7 +1265,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		diamondRecipientTotal, _ := amountsByPublicKey[MakePkMapKey(diamondRecipientPubKey)]
 
 		if diamondRecipientTotal < expectedDeSoNanosToTransfer {
-			return 0, 0, nil, RuleErrorBasicTransferInsufficientDeSoForDiamondLevel
+			return 0, 0, nil, lib.RuleErrorBasicTransferInsufficientDeSoForDiamondLevel
 		}
 
 		// The diamondPostEntry needs to be updated with the number of new diamonds.
@@ -1325,9 +1327,9 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// nodes. Block rewards are the only transactions that get a pass on this. They are
 		// also not allowed to have any inputs because they by construction cannot authorize
 		// the spending of any inputs.
-		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+		if txn.TxnMeta.GetTxnType() == lib.TxnTypeBlockReward {
 			if len(txn.PublicKey) != 0 || txn.Signature != nil {
-				return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveSignature
+				return 0, 0, nil, lib.RuleErrorBlockRewardTxnNotAllowedToHaveSignature
 			}
 		} else {
 			if err := bav._verifySignature(txn, blockHeight); err != nil {
@@ -1342,11 +1344,11 @@ func (bav *UtxoView) _connectBasicTransfer(
 }
 
 func (bav *UtxoView) _connectUpdateGlobalParams(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeUpdateGlobalParams {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeUpdateGlobalParams {
 		return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
@@ -1359,75 +1361,75 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 	// Validate the public key. Only a paramUpdater is allowed to trigger this.
 	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
-		return 0, 0, nil, RuleErrorUserNotAuthorizedToUpdateGlobalParams
+		return 0, 0, nil, lib.RuleErrorUserNotAuthorizedToUpdateGlobalParams
 	}
-	if len(extraData[USDCentsPerBitcoinKey]) > 0 {
+	if len(extraData[lib.USDCentsPerBitcoinKey]) > 0 {
 		// Validate that the exchange rate is not less than the floor as a sanity-check.
-		newUSDCentsPerBitcoin, usdCentsPerBitcoinBytesRead := Uvarint(extraData[USDCentsPerBitcoinKey])
+		newUSDCentsPerBitcoin, usdCentsPerBitcoinBytesRead := lib.Uvarint(extraData[lib.USDCentsPerBitcoinKey])
 		if usdCentsPerBitcoinBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode USDCentsPerBitcoin as uint64")
 		}
-		if newUSDCentsPerBitcoin < MinUSDCentsPerBitcoin {
-			return 0, 0, nil, RuleErrorExchangeRateTooLow
+		if newUSDCentsPerBitcoin < lib.MinUSDCentsPerBitcoin {
+			return 0, 0, nil, lib.RuleErrorExchangeRateTooLow
 		}
-		if newUSDCentsPerBitcoin > MaxUSDCentsPerBitcoin {
-			return 0, 0, nil, RuleErrorExchangeRateTooHigh
+		if newUSDCentsPerBitcoin > lib.MaxUSDCentsPerBitcoin {
+			return 0, 0, nil, lib.RuleErrorExchangeRateTooHigh
 		}
 		newGlobalParamsEntry.USDCentsPerBitcoin = newUSDCentsPerBitcoin
 	}
 
-	if len(extraData[MinNetworkFeeNanosPerKBKey]) > 0 {
-		newMinNetworkFeeNanosPerKB, minNetworkFeeNanosPerKBBytesRead := Uvarint(extraData[MinNetworkFeeNanosPerKBKey])
+	if len(extraData[lib.MinNetworkFeeNanosPerKBKey]) > 0 {
+		newMinNetworkFeeNanosPerKB, minNetworkFeeNanosPerKBBytesRead := lib.Uvarint(extraData[lib.MinNetworkFeeNanosPerKBKey])
 		if minNetworkFeeNanosPerKBBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode MinNetworkFeeNanosPerKB as uint64")
 		}
-		if newMinNetworkFeeNanosPerKB < MinNetworkFeeNanosPerKBValue {
-			return 0, 0, nil, RuleErrorMinNetworkFeeTooLow
+		if newMinNetworkFeeNanosPerKB < lib.MinNetworkFeeNanosPerKBValue {
+			return 0, 0, nil, lib.RuleErrorMinNetworkFeeTooLow
 		}
-		if newMinNetworkFeeNanosPerKB > MaxNetworkFeeNanosPerKBValue {
-			return 0, 0, nil, RuleErrorMinNetworkFeeTooHigh
+		if newMinNetworkFeeNanosPerKB > lib.MaxNetworkFeeNanosPerKBValue {
+			return 0, 0, nil, lib.RuleErrorMinNetworkFeeTooHigh
 		}
 		newGlobalParamsEntry.MinimumNetworkFeeNanosPerKB = newMinNetworkFeeNanosPerKB
 	}
 
-	if len(extraData[CreateProfileFeeNanosKey]) > 0 {
-		newCreateProfileFeeNanos, createProfileFeeNanosBytesRead := Uvarint(extraData[CreateProfileFeeNanosKey])
+	if len(extraData[lib.CreateProfileFeeNanosKey]) > 0 {
+		newCreateProfileFeeNanos, createProfileFeeNanosBytesRead := lib.Uvarint(extraData[lib.CreateProfileFeeNanosKey])
 		if createProfileFeeNanosBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode CreateProfileFeeNanos as uint64")
 		}
-		if newCreateProfileFeeNanos < MinCreateProfileFeeNanos {
-			return 0, 0, nil, RuleErrorCreateProfileFeeTooLow
+		if newCreateProfileFeeNanos < lib.MinCreateProfileFeeNanos {
+			return 0, 0, nil, lib.RuleErrorCreateProfileFeeTooLow
 		}
-		if newCreateProfileFeeNanos > MaxCreateProfileFeeNanos {
-			return 0, 0, nil, RuleErrorCreateProfileTooHigh
+		if newCreateProfileFeeNanos > lib.MaxCreateProfileFeeNanos {
+			return 0, 0, nil, lib.RuleErrorCreateProfileTooHigh
 		}
 		newGlobalParamsEntry.CreateProfileFeeNanos = newCreateProfileFeeNanos
 	}
 
-	if len(extraData[CreateNFTFeeNanosKey]) > 0 {
-		newCreateNFTFeeNanos, createNFTFeeNanosBytesRead := Uvarint(extraData[CreateNFTFeeNanosKey])
+	if len(extraData[lib.CreateNFTFeeNanosKey]) > 0 {
+		newCreateNFTFeeNanos, createNFTFeeNanosBytesRead := lib.Uvarint(extraData[lib.CreateNFTFeeNanosKey])
 		if createNFTFeeNanosBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode CreateNFTFeeNanos as uint64")
 		}
-		if newCreateNFTFeeNanos < MinCreateNFTFeeNanos {
-			return 0, 0, nil, RuleErrorCreateNFTFeeTooLow
+		if newCreateNFTFeeNanos < lib.MinCreateNFTFeeNanos {
+			return 0, 0, nil, lib.RuleErrorCreateNFTFeeTooLow
 		}
-		if newCreateNFTFeeNanos > MaxCreateNFTFeeNanos {
-			return 0, 0, nil, RuleErrorCreateNFTFeeTooHigh
+		if newCreateNFTFeeNanos > lib.MaxCreateNFTFeeNanos {
+			return 0, 0, nil, lib.RuleErrorCreateNFTFeeTooHigh
 		}
 		newGlobalParamsEntry.CreateNFTFeeNanos = newCreateNFTFeeNanos
 	}
 
-	if len(extraData[MaxCopiesPerNFTKey]) > 0 {
-		newMaxCopiesPerNFT, maxCopiesPerNFTBytesRead := Uvarint(extraData[MaxCopiesPerNFTKey])
+	if len(extraData[lib.MaxCopiesPerNFTKey]) > 0 {
+		newMaxCopiesPerNFT, maxCopiesPerNFTBytesRead := lib.Uvarint(extraData[lib.MaxCopiesPerNFTKey])
 		if maxCopiesPerNFTBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode MaxCopiesPerNFT as uint64")
 		}
-		if newMaxCopiesPerNFT < MinMaxCopiesPerNFT {
-			return 0, 0, nil, RuleErrorMaxCopiesPerNFTTooLow
+		if newMaxCopiesPerNFT < lib.MinMaxCopiesPerNFT {
+			return 0, 0, nil, lib.RuleErrorMaxCopiesPerNFTTooLow
 		}
-		if newMaxCopiesPerNFT > MaxMaxCopiesPerNFT {
-			return 0, 0, nil, RuleErrorMaxCopiesPerNFTTooHigh
+		if newMaxCopiesPerNFT > lib.MaxMaxCopiesPerNFT {
+			return 0, 0, nil, lib.RuleErrorMaxCopiesPerNFTTooHigh
 		}
 		newGlobalParamsEntry.MaxCopiesPerNFT = newMaxCopiesPerNFT
 	}
@@ -1435,11 +1437,11 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
-	if _, exists := extraData[ForbiddenBlockSignaturePubKeyKey]; exists {
-		forbiddenPubKey = extraData[ForbiddenBlockSignaturePubKeyKey]
+	if _, exists := extraData[lib.ForbiddenBlockSignaturePubKeyKey]; exists {
+		forbiddenPubKey = extraData[lib.ForbiddenBlockSignaturePubKeyKey]
 
 		if len(forbiddenPubKey) != btcec.PubKeyBytesLenCompressed {
-			return 0, 0, nil, RuleErrorForbiddenPubKeyLength
+			return 0, 0, nil, lib.RuleErrorForbiddenPubKeyLength
 		}
 
 		// If there is already an entry on the view for this pub key, save it.
@@ -1462,7 +1464,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 	// Output must be non-zero
 	if totalOutput == 0 {
-		return 0, 0, nil, RuleErrorUserOutputMustBeNonzero
+		return 0, 0, nil, lib.RuleErrorUserOutputMustBeNonzero
 	}
 
 	if verifySignatures {
@@ -1493,13 +1495,13 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 	senderPublicKey []byte,
 	receiverPublicKey []byte,
-	diamondPostHash *BlockHash,
+	diamondPostHash *core.BlockHash,
 	diamondLevel int64,
 	blockHeight uint32,
 ) (_numDeSoNanos uint64, _netNewDiamonds int64, _err error) {
 
 	// Check that the diamond level is reasonable
-	diamondLevelMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(int64(blockHeight))
+	diamondLevelMap := lib.GetDeSoNanosDiamondLevelMapAtBlockHeight(int64(blockHeight))
 	if _, isAllowedLevel := diamondLevelMap[diamondLevel]; !isAllowedLevel {
 		return 0, 0, fmt.Errorf(
 			"ValidateDiamondsAndGetNumCreatorCoinNanos: Diamond level %v not allowed",
@@ -1520,12 +1522,12 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 	}
 
 	if currDiamondLevel >= diamondLevel {
-		return 0, 0, RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds
+		return 0, 0, lib.RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds
 	}
 
 	// Calculate the number of creator coin nanos needed vs. already added for previous diamonds.
-	currDeSoNanos := GetDeSoNanosForDiamondLevelAtBlockHeight(currDiamondLevel, int64(blockHeight))
-	neededDeSoNanos := GetDeSoNanosForDiamondLevelAtBlockHeight(diamondLevel, int64(blockHeight))
+	currDeSoNanos := lib.GetDeSoNanosForDiamondLevelAtBlockHeight(currDiamondLevel, int64(blockHeight))
+	neededDeSoNanos := lib.GetDeSoNanosForDiamondLevelAtBlockHeight(diamondLevel, int64(blockHeight))
 
 	// There is an edge case where, if the person's creator coin value goes down
 	// by a large enough amount, then they can get a "free" diamond upgrade. This
@@ -1540,7 +1542,7 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 	return desoToTransferNanos, netNewDiamonds, nil
 }
 
-func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
+func (bav *UtxoView) ConnectTransaction(txn *lib.MsgDeSoTxn, txHash *core.BlockHash,
 	txnSizeBytes int64,
 	blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
 	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
@@ -1553,13 +1555,13 @@ func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 }
 
-func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
+func (bav *UtxoView) _connectTransaction(txn *lib.MsgDeSoTxn, txHash *core.BlockHash,
 	txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
 	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
 	_fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
-	if err := CheckTransactionSanity(txn); err != nil {
+	if err := lib.CheckTransactionSanity(txn); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
 	}
 
@@ -1570,106 +1572,106 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			err, "CheckTransactionSanity: Problem serializing transaction: ")
 	}
 	if len(txnBytes) > int(bav.Params.MaxBlockSizeBytes/2) {
-		return nil, 0, 0, 0, RuleErrorTxnTooBig
+		return nil, 0, 0, 0, lib.RuleErrorTxnTooBig
 	}
 
 	var totalInput, totalOutput uint64
 	var utxoOpsForTxn []*UtxoOperation
-	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward || txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+	if txn.TxnMeta.GetTxnType() == lib.TxnTypeBlockReward || txn.TxnMeta.GetTxnType() == lib.TxnTypeBasicTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectBasicTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeBitcoinExchange {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectBitcoinExchange(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypePrivateMessage {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectPrivateMessage(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeSubmitPost {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSubmitPost(
 				txn, txHash, blockHeight, verifySignatures, ignoreUtxos)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateProfile {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateProfile(
 				txn, txHash, blockHeight, verifySignatures, ignoreUtxos)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateBitcoinUSDExchangeRate {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateBitcoinUSDExchangeRate {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateBitcoinUSDExchangeRate(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateGlobalParams {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateGlobalParams {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateGlobalParams(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeFollow {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectFollow(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeLike {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectLike(txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeCreatorCoin {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreatorCoin(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeCreatorCoinTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreatorCoinTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeSwapIdentity {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSwapIdentity(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeCreateNFT {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreateNFT(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateNFT {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateNFT(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeAcceptNFTBid {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAcceptNFTBid(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeNFTBid {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNFTBid(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeNFTTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNFTTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeAcceptNFTTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAcceptNFTTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeBurnNFT {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectBurnNFT(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
+	} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeAuthorizeDerivedKey {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
@@ -1684,12 +1686,12 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	// Do some extra processing for non-block-reward transactions. Block reward transactions
 	// will return zero for their fees.
 	fees := uint64(0)
-	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeBlockReward {
 		// If this isn't a block reward transaction, make sure the total input does
 		// not exceed the total output. If it does, mark the block as invalid and
 		// return an error.
 		if totalInput < totalOutput {
-			return nil, 0, 0, 0, RuleErrorTxnOutputExceedsInput
+			return nil, 0, 0, 0, lib.RuleErrorTxnOutputExceedsInput
 		}
 		fees = totalInput - totalOutput
 	}
@@ -1699,14 +1701,14 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	// enough fees to get mined into the Bitcoin blockchain itself then they're almost certainly not spam.
 	// If the transaction size was set to 0, skip validating the fee is above the minimum.
 	// If the current minimum network fee per kb is set to 0, that indicates we should not assess a minimum fee.
-	if txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange && txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeBitcoinExchange && txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
 		// Make sure there isn't overflow in the fee.
 		if fees != ((fees * 1000) / 1000) {
-			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation
+			return nil, 0, 0, 0, lib.RuleErrorOverflowDetectedInFeeRateCalculation
 		}
 		// If the fee is less than the minimum network fee per KB, return an error.
 		if (fees*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
-			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
+			return nil, 0, 0, 0, lib.RuleErrorTxnFeeBelowNetworkMinimum
 		}
 	}
 
@@ -1714,7 +1716,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 }
 
 func (bav *UtxoView) ConnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager) (
+	desoBlock *lib.MsgDeSoBlock, txHashes []*core.BlockHash, verifySignatures bool, eventManager *lib.EventManager) (
 	[][]*UtxoOperation, error) {
 
 	glog.V(1).Infof("ConnectBlock: Connecting block %v", desoBlock)
@@ -1752,7 +1754,7 @@ func (bav *UtxoView) ConnectBlock(
 		// mark the block as invalid and return a rule error. Note that block reward
 		// txns should count as having zero fees.
 		if totalFees > (math.MaxUint64 - currentFees) {
-			return nil, RuleErrorTxnOutputWithInvalidAmount
+			return nil, lib.RuleErrorTxnOutputWithInvalidAmount
 		}
 		totalFees += currentFees
 
@@ -1765,7 +1767,7 @@ func (bav *UtxoView) ConnectBlock(
 		//
 		// Call the event manager
 		if eventManager != nil {
-			eventManager.transactionConnected(&TransactionEvent{
+			eventManager.transactionConnected(&lib.TransactionEvent{
 				Txn:      txn,
 				TxnHash:  txHash,
 				UtxoView: bav,
@@ -1781,20 +1783,20 @@ func (bav *UtxoView) ConnectBlock(
 	// occurs mark the block as invalid and return a rule error.
 	var blockRewardOutput uint64
 	for _, bro := range desoBlock.Txns[0].TxOutputs {
-		if bro.AmountNanos > MaxNanos ||
+		if bro.AmountNanos > lib.MaxNanos ||
 			blockRewardOutput > (math.MaxUint64-bro.AmountNanos) {
 
-			return nil, RuleErrorBlockRewardOutputWithInvalidAmount
+			return nil, lib.RuleErrorBlockRewardOutputWithInvalidAmount
 		}
 		blockRewardOutput += bro.AmountNanos
 	}
 	// Verify that the block reward does not overflow when added to
 	// the block's fees.
-	blockReward := CalcBlockRewardNanos(uint32(blockHeader.Height))
-	if totalFees > MaxNanos ||
+	blockReward := lib.CalcBlockRewardNanos(uint32(blockHeader.Height))
+	if totalFees > lib.MaxNanos ||
 		blockReward > (math.MaxUint64-totalFees) {
 
-		return nil, RuleErrorBlockRewardOverflow
+		return nil, lib.RuleErrorBlockRewardOverflow
 	}
 	maxBlockReward := blockReward + totalFees
 	// If the outputs of the block reward txn exceed the max block reward
@@ -1802,7 +1804,7 @@ func (bav *UtxoView) ConnectBlock(
 	if blockRewardOutput > maxBlockReward {
 		glog.Errorf("ConnectBlock(RuleErrorBlockRewardExceedsMaxAllowed): "+
 			"blockRewardOutput %d exceeds maxBlockReward %d", blockRewardOutput, maxBlockReward)
-		return nil, RuleErrorBlockRewardExceedsMaxAllowed
+		return nil, lib.RuleErrorBlockRewardExceedsMaxAllowed
 	}
 
 	// If we made it to the end and this block is valid, advance the tip
@@ -1822,7 +1824,7 @@ func (bav *UtxoView) ConnectBlock(
 // the database. It's much faster to fetch data in bulk and cache "nil" values
 // then to query individual records when connecting every transaction. If something
 // is not preloaded the view falls back to individual queries.
-func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
+func (bav *UtxoView) Preload(desoBlock *lib.MsgDeSoBlock) error {
 	// We can only preload if we're using postgres
 	if bav.Postgres == nil {
 		return nil
@@ -1830,18 +1832,18 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 
 	// One iteration for all the PKIDs
 	// NOTE: Work in progress. Testing with follows for now.
-	var publicKeys []*PublicKey
+	var publicKeys []*core.PublicKey
 	for _, txn := range desoBlock.Txns {
-		if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
-			txnMeta := txn.TxnMeta.(*FollowMetadata)
-			publicKeys = append(publicKeys, NewPublicKey(txn.PublicKey))
-			publicKeys = append(publicKeys, NewPublicKey(txnMeta.FollowedPublicKey))
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
-			txnMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
-			publicKeys = append(publicKeys, NewPublicKey(txn.PublicKey))
-			publicKeys = append(publicKeys, NewPublicKey(txnMeta.ProfilePublicKey))
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
-			publicKeys = append(publicKeys, NewPublicKey(txn.PublicKey))
+		if txn.TxnMeta.GetTxnType() == lib.TxnTypeFollow {
+			txnMeta := txn.TxnMeta.(*lib.FollowMetadata)
+			publicKeys = append(publicKeys, core.NewPublicKey(txn.PublicKey))
+			publicKeys = append(publicKeys, core.NewPublicKey(txnMeta.FollowedPublicKey))
+		} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeCreatorCoin {
+			txnMeta := txn.TxnMeta.(*lib.CreatorCoinMetadataa)
+			publicKeys = append(publicKeys, core.NewPublicKey(txn.PublicKey))
+			publicKeys = append(publicKeys, core.NewPublicKey(txnMeta.ProfilePublicKey))
+		} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateProfile {
+			publicKeys = append(publicKeys, core.NewPublicKey(txn.PublicKey))
 		}
 	}
 
@@ -1849,7 +1851,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		for _, publicKey := range publicKeys {
 			publicKeyBytes := publicKey.ToBytes()
 			pkidEntry := &PKIDEntry{
-				PKID:      PublicKeyToPKID(publicKeyBytes),
+				PKID:      core.PublicKeyToPKID(publicKeyBytes),
 				PublicKey: publicKeyBytes,
 			}
 
@@ -1869,17 +1871,17 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 
 	// One iteration for everything else
 	// TODO: For some reason just fetching follows from the DB causes consensus issues??
-	var outputs []*PGTransactionOutput
-	var follows []*PGFollow
-	var balances []*PGCreatorCoinBalance
-	var likes []*PGLike
-	var posts []*PGPost
+	var outputs []*lib.PGTransactionOutput
+	var follows []*lib.PGFollow
+	var balances []*lib.PGCreatorCoinBalance
+	var likes []*lib.PGLike
+	var posts []*lib.PGPost
 	var lowercaseUsernames []string
 
 	for _, txn := range desoBlock.Txns {
 		// Preload all the inputs
 		for _, txInput := range txn.TxInputs {
-			output := &PGTransactionOutput{
+			output := &lib.PGTransactionOutput{
 				OutputHash:  &txInput.TxID,
 				OutputIndex: txInput.Index,
 				Spent:       false,
@@ -1887,9 +1889,9 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 			outputs = append(outputs, output)
 		}
 
-		if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
-			txnMeta := txn.TxnMeta.(*FollowMetadata)
-			follow := &PGFollow{
+		if txn.TxnMeta.GetTxnType() == lib.TxnTypeFollow {
+			txnMeta := txn.TxnMeta.(*lib.FollowMetadata)
+			follow := &lib.PGFollow{
 				FollowerPKID: bav.GetPKIDForPublicKey(txn.PublicKey).PKID.NewPKID(),
 				FollowedPKID: bav.GetPKIDForPublicKey(txnMeta.FollowedPublicKey).PKID.NewPKID(),
 			}
@@ -1898,11 +1900,11 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 			// We cache the follow as not present and then fill them in later
 			followerKey := MakeFollowKey(follow.FollowerPKID, follow.FollowedPKID)
 			bav.FollowKeyToFollowEntry[followerKey] = nil
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
-			txnMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
+		} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeCreatorCoin {
+			txnMeta := txn.TxnMeta.(*lib.CreatorCoinMetadataa)
 
 			// Fetch the buyer's balance entry
-			balance := &PGCreatorCoinBalance{
+			balance := &lib.PGCreatorCoinBalance{
 				HolderPKID:  bav.GetPKIDForPublicKey(txn.PublicKey).PKID.NewPKID(),
 				CreatorPKID: bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 			}
@@ -1914,7 +1916,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 
 			// Fetch the creator's balance entry if they're not buying their own coin
 			if !reflect.DeepEqual(txn.PublicKey, txnMeta.ProfilePublicKey) {
-				balance = &PGCreatorCoinBalance{
+				balance = &lib.PGCreatorCoinBalance{
 					HolderPKID:  bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 					CreatorPKID: bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
 				}
@@ -1924,9 +1926,9 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 				balanceEntryKey = MakeCreatorCoinBalanceKey(balance.HolderPKID, balance.CreatorPKID)
 				bav.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryKey] = nil
 			}
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
-			txnMeta := txn.TxnMeta.(*LikeMetadata)
-			like := &PGLike{
+		} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeLike {
+			txnMeta := txn.TxnMeta.(*lib.LikeMetadata)
+			like := &lib.PGLike{
 				LikerPublicKey: txn.PublicKey,
 				LikedPostHash:  txnMeta.LikedPostHash.NewBlockHash(),
 			}
@@ -1936,24 +1938,24 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 			likeKey := MakeLikeKey(like.LikerPublicKey, *like.LikedPostHash)
 			bav.LikeKeyToLikeEntry[likeKey] = nil
 
-			post := &PGPost{
+			post := &lib.PGPost{
 				PostHash: txnMeta.LikedPostHash.NewBlockHash(),
 			}
 			posts = append(posts, post)
 
 			// We cache the posts as not present and then fill them in later
 			bav.PostHashToPostEntry[*post.PostHash] = nil
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
-			txnMeta := txn.TxnMeta.(*SubmitPostMetadata)
+		} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeSubmitPost {
+			txnMeta := txn.TxnMeta.(*lib.SubmitPostMetadata)
 
-			var postHash *BlockHash
+			var postHash *core.BlockHash
 			if len(txnMeta.PostHashToModify) != 0 {
-				postHash = NewBlockHash(txnMeta.PostHashToModify)
+				postHash = core.NewBlockHash(txnMeta.PostHashToModify)
 			} else {
 				postHash = txn.Hash()
 			}
 
-			posts = append(posts, &PGPost{
+			posts = append(posts, &lib.PGPost{
 				PostHash: postHash,
 			})
 
@@ -1961,8 +1963,8 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 			bav.PostHashToPostEntry[*postHash] = nil
 
 			// TODO: Preload parent, grandparent, and reposted posts
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
-			txnMeta := txn.TxnMeta.(*UpdateProfileMetadata)
+		} else if txn.TxnMeta.GetTxnType() == lib.TxnTypeUpdateProfile {
+			txnMeta := txn.TxnMeta.(*lib.UpdateProfileMetadata)
 			if len(txnMeta.NewUsername) == 0 {
 				continue
 			}
@@ -2043,11 +2045,11 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	if bav.Postgres != nil {
 		utxoEntriesForPublicKey = bav.Postgres.GetUtxoEntriesForPublicKey(pkBytes)
 	} else {
-		utxoEntriesForPublicKey, err = DbGetUtxosForPubKey(pkBytes, bav.Handle)
+		utxoEntriesForPublicKey, err = lib.DbGetUtxosForPubKey(pkBytes, bav.Handle)
 	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GetUnspentUtxoEntrysForPublicKey: Problem fetching "+
-			"utxos for public key %s", PkToString(pkBytes, bav.Params))
+			"utxos for public key %s", lib.PkToString(pkBytes, bav.Params))
 	}
 
 	// Load all the utxos associated with this public key into
@@ -2094,27 +2096,27 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	} else {
 		for ii := uint64(1); ii < uint64(numImmatureBlocks); ii++ {
 			// Don't look up the genesis block since it isn't in the DB.
-			if GenesisBlockHashHex == nextBlockHash.String() {
+			if lib.GenesisBlockHashHex == nextBlockHash.String() {
 				break
 			}
 
-			blockNode := GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
+			blockNode := lib.GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
 				return uint64(0), fmt.Errorf(
 					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 					nextBlockHash.String())
 			}
-			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
+			blockRewardForPK, err := lib.DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
 			if err != nil {
 				return uint64(0), errors.Wrapf(
 					err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block reward for "+
-						"public key %s blockhash %s", PkToString(pkBytes, bav.Params), nextBlockHash.String())
+						"public key %s blockhash %s", lib.PkToString(pkBytes, bav.Params), nextBlockHash.String())
 			}
 			immatureBlockRewards += blockRewardForPK
 			if blockNode.Parent != nil {
 				nextBlockHash = blockNode.Parent.Hash
 			} else {
-				nextBlockHash = GenesisBlockHash
+				nextBlockHash = lib.GenesisBlockHash
 			}
 		}
 	}

@@ -1,8 +1,9 @@
-package lib
+package view
 
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -10,21 +11,21 @@ import (
 	"time"
 )
 
-func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
+func _privateMessage(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
 	recipientPkBase58Check string,
 	senderPrivBase58Check string, unencryptedMessageText string, tstampNanos uint64) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
+	senderPkBytes, _, err := lib.Base58CheckDecode(senderPkBase58Check)
 	require.NoError(err)
 
-	recipientPkBytes, _, err := Base58CheckDecode(recipientPkBase58Check)
+	recipientPkBytes, _, err := lib.Base58CheckDecode(recipientPkBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -32,7 +33,7 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
-		tstampNanos, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		tstampNanos, feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -40,7 +41,7 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, senderPrivBase58Check)
+	lib._signTxn(t, txn, senderPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -75,8 +76,8 @@ func TestPrivateMessage(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -90,7 +91,7 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Setup some convenience functions for the test.
 	txnOps := [][]*UtxoOperation{}
-	txns := []*MsgDeSoTxn{}
+	txns := []*lib.MsgDeSoTxn{}
 	expectedSenderBalances := []uint64{}
 	expectedRecipientBalances := []uint64{}
 
@@ -100,8 +101,8 @@ func TestPrivateMessage(t *testing.T) {
 	registerOrTransfer := func(username string,
 		senderPk string, recipientPk string, senderPriv string) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
-		expectedRecipientBalances = append(expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, lib.senderPkString))
+		expectedRecipientBalances = append(expectedRecipientBalances, lib._getBalance(t, chain, nil, lib.recipientPkString))
 
 		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
 			t, chain, db, params, senderPk, recipientPk,
@@ -112,26 +113,26 @@ func TestPrivateMessage(t *testing.T) {
 	}
 
 	// Fund all the keys.
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m2Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m3Pub, lib.senderPrivString)
 
 	privateMessage := func(
 		senderPkBase58Check string, recipientPkBase58Check string,
 		senderPrivBase58Check string, unencryptedMessageText string, tstampNanos uint64,
 		feeRateNanosPerKB uint64) {
 
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
-		expectedRecipientBalances = append(expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
+		expectedSenderBalances = append(expectedSenderBalances, lib._getBalance(t, chain, nil, lib.senderPkString))
+		expectedRecipientBalances = append(expectedRecipientBalances, lib._getBalance(t, chain, nil, lib.recipientPkString))
 
 		currentOps, currentTxn, _, err := _privateMessage(
 			t, chain, db, params, feeRateNanosPerKB, senderPkBase58Check,
@@ -146,37 +147,37 @@ func TestPrivateMessage(t *testing.T) {
 	// Do some PrivateMessage transactions
 	// ===================================================================================
 	tstamp1 := uint64(time.Now().UnixNano())
-	message1 := string(append([]byte("message1: "), RandomBytes(100)...))
+	message1 := string(append([]byte("message1: "), db.RandomBytes(100)...))
 	tstamp2 := uint64(time.Now().UnixNano())
-	message2 := string(append([]byte("message2: "), RandomBytes(100)...))
+	message2 := string(append([]byte("message2: "), db.RandomBytes(100)...))
 	tstamp3 := uint64(time.Now().UnixNano())
-	message3 := string(append([]byte("message3: "), RandomBytes(100)...))
+	message3 := string(append([]byte("message3: "), db.RandomBytes(100)...))
 	tstamp4 := uint64(time.Now().UnixNano())
-	message4 := string(append([]byte("message4: "), RandomBytes(100)...))
-	message5 := string(append([]byte("message5: "), RandomBytes(100)...))
+	message4 := string(append([]byte("message4: "), db.RandomBytes(100)...))
+	message5 := string(append([]byte("message5: "), db.RandomBytes(100)...))
 
 	// Message where the sender is the recipient should fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		m0Pub, m0Priv, "test" /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey)
+	require.Contains(err.Error(), lib.RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey)
 
 	// Message with length too long should fail.
 	badMessage := string(append([]byte("badMessage: "),
-		RandomBytes(int32(params.MaxPrivateMessageLengthBytes))...))
+		db.RandomBytes(int32(params.MaxPrivateMessageLengthBytes))...))
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, badMessage /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorPrivateMessageEncryptedTextLengthExceedsMax)
+	require.Contains(err.Error(), lib.RuleErrorPrivateMessageEncryptedTextLengthExceedsMax)
 
 	// Zero tstamp should fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, message1 /*unencryptedMessageText*/, 0)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorPrivateMessageTstampIsZero)
+	require.Contains(err.Error(), lib.RuleErrorPrivateMessageTstampIsZero)
 
 	// m0 -> m1: message1, tstamp1
 	privateMessage(
@@ -187,28 +188,28 @@ func TestPrivateMessage(t *testing.T) {
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, message1 /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple)
+	require.Contains(err.Error(), lib.RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple)
 
 	// Duplicating (m1, tstamp1) should fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m1Pub,
 		m0Pub, m1Priv, message1 /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple)
+	require.Contains(err.Error(), lib.RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple)
 
 	// Duplicating (m0, tstamp1) with a different sender should still fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m2Pub,
 		m0Pub, m2Priv, message1 /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple)
+	require.Contains(err.Error(), lib.RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple)
 
 	// Duplicating (m1, tstamp1) with a different sender should still fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m2Pub,
 		m1Pub, m2Priv, message1 /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple)
+	require.Contains(err.Error(), lib.RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple)
 
 	// m2 -> m1: message2, tstamp2
 	privateMessage(
@@ -238,7 +239,7 @@ func TestPrivateMessage(t *testing.T) {
 	//    m2: 3
 	//    m3: 2
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(1, len(messages))
 		messageEntry := messages[0]
@@ -247,22 +248,22 @@ func TestPrivateMessage(t *testing.T) {
 		require.Equal(messageEntry.TstampNanos, tstamp1)
 		require.Equal(messageEntry.isDeleted, false)
 		priv, _ := btcec.PrivKeyFromBytes(btcec.S256(), _strToPk(t, m1Priv))
-		decryptedBytes, err := DecryptBytesWithPrivateKey(messageEntry.EncryptedText, priv.ToECDSA())
+		decryptedBytes, err := lib.DecryptBytesWithPrivateKey(messageEntry.EncryptedText, priv.ToECDSA())
 		require.NoError(err)
 		require.Equal(message1, string(decryptedBytes))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(4, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(3, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(2, len(messages))
 	}
@@ -270,18 +271,18 @@ func TestPrivateMessage(t *testing.T) {
 	// ===================================================================================
 	// Finish it off with some transactions
 	// ===================================================================================
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m0Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
+	registerOrTransfer("", lib.senderPkString, m1Pub, lib.senderPrivString)
 	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
 	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
 	registerOrTransfer("", m1Pub, m0Pub, m1Priv)
@@ -314,28 +315,28 @@ func TestPrivateMessage(t *testing.T) {
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
-		require.Equal(expectedSenderBalances[backwardIter], _getBalance(t, chain, nil, senderPkString))
-		require.Equal(expectedRecipientBalances[backwardIter], _getBalance(t, chain, nil, recipientPkString))
+		require.Equal(expectedSenderBalances[backwardIter], lib._getBalance(t, chain, nil, lib.senderPkString))
+		require.Equal(expectedRecipientBalances[backwardIter], lib._getBalance(t, chain, nil, lib.recipientPkString))
 	}
 
 	// Verify that all the messages have been deleted.
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
@@ -346,8 +347,8 @@ func TestPrivateMessage(t *testing.T) {
 		// See comment above on this transaction.
 		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
-		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, senderPkString))
-		require.Equal(expectedRecipientBalances[ii], _getBalance(t, chain, mempool, recipientPkString))
+		require.Equal(expectedSenderBalances[ii], lib._getBalance(t, chain, mempool, lib.senderPkString))
+		require.Equal(expectedRecipientBalances[ii], lib._getBalance(t, chain, mempool, lib.recipientPkString))
 
 		acceptedTxns, err := mempool.ProcessTransaction(tx, false, false, 0, true)
 		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
@@ -386,27 +387,27 @@ func TestPrivateMessage(t *testing.T) {
 		require.NoError(err)
 	}
 	require.NoError(utxoView2.FlushToDb())
-	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
-	require.Equal(expectedRecipientBalances[0], _getBalance(t, chain, nil, recipientPkString))
+	require.Equal(expectedSenderBalances[0], lib._getBalance(t, chain, nil, lib.senderPkString))
+	require.Equal(expectedRecipientBalances[0], lib._getBalance(t, chain, nil, lib.recipientPkString))
 
 	// Verify that all the messages have been deleted.
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
@@ -453,11 +454,11 @@ func TestPrivateMessage(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := db.GetUtxoOperationsForBlock(db, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
-		txHashes, err := ComputeTransactionHashes(block.Txns)
+		txHashes, err := lib.ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
 		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
 
@@ -467,22 +468,22 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Verify that all the messages have been deleted.
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		messages, err := db.DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}

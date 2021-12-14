@@ -1,8 +1,10 @@
-package lib
+package view
 
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -22,7 +24,7 @@ func (bav *UtxoView) _getLikeEntryForLikeKey(likeKey *LikeKey) *LikeEntry {
 	if bav.Postgres != nil {
 		likeExists = bav.Postgres.GetLike(likeKey.LikerPubKey[:], &likeKey.LikedPostHash) != nil
 	} else {
-		likeExists = DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
+		likeExists = lib.DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
 	}
 
 	if likeExists {
@@ -59,14 +61,14 @@ func (bav *UtxoView) _deleteLikeEntryMappings(likeEntry *LikeEntry) {
 	bav._setLikeEntryMappings(&tombstoneLikeEntry)
 }
 
-func (bav *UtxoView) GetLikedByReader(readerPK []byte, postHash *BlockHash) bool {
+func (bav *UtxoView) GetLikedByReader(readerPK []byte, postHash *core.BlockHash) bool {
 	// Get like state.
 	likeKey := MakeLikeKey(readerPK, *postHash)
 	likeEntry := bav._getLikeEntryForLikeKey(&likeKey)
 	return likeEntry != nil && !likeEntry.isDeleted
 }
 
-func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][]byte, _err error) {
+func (bav *UtxoView) GetLikesForPostHash(postHash *core.BlockHash) (_likerPubKeys [][]byte, _err error) {
 	if bav.Postgres != nil {
 		likes := bav.Postgres.GetLikesForPost(postHash)
 		for _, like := range likes {
@@ -74,19 +76,19 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][
 		}
 	} else {
 		handle := bav.Handle
-		dbPrefix := append([]byte{}, _PrefixLikedPostHashToLikerPubKey...)
+		dbPrefix := append([]byte{}, lib._PrefixLikedPostHashToLikerPubKey...)
 		dbPrefix = append(dbPrefix, postHash[:]...)
-		keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+		keysFound, _ := lib.EnumerateKeysForPrefix(handle, dbPrefix)
 
 		// Iterate over all the db keys & values and load them into the view.
-		expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
+		expectedKeyLength := 1 + core.HashSizeBytes + btcec.PubKeyBytesLenCompressed
 		for _, key := range keysFound {
 			// Sanity check that this is a reasonable key.
 			if len(key) != expectedKeyLength {
 				return nil, fmt.Errorf("UtxoView.GetLikesForPostHash: Invalid key length found: %d", len(key))
 			}
 
-			likerPubKey := key[1+HashSizeBytes:]
+			likerPubKey := key[1+core.HashSizeBytes:]
 
 			likeKey := &LikeKey{
 				LikerPubKey:   MakePkMapKey(likerPubKey),
@@ -109,15 +111,15 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][
 }
 
 func (bav *UtxoView) _connectLike(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeLike {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeLike {
 		return 0, 0, nil, fmt.Errorf("_connectLike: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*LikeMetadata)
+	txMeta := txn.TxnMeta.(*lib.LikeMetadata)
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -144,7 +146,7 @@ func (bav *UtxoView) _connectLike(
 	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.LikedPostHash)
 	if existingPostEntry == nil || existingPostEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorCannotLikeNonexistentPost,
+			lib.RuleErrorCannotLikeNonexistentPost,
 			"_connectLike: Post hash: %v", txMeta.LikedPostHash)
 	}
 
@@ -161,7 +163,7 @@ func (bav *UtxoView) _connectLike(
 		// Ensure that there *is* an existing like entry to delete.
 		if existingLikeEntry == nil || existingLikeEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorCannotUnlikeWithoutAnExistingLike,
+				lib.RuleErrorCannotUnlikeWithoutAnExistingLike,
 				"_connectLike: Like key: %v", &likeKey)
 		}
 
@@ -172,7 +174,7 @@ func (bav *UtxoView) _connectLike(
 		// Ensure that there *is not* an existing like entry.
 		if existingLikeEntry != nil && !existingLikeEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorLikeEntryAlreadyExists,
+				lib.RuleErrorLikeEntryAlreadyExists,
 				"_connectLike: Like key: %v", &likeKey)
 		}
 
@@ -200,7 +202,7 @@ func (bav *UtxoView) _connectLike(
 }
 
 func (bav *UtxoView) _disconnectLike(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a Like operation
@@ -215,7 +217,7 @@ func (bav *UtxoView) _disconnectLike(
 	}
 
 	// Now we know the txMeta is a Like
-	txMeta := currentTxn.TxnMeta.(*LikeMetadata)
+	txMeta := currentTxn.TxnMeta.(*lib.LikeMetadata)
 
 	// Before we do anything, let's get the post so we can adjust the like counter later.
 	likedPostEntry := bav.GetPostEntryForPostHash(txMeta.LikedPostHash)
@@ -233,8 +235,8 @@ func (bav *UtxoView) _disconnectLike(
 		if !reflect.DeepEqual(prevLikeEntry.LikerPubKey, currentTxn.PublicKey) {
 			return fmt.Errorf("_disconnectLike: User public key on "+
 				"LikeEntry was %s but the PublicKey on the txn was %s",
-				PkToStringBoth(prevLikeEntry.LikerPubKey),
-				PkToStringBoth(currentTxn.PublicKey))
+				lib.PkToStringBoth(prevLikeEntry.LikerPubKey),
+				lib.PkToStringBoth(currentTxn.PublicKey))
 		}
 
 		// Sanity check: verify that the post hash on the prevLikeEntry matches the transaction's.
@@ -264,8 +266,8 @@ func (bav *UtxoView) _disconnectLike(
 		if !reflect.DeepEqual(likeEntry.LikerPubKey, currentTxn.PublicKey) {
 			return fmt.Errorf("_disconnectLike: User public key on "+
 				"LikeEntry was %s but the PublicKey on the txn was %s",
-				PkToStringBoth(likeEntry.LikerPubKey),
-				PkToStringBoth(currentTxn.PublicKey))
+				lib.PkToStringBoth(likeEntry.LikerPubKey),
+				lib.PkToStringBoth(currentTxn.PublicKey))
 		}
 
 		// Sanity check: verify that the post hash on the likeEntry matches the transaction's.

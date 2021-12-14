@@ -1,7 +1,9 @@
-package lib
+package view
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,7 +15,7 @@ type _CreatorCoinTestData struct {
 	UpdaterPublicKeyBase58Check  string
 	UpdaterPrivateKeyBase58Check string
 	ProfilePublicKeyBase58Check  string
-	OperationType                CreatorCoinOperationType
+	OperationType                lib.CreatorCoinOperationType
 	DeSoToSellNanos              uint64
 	CreatorCoinToSellNanos       uint64
 	DeSoToAddNanos               uint64
@@ -40,7 +42,7 @@ type _CreatorCoinTestData struct {
 
 	// The type of txn we're having the helper execute. When unset, this defaults to
 	// a CreatorCoin transaction to avoid having to change existing code.
-	TxnType TxnType
+	TxnType lib.TxnType
 
 	// Extra fields for UpdateProfile txns
 	ProfileUsername           string
@@ -107,11 +109,11 @@ func _helpTestCreatorCoinBuySell(
 	desoFounderReward bool) {
 
 	// These are block heights where deso forked.
-	SalomonFixBlockHeight = 0
-	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
-	DeSoFounderRewardBlockHeight = 0
+	lib.SalomonFixBlockHeight = 0
+	lib.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
+	lib.DeSoFounderRewardBlockHeight = 0
 	if !desoFounderReward {
-		DeSoFounderRewardBlockHeight = 1e9
+		lib.DeSoFounderRewardBlockHeight = 1e9
 	}
 
 	// Set up a blockchain
@@ -119,8 +121,8 @@ func _helpTestCreatorCoinBuySell(
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
 
@@ -129,44 +131,44 @@ func _helpTestCreatorCoinBuySell(
 
 	// Give paramUpdater some mony
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, paramUpdaterPub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, paramUpdaterPub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	// Send money to people from moneyPk
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m0Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m0Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m1Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m1Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m2Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m2Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m3Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m3Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m4Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m4Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m5Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m5Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m6Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m6Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
-	m0StartNanos := _getBalance(t, chain, nil, m0Pub)
-	m1StartNanos := _getBalance(t, chain, nil, m1Pub)
-	m2StartNanos := _getBalance(t, chain, nil, m2Pub)
-	m3StartNanos := _getBalance(t, chain, nil, m3Pub)
-	m4StartNanos := _getBalance(t, chain, nil, m4Pub)
-	m5StartNanos := _getBalance(t, chain, nil, m5Pub)
-	m6StartNanos := _getBalance(t, chain, nil, m6Pub)
+	m0StartNanos := lib._getBalance(t, chain, nil, m0Pub)
+	m1StartNanos := lib._getBalance(t, chain, nil, m1Pub)
+	m2StartNanos := lib._getBalance(t, chain, nil, m2Pub)
+	m3StartNanos := lib._getBalance(t, chain, nil, m3Pub)
+	m4StartNanos := lib._getBalance(t, chain, nil, m4Pub)
+	m5StartNanos := lib._getBalance(t, chain, nil, m5Pub)
+	m6StartNanos := lib._getBalance(t, chain, nil, m6Pub)
 
 	testUtxoOps := [][]*UtxoOperation{}
-	testTxns := []*MsgDeSoTxn{}
+	testTxns := []*lib.MsgDeSoTxn{}
 	_checkTestData := func(
-		testData *_CreatorCoinTestData, message string, utxoView *UtxoView, mempool *DeSoMempool) {
+		testData *_CreatorCoinTestData, message string, utxoView *UtxoView, mempool *lib.DeSoMempool) {
 
 		// If we were instructed to skip these checks then skip them.
 		if testData.SkipChecks {
@@ -176,33 +178,33 @@ func _helpTestCreatorCoinBuySell(
 		// If a mempool object is provided then just check balances and return
 		if mempool != nil {
 			// DeSo balances
-			if _getBalance(t, chain, mempool, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
+			if lib._getBalance(t, chain, mempool, m0Pub) != 6*lib.NanosPerUnit && testData.m0DeSoBalance != 0 {
 				assert.Equalf(int64(testData.m0DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m0Pub)), "MempoolIncrementalBalanceCheck: m0 DeSo balance: %v", message)
+					int64(lib._getBalance(t, chain, mempool, m0Pub)), "MempoolIncrementalBalanceCheck: m0 DeSo balance: %v", message)
 			}
-			if _getBalance(t, chain, mempool, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
+			if lib._getBalance(t, chain, mempool, m1Pub) != 6*lib.NanosPerUnit && testData.m1DeSoBalance != 0 {
 				assert.Equalf(int64(testData.m1DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m1Pub)), "MempoolIncrementalBalanceCheck: m1 DeSo balance: %v", message)
+					int64(lib._getBalance(t, chain, mempool, m1Pub)), "MempoolIncrementalBalanceCheck: m1 DeSo balance: %v", message)
 			}
-			if _getBalance(t, chain, mempool, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
+			if lib._getBalance(t, chain, mempool, m2Pub) != 6*lib.NanosPerUnit && testData.m2DeSoBalance != 0 {
 				assert.Equalf(int64(testData.m2DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m2Pub)), "MempoolIncrementalBalanceCheck: m2 DeSo balance: %v", message)
+					int64(lib._getBalance(t, chain, mempool, m2Pub)), "MempoolIncrementalBalanceCheck: m2 DeSo balance: %v", message)
 			}
-			if _getBalance(t, chain, mempool, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
+			if lib._getBalance(t, chain, mempool, m3Pub) != 6*lib.NanosPerUnit && testData.m3DeSoBalance != 0 {
 				assert.Equalf(int64(testData.m3DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m3Pub)), "MempoolIncrementalBalanceCheck: m3 DeSo balance: %v", message)
+					int64(lib._getBalance(t, chain, mempool, m3Pub)), "MempoolIncrementalBalanceCheck: m3 DeSo balance: %v", message)
 			}
-			if _getBalance(t, chain, mempool, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
+			if lib._getBalance(t, chain, mempool, m4Pub) != 6*lib.NanosPerUnit && testData.m4DeSoBalance != 0 {
 				assert.Equalf(int64(testData.m4DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m4Pub)), "MempoolIncrementalBalanceCheck: m4 DeSo balance: %v", message)
+					int64(lib._getBalance(t, chain, mempool, m4Pub)), "MempoolIncrementalBalanceCheck: m4 DeSo balance: %v", message)
 			}
-			if _getBalance(t, chain, mempool, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+			if lib._getBalance(t, chain, mempool, m5Pub) != 6*lib.NanosPerUnit && testData.m5DeSoBalance != 0 {
 				assert.Equalf(int64(testData.m5DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m5Pub)), "MempoolIncrementalBalanceCheck: m5 DeSo balance: %v", message)
+					int64(lib._getBalance(t, chain, mempool, m5Pub)), "MempoolIncrementalBalanceCheck: m5 DeSo balance: %v", message)
 			}
-			if _getBalance(t, chain, mempool, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
+			if lib._getBalance(t, chain, mempool, m6Pub) != 6*lib.NanosPerUnit && testData.m6DeSoBalance != 0 {
 				assert.Equalf(int64(testData.m6DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m6Pub)), "MempoolIncrementalBalanceCheck: m6 DeSo balance: %v", message)
+					int64(lib._getBalance(t, chain, mempool, m6Pub)), "MempoolIncrementalBalanceCheck: m6 DeSo balance: %v", message)
 			}
 
 			return
@@ -216,7 +218,7 @@ func _helpTestCreatorCoinBuySell(
 		}
 
 		// Profile fields
-		creatorPkBytes, _, _ := Base58CheckDecode(testData.ProfilePublicKeyBase58Check)
+		creatorPkBytes, _, _ := lib.Base58CheckDecode(testData.ProfilePublicKeyBase58Check)
 		creatorProfile := utxoView.GetProfileEntryForPublicKey(creatorPkBytes)
 		require.NotNil(creatorProfile)
 
@@ -340,38 +342,38 @@ func _helpTestCreatorCoinBuySell(
 			"m0+m1+m2+m3+m4+m5+m6 != CoinsInCirculationNanos: %v", message)
 
 		// DeSo balances
-		if _getBalanceWithView(t, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
+		if lib._getBalanceWithView(t, utxoView, m0Pub) != 6*lib.NanosPerUnit && testData.m0DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m0DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
+				int64(lib._getBalanceWithView(t, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
+		if lib._getBalanceWithView(t, utxoView, m1Pub) != 6*lib.NanosPerUnit && testData.m1DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m1DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
+				int64(lib._getBalanceWithView(t, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
+		if lib._getBalanceWithView(t, utxoView, m2Pub) != 6*lib.NanosPerUnit && testData.m2DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m2DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
+				int64(lib._getBalanceWithView(t, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
+		if lib._getBalanceWithView(t, utxoView, m3Pub) != 6*lib.NanosPerUnit && testData.m3DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m3DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
+				int64(lib._getBalanceWithView(t, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
+		if lib._getBalanceWithView(t, utxoView, m4Pub) != 6*lib.NanosPerUnit && testData.m4DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m4DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
+				int64(lib._getBalanceWithView(t, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+		if lib._getBalanceWithView(t, utxoView, m5Pub) != 6*lib.NanosPerUnit && testData.m5DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m5DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
+				int64(lib._getBalanceWithView(t, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
+		if lib._getBalanceWithView(t, utxoView, m6Pub) != 6*lib.NanosPerUnit && testData.m6DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m6DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
+				int64(lib._getBalanceWithView(t, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
 		}
 
 		for ii, profilePubStr := range testData.ProfilesToCheckPublicKeysBase58Check {
 			// Look up the profile for the public key.
-			profilePkBytes, _, _ := Base58CheckDecode(profilePubStr)
+			profilePkBytes, _, _ := lib.Base58CheckDecode(profilePubStr)
 			profileEntry := utxoView.GetProfileEntryForPublicKey(profilePkBytes)
 			if testData.ProfilesToCheckUsernames[ii] == "" {
 				if profileEntry != nil && !profileEntry.isDeleted {
@@ -389,7 +391,7 @@ func _helpTestCreatorCoinBuySell(
 
 		for ii, userPubStr := range testData.FollowPublicKeysToCheck {
 			// Look up the profile for the public key.
-			userPkBytes, _, _ := Base58CheckDecode(userPubStr)
+			userPkBytes, _, _ := lib.Base58CheckDecode(userPubStr)
 
 			userIsFollowing := testData.FollowPublicKeysUserIsFollowing[ii]
 			followingUser := testData.FollowPublicKeysFollowingThisUser[ii]
@@ -404,9 +406,9 @@ func _helpTestCreatorCoinBuySell(
 
 				for _, followEntry := range followEntries {
 					followPk := utxoView.GetPublicKeyForPKID(followEntry.FollowerPKID)
-					if _, exists := followingUser[PkToString(followPk, params)]; !exists {
+					if _, exists := followingUser[db.PkToString(followPk, params)]; !exists {
 						require.Fail(fmt.Sprintf("Pub key %v should be following user %v but is not: %v %v",
-							PkToString(followPk, params), userPubStr, ii, message))
+							db.PkToString(followPk, params), userPubStr, ii, message))
 					}
 				}
 			}
@@ -420,33 +422,33 @@ func _helpTestCreatorCoinBuySell(
 
 				for _, followEntry := range followEntries {
 					followPk := utxoView.GetPublicKeyForPKID(followEntry.FollowedPKID)
-					if _, exists := userIsFollowing[PkToString(followPk, params)]; !exists {
+					if _, exists := userIsFollowing[db.PkToString(followPk, params)]; !exists {
 						require.Fail(fmt.Sprintf("Pub key %v should be in the users this one is following %v but is not: %v %v",
-							PkToString(followPk, params), userPubStr, ii, message))
+							db.PkToString(followPk, params), userPubStr, ii, message))
 					}
 				}
 			}
 		}
 	}
 
-	postHashes := []*BlockHash{}
+	postHashes := []*core.BlockHash{}
 	for testIndex, testData := range creatorCoinTests {
 		fmt.Printf("Applying test index: %v\n", testIndex)
 
 		// If this is a profile swap, then execute that.
 		var utxoOps []*UtxoOperation
-		var txn *MsgDeSoTxn
+		var txn *lib.MsgDeSoTxn
 		var err error
-		if testData.TxnType == TxnTypeSwapIdentity {
+		if testData.TxnType == lib.TxnTypeSwapIdentity {
 			utxoOps, txn, _, err = _swapIdentity(
 				t, chain, db, params, feeRateNanosPerKB,
 				paramUpdaterPub,
 				paramUpdaterPriv,
 				testData.FromPublicKey, testData.ToPublicKey)
 			require.NoError(err)
-		} else if testData.TxnType == TxnTypeUpdateProfile {
+		} else if testData.TxnType == lib.TxnTypeUpdateProfile {
 			// Create a profile using the testData params
-			profilePkBytes, _, _ := Base58CheckDecode(testData.ProfilePublicKeyBase58Check)
+			profilePkBytes, _, _ := lib.Base58CheckDecode(testData.ProfilePublicKeyBase58Check)
 			utxoOps, txn, _, err = _updateProfile(
 				t, chain, db, params,
 				feeRateNanosPerKB /*feerate*/, testData.UpdaterPublicKeyBase58Check,
@@ -455,13 +457,13 @@ func _helpTestCreatorCoinBuySell(
 				testData.ProfileCreatorBasisPoints, /*CreatorBasisPoints*/
 				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
 			require.NoError(err)
-		} else if testData.TxnType == TxnTypeFollow {
+		} else if testData.TxnType == lib.TxnTypeFollow {
 			utxoOps, txn, _, err = _doFollowTxn(
 				t, chain, db, params, feeRateNanosPerKB /*feeRateNanosPerKB*/, testData.UpdaterPublicKeyBase58Check,
-				PkToString(testData.FollowedPublicKey, params),
+				db.PkToString(testData.FollowedPublicKey, params),
 				testData.UpdaterPrivateKeyBase58Check, testData.IsUnfollow /*isUnfollow*/)
 			require.NoError(err)
-		} else if testData.TxnType == TxnTypeSubmitPost {
+		} else if testData.TxnType == lib.TxnTypeSubmitPost {
 
 			var postHashToModify []byte
 			if testData.PostHashToModifyIndex >= 0 {
@@ -488,8 +490,8 @@ func _helpTestCreatorCoinBuySell(
 				postHashes = append(postHashes, txn.Hash())
 			}
 
-		} else if testData.TxnType == TxnTypeCreatorCoinTransfer {
-			var diamondPostHash *BlockHash
+		} else if testData.TxnType == lib.TxnTypeCreatorCoinTransfer {
+			var diamondPostHash *core.BlockHash
 			if testData.DiamondLevel > 0 {
 				diamondPostHash = postHashes[testData.DiamondPostHashIndex]
 			}
@@ -540,10 +542,10 @@ func _helpTestCreatorCoinBuySell(
 
 	// The sum of all the balances shouldn't exceed what we started with.
 	assert.Less(
-		int64(_getBalance(t, chain, nil, m0Pub)+_getBalance(t, chain, nil, m1Pub)+
-			_getBalance(t, chain, nil, m2Pub)+_getBalance(t, chain, nil, m3Pub)+
-			_getBalance(t, chain, nil, m4Pub)+_getBalance(t, chain, nil, m5Pub)+
-			_getBalance(t, chain, nil, m6Pub)),
+		int64(lib._getBalance(t, chain, nil, m0Pub)+lib._getBalance(t, chain, nil, m1Pub)+
+			lib._getBalance(t, chain, nil, m2Pub)+lib._getBalance(t, chain, nil, m3Pub)+
+			lib._getBalance(t, chain, nil, m4Pub)+lib._getBalance(t, chain, nil, m5Pub)+
+			lib._getBalance(t, chain, nil, m6Pub)),
 		int64(m0StartNanos+m1StartNanos+m2StartNanos+m3StartNanos+m4StartNanos+m5StartNanos+m6StartNanos))
 
 	// Disconnect each txn and rerun the checks in the reverse direction
@@ -570,19 +572,19 @@ func _helpTestCreatorCoinBuySell(
 
 	// Verify the DeSo balances are back to where they started after disconnecting all the txns.
 	assert.Equalf(int64(m0StartNanos),
-		int64(_getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after SimpleDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after SimpleDisconnect is incorrect")
 	assert.Equalf(int64(m1StartNanos),
-		int64(_getBalance(t, chain, nil, m1Pub)), "m1 DeSo balance after SimpleDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m1Pub)), "m1 DeSo balance after SimpleDisconnect is incorrect")
 	assert.Equalf(int64(m2StartNanos),
-		int64(_getBalance(t, chain, nil, m2Pub)), "m2 DeSo balance after SimpleDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m2Pub)), "m2 DeSo balance after SimpleDisconnect is incorrect")
 	assert.Equalf(int64(m3StartNanos),
-		int64(_getBalance(t, chain, nil, m3Pub)), "m3 DeSo balance after SimpleDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m3Pub)), "m3 DeSo balance after SimpleDisconnect is incorrect")
 	assert.Equalf(int64(m4StartNanos),
-		int64(_getBalance(t, chain, nil, m4Pub)), "m4 DeSo balance after SimpleDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m4Pub)), "m4 DeSo balance after SimpleDisconnect is incorrect")
 	assert.Equalf(int64(m5StartNanos),
-		int64(_getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after SimpleDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after SimpleDisconnect is incorrect")
 	assert.Equalf(int64(m6StartNanos),
-		int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after SimpleDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after SimpleDisconnect is incorrect")
 
 	// Connect all the txns to a single UtxoView without flushing
 	{
@@ -635,19 +637,19 @@ func _helpTestCreatorCoinBuySell(
 
 		// Verify the DeSo balances are back to where they started after disconnecting all the txns.
 		assert.Equalf(int64(m0StartNanos),
-			int64(_getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after BatchDisconnect is incorrect")
+			int64(lib._getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after BatchDisconnect is incorrect")
 		assert.Equalf(int64(m1StartNanos),
-			int64(_getBalance(t, chain, nil, m1Pub)), "m1 DeSo balance after BatchDisconnect is incorrect")
+			int64(lib._getBalance(t, chain, nil, m1Pub)), "m1 DeSo balance after BatchDisconnect is incorrect")
 		assert.Equalf(int64(m2StartNanos),
-			int64(_getBalance(t, chain, nil, m2Pub)), "m2 DeSo balance after BatchDisconnect is incorrect")
+			int64(lib._getBalance(t, chain, nil, m2Pub)), "m2 DeSo balance after BatchDisconnect is incorrect")
 		assert.Equalf(int64(m3StartNanos),
-			int64(_getBalance(t, chain, nil, m3Pub)), "m3 DeSo balance after BatchDisconnect is incorrect")
+			int64(lib._getBalance(t, chain, nil, m3Pub)), "m3 DeSo balance after BatchDisconnect is incorrect")
 		assert.Equalf(int64(m4StartNanos),
-			int64(_getBalance(t, chain, nil, m4Pub)), "m4 DeSo balance after BatchDisconnect is incorrect")
+			int64(lib._getBalance(t, chain, nil, m4Pub)), "m4 DeSo balance after BatchDisconnect is incorrect")
 		assert.Equalf(int64(m5StartNanos),
-			int64(_getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after BatchDisconnect is incorrect")
+			int64(lib._getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after BatchDisconnect is incorrect")
 		assert.Equalf(int64(m6StartNanos),
-			int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BatchDisconnect is incorrect")
+			int64(lib._getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BatchDisconnect is incorrect")
 	}
 
 	// Running all the transactions through the mempool should work and result
@@ -672,19 +674,19 @@ func _helpTestCreatorCoinBuySell(
 
 	// The balances should be reset after removing transactions from the mempool.
 	assert.Equalf(int64(m0StartNanos),
-		int64(_getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after BatchDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after BatchDisconnect is incorrect")
 	assert.Equalf(int64(m1StartNanos),
-		int64(_getBalance(t, chain, nil, m1Pub)), "m1 DeSo balance after BatchDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m1Pub)), "m1 DeSo balance after BatchDisconnect is incorrect")
 	assert.Equalf(int64(m2StartNanos),
-		int64(_getBalance(t, chain, nil, m2Pub)), "m2 DeSo balance after BatchDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m2Pub)), "m2 DeSo balance after BatchDisconnect is incorrect")
 	assert.Equalf(int64(m3StartNanos),
-		int64(_getBalance(t, chain, nil, m3Pub)), "m3 DeSo balance after BatchDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m3Pub)), "m3 DeSo balance after BatchDisconnect is incorrect")
 	assert.Equalf(int64(m4StartNanos),
-		int64(_getBalance(t, chain, nil, m4Pub)), "m4 DeSo balance after BatchDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m4Pub)), "m4 DeSo balance after BatchDisconnect is incorrect")
 	assert.Equalf(int64(m5StartNanos),
-		int64(_getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after BatchDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after BatchDisconnect is incorrect")
 	assert.Equalf(int64(m6StartNanos),
-		int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BatchDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BatchDisconnect is incorrect")
 
 	// Re-add all of the transactions to the mempool so we can mine them into a block.
 	{
@@ -719,48 +721,48 @@ func _helpTestCreatorCoinBuySell(
 		testIndex := len(creatorCoinTests) - 1
 		testData := creatorCoinTests[testIndex]
 		// DeSo balances
-		if _getBalance(t, chain, nil, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
+		if lib._getBalance(t, chain, nil, m0Pub) != 6*lib.NanosPerUnit && testData.m0DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m0DeSoBalance),
-				int64(_getBalance(t, chain, nil, m0Pub)), "BlockConnect: m0 DeSo balance: %v", testIndex)
+				int64(lib._getBalance(t, chain, nil, m0Pub)), "BlockConnect: m0 DeSo balance: %v", testIndex)
 		}
-		if _getBalance(t, chain, nil, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
+		if lib._getBalance(t, chain, nil, m1Pub) != 6*lib.NanosPerUnit && testData.m1DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m1DeSoBalance),
-				int64(_getBalance(t, chain, nil, m1Pub)), "BlockConnect: m1 DeSo balance: %v", testIndex)
+				int64(lib._getBalance(t, chain, nil, m1Pub)), "BlockConnect: m1 DeSo balance: %v", testIndex)
 		}
-		if _getBalance(t, chain, nil, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
+		if lib._getBalance(t, chain, nil, m2Pub) != 6*lib.NanosPerUnit && testData.m2DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m2DeSoBalance),
-				int64(_getBalance(t, chain, nil, m2Pub)), "BlockConnect: m2 DeSo balance: %v", testIndex)
+				int64(lib._getBalance(t, chain, nil, m2Pub)), "BlockConnect: m2 DeSo balance: %v", testIndex)
 		}
-		if _getBalance(t, chain, nil, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
+		if lib._getBalance(t, chain, nil, m3Pub) != 6*lib.NanosPerUnit && testData.m3DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m3DeSoBalance),
-				int64(_getBalance(t, chain, nil, m3Pub)), "BlockConnect: m3 DeSo balance: %v", testIndex)
+				int64(lib._getBalance(t, chain, nil, m3Pub)), "BlockConnect: m3 DeSo balance: %v", testIndex)
 		}
-		if _getBalance(t, chain, nil, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
+		if lib._getBalance(t, chain, nil, m4Pub) != 6*lib.NanosPerUnit && testData.m4DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m4DeSoBalance),
-				int64(_getBalance(t, chain, nil, m4Pub)), "BlockConnect: m4 DeSo balance: %v", testIndex)
+				int64(lib._getBalance(t, chain, nil, m4Pub)), "BlockConnect: m4 DeSo balance: %v", testIndex)
 		}
-		if _getBalance(t, chain, nil, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+		if lib._getBalance(t, chain, nil, m5Pub) != 6*lib.NanosPerUnit && testData.m5DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m5DeSoBalance),
-				int64(_getBalance(t, chain, nil, m5Pub)), "BlockConnect: m5 DeSo balance: %v", testIndex)
+				int64(lib._getBalance(t, chain, nil, m5Pub)), "BlockConnect: m5 DeSo balance: %v", testIndex)
 		}
-		if _getBalance(t, chain, nil, m6Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+		if lib._getBalance(t, chain, nil, m6Pub) != 6*lib.NanosPerUnit && testData.m5DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m6DeSoBalance),
-				int64(_getBalance(t, chain, nil, m6Pub)), "BlockConnect: m6 DeSo balance: %v", testIndex)
+				int64(lib._getBalance(t, chain, nil, m6Pub)), "BlockConnect: m6 DeSo balance: %v", testIndex)
 		}
 
 	}
 
 	// Roll back the blocks and make sure we don't hit any errors.
-	disconnectSingleBlock := func(blockToDisconnect *MsgDeSoBlock, utxoView *UtxoView) {
+	disconnectSingleBlock := func(blockToDisconnect *lib.MsgDeSoBlock, utxoView *UtxoView) {
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := blockToDisconnect.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := db.GetUtxoOperationsForBlock(db, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
-		txHashes, err := ComputeTransactionHashes(blockToDisconnect.Txns)
+		txHashes, err := lib.ComputeTransactionHashes(blockToDisconnect.Txns)
 		require.NoError(err)
 		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps))
 	}
@@ -778,17 +780,17 @@ func _helpTestCreatorCoinBuySell(
 	// The DeSo balances should line up with what they were initially after
 	// disconnecting the blocks.
 	assert.Equalf(int64(m0StartNanos),
-		int64(_getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after BlockDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after BlockDisconnect is incorrect")
 	assert.Equalf(int64(m1StartNanos),
-		int64(_getBalance(t, chain, nil, m1Pub)), "m1 DeSo balance after BlockDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m1Pub)), "m1 DeSo balance after BlockDisconnect is incorrect")
 	assert.Equalf(int64(m2StartNanos),
-		int64(_getBalance(t, chain, nil, m2Pub)), "m2 DeSo balance after BlockDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m2Pub)), "m2 DeSo balance after BlockDisconnect is incorrect")
 	assert.Equalf(int64(m3StartNanos),
-		int64(_getBalance(t, chain, nil, m3Pub)), "m3 DeSo balance after BlockDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m3Pub)), "m3 DeSo balance after BlockDisconnect is incorrect")
 	assert.Equalf(int64(m5StartNanos),
-		int64(_getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after BlockDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after BlockDisconnect is incorrect")
 	assert.Equalf(int64(m6StartNanos),
-		int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BlockDisconnect is incorrect")
+		int64(lib._getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BlockDisconnect is incorrect")
 }
 
 func TestCreatorCoinWithDiamonds(t *testing.T) {
@@ -800,7 +802,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -818,7 +820,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -841,7 +843,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 		},
 		// Create a post for m0
 		{
-			TxnType:                      TxnTypeSubmitPost,
+			TxnType:                      lib.TxnTypeSubmitPost,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 
@@ -854,7 +856,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 		},
 		// Create a post from m1 that is a comment on m0
 		{
-			TxnType:                      TxnTypeSubmitPost,
+			TxnType:                      lib.TxnTypeSubmitPost,
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			PostHashToModifyIndex:        -1,
@@ -866,7 +868,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 		},
 		// Create a post from m2 that is a comment on m0
 		{
-			TxnType:                      TxnTypeSubmitPost,
+			TxnType:                      lib.TxnTypeSubmitPost,
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			PostHashToModifyIndex:        -1,
@@ -878,7 +880,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 		},
 		// Have m0 throw a diamond on m1's comment
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
@@ -906,7 +908,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 		},
 		// m0 upgrading the diamond level should work
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
@@ -935,7 +937,7 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 		// m0 giving diamond level 4 to m2 should result in the same
 		// CC balance for m2 as m1 has
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
@@ -972,8 +974,8 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
 
@@ -982,19 +984,19 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 
 	// Give paramUpdater some mony
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, paramUpdaterPub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, paramUpdaterPub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	// Send money to people from moneyPk
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m0Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m0Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m1Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m1Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m2Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m2Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	// Create a post for m0
 	_, postTxn, _, err := _doSubmitPostTxn(
@@ -1035,12 +1037,12 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, err = _creatorCoinTxn(
 			t, chain, db, params, feeRateNanosPerKB,
 			m0Pub, m0Priv, /*updater*/
-			m0Pub,                       /*profile*/
-			CreatorCoinOperationTypeBuy, /*buy/sell*/
-			1000000000,                  /*DeSoToSellNanos*/
-			0,                           /*CreatorCoinToSellNanos*/
-			0,                           /*DeSoToAddNanos*/
-			0,                           /*MinDeSoExpectedNanos*/
+			m0Pub,                           /*profile*/
+			lib.CreatorCoinOperationTypeBuy, /*buy/sell*/
+			1000000000,                      /*DeSoToSellNanos*/
+			0,                               /*CreatorCoinToSellNanos*/
+			0,                               /*DeSoToAddNanos*/
+			0,                               /*MinDeSoExpectedNanos*/
 			0 /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
@@ -1049,22 +1051,22 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, err = _creatorCoinTxn(
 			t, chain, db, params, feeRateNanosPerKB,
 			m0Pub, m0Priv, /*updater*/
-			m1Pub,                       /*profile*/
-			CreatorCoinOperationTypeBuy, /*buy/sell*/
-			1000000000,                  /*DeSoToSellNanos*/
-			0,                           /*CreatorCoinToSellNanos*/
-			0,                           /*DeSoToAddNanos*/
-			0,                           /*MinDeSoExpectedNanos*/
+			m1Pub,                           /*profile*/
+			lib.CreatorCoinOperationTypeBuy, /*buy/sell*/
+			1000000000,                      /*DeSoToSellNanos*/
+			0,                               /*CreatorCoinToSellNanos*/
+			0,                               /*DeSoToAddNanos*/
+			0,                               /*MinDeSoExpectedNanos*/
 			0 /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 
 	// Missing a DiamondLevel should fail
 	{
-		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1075,13 +1077,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 		require.NoError(err)
 
-		delete(txn.ExtraData, DiamondLevelKey)
+		delete(txn.ExtraData, lib.DiamondLevelKey)
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, m0Priv)
+		lib._signTxn(t, txn, m0Priv)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1090,15 +1092,15 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel)
+		require.Contains(err.Error(), lib.RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel)
 	}
 
 	// An invalid DiamondLevel should fail
 	{
-		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1109,13 +1111,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 		require.NoError(err)
 
-		txn.ExtraData[DiamondLevelKey] = IntToBuf(15)
+		txn.ExtraData[lib.DiamondLevelKey] = lib.IntToBuf(15)
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, m0Priv)
+		lib._signTxn(t, txn, m0Priv)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1128,10 +1130,10 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	}
 	// A DiamondLevel of zero should fail
 	{
-		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1142,13 +1144,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 		require.NoError(err)
 
-		txn.ExtraData[DiamondLevelKey] = IntToBuf(0)
+		txn.ExtraData[lib.DiamondLevelKey] = lib.IntToBuf(0)
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, m0Priv)
+		lib._signTxn(t, txn, m0Priv)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1161,10 +1163,10 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	}
 	// You cannot give diamonds for profiles that are not your own.
 	{
-		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1175,13 +1177,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 		require.NoError(err)
 
-		txn.TxnMeta.(*CreatorCoinTransferMetadataa).ProfilePublicKey = receiverPkBytes
+		txn.TxnMeta.(*lib.CreatorCoinTransferMetadataa).ProfilePublicKey = receiverPkBytes
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, m0Priv)
+		lib._signTxn(t, txn, m0Priv)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1190,14 +1192,14 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferCantSendDiamondsForOtherProfiles)
+		require.Contains(err.Error(), lib.RuleErrorCreatorCoinTransferCantSendDiamondsForOtherProfiles)
 	}
 	// You can't Diamond yourself
 	{
-		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1208,13 +1210,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 		require.NoError(err)
 
-		txn.TxnMeta.(*CreatorCoinTransferMetadataa).ReceiverPublicKey = senderPkBytes
+		txn.TxnMeta.(*lib.CreatorCoinTransferMetadataa).ReceiverPublicKey = senderPkBytes
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, m0Priv)
+		lib._signTxn(t, txn, m0Priv)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1223,14 +1225,14 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferCannotTransferToSelf)
+		require.Contains(err.Error(), lib.RuleErrorCreatorCoinTransferCannotTransferToSelf)
 	}
 	// You can't Diamond off a post that doesn't exist
 	{
-		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1241,14 +1243,14 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 		require.NoError(err)
 
-		emptyHash := &BlockHash{}
-		txn.ExtraData[DiamondPostHashKey] = emptyHash[:]
+		emptyHash := &core.BlockHash{}
+		txn.ExtraData[lib.DiamondPostHashKey] = emptyHash[:]
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, m0Priv)
+		lib._signTxn(t, txn, m0Priv)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1257,14 +1259,14 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist)
+		require.Contains(err.Error(), lib.RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist)
 	}
 	// If you don't have enough creator coins, you can't Diamond
 	{
-		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1275,13 +1277,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			senderPkBytes,
 			postTxn.Hash(),
 			1,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 		require.NoError(err)
 
-		txn.ExtraData[DiamondLevelKey] = IntToBuf(7)
+		txn.ExtraData[lib.DiamondLevelKey] = lib.IntToBuf(7)
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, m1Priv)
+		lib._signTxn(t, txn, m1Priv)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1290,7 +1292,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel)
+		require.Contains(err.Error(), lib.RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel)
 	}
 	// You can't apply the same number of Diamonds to a post twice
 	{
@@ -1299,10 +1301,10 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 
 		// Let's have a successful transaction
 		{
-			senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+			senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 			require.NoError(err)
 
-			receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+			receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 			require.NoError(err)
 
 			txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -1310,11 +1312,11 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 				receiverPkBytes,
 				postTxn.Hash(),
 				3,
-				feeRateNanosPerKB, nil, []*DeSoOutput{})
+				feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m0Priv)
+			lib._signTxn(t, txn, m0Priv)
 
 			txHash := txn.Hash()
 			// Always use height+1 for validation since it's assumed the transaction will
@@ -1328,10 +1330,10 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		}
 		// Now do a transaction with the same number of Diamonds
 		{
-			senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+			senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 			require.NoError(err)
 
-			receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+			receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 			require.NoError(err)
 
 			txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -1339,13 +1341,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 				receiverPkBytes,
 				postTxn.Hash(),
 				5,
-				feeRateNanosPerKB, mempool, []*DeSoOutput{})
+				feeRateNanosPerKB, mempool, []*lib.DeSoOutput{})
 			require.NoError(err)
 
-			txn.ExtraData[DiamondLevelKey] = IntToBuf(3)
+			txn.ExtraData[lib.DiamondLevelKey] = lib.IntToBuf(3)
 
 			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m0Priv)
+			lib._signTxn(t, txn, m0Priv)
 
 			txHash := txn.Hash()
 			// Always use height+1 for validation since it's assumed the transaction will
@@ -1354,22 +1356,22 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			_, _, _, _, err =
 				utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 			require.Error(err)
-			require.Contains(err.Error(), RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds)
+			require.Contains(err.Error(), lib.RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds)
 		}
 	}
 }
 
 func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	// Set the DeSoDiamondsBlockHeight so that it is immediately hit.
-	DeSoDiamondsBlockHeight = uint32(0)
+	lib.DeSoDiamondsBlockHeight = uint32(0)
 
 	// Set up a blockchain.
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
 
@@ -1378,19 +1380,19 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 
 	// Give paramUpdater some mony.
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, paramUpdaterPub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, paramUpdaterPub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	// Send money to people from moneyPk.
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m0Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m0Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m1Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m1Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m2Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m2Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	// Create a post for m0.
 	_, postTxn, _, err := _doSubmitPostTxn(
@@ -1431,12 +1433,12 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 		_, _, _, err = _creatorCoinTxn(
 			t, chain, db, params, feeRateNanosPerKB,
 			m0Pub, m0Priv, /*updater*/
-			m0Pub,                       /*profile*/
-			CreatorCoinOperationTypeBuy, /*buy/sell*/
-			1000000000,                  /*DeSoToSellNanos*/
-			0,                           /*CreatorCoinToSellNanos*/
-			0,                           /*DeSoToAddNanos*/
-			0,                           /*MinDeSoExpectedNanos*/
+			m0Pub,                           /*profile*/
+			lib.CreatorCoinOperationTypeBuy, /*buy/sell*/
+			1000000000,                      /*DeSoToSellNanos*/
+			0,                               /*CreatorCoinToSellNanos*/
+			0,                               /*DeSoToAddNanos*/
+			0,                               /*MinDeSoExpectedNanos*/
 			0 /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
@@ -1445,22 +1447,22 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 		_, _, _, err = _creatorCoinTxn(
 			t, chain, db, params, feeRateNanosPerKB,
 			m0Pub, m0Priv, /*updater*/
-			m1Pub,                       /*profile*/
-			CreatorCoinOperationTypeBuy, /*buy/sell*/
-			1000000000,                  /*DeSoToSellNanos*/
-			0,                           /*CreatorCoinToSellNanos*/
-			0,                           /*DeSoToAddNanos*/
-			0,                           /*MinDeSoExpectedNanos*/
+			m1Pub,                           /*profile*/
+			lib.CreatorCoinOperationTypeBuy, /*buy/sell*/
+			1000000000,                      /*DeSoToSellNanos*/
+			0,                               /*CreatorCoinToSellNanos*/
+			0,                               /*DeSoToAddNanos*/
+			0,                               /*MinDeSoExpectedNanos*/
 			0 /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 
 	// Adding diamonds after the DeSo Diamonds block height should fail.
 	{
-		senderPkBytes, _, err := Base58CheckDecode(m0Pub)
+		senderPkBytes, _, err := lib.Base58CheckDecode(m0Pub)
 		require.NoError(err)
 
-		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
+		receiverPkBytes, _, err := lib.Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1472,11 +1474,11 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			2,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
-		_signTxn(t, txn, m0Priv)
+		lib._signTxn(t, txn, m0Priv)
 
 		txHash := txn.Hash()
 		// Always use height+1 for validation since it's assumed the transaction will
@@ -1485,7 +1487,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight)
+		require.Contains(err.Error(), lib.RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight)
 	}
 }
 
@@ -1498,7 +1500,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -1516,7 +1518,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1539,7 +1541,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 		},
 		// Have m1 transfer some creator coins to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1563,7 +1565,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 		},
 		// Have m1 transfer some more creator coins to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1587,7 +1589,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 		},
 		// Have m1 transfer some more creator coins to m0
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1611,7 +1613,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 		},
 		// Have m1 transfer the rest of her creator coins to m0
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1635,7 +1637,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 		},
 		// Have m0 transfer all coins back to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
@@ -1659,7 +1661,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 		},
 		// Have m2 transfer all coins back to m1. Weeeeee!!!
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
@@ -1695,7 +1697,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// [0] Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -1713,7 +1715,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1736,7 +1738,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 		},
 		// [2] Have m1 transfer some creator coins to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1760,7 +1762,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 		},
 		// [3] Have m1 transfer some more creator coins to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1784,7 +1786,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 		},
 		// [4] Have m1 transfer some more creator coins to m0
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1808,7 +1810,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 		},
 		// [5] Have m1 transfer the rest of her creator coins to m0
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1832,7 +1834,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 		},
 		// [6] Have m0 transfer all coins back to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
@@ -1856,7 +1858,7 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 		},
 		// [7] Have m2 transfer all coins back to m1. Weeeeee!!!
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
@@ -1892,7 +1894,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -1910,7 +1912,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1937,7 +1939,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -1960,7 +1962,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 		},
 		// Have m1 transfer 1e9 creator coins to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -1984,7 +1986,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 		},
 		// Swap m0 and m3
 		{
-			TxnType:       TxnTypeSwapIdentity,
+			TxnType:       lib.TxnTypeSwapIdentity,
 			FromPublicKey: m0PkBytes,
 			ToPublicKey:   m3PkBytes,
 			// This is the creator whose coins we are testing the balances of.
@@ -2010,7 +2012,7 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 		},
 		// Have m2 transfer 2e9 creator coins (now attached to m3Pub's profile) to m0
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
@@ -2048,7 +2050,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -2066,7 +2068,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2089,7 +2091,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 		},
 		// Have m1 all but one nano of their creator coins to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -2113,7 +2115,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 		},
 		// Have m2 transfer all but the min threshold back to m1 (threshold assumed to be 10 nanos).
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
@@ -2137,7 +2139,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 		},
 		// Have m2 transfer their remaining 10 nanos back to m1.
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
@@ -2161,7 +2163,7 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 		},
 		// Have m1 transfer all but 5 nanos back to m0.
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -2197,7 +2199,7 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -2215,7 +2217,7 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2238,7 +2240,7 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 		},
 		// Have m1 send all of their creator coins to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -2266,7 +2268,7 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2289,7 +2291,7 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 		},
 		// Have m1 transfer all their m0 coins to m2
 		{
-			TxnType: TxnTypeCreatorCoinTransfer,
+			TxnType: lib.TxnTypeCreatorCoinTransfer,
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
@@ -2322,33 +2324,33 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	_, _ = assert, require
 
 	// Set up a blockchain
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	chain, params, db := lib.NewLowDifficultyBlockchain()
+	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
 
 	// Send money to people from moneyPk
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m0Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m0Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m1Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m1Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m2Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m2Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m3Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m3Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m4Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m4Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m5Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m5Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, moneyPkString, m6Pub,
-		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+		t, chain, db, params, lib.moneyPkString, m6Pub,
+		lib.moneyPrivString, 6*lib.NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	_, _, _, err := _updateProfile(
 		t, chain, db, params,
@@ -2361,12 +2363,12 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	_, _, _, err = _creatorCoinTxn(
 		t, chain, db, params, feeRateNanosPerKB,
 		m1Pub, m1Priv,
-		m0Pub,                       /*profile*/
-		CreatorCoinOperationTypeBuy, /*buy/sell*/
-		1000000000,                  /*DeSoToSellNanos*/
-		0,                           /*CreatorCoinToSellNanos*/
-		0,                           /*DeSoToAddNanos*/
-		0,                           /*MinDeSoExpectedNanos*/
+		m0Pub,                           /*profile*/
+		lib.CreatorCoinOperationTypeBuy, /*buy/sell*/
+		1000000000,                      /*DeSoToSellNanos*/
+		0,                               /*CreatorCoinToSellNanos*/
+		0,                               /*DeSoToAddNanos*/
+		0,                               /*MinDeSoExpectedNanos*/
 		0 /*MinCreatorCoinExpectedNanos*/)
 	require.NoError(err)
 
@@ -2374,7 +2376,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		t, chain, db, params, feeRateNanosPerKB,
 		m1Pub, m1Priv, m0Pub, m2Pub,
 		mempool.bc.params.CreatorCoinAutoSellThresholdNanos-1)
-	require.Contains(err.Error(), RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold)
+	require.Contains(err.Error(), lib.RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold)
 }
 
 func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
@@ -2386,7 +2388,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -2404,7 +2406,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2431,7 +2433,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2458,7 +2460,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4123456789,
 			DeSoToAddNanos:               0,
@@ -2485,7 +2487,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1977342329,
 			DeSoToAddNanos:               0,
@@ -2515,7 +2517,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2543,7 +2545,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8685258418,
 			DeSoToAddNanos:               0,
@@ -2572,7 +2574,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4928685842,
 			DeSoToAddNanos:               0,
@@ -2600,7 +2602,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2628,7 +2630,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       9639647781,
 			DeSoToAddNanos:               0,
@@ -2663,7 +2665,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// [0] Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -2681,7 +2683,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2708,7 +2710,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2735,7 +2737,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4123456789,
 			DeSoToAddNanos:               0,
@@ -2762,7 +2764,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       2395379666,
 			DeSoToAddNanos:               0,
@@ -2792,7 +2794,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2820,7 +2822,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       12117833075,
 			DeSoToAddNanos:               0,
@@ -2848,7 +2850,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1e6,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2877,7 +2879,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       999966697,
 			DeSoToAddNanos:               0,
@@ -2905,7 +2907,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2123456789,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -2933,7 +2935,7 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       11677601773,
 			DeSoToAddNanos:               0,
@@ -2970,7 +2972,7 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -2988,7 +2990,7 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3015,7 +3017,7 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1172373183,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3042,7 +3044,7 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1556503355,
 			DeSoToAddNanos:               0,
@@ -3069,7 +3071,7 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       11912103398,
 			DeSoToAddNanos:               0,
@@ -3107,7 +3109,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -3124,7 +3126,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              100000000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3150,7 +3152,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       464143,
 			DeSoToAddNanos:               0,
@@ -3177,7 +3179,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              10000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3206,7 +3208,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3241,7 +3243,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -3258,7 +3260,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              100000000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3285,7 +3287,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              10000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3313,7 +3315,7 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3348,7 +3350,7 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -3365,7 +3367,7 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              100000000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3392,7 +3394,7 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       4641433551,
 			DeSoToAddNanos:               0,
@@ -3427,7 +3429,7 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -3444,7 +3446,7 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              100000000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3475,7 +3477,7 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              66000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3510,7 +3512,7 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -3527,7 +3529,7 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              7,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3554,18 +3556,18 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
-			CreatorCoinToSellNanos:       18171213 - DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
+			CreatorCoinToSellNanos:       18171213 - lib.DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
 			DeSoToAddNanos:               0,
 			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
 
 			// These are the expectations
-			CoinsInCirculationNanos: DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
+			CoinsInCirculationNanos: lib.DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
 			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      18171213,
-			m0CCBalance:             DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
+			m0CCBalance:             lib.DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
 			m0HasPurchased:          true,
 			m1CCBalance:             0,
 			m1HasPurchased:          false,
@@ -3580,7 +3582,7 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3591,7 +3593,7 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			CoinsInCirculationNanos: 99966681,
 			DeSoLockedNanos:         999,
 			CoinWatermarkNanos:      99966681,
-			m0CCBalance:             DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
+			m0CCBalance:             lib.DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos,
 			m0HasPurchased:          true,
 			m1CCBalance:             99966671,
 			m1HasPurchased:          true,
@@ -3607,7 +3609,7 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       1,
 			DeSoToAddNanos:               0,
@@ -3633,7 +3635,7 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1000000000,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3659,9 +3661,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
-			CreatorCoinToSellNanos:       99966671 - DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
+			CreatorCoinToSellNanos:       99966671 - lib.DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
 			DeSoToAddNanos:               0,
 			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
@@ -3685,9 +3687,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m2Pub,
 			UpdaterPrivateKeyBase58Check: m2Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
-			CreatorCoinToSellNanos:       9899700254 - DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
+			CreatorCoinToSellNanos:       9899700254 - lib.DeSoMainnetParams.CreatorCoinAutoSellThresholdNanos + 1,
 			DeSoToAddNanos:               0,
 			MinDeSoExpectedNanos:         0,
 			MinCreatorCoinExpectedNanos:  0,
@@ -3725,7 +3727,7 @@ func TestSalomonSequence(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0. m0 represents salomon.
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -3743,7 +3745,7 @@ func TestSalomonSequence(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              323106117 + 6,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3770,7 +3772,7 @@ func TestSalomonSequence(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              191807888 + 6,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3801,7 +3803,7 @@ func TestSalomonSequence(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8014879883,
 			DeSoToAddNanos:               0,
@@ -3839,7 +3841,7 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 	creatorCoinTests := []*_CreatorCoinTestData{
 		// Create a profile for m0
 		{
-			TxnType:                      TxnTypeUpdateProfile,
+			TxnType:                      lib.TxnTypeUpdateProfile,
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
@@ -3856,7 +3858,7 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              2,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3883,7 +3885,7 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeBuy,
+			OperationType:                lib.CreatorCoinOperationTypeBuy,
 			DeSoToSellNanos:              1271123456,
 			CreatorCoinToSellNanos:       0,
 			DeSoToAddNanos:               0,
@@ -3909,7 +3911,7 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m0Pub,
 			UpdaterPrivateKeyBase58Check: m0Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       2715537328,
 			DeSoToAddNanos:               0,
@@ -3935,7 +3937,7 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			UpdaterPublicKeyBase58Check:  m1Pub,
 			UpdaterPrivateKeyBase58Check: m1Priv,
 			ProfilePublicKeyBase58Check:  m0Pub,
-			OperationType:                CreatorCoinOperationTypeSell,
+			OperationType:                lib.CreatorCoinOperationTypeSell,
 			DeSoToSellNanos:              0,
 			CreatorCoinToSellNanos:       8116611973,
 			DeSoToAddNanos:               0,
@@ -3971,17 +3973,17 @@ func TestCreatorCoinBigBigBuyBigSell(t *testing.T) {
 	{
 		// Buy 30M DeSo worth of CC using polynomial model.
 		polyMintedCCNanos := CalculateCreatorCoinToMintPolynomial(
-			desoToSellNanos, 0, &DeSoMainnetParams)
+			desoToSellNanos, 0, &lib.DeSoMainnetParams)
 
 		// Sell half of the CC
 		desoReturnedNanos := CalculateDeSoToReturn(
 			polyMintedCCNanos/2, polyMintedCCNanos,
-			desoToSellNanos, &DeSoMainnetParams)
+			desoToSellNanos, &lib.DeSoMainnetParams)
 
 		// Sell the other half of the CC
 		desoReturned2Nanos := CalculateDeSoToReturn(
 			polyMintedCCNanos-polyMintedCCNanos/2, polyMintedCCNanos-polyMintedCCNanos/2,
-			desoToSellNanos-desoReturnedNanos, &DeSoMainnetParams)
+			desoToSellNanos-desoReturnedNanos, &lib.DeSoMainnetParams)
 
 		// Should get back the amount of DeSo we put in.
 		require.Equal(desoToSellNanos, desoReturnedNanos+desoReturned2Nanos)
@@ -3993,47 +3995,47 @@ func TestCreatorCoinBigBigBuyBigSell(t *testing.T) {
 		// Sell the CC from the previous step down to zero.
 		initialCCNanos := uint64(10000004)
 		bancorMintedCCNanos := CalculateCreatorCoinToMintBancor(
-			desoToSellNanos, initialCCNanos, 1, &DeSoMainnetParams)
+			desoToSellNanos, initialCCNanos, 1, &lib.DeSoMainnetParams)
 
 		// Sell half of the CC
 		desoReturnedNanos := CalculateDeSoToReturn(
 			bancorMintedCCNanos/2, bancorMintedCCNanos+initialCCNanos,
-			desoToSellNanos+1, &DeSoMainnetParams)
+			desoToSellNanos+1, &lib.DeSoMainnetParams)
 
 		// Sell the other half of the CC
 		desoReturned2Nanos := CalculateDeSoToReturn(
 			bancorMintedCCNanos-bancorMintedCCNanos/2,
 			bancorMintedCCNanos-bancorMintedCCNanos/2+initialCCNanos,
-			desoToSellNanos-desoReturnedNanos+1, &DeSoMainnetParams)
+			desoToSellNanos-desoReturnedNanos+1, &lib.DeSoMainnetParams)
 
 		// Should get back the amount of DeSo we put in.
 		require.Equal(int64(desoToSellNanos), int64(desoReturnedNanos+desoReturned2Nanos))
 	}
 }
 
-func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64,
+func _creatorCoinTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string,
 	UpdaterPrivateKeyBase58Check string,
 	// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
-	OperationType CreatorCoinOperationType,
+	OperationType lib.CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
 	CreatorCoinToSellNanos uint64,
 	DeSoToAddNanos uint64,
 	MinDeSoExpectedNanos uint64,
 	MinCreatorCoinExpectedNanos uint64) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	updaterPkBytes, _, err := Base58CheckDecode(UpdaterPublicKeyBase58Check)
+	updaterPkBytes, _, err := lib.Base58CheckDecode(UpdaterPublicKeyBase58Check)
 	require.NoError(err)
 
-	profilePkBytes, _, err := Base58CheckDecode(ProfilePublicKeyBase58Check)
+	profilePkBytes, _, err := lib.Base58CheckDecode(ProfilePublicKeyBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -4050,20 +4052,20 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		MinCreatorCoinExpectedNanos,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*lib.DeSoOutput{})
 
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	if OperationType == CreatorCoinOperationTypeBuy {
+	if OperationType == lib.CreatorCoinOperationTypeBuy {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake+DeSoToSellNanos))
 	} else {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake))
 	}
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, UpdaterPrivateKeyBase58Check)
+	lib._signTxn(t, txn, UpdaterPrivateKeyBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -4103,7 +4105,7 @@ func _creatorCoinTxnWithTestMeta(
 	UpdaterPrivateKeyBase58Check string,
 	// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
-	OperationType CreatorCoinOperationType,
+	OperationType lib.CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
 	CreatorCoinToSellNanos uint64,
 	DeSoToAddNanos uint64,
@@ -4111,7 +4113,7 @@ func _creatorCoinTxnWithTestMeta(
 	MinCreatorCoinExpectedNanos uint64) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, UpdaterPublicKeyBase58Check))
+		testMeta.expectedSenderBalances, lib._getBalance(testMeta.t, testMeta.chain, nil, UpdaterPublicKeyBase58Check))
 
 	currentOps, currentTxn, _, err := _creatorCoinTxn(
 		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
@@ -4125,24 +4127,24 @@ func _creatorCoinTxnWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64,
+func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64,
 	SenderPublicKeyBase58Check string,
 	SenderPrivBase58Check string,
 	ReceiverPublicKeyBase58Check string,
-	DiamondPostHash *BlockHash,
+	DiamondPostHash *core.BlockHash,
 	DiamondLevel int64) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	senderPkBytes, _, err := Base58CheckDecode(SenderPublicKeyBase58Check)
+	senderPkBytes, _, err := lib.Base58CheckDecode(SenderPublicKeyBase58Check)
 	require.NoError(err)
 
-	receiverPkBytes, _, err := Base58CheckDecode(ReceiverPublicKeyBase58Check)
+	receiverPkBytes, _, err := lib.Base58CheckDecode(ReceiverPublicKeyBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -4153,13 +4155,13 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 		receiverPkBytes,
 		DiamondPostHash,
 		DiamondLevel,
-		feeRateNanosPerKB, nil, []*DeSoOutput{})
+		feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, SenderPrivBase58Check)
+	lib._signTxn(t, txn, SenderPrivBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -4188,27 +4190,27 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 	return utxoOps, txn, blockHeight, nil
 }
 
-func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64,
+func _doCreatorCoinTransferTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
+	params *lib.DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string, UpdaterPrivateKeyBase58Check string,
 	// See CreatorCoinTransferMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	ReceiverPublicKeyBase58Check string,
 	CreatorCoinToTransferNanos uint64) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	updaterPkBytes, _, err := Base58CheckDecode(UpdaterPublicKeyBase58Check)
+	updaterPkBytes, _, err := lib.Base58CheckDecode(UpdaterPublicKeyBase58Check)
 	require.NoError(err)
 
-	profilePkBytes, _, err := Base58CheckDecode(ProfilePublicKeyBase58Check)
+	profilePkBytes, _, err := lib.Base58CheckDecode(ProfilePublicKeyBase58Check)
 	require.NoError(err)
 
-	receiverPkBytes, _, err := Base58CheckDecode(ReceiverPublicKeyBase58Check)
+	receiverPkBytes, _, err := lib.Base58CheckDecode(ReceiverPublicKeyBase58Check)
 	require.NoError(err)
 
 	utxoView, err := NewUtxoView(db, params, nil)
@@ -4221,13 +4223,13 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		receiverPkBytes,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*lib.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
 	// Sign the transaction now that its inputs are set up.
-	_signTxn(t, txn, UpdaterPrivateKeyBase58Check)
+	lib._signTxn(t, txn, UpdaterPrivateKeyBase58Check)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will

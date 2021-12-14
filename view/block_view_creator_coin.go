@@ -1,8 +1,10 @@
-package lib
+package view
 
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"math"
@@ -11,7 +13,7 @@ import (
 )
 
 func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(
-	hodlerPKID *PKID, creatorPKID *PKID) *BalanceEntry {
+	hodlerPKID *core.PKID, creatorPKID *core.PKID) *BalanceEntry {
 
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	balanceEntryKey := MakeCreatorCoinBalanceKey(hodlerPKID, creatorPKID)
@@ -35,7 +37,7 @@ func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(
 			}
 		}
 	} else {
-		balanceEntry = DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(bav.Handle, hodlerPKID, creatorPKID)
+		balanceEntry = lib.DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(bav.Handle, hodlerPKID, creatorPKID)
 	}
 	if balanceEntry != nil {
 		bav._setBalanceEntryMappingsWithPKIDs(balanceEntry, hodlerPKID, creatorPKID)
@@ -45,7 +47,7 @@ func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(
 
 func (bav *UtxoView) GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 	hodlerPubKey []byte, creatorPubKey []byte) (
-	_balanceEntry *BalanceEntry, _hodlerPKID *PKID, _creatorPKID *PKID) {
+	_balanceEntry *BalanceEntry, _hodlerPKID *core.PKID, _creatorPKID *core.PKID) {
 
 	// These are guaranteed to be non-nil as long as the public keys are valid.
 	hodlerPKID := bav.GetPKIDForPublicKey(hodlerPubKey)
@@ -55,7 +57,7 @@ func (bav *UtxoView) GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 }
 
 func (bav *UtxoView) _setBalanceEntryMappingsWithPKIDs(
-	balanceEntry *BalanceEntry, hodlerPKID *PKID, creatorPKID *PKID) {
+	balanceEntry *BalanceEntry, hodlerPKID *core.PKID, creatorPKID *core.PKID) {
 
 	// This function shouldn't be called with nil.
 	if balanceEntry == nil {
@@ -77,7 +79,7 @@ func (bav *UtxoView) _setBalanceEntryMappings(
 }
 
 func (bav *UtxoView) _deleteBalanceEntryMappingsWithPKIDs(
-	balanceEntry *BalanceEntry, hodlerPKID *PKID, creatorPKID *PKID) {
+	balanceEntry *BalanceEntry, hodlerPKID *core.PKID, creatorPKID *core.PKID) {
 
 	// Create a tombstone entry.
 	tombstoneBalanceEntry := *balanceEntry
@@ -98,7 +100,7 @@ func (bav *UtxoView) _deleteBalanceEntryMappings(
 	bav._deleteBalanceEntryMappingsWithPKIDs(balanceEntry, hodlerPKID.PKID, creatorPKID.PKID)
 }
 
-func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool) ([]*BalanceEntry, []*ProfileEntry, error) {
+func (bav *UtxoView) GetHoldings(pkid *core.PKID, fetchProfiles bool) ([]*BalanceEntry, []*ProfileEntry, error) {
 	var entriesYouHold []*BalanceEntry
 	if bav.Postgres != nil {
 		balances := bav.Postgres.GetHoldings(pkid)
@@ -106,14 +108,14 @@ func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool) ([]*BalanceEntr
 			entriesYouHold = append(entriesYouHold, balance.NewBalanceEntry())
 		}
 	} else {
-		holdings, err := DbGetBalanceEntriesYouHold(bav.Handle, pkid, true)
+		holdings, err := lib.DbGetBalanceEntriesYouHold(bav.Handle, pkid, true)
 		if err != nil {
 			return nil, nil, err
 		}
 		entriesYouHold = holdings
 	}
 
-	holdingsMap := make(map[PKID]*BalanceEntry)
+	holdingsMap := make(map[core.PKID]*BalanceEntry)
 	for _, balanceEntry := range entriesYouHold {
 		holdingsMap[*balanceEntry.CreatorPKID] = balanceEntry
 	}
@@ -143,7 +145,7 @@ func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool) ([]*BalanceEntr
 	return entriesYouHold, profilesYouHold, nil
 }
 
-func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool) ([]*BalanceEntry, []*ProfileEntry, error) {
+func (bav *UtxoView) GetHolders(pkid *core.PKID, fetchProfiles bool) ([]*BalanceEntry, []*ProfileEntry, error) {
 	var holderEntries []*BalanceEntry
 	if bav.Postgres != nil {
 		balances := bav.Postgres.GetHolders(pkid)
@@ -151,14 +153,14 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool) ([]*BalanceEntry
 			holderEntries = append(holderEntries, balance.NewBalanceEntry())
 		}
 	} else {
-		holders, err := DbGetBalanceEntriesHodlingYou(bav.Handle, pkid, true)
+		holders, err := lib.DbGetBalanceEntriesHodlingYou(bav.Handle, pkid, true)
 		if err != nil {
 			return nil, nil, err
 		}
 		holderEntries = holders
 	}
 
-	holdersMap := make(map[PKID]*BalanceEntry)
+	holdersMap := make(map[core.PKID]*BalanceEntry)
 	for _, balanceEntry := range holderEntries {
 		holdersMap[*balanceEntry.HODLerPKID] = balanceEntry
 	}
@@ -189,14 +191,14 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool) ([]*BalanceEntry
 }
 
 func CalculateCreatorCoinToMintPolynomial(
-	deltaDeSoNanos uint64, currentCreatorCoinSupplyNanos uint64, params *DeSoParams) uint64 {
+	deltaDeSoNanos uint64, currentCreatorCoinSupplyNanos uint64, params *lib.DeSoParams) uint64 {
 	// The values our equations take are generally in whole units rather than
 	// nanos, so the first step is to convert the nano amounts into floats
 	// representing full coin units.
-	bigNanosPerUnit := NewFloat().SetUint64(NanosPerUnit)
-	bigDeltaDeSo := Div(NewFloat().SetUint64(deltaDeSoNanos), bigNanosPerUnit)
+	bigNanosPerUnit := lib.NewFloat().SetUint64(lib.NanosPerUnit)
+	bigDeltaDeSo := lib.Div(lib.NewFloat().SetUint64(deltaDeSoNanos), bigNanosPerUnit)
 	bigCurrentCreatorCoinSupply :=
-		Div(NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
+		lib.Div(lib.NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
 
 	// These calculations are basically what you get when you integrate a
 	// polynomial price curve. For more information, see the comment on
@@ -213,28 +215,28 @@ func CalculateCreatorCoinToMintPolynomial(
 	//
 	// If you think it's hard to understand the code below, don't worry-- I hate
 	// the Go float libary syntax too...
-	bigRet := Sub(BigFloatPow((Div((Add(bigDeltaDeSo,
-		Mul(params.CreatorCoinSlope, Mul(params.CreatorCoinReserveRatio,
-			BigFloatPow(bigCurrentCreatorCoinSupply, (Div(bigOne,
-				params.CreatorCoinReserveRatio))))))), Mul(params.CreatorCoinSlope,
+	bigRet := lib.Sub(lib.BigFloatPow((lib.Div((lib.Add(bigDeltaDeSo,
+		lib.Mul(params.CreatorCoinSlope, lib.Mul(params.CreatorCoinReserveRatio,
+			lib.BigFloatPow(bigCurrentCreatorCoinSupply, (lib.Div(lib.bigOne,
+				params.CreatorCoinReserveRatio))))))), lib.Mul(params.CreatorCoinSlope,
 		params.CreatorCoinReserveRatio))), params.CreatorCoinReserveRatio),
 		bigCurrentCreatorCoinSupply)
 	// The value we get is generally a number of whole creator coins, and so we
 	// need to convert it to "nanos" as a last step.
-	retNanos, _ := Mul(bigRet, bigNanosPerUnit).Uint64()
+	retNanos, _ := lib.Mul(bigRet, bigNanosPerUnit).Uint64()
 	return retNanos
 }
 
 func CalculateCreatorCoinToMintBancor(
 	deltaDeSoNanos uint64, currentCreatorCoinSupplyNanos uint64,
-	currentDeSoLockedNanos uint64, params *DeSoParams) uint64 {
+	currentDeSoLockedNanos uint64, params *lib.DeSoParams) uint64 {
 	// The values our equations take are generally in whole units rather than
 	// nanos, so the first step is to convert the nano amounts into floats
 	// representing full coin units.
-	bigNanosPerUnit := NewFloat().SetUint64(NanosPerUnit)
-	bigDeltaDeSo := Div(NewFloat().SetUint64(deltaDeSoNanos), bigNanosPerUnit)
-	bigCurrentCreatorCoinSupply := Div(NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
-	bigCurrentDeSoLocked := Div(NewFloat().SetUint64(currentDeSoLockedNanos), bigNanosPerUnit)
+	bigNanosPerUnit := lib.NewFloat().SetUint64(lib.NanosPerUnit)
+	bigDeltaDeSo := lib.Div(lib.NewFloat().SetUint64(deltaDeSoNanos), bigNanosPerUnit)
+	bigCurrentCreatorCoinSupply := lib.Div(lib.NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
+	bigCurrentDeSoLocked := lib.Div(lib.NewFloat().SetUint64(currentDeSoLockedNanos), bigNanosPerUnit)
 
 	// These calculations are derived from the Bancor pricing formula, which
 	// is proportional to a polynomial price curve (and equivalent to Uniswap
@@ -251,26 +253,26 @@ func CalculateCreatorCoinToMintBancor(
 	//     RR = params.CreatorCoinReserveRatio
 	//
 	// Sorry the code for the equation is so hard to read.
-	bigRet := Mul(bigCurrentCreatorCoinSupply,
-		Sub(BigFloatPow((Add(bigOne, Div(bigDeltaDeSo,
+	bigRet := lib.Mul(bigCurrentCreatorCoinSupply,
+		lib.Sub(lib.BigFloatPow((lib.Add(lib.bigOne, lib.Div(bigDeltaDeSo,
 			bigCurrentDeSoLocked))),
-			(params.CreatorCoinReserveRatio)), bigOne))
+			(params.CreatorCoinReserveRatio)), lib.bigOne))
 	// The value we get is generally a number of whole creator coins, and so we
 	// need to convert it to "nanos" as a last step.
-	retNanos, _ := Mul(bigRet, bigNanosPerUnit).Uint64()
+	retNanos, _ := lib.Mul(bigRet, bigNanosPerUnit).Uint64()
 	return retNanos
 }
 
 func CalculateDeSoToReturn(
 	deltaCreatorCoinNanos uint64, currentCreatorCoinSupplyNanos uint64,
-	currentDeSoLockedNanos uint64, params *DeSoParams) uint64 {
+	currentDeSoLockedNanos uint64, params *lib.DeSoParams) uint64 {
 	// The values our equations take are generally in whole units rather than
 	// nanos, so the first step is to convert the nano amounts into floats
 	// representing full coin units.
-	bigNanosPerUnit := NewFloat().SetUint64(NanosPerUnit)
-	bigDeltaCreatorCoin := Div(NewFloat().SetUint64(deltaCreatorCoinNanos), bigNanosPerUnit)
-	bigCurrentCreatorCoinSupply := Div(NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
-	bigCurrentDeSoLocked := Div(NewFloat().SetUint64(currentDeSoLockedNanos), bigNanosPerUnit)
+	bigNanosPerUnit := lib.NewFloat().SetUint64(lib.NanosPerUnit)
+	bigDeltaCreatorCoin := lib.Div(lib.NewFloat().SetUint64(deltaCreatorCoinNanos), bigNanosPerUnit)
+	bigCurrentCreatorCoinSupply := lib.Div(lib.NewFloat().SetUint64(currentCreatorCoinSupplyNanos), bigNanosPerUnit)
+	bigCurrentDeSoLocked := lib.Div(lib.NewFloat().SetUint64(currentDeSoLockedNanos), bigNanosPerUnit)
 
 	// These calculations are derived from the Bancor pricing formula, which
 	// is proportional to a polynomial price curve (and equivalent to Uniswap
@@ -287,19 +289,19 @@ func CalculateDeSoToReturn(
 	//     RR = params.CreatorCoinReserveRatio
 	//
 	// Sorry the code for the equation is so hard to read.
-	bigRet := Mul(bigCurrentDeSoLocked, (Sub(bigOne, BigFloatPow((Sub(bigOne,
-		Div(bigDeltaCreatorCoin, bigCurrentCreatorCoinSupply))), (Div(bigOne,
+	bigRet := lib.Mul(bigCurrentDeSoLocked, (lib.Sub(lib.bigOne, lib.BigFloatPow((lib.Sub(lib.bigOne,
+		lib.Div(bigDeltaCreatorCoin, bigCurrentCreatorCoinSupply))), (lib.Div(lib.bigOne,
 		params.CreatorCoinReserveRatio))))))
 	// The value we get is generally a number of whole creator coins, and so we
 	// need to convert it to "nanos" as a last step.
-	retNanos, _ := Mul(bigRet, bigNanosPerUnit).Uint64()
+	retNanos, _ := lib.Mul(bigRet, bigNanosPerUnit).Uint64()
 	return retNanos
 }
 
 func CalculateCreatorCoinToMint(
 	desoToSellNanos uint64,
 	coinsInCirculationNanos uint64, desoLockedNanos uint64,
-	params *DeSoParams) uint64 {
+	params *lib.DeSoParams) uint64 {
 
 	if desoLockedNanos == 0 {
 		// In this case, there is no DeSo in the profile so we have to use
@@ -320,13 +322,13 @@ func CalculateCreatorCoinToMint(
 func (bav *UtxoView) ValidateDiamondsAndGetNumCreatorCoinNanos(
 	senderPublicKey []byte,
 	receiverPublicKey []byte,
-	diamondPostHash *BlockHash,
+	diamondPostHash *core.BlockHash,
 	diamondLevel int64,
 	blockHeight uint32,
 ) (_numCreatorCoinNanos uint64, _netNewDiamonds int64, _err error) {
 
 	// Check that the diamond level is reasonable
-	diamondLevelMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(int64(blockHeight))
+	diamondLevelMap := lib.GetDeSoNanosDiamondLevelMapAtBlockHeight(int64(blockHeight))
 	if _, isAllowedLevel := diamondLevelMap[diamondLevel]; !isAllowedLevel {
 		return 0, 0, fmt.Errorf(
 			"ValidateDiamondsAndGetNumCreatorCoinNanos: Diamond level %v not allowed",
@@ -358,14 +360,14 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumCreatorCoinNanos(
 	}
 
 	if currDiamondLevel >= diamondLevel {
-		return 0, 0, RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds
+		return 0, 0, lib.RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds
 	}
 
 	// Calculate the number of creator coin nanos needed vs. already added for previous diamonds.
-	currCreatorCoinNanos := GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
+	currCreatorCoinNanos := lib.GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
 		existingProfileEntry.CoinsInCirculationNanos, existingProfileEntry.DeSoLockedNanos,
 		currDiamondLevel, int64(blockHeight), bav.Params)
-	neededCreatorCoinNanos := GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
+	neededCreatorCoinNanos := lib.GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
 		existingProfileEntry.CoinsInCirculationNanos, existingProfileEntry.DeSoLockedNanos,
 		diamondLevel, int64(blockHeight), bav.Params)
 
@@ -383,7 +385,7 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumCreatorCoinNanos(
 }
 
 func (bav *UtxoView) _disconnectCreatorCoin(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a CreatorCoin opration
@@ -396,7 +398,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			"OperationTypeCreatorCoin but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*CreatorCoinMetadataa)
+	txMeta := currentTxn.TxnMeta.(*lib.CreatorCoinMetadataa)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
@@ -418,7 +420,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return fmt.Errorf("_disconnectCreatorCoin: CreatorCoin profile for "+
 			"public key %v doesn't exist; this should never happen",
-			PkToStringBoth(txMeta.ProfilePublicKey))
+			lib.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	// Get the BalanceEntry of the transactor. This should always exist.
 	transactorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
@@ -428,7 +430,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		return fmt.Errorf("_disconnectCreatorCoin: Transactor BalanceEntry "+
 			"pubkey %v and creator pubkey %v does not exist; this should "+
 			"never happen",
-			PkToStringBoth(currentTxn.PublicKey), PkToStringBoth(txMeta.ProfilePublicKey))
+			lib.PkToStringBoth(currentTxn.PublicKey), lib.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 
 	// Get the BalanceEntry of the creator. It could be nil if this is a sell
@@ -444,7 +446,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		}
 	}
 
-	if txMeta.OperationType == CreatorCoinOperationTypeBuy {
+	if txMeta.OperationType == lib.CreatorCoinOperationTypeBuy {
 		// Set up some variables so that we can run some sanity-checks
 		deltaBuyerNanos := transactorBalanceEntry.BalanceNanos - operationData.PrevTransactorBalanceEntry.BalanceNanos
 		deltaCreatorNanos := creatorBalanceEntry.BalanceNanos - operationData.PrevCreatorBalanceEntry.BalanceNanos
@@ -466,10 +468,10 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 
 			// Sanity-check that the watermark delta equates to what the creator received.
 			deltaNanos := uint64(0)
-			if blockHeight > DeSoFounderRewardBlockHeight {
+			if blockHeight > lib.DeSoFounderRewardBlockHeight {
 				// Do nothing.  After the DeSoFounderRewardBlockHeight, creator coins are not
 				// minted as a founder's reward, just DeSo (see utxo reverted later).
-			} else if blockHeight > SalomonFixBlockHeight {
+			} else if blockHeight > lib.SalomonFixBlockHeight {
 				// Following the SalomonFixBlockHeight block, we calculate a founders reward
 				// on every buy, not just the ones that push a creator to a new all time high.
 				deltaNanos = existingProfileEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
@@ -478,8 +480,8 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 				// only for new all time highs.
 				deltaNanos = existingProfileEntry.CoinWatermarkNanos - operationData.PrevCoinEntry.CoinWatermarkNanos
 			}
-			founderRewardNanos := IntDiv(
-				IntMul(
+			founderRewardNanos := lib.IntDiv(
+				lib.IntMul(
 					big.NewInt(int64(deltaNanos)),
 					big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
 				big.NewInt(100*100)).Uint64()
@@ -522,7 +524,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		// value lowers the amount of DeSo locked in the profile by the same
 		// amount the buyer will receive. Thus no DeSo is created in this
 		// transaction.
-	} else if txMeta.OperationType == CreatorCoinOperationTypeSell {
+	} else if txMeta.OperationType == lib.CreatorCoinOperationTypeSell {
 		// Set up some variables so that we can run some sanity-checks. The coins
 		// the transactor has and the coins in circulation should both have gone
 		// down as a result of the transaction, so both of these values should be
@@ -550,7 +552,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		//
 		// The UtxoKey is simply the transaction hash with index set to the end of the
 		// transaction list.
-		utxoKey := UtxoKey{
+		utxoKey := core.UtxoKey{
 			TxID: *currentTxn.Hash(),
 			// We give all UTXOs that are created as a result of BitcoinExchange transactions
 			// an index of zero. There is generally only one UTXO created in a BitcoinExchange
@@ -560,7 +562,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		if err := bav._unAddUtxo(&utxoKey); err != nil {
 			return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding utxo %v: ", utxoKey)
 		}
-	} else if txMeta.OperationType == CreatorCoinOperationTypeAddDeSo {
+	} else if txMeta.OperationType == lib.CreatorCoinOperationTypeAddDeSo {
 		return fmt.Errorf("_disconnectCreatorCoin: Add DeSo operation txn not implemented")
 	}
 
@@ -576,7 +578,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 }
 
 func (bav *UtxoView) _disconnectCreatorCoinTransfer(
-	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a CreatorCoinTransfer operation
@@ -589,7 +591,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 			"OperationTypeCreatorCoinTransfer but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
-	txMeta := currentTxn.TxnMeta.(*CreatorCoinTransferMetadataa)
+	txMeta := currentTxn.TxnMeta.(*lib.CreatorCoinTransferMetadataa)
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
@@ -599,7 +601,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: CreatorCoinTransfer profile for "+
 			"public key %v doesn't exist; this should never happen",
-			PkToStringBoth(txMeta.ProfilePublicKey))
+			lib.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 
 	// Get the current / previous balance for the sender for sanity checking.
@@ -610,7 +612,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: Previous sender BalanceEntry "+
 			"pubkey %v and creator pubkey %v does not exist; this should "+
 			"never happen",
-			PkToStringBoth(currentTxn.PublicKey), PkToStringBoth(txMeta.ProfilePublicKey))
+			lib.PkToStringBoth(currentTxn.PublicKey), lib.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	senderPrevBalanceNanos := operationData.PrevSenderBalanceEntry.BalanceNanos
 	var senderCurrBalanceNanos uint64
@@ -627,7 +629,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: Receiver BalanceEntry "+
 			"pubkey %v and creator pubkey %v does not exist; this should "+
 			"never happen",
-			PkToStringBoth(currentTxn.PublicKey), PkToStringBoth(txMeta.ProfilePublicKey))
+			lib.PkToStringBoth(currentTxn.PublicKey), lib.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	receiverCurrBalanceNanos := receiverBalanceEntry.BalanceNanos
 	var receiverPrevBalanceNanos uint64
@@ -681,11 +683,11 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	bav._setProfileEntryMappings(existingProfileEntry)
 
 	// If the transaction had diamonds, let's revert those too.
-	diamondPostHashBytes, hasDiamondPostHash := currentTxn.ExtraData[DiamondPostHashKey]
+	diamondPostHashBytes, hasDiamondPostHash := currentTxn.ExtraData[lib.DiamondPostHashKey]
 	if hasDiamondPostHash {
 		// Sanity check the post hash bytes before creating the post hash.
-		diamondPostHash := &BlockHash{}
-		if len(diamondPostHashBytes) != HashSizeBytes {
+		diamondPostHash := &core.BlockHash{}
+		if len(diamondPostHashBytes) != core.HashSizeBytes {
 			return fmt.Errorf(
 				"_disconnectCreatorCoin: DiamondPostHashBytes has incorrect length: %d",
 				len(diamondPostHashBytes))
@@ -723,7 +725,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 // TODO: A lot of duplicate code between buy and sell. Consider factoring
 // out the common code.
 func (bav *UtxoView) HelpConnectCreatorCoinBuy(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _creatorCoinReturnedNanos uint64, _founderRewardNanos uint64,
 	_utxoOps []*UtxoOperation, _err error) {
 
@@ -739,7 +741,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// we didn't do this then someone could replay your sell over and over again
 	// to force-convert all your creator coin into DeSo. Think about it.
 	if totalInput == 0 {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinRequiresNonZeroInput
+		return 0, 0, 0, 0, nil, lib.RuleErrorCreatorCoinRequiresNonZeroInput
 	}
 
 	// At this point the inputs and outputs have been processed. Now we
@@ -747,9 +749,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Check that the specified profile public key is valid and that a profile
 	// corresponding to that public key exists.
-	txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
+	txMeta := txn.TxnMeta.(*lib.CreatorCoinMetadataa)
 	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinInvalidPubKeySize
+		return 0, 0, 0, 0, nil, lib.RuleErrorCreatorCoinInvalidPubKeySize
 	}
 
 	// Dig up the profile. It must exist for the user to be able to
@@ -757,9 +759,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinOperationOnNonexistentProfile,
+			lib.RuleErrorCreatorCoinOperationOnNonexistentProfile,
 			"_connectCreatorCoin: Profile pub key: %v %v",
-			PkToStringMainnet(txMeta.ProfilePublicKey), PkToStringTestnet(txMeta.ProfilePublicKey))
+			lib.PkToStringMainnet(txMeta.ProfilePublicKey), lib.PkToStringTestnet(txMeta.ProfilePublicKey))
 	}
 
 	// At this point we are confident that we have a profile that
@@ -770,7 +772,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// non-zero.
 	desoBeforeFeesNanos := txMeta.DeSoToSellNanos
 	if desoBeforeFeesNanos == 0 {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroDeSo
+		return 0, 0, 0, 0, nil, lib.RuleErrorCreatorCoinBuyMustTradeNonZeroDeSo
 	}
 	// The amount of DeSo being traded counts as output being spent by
 	// this transaction, so add it to the transaction output and check that
@@ -779,7 +781,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Check for overflow of the outputs before adding.
 	if totalOutput > math.MaxUint64-desoBeforeFeesNanos {
 		return 0, 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinTxnOutputWithInvalidBuyAmount,
+			lib.RuleErrorCreatorCoinTxnOutputWithInvalidBuyAmount,
 			"_connectCreatorCoin: %v", desoBeforeFeesNanos)
 	}
 	totalOutput += desoBeforeFeesNanos
@@ -787,7 +789,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// but we check it here just in case...
 	if totalInput < totalOutput {
 		return 0, 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinTxnOutputExceedsInput,
+			lib.RuleErrorCreatorCoinTxnOutputExceedsInput,
 			"_connectCreatorCoin: Input: %v, Output: %v", totalInput, totalOutput)
 	}
 	// At this point we have verified that the output is sufficient to cover
@@ -802,15 +804,15 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// stages of the calculation but this most likely isn't necessary. This
 	// formula is equal to:
 	// - desoAfterFeesNanos = desoBeforeFeesNanos * (CreatorCoinTradeFeeBasisPoints / (100*100))
-	desoAfterFeesNanos := IntDiv(
-		IntMul(
+	desoAfterFeesNanos := lib.IntDiv(
+		lib.IntMul(
 			big.NewInt(int64(desoBeforeFeesNanos)),
 			big.NewInt(int64(100*100-bav.Params.CreatorCoinTradeFeeBasisPoints))),
 		big.NewInt(100*100)).Uint64()
 
 	// The amount of DeSo being convertend must be nonzero after fees as well.
 	if desoAfterFeesNanos == 0 {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFees
+		return 0, 0, 0, 0, nil, lib.RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFees
 	}
 
 	// Figure out how much deso goes to the founder.
@@ -818,13 +820,13 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// profile being bought, we do not cut a founder reward.
 	desoRemainingNanos := uint64(0)
 	desoFounderRewardNanos := uint64(0)
-	if blockHeight > DeSoFounderRewardBlockHeight &&
+	if blockHeight > lib.DeSoFounderRewardBlockHeight &&
 		!reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) {
 
 		// This formula is equal to:
 		// desoFounderRewardNanos = desoAfterFeesNanos * creatorBasisPoints / (100*100)
-		desoFounderRewardNanos = IntDiv(
-			IntMul(
+		desoFounderRewardNanos = lib.IntDiv(
+			lib.IntMul(
 				big.NewInt(int64(desoAfterFeesNanos)),
 				big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
 			big.NewInt(100*100)).Uint64()
@@ -842,7 +844,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	}
 
 	if desoRemainingNanos == 0 {
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFounderReward
+		return 0, 0, 0, 0, nil, lib.RuleErrorCreatorCoinBuyMustTradeNonZeroDeSoAfterFounderReward
 	}
 
 	// If no DeSo is currently locked in the profile then we use the
@@ -865,9 +867,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// This makes it prohibitively expensive for a user to buy themself above the
 	// CreatorCoinAutoSellThresholdNanos and then spam tiny nano DeSo creator
 	// coin purchases causing the effective Bancor Creator Coin Reserve Ratio to drift.
-	if blockHeight > SalomonFixBlockHeight {
+	if blockHeight > lib.SalomonFixBlockHeight {
 		if creatorCoinToMintNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
-			return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanos
+			return 0, 0, 0, 0, nil, lib.RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanos
 		}
 	}
 
@@ -900,16 +902,16 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Calculate the *Creator Coin nanos* to give as a founder reward.
 	creatorCoinFounderRewardNanos := uint64(0)
-	if blockHeight > DeSoFounderRewardBlockHeight {
+	if blockHeight > lib.DeSoFounderRewardBlockHeight {
 		// Do nothing. The chain stopped minting creator coins as a founder reward for
 		// creators at this blockheight.  It gives DeSo as a founder reward now instead.
 
-	} else if blockHeight > SalomonFixBlockHeight {
+	} else if blockHeight > lib.SalomonFixBlockHeight {
 		// Following the SalomonFixBlockHeight block, creator coin buys continuously mint
 		// a founders reward based on the CreatorBasisPoints.
 
-		creatorCoinFounderRewardNanos = IntDiv(
-			IntMul(
+		creatorCoinFounderRewardNanos = lib.IntDiv(
+			lib.IntMul(
 				big.NewInt(int64(creatorCoinToMintNanos)),
 				big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
 			big.NewInt(100*100)).Uint64()
@@ -922,8 +924,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			watermarkDiff := existingProfileEntry.CoinsInCirculationNanos - existingProfileEntry.CoinWatermarkNanos
 			// The founder reward is computed as a percentage of the "net coins created,"
 			// which is equal to the watermarkDiff
-			creatorCoinFounderRewardNanos = IntDiv(
-				IntMul(
+			creatorCoinFounderRewardNanos = lib.IntDiv(
+				lib.IntMul(
 					big.NewInt(int64(watermarkDiff)),
 					big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
 				big.NewInt(100*100)).Uint64()
@@ -952,7 +954,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	if txMeta.MinCreatorCoinExpectedNanos != 0 &&
 		coinsBuyerGetsNanos < txMeta.MinCreatorCoinExpectedNanos {
 		return 0, 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinLessThanMinimumSetByUser,
+			lib.RuleErrorCreatorCoinLessThanMinimumSetByUser,
 			"_connectCreatorCoin: Amount that would be minted and given to user: "+
 				"%v, amount that would be given to founder: %v, amount user needed: %v",
 			coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, txMeta.MinCreatorCoinExpectedNanos)
@@ -969,7 +971,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
 	if buyerBalanceEntry == nil ||
-		(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
+		(buyerBalanceEntry.isDeleted && blockHeight > lib.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
@@ -1000,7 +1002,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		// If the creator does not have a balance entry or the creator's balance entry is deleted and we have passed the
 		// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
 		if creatorBalanceEntry == nil ||
-			(creatorBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
+			(creatorBalanceEntry.isDeleted && blockHeight > lib.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 			// If there is no balance entry then it means the creator doesn't own
 			// any of their coin yet. In this case we create a new entry for them
 			// with a zero balance.
@@ -1030,10 +1032,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Check that if the buyer is receiving nanos for the first time, it's enough
 	// to push them above the CreatorCoinAutoSellThresholdNanos threshold. This helps
 	// prevent tiny amounts of nanos from drifting the ratio of creator coins to DeSo locked.
-	if blockHeight > SalomonFixBlockHeight {
+	if blockHeight > lib.SalomonFixBlockHeight {
 		if buyerBalanceEntry.BalanceNanos == 0 && coinsBuyerGetsNanos != 0 &&
 			coinsBuyerGetsNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
-			return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForBuyer
+			return 0, 0, 0, 0, nil, lib.RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForBuyer
 		}
 	}
 
@@ -1064,9 +1066,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	if creatorBalanceEntry.BalanceNanos == 0 &&
 		creatorCoinFounderRewardNanos != 0 &&
 		creatorCoinFounderRewardNanos < bav.Params.CreatorCoinAutoSellThresholdNanos &&
-		blockHeight > SalomonFixBlockHeight {
+		blockHeight > lib.SalomonFixBlockHeight {
 
-		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForCreator
+		return 0, 0, 0, 0, nil, lib.RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForCreator
 	}
 	// Check if the creator's balance is going from zero to non-zero and increment the NumberOfHolders if so.
 	if creatorBalanceEntry.BalanceNanos == 0 && creatorCoinFounderRewardNanos != 0 {
@@ -1087,12 +1089,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	}
 
 	// Finally, if the creator is getting a deso founder reward, add a UTXO for it.
-	var outputKey *UtxoKey
-	if blockHeight > DeSoFounderRewardBlockHeight {
+	var outputKey *core.UtxoKey
+	if blockHeight > lib.DeSoFounderRewardBlockHeight {
 		if desoFounderRewardNanos > 0 {
 			// Create a new entry for this output and add it to the view. It should be
 			// added at the end of the utxo list.
-			outputKey = &UtxoKey{
+			outputKey = &core.UtxoKey{
 				TxID: *txHash,
 				// The output is like an extra virtual output at the end of the transaction.
 				Index: uint32(len(txn.TxOutputs)),
@@ -1145,7 +1147,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 // TODO: A lot of duplicate code between buy and sell. Consider factoring
 // out the common code.
 func (bav *UtxoView) HelpConnectCreatorCoinSell(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _desoReturnedNanos uint64,
 	_utxoOps []*UtxoOperation, _err error) {
 
@@ -1161,14 +1163,14 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// we didn't do this then someone could replay your sell over and over again
 	// to force-convert all your creator coin into DeSo. Think about it.
 	if totalInput == 0 {
-		return 0, 0, 0, nil, RuleErrorCreatorCoinRequiresNonZeroInput
+		return 0, 0, 0, nil, lib.RuleErrorCreatorCoinRequiresNonZeroInput
 	}
 
 	// Verify that the output does not exceed the input. This check should also
 	// be done by the caller, but we do it here as well.
 	if totalInput < totalOutput {
 		return 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinTxnOutputExceedsInput,
+			lib.RuleErrorCreatorCoinTxnOutputExceedsInput,
 			"_connectCreatorCoin: Input: %v, Output: %v", totalInput, totalOutput)
 	}
 
@@ -1177,9 +1179,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	// Check that the specified profile public key is valid and that a profile
 	// corresponding to that public key exists.
-	txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
+	txMeta := txn.TxnMeta.(*lib.CreatorCoinMetadataa)
 	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, 0, nil, RuleErrorCreatorCoinInvalidPubKeySize
+		return 0, 0, 0, nil, lib.RuleErrorCreatorCoinInvalidPubKeySize
 	}
 
 	// Dig up the profile. It must exist for the user to be able to
@@ -1187,9 +1189,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinOperationOnNonexistentProfile,
+			lib.RuleErrorCreatorCoinOperationOnNonexistentProfile,
 			"_connectCreatorCoin: Profile pub key: %v %v",
-			PkToStringMainnet(txMeta.ProfilePublicKey), PkToStringTestnet(txMeta.ProfilePublicKey))
+			lib.PkToStringMainnet(txMeta.ProfilePublicKey), lib.PkToStringTestnet(txMeta.ProfilePublicKey))
 	}
 
 	// At this point we are confident that we have a profile that
@@ -1202,20 +1204,20 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	sellerBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txn.PublicKey, existingProfileEntry.PublicKey)
 	if sellerBalanceEntry == nil || sellerBalanceEntry.isDeleted {
-		return 0, 0, 0, nil, RuleErrorCreatorCoinSellerBalanceEntryDoesNotExist
+		return 0, 0, 0, nil, lib.RuleErrorCreatorCoinSellerBalanceEntryDoesNotExist
 	}
 
 	// Check that the amount of creator coin being sold is non-zero.
 	creatorCoinToSellNanos := txMeta.CreatorCoinToSellNanos
 	if creatorCoinToSellNanos == 0 {
-		return 0, 0, 0, nil, RuleErrorCreatorCoinSellMustTradeNonZeroCreatorCoin
+		return 0, 0, 0, nil, lib.RuleErrorCreatorCoinSellMustTradeNonZeroCreatorCoin
 	}
 
 	// Check that the amount of creator coin being sold does not exceed the user's
 	// balance of this particular creator coin.
 	if creatorCoinToSellNanos > sellerBalanceEntry.BalanceNanos {
 		return 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinSellInsufficientCoins,
+			lib.RuleErrorCreatorCoinSellInsufficientCoins,
 			"_connectCreatorCoin: CreatorCoin nanos being sold %v exceeds "+
 				"user's creator coin balance %v",
 			creatorCoinToSellNanos, sellerBalanceEntry.BalanceNanos)
@@ -1224,12 +1226,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// If the amount of DeSo locked in the profile is zero then selling is
 	// not allowed.
 	if existingProfileEntry.DeSoLockedNanos == 0 {
-		return 0, 0, 0, nil, RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked
+		return 0, 0, 0, nil, lib.RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked
 	}
 
 	desoBeforeFeesNanos := uint64(0)
 	// Compute the amount of DeSo to return.
-	if blockHeight > SalomonFixBlockHeight {
+	if blockHeight > lib.SalomonFixBlockHeight {
 		// Following the SalomonFixBlockHeight block, if a user would be left with less than
 		// bav.Params.CreatorCoinAutoSellThresholdNanos, we clear all their remaining holdings
 		// to prevent 1 or 2 lingering creator coin nanos from staying in their wallet.
@@ -1350,8 +1352,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	// Charge a fee on the DeSo the seller is getting to hedge against
 	// floating point errors
-	desoAfterFeesNanos := IntDiv(
-		IntMul(
+	desoAfterFeesNanos := lib.IntDiv(
+		lib.IntMul(
 			big.NewInt(int64(desoBeforeFeesNanos)),
 			big.NewInt(int64(100*100-bav.Params.CreatorCoinTradeFeeBasisPoints))),
 		big.NewInt(100*100)).Uint64()
@@ -1363,7 +1365,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		desoAfterFeesNanos < txMeta.MinDeSoExpectedNanos {
 
 		return 0, 0, 0, nil, errors.Wrapf(
-			RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller,
+			lib.RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller,
 			"_connectCreatorCoin: DeSo nanos that would be given to seller: "+
 				"%v, amount user needed: %v",
 			desoAfterFeesNanos, txMeta.MinDeSoExpectedNanos)
@@ -1371,7 +1373,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	// Now that we have all the information we need, save a UTXO allowing the user to
 	// spend the DeSo from the sale in the future.
-	outputKey := UtxoKey{
+	outputKey := core.UtxoKey{
 		TxID: *txn.Hash(),
 		// The output is like an extra virtual output at the end of the transaction.
 		Index: uint32(len(txn.TxOutputs)),
@@ -1426,33 +1428,33 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 }
 
 func (bav *UtxoView) _connectCreatorCoin(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeCreatorCoin {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeCreatorCoin {
 		return 0, 0, nil, fmt.Errorf("_connectCreatorCoin: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
+	txMeta := txn.TxnMeta.(*lib.CreatorCoinMetadataa)
 
 	// We save the previous CoinEntry so that we can revert things easily during a
 	// disconnect. If we didn't do this, it would be annoying to reset the coin
 	// state when reverting a transaction.
 	switch txMeta.OperationType {
-	case CreatorCoinOperationTypeBuy:
+	case lib.CreatorCoinOperationTypeBuy:
 		// We don't need the creatorCoinsReturned return value
 		totalInput, totalOutput, _, _, utxoOps, err :=
 			bav.HelpConnectCreatorCoinBuy(txn, txHash, blockHeight, verifySignatures)
 		return totalInput, totalOutput, utxoOps, err
 
-	case CreatorCoinOperationTypeSell:
+	case lib.CreatorCoinOperationTypeSell:
 		// We don't need the desoReturned return value
 		totalInput, totalOutput, _, utxoOps, err :=
 			bav.HelpConnectCreatorCoinSell(txn, txHash, blockHeight, verifySignatures)
 		return totalInput, totalOutput, utxoOps, err
 
-	case CreatorCoinOperationTypeAddDeSo:
+	case lib.CreatorCoinOperationTypeAddDeSo:
 		return 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Add DeSo not implemented")
 	}
 
@@ -1461,15 +1463,15 @@ func (bav *UtxoView) _connectCreatorCoin(
 }
 
 func (bav *UtxoView) _connectCreatorCoinTransfer(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeCreatorCoinTransfer {
+	if txn.TxnMeta.GetTxnType() != lib.TxnTypeCreatorCoinTransfer {
 		return 0, 0, nil, fmt.Errorf("_connectCreatorCoinTransfer: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
+	txMeta := txn.TxnMeta.(*lib.CreatorCoinTransferMetadataa)
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -1483,7 +1485,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 	// we didn't do this then someone could replay your transfer over and over again
 	// to force-convert all your creator coin into DeSo. Think about it.
 	if totalInput == 0 {
-		return 0, 0, nil, RuleErrorCreatorCoinTransferRequiresNonZeroInput
+		return 0, 0, nil, lib.RuleErrorCreatorCoinTransferRequiresNonZeroInput
 	}
 
 	// At this point the inputs and outputs have been processed. Now we
@@ -1491,27 +1493,27 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 
 	// Check that the specified receiver public key is valid.
 	if len(txMeta.ReceiverPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorCreatorCoinTransferInvalidReceiverPubKeySize
+		return 0, 0, nil, lib.RuleErrorCreatorCoinTransferInvalidReceiverPubKeySize
 	}
 
 	// Check that the sender and receiver public keys are different.
 	if reflect.DeepEqual(txn.PublicKey, txMeta.ReceiverPublicKey) {
-		return 0, 0, nil, RuleErrorCreatorCoinTransferCannotTransferToSelf
+		return 0, 0, nil, lib.RuleErrorCreatorCoinTransferCannotTransferToSelf
 	}
 
 	// Check that the specified profile public key is valid and that a profile
 	// corresponding to that public key exists.
 	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorCreatorCoinTransferInvalidProfilePubKeySize
+		return 0, 0, nil, lib.RuleErrorCreatorCoinTransferInvalidProfilePubKeySize
 	}
 
 	// Dig up the profile. It must exist for the user to be able to transfer its coin.
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinTransferOnNonexistentProfile,
+			lib.RuleErrorCreatorCoinTransferOnNonexistentProfile,
 			"_connectCreatorCoin: Profile pub key: %v %v",
-			PkToStringMainnet(txMeta.ProfilePublicKey), PkToStringTestnet(txMeta.ProfilePublicKey))
+			lib.PkToStringMainnet(txMeta.ProfilePublicKey), lib.PkToStringTestnet(txMeta.ProfilePublicKey))
 	}
 
 	// At this point we are confident that we have a profile that
@@ -1522,19 +1524,19 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 	senderBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txn.PublicKey, existingProfileEntry.PublicKey)
 	if senderBalanceEntry == nil || senderBalanceEntry.isDeleted {
-		return 0, 0, nil, RuleErrorCreatorCoinTransferBalanceEntryDoesNotExist
+		return 0, 0, nil, lib.RuleErrorCreatorCoinTransferBalanceEntryDoesNotExist
 	}
 
 	// Check that the amount of creator coin being transferred is not less than the min threshold.
 	if txMeta.CreatorCoinToTransferNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
-		return 0, 0, nil, RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold
+		return 0, 0, nil, lib.RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold
 	}
 
 	// Check that the amount of creator coin being transferred does not exceed the user's
 	// balance of this particular creator coin.
 	if txMeta.CreatorCoinToTransferNanos > senderBalanceEntry.BalanceNanos {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorCreatorCoinTransferInsufficientCoins,
+			lib.RuleErrorCreatorCoinTransferInsufficientCoins,
 			"_connectCreatorCoin: CreatorCoin nanos being transferred %v exceeds "+
 				"user's creator coin balance %v",
 			txMeta.CreatorCoinToTransferNanos, senderBalanceEntry.BalanceNanos)
@@ -1562,8 +1564,8 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 			return 0, 0, nil, fmt.Errorf(
 				"_connectCreatorCoin: Found nil or deleted PKID for receiver or creator, this should never "+
 					"happen. Receiver pubkey: %v, creator pubkey: %v",
-				PkToStringMainnet(txMeta.ReceiverPublicKey),
-				PkToStringMainnet(existingProfileEntry.PublicKey))
+				lib.PkToStringMainnet(txMeta.ReceiverPublicKey),
+				lib.PkToStringMainnet(existingProfileEntry.PublicKey))
 		}
 		receiverBalanceEntry = &BalanceEntry{
 			HODLerPKID:   receiverPKID.PKID,
@@ -1622,42 +1624,42 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 	bav._setProfileEntryMappings(existingProfileEntry)
 
 	// If this creator coin transfer has diamonds, validate them and do the connection.
-	diamondPostHashBytes, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
-	diamondPostHash := &BlockHash{}
-	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
+	diamondPostHashBytes, hasDiamondPostHash := txn.ExtraData[lib.DiamondPostHashKey]
+	diamondPostHash := &core.BlockHash{}
+	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[lib.DiamondLevelKey]
 	var previousDiamondPostEntry *PostEntry
 	var previousDiamondEntry *DiamondEntry
 	// After the DeSoDiamondsBlockHeight, we no longer accept creator coin diamonds.
-	if hasDiamondPostHash && blockHeight > DeSoDiamondsBlockHeight {
-		return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight
+	if hasDiamondPostHash && blockHeight > lib.DeSoDiamondsBlockHeight {
+		return 0, 0, nil, lib.RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight
 	} else if hasDiamondPostHash {
 		if !hasDiamondLevel {
-			return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel
+			return 0, 0, nil, lib.RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel
 		}
-		diamondLevel, bytesRead := Varint(diamondLevelBytes)
+		diamondLevel, bytesRead := lib.Varint(diamondLevelBytes)
 		// NOTE: Despite being an int, diamondLevel is required to be non-negative. This
 		// is useful for sorting our dbkeys by diamondLevel.
 		if bytesRead < 0 || diamondLevel < 0 {
-			return 0, 0, nil, RuleErrorCreatorCoinTransferHasInvalidDiamondLevel
+			return 0, 0, nil, lib.RuleErrorCreatorCoinTransferHasInvalidDiamondLevel
 		}
 
 		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) {
-			return 0, 0, nil, RuleErrorCreatorCoinTransferCantSendDiamondsForOtherProfiles
+			return 0, 0, nil, lib.RuleErrorCreatorCoinTransferCantSendDiamondsForOtherProfiles
 		}
 		if reflect.DeepEqual(txMeta.ReceiverPublicKey, existingProfileEntry.PublicKey) {
-			return 0, 0, nil, RuleErrorCreatorCoinTransferCantDiamondYourself
+			return 0, 0, nil, lib.RuleErrorCreatorCoinTransferCantDiamondYourself
 		}
 
-		if len(diamondPostHashBytes) != HashSizeBytes {
+		if len(diamondPostHashBytes) != core.HashSizeBytes {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorCreatorCoinTransferInvalidLengthForPostHashBytes,
+				lib.RuleErrorCreatorCoinTransferInvalidLengthForPostHashBytes,
 				"_connectCreatorCoin: DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
 		}
 		copy(diamondPostHash[:], diamondPostHashBytes[:])
 
 		previousDiamondPostEntry = bav.GetPostEntryForPostHash(diamondPostHash)
 		if previousDiamondPostEntry == nil || previousDiamondPostEntry.isDeleted {
-			return 0, 0, nil, RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist
+			return 0, 0, nil, lib.RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist
 		}
 
 		expectedCreatorCoinNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumCreatorCoinNanos(
@@ -1667,7 +1669,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 		}
 
 		if txMeta.CreatorCoinToTransferNanos < expectedCreatorCoinNanosToTransfer {
-			return 0, 0, nil, RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel
+			return 0, 0, nil, lib.RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel
 		}
 
 		// The diamondPostEntry needs to be updated with the number of new diamonds.

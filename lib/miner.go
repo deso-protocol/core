@@ -7,6 +7,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core"
 	"math/big"
 	"math/rand"
 	"reflect"
@@ -64,7 +65,7 @@ func (desoMiner *DeSoMiner) Stop() {
 }
 
 func (desoMiner *DeSoMiner) _getBlockToMine(threadIndex uint32) (
-	_blk *MsgDeSoBlock, _diffTarget *BlockHash, _lastNode *BlockNode, _err error) {
+	_blk *MsgDeSoBlock, _diffTarget *core.BlockHash, _lastNode *BlockNode, _err error) {
 
 	// Choose a random address to contribute the coins to. Use the extraNonce to
 	// choose the random address since it's random.
@@ -87,7 +88,7 @@ func (desoMiner *DeSoMiner) _getRandomPublicKey() []byte {
 	return desoMiner.PublicKeys[rand.Intn(len(desoMiner.PublicKeys))].SerializeCompressed()
 }
 
-func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *BlockHash, minedBlock *MsgDeSoBlock) {
+func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *core.BlockHash, minedBlock *MsgDeSoBlock) {
 	for {
 		// This provides a way for outside processes to pause the miner.
 		if len(desoMiner.PublicKeys) == 0 {
@@ -255,7 +256,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 
 	decimalPlaces := int64(1000)
 	diffTargetBaseline, _ := hex.DecodeString(desoMiner.params.MinDifficultyTargetHex)
-	diffTargetBaselineBlockHash := BlockHash{}
+	diffTargetBaselineBlockHash := core.BlockHash{}
 	copy(diffTargetBaselineBlockHash[:], diffTargetBaseline)
 	diffTargetBaselineBigint := big.NewInt(0).Mul(HashToBigint(&diffTargetBaselineBlockHash), big.NewInt(decimalPlaces))
 	diffTargetBigint := HashToBigint(diffTarget)
@@ -301,13 +302,13 @@ func (desoMiner *DeSoMiner) Start() {
 	}
 }
 
-func CopyBytesIntoBlockHash(data []byte) *BlockHash {
-	if len(data) != HashSizeBytes {
-		errorStr := fmt.Sprintf("CopyBytesIntoBlockHash: Got data of size %d for BlockHash of size %d", len(data), HashSizeBytes)
+func CopyBytesIntoBlockHash(data []byte) *core.BlockHash {
+	if len(data) != core.HashSizeBytes {
+		errorStr := fmt.Sprintf("CopyBytesIntoBlockHash: Got data of size %d for BlockHash of size %d", len(data), core.HashSizeBytes)
 		glog.Error(errorStr)
 		return nil
 	}
-	var blockHash BlockHash
+	var blockHash core.BlockHash
 	copy(blockHash[:], data)
 	return &blockHash
 }
@@ -334,8 +335,8 @@ func CopyBytesIntoBlockHash(data []byte) *BlockHash {
 // that we don't think any ASIC exists for currently. Note that creating an ASIC for
 // this should be relatively straightforward, however, which allows us to satisfy
 // property (2) above.
-func ProofOfWorkHash(inputBytes []byte, version uint32) *BlockHash {
-	output := BlockHash{}
+func ProofOfWorkHash(inputBytes []byte, version uint32) *core.BlockHash {
+	output := core.BlockHash{}
 
 	if version == HeaderVersion0 {
 		hashBytes := desohash.DeSoHashV0(inputBytes)
@@ -353,14 +354,14 @@ func ProofOfWorkHash(inputBytes []byte, version uint32) *BlockHash {
 	return &output
 }
 
-func Sha256DoubleHash(input []byte) *BlockHash {
+func Sha256DoubleHash(input []byte) *core.BlockHash {
 	hashBytes := merkletree.Sha256DoubleHash(input)
-	ret := &BlockHash{}
+	ret := &core.BlockHash{}
 	copy(ret[:], hashBytes[:])
 	return ret
 }
 
-func HashToBigint(hash *BlockHash) *big.Int {
+func HashToBigint(hash *core.BlockHash) *big.Int {
 	// No need to check errors since the string is necessarily a valid hex
 	// string.
 	val, itWorked := new(big.Int).SetString(hex.EncodeToString(hash[:]), 16)
@@ -370,7 +371,7 @@ func HashToBigint(hash *BlockHash) *big.Int {
 	return val
 }
 
-func BigintToHash(bigint *big.Int) *BlockHash {
+func BigintToHash(bigint *big.Int) *core.BlockHash {
 	hexStr := bigint.Text(16)
 	if len(hexStr)%2 != 0 {
 		// If we have an odd number of bytes add one to the beginning (remember
@@ -382,13 +383,13 @@ func BigintToHash(bigint *big.Int) *BlockHash {
 		glog.Errorf("Failed in converting bigint (%#v) with hex "+
 			"string (%s) to hash.", bigint, hexStr)
 	}
-	if len(hexBytes) > HashSizeBytes {
-		glog.Errorf("BigintToHash: Bigint %v overflows the hash size %d", bigint, HashSizeBytes)
+	if len(hexBytes) > core.HashSizeBytes {
+		glog.Errorf("BigintToHash: Bigint %v overflows the hash size %d", bigint, core.HashSizeBytes)
 		return nil
 	}
 
-	var retBytes BlockHash
-	copy(retBytes[HashSizeBytes-len(hexBytes):], hexBytes)
+	var retBytes core.BlockHash
+	copy(retBytes[core.HashSizeBytes-len(hexBytes):], hexBytes)
 	return &retBytes
 }
 
@@ -423,7 +424,7 @@ func BigintToBytes(bigint *big.Int) []byte {
 // continue a subsequent batch of iterations after we return.
 func FindLowestHash(
 	blockHeaderr *MsgDeSoHeader, iterations uint64) (
-	lowestHash *BlockHash, lowestNonce uint64, ee error) {
+	lowestHash *core.BlockHash, lowestNonce uint64, ee error) {
 	//// Compute a hash of the header with the current nonce value.
 	bestNonce := blockHeaderr.Nonce
 	bestHash, err := blockHeaderr.Hash()
@@ -456,7 +457,7 @@ func FindLowestHash(
 	return bestHash, bestNonce, nil
 }
 
-func LessThan(aa *BlockHash, bb *BlockHash) bool {
+func LessThan(aa *core.BlockHash, bb *core.BlockHash) bool {
 	aaBigint := new(big.Int)
 	aaBigint.SetBytes(aa[:])
 	bbBigint := new(big.Int)

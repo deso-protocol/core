@@ -4,6 +4,9 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/deso-protocol/core"
+	db2 "github.com/deso-protocol/core/db"
+	"github.com/deso-protocol/core/view"
 	"log"
 	"math/big"
 	"testing"
@@ -134,7 +137,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 }
 
 func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
-	db, _ := GetTestBadgerDb()
+	db, _ := db2.GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
 
 	// Set the number of txns per view regeneration to one while creating the txns
@@ -168,7 +171,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	db, _ := GetTestBadgerDb()
+	db, _ := db2.GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
 
 	// Set some special parameters for testing. If the blocks above are changed
@@ -265,7 +268,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
 
-	utxoView, err := NewUtxoView(chain.db, chain.params, nil)
+	utxoView, err := view.NewUtxoView(chain.db, chain.params, nil)
 	require.NoError(t, err)
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
@@ -287,7 +290,7 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr 
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoView, _ := NewUtxoView(db, params, nil)
+	utxoView, _ := view.NewUtxoView(db, params, nil)
 
 	// Profile fields
 	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)
@@ -298,7 +301,7 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr 
 	return creatorProfile.DeSoLockedNanos, creatorProfile.CoinsInCirculationNanos
 }
 
-func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {
+func _getBalanceWithView(t *testing.T, utxoView *view.UtxoView, pkStr string) uint64 {
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
@@ -1448,7 +1451,7 @@ func TestBadMerkleRoot(t *testing.T) {
 	// to perturb the merkle root to mess it up.
 	blockA1, _, _, _, _, _, _ := getForkedChain(t)
 	_testMerkleRoot(t, false /*shouldFail*/, blockA1)
-	blockA1.Header.TransactionMerkleRoot = &BlockHash{}
+	blockA1.Header.TransactionMerkleRoot = &core.BlockHash{}
 	_testMerkleRoot(t, true /*shouldFail*/, blockA1)
 }
 
@@ -1460,10 +1463,10 @@ func TestBadBlockSignature(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
 
 	// Change the trusted public keys expected by the blockchain.
-	chain.trustedBlockProducerPublicKeys = make(map[PkMapKey]bool)
+	chain.trustedBlockProducerPublicKeys = make(map[view.PkMapKey]bool)
 	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
 	require.NoError(err)
-	chain.trustedBlockProducerPublicKeys[MakePkMapKey(senderPkBytes)] = true
+	chain.trustedBlockProducerPublicKeys[view.MakePkMapKey(senderPkBytes)] = true
 
 	// The "blockSignerPk" does not match "senderPk" so processing the block will fail.
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
@@ -1499,7 +1502,7 @@ func TestBadBlockSignature(t *testing.T) {
 	require.Contains(err.Error(), RuleErrorMissingBlockProducerSignature)
 
 	// Now let's add blockSignerPK to the map of trusted keys and confirm that the block processes.
-	chain.trustedBlockProducerPublicKeys[MakePkMapKey(blockSignerPkBytes)] = true
+	chain.trustedBlockProducerPublicKeys[view.MakePkMapKey(blockSignerPkBytes)] = true
 	finalBlock1.BlockProducerInfo = blockProducerInfoCopy
 	_, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.NoError(err)
@@ -1517,7 +1520,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 
 	// Make the senderPk a paramUpdater for this test
 	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
-	params.ParamUpdaterPublicKeys[MakePkMapKey(senderPkBytes)] = true
+	params.ParamUpdaterPublicKeys[view.MakePkMapKey(senderPkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1551,7 +1554,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	require.Equal(1, len(txDescsAdded))
 
 	// Make sure that the forbidden pub key made it into the mempool properly.
-	_, entryExists := mempool.universalUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(blockSignerPkBytes)]
+	_, entryExists := mempool.universalUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[view.MakePkMapKey(blockSignerPkBytes)]
 	require.True(entryExists)
 
 	// Mine the transaction.
