@@ -3051,6 +3051,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTRoyaltyToCreatorBasisPoints uint64,
 	NFTRoyaltyToCoinBasisPoints uint64,
 	IsBuyNow bool,
+	BuyNowPriceNanos uint64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3075,7 +3076,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	// If this transactions creates a Buy Now NFT, set the extra data appropriately.
 	if IsBuyNow {
 		extraData := make(map[string][]byte)
-		extraData[IsBuyNowKey] = []byte{BoolToByte(true)}
+		extraData[BuyNowPriceKey] = UintToBuf(BuyNowPriceNanos)
 		txn.ExtraData = extraData
 	}
 
@@ -3365,6 +3366,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	IsForSale bool,
 	MinBidAmountNanos uint64,
 	IsBuyNow bool,
+	BuyNowPriceNanos uint64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3386,7 +3388,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	// If this update makes the NFT a Buy Now NFT, set the extra data appropriately.
 	if IsBuyNow {
 		extraData := make(map[string][]byte)
-		extraData[IsBuyNowKey] = []byte{BoolToByte(true)}
+		extraData[BuyNowPriceKey] = UintToBuf(BuyNowPriceNanos)
 		txn.ExtraData = extraData
 	}
 

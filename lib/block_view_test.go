@@ -600,6 +600,7 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
 	nftPostHash *BlockHash, numCopies uint64, hasUnlockable bool, isForSale bool, minBidAmountNanos uint64,
 	nftFee uint64, nftRoyaltyToCreatorBasisPoints uint64, nftRoyaltyToCoinBasisPoints uint64, isBuyNow bool,
+	buyNowPriceNanos uint64,
 ) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -624,6 +625,7 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 		nftRoyaltyToCreatorBasisPoints,
 		nftRoyaltyToCoinBasisPoints,
 		isBuyNow,
+		buyNowPriceNanos,
 		feeRateNanosPerKB,
 		nil, []*DeSoOutput{})
 	if err != nil {
@@ -675,6 +677,7 @@ func _createNFTWithTestMeta(
 	nftRoyaltyToCreatorBasisPoints uint64,
 	nftRoyaltyToCoinBasisPoints uint64,
 	isBuyNow bool,
+	buyNowPriceNanos uint64,
 ) {
 	// Sanity check: the number of NFT entries before should be 0.
 	dbNFTEntries := DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
@@ -695,6 +698,7 @@ func _createNFTWithTestMeta(
 		nftRoyaltyToCreatorBasisPoints,
 		nftRoyaltyToCoinBasisPoints,
 		isBuyNow,
+		buyNowPriceNanos,
 	)
 	require.NoError(testMeta.t, err)
 
@@ -975,6 +979,7 @@ func _acceptNFTBidWithTestMeta(
 func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
 	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
 	nftPostHash *BlockHash, serialNumber uint64, isForSale bool, minBidAmountNanos uint64, isBuyNow bool,
+	buyNowPriceNanos uint64,
 ) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -995,6 +1000,7 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 		isForSale,
 		minBidAmountNanos,
 		isBuyNow,
+		buyNowPriceNanos,
 		feeRateNanosPerKB,
 		nil,
 		[]*DeSoOutput{})
@@ -1042,6 +1048,7 @@ func _updateNFTWithTestMeta(
 	isForSale bool,
 	minBidAmountNanos uint64,
 	isBuyNow bool,
+	buyNowPriceNanos uint64,
 ) {
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
@@ -1054,6 +1061,7 @@ func _updateNFTWithTestMeta(
 		isForSale,
 		minBidAmountNanos,
 		isBuyNow,
+		buyNowPriceNanos,
 	)
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -1669,7 +1677,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string,
 	UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinMetadataa for an explanation of these fields.
+// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	OperationType CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
@@ -1755,7 +1763,7 @@ func _creatorCoinTxnWithTestMeta(
 	feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string,
 	UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinMetadataa for an explanation of these fields.
+// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	OperationType CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
@@ -1845,7 +1853,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string, UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinTransferMetadataa for an explanation of these fields.
+// See CreatorCoinTransferMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	ReceiverPublicKeyBase58Check string,
 	CreatorCoinToTransferNanos uint64) (
@@ -2299,15 +2307,15 @@ func TestSubmitPost(t *testing.T) {
 	// Creating a post from an unregistered profile should succeed
 	{
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m0Pub,    /*updaterPkBase58Check*/
-			m0Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                 /*feeRateNanosPerKB*/
+			m0Pub,                                              /*updaterPkBase58Check*/
+			m0Priv,                                             /*updaterPrivBase58Check*/
+			[]byte{},                                           /*postHashToModify*/
+			[]byte{},                                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Txn := txns[len(txns)-1]
 	post1Hash := post1Txn.Hash()
@@ -2315,15 +2323,15 @@ func TestSubmitPost(t *testing.T) {
 
 	{
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m0Pub,    /*updaterPkBase58Check*/
-			m0Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                 /*feeRateNanosPerKB*/
+			m0Pub,                                              /*updaterPkBase58Check*/
+			m0Priv,                                             /*updaterPrivBase58Check*/
+			[]byte{},                                           /*postHashToModify*/
+			[]byte{},                                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body 2 no profile"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post2Txn := txns[len(txns)-1]
 	post2Hash := post2Txn.Hash()
@@ -2331,15 +2339,15 @@ func TestSubmitPost(t *testing.T) {
 
 	{
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m1Pub,    /*updaterPkBase58Check*/
-			m1Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                 /*feeRateNanosPerKB*/
+			m1Pub,                                              /*updaterPkBase58Check*/
+			m1Priv,                                             /*updaterPrivBase58Check*/
+			[]byte{},                                           /*postHashToModify*/
+			[]byte{},                                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m1 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post3Txn := txns[len(txns)-1]
 	post3Hash := post3Txn.Hash()
@@ -2357,18 +2365,18 @@ func TestSubmitPost(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m2Pub,    /*updaterPkBase58Check*/
-			m2Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                   /*feeRateNanosPerKB*/
+			m2Pub,                                                /*updaterPkBase58Check*/
+			m2Priv,                                               /*updaterPrivBase58Check*/
+			[]byte{},                                             /*postHashToModify*/
+			[]byte{},                                             /*parentStakeID*/
 			&DeSoBodySchema{Body: "m2 post body 1 WITH profile"}, /*body*/
 			[]byte{},
 			1502947014*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post4Txn := txns[len(txns)-1]
 	post4Hash := post4Txn.Hash()
@@ -2385,18 +2393,18 @@ func TestSubmitPost(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m3Pub,    /*updaterPkBase58Check*/
-			m3Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                   /*feeRateNanosPerKB*/
+			m3Pub,                                                /*updaterPkBase58Check*/
+			m3Priv,                                               /*updaterPrivBase58Check*/
+			[]byte{},                                             /*postHashToModify*/
+			[]byte{},                                             /*parentStakeID*/
 			&DeSoBodySchema{Body: "m3 post body 1 WITH profile"}, /*body*/
 			[]byte{},
 			1502947015*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post5Txn := txns[len(txns)-1]
 	post5Hash := post5Txn.Hash()
@@ -2405,15 +2413,15 @@ func TestSubmitPost(t *testing.T) {
 	// Create another post for m2
 	{
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m2Pub,    /*updaterPkBase58Check*/
-			m2Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                   /*feeRateNanosPerKB*/
+			m2Pub,                                                /*updaterPkBase58Check*/
+			m2Priv,                                               /*updaterPrivBase58Check*/
+			[]byte{},                                             /*postHashToModify*/
+			[]byte{},                                             /*parentStakeID*/
 			&DeSoBodySchema{Body: "m2 post body 2 WITH profile"}, /*body*/
 			[]byte{},
 			1502947016*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post6Txn := txns[len(txns)-1]
 	post6Hash := post6Txn.Hash()
@@ -2423,15 +2431,15 @@ func TestSubmitPost(t *testing.T) {
 	{
 		_, _, _, err := _submitPost(
 			t, chain, db, params,
-			0,        /*feeRateNanosPerKB*/
-			m0Pub,    /*updaterPkBase58Check*/
-			m0Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			0,                                            /*feeRateNanosPerKB*/
+			m0Pub,                                        /*updaterPkBase58Check*/
+			m0Priv,                                       /*updaterPrivBase58Check*/
+			[]byte{},                                     /*postHashToModify*/
+			[]byte{},                                     /*parentStakeID*/
 			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
 	}
@@ -2440,15 +2448,15 @@ func TestSubmitPost(t *testing.T) {
 	{
 		_, _, _, err := _submitPost(
 			t, chain, db, params,
-			10,                           /*feeRateNanosPerKB*/
-			m0Pub,                        /*updaterPkBase58Check*/
-			m0Priv,                       /*updaterPrivBase58Check*/
-			RandomBytes(HashSizeBytes-1), /*postHashToModify*/
-			[]byte{},                     /*parentStakeID*/
+			10,                                           /*feeRateNanosPerKB*/
+			m0Pub,                                        /*updaterPkBase58Check*/
+			m0Priv,                                       /*updaterPrivBase58Check*/
+			RandomBytes(HashSizeBytes-1),                 /*postHashToModify*/
+			[]byte{},                                     /*parentStakeID*/
 			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostInvalidPostHashToModify)
 	}
@@ -2457,15 +2465,15 @@ func TestSubmitPost(t *testing.T) {
 	{
 		_, _, _, err := _submitPost(
 			t, chain, db, params,
-			10,                         /*feeRateNanosPerKB*/
-			m0Pub,                      /*updaterPkBase58Check*/
-			m0Priv,                     /*updaterPrivBase58Check*/
-			RandomBytes(HashSizeBytes), /*postHashToModify*/
-			[]byte{},                   /*parentStakeID*/
+			10,                                           /*feeRateNanosPerKB*/
+			m0Pub,                                        /*updaterPkBase58Check*/
+			m0Priv,                                       /*updaterPrivBase58Check*/
+			RandomBytes(HashSizeBytes),                   /*postHashToModify*/
+			[]byte{},                                     /*parentStakeID*/
 			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostModifyingNonexistentPost)
 	}
@@ -2474,15 +2482,15 @@ func TestSubmitPost(t *testing.T) {
 	{
 		_, _, _, err := _submitPost(
 			t, chain, db, params,
-			10,                           /*feeRateNanosPerKB*/
-			m0Pub,                        /*updaterPkBase58Check*/
-			m0Priv,                       /*updaterPrivBase58Check*/
-			[]byte{},                     /*postHashToModify*/
-			RandomBytes(HashSizeBytes-1), /*parentStakeID*/
+			10,                                           /*feeRateNanosPerKB*/
+			m0Pub,                                        /*updaterPkBase58Check*/
+			m0Priv,                                       /*updaterPrivBase58Check*/
+			[]byte{},                                     /*postHashToModify*/
+			RandomBytes(HashSizeBytes-1),                 /*parentStakeID*/
 			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostInvalidParentStakeIDLength)
 	}
@@ -2491,15 +2499,15 @@ func TestSubmitPost(t *testing.T) {
 	{
 		_, _, _, err := _submitPost(
 			t, chain, db, params,
-			10,           /*feeRateNanosPerKB*/
-			m1Pub,        /*updaterPkBase58Check*/
-			m1Priv,       /*updaterPrivBase58Check*/
-			post1Hash[:], /*postHashToModify*/
-			[]byte{},     /*parentStakeID*/
+			10,                                           /*feeRateNanosPerKB*/
+			m1Pub,                                        /*updaterPkBase58Check*/
+			m1Priv,                                       /*updaterPrivBase58Check*/
+			post1Hash[:],                                 /*postHashToModify*/
+			[]byte{},                                     /*parentStakeID*/
 			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
 			1502947048*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -2508,14 +2516,14 @@ func TestSubmitPost(t *testing.T) {
 	{
 		_, _, _, err = _submitPost(
 			t, chain, db, params,
-			10,       /*feeRateNanosPerKB*/
-			m1Pub,    /*updaterPkBase58Check*/
-			m1Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                           /*feeRateNanosPerKB*/
+			m1Pub,                                        /*updaterPkBase58Check*/
+			m1Priv,                                       /*updaterPrivBase58Check*/
+			[]byte{},                                     /*postHashToModify*/
+			[]byte{},                                     /*parentStakeID*/
 			&DeSoBodySchema{Body: "this is a post body"}, /*body*/
 			[]byte{},
-			0, /*tstampNanos*/
+			0,    /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostTimestampIsZero)
@@ -2535,7 +2543,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -2554,7 +2562,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -2573,7 +2581,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -2592,7 +2600,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post body 2"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 	}
@@ -2601,82 +2609,82 @@ func TestSubmitPost(t *testing.T) {
 	// should be ignored.
 	{
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m0Pub,                      /*updaterPkBase58Check*/
-			m0Priv,                     /*updaterPrivBase58Check*/
-			post1Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
+			10,                                             /*feeRateNanosPerKB*/
+			m0Pub,                                          /*updaterPkBase58Check*/
+			m0Priv,                                         /*updaterPrivBase58Check*/
+			post1Hash[:],                                   /*postHashToModify*/
+			RandomBytes(HashSizeBytes),                     /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947017*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true            /*isHidden*/)
 	}
 
 	// Owner with profile modifying one of their posts should succeed but
 	// all non-body posts should be unchanged.
 	{
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m2Pub,                      /*updaterPkBase58Check*/
-			m2Priv,                     /*updaterPrivBase58Check*/
-			post4Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
+			10,                                             /*feeRateNanosPerKB*/
+			m2Pub,                                          /*updaterPkBase58Check*/
+			m2Priv,                                         /*updaterPrivBase58Check*/
+			post4Hash[:],                                   /*postHashToModify*/
+			RandomBytes(HashSizeBytes),                     /*parentStakeID*/
 			&DeSoBodySchema{Body: "m2 post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947018*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true            /*isHidden*/)
 	}
 
 	// ParamUpdater modifying their own post should succeed
 	{
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m3Pub,                      /*updaterPkBase58Check*/
-			m3Priv,                     /*updaterPrivBase58Check*/
-			post5Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
+			10,                                                       /*feeRateNanosPerKB*/
+			m3Pub,                                                    /*updaterPkBase58Check*/
+			m3Priv,                                                   /*updaterPrivBase58Check*/
+			post5Hash[:],                                             /*postHashToModify*/
+			RandomBytes(HashSizeBytes),                               /*parentStakeID*/
 			&DeSoBodySchema{Body: "paramUpdater post body MODIFIED"}, /*body*/
 			[]byte{},
 			1502947019*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true            /*isHidden*/)
 	}
 
 	// Modifying a post and then modifying it back should work.
 	{
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m1Pub,                      /*updaterPkBase58Check*/
-			m1Priv,                     /*updaterPrivBase58Check*/
-			post3Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
+			10,                                                      /*feeRateNanosPerKB*/
+			m1Pub,                                                   /*updaterPkBase58Check*/
+			m1Priv,                                                  /*updaterPrivBase58Check*/
+			post3Hash[:],                                            /*postHashToModify*/
+			RandomBytes(HashSizeBytes),                              /*parentStakeID*/
 			&DeSoBodySchema{Body: "sldkfjlskdfjlajflkasjdflkasjdf"}, /*body*/
 			[]byte{},
 			1502947022*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true            /*isHidden*/)
 		submitPost(
-			10,                         /*feeRateNanosPerKB*/
-			m1Pub,                      /*updaterPkBase58Check*/
-			m1Priv,                     /*updaterPrivBase58Check*/
-			post3Hash[:],               /*postHashToModify*/
-			RandomBytes(HashSizeBytes), /*parentStakeID*/
+			10,                                                               /*feeRateNanosPerKB*/
+			m1Pub,                                                            /*updaterPkBase58Check*/
+			m1Priv,                                                           /*updaterPrivBase58Check*/
+			post3Hash[:],                                                     /*postHashToModify*/
+			RandomBytes(HashSizeBytes),                                       /*parentStakeID*/
 			&DeSoBodySchema{Body: "m1 post body 1 no profile modified back"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 
 	// Comment on a post with an anonymous public key
 	{
 		submitPost(
-			10,           /*feeRateNanosPerKB*/
-			m0Pub,        /*updaterPkBase58Check*/
-			m0Priv,       /*updaterPrivBase58Check*/
-			[]byte{},     /*postHashToModify*/
-			post3Hash[:], /*parentStakeID*/
+			10,                                                  /*feeRateNanosPerKB*/
+			m0Pub,                                               /*updaterPkBase58Check*/
+			m0Priv,                                              /*updaterPrivBase58Check*/
+			[]byte{},                                            /*postHashToModify*/
+			post3Hash[:],                                        /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment 1 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947001*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	comment1Txn := txns[len(txns)-1]
 	comment1Hash := comment1Txn.Hash()
@@ -2684,15 +2692,15 @@ func TestSubmitPost(t *testing.T) {
 	// Make a few more comments.
 	{
 		submitPost(
-			10,           /*feeRateNanosPerKB*/
-			m0Pub,        /*updaterPkBase58Check*/
-			m0Priv,       /*updaterPrivBase58Check*/
-			[]byte{},     /*postHashToModify*/
-			post6Hash[:], /*parentStakeID*/
+			10,                                                  /*feeRateNanosPerKB*/
+			m0Pub,                                               /*updaterPkBase58Check*/
+			m0Priv,                                              /*updaterPrivBase58Check*/
+			[]byte{},                                            /*postHashToModify*/
+			post6Hash[:],                                        /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment 2 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947002*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	comment2CreatedTxnIndex := len(txns) - 1
 	comment2Txn := txns[comment2CreatedTxnIndex]
@@ -2700,15 +2708,15 @@ func TestSubmitPost(t *testing.T) {
 
 	{
 		submitPost(
-			10,           /*feeRateNanosPerKB*/
-			m2Pub,        /*updaterPkBase58Check*/
-			m2Priv,       /*updaterPrivBase58Check*/
-			[]byte{},     /*postHashToModify*/
-			post6Hash[:], /*parentStakeID*/
+			10,                                                  /*feeRateNanosPerKB*/
+			m2Pub,                                               /*updaterPkBase58Check*/
+			m2Priv,                                              /*updaterPrivBase58Check*/
+			[]byte{},                                            /*postHashToModify*/
+			post6Hash[:],                                        /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment 1 from m2 on post6"}, /*body*/
 			[]byte{},
 			1502947003*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	comment3CreatedTxnIndex := len(txns) - 1
 	comment3Txn := txns[comment3CreatedTxnIndex]
@@ -2716,15 +2724,15 @@ func TestSubmitPost(t *testing.T) {
 
 	{
 		submitPost(
-			10,           /*feeRateNanosPerKB*/
-			m3Pub,        /*updaterPkBase58Check*/
-			m3Priv,       /*updaterPrivBase58Check*/
-			[]byte{},     /*postHashToModify*/
-			post6Hash[:], /*parentStakeID*/
+			10,                                                  /*feeRateNanosPerKB*/
+			m3Pub,                                               /*updaterPkBase58Check*/
+			m3Priv,                                              /*updaterPrivBase58Check*/
+			[]byte{},                                            /*postHashToModify*/
+			post6Hash[:],                                        /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment 1 from m3 on post6"}, /*body*/
 			[]byte{},
 			1502947004*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	comment4CreatedTxnIndex := len(txns) - 1
 	comment4Txn := txns[comment4CreatedTxnIndex]
@@ -2736,121 +2744,121 @@ func TestSubmitPost(t *testing.T) {
 		// Modifying the comment with the wrong pub should fail.
 		_, _, _, err = _submitPost(
 			t, chain, db, params,
-			10,              /*feeRateNanosPerKB*/
-			m1Pub,           /*updaterPkBase58Check*/
-			m1Priv,          /*updaterPrivBase58Check*/
-			comment1Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                             /*feeRateNanosPerKB*/
+			m1Pub,                                                          /*updaterPkBase58Check*/
+			m1Priv,                                                         /*updaterPrivBase58Check*/
+			comment1Hash[:],                                                /*postHashToModify*/
+			[]byte{},                                                       /*parentStakeID*/
 			&DeSoBodySchema{Body: "modifying comment 1 by m1 should fail"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 
 		// Modifying the comment with the proper key should work.
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m0Pub,           /*updaterPkBase58Check*/
-			m0Priv,          /*updaterPrivBase58Check*/
-			comment1Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                         /*feeRateNanosPerKB*/
+			m0Pub,                                                      /*updaterPkBase58Check*/
+			m0Priv,                                                     /*updaterPrivBase58Check*/
+			comment1Hash[:],                                            /*postHashToModify*/
+			[]byte{},                                                   /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		// Modifying the comment with the proper key should work.
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m2Pub,           /*updaterPkBase58Check*/
-			m2Priv,          /*updaterPrivBase58Check*/
-			comment3Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                         /*feeRateNanosPerKB*/
+			m2Pub,                                                      /*updaterPkBase58Check*/
+			m2Priv,                                                     /*updaterPrivBase58Check*/
+			comment3Hash[:],                                            /*postHashToModify*/
+			[]byte{},                                                   /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment from m2 on post6 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true            /*isHidden*/)
 		comment3HiddenTxnIndex = len(txns) - 1
 
 		// Modify a comment and modify it back.
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m0Pub,           /*updaterPkBase58Check*/
-			m0Priv,          /*updaterPrivBase58Check*/
-			comment2Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                         /*feeRateNanosPerKB*/
+			m0Pub,                                                      /*updaterPkBase58Check*/
+			m0Priv,                                                     /*updaterPrivBase58Check*/
+			comment2Hash[:],                                            /*postHashToModify*/
+			[]byte{},                                                   /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true            /*isHidden*/)
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m0Pub,           /*updaterPkBase58Check*/
-			m0Priv,          /*updaterPrivBase58Check*/
-			comment2Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                  /*feeRateNanosPerKB*/
+			m0Pub,                                               /*updaterPkBase58Check*/
+			m0Priv,                                              /*updaterPrivBase58Check*/
+			comment2Hash[:],                                     /*postHashToModify*/
+			[]byte{},                                            /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment 2 from m0 on post3"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 
 	// Commenting on a public key should work regardless of whether
 	// a profile actually exists for that stake ID.
 	{
 		submitPost(
-			10,        /*feeRateNanosPerKB*/
-			m0Pub,     /*updaterPkBase58Check*/
-			m0Priv,    /*updaterPrivBase58Check*/
-			[]byte{},  /*postHashToModify*/
-			m1PkBytes, /*parentStakeID*/
+			10,                                                    /*feeRateNanosPerKB*/
+			m0Pub,                                                 /*updaterPkBase58Check*/
+			m0Priv,                                                /*updaterPrivBase58Check*/
+			[]byte{},                                              /*postHashToModify*/
+			m1PkBytes,                                             /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment m0 on profile m1 [1]"}, /*body*/
 			[]byte{},
 			1502947005*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	comment5Txn := txns[len(txns)-1]
 	comment5Hash := comment5Txn.Hash()
 	{
 		submitPost(
-			10,        /*feeRateNanosPerKB*/
-			m1Pub,     /*updaterPkBase58Check*/
-			m1Priv,    /*updaterPrivBase58Check*/
-			[]byte{},  /*postHashToModify*/
-			m2PkBytes, /*parentStakeID*/
+			10,                                                    /*feeRateNanosPerKB*/
+			m1Pub,                                                 /*updaterPkBase58Check*/
+			m1Priv,                                                /*updaterPrivBase58Check*/
+			[]byte{},                                              /*postHashToModify*/
+			m2PkBytes,                                             /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment m1 on profile m2 [1]"}, /*body*/
 			[]byte{},
 			1502947006*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	comment6Txn := txns[len(txns)-1]
 	comment6Hash := comment6Txn.Hash()
 	{
 		submitPost(
-			10,        /*feeRateNanosPerKB*/
-			m3Pub,     /*updaterPkBase58Check*/
-			m3Priv,    /*updaterPrivBase58Check*/
-			[]byte{},  /*postHashToModify*/
-			m3PkBytes, /*parentStakeID*/
+			10,                                                    /*feeRateNanosPerKB*/
+			m3Pub,                                                 /*updaterPkBase58Check*/
+			m3Priv,                                                /*updaterPrivBase58Check*/
+			[]byte{},                                              /*postHashToModify*/
+			m3PkBytes,                                             /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment m3 on profile m3 [1]"}, /*body*/
 			[]byte{},
 			1502947007*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	comment7Txn := txns[len(txns)-1]
 	comment7Hash := comment7Txn.Hash()
 	{
 		submitPost(
-			10,        /*feeRateNanosPerKB*/
-			m0Pub,     /*updaterPkBase58Check*/
-			m0Priv,    /*updaterPrivBase58Check*/
-			[]byte{},  /*postHashToModify*/
-			m3PkBytes, /*parentStakeID*/
+			10,                                                    /*feeRateNanosPerKB*/
+			m0Pub,                                                 /*updaterPkBase58Check*/
+			m0Priv,                                                /*updaterPrivBase58Check*/
+			[]byte{},                                              /*postHashToModify*/
+			m3PkBytes,                                             /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment m0 on profile m3 [2]"}, /*body*/
 			[]byte{},
 			1502947008*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	comment8Txn := txns[len(txns)-1]
 	comment8Hash := comment8Txn.Hash()
@@ -2859,51 +2867,51 @@ func TestSubmitPost(t *testing.T) {
 	// and fail when it's not.
 	{
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m0Pub,           /*updaterPkBase58Check*/
-			m0Priv,          /*updaterPrivBase58Check*/
-			comment5Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                           /*feeRateNanosPerKB*/
+			m0Pub,                                                        /*updaterPkBase58Check*/
+			m0Priv,                                                       /*updaterPrivBase58Check*/
+			comment5Hash[:],                                              /*postHashToModify*/
+			[]byte{},                                                     /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment 1 from m0 on post3 MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true            /*isHidden*/)
 
 		_, _, _, err = _submitPost(
 			t, chain, db, params,
-			10,              /*feeRateNanosPerKB*/
-			m1Pub,           /*updaterPkBase58Check*/
-			m1Priv,          /*updaterPrivBase58Check*/
-			comment5Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                             /*feeRateNanosPerKB*/
+			m1Pub,                                                          /*updaterPkBase58Check*/
+			m1Priv,                                                         /*updaterPrivBase58Check*/
+			comment5Hash[:],                                                /*postHashToModify*/
+			[]byte{},                                                       /*parentStakeID*/
 			&DeSoBodySchema{Body: "modifying comment 1 by m1 should fail"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorSubmitPostPostModificationNotAuthorized)
 
 		// Modify a profile comment then modify it back.
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m1Pub,           /*updaterPkBase58Check*/
-			m1Priv,          /*updaterPrivBase58Check*/
-			comment6Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                             /*feeRateNanosPerKB*/
+			m1Pub,                                                          /*updaterPkBase58Check*/
+			m1Priv,                                                         /*updaterPrivBase58Check*/
+			comment6Hash[:],                                                /*postHashToModify*/
+			[]byte{},                                                       /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment m1 on profile m2 [1] MODIFIED"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true            /*isHidden*/)
 		submitPost(
-			10,              /*feeRateNanosPerKB*/
-			m1Pub,           /*updaterPkBase58Check*/
-			m1Priv,          /*updaterPrivBase58Check*/
-			comment6Hash[:], /*postHashToModify*/
-			[]byte{},        /*parentStakeID*/
+			10,                                                    /*feeRateNanosPerKB*/
+			m1Pub,                                                 /*updaterPkBase58Check*/
+			m1Priv,                                                /*updaterPrivBase58Check*/
+			comment6Hash[:],                                       /*postHashToModify*/
+			[]byte{},                                              /*parentStakeID*/
 			&DeSoBodySchema{Body: "comment m1 on profile m2 [1]"}, /*body*/
 			[]byte{},
 			1502947049*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 
 	// Reposting tests
@@ -2918,7 +2926,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{},
 			post3Hash[:],
 			15029557050*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false            /*isHidden*/)
 
 	}
 	repost1Txn := txns[len(txns)-1]
@@ -2935,7 +2943,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{},
 			post4Hash[:],
 			15029557051*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false            /*isHidden*/)
 		repost2Txn := txns[len(txns)-1]
 		repost2Hash := repost2Txn.Hash()
 		submitPost(
@@ -2947,7 +2955,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{},
 			post4Hash[:],
 			15029557052*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true             /*isHidden*/)
 	}
 	// repost 3 - Quote Repost
 	{
@@ -2960,7 +2968,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{Body: "quote-post"},
 			post5Hash[:],
 			15029557053*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false            /*isHidden*/)
 	}
 	// repost 4 - Quote Repost + hide
 	{
@@ -2973,7 +2981,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{Body: "quote-post-hide-me"},
 			post6Hash[:],
 			15029557054*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false            /*isHidden*/)
 		repost4Txn := txns[len(txns)-1]
 		repost4hash := repost4Txn.Hash()
 		submitPost(
@@ -2985,7 +2993,7 @@ func TestSubmitPost(t *testing.T) {
 			&DeSoBodySchema{Body: "quote-post-hide-me"},
 			post6Hash[:],
 			15029557054*1e9, /*tstampNanos*/
-			true /*isHidden*/)
+			true             /*isHidden*/)
 	}
 	// repost -- test exceptions
 	{
@@ -3649,7 +3657,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
 	}
@@ -3669,7 +3677,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameTooLong)
 	}
@@ -3689,7 +3697,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,       /*newProfilePic*/
 			10*100,         /*newCreatorBasisPoints*/
 			2*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileDescriptionTooLong)
 	}
@@ -3707,7 +3715,7 @@ func TestUpdateProfile(t *testing.T) {
 			longPic,       /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxProfilePicSize)
 	}
@@ -3725,7 +3733,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			100*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
@@ -3743,7 +3751,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			.99*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
@@ -3761,7 +3769,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			101*100,       /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileCreatorPercentageSize)
 	}
@@ -3779,7 +3787,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,        /*newProfilePic*/
 			10*100,          /*newCreatorBasisPoints*/
 			1.25*100*100,    /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false            /*isHidden*/)
 		require.Error(err)
 		// This returned RuleErrorProfilePubKeyNotAuthorized for me once
 		// "ConnectTransaction: : _connectUpdateProfile: ... RuleErrorProfilePubKeyNotAuthorized"
@@ -3799,7 +3807,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -3816,7 +3824,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Username that does not match our regex should fail
@@ -3832,7 +3840,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3847,7 +3855,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,          /*newProfilePic*/
 			10*100,            /*newCreatorBasisPoints*/
 			1.25*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false              /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3862,7 +3870,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,            /*newProfilePic*/
 			10*100,              /*newCreatorBasisPoints*/
 			1.25*100*100,        /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3877,7 +3885,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -3892,7 +3900,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                  /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 	}
@@ -3910,7 +3918,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -3927,7 +3935,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -3942,7 +3950,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
@@ -3955,7 +3963,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -3972,7 +3980,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -3989,7 +3997,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 	}
@@ -4006,7 +4014,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Leaving username, description, and pic blank should result in a noop.
@@ -4021,7 +4029,7 @@ func TestUpdateProfile(t *testing.T) {
 			"",           /*newProfilePic*/
 			10*100,       /*newCreatorBasisPoints*/
 			1.25*100*100, /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false         /*isHidden*/)
 	}
 
 	// An update followed by a reversion should result in no change.
@@ -4036,7 +4044,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic+"woohoo",    /*newProfilePic*/
 			15*100,               /*newCreatorBasisPoints*/
 			1.7*100*100,          /*newStakeMultipleBasisPoints*/
-			true /*isHidden*/)
+			true                  /*isHidden*/)
 
 		updateProfile(
 			1,             /*feeRateNanosPerKB*/
@@ -4048,7 +4056,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// A normal user updating their profile should succeed.
@@ -4063,7 +4071,7 @@ func TestUpdateProfile(t *testing.T) {
 			otherShortPic,      /*newProfilePic*/
 			12*100,             /*newCreatorBasisPoints*/
 			1.6*100*100,        /*newStakeMultipleBasisPoints*/
-			true /*isHidden*/)
+			true                /*isHidden*/)
 	}
 
 	// Normal user updating another user's profile should fail.
@@ -4079,7 +4087,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,         /*newProfilePic*/
 			10*100,           /*newCreatorBasisPoints*/
 			1.25*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false             /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -4096,7 +4104,7 @@ func TestUpdateProfile(t *testing.T) {
 			otherShortPic,                /*newProfilePic*/
 			11*100,                       /*newCreatorBasisPoints*/
 			1.5*100*100,                  /*newStakeMultipleBasisPoints*/
-			true /*isHidden*/)
+			true                          /*isHidden*/)
 	}
 
 	// ParamUpdater creating another user's profile should succeed.
@@ -4111,7 +4119,7 @@ func TestUpdateProfile(t *testing.T) {
 			otherShortPic,                /*newProfilePic*/
 			11*100,                       /*newCreatorBasisPoints*/
 			1.5*100*100,                  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                         /*isHidden*/)
 	}
 
 	// Create Profile Fee and Minimum Network Fee tests
@@ -4945,44 +4953,44 @@ func TestLikeTxns(t *testing.T) {
 	require.Contains(err.Error(), RuleErrorCannotLikeNonexistentPost)
 
 	submitPost(
-		10,       /*feeRateNanosPerKB*/
-		m0Pub,    /*updaterPkBase58Check*/
-		m0Priv,   /*updaterPrivBase58Check*/
-		[]byte{}, /*postHashToModify*/
-		[]byte{}, /*parentStakeID*/
+		10,                                                 /*feeRateNanosPerKB*/
+		m0Pub,                                              /*updaterPkBase58Check*/
+		m0Priv,                                             /*updaterPrivBase58Check*/
+		[]byte{},                                           /*postHashToModify*/
+		[]byte{},                                           /*parentStakeID*/
 		&DeSoBodySchema{Body: "m0 post body 1 no profile"}, /*body*/
 		[]byte{},
 		1602947011*1e9, /*tstampNanos*/
-		false /*isHidden*/)
+		false           /*isHidden*/)
 	post1Txn := txns[len(txns)-1]
 	post1Hash := *post1Txn.Hash()
 
 	{
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m0Pub,    /*updaterPkBase58Check*/
-			m0Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                 /*feeRateNanosPerKB*/
+			m0Pub,                                              /*updaterPkBase58Check*/
+			m0Priv,                                             /*updaterPrivBase58Check*/
+			[]byte{},                                           /*postHashToModify*/
+			[]byte{},                                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body 2 no profile"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post2Txn := txns[len(txns)-1]
 	post2Hash := *post2Txn.Hash()
 
 	{
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m1Pub,    /*updaterPkBase58Check*/
-			m1Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                 /*feeRateNanosPerKB*/
+			m1Pub,                                              /*updaterPkBase58Check*/
+			m1Priv,                                             /*updaterPrivBase58Check*/
+			[]byte{},                                           /*postHashToModify*/
+			[]byte{},                                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m1 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post3Txn := txns[len(txns)-1]
 	post3Hash := *post3Txn.Hash()
@@ -5622,7 +5630,7 @@ func TestFollowTxns(t *testing.T) {
 		shortPic,      /*newProfilePic*/
 		0,             /*newCreatorBasisPoints*/
 		1.25*100*100,  /*newStakeMultipleBasisPoints*/
-		false /*isHidden*/)
+		false          /*isHidden*/)
 
 	updateProfile(
 		5,             /*feeRateNanosPerKB*/
@@ -5634,7 +5642,7 @@ func TestFollowTxns(t *testing.T) {
 		shortPic,      /*newProfilePic*/
 		0,             /*newCreatorBasisPoints*/
 		1.25*100*100,  /*newStakeMultipleBasisPoints*/
-		false /*isHidden*/)
+		false          /*isHidden*/)
 
 	updateProfile(
 		5,             /*feeRateNanosPerKB*/
@@ -5646,7 +5654,7 @@ func TestFollowTxns(t *testing.T) {
 		shortPic,      /*newProfilePic*/
 		0,             /*newCreatorBasisPoints*/
 		1.25*100*100,  /*newStakeMultipleBasisPoints*/
-		false /*isHidden*/)
+		false          /*isHidden*/)
 
 	// m0 -> m1
 	doFollowTxn(m0Pub, m1Pub, m0Priv, false /*isUnfollow*/, 10 /*feeRateNanosPerKB*/)
@@ -9661,7 +9669,7 @@ func _helpTestCreatorCoinBuySell(
 				testData.UpdaterPrivateKeyBase58Check, profilePkBytes, testData.ProfileUsername,
 				testData.ProfileDescription, testData.ProfilePic,
 				testData.ProfileCreatorBasisPoints, /*CreatorBasisPoints*/
-				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
+				12500                               /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
 			require.NoError(err)
 		} else if testData.TxnType == TxnTypeFollow {
 			utxoOps, txn, _, err = _doFollowTxn(
@@ -9734,7 +9742,7 @@ func _helpTestCreatorCoinBuySell(
 				testData.CreatorCoinToSellNanos,      /*CreatorCoinToSellNanos*/
 				testData.DeSoToAddNanos,              /*DeSoToAddNanos*/
 				testData.MinDeSoExpectedNanos,        /*MinDeSoExpectedNanos*/
-				testData.MinCreatorCoinExpectedNanos /*MinCreatorCoinExpectedNanos*/)
+				testData.MinCreatorCoinExpectedNanos  /*MinCreatorCoinExpectedNanos*/)
 			require.NoError(err)
 		}
 
@@ -10249,7 +10257,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 	// Have m0 buy some m1 as well
@@ -10263,7 +10271,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 
@@ -10645,7 +10653,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 	// Have m0 buy some m1 as well.
@@ -10659,7 +10667,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 
@@ -11560,7 +11568,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 
 	_, _, _, err := _updateProfile(
 		t, chain, db, params,
-		feeRateNanosPerKB /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
+		feeRateNanosPerKB                  /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
 		"i am m0", "m0 profile pic", 2500, /*CreatorBasisPoints*/
 		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
 	require.NoError(err)
@@ -11575,7 +11583,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		0,                           /*CreatorCoinToSellNanos*/
 		0,                           /*DeSoToAddNanos*/
 		0,                           /*MinDeSoExpectedNanos*/
-		0 /*MinCreatorCoinExpectedNanos*/)
+		0                            /*MinCreatorCoinExpectedNanos*/)
 	require.NoError(err)
 
 	_, _, _, err = _doCreatorCoinTransferTxn(
@@ -15386,7 +15394,7 @@ func TestNFTBasic(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -15405,6 +15413,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -15424,7 +15433,7 @@ func TestNFTBasic(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Error case: m0 cannot turn a vanilla repost of their post into an NFT.
@@ -15439,7 +15448,7 @@ func TestNFTBasic(t *testing.T) {
 			&DeSoBodySchema{}, /*body*/
 			post1Hash[:],      /*repostedPostHash*/
 			1502947011*1e9,    /*tstampNanos*/
-			false /*isHidden*/)
+			false              /*isHidden*/)
 
 		vanillaRepostPostHash := testMeta.txns[len(testMeta.txns)-1].Hash()
 		_, _, _, err := _createNFT(
@@ -15455,6 +15464,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -15476,6 +15486,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -15497,6 +15508,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -15518,6 +15530,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -15545,6 +15558,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -15565,6 +15579,7 @@ func TestNFTBasic(t *testing.T) {
 			0,    /*nftRoyaltyToCreatorBasisPoints*/
 			0,    /*nftRoyaltyToCoinBasisPoints*/
 			true, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -15591,6 +15606,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -15613,6 +15629,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
@@ -15662,7 +15679,7 @@ func TestNFTBasic(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -15681,6 +15698,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
@@ -15712,6 +15730,7 @@ func TestNFTBasic(t *testing.T) {
 			0,      /*nftRoyaltyToCreatorBasisPoints*/
 			0,      /*nftRoyaltyToCoinBasisPoints*/
 			false,  /*IsBuyNow*/
+			0,
 		)
 
 		// Check that m0 was charged the correct nftFee.
@@ -15754,7 +15773,7 @@ func TestNFTBasic(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 3"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post3Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -15857,6 +15876,7 @@ func TestNFTBasic(t *testing.T) {
 			false, /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorUpdateNFTByNonOwner)
@@ -15921,6 +15941,7 @@ func TestNFTBasic(t *testing.T) {
 			false, /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCannotUpdateNonExistentNFT)
@@ -15951,6 +15972,7 @@ func TestNFTBasic(t *testing.T) {
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTUpdateMustUpdateIsForSaleStatus)
@@ -15985,6 +16007,7 @@ func TestNFTBasic(t *testing.T) {
 			false, /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false,
+			0,
 		)
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, 2)
 		require.Equal(0, len(bidEntries))
@@ -16136,6 +16159,7 @@ func TestNFTBasic(t *testing.T) {
 			true,
 			12,
 			true,
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCannotHaveUnlockableAndBuyNowNFT)
@@ -16212,7 +16236,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -16229,7 +16253,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Make sure that m0 has coins in circulation so that creator coin royalties can be paid.
@@ -16270,6 +16294,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			10000, /*nftRoyaltyToCreatorBasisPoints*/
 			1,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
@@ -16287,6 +16312,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			1,     /*nftRoyaltyToCreatorBasisPoints*/
 			10000, /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTRoyaltyHasTooManyBasisPoints)
@@ -16307,6 +16333,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			math.MaxUint64-1, /*nftRoyaltyToCreatorBasisPoints*/
 			2,                /*nftRoyaltyToCoinBasisPoints*/
 			false,            /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTRoyaltyOverflow)
@@ -16332,6 +16359,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			1000,  /*nftRoyaltyToCreatorBasisPoints*/
 			2000,  /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -16529,6 +16557,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -16743,7 +16772,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		_submitPostWithTestMeta(
 			testMeta,
@@ -16755,7 +16784,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
 	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
@@ -16773,7 +16802,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Create NFT: Let's have m0 create two NFTs for testing.
@@ -16797,6 +16826,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		// Create an NFT with one copy to test making a standing offer on an NFT that isn't for sale.
@@ -16814,6 +16844,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -17069,7 +17100,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -17086,7 +17117,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Create NFT with a minimum bid amount.
@@ -17109,6 +17140,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -17320,7 +17352,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -17337,7 +17369,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Create NFT with IsForSale=false.
@@ -17360,6 +17392,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -17405,6 +17438,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -17534,7 +17568,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -17551,7 +17585,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Error case: CreatorBasisPoints / CoinBasisPoints greater than max.
@@ -17569,6 +17603,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			10001, /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -17587,6 +17622,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			10001, /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -17605,6 +17641,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			5001,  /*nftRoyaltyToCreatorBasisPoints*/
 			5001,  /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -17631,6 +17668,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,       /*nftRoyaltyToCreatorBasisPoints*/
 			0,       /*nftRoyaltyToCoinBasisPoints*/
 			false,   /*IsBuyNow*/
+			0,
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -17653,6 +17691,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,       /*nftRoyaltyToCreatorBasisPoints*/
 			0,       /*nftRoyaltyToCoinBasisPoints*/
 			false,   /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -17672,6 +17711,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,       /*nftRoyaltyToCreatorBasisPoints*/
 			0,       /*nftRoyaltyToCoinBasisPoints*/
 			false,   /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -17691,6 +17731,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		require.Error(err)
@@ -17744,6 +17785,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			true,  /*IsForSale*/
 			1000,  /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -17874,7 +17916,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -17891,7 +17933,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
@@ -17910,6 +17952,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -18159,7 +18202,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -18176,7 +18219,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
@@ -18195,6 +18238,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -18210,6 +18254,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			true,  /*IsForSale*/
 			100,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		_updateNFTWithTestMeta(
@@ -18222,6 +18267,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			true,  /*IsForSale*/
 			300,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		_updateNFTWithTestMeta(
@@ -18234,6 +18280,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			true,  /*IsForSale*/
 			500,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		_updateNFTWithTestMeta(
@@ -18246,6 +18293,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			true,  /*IsForSale*/
 			400,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		_updateNFTWithTestMeta(
@@ -18258,6 +18306,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			true,  /*IsForSale*/
 			200,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -18444,7 +18493,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		_submitPostWithTestMeta(
 			testMeta,
@@ -18456,7 +18505,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		_submitPostWithTestMeta(
 			testMeta,
@@ -18468,7 +18517,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 3"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 	post2Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
@@ -18487,7 +18536,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Error case: creating an NFT with 1001 copies should fail since the default max is 1000.
@@ -18505,6 +18554,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTooManyNFTCopies)
@@ -18526,6 +18576,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -18556,6 +18607,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTooManyNFTCopies)
@@ -18577,6 +18629,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -18592,7 +18645,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m3Priv,
 			-1, -1, -1, -1,
 			MaxMaxCopiesPerNFT+1, /*maxCopiesPerNFT*/
-			true)                 /*flushToDB*/
+			true) /*flushToDB*/
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxCopiesPerNFTTooHigh)
 
@@ -18603,7 +18656,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m3Priv,
 			-1, -1, -1, -1,
 			MinMaxCopiesPerNFT-1, /*maxCopiesPerNFT*/
-			true)                 /*flushToDB*/
+			true) /*flushToDB*/
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxCopiesPerNFTTooLow)
 	}
@@ -18636,6 +18689,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -18753,7 +18807,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -18771,7 +18825,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		// We only need 1 copy for this test.
 		_createNFTWithTestMeta(
@@ -18788,6 +18842,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		// Post 1 should have 1 copies.
@@ -18836,6 +18891,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			false, /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorUpdateNFTByNonOwner)
@@ -18853,6 +18909,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		_createNFTBidWithTestMeta(
@@ -18910,6 +18967,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		_createNFTBidWithTestMeta(
@@ -19044,7 +19102,7 @@ func TestNFTBuyNow(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -19062,7 +19120,7 @@ func TestNFTBuyNow(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 	// Make sure that m0 has coins in circulation so that creator coin royalties can be paid.
 	{
@@ -19097,11 +19155,12 @@ func TestNFTBuyNow(t *testing.T) {
 			100,  /*NumCopies*/
 			true, /*HasUnlockable*/
 			true, /*IsForSale*/
-			10,   /*MinBidAmountNanos*/
+			0,    /*MinBidAmountNanos*/
 			0,    /*nftFee*/
 			0,    /*nftRoyaltyToCreatorBasisPoints*/
 			0,    /*nftRoyaltyToCoinBasisPoints*/
 			true, /*IsBuyNow*/
+			10,
 		)
 
 		require.Error(err)
@@ -19123,41 +19182,17 @@ func TestNFTBuyNow(t *testing.T) {
 			100,    /*NumCopies*/
 			false,  /*HasUnlockable*/
 			true,   /*IsForSale*/
-			100,    /*MinBidAmountNanos*/
+			0,      /*MinBidAmountNanos*/
 			0,      /*nftFee*/
 			10*100, /*nftRoyaltyToCreatorBasisPoints*/
 			20*100, /*nftRoyaltyToCoinBasisPoints*/
 			true,   /*IsBuyNow*/
+			100,
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(929), m0BalAfterNFT)
-	}
-
-	// Error case: Attempt to make some bids below the minimum bid amount, they should error.
-	{
-		_, _, _, err := _createNFTBid(
-			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
-			post1Hash,
-			1, /*SerialNumber*/
-			0, /*BidAmountNanos*/
-		)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorNFTBidLessThanMinBidAmountNanos)
-
-		_, _, _, err = _createNFTBid(
-			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
-			post1Hash,
-			1, /*SerialNumber*/
-			5, /*BidAmountNanos*/
-		)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Equal(uint64(928), m0BalAfterNFT)
 	}
 
 	// Have m1 buy serial #1.
@@ -19165,7 +19200,7 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(100)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(929), m0BalBefore)
+		require.Equal(uint64(928), m0BalBefore)
 
 		// Bidder Balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
@@ -19197,7 +19232,7 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Balance after. M0's balance should increase by the bid amount (100) less coin royalties (20)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(1009), m0BalAfter)
+		require.Equal(uint64(1008), m0BalAfter)
 
 		// Balance after. m1 should pay for the bid amount + cover the transaction fee.
 		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
@@ -19222,8 +19257,9 @@ func TestNFTBuyNow(t *testing.T) {
 			post1Hash,
 			1,    /*SerialNumber*/
 			true, /*IsForSale*/
-			150,  /*MinBidAmountNanos*/
+			0,    /*MinBidAmountNanos*/
 			true, /*IsBuyNow*/
+			150,
 		)
 	}
 
@@ -19232,11 +19268,11 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(150)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(1009), m0BalBefore)
+		require.Equal(uint64(1008), m0BalBefore)
 
 		// Seller Balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
-		require.Equal(uint64(898), m1BalBefore)
+		require.Equal(uint64(897), m1BalBefore)
 
 		// Bidder Balance before.
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
@@ -19271,12 +19307,12 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Creator Balance after. M0's balance should increase by the creator royalties (15)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(1024), m0BalAfter)
+		require.Equal(uint64(1023), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+15)
 
 		// Seller Balance after. M1's balance should increase by the bid amount (150) less coin royalties (30) and creator royalties (15)
 		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
-		require.Equal(uint64(1003), m1BalAfter)
+		require.Equal(uint64(1002), m1BalAfter)
 		require.Equal(m1BalAfter, m1BalBefore+bidAmountNanos-30-15)
 
 		// Bidder Balance after. m2 should pay for the bid amount (150) + cover the transaction fee (1).
@@ -19305,6 +19341,7 @@ func TestNFTBuyNow(t *testing.T) {
 			true,  /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 
@@ -19328,7 +19365,7 @@ func TestNFTBuyNow(t *testing.T) {
 		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
 		require.Equal(1, len(bidEntries))
 
-		// m2: Add a bid from m2 for fun.
+		// m0: Add a bid from m0 for fun.
 		_createNFTBidWithTestMeta(
 			testMeta,
 			10, /*FeeRateNanosPerKB*/
@@ -19370,7 +19407,7 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(20)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(1023), m0BalBefore)
+		require.Equal(uint64(1022), m0BalBefore)
 
 		// Bidder Balance before.
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
@@ -19407,7 +19444,7 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Creator Balance after. M0's balance should increase by the creator royalties (2)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(1025), m0BalAfter)
+		require.Equal(uint64(1024), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+2)
 
 		// Bidder Balance after. M1's balance should decrease by the bid amount (20)
@@ -20375,7 +20412,7 @@ func TestDeSoDiamonds(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 	_ = post1Hash
@@ -20663,7 +20700,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 	_ = post1Hash
@@ -20812,7 +20849,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		_submitPostWithTestMeta(
 			testMeta,
@@ -20824,7 +20861,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
 	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
@@ -20842,7 +20879,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Have m0 turn both post1 and post2 into NFTs.
@@ -20865,6 +20902,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		_createNFTWithTestMeta(
@@ -20881,6 +20919,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			0,     /*nftRoyaltyToCreatorBasisPoints*/
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 			false, /*IsBuyNow*/
+			0,
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -20934,6 +20973,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			false, /*IsForSale*/
 			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
+			0,
 		)
 	}
 

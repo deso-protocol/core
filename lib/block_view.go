@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -232,8 +231,11 @@ type NFTEntry struct {
 	// If this NFT was transferred to the current owner, it will be pending until accepted.
 	IsPending bool
 
-	// If an NFT does not have unlockable content, it can be sold instantly at the MinBidAmountNanos.
+	// If an NFT does not have unlockable content, it can be sold instantly at BuyNowPriceNanos.
 	IsBuyNow bool
+
+	// If an NFT is a Buy Now NFT, it can be purchased for this price.
+	BuyNowPriceNanos uint64
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -6841,10 +6843,16 @@ func (bav *UtxoView) _connectCreateNFT(
 	txMeta := txn.TxnMeta.(*CreateNFTMetadata)
 
 	isBuyNow := false
-	// Only extract the IsBuyNow value if we are past the BuyNowNFTBlockHeight
-	if val, exists := txn.ExtraData[IsBuyNowKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
-		rr := bytes.NewReader(val)
-		isBuyNow = ReadBoolByte(rr)
+	buyNowPrice := uint64(0)
+	// Only extract the BuyNowPriceKey value if we are past the BuyNowNFTBlockHeight
+	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
+		var bytesRead int
+		buyNowPrice, bytesRead = Uvarint(val)
+		if bytesRead <= 0 {
+			return 0, 0, nil, errors.New(
+				"_connectCreateNFT: Problem reading bytes for BuyNowPriceNanos")
+		}
+		isBuyNow = true
 	}
 	// Validate the txMeta.
 	if txMeta.NumCopies > bav.GlobalParamsEntry.MaxCopiesPerNFT {
@@ -6948,6 +6956,7 @@ func (bav *UtxoView) _connectCreateNFT(
 			IsForSale:         txMeta.IsForSale,
 			MinBidAmountNanos: txMeta.MinBidAmountNanos,
 			IsBuyNow:          isBuyNow,
+			BuyNowPriceNanos:  buyNowPrice,
 		}
 		bav._setNFTEntryMappings(nftEntry)
 	}
@@ -6976,10 +6985,16 @@ func (bav *UtxoView) _connectUpdateNFT(
 	txMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 
 	isBuyNow := false
-	// Only extract the IsBuyNow value if we are past the BuyNowNFTBlockHeight
-	if val, exists := txn.ExtraData[IsBuyNowKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
-		rr := bytes.NewReader(val)
-		isBuyNow = ReadBoolByte(rr)
+	buyNowPrice := uint64(0)
+	// Only extract the BuyNowPriceKey value if we are past the BuyNowNFTBlockHeight
+	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
+		var bytesRead int
+		buyNowPrice, bytesRead = Uvarint(val)
+		if bytesRead <= 0 {
+			return 0, 0, nil, errors.New(
+				"_connectCreateNFT: Problem reading bytes for BuyNowPriceNanos")
+		}
+		isBuyNow = true
 	}
 
 	// Verify the NFT entry exists.
@@ -7063,6 +7078,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 		MinBidAmountNanos: txMeta.MinBidAmountNanos,
 		UnlockableText:    prevNFTEntry.UnlockableText,
 		IsBuyNow:          isBuyNow,
+		BuyNowPriceNanos:  buyNowPrice,
 		// Keep the last accepted bid amount nanos from the previous entry since this
 		// value is only updated when a new bid is accepted.
 		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
@@ -7249,19 +7265,41 @@ func (bav *UtxoView) _connectNFTBid(
 		if txMeta.BidAmountNanos < nftEntry.MinBidAmountNanos && !(txMeta.BidAmountNanos == 0 && prevNFTBidEntry != nil) {
 			return 0, 0, nil, RuleErrorNFTBidLessThanMinBidAmountNanos
 		}
-		if nftEntry.IsBuyNow && txMeta.BidAmountNanos == 0 {
-			return 0, 0, nil, RuleErrorZeroBidOnBuyNowNFT
-		}
+
 		// Verify that we are not bidding on a Buy Now NFT before the Buy Now NFT Block Height. This should never happen.
 		if nftEntry.IsBuyNow && blockHeight < BuyNowNFTBlockHeight {
 			return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowNFTBeforeBlockHeight, "_connectNFTBid: ")
 		}
-		if nftEntry.IsBuyNow && txMeta.BidAmountNanos >= nftEntry.MinBidAmountNanos {
+
+		// If the NFT is a Buy Now NFT and the bid amount is greater than the Buy Now Price, we treat this bid as a
+		// a purchase. We also make sure that the Bid Amount is greater than 0. A bid amount of 0 would signify the
+		// cancellation of a previous bid. It is possible to have the Buy Now Price be 0 nanos, but it would require
+		// a bid of at least 1 nano.
+		if nftEntry.IsBuyNow && txMeta.BidAmountNanos >= nftEntry.BuyNowPriceNanos && txMeta.BidAmountNanos > 0 {
 			isBuyNowBid = true
 		}
 	}
 
-	// If this is a bid on an NFT that is not "Buy Now" enabled, simply create the bid.
+	deletePrevBidAndSetNewBid := func() {
+		// If an old bid exists, delete it.
+		if prevNFTBidEntry != nil {
+			bav._deleteNFTBidEntryMappings(prevNFTBidEntry)
+		}
+
+		// If the new bid has a non-zero amount, set it.
+		if txMeta.BidAmountNanos != 0 {
+			// Zero bids are not allowed, submitting a zero bid effectively withdraws a prior bid.
+			newBidEntry := &NFTBidEntry{
+				BidderPKID:     bidderPKID.PKID,
+				NFTPostHash:    txMeta.NFTPostHash,
+				SerialNumber:   txMeta.SerialNumber,
+				BidAmountNanos: txMeta.BidAmountNanos,
+			}
+			bav._setNFTBidEntryMappings(newBidEntry)
+		}
+	}
+
+	// If this is a bid on an NFT that is not "Buy Now" enabled or a bid below the Buy Now Price, simply create the bid.
 	if !isBuyNowBid {
 		// Connect basic txn to get the total input and the total output without
 		// considering the transaction metadata.
@@ -7295,22 +7333,8 @@ func (bav *UtxoView) _connectNFTBid(
 			// public key.
 		}
 
-		// If an old bid exists, delete it.
-		if prevNFTBidEntry != nil {
-			bav._deleteNFTBidEntryMappings(prevNFTBidEntry)
-		}
-
-		// If the new bid has a non-zero amount, set it.
-		if txMeta.BidAmountNanos != 0 {
-			// Zero bids are not allowed, submitting a zero bid effectively withdraws a prior bid.
-			newBidEntry := &NFTBidEntry{
-				BidderPKID:     bidderPKID.PKID,
-				NFTPostHash:    txMeta.NFTPostHash,
-				SerialNumber:   txMeta.SerialNumber,
-				BidAmountNanos: txMeta.BidAmountNanos,
-			}
-			bav._setNFTBidEntryMappings(newBidEntry)
-		}
+		// Delete the previous bid and set the new bid.
+		deletePrevBidAndSetNewBid()
 
 		// Add an operation to the list at the end indicating we've connected an NFT bid.
 		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -7320,23 +7344,19 @@ func (bav *UtxoView) _connectNFTBid(
 
 		return totalInput, totalOutput, utxoOpsForTxn, nil
 	} else {
-		// For bids on Buy Now NFTs, we create a bid that will get deleted in the _helpConnectNFTSold logic. This allows
-		// us to reuse the code that handles the royalty payouts and NFT ownership changes that is used in
-		// _connectAcceptNFTBid.
-		newBidEntry := &NFTBidEntry{
-			BidderPKID:     bidderPKID.PKID,
-			NFTPostHash:    txMeta.NFTPostHash,
-			SerialNumber:   txMeta.SerialNumber,
-			BidAmountNanos: txMeta.BidAmountNanos,
-		}
-		bav._setNFTBidEntryMappings(newBidEntry)
+		// For bids above the Buy Now Price on Buy Now NFTs, we delete the prev bid if it exists and create a bid that
+		// will get deleted in the _helpConnectNFTSold logic. This allows us to reuse the code that handles the royalty
+		// payouts and NFT ownership changes that is used in _connectAcceptNFTBid.
+		deletePrevBidAndSetNewBid()
+
 		// Okay here's where the fun happens. We are submitting a bid on a Buy Now enabled NFT. We create the bid then we call the
 		// _helpConnectNFTSold to handle the royalty payout logic and such.
 		totalInput, totalOutput, utxoOpsForTxn, err := bav._helpConnectNFTSold(HelpConnectNFTSoldStruct{
-			NFTPostHash:    txMeta.NFTPostHash,
-			SerialNumber:   txMeta.SerialNumber,
-			BidderPKID:     bidderPKID.PKID,
-			BidAmountNanos: txMeta.BidAmountNanos,
+			NFTPostHash:     txMeta.NFTPostHash,
+			SerialNumber:    txMeta.SerialNumber,
+			BidderPKID:      bidderPKID.PKID,
+			BidAmountNanos:  txMeta.BidAmountNanos,
+			PrevNFTBidEntry: prevNFTBidEntry,
 
 			BidderInputs: []*DeSoInput{},
 
@@ -7354,11 +7374,12 @@ func (bav *UtxoView) _connectNFTBid(
 }
 
 type HelpConnectNFTSoldStruct struct {
-	NFTPostHash    *BlockHash
-	SerialNumber   uint64
-	BidderPKID     *PKID
-	BidAmountNanos uint64
-	UnlockableText []byte
+	NFTPostHash     *BlockHash
+	SerialNumber    uint64
+	BidderPKID      *PKID
+	BidAmountNanos  uint64
+	UnlockableText  []byte
+	PrevNFTBidEntry *NFTBidEntry
 
 	// When an NFT owner accepts a bid, they must specify the bidder's UTXO inputs they will lock up
 	// as payment for the purchase. This prevents the transaction from accidentally using UTXOs
@@ -7738,6 +7759,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		NFTPaymentUtxoKeys:        nftPaymentUtxoKeys,
 		NFTSpentUtxoEntries:       spentUtxoEntries,
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
+		PrevNFTBidEntry:           args.PrevNFTBidEntry,
 		// Rosetta fields.
 		AcceptNFTBidCreatorPublicKey:    nftPostEntry.PosterPublicKey,
 		AcceptNFTBidBidderPublicKey:     bidderPublicKey,
