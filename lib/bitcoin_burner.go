@@ -680,16 +680,17 @@ func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCyp
 }
 
 func CheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) error {
+
 	{
 		isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(txnHash, blockCypherAPIKey, params)
 		if err != nil {
-			return fmt.Errorf("PushAndWaitForTxn: Error occurred when checking for " +
-				"double-spend on BlockCypher. Your transaction will go through once it " +
+			return fmt.Errorf("PushAndWaitForTxn: Error occurred when checking for "+
+				"double-spend on BlockCypher. Your transaction will go through once it "+
 				"has been mined into a Bitcoin block. Txn hash: %v", txnHash)
 		}
 		if isDoubleSpend {
-			return fmt.Errorf("PushAndWaitForTxn: Error: double-spend detected " +
-				"by BlockCypher. Your transaction will go through once it mines into the " +
+			return fmt.Errorf("PushAndWaitForTxn: Error: double-spend detected "+
+				"by BlockCypher. Your transaction will go through once it mines into the "+
 				"next Bitcoin block, which should take about ten minutes. Txn hash: %v", txnHash)
 		}
 	}
@@ -701,13 +702,13 @@ func CheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, 
 	{
 		isDoubleSpend, err := BlockchainInfoCheckBitcoinDoubleSpend(txnHash, blockCypherAPIKey, params)
 		if err != nil {
-			return fmt.Errorf("PushAndWaitForTxn: Error occurred when checking for " +
-				"double-spend on blockchain.info. Your transaction will go through once " +
+			return fmt.Errorf("PushAndWaitForTxn: Error occurred when checking for "+
+				"double-spend on blockchain.info. Your transaction will go through once "+
 				"it has been mined into a Bitcoin block. Txn hash: %v", txnHash)
 		}
 		if isDoubleSpend {
-			return fmt.Errorf("PushAndWaitForTxn: Error: double-spend detected " +
-				"by blockchain.info. Your transaction will go through once it mines " +
+			return fmt.Errorf("PushAndWaitForTxn: Error: double-spend detected "+
+				"by blockchain.info. Your transaction will go through once it mines "+
 				"into the next Bitcoin block. Txn hash: %v", txnHash)
 		}
 	}
@@ -717,19 +718,19 @@ func CheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, 
 }
 
 func BlockCypherPushAndWaitForTxn(txnHex string, txnHash *chainhash.Hash,
-	blockCypherAPIKey string, doubleSpendWaitSeconds float64, params *DeSoParams) error {
+	blockCypherAPIKey string, doubleSpendWaitSeconds float64, params *DeSoParams) (_isDoubleSpend bool, _err error) {
 	_, err := BlockCypherPushTransaction(txnHex, txnHash, blockCypherAPIKey, params)
 	if err != nil {
-		return fmt.Errorf("PushAndWaitForTxn: %v", err)
+		return false, fmt.Errorf("PushAndWaitForTxn: %v", err)
 	}
 	// Wait some amount of time before checking for a double-spend.
 	time.Sleep(time.Duration(doubleSpendWaitSeconds) * time.Second)
 
 	if err := CheckBitcoinDoubleSpend(txnHash, blockCypherAPIKey, params); err != nil {
-		return err
+		return true, err
 	}
 
-	return nil
+	return false, nil
 }
 
 type BlockonomicsRBFResponse struct {

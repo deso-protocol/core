@@ -877,7 +877,7 @@ func (op OperationType) String() string {
 		}
 	case OperationTypeDeSoDiamond:
 		{
-		return "OperationTypeDeSoDiamond"
+			return "OperationTypeDeSoDiamond"
 		}
 	case OperationTypeNFTTransfer:
 		{
