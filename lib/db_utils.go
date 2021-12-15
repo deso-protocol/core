@@ -4641,6 +4641,10 @@ func _dbKeyForCreatorDeSoLockedNanosCreatorPKID(desoLockedNanos uint64, pkid *PK
 	return key
 }
 
+func DbPrefixForCreatorDeSoLockedNanosCreatorPKID() []byte {
+	return append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
+}
+
 func DBGetPKIDForUsernameWithTxn(
 	txn *badger.Txn, username []byte) *PKID {
 
