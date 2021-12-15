@@ -680,6 +680,7 @@ func BlockCypherPushTransaction(txnHex string, txnHash *chainhash.Hash, blockCyp
 }
 
 func CheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, params *DeSoParams) error {
+
 	{
 		isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(txnHash, blockCypherAPIKey, params)
 		if err != nil {
@@ -717,19 +718,19 @@ func CheckBitcoinDoubleSpend(txnHash *chainhash.Hash, blockCypherAPIKey string, 
 }
 
 func BlockCypherPushAndWaitForTxn(txnHex string, txnHash *chainhash.Hash,
-	blockCypherAPIKey string, doubleSpendWaitSeconds float64, params *DeSoParams) error {
+	blockCypherAPIKey string, doubleSpendWaitSeconds float64, params *DeSoParams) (_err error, _isDoubleSpend bool) {
 	_, err := BlockCypherPushTransaction(txnHex, txnHash, blockCypherAPIKey, params)
 	if err != nil {
-		return fmt.Errorf("PushAndWaitForTxn: %v", err)
+		return fmt.Errorf("PushAndWaitForTxn: %v", err), false
 	}
 	// Wait some amount of time before checking for a double-spend.
 	time.Sleep(time.Duration(doubleSpendWaitSeconds) * time.Second)
 
 	if err := CheckBitcoinDoubleSpend(txnHash, blockCypherAPIKey, params); err != nil {
-		return err
+		return err, true
 	}
 
-	return nil
+	return nil, false
 }
 
 type BlockonomicsRBFResponse struct {
