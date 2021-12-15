@@ -15,8 +15,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/ethereum/go-ethereum/crypto/ecies"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
+	"github.com/ethereum/go-ethereum/crypto/ecies"
 
 	"github.com/pkg/errors"
 )
@@ -37,44 +37,6 @@ var MaxHeadersPerMsg = uint32(2000)
 // a getheaders response. It is used to determine whether a node has more headers
 // to give us.
 var MaxBitcoinHeadersPerMsg = uint32(2000)
-
-const HashSizeBytes = 32
-
-// BlockHash is a convenient alias for a block hash.
-type BlockHash [HashSizeBytes]byte
-
-func NewBlockHash(input []byte) *BlockHash {
-	blockHash := &BlockHash{}
-	copy(blockHash[:], input)
-	return blockHash
-}
-
-func (bh *BlockHash) String() string {
-	return fmt.Sprintf("%064x", HashToBigint(bh))
-}
-
-func (bh *BlockHash) ToBytes() []byte {
-	res := make([]byte, HashSizeBytes)
-	copy(res, bh[:])
-	return res
-}
-
-// IsEqual returns true if target is the same as hash.
-func (bh *BlockHash) IsEqual(target *BlockHash) bool {
-	if bh == nil && target == nil {
-		return true
-	}
-	if bh == nil || target == nil {
-		return false
-	}
-	return *bh == *target
-}
-
-func (bh *BlockHash) NewBlockHash() *BlockHash {
-	newBlockhash := &BlockHash{}
-	copy(newBlockhash[:], bh[:])
-	return newBlockhash
-}
 
 // The MsgType is usually sent on the wire to indicate what type of
 // struct is being sent in the payload part of the message.
