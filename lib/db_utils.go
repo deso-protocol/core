@@ -490,6 +490,10 @@ func _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey []byte) []byte {
 	return key
 }
 
+func DbGetPrefixForPublicKeyToDesoBalanceNanos() []byte {
+	return append([]byte{}, _PrefixPublicKeyToDeSoBalanceNanos...)
+}
+
 func DbGetDeSoBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
 ) (_balance uint64, _err error) {
 
@@ -4635,6 +4639,10 @@ func _dbKeyForCreatorDeSoLockedNanosCreatorPKID(desoLockedNanos uint64, pkid *PK
 	key = append(key, EncodeUint64(desoLockedNanos)...)
 	key = append(key, pkid[:]...)
 	return key
+}
+
+func DbPrefixForCreatorDeSoLockedNanosCreatorPKID() []byte {
+	return append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
 }
 
 func DBGetPKIDForUsernameWithTxn(
