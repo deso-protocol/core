@@ -490,6 +490,10 @@ func _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey []byte) []byte {
 	return key
 }
 
+func DbGetPrefixForPublicKeyToDesoBalanceNanos() []byte {
+	return append([]byte{}, _PrefixPublicKeyToDeSoBalanceNanos...)
+}
+
 func DbGetDeSoBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
 ) (_balance uint64, _err error) {
 
