@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/json"
 	"fmt"
+	db2 "github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/view"
 	"os"
 	"runtime/pprof"
@@ -40,9 +41,9 @@ func TestComputeMaxTPS(t *testing.T) {
 		require.NoError(err)
 		privKeys = append(privKeys, privKey)
 		pubKeys = append(pubKeys, privKey.PubKey())
-		currentPubStr := PkToString(
+		currentPubStr := db2.PkToString(
 			pubKeys[len(pubKeys)-1].SerializeCompressed(), params)
-		currentPrivStr := PrivToString(
+		currentPrivStr := db2.PrivToString(
 			privKeys[len(privKeys)-1].Serialize(), params)
 
 		// Send money to this key

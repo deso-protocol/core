@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -27,7 +28,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	//
 	// TODO(performance): This currently fetches all profiles. We should implement
 	// some kind of pagination instead though.
-	_, _, dbProfileEntries, err := lib.DBGetAllProfilesByCoinValue(bav.Handle, true /*fetchEntries*/)
+	_, _, dbProfileEntries, err := db.DBGetAllProfilesByCoinValue(bav.Handle, true /*fetchEntries*/)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrapf(
 			err, "GetAllProfiles: Problem fetching ProfileEntrys from db: ")
@@ -51,7 +52,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 			continue
 		}
 		commentsByProfilePublicKey[MakePkMapKey(profileEntry.PublicKey)] = []*PostEntry{}
-		_, dbCommentHashes, _, err := lib.DBGetCommentPostHashesForParentStakeID(
+		_, dbCommentHashes, _, err := db.DBGetCommentPostHashesForParentStakeID(
 			bav.Handle, profileEntry.PublicKey, false /*fetchEntries*/)
 		if err != nil {
 			return nil, nil, nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching comment PostEntry's from db: ")
@@ -64,7 +65,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	// has made, just go ahead and load *all* the posts into the view so that
 	// they'll get returned in the mapping. Later, we should use the db index
 	// to do this.
-	_, _, dbPostEntries, err := lib.DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
+	_, _, dbPostEntries, err := db.DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrapf(
 			err, "GetAllPosts: Problem fetching PostEntry's from db: ")
@@ -155,7 +156,7 @@ func (bav *UtxoView) GetProfileEntryForUsername(nonLowercaseUsername []byte) *Pr
 		profileEntry, _ := bav.setProfileMappings(profile)
 		return profileEntry
 	} else {
-		dbProfileEntry := lib.DBGetProfileEntryForUsername(bav.Handle, nonLowercaseUsername)
+		dbProfileEntry := db.DBGetProfileEntryForUsername(bav.Handle, nonLowercaseUsername)
 		if dbProfileEntry != nil {
 			bav._setProfileEntryMappings(dbProfileEntry)
 		}
@@ -191,7 +192,7 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKey []byte) *PKIDEntry {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry
 	} else {
-		dbPKIDEntry := lib.DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
+		dbPKIDEntry := db.DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
 		if dbPKIDEntry != nil {
 			bav._setPKIDMappings(dbPKIDEntry)
 		}
@@ -227,7 +228,7 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *core.PKID) []byte {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry.PublicKey
 	} else {
-		dbPublicKey := lib.DBGetPublicKeyForPKID(bav.Handle, pkid)
+		dbPublicKey := db.DBGetPublicKeyForPKID(bav.Handle, pkid)
 		if len(dbPublicKey) != 0 {
 			bav._setPKIDMappings(&PKIDEntry{
 				PKID:      pkid,
@@ -291,7 +292,7 @@ func (bav *UtxoView) GetProfileEntryForPKID(pkid *core.PKID) *ProfileEntry {
 		profileEntry, _ := bav.setProfileMappings(profile)
 		return profileEntry
 	} else {
-		dbProfileEntry := lib.DBGetProfileEntryForPKID(bav.Handle, pkid)
+		dbProfileEntry := db.DBGetProfileEntryForPKID(bav.Handle, pkid)
 		if dbProfileEntry != nil {
 			bav._setProfileEntryMappings(dbProfileEntry)
 		}
@@ -344,7 +345,7 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 			entry = nil
 		}
 	} else {
-		entry = lib.DBGetOwnerToDerivedKeyMapping(bav.Handle, *ownerPk, *derivedPk)
+		entry = db.DBGetOwnerToDerivedKeyMapping(bav.Handle, *ownerPk, *derivedPk)
 	}
 
 	// If an entry exists, update the UtxoView map.
@@ -377,7 +378,7 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 		}
 	} else {
 		var err error
-		dbMappings, err = lib.DBGetAllOwnerToDerivedKeyMappings(bav.Handle, *ownerPk)
+		dbMappings, err = db.DBGetAllOwnerToDerivedKeyMappings(bav.Handle, *ownerPk)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetAllDerivedKeyMappingsForOwner: problem looking up"+
 				"entries in the DB.")
@@ -569,7 +570,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 				return 0, 0, nil, errors.Wrapf(
 					lib.RuleErrorProfilePubKeyNotAuthorized,
 					"_connectUpdateProfile: Profile pub key: %v, signer public key: %v",
-					lib.PkToStringBoth(txn.PublicKey), lib.PkToStringBoth(txMeta.ProfilePublicKey))
+					db.PkToStringBoth(txn.PublicKey), db.PkToStringBoth(txMeta.ProfilePublicKey))
 			}
 		}
 	}
@@ -650,8 +651,8 @@ func (bav *UtxoView) _connectUpdateProfile(
 				lib.RuleErrorProfileModificationNotAuthorized,
 				"_connectUpdateProfile: Profile: %v, profile public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", existingProfileEntry,
-				lib.PkToStringBoth(existingProfileEntry.PublicKey),
-				lib.PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+				db.PkToStringBoth(existingProfileEntry.PublicKey),
+				db.PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
 		}
 
 		// Only set the fields if they have non-zero length. Otherwise leave
@@ -923,7 +924,7 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	}
 
 	// Compute a hash of derivedPublicKey+expirationBlock.
-	expirationBlockBytes := lib.EncodeUint64(expirationBlock)
+	expirationBlockBytes := db.EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
 	accessHash := lib.Sha256DoubleHash(accessBytes)
 
@@ -1110,7 +1111,7 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 	if profileEntry == nil || profileEntry.isDeleted {
 		return fmt.Errorf("_disconnectUpdateProfile: ProfileEntry for "+
 			"public key %v was found to be nil or deleted: %v",
-			lib.PkToString(profilePublicKey, bav.Params),
+			db.PkToString(profilePublicKey, bav.Params),
 			profileEntry)
 	}
 
@@ -1233,7 +1234,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey: DerivedKeyEntry for "+
 			"public key %v, derived key %v was found to be nil or deleted: %v",
-			lib.PkToString(ownerPublicKey, bav.Params), lib.PkToString(derivedPublicKey, bav.Params),
+			db.PkToString(ownerPublicKey, bav.Params), db.PkToString(derivedPublicKey, bav.Params),
 			derivedKeyEntry)
 	}
 

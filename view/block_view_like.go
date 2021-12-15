@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -24,7 +25,7 @@ func (bav *UtxoView) _getLikeEntryForLikeKey(likeKey *LikeKey) *LikeEntry {
 	if bav.Postgres != nil {
 		likeExists = bav.Postgres.GetLike(likeKey.LikerPubKey[:], &likeKey.LikedPostHash) != nil
 	} else {
-		likeExists = lib.DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
+		likeExists = db.DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
 	}
 
 	if likeExists {
@@ -78,7 +79,7 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *core.BlockHash) (_likerPubKey
 		handle := bav.Handle
 		dbPrefix := append([]byte{}, lib._PrefixLikedPostHashToLikerPubKey...)
 		dbPrefix = append(dbPrefix, postHash[:]...)
-		keysFound, _ := lib.EnumerateKeysForPrefix(handle, dbPrefix)
+		keysFound, _ := db.EnumerateKeysForPrefix(handle, dbPrefix)
 
 		// Iterate over all the db keys & values and load them into the view.
 		expectedKeyLength := 1 + core.HashSizeBytes + btcec.PubKeyBytesLenCompressed
@@ -235,8 +236,8 @@ func (bav *UtxoView) _disconnectLike(
 		if !reflect.DeepEqual(prevLikeEntry.LikerPubKey, currentTxn.PublicKey) {
 			return fmt.Errorf("_disconnectLike: User public key on "+
 				"LikeEntry was %s but the PublicKey on the txn was %s",
-				lib.PkToStringBoth(prevLikeEntry.LikerPubKey),
-				lib.PkToStringBoth(currentTxn.PublicKey))
+				db.PkToStringBoth(prevLikeEntry.LikerPubKey),
+				db.PkToStringBoth(currentTxn.PublicKey))
 		}
 
 		// Sanity check: verify that the post hash on the prevLikeEntry matches the transaction's.
@@ -266,8 +267,8 @@ func (bav *UtxoView) _disconnectLike(
 		if !reflect.DeepEqual(likeEntry.LikerPubKey, currentTxn.PublicKey) {
 			return fmt.Errorf("_disconnectLike: User public key on "+
 				"LikeEntry was %s but the PublicKey on the txn was %s",
-				lib.PkToStringBoth(likeEntry.LikerPubKey),
-				lib.PkToStringBoth(currentTxn.PublicKey))
+				db.PkToStringBoth(likeEntry.LikerPubKey),
+				db.PkToStringBoth(currentTxn.PublicKey))
 		}
 
 		// Sanity check: verify that the post hash on the likeEntry matches the transaction's.

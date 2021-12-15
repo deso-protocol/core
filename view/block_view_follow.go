@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -36,7 +37,7 @@ func (bav *UtxoView) _getFollowEntryForFollowKey(followKey *FollowKey) *FollowEn
 	if bav.Postgres != nil {
 		followExists = bav.Postgres.GetFollow(&followKey.FollowerPKID, &followKey.FollowedPKID) != nil
 	} else {
-		followExists = lib.DbGetFollowerToFollowedMapping(bav.Handle, &followKey.FollowerPKID, &followKey.FollowedPKID) != nil
+		followExists = db.DbGetFollowerToFollowedMapping(bav.Handle, &followKey.FollowerPKID, &followKey.FollowedPKID) != nil
 	}
 
 	if followExists {
@@ -64,7 +65,7 @@ func (bav *UtxoView) _followEntriesForPubKey(publicKey []byte, getEntriesFollowi
 	pkidForPublicKey := bav.GetPKIDForPublicKey(publicKey)
 	if pkidForPublicKey == nil || pkidForPublicKey.isDeleted {
 		glog.Errorf("PKID for public key %v was nil or deleted on the view; this "+
-			"should never happen", lib.PkToString(publicKey, bav.Params))
+			"should never happen", db.PkToString(publicKey, bav.Params))
 		return nil
 	}
 
@@ -116,7 +117,7 @@ func (bav *UtxoView) GetFollowEntriesForPublicKey(publicKey []byte, getEntriesFo
 	if pkidForPublicKey == nil || pkidForPublicKey.isDeleted {
 		return nil, fmt.Errorf("GetFollowEntriesForPublicKey: PKID for public key %v was nil "+
 			"or deleted on the view; this should never happen",
-			lib.PkToString(publicKey, bav.Params))
+			db.PkToString(publicKey, bav.Params))
 	}
 
 	// Start by fetching all the follows we have in the db.
@@ -135,9 +136,9 @@ func (bav *UtxoView) GetFollowEntriesForPublicKey(publicKey []byte, getEntriesFo
 		var dbPKIDs []*core.PKID
 		var err error
 		if getEntriesFollowingPublicKey {
-			dbPKIDs, err = lib.DbGetPKIDsFollowingYou(bav.Handle, pkidForPublicKey.PKID)
+			dbPKIDs, err = db.DbGetPKIDsFollowingYou(bav.Handle, pkidForPublicKey.PKID)
 		} else {
-			dbPKIDs, err = lib.DbGetPKIDsYouFollow(bav.Handle, pkidForPublicKey.PKID)
+			dbPKIDs, err = db.DbGetPKIDsYouFollow(bav.Handle, pkidForPublicKey.PKID)
 		}
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetFollowsForUser: Problem fetching FollowEntrys from db: ")
@@ -219,7 +220,7 @@ func (bav *UtxoView) _connectFollow(
 		return 0, 0, nil, errors.Wrapf(
 			lib.RuleErrorFollowingNonexistentProfile,
 			"_connectFollow: Profile pub key: %v",
-			lib.PkToStringBoth(txMeta.FollowedPublicKey))
+			db.PkToStringBoth(txMeta.FollowedPublicKey))
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -342,14 +343,14 @@ func (bav *UtxoView) _disconnectFollow(
 	if !reflect.DeepEqual(followEntry.FollowerPKID, followerPKID.PKID) {
 		return fmt.Errorf("_disconnectFollow: Follower PKID on "+
 			"FollowEntry was %s but the PKID looked up from the txn was %s",
-			lib.PkToString(followEntry.FollowerPKID[:], bav.Params),
-			lib.PkToString(followerPKID.PKID[:], bav.Params))
+			db.PkToString(followEntry.FollowerPKID[:], bav.Params),
+			db.PkToString(followerPKID.PKID[:], bav.Params))
 	}
 	if !reflect.DeepEqual(followEntry.FollowedPKID, followedPKID.PKID) {
 		return fmt.Errorf("_disconnectFollow: Followed PKID on "+
 			"FollowEntry was %s but the FollowedPKID looked up from the txn was %s",
-			lib.PkToString(followEntry.FollowedPKID[:], bav.Params),
-			lib.PkToString(followedPKID.PKID[:], bav.Params))
+			db.PkToString(followEntry.FollowedPKID[:], bav.Params),
+			db.PkToString(followedPKID.PKID[:], bav.Params))
 	}
 
 	// Now that we are confident the FollowEntry lines up with the transaction we're

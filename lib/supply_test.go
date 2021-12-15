@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/db"
 	"math"
 	"testing"
 	"time"
@@ -486,7 +487,7 @@ func TestSumBalances(t *testing.T) {
 	balancesByPublicKey := make(map[string]int64)
 	for _, seedBal := range params.SeedBalances {
 		amounts += seedBal.AmountNanos
-		pkStr := PkToStringMainnet(seedBal.PublicKey)
+		pkStr := db.PkToStringMainnet(seedBal.PublicKey)
 		if amountFound, exists := balancesByPublicKey[pkStr]; exists {
 			require.Fail(fmt.Sprintf("Public key %v found twice in map: %v %v",
 				pkStr, int64(seedBal.AmountNanos), int64(amountFound)))

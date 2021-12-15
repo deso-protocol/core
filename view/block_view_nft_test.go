@@ -2,6 +2,7 @@ package view
 
 import (
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
@@ -90,7 +91,7 @@ func _createNFTWithTestMeta(
 	nftRoyaltyToCoinBasisPoints uint64,
 ) {
 	// Sanity check: the number of NFT entries before should be 0.
-	dbNFTEntries := lib.DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
+	dbNFTEntries := db.DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
 	require.Equal(testMeta.t, 0, len(dbNFTEntries))
 
 	testMeta.expectedSenderBalances = append(
@@ -111,7 +112,7 @@ func _createNFTWithTestMeta(
 	require.NoError(testMeta.t, err)
 
 	// Sanity check: the number of NFT entries after should be numCopies.
-	dbNFTEntries = lib.DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
+	dbNFTEntries = db.DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
 	require.Equal(testMeta.t, int(numCopies), len(dbNFTEntries))
 
 	// Sanity check that the first entry has serial number 1.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gernest/mention"
 	"github.com/go-pg/pg/v10"
@@ -86,7 +87,7 @@ func (notifier *Notifier) Update() error {
 				}
 			} else if transaction.Type == TxnTypeLike {
 				postHash := transaction.MetadataLike.LikedPostHash
-				post := DBGetPostEntryByPostHash(notifier.badger, postHash)
+				post := db.DBGetPostEntryByPostHash(notifier.badger, postHash)
 				if post != nil {
 					notifications = append(notifications, &PGNotification{
 						TransactionHash: transaction.Hash,
@@ -158,7 +159,7 @@ func (notifier *Notifier) Update() error {
 
 				// Process replies
 				if len(meta.ParentStakeID) == core.HashSizeBytes {
-					postEntry := DBGetPostEntryByPostHash(notifier.badger, meta.ParentStakeID)
+					postEntry := db.DBGetPostEntryByPostHash(notifier.badger, meta.ParentStakeID)
 					if postEntry != nil {
 						notifications = append(notifications, &PGNotification{
 							TransactionHash: transaction.Hash,
@@ -182,7 +183,7 @@ func (notifier *Notifier) Update() error {
 					tagsFound := append(dollarTagsFound, atTagsFound...)
 					for _, tag := range tagsFound {
 
-						profileFound := DBGetProfileEntryForUsername(notifier.badger, []byte(strings.ToLower(strings.Trim(tag, ",.\n&*()-+~'\"[]{}!?^%#"))))
+						profileFound := db.DBGetProfileEntryForUsername(notifier.badger, []byte(strings.ToLower(strings.Trim(tag, ",.\n&*()-+~'\"[]{}!?^%#"))))
 						// Don't worry about tags that don't line up to a profile.
 						if profileFound == nil {
 							continue
@@ -204,7 +205,7 @@ func (notifier *Notifier) Update() error {
 				if postBytes, isRepost := transaction.ExtraData[RepostedPostHash]; isRepost {
 					postHash := &core.BlockHash{}
 					copy(postHash[:], postBytes)
-					post := DBGetPostEntryByPostHash(notifier.badger, postHash)
+					post := db.DBGetPostEntryByPostHash(notifier.badger, postHash)
 					if post != nil {
 						notifications = append(notifications, &PGNotification{
 							TransactionHash: transaction.Hash,

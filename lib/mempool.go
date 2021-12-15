@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcutil"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/view"
 	"github.com/gernest/mention"
 	"log"
@@ -69,7 +70,7 @@ type MempoolTx struct {
 	Tx *MsgDeSoTxn
 
 	// TxMeta is the transaction metadata
-	TxMeta *TransactionMetadata
+	TxMeta *db.TransactionMetadata
 
 	// Hash is a hash of the transaction so we don't have to recompute
 	// it all the time.
@@ -788,7 +789,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 		if len(txnsToDump)%1000 == 0 || ii == len(allTxns)-1 {
 			glog.Infof("OpenTempDBAndDumpTxns: Dumping txns %v to %v", ii-len(txnsToDump)+1, ii)
 			err := tempMempoolDB.Update(func(txn *badger.Txn) error {
-				return FlushMempoolToDbWithTxn(txn, txnsToDump)
+				return db.FlushMempoolToDbWithTxn(txn, txnsToDump)
 			})
 			if err != nil {
 				return fmt.Errorf("OpenTempDBAndDumpTxns: Error flushing mempool txns to DB: %v", err)
@@ -1118,19 +1119,19 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockHash *core.BlockHash,
 	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64, utxoOps []*view.UtxoOperation) (*TransactionMetadata, error) {
+	fees uint64, txnIndexInBlock uint64, utxoOps []*view.UtxoOperation) (*db.TransactionMetadata, error) {
 
 	var err error
-	txnMeta := &TransactionMetadata{
+	txnMeta := &db.TransactionMetadata{
 		TxnIndexInBlock: txnIndexInBlock,
 		TxnType:         txn.TxnMeta.GetTxnType().String(),
 
 		// This may be overwritten later on, for example if we're dealing with a
 		// BitcoinExchange txn which doesn't set the txn.PublicKey
-		TransactorPublicKeyBase58Check: PkToString(txn.PublicKey, utxoView.Params),
+		TransactorPublicKeyBase58Check: db.PkToString(txn.PublicKey, utxoView.Params),
 
 		// General transaction metadata
-		BasicTransferTxindexMetadata: &BasicTransferTxindexMetadata{
+		BasicTransferTxindexMetadata: &db.BasicTransferTxindexMetadata{
 			TotalInputNanos:  totalInput,
 			TotalOutputNanos: totalOutput,
 			FeeNanos:         fees,
@@ -1154,8 +1155,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 
 	// Set the affected public keys for the basic transfer.
 	for _, output := range txn.TxOutputs {
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(output.PublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(output.PublicKey, utxoView.Params),
 			Metadata:             "BasicTransferOutput",
 		})
 	}
@@ -1175,7 +1176,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 
 		// Always associate BitcoinExchange txns with the burn public key. This makes it
 		//		// easy to enumerate all burn txns in the block explorer.
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
 			PublicKeyBase58Check: BurnPubKeyBase58Check,
 			Metadata:             "BurnPublicKey",
 		})
@@ -1204,7 +1205,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 		}
 
 		// Set the amount of the buy/sell/add
-		txnMeta.CreatorCoinTxindexMetadata = &CreatorCoinTxindexMetadata{
+		txnMeta.CreatorCoinTxindexMetadata = &db.CreatorCoinTxindexMetadata{
 			DeSoToSellNanos:        realTxMeta.DeSoToSellNanos,
 			CreatorCoinToSellNanos: realTxMeta.CreatorCoinToSellNanos,
 			DeSoToAddNanos:         realTxMeta.DeSoToAddNanos,
@@ -1222,15 +1223,15 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 
 		// Set the affected public key to the owner of the creator coin so that they
 		// get notified.
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(realTxMeta.ProfilePublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(realTxMeta.ProfilePublicKey, utxoView.Params),
 			Metadata:             "CreatorPublicKey",
 		})
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
 		realTxMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
 		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
-		txnMeta.CreatorCoinTransferTxindexMetadata = &CreatorCoinTransferTxindexMetadata{
+		txnMeta.CreatorCoinTransferTxindexMetadata = &db.CreatorCoinTransferTxindexMetadata{
 			CreatorUsername:            string(creatorProfileEntry.Username),
 			CreatorCoinToTransferNanos: realTxMeta.CreatorCoinToTransferNanos,
 		}
@@ -1247,18 +1248,18 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 			}
 		}
 
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "ReceiverPublicKey",
 		})
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
 		realTxMeta := txn.TxnMeta.(*UpdateProfileMetadata)
 
-		txnMeta.UpdateProfileTxindexMetadata = &UpdateProfileTxindexMetadata{}
+		txnMeta.UpdateProfileTxindexMetadata = &db.UpdateProfileTxindexMetadata{}
 		if len(realTxMeta.ProfilePublicKey) == btcec.PubKeyBytesLenCompressed {
 			txnMeta.UpdateProfileTxindexMetadata.ProfilePublicKeyBase58Check =
-				PkToString(realTxMeta.ProfilePublicKey, utxoView.Params)
+				db.PkToString(realTxMeta.ProfilePublicKey, utxoView.Params)
 		}
 		txnMeta.UpdateProfileTxindexMetadata.NewUsername = string(realTxMeta.NewUsername)
 		txnMeta.UpdateProfileTxindexMetadata.NewDescription = string(realTxMeta.NewDescription)
@@ -1268,8 +1269,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 		txnMeta.UpdateProfileTxindexMetadata.IsHidden = realTxMeta.IsHidden
 
 		// Add the ProfilePublicKey to the AffectedPublicKeys
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(realTxMeta.ProfilePublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(realTxMeta.ProfilePublicKey, utxoView.Params),
 			Metadata:             "ProfilePublicKeyBase58Check",
 		})
 	}
@@ -1277,7 +1278,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 		realTxMeta := txn.TxnMeta.(*SubmitPostMetadata)
 		_ = realTxMeta
 
-		txnMeta.SubmitPostTxindexMetadata = &SubmitPostTxindexMetadata{}
+		txnMeta.SubmitPostTxindexMetadata = &db.SubmitPostTxindexMetadata{}
 		if len(realTxMeta.PostHashToModify) == core.HashSizeBytes {
 			txnMeta.SubmitPostTxindexMetadata.PostHashBeingModifiedHex = hex.EncodeToString(
 				realTxMeta.PostHashToModify)
@@ -1308,8 +1309,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 						"missing parent post for hash %v: %v", postHash, err)
 			}
 
-			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-				PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+				PublicKeyBase58Check: db.PkToString(postEntry.PosterPublicKey, utxoView.Params),
 				Metadata:             "ParentPosterPublicKeyBase58Check",
 			})
 		}
@@ -1343,8 +1344,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 					continue
 				}
 				// If we found a profile then set it as an affected public key.
-				txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-					PublicKeyBase58Check: PkToString(profileFound.PublicKey, utxoView.Params),
+				txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+					PublicKeyBase58Check: db.PkToString(profileFound.PublicKey, utxoView.Params),
 					Metadata:             "MentionedPublicKeyBase58Check",
 				})
 			}
@@ -1355,8 +1356,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 				copy(repostedBlockHash[:], repostedPostHash)
 				repostPost := utxoView.GetPostEntryForPostHash(repostedBlockHash)
 				if repostPost != nil {
-					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-						PublicKeyBase58Check: PkToString(repostPost.PosterPublicKey, utxoView.Params),
+					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+						PublicKeyBase58Check: db.PkToString(repostPost.PosterPublicKey, utxoView.Params),
 						Metadata:             "RepostedPublicKeyBase58Check",
 					})
 				}
@@ -1369,7 +1370,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 
 		// LikerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 
-		txnMeta.LikeTxindexMetadata = &LikeTxindexMetadata{
+		txnMeta.LikeTxindexMetadata = &db.LikeTxindexMetadata{
 			IsUnlike:    realTxMeta.IsUnlike,
 			PostHashHex: hex.EncodeToString(realTxMeta.LikedPostHash[:]),
 		}
@@ -1387,8 +1388,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 					"missing post for hash %v: %v", postHash, err)
 		}
 
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(postEntry.PosterPublicKey, utxoView.Params),
 			Metadata:             "PosterPublicKeyBase58Check",
 		})
 	}
@@ -1396,15 +1397,15 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 		realTxMeta := txn.TxnMeta.(*FollowMetadata)
 		_ = realTxMeta
 
-		txnMeta.FollowTxindexMetadata = &FollowTxindexMetadata{
+		txnMeta.FollowTxindexMetadata = &db.FollowTxindexMetadata{
 			IsUnfollow: realTxMeta.IsUnfollow,
 		}
 
 		// FollowerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 
 		// FollowedPublicKeyBase58Check in AffectedPublicKeys
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(realTxMeta.FollowedPublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(realTxMeta.FollowedPublicKey, utxoView.Params),
 			Metadata:             "FollowedPublicKeyBase58Check",
 		})
 	}
@@ -1412,15 +1413,15 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 		realTxMeta := txn.TxnMeta.(*PrivateMessageMetadata)
 		_ = realTxMeta
 
-		txnMeta.PrivateMessageTxindexMetadata = &PrivateMessageTxindexMetadata{
+		txnMeta.PrivateMessageTxindexMetadata = &db.PrivateMessageTxindexMetadata{
 			TimestampNanos: realTxMeta.TimestampNanos,
 		}
 
 		// SenderPublicKeyBase58Check = TransactorPublicKeyBase58Check
 
 		// RecipientPublicKeyBase58Check in AffectedPublicKeys
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(realTxMeta.RecipientPublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(realTxMeta.RecipientPublicKey, utxoView.Params),
 			Metadata:             "RecipientPublicKeyBase58Check",
 		})
 	}
@@ -1443,21 +1444,21 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 			toNanos = toProfile.CoinEntry.DeSoLockedNanos
 		}
 
-		txnMeta.SwapIdentityTxindexMetadata = &SwapIdentityTxindexMetadata{
-			FromPublicKeyBase58Check: PkToString(realTxMeta.FromPublicKey, utxoView.Params),
-			ToPublicKeyBase58Check:   PkToString(realTxMeta.ToPublicKey, utxoView.Params),
+		txnMeta.SwapIdentityTxindexMetadata = &db.SwapIdentityTxindexMetadata{
+			FromPublicKeyBase58Check: db.PkToString(realTxMeta.FromPublicKey, utxoView.Params),
+			ToPublicKeyBase58Check:   db.PkToString(realTxMeta.ToPublicKey, utxoView.Params),
 			FromDeSoLockedNanos:      fromNanos,
 			ToDeSoLockedNanos:        toNanos,
 		}
 
 		// The to and from public keys are affected by this.
 
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(realTxMeta.FromPublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(realTxMeta.FromPublicKey, utxoView.Params),
 			Metadata:             "FromPublicKeyBase58Check",
 		})
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(realTxMeta.ToPublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(realTxMeta.ToPublicKey, utxoView.Params),
 			Metadata:             "ToPublicKeyBase58Check",
 		})
 	}
@@ -1465,7 +1466,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 		realTxMeta := txn.TxnMeta.(*NFTBidMetadata)
 		_ = realTxMeta
 
-		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
+		txnMeta.NFTBidTxindexMetadata = &db.NFTBidTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
 			SerialNumber:   realTxMeta.SerialNumber,
 			BidAmountNanos: realTxMeta.BidAmountNanos,
@@ -1475,8 +1476,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 		if realTxMeta.SerialNumber != 0 {
 			nftKey := view.MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
 			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
-			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(nftEntry.OwnerPKID), utxoView.Params),
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+				PublicKeyBase58Check: db.PkToString(utxoView.GetPublicKeyForPKID(nftEntry.OwnerPKID), utxoView.Params),
 				Metadata:             "NFTOwnerPublicKeyBase58Check",
 			})
 		}
@@ -1511,16 +1512,16 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 			creatorCoinRoyaltyNanos = profileEntry.CoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
 		}
 
-		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
+		txnMeta.AcceptNFTBidTxindexMetadata = &db.AcceptNFTBidTxindexMetadata{
 			NFTPostHashHex:              hex.EncodeToString(realTxMeta.NFTPostHash[:]),
 			SerialNumber:                realTxMeta.SerialNumber,
 			BidAmountNanos:              realTxMeta.BidAmountNanos,
 			CreatorCoinRoyaltyNanos:     creatorCoinRoyaltyNanos,
-			CreatorPublicKeyBase58Check: PkToString(creatorPublicKey, utxoView.Params),
+			CreatorPublicKeyBase58Check: db.PkToString(creatorPublicKey, utxoView.Params),
 		}
 
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(realTxMeta.BidderPKID), utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(utxoView.GetPublicKeyForPKID(realTxMeta.BidderPKID), utxoView.Params),
 			Metadata:             "NFTBidderPublicKeyBase58Check",
 		})
 	}
@@ -1528,13 +1529,13 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 		realTxMeta := txn.TxnMeta.(*NFTTransferMetadata)
 		_ = realTxMeta
 
-		txnMeta.NFTTransferTxindexMetadata = &NFTTransferTxindexMetadata{
+		txnMeta.NFTTransferTxindexMetadata = &db.NFTTransferTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
 			SerialNumber:   realTxMeta.SerialNumber,
 		}
 
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &db.AffectedPublicKey{
+			PublicKeyBase58Check: db.PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "NFTTransferRecipientPublicKeyBase58Check",
 		})
 
@@ -1558,7 +1559,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *view.UtxoView, blockH
 
 func _computeBitcoinExchangeFields(params *DeSoParams,
 	txMetaa *BitcoinExchangeMetadata, totalNanosPurchasedBefore uint64, usdCentsPerBitcoin uint64) (
-	_btcMeta *BitcoinExchangeTxindexMetadata, _spendPkBase58Check string, _err error) {
+	_btcMeta *db.BitcoinExchangeTxindexMetadata, _spendPkBase58Check string, _err error) {
 
 	// Extract a public key from the BitcoinTransaction's inputs. Note that we only
 	// consider P2PKH inputs to be valid. If no P2PKH inputs are found then we consider
@@ -1608,17 +1609,17 @@ func _computeBitcoinExchangeFields(params *DeSoParams,
 		totalNanosPurchasedBefore, uint64(totalBurnOutput), usdCentsPerBitcoin)
 
 	bitcoinTxHash := txMetaa.BitcoinTransaction.TxHash()
-	return &BitcoinExchangeTxindexMetadata{
+	return &db.BitcoinExchangeTxindexMetadata{
 		BitcoinSpendAddress: addrString,
 		SatoshisBurned:      uint64(totalBurnOutput),
 		NanosCreated:        nanosToCreate,
 		BitcoinTxnHash:      bitcoinTxHash.String(),
-	}, PkToString(publicKey.SerializeCompressed(), params), nil
+	}, db.PkToString(publicKey.SerializeCompressed(), params), nil
 }
 
 func ConnectTxnAndComputeTransactionMetadata(
 	txn *MsgDeSoTxn, utxoView *view.UtxoView, blockHash *core.BlockHash,
-	blockHeight uint32, txnIndexInBlock uint64) (*TransactionMetadata, error) {
+	blockHeight uint32, txnIndexInBlock uint64) (*db.TransactionMetadata, error) {
 
 	totalNanosPurchasedBefore := utxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
@@ -2128,7 +2129,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 	defer tempMempoolDB.Close()
 
 	// Get all saved mempool transactions from the DB.
-	dbMempoolTxnsOrderedByTime, err := DbGetAllMempoolTxnsSortedByTimeAdded(tempMempoolDB)
+	dbMempoolTxnsOrderedByTime, err := db.DbGetAllMempoolTxnsSortedByTimeAdded(tempMempoolDB)
 	if err != nil {
 		log.Fatalf("NewDeSoMempool: Failed to get mempoolTxs from the DB: %v", err)
 	}

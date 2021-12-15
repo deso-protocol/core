@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
@@ -181,7 +182,7 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 	derivedPublicKey := derivedPrivateKey.PubKey().SerializeCompressed()
 
 	// Create access signature
-	expirationBlockByte := lib.EncodeUint64(expirationBlock)
+	expirationBlockByte := db.EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockByte[:]...)
 	accessSignature, err := ownerPrivateKey.Sign(lib.Sha256DoubleHash(accessBytes)[:])
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadata: Error creating access signature")

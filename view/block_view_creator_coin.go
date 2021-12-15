@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -37,7 +38,7 @@ func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(
 			}
 		}
 	} else {
-		balanceEntry = lib.DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(bav.Handle, hodlerPKID, creatorPKID)
+		balanceEntry = db.DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(bav.Handle, hodlerPKID, creatorPKID)
 	}
 	if balanceEntry != nil {
 		bav._setBalanceEntryMappingsWithPKIDs(balanceEntry, hodlerPKID, creatorPKID)
@@ -108,7 +109,7 @@ func (bav *UtxoView) GetHoldings(pkid *core.PKID, fetchProfiles bool) ([]*Balanc
 			entriesYouHold = append(entriesYouHold, balance.NewBalanceEntry())
 		}
 	} else {
-		holdings, err := lib.DbGetBalanceEntriesYouHold(bav.Handle, pkid, true)
+		holdings, err := db.DbGetBalanceEntriesYouHold(bav.Handle, pkid, true)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -153,7 +154,7 @@ func (bav *UtxoView) GetHolders(pkid *core.PKID, fetchProfiles bool) ([]*Balance
 			holderEntries = append(holderEntries, balance.NewBalanceEntry())
 		}
 	} else {
-		holders, err := lib.DbGetBalanceEntriesHodlingYou(bav.Handle, pkid, true)
+		holders, err := db.DbGetBalanceEntriesHodlingYou(bav.Handle, pkid, true)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -420,7 +421,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return fmt.Errorf("_disconnectCreatorCoin: CreatorCoin profile for "+
 			"public key %v doesn't exist; this should never happen",
-			lib.PkToStringBoth(txMeta.ProfilePublicKey))
+			db.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	// Get the BalanceEntry of the transactor. This should always exist.
 	transactorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
@@ -430,7 +431,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		return fmt.Errorf("_disconnectCreatorCoin: Transactor BalanceEntry "+
 			"pubkey %v and creator pubkey %v does not exist; this should "+
 			"never happen",
-			lib.PkToStringBoth(currentTxn.PublicKey), lib.PkToStringBoth(txMeta.ProfilePublicKey))
+			db.PkToStringBoth(currentTxn.PublicKey), db.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 
 	// Get the BalanceEntry of the creator. It could be nil if this is a sell
@@ -601,7 +602,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: CreatorCoinTransfer profile for "+
 			"public key %v doesn't exist; this should never happen",
-			lib.PkToStringBoth(txMeta.ProfilePublicKey))
+			db.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 
 	// Get the current / previous balance for the sender for sanity checking.
@@ -612,7 +613,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: Previous sender BalanceEntry "+
 			"pubkey %v and creator pubkey %v does not exist; this should "+
 			"never happen",
-			lib.PkToStringBoth(currentTxn.PublicKey), lib.PkToStringBoth(txMeta.ProfilePublicKey))
+			db.PkToStringBoth(currentTxn.PublicKey), db.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	senderPrevBalanceNanos := operationData.PrevSenderBalanceEntry.BalanceNanos
 	var senderCurrBalanceNanos uint64
@@ -629,7 +630,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: Receiver BalanceEntry "+
 			"pubkey %v and creator pubkey %v does not exist; this should "+
 			"never happen",
-			lib.PkToStringBoth(currentTxn.PublicKey), lib.PkToStringBoth(txMeta.ProfilePublicKey))
+			db.PkToStringBoth(currentTxn.PublicKey), db.PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	receiverCurrBalanceNanos := receiverBalanceEntry.BalanceNanos
 	var receiverPrevBalanceNanos uint64
@@ -761,7 +762,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		return 0, 0, 0, 0, nil, errors.Wrapf(
 			lib.RuleErrorCreatorCoinOperationOnNonexistentProfile,
 			"_connectCreatorCoin: Profile pub key: %v %v",
-			lib.PkToStringMainnet(txMeta.ProfilePublicKey), lib.PkToStringTestnet(txMeta.ProfilePublicKey))
+			db.PkToStringMainnet(txMeta.ProfilePublicKey), db.PkToStringTestnet(txMeta.ProfilePublicKey))
 	}
 
 	// At this point we are confident that we have a profile that
@@ -1191,7 +1192,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		return 0, 0, 0, nil, errors.Wrapf(
 			lib.RuleErrorCreatorCoinOperationOnNonexistentProfile,
 			"_connectCreatorCoin: Profile pub key: %v %v",
-			lib.PkToStringMainnet(txMeta.ProfilePublicKey), lib.PkToStringTestnet(txMeta.ProfilePublicKey))
+			db.PkToStringMainnet(txMeta.ProfilePublicKey), db.PkToStringTestnet(txMeta.ProfilePublicKey))
 	}
 
 	// At this point we are confident that we have a profile that
@@ -1513,7 +1514,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 		return 0, 0, nil, errors.Wrapf(
 			lib.RuleErrorCreatorCoinTransferOnNonexistentProfile,
 			"_connectCreatorCoin: Profile pub key: %v %v",
-			lib.PkToStringMainnet(txMeta.ProfilePublicKey), lib.PkToStringTestnet(txMeta.ProfilePublicKey))
+			db.PkToStringMainnet(txMeta.ProfilePublicKey), db.PkToStringTestnet(txMeta.ProfilePublicKey))
 	}
 
 	// At this point we are confident that we have a profile that
@@ -1564,8 +1565,8 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 			return 0, 0, nil, fmt.Errorf(
 				"_connectCreatorCoin: Found nil or deleted PKID for receiver or creator, this should never "+
 					"happen. Receiver pubkey: %v, creator pubkey: %v",
-				lib.PkToStringMainnet(txMeta.ReceiverPublicKey),
-				lib.PkToStringMainnet(existingProfileEntry.PublicKey))
+				db.PkToStringMainnet(txMeta.ReceiverPublicKey),
+				db.PkToStringMainnet(existingProfileEntry.PublicKey))
 		}
 		receiverBalanceEntry = &BalanceEntry{
 			HODLerPKID:   receiverPKID.PKID,

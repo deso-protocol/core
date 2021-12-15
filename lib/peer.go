@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/decred/dcrd/lru"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"math"
 	"net"
 	"sort"
@@ -1083,7 +1084,7 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	// We use an int64 instead of a uint64 for convenience but
 	// this should be fine since we're just looking to generate a
 	// unique value.
-	ver.Nonce = uint64(RandInt64(math.MaxInt64))
+	ver.Nonce = uint64(db.RandInt64(math.MaxInt64))
 	ver.UserAgent = params.UserAgent
 	// TODO: Right now all peers are full nodes. Later on we'll want to change this,
 	// at which point we'll need to do a little refactoring.

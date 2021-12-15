@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"strings"
 )
@@ -314,7 +315,7 @@ type UtxoOperation struct {
 
 func (utxoEntry *UtxoEntry) String() string {
 	return fmt.Sprintf("< PublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
-		"isSpent: %v, utxoKey: %v>", lib.PkToStringMainnet(utxoEntry.PublicKey),
+		"isSpent: %v, utxoKey: %v>", db.PkToStringMainnet(utxoEntry.PublicKey),
 		utxoEntry.BlockHeight, utxoEntry.AmountNanos,
 		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
 }
@@ -336,7 +337,7 @@ func MakeUsernameMapKey(nonLowercaseUsername []byte) UsernameMapKey {
 type PkMapKey [btcec.PubKeyBytesLenCompressed]byte
 
 func (mm PkMapKey) String() string {
-	return lib.PkToStringBoth(mm[:])
+	return db.PkToStringBoth(mm[:])
 }
 
 func MakePkMapKey(pk []byte) PkMapKey {
@@ -360,12 +361,12 @@ type MessageKey struct {
 
 func (mm *MessageKey) String() string {
 	return fmt.Sprintf("<Public Key: %s, TstampNanos: %d>",
-		lib.PkToStringMainnet(mm.PublicKey[:]), mm.TstampNanos)
+		db.PkToStringMainnet(mm.PublicKey[:]), mm.TstampNanos)
 }
 
 // StringKey is useful for creating maps that need to be serialized to JSON.
 func (mm *MessageKey) StringKey(params *lib.DeSoParams) string {
-	return lib.PkToString(mm.PublicKey[:], params) + "_" + fmt.Sprint(mm.TstampNanos)
+	return db.PkToString(mm.PublicKey[:], params) + "_" + fmt.Sprint(mm.TstampNanos)
 }
 
 // MessageEntry stores the essential content of a message transaction.
@@ -551,7 +552,7 @@ func MakeDiamondKey(senderPKID *core.PKID, receiverPKID *core.PKID, diamondPostH
 
 func (mm *DiamondKey) String() string {
 	return fmt.Sprintf("<SenderPKID: %v, ReceiverPKID: %v, DiamondPostHash: %v>",
-		lib.PkToStringMainnet(mm.SenderPKID[:]), lib.PkToStringMainnet(mm.ReceiverPKID[:]),
+		db.PkToStringMainnet(mm.SenderPKID[:]), db.PkToStringMainnet(mm.ReceiverPKID[:]),
 		hex.EncodeToString(mm.DiamondPostHash[:]))
 }
 
@@ -751,7 +752,7 @@ func MakeCreatorCoinBalanceKey(hodlerPKID *core.PKID, creatorPKID *core.PKID) Ba
 }
 func (mm BalanceEntryMapKey) String() string {
 	return fmt.Sprintf("BalanceEntryMapKey: <HODLer Pub Key: %v, Creator Pub Key: %v>",
-		lib.PkToStringBoth(mm.HODLerPKID[:]), lib.PkToStringBoth(mm.CreatorPKID[:]))
+		db.PkToStringBoth(mm.HODLerPKID[:]), db.PkToStringBoth(mm.CreatorPKID[:]))
 }
 
 // This struct is mainly used to track a user's balance of a particular
@@ -819,7 +820,7 @@ type PKIDEntry struct {
 }
 
 func (pkid *PKIDEntry) String() string {
-	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", lib.PkToStringMainnet(pkid.PKID[:]), lib.PkToStringMainnet(pkid.PublicKey))
+	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", db.PkToStringMainnet(pkid.PKID[:]), db.PkToStringMainnet(pkid.PublicKey))
 }
 
 type ProfileEntry struct {

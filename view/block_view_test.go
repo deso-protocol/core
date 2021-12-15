@@ -2,6 +2,7 @@ package view
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
@@ -246,7 +247,7 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 		require.Equal(
 			testMeta.t,
 			testMeta.expectedSenderBalances[backwardIter],
-			lib._getBalance(testMeta.t, testMeta.chain, nil, lib.PkToStringTestnet(currentTxn.PublicKey)),
+			lib._getBalance(testMeta.t, testMeta.chain, nil, db.PkToStringTestnet(currentTxn.PublicKey)),
 		)
 	}
 }
@@ -258,7 +259,7 @@ func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
 		require.Equal(
 			testMeta.t,
 			testMeta.expectedSenderBalances[ii],
-			lib._getBalance(testMeta.t, testMeta.chain, testMeta.mempool, lib.PkToStringTestnet(tx.PublicKey)))
+			lib._getBalance(testMeta.t, testMeta.chain, testMeta.mempool, db.PkToStringTestnet(tx.PublicKey)))
 
 		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
@@ -324,7 +325,7 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(testMeta.t, err)
-		utxoOps, err := lib.GetUtxoOperationsForBlock(testMeta.db, hash)
+		utxoOps, err := db.GetUtxoOperationsForBlock(testMeta.db, hash)
 		require.NoError(testMeta.t, err)
 
 		// Compute the hashes for all the transactions.

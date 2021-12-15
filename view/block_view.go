@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"math"
 	"reflect"
@@ -95,13 +96,13 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Utxo data
 	bav.UtxoKeyToUtxoEntry = make(map[core.UtxoKey]*UtxoEntry)
 	// TODO: Deprecate this value
-	bav.NumUtxoEntries = lib.GetUtxoNumEntries(bav.Handle)
+	bav.NumUtxoEntries = db.GetUtxoNumEntries(bav.Handle)
 	bav.PublicKeyToDeSoBalanceNanos = make(map[core.PublicKey]uint64)
 
 	// BitcoinExchange data
-	bav.NanosPurchased = lib.DbGetNanosPurchased(bav.Handle)
-	bav.USDCentsPerBitcoin = lib.DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle)
-	bav.GlobalParamsEntry = lib.DbGetGlobalParamsEntry(bav.Handle)
+	bav.NanosPurchased = db.DbGetNanosPurchased(bav.Handle)
+	bav.USDCentsPerBitcoin = db.DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle)
+	bav.GlobalParamsEntry = db.DbGetGlobalParamsEntry(bav.Handle)
 	bav.BitcoinBurnTxIDs = make(map[core.BlockHash]bool)
 
 	// Forbidden block signature pub key info.
@@ -326,7 +327,7 @@ func NewUtxoView(
 		// whether or not the view is flushed or not. Additionally the utxo view does
 		// not concern itself with the header chain (see comment on GetBestHash for more
 		// info on that).
-		TipHash: lib.DbGetBestHash(_handle, lib.ChainTypeDeSoBlock /* don't get the header chain */),
+		TipHash: db.DbGetBestHash(_handle, db.ChainTypeDeSoBlock /* don't get the header chain */),
 
 		Postgres: _postgres,
 		// Set everything else in _ResetViewMappings()
@@ -341,7 +342,7 @@ func NewUtxoView(
 	if view.Postgres != nil {
 		view.TipHash = view.Postgres.GetChain(lib.MAIN_CHAIN).TipHash
 	} else {
-		view.TipHash = lib.DbGetBestHash(view.Handle, lib.ChainTypeDeSoBlock /* don't get the header chain */)
+		view.TipHash = db.DbGetBestHash(view.Handle, db.ChainTypeDeSoBlock /* don't get the header chain */)
 	}
 
 	// This function is generally used to reset the view after a flush has been performed
@@ -389,7 +390,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *core.UtxoKey) *UtxoEntry {
 		if bav.Postgres != nil {
 			utxoEntry = bav.Postgres.GetUtxoEntryForUtxoKey(utxoKey)
 		} else {
-			utxoEntry = lib.DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
+			utxoEntry = db.DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
 		}
 		if utxoEntry == nil {
 			// This means the utxo is neither in our map nor in the db so
@@ -422,7 +423,7 @@ func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, 
 		balanceNanos = bav.Postgres.GetBalance(core.NewPublicKey(publicKey))
 	} else {
 		var err error
-		balanceNanos, err = lib.DbGetDeSoBalanceNanosForPublicKey(bav.Handle, publicKey)
+		balanceNanos, err = db.DbGetDeSoBalanceNanosForPublicKey(bav.Handle, publicKey)
 		if err != nil {
 			return uint64(0), errors.Wrap(err, "GetDeSoBalanceNanosForPublicKey: ")
 		}
@@ -2045,11 +2046,11 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	if bav.Postgres != nil {
 		utxoEntriesForPublicKey = bav.Postgres.GetUtxoEntriesForPublicKey(pkBytes)
 	} else {
-		utxoEntriesForPublicKey, err = lib.DbGetUtxosForPubKey(pkBytes, bav.Handle)
+		utxoEntriesForPublicKey, err = db.DbGetUtxosForPubKey(pkBytes, bav.Handle)
 	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GetUnspentUtxoEntrysForPublicKey: Problem fetching "+
-			"utxos for public key %s", lib.PkToString(pkBytes, bav.Params))
+			"utxos for public key %s", db.PkToString(pkBytes, bav.Params))
 	}
 
 	// Load all the utxos associated with this public key into
@@ -2100,17 +2101,17 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 				break
 			}
 
-			blockNode := lib.GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
+			blockNode := db.GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
 				return uint64(0), fmt.Errorf(
 					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 					nextBlockHash.String())
 			}
-			blockRewardForPK, err := lib.DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
+			blockRewardForPK, err := db.DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
 			if err != nil {
 				return uint64(0), errors.Wrapf(
 					err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block reward for "+
-						"public key %s blockhash %s", lib.PkToString(pkBytes, bav.Params), nextBlockHash.String())
+						"public key %s blockhash %s", db.PkToString(pkBytes, bav.Params), nextBlockHash.String())
 			}
 			immatureBlockRewards += blockRewardForPK
 			if blockNode.Parent != nil {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/view"
 	"io"
 	"math"
@@ -2061,7 +2062,7 @@ func (bpi *BlockProducerInfo) String() string {
 	if bpi == nil || len(bpi.PublicKey) == 0 {
 		return "Signer Key: NONE"
 	}
-	return fmt.Sprintf("Signer Key: %v", PkToStringMainnet(bpi.PublicKey))
+	return fmt.Sprintf("Signer Key: %v", db.PkToStringMainnet(bpi.PublicKey))
 }
 
 type MsgDeSoBlock struct {
@@ -2273,7 +2274,7 @@ type DeSoOutput struct {
 
 func (desoOutput *DeSoOutput) String() string {
 	return fmt.Sprintf("< PublicKey: %#v, AmountNanos: %d >",
-		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
+		db.PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
 }
 
 type MsgDeSoTxn struct {
@@ -2333,7 +2334,7 @@ func (msg *MsgDeSoTxn) String() string {
 		}
 	}
 	return fmt.Sprintf("< TxHash: %v, TxnType: %v, PubKey: %v >",
-		msg.Hash(), msg.TxnMeta.GetTxnType(), PkToStringMainnet(pubKey))
+		msg.Hash(), msg.TxnMeta.GetTxnType(), db.PkToStringMainnet(pubKey))
 }
 
 func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {

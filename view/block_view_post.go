@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -25,7 +26,7 @@ func (bav *UtxoView) _getRepostEntryForRepostKey(repostKey *RepostKey) *RepostEn
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	repostEntry := lib.DbReposterPubKeyRepostedPostHashToRepostEntry(
+	repostEntry := db.DbReposterPubKeyRepostedPostHashToRepostEntry(
 		bav.Handle, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash)
 	if repostEntry != nil {
 		bav._setRepostEntryMappings(repostEntry)
@@ -105,7 +106,7 @@ func (bav *UtxoView) GetDiamondEntryForDiamondKey(diamondKey *DiamondKey) *Diamo
 			}
 		}
 	} else {
-		diamondEntry = lib.DbGetDiamondMappings(bav.Handle, &diamondKey.ReceiverPKID, &diamondKey.SenderPKID, &diamondKey.DiamondPostHash)
+		diamondEntry = db.DbGetDiamondMappings(bav.Handle, &diamondKey.ReceiverPKID, &diamondKey.SenderPKID, &diamondKey.DiamondPostHash)
 	}
 
 	if diamondEntry != nil {
@@ -132,7 +133,7 @@ func (bav *UtxoView) GetPostEntryForPostHash(postHash *core.BlockHash) *PostEntr
 		}
 		return nil
 	} else {
-		dbPostEntry := lib.DBGetPostEntryByPostHash(bav.Handle, postHash)
+		dbPostEntry := db.DBGetPostEntryByPostHash(bav.Handle, postHash)
 		if dbPostEntry != nil {
 			bav._setPostEntryMappings(dbPostEntry)
 		}
@@ -144,7 +145,7 @@ func (bav *UtxoView) GetDiamondEntryMapForPublicKey(publicKey []byte, fetchYouDi
 ) (_pkidToDiamondsMap map[core.PKID][]*DiamondEntry, _err error) {
 	pkidEntry := bav.GetPKIDForPublicKey(publicKey)
 
-	dbPKIDToDiamondsMap, err := lib.DbGetPKIDsThatDiamondedYouMap(bav.Handle, pkidEntry.PKID, fetchYouDiamonded)
+	dbPKIDToDiamondsMap, err := db.DbGetPKIDsThatDiamondedYouMap(bav.Handle, pkidEntry.PKID, fetchYouDiamonded)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetDiamondEntryMapForPublicKey: Error Getting "+
 			"PKIDs that diamonded you map from the DB.")
@@ -192,7 +193,7 @@ func (bav *UtxoView) GetDiamondEntriesForSenderToReceiver(receiverPublicKey []by
 
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(receiverPublicKey)
 	senderPKIDEntry := bav.GetPKIDForPublicKey(senderPublicKey)
-	dbDiamondEntries, err := lib.DbGetDiamondEntriesForSenderToReceiver(bav.Handle, receiverPKIDEntry.PKID, senderPKIDEntry.PKID)
+	dbDiamondEntries, err := db.DbGetDiamondEntriesForSenderToReceiver(bav.Handle, receiverPKIDEntry.PKID, senderPKIDEntry.PKID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetDiamondEntriesForGiverToReceiver: Error getting diamond entries from DB.")
 	}
@@ -272,7 +273,7 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	if senderPKID == nil || receiverPKID == nil {
 		glog.V(1).Infof(
 			"GetPostEntryReaderState: Could not find PKID for reader PK: %s or poster PK: %s",
-			lib.PkToString(readerPK, bav.Params), lib.PkToString(postEntry.PosterPublicKey, bav.Params))
+			db.PkToString(readerPK, bav.Params), db.PkToString(postEntry.PosterPublicKey, bav.Params))
 	} else {
 		diamondKey := MakeDiamondKey(senderPKID.PKID, receiverPKID.PKID, postEntry.PostHash)
 		diamondEntry := bav.GetDiamondEntryForDiamondKey(&diamondKey)
@@ -308,7 +309,7 @@ func (bav *UtxoView) GetCommentEntriesForParentStakeID(parentStakeID []byte) ([]
 			bav.setPostMappings(post)
 		}
 	} else {
-		_, dbCommentHashes, _, err := lib.DBGetCommentPostHashesForParentStakeID(bav.Handle, parentStakeID, false)
+		_, dbCommentHashes, _, err := db.DBGetCommentPostHashesForParentStakeID(bav.Handle, parentStakeID, false)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetCommentEntriesForParentStakeID: Problem fetching comments: %v", err)
 		}
@@ -384,7 +385,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	//
 	// TODO(performance): This currently fetches all posts. We should implement
 	// some kind of pagination instead though.
-	_, _, dbPostEntries, err := lib.DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
+	_, _, dbPostEntries, err := db.DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching PostEntry's from db: ")
 	}
@@ -409,7 +410,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 		// comments.
 
 		if len(postEntry.ParentStakeID) == 0 {
-			_, dbCommentHashes, _, err := lib.DBGetCommentPostHashesForParentStakeID(
+			_, dbCommentHashes, _, err := db.DBGetCommentPostHashesForParentStakeID(
 				bav.Handle, postEntry.ParentStakeID, false /*fetchEntries*/)
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching comment PostEntry's from db: ")
@@ -479,7 +480,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			if startPostEntry == nil {
 				return nil, fmt.Errorf("GetPostsPaginatedForPublicKeyOrderedByTimestamp: Invalid start post hash")
 			}
-			prefix = append(dbPrefix, lib.EncodeUint64(startPostEntry.TimestampNanos)...)
+			prefix = append(dbPrefix, db.EncodeUint64(startPostEntry.TimestampNanos)...)
 			prefix = append(prefix, startPostEntry.PostHash[:]...)
 		} else {
 			maxBigEndianUint64Bytes := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -569,7 +570,7 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *core.BlockHash) (_pk
 	handle := bav.Handle
 	dbPrefix := append([]byte{}, lib._PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := lib.EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := db.EnumerateKeysForPrefix(handle, dbPrefix)
 
 	diamondPostEntry := bav.GetPostEntryForPostHash(postHash)
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(diamondPostEntry.PosterPublicKey)
@@ -609,7 +610,7 @@ func (bav *UtxoView) GetRepostsForPostHash(postHash *core.BlockHash) (_reposterP
 	handle := bav.Handle
 	dbPrefix := append([]byte{}, lib._PrefixRepostedPostHashReposterPubKey...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := lib.EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := db.EnumerateKeysForPrefix(handle, dbPrefix)
 
 	// Iterate over all the db keys & values and load them into the view.
 	expectedKeyLength := 1 + core.HashSizeBytes + btcec.PubKeyBytesLenCompressed
@@ -645,7 +646,7 @@ func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *core.BlockHash,
 	handle := bav.Handle
 	dbPrefix := append([]byte{}, lib._PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := lib.EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := db.EnumerateKeysForPrefix(handle, dbPrefix)
 
 	// Iterate over all the db keys & values and load them into the view.
 	expectedKeyLength := 1 + core.HashSizeBytes + btcec.PubKeyBytesLenCompressed + core.HashSizeBytes
@@ -779,8 +780,8 @@ func (bav *UtxoView) _connectSubmitPost(
 				lib.RuleErrorSubmitPostPostModificationNotAuthorized,
 				"_connectSubmitPost: Post hash: %v, poster public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", postHash,
-				lib.PkToStringBoth(existingPostEntryy.PosterPublicKey),
-				lib.PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+				db.PkToStringBoth(existingPostEntryy.PosterPublicKey),
+				db.PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
 		}
 
 		// Modification of an NFT is not allowed.

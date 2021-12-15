@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/pkg/errors"
 	"math"
@@ -35,7 +36,7 @@ func (bav *UtxoView) _existsBitcoinTxIDMapping(bitcoinBurnTxID *core.BlockHash) 
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return true. If not, return
 	// false. Either way, save the value to the in-memory view mapping got later.
-	dbHasMapping := lib.DbExistsBitcoinBurnTxID(bav.Handle, bitcoinBurnTxID)
+	dbHasMapping := db.DbExistsBitcoinBurnTxID(bav.Handle, bitcoinBurnTxID)
 	bav.BitcoinBurnTxIDs[*bitcoinBurnTxID] = dbHasMapping
 	return dbHasMapping
 }

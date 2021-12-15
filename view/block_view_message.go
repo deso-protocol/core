@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -21,7 +22,7 @@ func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *Mess
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	dbMessageEntry := lib.DbGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
+	dbMessageEntry := db.DbGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
 	if dbMessageEntry != nil {
 		bav._setMessageEntryMappings(dbMessageEntry)
 	}
@@ -86,7 +87,7 @@ func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
 	_messageEntries []*MessageEntry, _err error) {
 
 	// Start by fetching all the messages we have in the db.
-	dbMessageEntries, err := lib.DbGetMessageEntriesForPublicKey(bav.Handle, publicKey)
+	dbMessageEntries, err := db.DbGetMessageEntriesForPublicKey(bav.Handle, publicKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
 	}
@@ -127,7 +128,7 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
 	_messageEntries []*MessageEntry, _err error) {
 
 	// Start by fetching all the messages we have in the db.
-	dbMessageEntries, err := lib.DbGetLimitedMessageEntriesForPublicKey(bav.Handle, publicKey)
+	dbMessageEntries, err := db.DbGetLimitedMessageEntriesForPublicKey(bav.Handle, publicKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
 	}
@@ -325,14 +326,14 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	if !reflect.DeepEqual(messageEntry.SenderPublicKey, currentTxn.PublicKey) {
 		return fmt.Errorf("_disconnectPrivateMessage: Sender public key on "+
 			"MessageEntry was %s but the PublicKey on the txn was %s",
-			lib.PkToString(messageEntry.SenderPublicKey, bav.Params),
-			lib.PkToString(currentTxn.PublicKey, bav.Params))
+			db.PkToString(messageEntry.SenderPublicKey, bav.Params),
+			db.PkToString(currentTxn.PublicKey, bav.Params))
 	}
 	if !reflect.DeepEqual(messageEntry.RecipientPublicKey, txMeta.RecipientPublicKey) {
 		return fmt.Errorf("_disconnectPrivateMessage: Recipient public key on "+
 			"MessageEntry was %s but the PublicKey on the TxnMeta was %s",
-			lib.PkToString(messageEntry.RecipientPublicKey, bav.Params),
-			lib.PkToString(txMeta.RecipientPublicKey, bav.Params))
+			db.PkToString(messageEntry.RecipientPublicKey, bav.Params),
+			db.PkToString(txMeta.RecipientPublicKey, bav.Params))
 	}
 	// Sanity-check that the MessageEntry TstampNanos matches the transaction.
 	if messageEntry.TstampNanos != txMeta.TimestampNanos {

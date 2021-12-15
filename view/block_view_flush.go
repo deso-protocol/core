@@ -3,7 +3,7 @@ package view
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/db"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -120,7 +120,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 
 		// Start by deleting the pre-existing mappings in the db for this key if they
 		// have not yet been modified.
-		if err := lib.DeleteUnmodifiedMappingsForUtxoWithTxn(txn, &utxoKey); err != nil {
+		if err := db.DeleteUnmodifiedMappingsForUtxoWithTxn(txn, &utxoKey); err != nil {
 			return err
 		}
 	}
@@ -138,7 +138,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the entry is unspent, then we need to re-set its mappings in the db
 			// appropriately.
-			if err := lib.PutMappingsForUtxoWithTxn(txn, &utxoKey, utxoEntry); err != nil {
+			if err := db.PutMappingsForUtxoWithTxn(txn, &utxoKey, utxoEntry); err != nil {
 				return err
 			}
 		}
@@ -147,7 +147,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 	glog.V(1).Infof("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// Now update the number of entries in the db with confidence.
-	if err := lib.PutUtxoNumEntriesWithTxn(txn, bav.NumUtxoEntries); err != nil {
+	if err := db.PutUtxoNumEntriesWithTxn(txn, bav.NumUtxoEntries); err != nil {
 		return err
 	}
 
@@ -168,7 +168,7 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 
 		// Start by deleting the pre-existing mappings in the db for this key if they
 		// have not yet been modified.
-		if err := lib.DbDeletePublicKeyToDeSoBalanceWithTxn(txn, pubKey); err != nil {
+		if err := db.DbDeletePublicKeyToDeSoBalanceWithTxn(txn, pubKey); err != nil {
 			return err
 		}
 	}
@@ -177,7 +177,7 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 		pubKey := pubKeyIter[:]
 
 		if balanceNanos > 0 {
-			if err := lib.DbPutDeSoBalanceForPublicKeyWithTxn(txn, pubKey, balanceNanos); err != nil {
+			if err := db.DbPutDeSoBalanceForPublicKeyWithTxn(txn, pubKey, balanceNanos); err != nil {
 				return err
 			}
 		}
@@ -188,7 +188,7 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushGlobalParamsEntryToDbWithTxn(txn *badger.Txn) error {
 	globalParamsEntry := bav.GlobalParamsEntry
-	if err := lib.DbPutGlobalParamsEntryWithTxn(txn, *globalParamsEntry); err != nil {
+	if err := db.DbPutGlobalParamsEntryWithTxn(txn, *globalParamsEntry); err != nil {
 		return errors.Wrapf(err, "_flushGlobalParamsEntryToDbWithTxn: Problem putting global params entry in DB")
 	}
 	return nil
@@ -200,7 +200,7 @@ func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) er
 	for _, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		// Delete the existing mappings in the db for this ForbiddenPubKeyEntry. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DbDeleteForbiddenBlockSignaturePubKeyWithTxn(
+		if err := db.DbDeleteForbiddenBlockSignaturePubKeyWithTxn(
 			txn, forbiddenPubKeyEntry.PubKey[:]); err != nil {
 
 			return errors.Wrapf(
@@ -215,7 +215,7 @@ func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) er
 		} else {
 			// If the ForbiddenPubKeyEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, forbiddenPubKeyEntry.PubKey); err != nil {
+			if err := db.DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, forbiddenPubKeyEntry.PubKey); err != nil {
 				return err
 			}
 		}
@@ -234,13 +234,13 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 
 		if mappingExists {
 			// In this case we should add the mapping to the db.
-			if err := lib.DbPutBitcoinBurnTxIDWithTxn(txn, &bitcoinBurnTxID); err != nil {
+			if err := db.DbPutBitcoinBurnTxIDWithTxn(txn, &bitcoinBurnTxID); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushBitcoinExchangeDataWithTxn: "+
 					"Problem putting BitcoinBurnTxID %v to db", &bitcoinBurnTxID)
 			}
 		} else {
 			// In this case we should delete the mapping from the db.
-			if err := lib.DbDeleteBitcoinBurnTxIDWithTxn(txn, &bitcoinBurnTxID); err != nil {
+			if err := db.DbDeleteBitcoinBurnTxIDWithTxn(txn, &bitcoinBurnTxID); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushBitcoinExchangeDataWithTxn: "+
 					"Problem deleting BitcoinBurnTxID %v to db", &bitcoinBurnTxID)
 			}
@@ -248,13 +248,13 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 	}
 
 	// Update NanosPurchased
-	if err := lib.DbPutNanosPurchasedWithTxn(txn, bav.NanosPurchased); err != nil {
+	if err := db.DbPutNanosPurchasedWithTxn(txn, bav.NanosPurchased); err != nil {
 		errors.Wrapf(err, "UtxoView._flushBitcoinExchangeDataWithTxn: "+
 			"Problem putting NanosPurchased %d to db", bav.NanosPurchased)
 	}
 
 	// Update the BitcoinUSDExchangeRate in the db
-	if err := lib.DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn, bav.USDCentsPerBitcoin); err != nil {
+	if err := db.DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn, bav.USDCentsPerBitcoin); err != nil {
 		errors.Wrapf(err, "UtxoView.FlushToDBWithTxn: "+
 			"Problem putting USDCentsPerBitcoin %d to db", bav.USDCentsPerBitcoin)
 	}
@@ -284,7 +284,7 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this MessageKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DbDeleteMessageEntryMappingsWithTxn(
+		if err := db.DbDeleteMessageEntryMappingsWithTxn(
 			txn, messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
 
 			return errors.Wrapf(
@@ -300,7 +300,7 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the MessageEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DbPutMessageEntryWithTxn(txn, messageEntry); err != nil {
+			if err := db.DbPutMessageEntryWithTxn(txn, messageEntry); err != nil {
 
 				return err
 			}
@@ -330,7 +330,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this RepostKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DbDeleteRepostMappingsWithTxn(
+		if err := db.DbDeleteRepostMappingsWithTxn(
 			txn, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash); err != nil {
 
 			return errors.Wrapf(
@@ -345,7 +345,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the RepostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DbPutRepostMappingsWithTxn(
+			if err := db.DbPutRepostMappingsWithTxn(
 				txn, repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry); err != nil {
 				return err
 			}
@@ -375,7 +375,7 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this LikeKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DbDeleteLikeMappingsWithTxn(
+		if err := db.DbDeleteLikeMappingsWithTxn(
 			txn, likeKey.LikerPubKey[:], likeKey.LikedPostHash); err != nil {
 
 			return errors.Wrapf(
@@ -393,7 +393,7 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the LikeEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DbPutLikeMappingsWithTxn(
+			if err := db.DbPutLikeMappingsWithTxn(
 				txn, likeEntry.LikerPubKey, *likeEntry.LikedPostHash); err != nil {
 
 				return err
@@ -423,7 +423,7 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this FollowKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DbDeleteFollowMappingsWithTxn(
+		if err := db.DbDeleteFollowMappingsWithTxn(
 			txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
 
 			return errors.Wrapf(
@@ -440,7 +440,7 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the FollowEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DbPutFollowMappingsWithTxn(
+			if err := db.DbPutFollowMappingsWithTxn(
 				txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
 
 				return err
@@ -469,7 +469,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this NFTKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+		if err := db.DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
@@ -485,7 +485,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DBPutNFTEntryMappingsWithTxn(txn, nftEntry); err != nil {
+			if err := db.DBPutNFTEntryMappingsWithTxn(txn, nftEntry); err != nil {
 				return err
 			}
 		}
@@ -506,7 +506,7 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 
 		// Delete the existing mappings in the db for this NFTKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, &nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
+		if err := db.DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, &nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushAcceptedBidEntriesToDbWithTxn: Problem deleting mappings "+
@@ -522,7 +522,7 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, nftKey, acceptedNFTBidEntries); err != nil {
+			if err := db.DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, nftKey, acceptedNFTBidEntries); err != nil {
 				return err
 			}
 		}
@@ -550,7 +550,7 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this NFTBidKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
+		if err := db.DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
@@ -566,7 +566,7 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DBPutNFTBidEntryMappingsWithTxn(txn, nftBidEntry); err != nil {
+			if err := db.DBPutNFTBidEntryMappingsWithTxn(txn, nftBidEntry); err != nil {
 				return err
 			}
 		}
@@ -594,7 +594,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this DiamondKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DbDeleteDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
+		if err := db.DbDeleteDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushDiamondEntriesToDbWithTxn: Problem deleting mappings "+
@@ -610,7 +610,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the DiamondEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DbPutDiamondMappingsWithTxn(
+			if err := db.DbPutDiamondMappingsWithTxn(
 				txn,
 				diamondEntry); err != nil {
 				return err
@@ -643,7 +643,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this PostHash. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DBDeletePostEntryMappingsWithTxn(txn, &postHash, bav.Params); err != nil {
+		if err := db.DBDeletePostEntryMappingsWithTxn(txn, &postHash, bav.Params); err != nil {
 			return errors.Wrapf(
 				err, "_flushPostEntriesToDbWithTxn: Problem deleting mappings "+
 					"for PostHash: %v: ", postHash)
@@ -660,7 +660,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the PostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DBPutPostEntryMappingsWithTxn(txn, postEntry, bav.Params); err != nil {
+			if err := db.DBPutPostEntryMappingsWithTxn(txn, postEntry, bav.Params); err != nil {
 
 				return err
 			}
@@ -681,11 +681,11 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this PKID. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DBDeletePKIDMappingsWithTxn(txn, pubKeyCopy, bav.Params); err != nil {
+		if err := db.DBDeletePKIDMappingsWithTxn(txn, pubKeyCopy, bav.Params); err != nil {
 			return errors.Wrapf(
 				err, "_flushPKIDEntriesToDbWithTxn: Problem deleting mappings "+
-					"for pkid: %v, public key: %v: ", lib.PkToString(pkidEntry.PKID[:], bav.Params),
-				lib.PkToString(pubKeyCopy, bav.Params))
+					"for pkid: %v, public key: %v: ", db.PkToString(pkidEntry.PKID[:], bav.Params),
+				db.PkToString(pubKeyCopy, bav.Params))
 		}
 	}
 
@@ -703,21 +703,21 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 			if !reflect.DeepEqual(pubKeyCopy, pkidEntry.PublicKey) {
 				return fmt.Errorf("_flushPKIDEntriesToDbWithTxn: Sanity-check failed. "+
 					"Public key in entry %v does not match public key in mapping %v ",
-					lib.PkToString(pkidEntry.PublicKey[:], bav.Params),
-					lib.PkToString(pubKeyCopy, bav.Params))
+					db.PkToString(pkidEntry.PublicKey[:], bav.Params),
+					db.PkToString(pubKeyCopy, bav.Params))
 			}
 			// Sanity-check that the mapping in the public key map lines up with the mapping
 			// in the PKID map.
 			if _, pkidEntryExists := bav.PKIDToPublicKey[*pkidEntry.PKID]; !pkidEntryExists {
 				return fmt.Errorf("_flushPKIDEntriesToDbWithTxn: Sanity-check failed. "+
 					"PKID %v for public key %v does not exist in PKIDToPublicKey map.",
-					lib.PkToString(pkidEntry.PKID[:], bav.Params),
-					lib.PkToString(pubKeyCopy, bav.Params))
+					db.PkToString(pkidEntry.PKID[:], bav.Params),
+					db.PkToString(pubKeyCopy, bav.Params))
 			}
 
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DBPutPKIDMappingsWithTxn(txn, pubKeyCopy, pkidEntry, bav.Params); err != nil {
+			if err := db.DBPutPKIDMappingsWithTxn(txn, pubKeyCopy, pkidEntry, bav.Params); err != nil {
 				return err
 			}
 		}
@@ -737,11 +737,11 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this PKID. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DBDeleteProfileEntryMappingsWithTxn(txn, &profilePKID, bav.Params); err != nil {
+		if err := db.DBDeleteProfileEntryMappingsWithTxn(txn, &profilePKID, bav.Params); err != nil {
 			return errors.Wrapf(
 				err, "_flushProfileEntriesToDbWithTxn: Problem deleting mappings "+
-					"for pkid: %v, public key: %v: ", lib.PkToString(profilePKID[:], bav.Params),
-				lib.PkToString(profileEntry.PublicKey, bav.Params))
+					"for pkid: %v, public key: %v: ", db.PkToString(profilePKID[:], bav.Params),
+				db.PkToString(profileEntry.PublicKey, bav.Params))
 		}
 	}
 	numDeleted := 0
@@ -762,13 +762,13 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 			if viewPKIDEntry == nil || viewPKIDEntry.isDeleted || *viewPKIDEntry.PKID != profilePKID {
 				return fmt.Errorf("_flushProfileEntriesToDbWithTxn: Sanity-check failed: PKID %v does "+
 					"not exist in view mapping for profile with public key %v",
-					lib.PkToString(profilePKID[:], bav.Params),
-					lib.PkToString(profileEntry.PublicKey, bav.Params))
+					db.PkToString(profilePKID[:], bav.Params),
+					db.PkToString(profileEntry.PublicKey, bav.Params))
 			}
 
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DBPutProfileEntryMappingsWithTxn(
+			if err := db.DBPutProfileEntryMappingsWithTxn(
 				txn, profileEntry, &profilePKID, bav.Params); err != nil {
 
 				return err
@@ -804,7 +804,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := lib.DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
+		if err := db.DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 			txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), bav.Params); err != nil {
 
 			return errors.Wrapf(
@@ -825,7 +825,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := lib.DBPutCreatorCoinBalanceEntryMappingsWithTxn(
+			if err := db.DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 				txn, balanceEntry, bav.Params); err != nil {
 
 				return err
@@ -847,7 +847,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false.
-		if err := lib.DBDeleteDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
+		if err := db.DBDeleteDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
 			derivedKeyMapKey.DerivedPublicKey); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 				"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
@@ -860,7 +860,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 			numDeleted++
 		} else {
 			// In this case we add the mapping to the DB.
-			if err := lib.DBPutDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
+			if err := db.DBPutDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
 				derivedKeyMapKey.DerivedPublicKey, derivedKeyEntry); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 					"Problem putting DerivedKeyEntry %v to db", *derivedKeyEntry)
