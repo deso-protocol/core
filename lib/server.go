@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/deso-protocol/core"
+	miner2 "github.com/deso-protocol/core/miner"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 	"net"
 	"runtime"
@@ -28,7 +30,7 @@ import (
 // loop.
 type ServerMessage struct {
 	Peer      *Peer
-	Msg       DeSoMessage
+	Msg       net.DeSoMessage
 	ReplyChan chan *ServerReply
 }
 
@@ -52,7 +54,7 @@ type Server struct {
 	cmgr          *ConnectionManager
 	blockchain    *Blockchain
 	mempool       *DeSoMempool
-	miner         *DeSoMiner
+	miner         *miner2.DeSoMiner
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
 
@@ -111,7 +113,7 @@ type Server struct {
 	// It is organized in this way so that we can limit the number of addresses we
 	// are distributing for a single peer to avoid a DOS attack.
 	addrsToBroadcastLock deadlock.RWMutex
-	addrsToBroadcastt    map[string][]*SingleAddr
+	addrsToBroadcastt    map[string][]*net.SingleAddr
 
 	// When set to true, we disable the ConnectionManager
 	disableNetworking bool
@@ -150,8 +152,8 @@ func (srv *Server) _removeRequest(hash *core.BlockHash) {
 	// make sure it's good and purged.
 	delete(srv.requestedTransactionsMap, *hash)
 
-	invVect := &InvVect{
-		Type: InvTypeTx,
+	invVect := &net.InvVect{
+		Type: net.InvTypeTx,
 		Hash: *hash,
 	}
 	srv.inventoryBeingProcessed.Delete(*invVect)
@@ -203,11 +205,11 @@ func (srv *Server) GetConnectionManager() *ConnectionManager {
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
-func (srv *Server) GetMiner() *DeSoMiner {
+func (srv *Server) GetMiner() *miner2.DeSoMiner {
 	return srv.miner
 }
 
-func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
+func (srv *Server) BroadcastTransaction(txn *net.MsgDeSoTxn) ([]*MempoolTx, error) {
 	// Use the backendServer to add the transaction to the mempool and
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
@@ -224,7 +226,7 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 	return mempoolTxs, nil
 }
 
-func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
+func (srv *Server) VerifyAndBroadcastTransaction(txn *net.MsgDeSoTxn) error {
 	// Grab the block tip and use it as the height for validation.
 	blockHeight := srv.blockchain.BlockTip().Height
 	err := srv.blockchain.ValidateTransaction(
@@ -270,12 +272,12 @@ func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 //
 // TODO: Refactor all these arguments into a config object or something.
 func NewServer(
-	_params *DeSoParams,
+	_params *core.DeSoParams,
 	_listeners []net.Listener,
 	_desoAddrMgr *addrmgr.AddrManager,
 	_connectIps []string,
 	_db *badger.DB,
-	postgres *Postgres,
+	postgres *view.Postgres,
 	_targetOutboundPeers uint32,
 	_maxInboundPeers uint32,
 	_minerPublicKeys []string,
@@ -347,10 +349,10 @@ func NewServer(
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
 		_chain.headerTip().Height,
 		hex.EncodeToString(_chain.headerTip().Hash[:]),
-		hex.EncodeToString(BigintToHash(_chain.headerTip().CumWork)[:]),
+		hex.EncodeToString(miner2.BigintToHash(_chain.headerTip().CumWork)[:]),
 		_chain.blockTip().Height,
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
-		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
+		hex.EncodeToString(miner2.BigintToHash(_chain.blockTip().CumWork)[:]))
 
 	// Create a mempool to store transactions until they're ready to be mined into
 	// blocks.
@@ -402,7 +404,7 @@ func NewServer(
 	if _numMiningThreads <= 0 {
 		_numMiningThreads = uint64(runtime.NumCPU())
 	}
-	_miner, err := NewDeSoMiner(_minerPublicKeys, uint32(_numMiningThreads), _blockProducer, _params)
+	_miner, err := miner2.NewDeSoMiner(_minerPublicKeys, uint32(_numMiningThreads), _blockProducer, _params)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: ")
 	}
@@ -430,7 +432,7 @@ func NewServer(
 	}
 
 	// Initialize the addrs to broadcast map.
-	srv.addrsToBroadcastt = make(map[string][]*SingleAddr)
+	srv.addrsToBroadcastt = make(map[string][]*net.SingleAddr)
 
 	// This will initialize the request queues.
 	srv.ResetRequestQueues()
@@ -438,7 +440,7 @@ func NewServer(
 	return srv, nil
 }
 
-func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
+func (srv *Server) _handleGetHeaders(pp *Peer, msg *net.MsgDeSoGetHeaders) {
 	glog.V(1).Infof("Server._handleGetHeadersMessage: called with locator: (%v), "+
 		"stopHash: (%v) from Peer %v", msg.BlockLocator, msg.StopHash, pp)
 
@@ -466,7 +468,7 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 
 	// Send found headers to the requesting peer.
 	blockTip := srv.blockchain.blockTip()
-	pp.AddDeSoMessage(&MsgDeSoHeaderBundle{
+	pp.AddDeSoMessage(&net.MsgDeSoHeaderBundle{
 		Headers:   headers,
 		TipHash:   blockTip.Hash,
 		TipHeight: blockTip.Height,
@@ -481,7 +483,7 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 // SyncStateSyncingHeaders.
 func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 	// Fetch as many blocks as we can from this peer.
-	numBlocksToFetch := MaxBlocksInFlight - len(pp.requestedBlocks)
+	numBlocksToFetch := net.MaxBlocksInFlight - len(pp.requestedBlocks)
 	blockNodesToFetch := srv.blockchain.GetBlockNodesToFetch(
 		numBlocksToFetch, maxHeight, pp.requestedBlocks)
 	if len(blockNodesToFetch) == 0 {
@@ -497,7 +499,7 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 
 		pp.requestedBlocks[*node.Hash] = true
 	}
-	pp.AddDeSoMessage(&MsgDeSoGetBlocks{
+	pp.AddDeSoMessage(&net.MsgDeSoGetBlocks{
 		HashList: hashList,
 	}, false)
 
@@ -508,7 +510,7 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 		pp)
 }
 
-func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
+func (srv *Server) _handleHeaderBundle(pp *Peer, msg *net.MsgDeSoHeaderBundle) {
 	glog.Infof("Received header bundle with %v headers "+
 		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
@@ -586,7 +588,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// On the other hand, if the request contains MaxHeadersPerMsg, it is highly
 	// likely we have not hit the tip of our peer's chain, and so requesting more
 	// headers from the peer would likely be useful.
-	if uint32(len(msg.Headers)) < MaxHeadersPerMsg {
+	if uint32(len(msg.Headers)) < net.MaxHeadersPerMsg {
 		// If we have exhausted the peer's headers but our header chain still isn't
 		// current it means the peer we chose isn't current either. So disconnect
 		// from her and try to sync with someone else.
@@ -674,7 +676,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		pp.Disconnect()
 		return
 	}
-	pp.AddDeSoMessage(&MsgDeSoGetHeaders{
+	pp.AddDeSoMessage(&net.MsgDeSoGetHeaders{
 		StopHash:     &core.BlockHash{},
 		BlockLocator: locator,
 	}, false)
@@ -684,7 +686,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		headerTip.Header, msg.TipHeight, pp)
 }
 
-func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
+func (srv *Server) _handleGetBlocks(pp *Peer, msg *net.MsgDeSoGetBlocks) {
 	glog.V(1).Infof("srv._handleGetBlocks: Called with message %v from Peer %v", msg, pp)
 
 	// Let the peer handle this
@@ -747,7 +749,7 @@ func (srv *Server) _startSync() {
 	// Note that we include an empty BlockHash as the stopHash to indicate we want as
 	// many headers as the Peer can give us.
 	locator := srv.blockchain.LatestHeaderLocator()
-	bestPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
+	bestPeer.AddDeSoMessage(&net.MsgDeSoGetHeaders{
 		StopHash:     &core.BlockHash{},
 		BlockLocator: locator,
 	}, false)
@@ -831,12 +833,12 @@ func (srv *Server) _cleanupDonePeerPeerState(pp *Peer) {
 	}
 	// Request any hashes we might have reassigned in a goroutine to keep things
 	// moving.
-	newPeer.AddDeSoMessage(&MsgDeSoGetTransactions{
+	newPeer.AddDeSoMessage(&net.MsgDeSoGetTransactions{
 		HashList: txnHashesReassigned,
 	}, false)
 }
 
-func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUpdate) {
+func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *net.MsgDeSoBitcoinManagerUpdate) {
 	glog.V(1).Infof("Server._handleBitcoinManagerUpdate: Being called")
 
 	// Regardless of whether the DeSo chain is in-sync, consider adding any BitcoinExchange
@@ -855,7 +857,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 			// Note that we pass a nil mempool in order to avoid considering transactions
 			// that are in the mempool but lacking a merkle proof. If transactions are
 			// invalid then a separate mempool check later will catch them.
-			validTransactions := []*MsgDeSoTxn{}
+			validTransactions := []*net.MsgDeSoTxn{}
 			for _, burnTxn := range bmUpdate.TransactionsFound {
 				err := srv.blockchain.ValidateTransaction(
 					burnTxn, srv.blockchain.blockTip().Height+1, true, /*verifySignatures*/
@@ -916,7 +918,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 		glog.V(1).Infof("Server._handleBitcoinManagerUpdate: SyncPeer is NOT nil; sending " +
 			"DeSo getheaders for good measure")
 		locator := srv.blockchain.LatestHeaderLocator()
-		srv.SyncPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
+		srv.SyncPeer.AddDeSoMessage(&net.MsgDeSoGetHeaders{
 			StopHash:     &core.BlockHash{},
 			BlockLocator: locator,
 		}, false)
@@ -971,10 +973,10 @@ func (srv *Server) _relayTransactions() {
 		}
 		// For each peer construct an inventory message that excludes transactions
 		// for which the minimum fee is below what the Peer will allow.
-		invMsg := &MsgDeSoInv{}
+		invMsg := &net.MsgDeSoInv{}
 		for _, newTxn := range txnList {
-			invVect := &InvVect{
-				Type: InvTypeTx,
+			invVect := &net.InvVect{
+				Type: net.InvTypeTx,
 				Hash: *newTxn.Hash,
 			}
 
@@ -994,7 +996,7 @@ func (srv *Server) _relayTransactions() {
 }
 
 func (srv *Server) _addNewTxn(
-	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MempoolTx, error) {
+	pp *Peer, txn *net.MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MempoolTx, error) {
 
 	if srv.readOnlyMode {
 		err := fmt.Errorf("Server._addNewTxnAndRelay: Not processing txn from peer %v "+
@@ -1088,7 +1090,7 @@ func (srv *Server) _maybeRequestSync(pp *Peer) {
 	if srv.blockchain.chainState() == SyncStateFullyCurrent {
 		if pp != nil {
 			glog.V(1).Infof("Server._maybeRequestSync: Sending mempool message: %v", pp)
-			pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
+			pp.AddDeSoMessage(&net.MsgDeSoMempool{}, false)
 		} else {
 			glog.V(1).Infof("Server._maybeRequestSync: NOT sending mempool message because peer is nil: %v", pp)
 		}
@@ -1116,8 +1118,8 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 
 	// Construct an inventory vector to relay to peers.
 	blockHash, _ := blk.Header.Hash()
-	invVect := &InvVect{
-		Type: InvTypeBlock,
+	invVect := &net.InvVect{
+		Type: net.InvTypeBlock,
 		Hash: *blockHash,
 	}
 
@@ -1125,13 +1127,13 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 	// actually be relayed if it's not already in the peer's knownInventory.
 	allPeers := srv.cmgr.GetAllPeers()
 	for _, pp := range allPeers {
-		pp.AddDeSoMessage(&MsgDeSoInv{
-			InvList: []*InvVect{invVect},
+		pp.AddDeSoMessage(&net.MsgDeSoInv{
+			InvList: []*net.InvVect{invVect},
 		}, false)
 	}
 }
 
-func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffix string) {
+func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *net.MsgDeSoBlock, suffix string) {
 	// Disconnect the Peer. Generally-speaking, disconnecting from the peer will cause its
 	// requested blocks and txns to be removed from the global maps and cause it to be
 	// replaced by another peer. Furthermore,
@@ -1144,7 +1146,7 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 	pp.Disconnect()
 }
 
-func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
+func (srv *Server) _handleBlock(pp *Peer, blk *net.MsgDeSoBlock) {
 	glog.Infof("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)
 
@@ -1262,7 +1264,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		//   result in us not sending anything back because there won’t be any new
 		//   blocks to request.
 		locator := srv.blockchain.LatestHeaderLocator()
-		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
+		pp.AddDeSoMessage(&net.MsgDeSoGetHeaders{
 			StopHash:     &core.BlockHash{},
 			BlockLocator: locator,
 		}, false)
@@ -1274,7 +1276,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	srv._maybeRequestSync(pp)
 }
 
-func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
+func (srv *Server) _handleInv(peer *Peer, msg *net.MsgDeSoInv) {
 	if !peer.isOutbound && srv.ignoreInboundPeerInvMessages {
 		glog.Infof("_handleInv: Ignoring inv message from inbound peer because "+
 			"ignore_outbound_peer_inv_messages=true: %v", peer)
@@ -1283,7 +1285,7 @@ func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
 	peer.AddDeSoMessage(msg, true /*inbound*/)
 }
 
-func (srv *Server) _handleGetTransactions(pp *Peer, msg *MsgDeSoGetTransactions) {
+func (srv *Server) _handleGetTransactions(pp *Peer, msg *net.MsgDeSoGetTransactions) {
 	glog.V(1).Infof("Server._handleGetTransactions: Received GetTransactions "+
 		"message %v from Peer %v", msg, pp)
 
@@ -1291,7 +1293,7 @@ func (srv *Server) _handleGetTransactions(pp *Peer, msg *MsgDeSoGetTransactions)
 }
 
 func (srv *Server) ProcessSingleTxnWithChainLock(
-	pp *Peer, txn *MsgDeSoTxn) ([]*MempoolTx, error) {
+	pp *Peer, txn *net.MsgDeSoTxn) ([]*MempoolTx, error) {
 	// Lock the chain for reading so that transactions don't shift under our feet
 	// when processing this bundle. Not doing this could cause us to miss transactions
 	// erroneously.
@@ -1308,7 +1310,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(
 		pp.ID, true /*verifySignatures*/)
 }
 
-func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle) []*MempoolTx {
+func (srv *Server) _processTransactions(pp *Peer, msg *net.MsgDeSoTransactionBundle) []*MempoolTx {
 	// Try and add all the transactions to our mempool in the order we received
 	// them. If any fail to get added, just log an error.
 	//
@@ -1329,7 +1331,7 @@ func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle)
 				"transaction %v from peer %v from mempool: %v", txn, pp, err))
 			// A peer should know better than to send us a transaction that's below
 			// our min feerate, which they see when we send them a version message.
-			if err == TxErrorInsufficientFeeMinFee {
+			if err == core.TxErrorInsufficientFeeMinFee {
 				glog.Errorf(fmt.Sprintf("Server._handleTransactionBundle: Disconnecting "+
 					"Peer %v for sending us a transaction %v with fee below the minimum fee %d",
 					pp, txn, srv.mempool.minFeeRateNanosPerKB))
@@ -1353,14 +1355,14 @@ func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle)
 	return transactionsToRelay
 }
 
-func (srv *Server) _handleTransactionBundle(pp *Peer, msg *MsgDeSoTransactionBundle) {
+func (srv *Server) _handleTransactionBundle(pp *Peer, msg *net.MsgDeSoTransactionBundle) {
 	glog.V(1).Infof("Server._handleTransactionBundle: Received TransactionBundle "+
 		"message of size %v from Peer %v", len(msg.Transactions), pp)
 
 	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
-func (srv *Server) _handleMempool(pp *Peer, msg *MsgDeSoMempool) {
+func (srv *Server) _handleMempool(pp *Peer, msg *net.MsgDeSoMempool) {
 	glog.V(1).Infof("Server._handleMempool: Received Mempool message from Peer %v", pp)
 
 	pp.canReceiveInvMessagess = true
@@ -1392,7 +1394,7 @@ func (srv *Server) StartStatsdReporter() {
 	}()
 }
 
-func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
+func (srv *Server) _handleAddrMessage(pp *Peer, msg *net.MsgDeSoAddr) {
 	srv.addrsToBroadcastLock.Lock()
 	defer srv.addrsToBroadcastLock.Unlock()
 
@@ -1400,11 +1402,11 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 
 	// If this addr message contains more than the maximum allowed number of addresses
 	// then disconnect this peer.
-	if len(msg.AddrList) > MaxAddrsPerAddrMsg {
+	if len(msg.AddrList) > net.MaxAddrsPerAddrMsg {
 		glog.Errorf(fmt.Sprintf("Server._handleAddrMessage: Disconnecting "+
 			"Peer %v for sending us an addr message with %d transactions, which exceeds "+
 			"the max allowed %d",
-			pp, len(msg.AddrList), MaxAddrsPerAddrMsg))
+			pp, len(msg.AddrList), net.MaxAddrsPerAddrMsg))
 		pp.Disconnect()
 		return
 	}
@@ -1428,7 +1430,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 	if len(msg.AddrList) <= 10 {
 		glog.V(1).Infof("Server._handleAddrMessage: Queueing %d addrs for forwarding from "+
 			"peer %v", len(msg.AddrList), pp)
-		sourceAddr := &SingleAddr{
+		sourceAddr := &net.SingleAddr{
 			Timestamp: time.Now(),
 			IP:        pp.netAddr.IP,
 			Port:      pp.netAddr.Port,
@@ -1436,35 +1438,35 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 		}
 		listToAddTo, hasSeenSource := srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)]
 		if !hasSeenSource {
-			listToAddTo = []*SingleAddr{}
+			listToAddTo = []*net.SingleAddr{}
 		}
 		// If this peer has been sending us a lot of little crap, evict a lot of their
 		// stuff but don't disconnect.
-		if len(listToAddTo) > MaxAddrsPerAddrMsg {
-			listToAddTo = listToAddTo[:MaxAddrsPerAddrMsg/2]
+		if len(listToAddTo) > net.MaxAddrsPerAddrMsg {
+			listToAddTo = listToAddTo[:net.MaxAddrsPerAddrMsg/2]
 		}
 		listToAddTo = append(listToAddTo, msg.AddrList...)
 		srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)] = listToAddTo
 	}
 }
 
-func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
+func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *net.MsgDeSoGetAddr) {
 	glog.V(1).Infof("Server._handleGetAddrMessage: Received GetAddr from peer %v", pp)
 	// When we get a GetAddr message, choose MaxAddrsPerMsg from the AddrMgr
 	// and send them back to the peer.
 	netAddrsFound := srv.cmgr.addrMgr.AddressCache()
-	if len(netAddrsFound) > MaxAddrsPerAddrMsg {
-		netAddrsFound = netAddrsFound[:MaxAddrsPerAddrMsg]
+	if len(netAddrsFound) > net.MaxAddrsPerAddrMsg {
+		netAddrsFound = netAddrsFound[:net.MaxAddrsPerAddrMsg]
 	}
 
 	// Convert the list to a SingleAddr list.
-	res := &MsgDeSoAddr{}
+	res := &net.MsgDeSoAddr{}
 	for _, netAddr := range netAddrsFound {
-		singleAddr := &SingleAddr{
+		singleAddr := &net.SingleAddr{
 			Timestamp: time.Now(),
 			IP:        netAddr.IP,
 			Port:      netAddr.Port,
-			Services:  (ServiceFlag)(netAddr.Services),
+			Services:  (net.ServiceFlag)(netAddr.Services),
 		}
 		res.AddrList = append(res.AddrList, singleAddr)
 	}
@@ -1474,13 +1476,13 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_shouldQuit bool) {
 	switch msg := serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
-	case *MsgDeSoNewPeer:
+	case *net.MsgDeSoNewPeer:
 		srv._handleNewPeer(serverMessage.Peer)
-	case *MsgDeSoDonePeer:
+	case *net.MsgDeSoDonePeer:
 		srv._handleDonePeer(serverMessage.Peer)
-	case *MsgDeSoBitcoinManagerUpdate:
+	case *net.MsgDeSoBitcoinManagerUpdate:
 		srv._handleBitcoinManagerUpdate(msg)
-	case *MsgDeSoQuit:
+	case *net.MsgDeSoQuit:
 		return true
 	}
 
@@ -1491,21 +1493,21 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	// Handle all non-control message types from our Peers.
 	switch msg := serverMessage.Msg.(type) {
 	// Messages sent among peers.
-	case *MsgDeSoBlock:
+	case *net.MsgDeSoBlock:
 		srv._handleBlock(serverMessage.Peer, msg)
-	case *MsgDeSoGetHeaders:
+	case *net.MsgDeSoGetHeaders:
 		srv._handleGetHeaders(serverMessage.Peer, msg)
-	case *MsgDeSoHeaderBundle:
+	case *net.MsgDeSoHeaderBundle:
 		srv._handleHeaderBundle(serverMessage.Peer, msg)
-	case *MsgDeSoGetBlocks:
+	case *net.MsgDeSoGetBlocks:
 		srv._handleGetBlocks(serverMessage.Peer, msg)
-	case *MsgDeSoGetTransactions:
+	case *net.MsgDeSoGetTransactions:
 		srv._handleGetTransactions(serverMessage.Peer, msg)
-	case *MsgDeSoTransactionBundle:
+	case *net.MsgDeSoTransactionBundle:
 		srv._handleTransactionBundle(serverMessage.Peer, msg)
-	case *MsgDeSoMempool:
+	case *net.MsgDeSoMempool:
 		srv._handleMempool(serverMessage.Peer, msg)
-	case *MsgDeSoInv:
+	case *net.MsgDeSoInv:
 		srv._handleInv(serverMessage.Peer, msg)
 	}
 }
@@ -1521,14 +1523,14 @@ func (srv *Server) messageHandler() {
 
 		// If the message is an addr message we handle it independent of whether or
 		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
-			srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
+		if serverMessage.Msg.GetMsgType() == net.MsgTypeAddr {
+			srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*net.MsgDeSoAddr))
 			continue
 		}
 		// If the message is a GetAddr message we handle it independent of whether or
 		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
-			srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
+		if serverMessage.Msg.GetMsgType() == net.MsgTypeGetAddr {
+			srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*net.MsgDeSoGetAddr))
 			continue
 		}
 
@@ -1555,17 +1557,17 @@ func (srv *Server) messageHandler() {
 	glog.V(2).Info("Server.Start: Server done")
 }
 
-func (srv *Server) _getAddrsToBroadcast() []*SingleAddr {
+func (srv *Server) _getAddrsToBroadcast() []*net.SingleAddr {
 	srv.addrsToBroadcastLock.Lock()
 	defer srv.addrsToBroadcastLock.Unlock()
 
 	// If there's nothing in the map, return.
 	if len(srv.addrsToBroadcastt) == 0 {
-		return []*SingleAddr{}
+		return []*net.SingleAddr{}
 	}
 
 	// If we get here then we have some addresses to broadcast.
-	addrsToBroadcast := []*SingleAddr{}
+	addrsToBroadcast := []*net.SingleAddr{}
 	for len(addrsToBroadcast) < 10 && len(srv.addrsToBroadcastt) > 0 {
 		// Choose a key at random. This works because map iteration is random in golang.
 		bucket := ""
@@ -1600,19 +1602,19 @@ func (srv *Server) _startAddressRelayer() {
 		// For the first ten minutes after the server starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
 		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
-		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
+		if numMinutesPassed < 10 || numMinutesPassed%(net.RebroadcastNodeAddrIntervalMinutes) == 0 {
 			for _, pp := range srv.cmgr.GetAllPeers() {
 				bestAddress := srv.cmgr.addrMgr.GetBestLocalAddress(pp.netAddr)
 				if bestAddress != nil {
 					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
 						"peer %v", bestAddress.IP.String(), pp)
-					pp.AddDeSoMessage(&MsgDeSoAddr{
-						AddrList: []*SingleAddr{
-							&SingleAddr{
+					pp.AddDeSoMessage(&net.MsgDeSoAddr{
+						AddrList: []*net.SingleAddr{
+							&net.SingleAddr{
 								Timestamp: time.Now(),
 								IP:        bestAddress.IP,
 								Port:      bestAddress.Port,
-								Services:  (ServiceFlag)(bestAddress.Services),
+								Services:  (net.ServiceFlag)(bestAddress.Services),
 							},
 						},
 					}, false)
@@ -1625,7 +1627,7 @@ func (srv *Server) _startAddressRelayer() {
 		addrsToBroadcast := srv._getAddrsToBroadcast()
 		if len(addrsToBroadcast) == 0 {
 			glog.V(2).Infof("Server.Start._startAddressRelayer: No addrs to relay.")
-			time.Sleep(AddrRelayIntervalSeconds * time.Second)
+			time.Sleep(net.AddrRelayIntervalSeconds * time.Second)
 			continue
 		}
 
@@ -1633,11 +1635,11 @@ func (srv *Server) _startAddressRelayer() {
 			"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
 		// Iterate over all our peers and broadcast the addrs to all of them.
 		for _, pp := range srv.cmgr.GetAllPeers() {
-			pp.AddDeSoMessage(&MsgDeSoAddr{
+			pp.AddDeSoMessage(&net.MsgDeSoAddr{
 				AddrList: addrsToBroadcast,
 			}, false)
 		}
-		time.Sleep(AddrRelayIntervalSeconds * time.Second)
+		time.Sleep(net.AddrRelayIntervalSeconds * time.Second)
 		continue
 	}
 }
@@ -1687,7 +1689,7 @@ func (srv *Server) Stop() {
 		srv.incomingMessages <- &ServerMessage{
 			// Peer is ignored for MsgDeSoQuit.
 			Peer: nil,
-			Msg:  &MsgDeSoQuit{},
+			Msg:  &net.MsgDeSoQuit{},
 		}
 	}()
 

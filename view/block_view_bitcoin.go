@@ -10,6 +10,7 @@ import (
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/pkg/errors"
 	"math"
 	"math/big"
@@ -133,21 +134,21 @@ func _computeBitcoinBurnOutput(bitcoinTransaction *wire.MsgTx, bitcoinBurnAddres
 }
 
 func (bav *UtxoView) _connectBitcoinExchange(
-	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *net.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if bav.Params.DeflationBombBlockHeight != 0 &&
 		uint64(blockHeight) >= bav.Params.DeflationBombBlockHeight {
 
-		return 0, 0, nil, lib.RuleErrorDeflationBombForbidsMintingAnyMoreDeSo
+		return 0, 0, nil, core.RuleErrorDeflationBombForbidsMintingAnyMoreDeSo
 	}
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != lib.TxnTypeBitcoinExchange {
+	if txn.TxnMeta.GetTxnType() != net.TxnTypeBitcoinExchange {
 		return 0, 0, nil, fmt.Errorf("_connectBitcoinExchange: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMetaa := txn.TxnMeta.(*lib.BitcoinExchangeMetadata)
+	txMetaa := txn.TxnMeta.(*net.BitcoinExchangeMetadata)
 
 	// Verify that the the transaction has:
 	// - no inputs
@@ -162,16 +163,16 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	// to repackage Bitcoin burn transactions paying themselves rather than the person
 	// who originally burned the Bitcoin.
 	if len(txn.TxInputs) != 0 {
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeShouldNotHaveInputs
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeShouldNotHaveInputs
 	}
 	if len(txn.TxOutputs) != 0 {
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeShouldNotHaveOutputs
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeShouldNotHaveOutputs
 	}
 	if len(txn.PublicKey) != 0 {
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeShouldNotHavePublicKey
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeShouldNotHavePublicKey
 	}
 	if txn.Signature != nil {
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeShouldNotHaveSignature
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeShouldNotHaveSignature
 	}
 
 	// Check that the BitcoinTransactionHash has not been used in a BitcoinExchange
@@ -183,7 +184,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	// is also tricked, in which case we have bigger problems).
 	bitcoinTxHash := (core.BlockHash)(txMetaa.BitcoinTransaction.TxHash())
 	if bav._existsBitcoinTxIDMapping(&bitcoinTxHash) {
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeDoubleSpendingBitcoinTransaction
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeDoubleSpendingBitcoinTransaction
 	}
 
 	if verifySignatures {
@@ -203,7 +204,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	publicKey, err := ExtractBitcoinPublicKeyFromBitcoinTransactionInputs(
 		txMetaa.BitcoinTransaction, bav.Params.BitcoinBtcdParams)
 	if err != nil {
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeValidPublicKeyNotFoundInInputs
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeValidPublicKeyNotFoundInInputs
 	}
 	// At this point, we should have extracted a public key from the Bitcoin transaction
 	// that we expect to credit the newly-created DeSo to.
@@ -216,7 +217,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 			"converting public key to Bitcoin address: %v", err)
 	}
 	if addrFromPubKey.AddressPubKeyHash().EncodeAddress() == bav.Params.BitcoinBurnAddress {
-		return 0, 0, nil, lib.RuleErrorBurnAddressCannotBurnBitcoin
+		return 0, 0, nil, core.RuleErrorBurnAddressCannotBurnBitcoin
 	}
 
 	// Go through the transaction's outputs and count up the satoshis that are being
@@ -227,10 +228,10 @@ func (bav *UtxoView) _connectBitcoinExchange(
 		txMetaa.BitcoinTransaction, bav.Params.BitcoinBurnAddress,
 		bav.Params.BitcoinBtcdParams)
 	if err != nil {
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeProblemComputingBurnOutput
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeProblemComputingBurnOutput
 	}
 	if totalBurnOutput <= 0 {
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeTotalOutputLessThanOrEqualZero
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeTotalOutputLessThanOrEqualZero
 	}
 
 	// At this point we know how many satoshis were burned and we know the public key
@@ -264,7 +265,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	if feeNanosBigint.Cmp(big.NewInt(math.MaxInt64)) > 0 ||
 		nanosToCreate < uint64(feeNanosBigint.Int64()) {
 
-		return 0, 0, nil, lib.RuleErrorBitcoinExchangeFeeOverflow
+		return 0, 0, nil, core.RuleErrorBitcoinExchangeFeeOverflow
 	}
 	feeNanos := feeNanosBigint.Uint64()
 	userNanos := nanosToCreate - feeNanos
@@ -320,28 +321,28 @@ func (bav *UtxoView) _connectBitcoinExchange(
 }
 
 func (bav *UtxoView) _connectUpdateBitcoinUSDExchangeRate(
-	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *net.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != lib.TxnTypeUpdateBitcoinUSDExchangeRate {
+	if txn.TxnMeta.GetTxnType() != net.TxnTypeUpdateBitcoinUSDExchangeRate {
 		return 0, 0, nil, fmt.Errorf("_connectUpdateBitcoinUSDExchangeRate: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*lib.UpdateBitcoinUSDExchangeRateMetadataa)
+	txMeta := txn.TxnMeta.(*net.UpdateBitcoinUSDExchangeRateMetadataa)
 
 	// Validate that the exchange rate is not less than the floor as a sanity-check.
 	if txMeta.USDCentsPerBitcoin < lib.MinUSDCentsPerBitcoin {
-		return 0, 0, nil, lib.RuleErrorExchangeRateTooLow
+		return 0, 0, nil, core.RuleErrorExchangeRateTooLow
 	}
 	if txMeta.USDCentsPerBitcoin > lib.MaxUSDCentsPerBitcoin {
-		return 0, 0, nil, lib.RuleErrorExchangeRateTooHigh
+		return 0, 0, nil, core.RuleErrorExchangeRateTooHigh
 	}
 
 	// Validate the public key. Only a paramUpdater is allowed to trigger this.
 	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
-		return 0, 0, nil, lib.RuleErrorUserNotAuthorizedToUpdateExchangeRate
+		return 0, 0, nil, core.RuleErrorUserNotAuthorizedToUpdateExchangeRate
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -354,7 +355,7 @@ func (bav *UtxoView) _connectUpdateBitcoinUSDExchangeRate(
 
 	// Output must be non-zero
 	if totalOutput == 0 {
-		return 0, 0, nil, lib.RuleErrorUserOutputMustBeNonzero
+		return 0, 0, nil, core.RuleErrorUserOutputMustBeNonzero
 	}
 
 	if verifySignatures {
@@ -378,7 +379,7 @@ func (bav *UtxoView) _connectUpdateBitcoinUSDExchangeRate(
 }
 
 func (bav *UtxoView) _disconnectBitcoinExchange(
-	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
+	operationType OperationType, currentTxn *net.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Check that the last operation has the required OperationType
@@ -397,7 +398,7 @@ func (bav *UtxoView) _disconnectBitcoinExchange(
 
 	// Get the transaction metadata from the transaction now that we know it has
 	// OperationTypeBitcoinExchange.
-	txMeta := currentTxn.TxnMeta.(*lib.BitcoinExchangeMetadata)
+	txMeta := currentTxn.TxnMeta.(*net.BitcoinExchangeMetadata)
 
 	// Remove the BitcoinTransactionHash from our TxID mappings since we are
 	// unspending it. This makes it so that this hash can be processed again in
@@ -432,7 +433,7 @@ func (bav *UtxoView) _disconnectBitcoinExchange(
 }
 
 func (bav *UtxoView) _disconnectUpdateBitcoinUSDExchangeRate(
-	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
+	operationType OperationType, currentTxn *net.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Check that the last operation has the required OperationType
@@ -451,7 +452,7 @@ func (bav *UtxoView) _disconnectUpdateBitcoinUSDExchangeRate(
 
 	// Get the transaction metadata from the transaction now that we know it has
 	// OperationTypeUpdateBitcoinUSDExchangeRate.
-	txMeta := currentTxn.TxnMeta.(*lib.UpdateBitcoinUSDExchangeRateMetadataa)
+	txMeta := currentTxn.TxnMeta.(*net.UpdateBitcoinUSDExchangeRateMetadataa)
 	_ = txMeta
 
 	// Reset exchange rate to the value it was before granting this DeSo to this user.

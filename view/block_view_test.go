@@ -2,8 +2,11 @@ package view
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/miner"
+	"github.com/deso-protocol/core/net"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +24,7 @@ func _strToPk(t *testing.T, pkStr string) []byte {
 	return pkBytes
 }
 
-func getTxnSize(txn lib.MsgDeSoTxn) int64 {
+func getTxnSize(txn net.MsgDeSoTxn) int64 {
 	bytes, _ := txn.ToBytes(false)
 	return int64(len(bytes))
 }
@@ -62,9 +65,9 @@ var (
 )
 
 func _doBasicTransferWithViewFlush(t *testing.T, chain *lib.Blockchain, db *badger.DB,
-	params *lib.DeSoParams, pkSenderStr string, pkReceiverStr string, privStr string,
+	params *core.DeSoParams, pkSenderStr string, pkReceiverStr string, privStr string,
 	amountNanos uint64, feeRateNanosPerKB uint64) (
-	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32) {
+	_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -114,10 +117,10 @@ func _registerOrTransferWithTestMeta(testMeta *TestMeta, username string,
 }
 
 func _updateGlobalParamsEntry(t *testing.T, chain *lib.Blockchain, db *badger.DB,
-	params *lib.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	params *core.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
 	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, flushToDb bool) (
-	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -137,7 +140,7 @@ func _updateGlobalParamsEntry(t *testing.T, chain *lib.Blockchain, db *badger.DB
 		nil,
 		feeRateNanosPerKB,
 		nil,
-		[]*lib.DeSoOutput{})
+		[]*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -214,11 +217,11 @@ type TestMeta struct {
 	t                      *testing.T
 	chain                  *lib.Blockchain
 	db                     *badger.DB
-	params                 *lib.DeSoParams
+	params                 *core.DeSoParams
 	mempool                *lib.DeSoMempool
-	miner                  *lib.DeSoMiner
+	miner                  *miner.DeSoMiner
 	txnOps                 [][]*UtxoOperation
-	txns                   []*lib.MsgDeSoTxn
+	txns                   []*net.MsgDeSoTxn
 	expectedSenderBalances []uint64
 	savedHeight            uint32
 }
@@ -374,11 +377,11 @@ func TestUpdateGlobalParams(t *testing.T) {
 			-1, /*maxCopiesPerNFT*/
 			false)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorUserNotAuthorizedToUpdateGlobalParams)
+		require.Contains(err.Error(), core.RuleErrorUserNotAuthorizedToUpdateGlobalParams)
 	}
 
 	// Should pass when founder key is equal to moneyPk
-	var updateGlobalParamsTxn *lib.MsgDeSoTxn
+	var updateGlobalParamsTxn *net.MsgDeSoTxn
 	var err error
 	{
 		newUSDCentsPerBitcoin := int64(270430 * 100)
@@ -499,17 +502,17 @@ func TestBasicTransfer(t *testing.T) {
 	// A basic transfer whose input public keys differ from the
 	// transaction-level public key should fail.
 	{
-		txn := &lib.MsgDeSoTxn{
+		txn := &net.MsgDeSoTxn{
 			// The inputs will be set below.
-			TxInputs: []*lib.DeSoInput{},
-			TxOutputs: []*lib.DeSoOutput{
+			TxInputs: []*net.DeSoInput{},
+			TxOutputs: []*net.DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
 			PublicKey: senderPkBytes,
-			TxnMeta:   &lib.BasicTransferMetadata{},
+			TxnMeta:   &net.BasicTransferMetadata{},
 		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
@@ -531,22 +534,22 @@ func TestBasicTransfer(t *testing.T) {
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignatures*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
+		require.Contains(err.Error(), core.RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
 	}
 
 	// Just a basic transfer with a bad signature.
 	{
-		txn := &lib.MsgDeSoTxn{
+		txn := &net.MsgDeSoTxn{
 			// The inputs will be set below.
-			TxInputs: []*lib.DeSoInput{},
-			TxOutputs: []*lib.DeSoOutput{
+			TxInputs: []*net.DeSoInput{},
+			TxOutputs: []*net.DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
 			PublicKey: senderPkBytes,
-			TxnMeta:   &lib.BasicTransferMetadata{},
+			TxnMeta:   &net.BasicTransferMetadata{},
 		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
@@ -565,22 +568,22 @@ func TestBasicTransfer(t *testing.T) {
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorInvalidTransactionSignature)
+		require.Contains(err.Error(), core.RuleErrorInvalidTransactionSignature)
 	}
 
 	// A block reward with a bad signature should fail.
 	{
-		txn := &lib.MsgDeSoTxn{
+		txn := &net.MsgDeSoTxn{
 			// The inputs will be set below.
-			TxInputs: []*lib.DeSoInput{},
-			TxOutputs: []*lib.DeSoOutput{
+			TxInputs: []*net.DeSoInput{},
+			TxOutputs: []*net.DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
 			PublicKey: senderPkBytes,
-			TxnMeta: &lib.BlockRewardMetadataa{
+			TxnMeta: &net.BlockRewardMetadataa{
 				ExtraData: []byte{0x00, 0x01},
 			},
 		}
@@ -592,23 +595,23 @@ func TestBasicTransfer(t *testing.T) {
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
+		require.Contains(err.Error(), core.RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
 	}
 
 	// A block reward with an input, even if it's signed legitimately,
 	// should fail.
 	{
-		txn := &lib.MsgDeSoTxn{
+		txn := &net.MsgDeSoTxn{
 			// The inputs will be set below.
-			TxInputs: []*lib.DeSoInput{},
-			TxOutputs: []*lib.DeSoOutput{
+			TxInputs: []*net.DeSoInput{},
+			TxOutputs: []*net.DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
 			PublicKey: senderPkBytes,
-			TxnMeta: &lib.BlockRewardMetadataa{
+			TxnMeta: &net.BlockRewardMetadataa{
 				ExtraData: []byte{0x00, 0x01},
 			},
 		}
@@ -627,7 +630,7 @@ func TestBasicTransfer(t *testing.T) {
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
+		require.Contains(err.Error(), core.RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
 	}
 
 	// A block with too much block reward should fail.
@@ -638,7 +641,7 @@ func TestBasicTransfer(t *testing.T) {
 	{
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward + 1
 		// One iteration should be sufficient to find us a good block.
-		_, bestNonce, err := lib.FindLowestHash(blockToMine.Header, 10000)
+		_, bestNonce, err := miner.FindLowestHash(blockToMine.Header, 10000)
 		require.NoError(err)
 		blockToMine.Header.Nonce = bestNonce
 
@@ -647,14 +650,14 @@ func TestBasicTransfer(t *testing.T) {
 		utxoView, _ := NewUtxoView(db, params, nil)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorBlockRewardExceedsMaxAllowed)
+		require.Contains(err.Error(), core.RuleErrorBlockRewardExceedsMaxAllowed)
 	}
 
 	// A block with less than the max block reward should be OK.
 	{
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward - 1
 		// One iteration should be sufficient to find us a good block.
-		_, bestNonce, err := lib.FindLowestHash(blockToMine.Header, 10000)
+		_, bestNonce, err := miner.FindLowestHash(blockToMine.Header, 10000)
 		require.NoError(err)
 		blockToMine.Header.Nonce = bestNonce
 

@@ -1,4 +1,4 @@
-package lib
+package core
 
 import "strings"
 
@@ -326,6 +326,6 @@ func IsRuleError(err error) bool {
 	// eventually we should clean this up and get rid of the string comparison both
 	// for the code's sake but also for the sake of our tests.
 	return strings.Contains(err.Error(), "RuleError") ||
-			strings.Contains(err.Error(), "HeaderError") ||
-			strings.Contains(err.Error(), "TxError")
+		strings.Contains(err.Error(), "HeaderError") ||
+		strings.Contains(err.Error(), "TxError")
 }

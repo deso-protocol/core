@@ -3,6 +3,7 @@ package lib
 import (
 	"github.com/deso-protocol/core"
 	db2 "github.com/deso-protocol/core/db"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 	"io/ioutil"
 	"log"
@@ -43,7 +44,7 @@ func _GetTestBlockNode() *BlockNode {
 	bs.CumWork = big.NewInt(5)
 
 	// Header (make a copy)
-	bs.Header = NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
+	bs.Header = net.NewMessage(net.MsgTypeHeader).(*net.MsgDeSoHeader)
 	headerBytes, _ := expectedBlockHeader.ToBytes(false)
 	bs.Header.FromBytes(headerBytes)
 
@@ -177,14 +178,14 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	db, dir := GetTestBadgerDb()
 	defer os.RemoveAll(dir)
 
-	err := db2.InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil)
+	err := db2.InitDbWithDeSoGenesisBlock(&core.DeSoTestnetParams, db, nil)
 	require.NoError(err)
 
 	// Check the block index.
 	blockIndex, err := db2.GetBlockIndex(db, false /*bitcoinNodes*/)
 	require.NoError(err)
 	require.Len(blockIndex, 1)
-	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)
+	genesisHash := *core.MustDecodeHexBlockHash(core.DeSoTestnetParams.GenesisBlockHashHex)
 	genesis, exists := blockIndex[genesisHash]
 	require.True(exists, "genesis block not found in index")
 	require.NotNil(genesis)

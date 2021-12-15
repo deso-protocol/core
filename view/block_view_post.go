@@ -8,6 +8,7 @@ import (
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -248,7 +249,7 @@ func (bav *UtxoView) _deletePostEntryMappings(postEntry *PostEntry) {
 	bav._setPostEntryMappings(&tombstonePostEntry)
 }
 
-func (bav *UtxoView) setPostMappings(post *lib.PGPost) *PostEntry {
+func (bav *UtxoView) setPostMappings(post *PGPost) *PostEntry {
 	postEntry := post.NewPostEntry()
 
 	// Add a mapping for the post.
@@ -682,16 +683,16 @@ func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *core.BlockHash,
 }
 
 func (bav *UtxoView) _connectSubmitPost(
-	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32,
+	txn *net.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32,
 	verifySignatures bool, ignoreUtxos bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != lib.TxnTypeSubmitPost {
+	if txn.TxnMeta.GetTxnType() != net.TxnTypeSubmitPost {
 		return 0, 0, nil, fmt.Errorf("_connectSubmitPost: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*lib.SubmitPostMetadata)
+	txMeta := txn.TxnMeta.(*net.SubmitPostMetadata)
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -712,7 +713,7 @@ func (bav *UtxoView) _connectSubmitPost(
 
 		// Force the input to be non-zero so that we can prevent replay attacks.
 		if totalInput == 0 {
-			return 0, 0, nil, lib.RuleErrorSubmitPostRequiresNonZeroInput
+			return 0, 0, nil, core.RuleErrorSubmitPostRequiresNonZeroInput
 		}
 	}
 
@@ -725,18 +726,18 @@ func (bav *UtxoView) _connectSubmitPost(
 	}
 	// Set the IsQuotedRepost attribute of postEntry based on extra data
 	isQuotedRepost := false
-	if quotedRepost, hasQuotedRepost := extraData[lib.IsQuotedRepostKey]; hasQuotedRepost {
-		if reflect.DeepEqual(quotedRepost, lib.QuotedRepostVal) {
+	if quotedRepost, hasQuotedRepost := extraData[core.IsQuotedRepostKey]; hasQuotedRepost {
+		if reflect.DeepEqual(quotedRepost, core.QuotedRepostVal) {
 			isQuotedRepost = true
 		}
 		// Delete key since it is not needed in the PostExtraData map as IsQuotedRepost is involved in consensus code.
-		delete(extraData, lib.IsQuotedRepostKey)
+		delete(extraData, core.IsQuotedRepostKey)
 	}
 	var repostedPostHash *core.BlockHash
-	if repostedPostHashBytes, isRepost := extraData[lib.RepostedPostHash]; isRepost {
+	if repostedPostHashBytes, isRepost := extraData[core.RepostedPostHash]; isRepost {
 		repostedPostHash = &core.BlockHash{}
 		copy(repostedPostHash[:], repostedPostHashBytes)
-		delete(extraData, lib.RepostedPostHash)
+		delete(extraData, core.RepostedPostHash)
 	}
 
 	// At this point the inputs and outputs have been processed. Now we
@@ -759,7 +760,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		// Make sure the post hash is valid
 		if len(txMeta.PostHashToModify) != core.HashSizeBytes {
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorSubmitPostInvalidPostHashToModify,
+				core.RuleErrorSubmitPostInvalidPostHashToModify,
 				"_connectSubmitPost: Bad post hash: %#v", txMeta.PostHashToModify)
 		}
 
@@ -769,7 +770,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		existingPostEntryy := bav.GetPostEntryForPostHash(postHash)
 		if existingPostEntryy == nil || existingPostEntryy.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorSubmitPostModifyingNonexistentPost,
+				core.RuleErrorSubmitPostModifyingNonexistentPost,
 				"_connectSubmitPost: Post hash: %v", postHash)
 		}
 
@@ -777,7 +778,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		if !reflect.DeepEqual(txn.PublicKey, existingPostEntryy.PosterPublicKey) {
 
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorSubmitPostPostModificationNotAuthorized,
+				core.RuleErrorSubmitPostPostModificationNotAuthorized,
 				"_connectSubmitPost: Post hash: %v, poster public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", postHash,
 				db.PkToStringBoth(existingPostEntryy.PosterPublicKey),
@@ -786,20 +787,20 @@ func (bav *UtxoView) _connectSubmitPost(
 
 		// Modification of an NFT is not allowed.
 		if existingPostEntryy.IsNFT {
-			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
+			return 0, 0, nil, errors.Wrapf(core.RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
 		}
 
 		// It's an error if we are updating the value of RepostedPostHash. A post can only ever repost a single post.
 		if !reflect.DeepEqual(repostedPostHash, existingPostEntryy.RepostedPostHash) {
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorSubmitPostUpdateRepostHash,
+				core.RuleErrorSubmitPostUpdateRepostHash,
 				"_connectSubmitPost: cannot update reposted post hash when updating a post")
 		}
 
 		// It's an error if we are updating the value of IsQuotedRepost.
 		if isQuotedRepost != existingPostEntryy.IsQuotedRepost {
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorSubmitPostUpdateIsQuotedRepost,
+				core.RuleErrorSubmitPostUpdateIsQuotedRepost,
 				"_connectSubmitPost: cannot update isQuotedRepost attribute of post when updating a post")
 		}
 
@@ -931,7 +932,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		if txMeta.StakeMultipleBasisPoints < 100*100 ||
 			txMeta.StakeMultipleBasisPoints > bav.Params.MaxStakeMultipleBasisPoints {
 
-			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostStakeMultipleSize,
+			return 0, 0, nil, errors.Wrapf(core.RuleErrorSubmitPostStakeMultipleSize,
 				"_connectSubmitPost: Invalid StakeMultipleSize: %d",
 				txMeta.StakeMultipleBasisPoints)
 		}
@@ -939,20 +940,20 @@ func (bav *UtxoView) _connectSubmitPost(
 		if txMeta.CreatorBasisPoints < 0 ||
 			txMeta.CreatorBasisPoints > bav.Params.MaxCreatorBasisPoints {
 
-			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostCreatorPercentageSize,
+			return 0, 0, nil, errors.Wrapf(core.RuleErrorSubmitPostCreatorPercentageSize,
 				"_connectSubmitPost: Invalid CreatorPercentageSize: %d",
 				txMeta.CreatorBasisPoints)
 		}
 		// TstampNanos != 0
 		if txMeta.TimestampNanos == 0 {
-			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostTimestampIsZero,
+			return 0, 0, nil, errors.Wrapf(core.RuleErrorSubmitPostTimestampIsZero,
 				"_connectSubmitPost: Invalid Timestamp: %d",
 				txMeta.TimestampNanos)
 		}
 		// The parent stake id should be a block hash or profile public key if it's set.
 		if len(txMeta.ParentStakeID) != 0 && len(txMeta.ParentStakeID) != core.HashSizeBytes &&
 			len(txMeta.ParentStakeID) != btcec.PubKeyBytesLenCompressed {
-			return 0, 0, nil, errors.Wrapf(lib.RuleErrorSubmitPostInvalidParentStakeIDLength,
+			return 0, 0, nil, errors.Wrapf(core.RuleErrorSubmitPostInvalidParentStakeIDLength,
 				"_connectSubmitPost: Parent stake ID length %v must be either 0 or %v or %v",
 				len(txMeta.ParentStakeID), core.HashSizeBytes, btcec.PubKeyBytesLenCompressed)
 		}
@@ -962,7 +963,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		existingPostEntry := bav.GetPostEntryForPostHash(postHash)
 		if existingPostEntry != nil && !existingPostEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorPostAlreadyExists,
+				core.RuleErrorPostAlreadyExists,
 				"_connectSubmitPost: Post hash: %v", postHash)
 		}
 
@@ -970,11 +971,11 @@ func (bav *UtxoView) _connectSubmitPost(
 			newRepostedPostEntry = bav.GetPostEntryForPostHash(repostedPostHash)
 			// It is an error if a post entry attempts to repost a post that does not exist.
 			if newRepostedPostEntry == nil {
-				return 0, 0, nil, lib.RuleErrorSubmitPostRepostPostNotFound
+				return 0, 0, nil, core.RuleErrorSubmitPostRepostPostNotFound
 			}
 			// It is an error if a post is trying to repost a vanilla repost.
 			if IsVanillaRepost(newRepostedPostEntry) {
-				return 0, 0, nil, lib.RuleErrorSubmitPostRepostOfRepost
+				return 0, 0, nil, core.RuleErrorSubmitPostRepostOfRepost
 			}
 		}
 
@@ -1088,7 +1089,7 @@ func (bav *UtxoView) _getParentAndGrandparentPostEntry(postEntry *PostEntry) (
 		parentPostEntry = bav.GetPostEntryForPostHash(core.NewBlockHash(postEntry.ParentStakeID))
 		if parentPostEntry == nil {
 			return nil, nil, errors.Wrapf(
-				lib.RuleErrorSubmitPostParentNotFound,
+				core.RuleErrorSubmitPostParentNotFound,
 				"_getParentAndGrandparentPostEntry: failed to find parent post for post hash: %v, parentStakeId: %v",
 				postEntry.PostHash, hex.EncodeToString(postEntry.ParentStakeID),
 			)
@@ -1099,7 +1100,7 @@ func (bav *UtxoView) _getParentAndGrandparentPostEntry(postEntry *PostEntry) (
 		grandparentPostEntry = bav.GetPostEntryForPostHash(core.NewBlockHash(parentPostEntry.ParentStakeID))
 		if grandparentPostEntry == nil {
 			return nil, nil, errors.Wrapf(
-				lib.RuleErrorSubmitPostParentNotFound,
+				core.RuleErrorSubmitPostParentNotFound,
 				"_getParentAndGrandparentPostEntry: failed to find grandparent post for post hash: %v, parentStakeId: %v, grandparentStakeId: %v",
 				postEntry.PostHash, postEntry.ParentStakeID, parentPostEntry.ParentStakeID,
 			)
@@ -1149,7 +1150,7 @@ func (bav *UtxoView) _updateParentCommentCountForPost(postEntry *PostEntry, pare
 }
 
 func (bav *UtxoView) _disconnectSubmitPost(
-	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
+	operationType OperationType, currentTxn *net.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a SubmitPost operation
@@ -1165,7 +1166,7 @@ func (bav *UtxoView) _disconnectSubmitPost(
 	}
 
 	// Now we know the txMeta is SubmitPost
-	txMeta := currentTxn.TxnMeta.(*lib.SubmitPostMetadata)
+	txMeta := currentTxn.TxnMeta.(*net.SubmitPostMetadata)
 
 	// The post hash is either the transaction hash or the hash set
 	// in the metadata.

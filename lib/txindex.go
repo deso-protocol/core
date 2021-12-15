@@ -3,7 +3,9 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 	"github.com/dgraph-io/badger/v3"
 	"path/filepath"
@@ -29,7 +31,7 @@ type TXIndex struct {
 	CoreChain *Blockchain
 
 	// Core params object
-	Params *DeSoParams
+	Params *core.DeSoParams
 
 	// Update wait group
 	updateWaitGroup sync.WaitGroup
@@ -38,7 +40,7 @@ type TXIndex struct {
 	stopUpdateChannel chan struct{}
 }
 
-func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (*TXIndex, error) {
+func NewTXIndex(coreChain *Blockchain, params *core.DeSoParams, dataDirectory string) (*TXIndex, error) {
 	// Initialize database
 	txIndexDir := filepath.Join(db.GetBadgerDbPath(dataDirectory), "txindex")
 	txIndexOpts := badger.DefaultOptions(txIndexDir)
@@ -61,11 +63,11 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		// Add the seed balances. Originate them from the architect public key and
 		// set their block as the genesis block.
 		{
-			dummyPk := ArchitectPubKeyBase58Check
-			dummyTxn := &MsgDeSoTxn{
-				TxInputs:  []*DeSoInput{},
+			dummyPk := core.ArchitectPubKeyBase58Check
+			dummyTxn := &net.MsgDeSoTxn{
+				TxInputs:  []*net.DeSoInput{},
 				TxOutputs: params.SeedBalances,
-				TxnMeta:   &BlockRewardMetadataa{},
+				TxnMeta:   &net.BlockRewardMetadataa{},
 				PublicKey: MustBase58CheckDecode(dummyPk),
 			}
 			affectedPublicKeys := []*db.AffectedPublicKey{}
@@ -80,7 +82,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 			err := db.DbPutTxindexTransactionMappings(txIndexDb, dummyTxn, params, &db.TransactionMetadata{
 				TransactorPublicKeyBase58Check: dummyPk,
 				AffectedPublicKeys:             affectedPublicKeys,
-				BlockHashHex:                   GenesisBlockHashHex,
+				BlockHashHex:                   core.GenesisBlockHashHex,
 				TxnIndexInBlock:                uint64(0),
 				// Just set some dummy metadata
 				BasicTransferTxindexMetadata: &db.BasicTransferTxindexMetadata{
@@ -100,14 +102,14 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 			if err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn HEX: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
-			txn := &MsgDeSoTxn{}
+			txn := &net.MsgDeSoTxn{}
 			if err := txn.FromBytes(txnBytes); err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
 			err = db.DbPutTxindexTransactionMappings(txIndexDb, txn, params, &db.TransactionMetadata{
 				TransactorPublicKeyBase58Check: db.PkToString(txn.PublicKey, params),
 				// Note that we don't set AffectedPublicKeys for the SeedTxns
-				BlockHashHex:    GenesisBlockHashHex,
+				BlockHashHex:    core.GenesisBlockHashHex,
 				TxnIndexInBlock: uint64(0),
 				// Just set some dummy metadata
 				BasicTransferTxindexMetadata: &db.BasicTransferTxindexMetadata{

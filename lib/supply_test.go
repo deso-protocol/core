@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
 	"math"
 	"testing"
@@ -38,7 +39,7 @@ func TestTotalMiningSupply(t *testing.T) {
 func TestCalcBlockReward(t *testing.T) {
 	require := require.New(t)
 
-	blocksPerYear := (time.Hour * 24 * 365 / DeSoMainnetParams.TimeBetweenBlocks)
+	blocksPerYear := (time.Hour * 24 * 365 / core.DeSoMainnetParams.TimeBetweenBlocks)
 	require.Equal(int64(blocksPerYear), int64(BlocksPerYear))
 
 	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(0))
@@ -482,7 +483,7 @@ func TestSumBalances(t *testing.T) {
 	_, _ = assert, require
 
 	// Balances should sum to the amount purchased.
-	params := &DeSoMainnetParams
+	params := &core.DeSoMainnetParams
 	amounts := uint64(0)
 	balancesByPublicKey := make(map[string]int64)
 	for _, seedBal := range params.SeedBalances {

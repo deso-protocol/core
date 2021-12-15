@@ -1,4 +1,4 @@
-package lib
+package net
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
+	"github.com/deso-protocol/core/miner"
 	"github.com/deso-protocol/core/view"
 	"io"
 	"math"
@@ -440,10 +441,10 @@ func WriteMessage(ww io.Writer, msg DeSoMessage, networkType NetworkType) ([]byt
 	hdr := []byte{}
 
 	// Add the network as a uvarint.
-	hdr = append(hdr, UintToBuf(uint64(networkType))...)
+	hdr = append(hdr, core.UintToBuf(uint64(networkType))...)
 
 	// Add the MsgType as a uvarint.
-	hdr = append(hdr, UintToBuf(uint64(msg.GetMsgType()))...)
+	hdr = append(hdr, core.UintToBuf(uint64(msg.GetMsgType()))...)
 
 	// Compute the payload we're going to write but don't add it
 	// yet.
@@ -463,11 +464,11 @@ func WriteMessage(ww io.Writer, msg DeSoMessage, networkType NetworkType) ([]byt
 	// we generally communicate over TCP, it's not a great idea to rely on the
 	// checksum it uses since its guarantees are relatively weak.
 	// https://www.evanjones.ca/tcp-checksums.html
-	hash := Sha256DoubleHash(payload)
+	hash := core.Sha256DoubleHash(payload)
 	hdr = append(hdr, hash[:8]...)
 
 	// Add the payload length as a uvarint.
-	hdr = append(hdr, UintToBuf(uint64(len(payload)))...)
+	hdr = append(hdr, core.UintToBuf(uint64(len(payload)))...)
 
 	// Write the message header.
 	_, err = ww.Write(hdr)
@@ -489,7 +490,7 @@ func WriteMessage(ww io.Writer, msg DeSoMessage, networkType NetworkType) ([]byt
 // derived.
 func ReadMessage(rr io.Reader, networkType NetworkType) (DeSoMessage, []byte, error) {
 	// Read the network as a uvarint.
-	inNetworkType, err := ReadUvarint(rr)
+	inNetworkType, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "ReadMessage: Problem decoding NetworkType")
 	}
@@ -498,7 +499,7 @@ func ReadMessage(rr io.Reader, networkType NetworkType) (DeSoMessage, []byte, er
 	}
 
 	// Read the MsgType as a uvarint.
-	inMsgType, err := ReadUvarint(rr)
+	inMsgType, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "ReadMessage: Could not read MsgType")
 	}
@@ -517,7 +518,7 @@ func ReadMessage(rr io.Reader, networkType NetworkType) (DeSoMessage, []byte, er
 	}
 
 	// Read the length of the payload.
-	payloadLength, err := ReadUvarint(rr)
+	payloadLength, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "ReadMessage: Could not read payload length for message type (%s)", MsgType(inMsgType))
 	}
@@ -537,7 +538,7 @@ func ReadMessage(rr io.Reader, networkType NetworkType) (DeSoMessage, []byte, er
 	}
 
 	// Check the payload checksum.
-	hash := Sha256DoubleHash(payload)
+	hash := core.Sha256DoubleHash(payload)
 	if !bytes.Equal(hash[:8], checksum) {
 		return nil, nil, fmt.Errorf("ReadMessage: Payload checksum computed "+
 			"(%#v) does not match payload checksum in header: (%#v)", hash[:8], checksum)
@@ -719,7 +720,7 @@ func (msg *MsgDeSoGetHeaders) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, msg.StopHash[:]...)
 
 	// Encode the number of hashes in the BlockLocator.
-	data = append(data, UintToBuf(uint64(len(msg.BlockLocator)))...)
+	data = append(data, core.UintToBuf(uint64(len(msg.BlockLocator)))...)
 
 	// Encode all of the hashes in the BlockLocator.
 	for _, hash := range msg.BlockLocator {
@@ -742,7 +743,7 @@ func (msg *MsgDeSoGetHeaders) FromBytes(data []byte) error {
 	retGetHeaders.StopHash = &stopHash
 
 	// Number of hashes in block locator.
-	numHeaders, err := ReadUvarint(rr)
+	numHeaders, err := core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("MsgDeSoGetHeaders.FromBytes: %v", err)
 	}
@@ -784,7 +785,7 @@ func (msg *MsgDeSoHeaderBundle) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Encode the number of headers in the bundle.
-	data = append(data, UintToBuf(uint64(len(msg.Headers)))...)
+	data = append(data, core.UintToBuf(uint64(len(msg.Headers)))...)
 
 	// Encode all the headers.
 	for _, header := range msg.Headers {
@@ -799,7 +800,7 @@ func (msg *MsgDeSoHeaderBundle) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, msg.TipHash[:]...)
 
 	// Encode the tip height.
-	data = append(data, UintToBuf(uint64(msg.TipHeight))...)
+	data = append(data, core.UintToBuf(uint64(msg.TipHeight))...)
 
 	return data, nil
 }
@@ -809,7 +810,7 @@ func (msg *MsgDeSoHeaderBundle) FromBytes(data []byte) error {
 	retBundle := NewMessage(MsgTypeHeaderBundle).(*MsgDeSoHeaderBundle)
 
 	// Read in the number of headers in the bundle.
-	numHeaders, err := ReadUvarint(rr)
+	numHeaders, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoHeaderBundle.FromBytes: Problem decoding number of header")
 	}
@@ -832,7 +833,7 @@ func (msg *MsgDeSoHeaderBundle) FromBytes(data []byte) error {
 	}
 
 	// Read in the tip height.
-	tipHeight, err := ReadUvarint(rr)
+	tipHeight, err := core.ReadUvarint(rr)
 	if err != nil || tipHeight > math.MaxUint32 {
 		return fmt.Errorf("MsgDeSoHeaderBundle.FromBytes: %v", err)
 	}
@@ -867,7 +868,7 @@ func (msg *MsgDeSoGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 	}
 
 	// Encode the number of hashes.
-	data = append(data, UintToBuf(uint64(len(msg.HashList)))...)
+	data = append(data, core.UintToBuf(uint64(len(msg.HashList)))...)
 	// Encode each hash.
 	for _, hash := range msg.HashList {
 		data = append(data, hash[:]...)
@@ -880,7 +881,7 @@ func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// Parse the nmber of block hashes.
-	numHashes, err := ReadUvarint(rr)
+	numHashes, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes: Problem "+
 			"reading number of block hashes requested")
@@ -936,7 +937,7 @@ func (msg *MsgDeSoGetTransactions) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Encode the number of hashes.
-	data = append(data, UintToBuf(uint64(len(msg.HashList)))...)
+	data = append(data, core.UintToBuf(uint64(len(msg.HashList)))...)
 	// Encode each hash.
 	for _, hash := range msg.HashList {
 		data = append(data, hash[:]...)
@@ -949,7 +950,7 @@ func (msg *MsgDeSoGetTransactions) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// Parse the nmber of block hashes.
-	numHashes, err := ReadUvarint(rr)
+	numHashes, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetTransactions.FromBytes: Problem "+
 			"reading number of transaction hashes requested")
@@ -993,7 +994,7 @@ func (msg *MsgDeSoTransactionBundle) ToBytes(preSignature bool) ([]byte, error) 
 	data := []byte{}
 
 	// Encode the number of transactions in the bundle.
-	data = append(data, UintToBuf(uint64(len(msg.Transactions)))...)
+	data = append(data, core.UintToBuf(uint64(len(msg.Transactions)))...)
 
 	// Encode all the transactions.
 	for _, transaction := range msg.Transactions {
@@ -1012,7 +1013,7 @@ func (msg *MsgDeSoTransactionBundle) FromBytes(data []byte) error {
 	retBundle := NewMessage(MsgTypeTransactionBundle).(*MsgDeSoTransactionBundle)
 
 	// Read in the number of transactions in the bundle.
-	numTransactions, err := ReadUvarint(rr)
+	numTransactions, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoTransactionBundle.FromBytes: Problem decoding number of transaction")
 	}
@@ -1122,11 +1123,11 @@ func _invListToBytes(invList []*InvVect) ([]byte, error) {
 	data := []byte{}
 
 	// Encode the number of inventory vectors.
-	data = append(data, UintToBuf(uint64(len(invList)))...)
+	data = append(data, core.UintToBuf(uint64(len(invList)))...)
 
 	// Encode each inventory vector subsequent.
 	for _, invVect := range invList {
-		data = append(data, UintToBuf(uint64(invVect.Type))...)
+		data = append(data, core.UintToBuf(uint64(invVect.Type))...)
 		data = append(data, invVect.Hash[:]...)
 	}
 
@@ -1138,7 +1139,7 @@ func _readInvList(rr io.Reader) ([]*InvVect, error) {
 
 	// Parse the number of inventory vectors in the message and make sure it doesn't
 	// exceed the limit.
-	numInvVects, err := ReadUvarint(rr)
+	numInvVects, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readInvList: Problem reading number of InvVects")
 	}
@@ -1146,7 +1147,7 @@ func _readInvList(rr io.Reader) ([]*InvVect, error) {
 	// Now parse each individual InvVect.
 	for ii := uint64(0); ii < numInvVects; ii++ {
 		// Parse the type field, which was encoded as a varint.
-		typeUint, err := ReadUvarint(rr)
+		typeUint, err := core.ReadUvarint(rr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readInvList: Problem parsing Type for InvVect")
 		}
@@ -1215,11 +1216,11 @@ func (msg *MsgDeSoPing) GetMsgType() MsgType {
 }
 
 func (msg *MsgDeSoPing) ToBytes(preSignature bool) ([]byte, error) {
-	return UintToBuf(msg.Nonce), nil
+	return core.UintToBuf(msg.Nonce), nil
 }
 
 func (msg *MsgDeSoPing) FromBytes(data []byte) error {
-	nonce, err := ReadUvarint(bytes.NewReader(data))
+	nonce, err := core.ReadUvarint(bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("MsgDeSoPing.FromBytes: %v", err)
 	}
@@ -1236,11 +1237,11 @@ func (msg *MsgDeSoPong) GetMsgType() MsgType {
 }
 
 func (msg *MsgDeSoPong) ToBytes(preSignature bool) ([]byte, error) {
-	return UintToBuf(msg.Nonce), nil
+	return core.UintToBuf(msg.Nonce), nil
 }
 
 func (msg *MsgDeSoPong) FromBytes(data []byte) error {
-	nonce, err := ReadUvarint(bytes.NewReader(data))
+	nonce, err := core.ReadUvarint(bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("MsgDeSoPong.FromBytes: %v", err)
 	}
@@ -1297,32 +1298,32 @@ func (msg *MsgDeSoVersion) ToBytes(preSignature bool) ([]byte, error) {
 	//
 	// We give each one of these its own scope to avoid issues where
 	// nn accidentally gets recycled.
-	retBytes = append(retBytes, UintToBuf(msg.Version)...)
+	retBytes = append(retBytes, core.UintToBuf(msg.Version)...)
 
 	// Services
-	retBytes = append(retBytes, UintToBuf(uint64(msg.Services))...)
+	retBytes = append(retBytes, core.UintToBuf(uint64(msg.Services))...)
 
 	// TstampSecs
-	retBytes = append(retBytes, IntToBuf(msg.TstampSecs)...)
+	retBytes = append(retBytes, core.IntToBuf(msg.TstampSecs)...)
 
 	// Nonce
-	retBytes = append(retBytes, UintToBuf(msg.Nonce)...)
+	retBytes = append(retBytes, core.UintToBuf(msg.Nonce)...)
 
 	// UserAgent
 	//
 	// Strings are encoded by putting their length first as uvarints
 	// then their values afterward as bytes.
-	retBytes = append(retBytes, UintToBuf(uint64(len(msg.UserAgent)))...)
+	retBytes = append(retBytes, core.UintToBuf(uint64(len(msg.UserAgent)))...)
 	retBytes = append(retBytes, msg.UserAgent...)
 
 	// StartBlockHeight
-	retBytes = append(retBytes, UintToBuf(uint64(msg.StartBlockHeight))...)
+	retBytes = append(retBytes, core.UintToBuf(uint64(msg.StartBlockHeight))...)
 
 	// MinFeeRateNanosPerKB
-	retBytes = append(retBytes, UintToBuf(uint64(msg.MinFeeRateNanosPerKB))...)
+	retBytes = append(retBytes, core.UintToBuf(uint64(msg.MinFeeRateNanosPerKB))...)
 
 	// JSONAPIPort - deprecated
-	retBytes = append(retBytes, UintToBuf(uint64(0))...)
+	retBytes = append(retBytes, core.UintToBuf(uint64(0))...)
 
 	return retBytes, nil
 }
@@ -1336,7 +1337,7 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 	// We give each one of these its own scope to avoid issues where
 	// a value accidentally gets recycled.
 	{
-		ver, err := ReadUvarint(rr)
+		ver, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.Version")
 		}
@@ -1345,7 +1346,7 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 
 	// Services
 	{
-		services, err := ReadUvarint(rr)
+		services, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.Services")
 		}
@@ -1354,7 +1355,7 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 
 	// TstampSecs
 	{
-		tstampSecs, err := ReadVarint(rr)
+		tstampSecs, err := core.ReadVarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.TstampSecs")
 		}
@@ -1363,7 +1364,7 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 
 	// Nonce
 	{
-		nonce, err := ReadUvarint(rr)
+		nonce, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.Nonce")
 		}
@@ -1375,7 +1376,7 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 	// Strings are encoded by putting their length first as uvarints
 	// then their values afterward as bytes.
 	{
-		strLen, err := ReadUvarint(rr)
+		strLen, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem reading length of msg.UserAgent")
 		}
@@ -1392,7 +1393,7 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 
 	// StartBlockHeight
 	{
-		lastBlockHeight, err := ReadUvarint(rr)
+		lastBlockHeight, err := core.ReadUvarint(rr)
 		if err != nil || lastBlockHeight > math.MaxUint32 {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.LatestBlockHeight")
 		}
@@ -1401,7 +1402,7 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 
 	// MinFeeRateNanosPerKB
 	{
-		minFeeRateNanosPerKB, err := ReadUvarint(rr)
+		minFeeRateNanosPerKB, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.MinFeeRateNanosPerKB")
 		}
@@ -1410,7 +1411,7 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 
 	// JSONAPIPort - deprecated
 	{
-		_, err := ReadUvarint(rr)
+		_, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.JSONAPIPort")
 		}
@@ -1482,24 +1483,24 @@ func (msg *MsgDeSoAddr) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
 	// Encode the number of addresses as a uvarint.
-	retBytes = append(retBytes, UintToBuf(uint64(len(msg.AddrList)))...)
+	retBytes = append(retBytes, core.UintToBuf(uint64(len(msg.AddrList)))...)
 
 	// Encode each address.
 	for _, addr := range msg.AddrList {
 		// Timestamp
 		// Assume it's always positive.
-		retBytes = append(retBytes, UintToBuf(uint64(addr.Timestamp.Unix()))...)
+		retBytes = append(retBytes, core.UintToBuf(uint64(addr.Timestamp.Unix()))...)
 
 		// Services
-		retBytes = append(retBytes, UintToBuf(uint64(addr.Services))...)
+		retBytes = append(retBytes, core.UintToBuf(uint64(addr.Services))...)
 
 		// IP
 		// Encode the length of the IP and then the actual bytes.
-		retBytes = append(retBytes, UintToBuf(uint64(len(addr.IP[:])))...)
+		retBytes = append(retBytes, core.UintToBuf(uint64(len(addr.IP[:])))...)
 		retBytes = append(retBytes, addr.IP[:]...)
 
 		// Port
-		retBytes = append(retBytes, UintToBuf(uint64(addr.Port))...)
+		retBytes = append(retBytes, core.UintToBuf(uint64(addr.Port))...)
 	}
 
 	return retBytes, nil
@@ -1510,7 +1511,7 @@ func (msg *MsgDeSoAddr) FromBytes(data []byte) error {
 	retVer := MsgDeSoAddr{}
 
 	// Read the number of addresses encoded.
-	numAddrs, err := ReadUvarint(rr)
+	numAddrs, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading numAddrs: ")
 	}
@@ -1519,21 +1520,21 @@ func (msg *MsgDeSoAddr) FromBytes(data []byte) error {
 		currentAddr := &SingleAddr{}
 
 		// Timestamp
-		tstampSecs, err := ReadUvarint(rr)
+		tstampSecs, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading tstamp: ")
 		}
 		currentAddr.Timestamp = time.Unix(int64(tstampSecs), 0)
 
 		// Services
-		serviceUint, err := ReadUvarint(rr)
+		serviceUint, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading services: ")
 		}
 		currentAddr.Services = ServiceFlag(serviceUint)
 
 		// IP
-		ipLen, err := ReadUvarint(rr)
+		ipLen, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading IP: ")
 		}
@@ -1547,7 +1548,7 @@ func (msg *MsgDeSoAddr) FromBytes(data []byte) error {
 		}
 
 		// Port
-		port, err := ReadUvarint(rr)
+		port, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Problem reading port: ")
 		}
@@ -1608,7 +1609,7 @@ func (msg *MsgDeSoVerack) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
 	// Nonce
-	retBytes = append(retBytes, UintToBuf(msg.Nonce)...)
+	retBytes = append(retBytes, core.UintToBuf(msg.Nonce)...)
 	return retBytes, nil
 }
 
@@ -1616,7 +1617,7 @@ func (msg *MsgDeSoVerack) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 	retMsg := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
 	{
-		nonce, err := ReadUvarint(rr)
+		nonce, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce")
 		}
@@ -1804,9 +1805,9 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 
 	// Depending on the version, we decode the header differently.
-	if msg.Version == HeaderVersion0 {
+	if msg.Version == core.HeaderVersion0 {
 		return msg.EncodeHeaderVersion0(preSignature)
-	} else if msg.Version == HeaderVersion1 {
+	} else if msg.Version == core.HeaderVersion1 {
 		return msg.EncodeHeaderVersion1(preSignature)
 	} else {
 		// If we have an unrecognized version then we default to serializing with
@@ -1932,9 +1933,9 @@ func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 	headerVersion := binary.BigEndian.Uint32(scratchBytes[:])
 
 	var ret *MsgDeSoHeader
-	if headerVersion == HeaderVersion0 {
+	if headerVersion == core.HeaderVersion0 {
 		ret, err = DecodeHeaderVersion0(rr)
-	} else if headerVersion == HeaderVersion1 {
+	} else if headerVersion == core.HeaderVersion1 {
 		ret, err = DecodeHeaderVersion1(rr)
 	} else {
 		// If we have an unrecognized version then we default to de-serializing with
@@ -1977,7 +1978,7 @@ func (msg *MsgDeSoHeader) Hash() (*core.BlockHash, error) {
 		return nil, errors.Wrap(err, "MsgDeSoHeader.Hash: ")
 	}
 
-	return ProofOfWorkHash(headerBytes, msg.Version), nil
+	return miner.ProofOfWorkHash(headerBytes, msg.Version), nil
 }
 
 func (msg *MsgDeSoHeader) String() string {
@@ -1996,14 +1997,14 @@ type BlockProducerInfo struct {
 
 func (bpi *BlockProducerInfo) Serialize() []byte {
 	data := []byte{}
-	data = append(data, UintToBuf(uint64(len(bpi.PublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(bpi.PublicKey)))...)
 	data = append(data, bpi.PublicKey...)
 
 	sigBytes := []byte{}
 	if bpi.Signature != nil {
 		sigBytes = bpi.Signature.Serialize()
 	}
-	data = append(data, UintToBuf(uint64(len(sigBytes)))...)
+	data = append(data, core.UintToBuf(uint64(len(sigBytes)))...)
 	data = append(data, sigBytes...)
 
 	return data
@@ -2015,7 +2016,7 @@ func (bpi *BlockProducerInfo) Deserialize(data []byte) error {
 
 	// De-serialize the public key.
 	{
-		pkLen, err := ReadUvarint(rr)
+		pkLen, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading public key len")
 		}
@@ -2032,7 +2033,7 @@ func (bpi *BlockProducerInfo) Deserialize(data []byte) error {
 
 	// De-serialize the signature.
 	{
-		sigLen, err := ReadUvarint(rr)
+		sigLen, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading signature len")
 		}
@@ -2087,18 +2088,18 @@ func (msg *MsgDeSoBlock) EncodeBlockCommmon(preSignature bool) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoBlock.ToBytes: Problem encoding header")
 	}
-	data = append(data, UintToBuf(uint64(len(hdrBytes)))...)
+	data = append(data, core.UintToBuf(uint64(len(hdrBytes)))...)
 	data = append(data, hdrBytes...)
 
 	// Serialize all the transactions.
 	numTxns := uint64(len(msg.Txns))
-	data = append(data, UintToBuf(numTxns)...)
+	data = append(data, core.UintToBuf(numTxns)...)
 	for ii := uint64(0); ii < numTxns; ii++ {
 		currentTxnBytes, err := msg.Txns[ii].ToBytes(preSignature)
 		if err != nil {
 			return nil, errors.Wrapf(err, "MsgDeSoBlock.ToBytes: Problem encoding txn")
 		}
-		data = append(data, UintToBuf(uint64(len(currentTxnBytes)))...)
+		data = append(data, core.UintToBuf(uint64(len(currentTxnBytes)))...)
 		data = append(data, currentTxnBytes...)
 	}
 
@@ -2120,16 +2121,16 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 	if msg.BlockProducerInfo != nil {
 		blockProducerInfoBytes = msg.BlockProducerInfo.Serialize()
 	}
-	data = append(data, UintToBuf(uint64(len(blockProducerInfoBytes)))...)
+	data = append(data, core.UintToBuf(uint64(len(blockProducerInfoBytes)))...)
 	data = append(data, blockProducerInfoBytes...)
 
 	return data, nil
 }
 
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
-	if msg.Header.Version == HeaderVersion0 {
+	if msg.Header.Version == core.HeaderVersion0 {
 		return msg.EncodeBlockVersion0(preSignature)
-	} else if msg.Header.Version == HeaderVersion1 {
+	} else if msg.Header.Version == core.HeaderVersion1 {
 		return msg.EncodeBlockVersion1(preSignature)
 	} else {
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
@@ -2141,7 +2142,7 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// De-serialize the header.
-	hdrLen, err := ReadUvarint(rr)
+	hdrLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding header length")
 	}
@@ -2160,13 +2161,13 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 	}
 
 	// De-serialize the transactions.
-	numTxns, err := ReadUvarint(rr)
+	numTxns, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding num txns")
 	}
 	ret.Txns = make([]*MsgDeSoTxn, 0)
 	for ii := uint64(0); ii < numTxns; ii++ {
-		txBytesLen, err := ReadUvarint(rr)
+		txBytesLen, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn length")
 		}
@@ -2189,8 +2190,8 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 	// Version 1 blocks have a BlockProducerInfo attached to them that
 	// must be read. If this is not a Version 1 block, then the BlockProducerInfo
 	// remains nil.
-	if ret.Header.Version == HeaderVersion1 {
-		blockProducerInfoLen, err := ReadUvarint(rr)
+	if ret.Header.Version == core.HeaderVersion1 {
+		blockProducerInfoLen, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding header length")
 		}
@@ -2326,7 +2327,7 @@ func (msg *MsgDeSoTxn) String() string {
 	pubKey := msg.PublicKey
 	if msg.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
 		pubKeyObj, err := view.ExtractBitcoinPublicKeyFromBitcoinTransactionInputs(
-			msg.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction, DeSoMainnetParams.BitcoinBtcdParams)
+			msg.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction, core.DeSoMainnetParams.BitcoinBtcdParams)
 		if err != nil {
 			pubKey = msg.PublicKey
 		} else {
@@ -2341,24 +2342,24 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Serialize the inputs
-	data = append(data, UintToBuf(uint64(len(msg.TxInputs)))...)
+	data = append(data, core.UintToBuf(uint64(len(msg.TxInputs)))...)
 	for _, desoInput := range msg.TxInputs {
 		data = append(data, desoInput.TxID[:]...)
-		data = append(data, UintToBuf(uint64(desoInput.Index))...)
+		data = append(data, core.UintToBuf(uint64(desoInput.Index))...)
 	}
 
 	// Serialize the outputs
-	data = append(data, UintToBuf(uint64(len(msg.TxOutputs)))...)
+	data = append(data, core.UintToBuf(uint64(len(msg.TxOutputs)))...)
 	for _, desoOutput := range msg.TxOutputs {
 		// The public key is always 33 bytes.
 		data = append(data, desoOutput.PublicKey[:]...)
-		data = append(data, UintToBuf(desoOutput.AmountNanos)...)
+		data = append(data, core.UintToBuf(desoOutput.AmountNanos)...)
 	}
 
 	// Serialize the metadata
 	//
 	// Encode the type as a uvarint.
-	data = append(data, UintToBuf(uint64(msg.TxnMeta.GetTxnType()))...)
+	data = append(data, core.UintToBuf(uint64(msg.TxnMeta.GetTxnType()))...)
 	// Encode the length and payload for the metadata.
 	//
 	// Note that we do *NOT* serialize the metadata using the preSignature
@@ -2379,17 +2380,17 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 		return nil, errors.Wrapf(err, "MsgDeSoTxn.ToBytes: Problem encoding meta of type %v: ",
 			msg.TxnMeta.GetTxnType())
 	}
-	data = append(data, UintToBuf(uint64(len(metadataBuf)))...)
+	data = append(data, core.UintToBuf(uint64(len(metadataBuf)))...)
 	data = append(data, metadataBuf...)
 
 	// Serialize the public key if there is one. Encode the length in
 	// case this field was left empty.
-	data = append(data, UintToBuf(uint64(len(msg.PublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(msg.PublicKey)))...)
 	data = append(data, msg.PublicKey...)
 
 	// ExtraData
 	extraDataLength := uint64(len(msg.ExtraData))
-	data = append(data, UintToBuf(extraDataLength)...)
+	data = append(data, core.UintToBuf(extraDataLength)...)
 	if extraDataLength > 0 {
 		// Sort the keys of the map
 		keys := make([]string, 0, len(msg.ExtraData))
@@ -2400,10 +2401,10 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 		// Encode the length of the key, the key itself
 		// then the length of the value, then the value itself.
 		for _, key := range keys {
-			data = append(data, UintToBuf(uint64(len(key)))...)
+			data = append(data, core.UintToBuf(uint64(len(key)))...)
 			data = append(data, []byte(key)...)
 			value := msg.ExtraData[key]
-			data = append(data, UintToBuf(uint64(len(value)))...)
+			data = append(data, core.UintToBuf(uint64(len(value)))...)
 			data = append(data, value...)
 		}
 	}
@@ -2421,7 +2422,7 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	// of the signature will never exceed 127 bytes in length. This is important
 	// to note for e.g. operations that try to compute a transaction's size
 	// before a signature is present such as during transaction fee computations.
-	data = append(data, UintToBuf(uint64(len(sigBytes)))...)
+	data = append(data, core.UintToBuf(uint64(len(sigBytes)))...)
 	data = append(data, sigBytes...)
 
 	return data, nil
@@ -2431,7 +2432,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	ret := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 
 	// De-serialize the inputs
-	numInputs, err := ReadUvarint(rr)
+	numInputs, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem converting len(msg.TxInputs)")
 	}
@@ -2441,7 +2442,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem converting input txid")
 		}
-		inputIndex, err := ReadUvarint(rr)
+		inputIndex, err := core.ReadUvarint(rr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem converting input index")
 		}
@@ -2454,7 +2455,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	// De-serialize the outputs
-	numOutputs, err := ReadUvarint(rr)
+	numOutputs, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem converting len(msg.TxOutputs)")
 	}
@@ -2466,7 +2467,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoOutput.PublicKey")
 		}
 
-		amountNanos, err := ReadUvarint(rr)
+		amountNanos, err := core.ReadUvarint(rr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoOutput.AmountNanos")
 		}
@@ -2478,7 +2479,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	// De-serialize the metadata
 	//
 	// Encode the type as a uvarint.
-	txnMetaType, err := ReadUvarint(rr)
+	txnMetaType, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem reading MsgDeSoTxn.TxnType")
 	}
@@ -2489,7 +2490,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	if ret.TxnMeta == nil {
 		return nil, fmt.Errorf("_readTransaction: Metadata was nil: %v", ret.TxnMeta)
 	}
-	metaLen, err := ReadUvarint(rr)
+	metaLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(TxnMeta)")
 	}
@@ -2507,7 +2508,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	// De-serialize the public key if there is one
-	pkLen, err := ReadUvarint(rr)
+	pkLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.PublicKey)")
 	}
@@ -2524,7 +2525,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	// De-serialize the ExtraData
-	extraDataLen, err := ReadUvarint(rr)
+	extraDataLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.ExtraData)")
 	}
@@ -2538,7 +2539,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 		for ii := uint64(0); ii < extraDataLen; ii++ {
 			// De-serialize the length of the key
 			var keyLen uint64
-			keyLen, err = ReadUvarint(rr)
+			keyLen, err = core.ReadUvarint(rr)
 			if err != nil {
 				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
 			}
@@ -2556,7 +2557,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 			}
 			// De-serialize the length of the value
 			var valueLen uint64
-			valueLen, err = ReadUvarint(rr)
+			valueLen, err = core.ReadUvarint(rr)
 			if err != nil {
 				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
 			}
@@ -2572,7 +2573,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	// De-serialize the signature if there is one.
-	sigLen, err := ReadUvarint(rr)
+	sigLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.Signature)")
 	}
@@ -2636,7 +2637,7 @@ func (msg *MsgDeSoTxn) Hash() *core.BlockHash {
 		return nil
 	}
 
-	return Sha256DoubleHash(txBytes)
+	return core.Sha256DoubleHash(txBytes)
 }
 
 func (msg *MsgDeSoTxn) Copy() (*MsgDeSoTxn, error) {
@@ -2660,7 +2661,7 @@ func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error)
 	}
 	// Compute a hash of the transaction bytes without the signature
 	// portion and sign it with the passed private key.
-	txnSignatureHash := Sha256DoubleHash(txnBytes)
+	txnSignatureHash := core.Sha256DoubleHash(txnBytes)
 	txnSignature, err := privKey.Sign(txnSignatureHash[:])
 	if err != nil {
 		return nil, err
@@ -2682,7 +2683,7 @@ func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey
 	if txn.ExtraData == nil {
 		txn.ExtraData = make(map[string][]byte)
 	}
-	txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
+	txn.ExtraData[core.DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
 
 	// Sign the transaction with the passed private key.
 	txnSignature, err := txn.Sign(privateKey)
@@ -2834,7 +2835,7 @@ func (txnData *BlockRewardMetadataa) ToBytes(preSignature bool) ([]byte, error) 
 			"BLOCK_REWARD txn ExtraData length (%d) cannot be longer than "+
 				"(%d) bytes", numExtraDataBytes, MaxBlockRewardDataSizeBytes)
 	}
-	retBytes = append(retBytes, UintToBuf(uint64(numExtraDataBytes))...)
+	retBytes = append(retBytes, core.UintToBuf(uint64(numExtraDataBytes))...)
 	retBytes = append(retBytes, txnData.ExtraData...)
 
 	return retBytes, nil
@@ -2845,7 +2846,7 @@ func (txnData *BlockRewardMetadataa) FromBytes(dataa []byte) error {
 	rr := bytes.NewReader(dataa)
 
 	// ExtraData
-	numExtraDataBytes, err := ReadUvarint(rr)
+	numExtraDataBytes, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BlockRewardMetadataa.FromBytes: Problem reading NumExtraDataBytes")
 	}
@@ -2931,7 +2932,7 @@ func (txnData *BitcoinExchangeMetadata) ToBytes(preSignature bool) ([]byte, erro
 		return nil, errors.Wrapf(err, "BitcoinExchangeMetadata.ToBytes: Problem "+
 			"serializing BitcoinTransaction: ")
 	}
-	data = append(data, UintToBuf(uint64(len(txnBytes.Bytes())))...)
+	data = append(data, core.UintToBuf(uint64(len(txnBytes.Bytes())))...)
 	data = append(data, txnBytes.Bytes()...)
 
 	// BitcoinBlockHash
@@ -2944,7 +2945,7 @@ func (txnData *BitcoinExchangeMetadata) ToBytes(preSignature bool) ([]byte, erro
 	//
 	// Encode the number of proof parts followed by all the proof parts.
 	numProofParts := uint64(len(txnData.BitcoinMerkleProof))
-	data = append(data, UintToBuf(numProofParts)...)
+	data = append(data, core.UintToBuf(numProofParts)...)
 	for _, pf := range txnData.BitcoinMerkleProof {
 		// ProofParts have a specific length so no need to encode the length.
 		pfBytes, err := pf.Serialize()
@@ -2963,7 +2964,7 @@ func (txnData *BitcoinExchangeMetadata) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// BitcoinTransaction
-	txnBytesLen, err := ReadUvarint(rr)
+	txnBytesLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BitcoinExchangeMetadata.FromBytes: Problem "+
 			"decoding BitcoinTransaction length")
@@ -2998,7 +2999,7 @@ func (txnData *BitcoinExchangeMetadata) FromBytes(data []byte) error {
 	}
 
 	// BitcoinMerkleProof
-	numProofParts, err := ReadUvarint(rr)
+	numProofParts, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BitcoinExchangeMetadata.FromBytes: Problem reading numProofParts: ")
 	}
@@ -3085,11 +3086,11 @@ func (txnData *PrivateMessageMetadata) ToBytes(preSignature bool) ([]byte, error
 	data = append(data, txnData.RecipientPublicKey...)
 
 	// EncryptedText
-	data = append(data, UintToBuf(uint64(len(txnData.EncryptedText)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.EncryptedText)))...)
 	data = append(data, txnData.EncryptedText...)
 
 	// TimestampNanos
-	data = append(data, UintToBuf(txnData.TimestampNanos)...)
+	data = append(data, core.UintToBuf(txnData.TimestampNanos)...)
 
 	return data, nil
 }
@@ -3106,7 +3107,7 @@ func (txnData *PrivateMessageMetadata) FromBytes(data []byte) error {
 	}
 
 	// EncryptedText
-	encryptedTextLen, err := ReadUvarint(rr)
+	encryptedTextLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "PrivateMessageMetadata.FromBytes: Problem "+
 			"decoding EncryptedText length")
@@ -3122,7 +3123,7 @@ func (txnData *PrivateMessageMetadata) FromBytes(data []byte) error {
 	}
 
 	// TimestampNanos
-	ret.TimestampNanos, err = ReadUvarint(rr)
+	ret.TimestampNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("PrivateMessageMetadata.FromBytes: Error reading TimestampNanos: %v", err)
 	}
@@ -3352,25 +3353,25 @@ func (txnData *SubmitPostMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// PostHashToModify
-	data = append(data, UintToBuf(uint64(len(txnData.PostHashToModify)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.PostHashToModify)))...)
 	data = append(data, txnData.PostHashToModify...)
 
 	// ParentPostHash
-	data = append(data, UintToBuf(uint64(len(txnData.ParentStakeID)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.ParentStakeID)))...)
 	data = append(data, txnData.ParentStakeID...)
 
 	// Body
-	data = append(data, UintToBuf(uint64(len(txnData.Body)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.Body)))...)
 	data = append(data, txnData.Body...)
 
 	// CreatorBasisPoints
-	data = append(data, UintToBuf(txnData.CreatorBasisPoints)...)
+	data = append(data, core.UintToBuf(txnData.CreatorBasisPoints)...)
 
 	// StakeMultipleBasisPoints
-	data = append(data, UintToBuf(txnData.StakeMultipleBasisPoints)...)
+	data = append(data, core.UintToBuf(txnData.StakeMultipleBasisPoints)...)
 
 	// TimestampNanos
-	data = append(data, UintToBuf(txnData.TimestampNanos)...)
+	data = append(data, core.UintToBuf(txnData.TimestampNanos)...)
 
 	// IsHidden
 	data = append(data, BoolToByte(txnData.IsHidden))
@@ -3379,7 +3380,7 @@ func (txnData *SubmitPostMetadata) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func ReadVarString(rr io.Reader) ([]byte, error) {
-	StringLen, err := ReadUvarint(rr)
+	StringLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "SubmitPostMetadata.FromBytes: Problem "+
 			"decoding String length")
@@ -3422,19 +3423,19 @@ func (txnData *SubmitPostMetadata) FromBytes(data []byte) error {
 	}
 
 	// CreatorBasisPoints
-	ret.CreatorBasisPoints, err = ReadUvarint(rr)
+	ret.CreatorBasisPoints, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("SubmitPostMetadata.FromBytes: Error reading CreatorBasisPoints: %v", err)
 	}
 
 	// StakeMultipleBasisPoints
-	ret.StakeMultipleBasisPoints, err = ReadUvarint(rr)
+	ret.StakeMultipleBasisPoints, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("SubmitPostMetadata.FromBytes: Error reading StakeMultipleBasisPoints: %v", err)
 	}
 
 	// TimestampNanos
-	ret.TimestampNanos, err = ReadUvarint(rr)
+	ret.TimestampNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("SubmitPostMetadata.FromBytes: Error reading TimestampNanos: %v", err)
 	}
@@ -3498,26 +3499,26 @@ func (txnData *UpdateProfileMetadata) ToBytes(preSignature bool) ([]byte, error)
 	data := []byte{}
 
 	// ProfilePublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.ProfilePublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.ProfilePublicKey)))...)
 	data = append(data, txnData.ProfilePublicKey...)
 
 	// NewUsername
-	data = append(data, UintToBuf(uint64(len(txnData.NewUsername)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.NewUsername)))...)
 	data = append(data, txnData.NewUsername...)
 
 	// NewDescription
-	data = append(data, UintToBuf(uint64(len(txnData.NewDescription)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.NewDescription)))...)
 	data = append(data, txnData.NewDescription...)
 
 	// NewProfilePic
-	data = append(data, UintToBuf(uint64(len(txnData.NewProfilePic)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.NewProfilePic)))...)
 	data = append(data, txnData.NewProfilePic...)
 
 	// NewCreatorBasisPoints
-	data = append(data, UintToBuf(txnData.NewCreatorBasisPoints)...)
+	data = append(data, core.UintToBuf(txnData.NewCreatorBasisPoints)...)
 
 	// NewStakeMultipleBasisPoints
-	data = append(data, UintToBuf(txnData.NewStakeMultipleBasisPoints)...)
+	data = append(data, core.UintToBuf(txnData.NewStakeMultipleBasisPoints)...)
 
 	// IsHidden
 	data = append(data, BoolToByte(txnData.IsHidden))
@@ -3563,13 +3564,13 @@ func (txnData *UpdateProfileMetadata) FromBytes(data []byte) error {
 	}
 
 	// NewCreatorBasisPoints
-	ret.NewCreatorBasisPoints, err = ReadUvarint(rr)
+	ret.NewCreatorBasisPoints, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("UpdateProfileMetadata.FromBytes: Error reading NewCreatorBasisPoints: %v", err)
 	}
 
 	// NewStakeMultipleBasisPoints
-	ret.NewStakeMultipleBasisPoints, err = ReadUvarint(rr)
+	ret.NewStakeMultipleBasisPoints, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("UpdateProfileMetadata.FromBytes: Error reading NewStakeMultipleBasisPoints: %v", err)
 	}
@@ -3630,7 +3631,7 @@ func (txnData *UpdateBitcoinUSDExchangeRateMetadataa) GetTxnType() TxnType {
 func (txnData *UpdateBitcoinUSDExchangeRateMetadataa) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
-	retBytes = append(retBytes, UintToBuf(uint64(txnData.USDCentsPerBitcoin))...)
+	retBytes = append(retBytes, core.UintToBuf(uint64(txnData.USDCentsPerBitcoin))...)
 
 	return retBytes, nil
 }
@@ -3641,7 +3642,7 @@ func (txnData *UpdateBitcoinUSDExchangeRateMetadataa) FromBytes(dataa []byte) er
 
 	// USDCentsPerBitcoin
 	var err error
-	ret.USDCentsPerBitcoin, err = ReadUvarint(rr)
+	ret.USDCentsPerBitcoin, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("UpdateBitcoinUSDExchangeRateMetadata.FromBytes: Error reading USDCentsPerBitcoin: %v", err)
 	}
@@ -3703,24 +3704,24 @@ func (txnData *CreatorCoinMetadataa) ToBytes(preSignature bool) ([]byte, error) 
 	data := []byte{}
 
 	// ProfilePublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.ProfilePublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.ProfilePublicKey)))...)
 	data = append(data, txnData.ProfilePublicKey...)
 
 	// OperationType byte
 	data = append(data, byte(txnData.OperationType))
 
 	// DeSoToSellNanos    uint64
-	data = append(data, UintToBuf(uint64(txnData.DeSoToSellNanos))...)
+	data = append(data, core.UintToBuf(uint64(txnData.DeSoToSellNanos))...)
 
 	// CreatorCoinToSellNanos uint64
-	data = append(data, UintToBuf(uint64(txnData.CreatorCoinToSellNanos))...)
+	data = append(data, core.UintToBuf(uint64(txnData.CreatorCoinToSellNanos))...)
 	// DeSoToAddNanos     uint64
-	data = append(data, UintToBuf(uint64(txnData.DeSoToAddNanos))...)
+	data = append(data, core.UintToBuf(uint64(txnData.DeSoToAddNanos))...)
 
 	// MinDeSoExpectedNanos    uint64
-	data = append(data, UintToBuf(uint64(txnData.MinDeSoExpectedNanos))...)
+	data = append(data, core.UintToBuf(uint64(txnData.MinDeSoExpectedNanos))...)
 	// MinCreatorCoinExpectedNanos uint64
-	data = append(data, UintToBuf(uint64(txnData.MinCreatorCoinExpectedNanos))...)
+	data = append(data, core.UintToBuf(uint64(txnData.MinCreatorCoinExpectedNanos))...)
 
 	return data, nil
 }
@@ -3746,31 +3747,31 @@ func (txnData *CreatorCoinMetadataa) FromBytes(dataa []byte) error {
 	ret.OperationType = CreatorCoinOperationType(operationType)
 
 	// DeSoToSellNanos    uint64
-	ret.DeSoToSellNanos, err = ReadUvarint(rr)
+	ret.DeSoToSellNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading DeSoToSellNanos: %v", err)
 	}
 
 	// CreatorCoinToSellNanos uint64
-	ret.CreatorCoinToSellNanos, err = ReadUvarint(rr)
+	ret.CreatorCoinToSellNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading CreatorCoinToSellNanos: %v", err)
 	}
 
 	// DeSoToAddNanos     uint64
-	ret.DeSoToAddNanos, err = ReadUvarint(rr)
+	ret.DeSoToAddNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading DeSoToAddNanos: %v", err)
 	}
 
 	// MinDeSoExpectedNanos    uint64
-	ret.MinDeSoExpectedNanos, err = ReadUvarint(rr)
+	ret.MinDeSoExpectedNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading MinDeSoExpectedNanos: %v", err)
 	}
 
 	// MinCreatorCoinExpectedNanos uint64
-	ret.MinCreatorCoinExpectedNanos, err = ReadUvarint(rr)
+	ret.MinCreatorCoinExpectedNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreatorCoinMetadata.FromBytes: Error reading MinCreatorCoinExpectedNanos: %v", err)
 	}
@@ -3805,14 +3806,14 @@ func (txnData *CreatorCoinTransferMetadataa) ToBytes(preSignature bool) ([]byte,
 	data := []byte{}
 
 	// ProfilePublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.ProfilePublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.ProfilePublicKey)))...)
 	data = append(data, txnData.ProfilePublicKey...)
 
 	// CreatorCoinToTransferNanos uint64
-	data = append(data, UintToBuf(uint64(txnData.CreatorCoinToTransferNanos))...)
+	data = append(data, core.UintToBuf(uint64(txnData.CreatorCoinToTransferNanos))...)
 
 	// ReceiverPublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
 	data = append(data, txnData.ReceiverPublicKey...)
 
 	return data, nil
@@ -3831,7 +3832,7 @@ func (txnData *CreatorCoinTransferMetadataa) FromBytes(dataa []byte) error {
 	}
 
 	// CreatorCoinToTransferNanos uint64
-	ret.CreatorCoinToTransferNanos, err = ReadUvarint(rr)
+	ret.CreatorCoinToTransferNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreatorCoinTransferMetadata.FromBytes: Error reading CreatorCoinToSellNanos: %v", err)
 	}
@@ -3884,7 +3885,7 @@ func (txnData *CreateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, txnData.NFTPostHash[:]...)
 
 	// NumCopies uint64
-	data = append(data, UintToBuf(txnData.NumCopies)...)
+	data = append(data, core.UintToBuf(txnData.NumCopies)...)
 
 	// HasUnlockable
 	data = append(data, BoolToByte(txnData.HasUnlockable))
@@ -3893,13 +3894,13 @@ func (txnData *CreateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, BoolToByte(txnData.IsForSale))
 
 	// MinBidAmountNanos uint64
-	data = append(data, UintToBuf(txnData.MinBidAmountNanos)...)
+	data = append(data, core.UintToBuf(txnData.MinBidAmountNanos)...)
 
 	// NFTRoyaltyToCreatorBasisPoints uint64
-	data = append(data, UintToBuf(txnData.NFTRoyaltyToCreatorBasisPoints)...)
+	data = append(data, core.UintToBuf(txnData.NFTRoyaltyToCreatorBasisPoints)...)
 
 	// NFTRoyaltyToCoinBasisPoints uint64
-	data = append(data, UintToBuf(txnData.NFTRoyaltyToCoinBasisPoints)...)
+	data = append(data, core.UintToBuf(txnData.NFTRoyaltyToCoinBasisPoints)...)
 
 	return data, nil
 }
@@ -3917,7 +3918,7 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// NumCopies uint64
-	ret.NumCopies, err = ReadUvarint(rr)
+	ret.NumCopies, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreateNFTMetadata.FromBytes: Error reading NumCopies: %v", err)
 	}
@@ -3929,19 +3930,19 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	ret.IsForSale = ReadBoolByte(rr)
 
 	// MinBidAmountNanos uint64
-	ret.MinBidAmountNanos, err = ReadUvarint(rr)
+	ret.MinBidAmountNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreateNFTMetadata.FromBytes: Error reading MinBidAmountNanos: %v", err)
 	}
 
 	// NFTRoyaltyToCreatorBasisPoints uint64
-	ret.NFTRoyaltyToCreatorBasisPoints, err = ReadUvarint(rr)
+	ret.NFTRoyaltyToCreatorBasisPoints, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreateNFTMetadata.FromBytes: Error reading NFTRoyaltyToCreatorBasisPoints: %v", err)
 	}
 
 	// NFTRoyaltyToCoinBasisPoints uint64
-	ret.NFTRoyaltyToCoinBasisPoints, err = ReadUvarint(rr)
+	ret.NFTRoyaltyToCoinBasisPoints, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("CreateNFTMetadata.FromBytes: Error reading NFTRoyaltyToCoinBasisPoints: %v", err)
 	}
@@ -3984,13 +3985,13 @@ func (txnData *UpdateNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, txnData.NFTPostHash[:]...)
 
 	// SerialNumber uint64
-	data = append(data, UintToBuf(txnData.SerialNumber)...)
+	data = append(data, core.UintToBuf(txnData.SerialNumber)...)
 
 	// IsForSale
 	data = append(data, BoolToByte(txnData.IsForSale))
 
 	// MinBidAmountNanos uint64
-	data = append(data, UintToBuf(txnData.MinBidAmountNanos)...)
+	data = append(data, core.UintToBuf(txnData.MinBidAmountNanos)...)
 
 	return data, nil
 }
@@ -4008,7 +4009,7 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// SerialNumber uint64
-	ret.SerialNumber, err = ReadUvarint(rr)
+	ret.SerialNumber, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("UpdateNFTMetadata.FromBytes: Error reading SerialNumber: %v", err)
 	}
@@ -4017,7 +4018,7 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	ret.IsForSale = ReadBoolByte(rr)
 
 	// SerialNumber uint64
-	ret.MinBidAmountNanos, err = ReadUvarint(rr)
+	ret.MinBidAmountNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("UpdateNFTMetadata.FromBytes: Error reading MinBidAmountNanos: %v", err)
 	}
@@ -4070,24 +4071,24 @@ func (txnData *AcceptNFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) 
 	data = append(data, txnData.NFTPostHash[:]...)
 
 	// SerialNumber uint64
-	data = append(data, UintToBuf(txnData.SerialNumber)...)
+	data = append(data, core.UintToBuf(txnData.SerialNumber)...)
 
 	// BidderPKID
-	data = append(data, UintToBuf(uint64(len(txnData.BidderPKID)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.BidderPKID)))...)
 	data = append(data, txnData.BidderPKID[:]...)
 
 	// BidAmountNanos uint64
-	data = append(data, UintToBuf(txnData.BidAmountNanos)...)
+	data = append(data, core.UintToBuf(txnData.BidAmountNanos)...)
 
 	// UnlockableText
-	data = append(data, UintToBuf(uint64(len(txnData.UnlockableText)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.UnlockableText)))...)
 	data = append(data, txnData.UnlockableText...)
 
 	// Serialize the bidder inputs
-	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.BidderInputs)))...)
 	for _, desoInput := range txnData.BidderInputs {
 		data = append(data, desoInput.TxID[:]...)
-		data = append(data, UintToBuf(uint64(desoInput.Index))...)
+		data = append(data, core.UintToBuf(uint64(desoInput.Index))...)
 	}
 
 	return data, nil
@@ -4106,7 +4107,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// SerialNumber uint64
-	ret.SerialNumber, err = ReadUvarint(rr)
+	ret.SerialNumber, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading SerialNumber: %v", err)
 	}
@@ -4120,13 +4121,13 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 	ret.BidderPKID = core.PublicKeyToPKID(bidderPKIDBytes)
 
 	// BidAmountNanos uint64
-	ret.BidAmountNanos, err = ReadUvarint(rr)
+	ret.BidAmountNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading BidAmountNanos: %v", err)
 	}
 
 	// UnlockableText
-	unlockableTextLen, err := ReadUvarint(rr)
+	unlockableTextLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem "+
 			"decoding UnlockableText length")
@@ -4142,7 +4143,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// De-serialize the inputs
-	numInputs, err := ReadUvarint(rr)
+	numInputs, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem getting length of inputs")
 	}
@@ -4152,7 +4153,7 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 		if err != nil {
 			return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem converting input txid")
 		}
-		inputIndex, err := ReadUvarint(rr)
+		inputIndex, err := core.ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "AcceptNFTBidMetadata.FromBytes: Problem converting input index")
 		}
@@ -4201,10 +4202,10 @@ func (txnData *NFTBidMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, txnData.NFTPostHash[:]...)
 
 	// SerialNumber uint64
-	data = append(data, UintToBuf(txnData.SerialNumber)...)
+	data = append(data, core.UintToBuf(txnData.SerialNumber)...)
 
 	// BidAmountNanos uint64
-	data = append(data, UintToBuf(txnData.BidAmountNanos)...)
+	data = append(data, core.UintToBuf(txnData.BidAmountNanos)...)
 
 	return data, nil
 }
@@ -4222,13 +4223,13 @@ func (txnData *NFTBidMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// SerialNumber uint64
-	ret.SerialNumber, err = ReadUvarint(rr)
+	ret.SerialNumber, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("NFTBidMetadata.FromBytes: Error reading SerialNumber: %v", err)
 	}
 
 	// BidAmountNanos uint64
-	ret.BidAmountNanos, err = ReadUvarint(rr)
+	ret.BidAmountNanos, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("NFTBidMetadata.FromBytes: Error reading BidAmountNanos: %v", err)
 	}
@@ -4271,14 +4272,14 @@ func (txnData *NFTTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, txnData.NFTPostHash[:]...)
 
 	// SerialNumber uint64
-	data = append(data, UintToBuf(txnData.SerialNumber)...)
+	data = append(data, core.UintToBuf(txnData.SerialNumber)...)
 
 	// ReceiverPublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
 	data = append(data, txnData.ReceiverPublicKey...)
 
 	// UnlockableText
-	data = append(data, UintToBuf(uint64(len(txnData.UnlockableText)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.UnlockableText)))...)
 	data = append(data, txnData.UnlockableText...)
 
 	return data, nil
@@ -4297,7 +4298,7 @@ func (txnData *NFTTransferMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// SerialNumber uint64
-	ret.SerialNumber, err = ReadUvarint(rr)
+	ret.SerialNumber, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("NFTTransferMetadata.FromBytes: Error reading SerialNumber: %v", err)
 	}
@@ -4310,7 +4311,7 @@ func (txnData *NFTTransferMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// UnlockableText
-	unlockableTextLen, err := ReadUvarint(rr)
+	unlockableTextLen, err := core.ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "NFTTransferMetadata.FromBytes: Problem "+
 			"decoding UnlockableText length")
@@ -4361,7 +4362,7 @@ func (txnData *AcceptNFTTransferMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, txnData.NFTPostHash[:]...)
 
 	// SerialNumber uint64
-	data = append(data, UintToBuf(txnData.SerialNumber)...)
+	data = append(data, core.UintToBuf(txnData.SerialNumber)...)
 
 	return data, nil
 }
@@ -4379,7 +4380,7 @@ func (txnData *AcceptNFTTransferMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// SerialNumber uint64
-	ret.SerialNumber, err = ReadUvarint(rr)
+	ret.SerialNumber, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("AcceptNFTTransferMetadata.FromBytes: Error reading SerialNumber: %v", err)
 	}
@@ -4420,7 +4421,7 @@ func (txnData *BurnNFTMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, txnData.NFTPostHash[:]...)
 
 	// SerialNumber uint64
-	data = append(data, UintToBuf(txnData.SerialNumber)...)
+	data = append(data, core.UintToBuf(txnData.SerialNumber)...)
 
 	return data, nil
 }
@@ -4438,7 +4439,7 @@ func (txnData *BurnNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// SerialNumber uint64
-	ret.SerialNumber, err = ReadUvarint(rr)
+	ret.SerialNumber, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("BurnNFTMetadata.FromBytes: Error reading SerialNumber: %v", err)
 	}
@@ -4480,11 +4481,11 @@ func (txnData *SwapIdentityMetadataa) ToBytes(preSignature bool) ([]byte, error)
 	data := []byte{}
 
 	// FromPublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.FromPublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.FromPublicKey)))...)
 	data = append(data, txnData.FromPublicKey...)
 
 	// ToPublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.ToPublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.ToPublicKey)))...)
 	data = append(data, txnData.ToPublicKey...)
 
 	return data, nil
@@ -4552,17 +4553,17 @@ func (txnData *AuthorizeDerivedKeyMetadata) ToBytes(preSignature bool) ([]byte, 
 	data := []byte{}
 
 	// DerivedPublicKey
-	data = append(data, UintToBuf(uint64(len(txnData.DerivedPublicKey)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.DerivedPublicKey)))...)
 	data = append(data, txnData.DerivedPublicKey...)
 
 	// ExpirationBlock uint64
-	data = append(data, UintToBuf(uint64(txnData.ExpirationBlock))...)
+	data = append(data, core.UintToBuf(uint64(txnData.ExpirationBlock))...)
 
 	// OperationType byte
 	data = append(data, byte(txnData.OperationType))
 
 	// AccessSignature
-	data = append(data, UintToBuf(uint64(len(txnData.AccessSignature)))...)
+	data = append(data, core.UintToBuf(uint64(len(txnData.AccessSignature)))...)
 	data = append(data, txnData.AccessSignature...)
 
 	return data, nil
@@ -4581,7 +4582,7 @@ func (txnData *AuthorizeDerivedKeyMetadata) FromBytes(data []byte) error {
 	}
 
 	// ExpirationBlock uint64
-	ret.ExpirationBlock, err = ReadUvarint(rr)
+	ret.ExpirationBlock, err = core.ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf(
 			"AuthorizeDerivedKeyMetadata.FromBytes: Error reading ExpirationBlock: %v", err)
@@ -4608,4 +4609,27 @@ func (txnData *AuthorizeDerivedKeyMetadata) FromBytes(data []byte) error {
 
 func (txnData *AuthorizeDerivedKeyMetadata) New() DeSoTxnMetadata {
 	return &AuthorizeDerivedKeyMetadata{}
+}
+
+type NetworkType uint64
+
+const (
+	// The different network types. For now we have a mainnet and a testnet.
+	// Also create an UNSET value to catch errors.
+	NetworkType_UNSET   NetworkType = 0
+	NetworkType_MAINNET NetworkType = 1
+	NetworkType_TESTNET NetworkType = 2
+)
+
+func (nt NetworkType) String() string {
+	switch nt {
+	case NetworkType_UNSET:
+		return "UNSET"
+	case NetworkType_MAINNET:
+		return "MAINNET"
+	case NetworkType_TESTNET:
+		return "TESTNET"
+	default:
+		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", nt)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,9 +12,9 @@ import (
 )
 
 func _doLikeTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
-	params *lib.DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
+	params *core.DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
 	likedPostHash core.BlockHash, senderPrivBase58Check string, isUnfollow bool) (
-	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -27,7 +28,7 @@ func _doLikeTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateLikeTxn(
-		senderPkBytes, likedPostHash, isUnfollow, feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
+		senderPkBytes, likedPostHash, isUnfollow, feeRateNanosPerKB, nil, []*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -86,7 +87,7 @@ func TestLikeTxns(t *testing.T) {
 
 	// Setup some convenience functions for the test.
 	txnOps := [][]*UtxoOperation{}
-	txns := []*lib.MsgDeSoTxn{}
+	txns := []*net.MsgDeSoTxn{}
 	expectedSenderBalances := []uint64{}
 	expectedRecipientBalances := []uint64{}
 
@@ -150,7 +151,7 @@ func TestLikeTxns(t *testing.T) {
 		updaterPrivBase58Check string,
 		postHashToModify []byte,
 		parentStakeID []byte,
-		bodyObj *lib.DeSoBodySchema,
+		bodyObj *net.DeSoBodySchema,
 		repostedPostHash []byte,
 		tstampNanos uint64,
 		isHidden bool) {
@@ -188,7 +189,7 @@ func TestLikeTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		fakePostHash, m0Priv, false /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorCannotLikeNonexistentPost)
+	require.Contains(err.Error(), core.RuleErrorCannotLikeNonexistentPost)
 
 	submitPost(
 		10,       /*feeRateNanosPerKB*/
@@ -196,7 +197,7 @@ func TestLikeTxns(t *testing.T) {
 		m0Priv,   /*updaterPrivBase58Check*/
 		[]byte{}, /*postHashToModify*/
 		[]byte{}, /*parentStakeID*/
-		&lib.DeSoBodySchema{Body: "m0 post body 1 no profile"}, /*body*/
+		&net.DeSoBodySchema{Body: "m0 post body 1 no profile"}, /*body*/
 		[]byte{},
 		1602947011*1e9, /*tstampNanos*/
 		false /*isHidden*/)
@@ -210,7 +211,7 @@ func TestLikeTxns(t *testing.T) {
 			m0Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post body 2 no profile"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post body 2 no profile"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -225,7 +226,7 @@ func TestLikeTxns(t *testing.T) {
 			m1Priv,   /*updaterPrivBase58Check*/
 			[]byte{}, /*postHashToModify*/
 			[]byte{}, /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m1 post body 1 no profile"}, /*body*/
+			&net.DeSoBodySchema{Body: "m1 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -241,7 +242,7 @@ func TestLikeTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		post1Hash, m0Priv, false /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorLikeEntryAlreadyExists)
+	require.Contains(err.Error(), core.RuleErrorLikeEntryAlreadyExists)
 
 	// m2 -> p1
 	doLikeTxn(m2Pub, post1Hash, m2Priv, false /*isUnfollow*/, 10 /*feeRateNanosPerKB*/)
@@ -380,7 +381,7 @@ func TestLikeTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		post1Hash, m0Priv, true /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorCannotUnlikeWithoutAnExistingLike)
+	require.Contains(err.Error(), core.RuleErrorCannotUnlikeWithoutAnExistingLike)
 
 	likingP1 = [][]byte{
 		_strToPk(t, m2Pub),

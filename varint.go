@@ -1,4 +1,4 @@
-package lib
+package core
 
 // This file implements "varint" encoding of 64-bit integers.
 // The encoding is:

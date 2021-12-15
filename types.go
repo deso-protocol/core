@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/miner"
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -72,7 +72,7 @@ func NewBlockHash(input []byte) *BlockHash {
 }
 
 func (bh *BlockHash) String() string {
-	return fmt.Sprintf("%064x", lib.HashToBigint(bh))
+	return fmt.Sprintf("%064x", miner.HashToBigint(bh))
 }
 
 func (bh *BlockHash) ToBytes() []byte {

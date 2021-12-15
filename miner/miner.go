@@ -2,12 +2,14 @@
 // delete all of this code and use remote_miner in all the places where we currently
 // use the miner. The reason we don't do this now is it would break a lot of test cases
 // that we have.
-package lib
+package miner
 
 import (
 	"encoding/hex"
 	"fmt"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"math/big"
 	"math/rand"
 	"reflect"
@@ -19,7 +21,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
-	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -29,19 +30,19 @@ import (
 type DeSoMiner struct {
 	PublicKeys    []*btcec.PublicKey
 	numThreads    uint32
-	BlockProducer *DeSoBlockProducer
-	params        *DeSoParams
+	BlockProducer *lib.DeSoBlockProducer
+	params        *core.DeSoParams
 
 	stopping int32
 }
 
 func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
-	_blockProducer *DeSoBlockProducer, _params *DeSoParams) (*DeSoMiner, error) {
+	_blockProducer *lib.DeSoBlockProducer, _params *core.DeSoParams) (*DeSoMiner, error) {
 
 	// Convert the public keys from Base58Check encoding to bytes.
 	_pubKeys := []*btcec.PublicKey{}
 	for _, publicKeyBase58 := range _minerPublicKeys {
-		pkBytes, _, err := Base58CheckDecode(publicKeyBase58)
+		pkBytes, _, err := lib.Base58CheckDecode(publicKeyBase58)
 		if err != nil {
 			return nil, errors.Wrapf(err, "NewDeSoMiner: ")
 		}
@@ -65,7 +66,7 @@ func (desoMiner *DeSoMiner) Stop() {
 }
 
 func (desoMiner *DeSoMiner) _getBlockToMine(threadIndex uint32) (
-	_blk *MsgDeSoBlock, _diffTarget *core.BlockHash, _lastNode *BlockNode, _err error) {
+	_blk *net.MsgDeSoBlock, _diffTarget *core.BlockHash, _lastNode *lib.BlockNode, _err error) {
 
 	// Choose a random address to contribute the coins to. Use the extraNonce to
 	// choose the random address since it's random.
@@ -88,7 +89,7 @@ func (desoMiner *DeSoMiner) _getRandomPublicKey() []byte {
 	return desoMiner.PublicKeys[rand.Intn(len(desoMiner.PublicKeys))].SerializeCompressed()
 }
 
-func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *core.BlockHash, minedBlock *MsgDeSoBlock) {
+func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *core.BlockHash, minedBlock *net.MsgDeSoBlock) {
 	for {
 		// This provides a way for outside processes to pause the miner.
 		if len(desoMiner.PublicKeys) == 0 {
@@ -107,14 +108,14 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *c
 		// TODO(miner): Replace with a call to GetBlockTemplate
 		publicKey := desoMiner._getRandomPublicKey()
 		blockID, headerBytes, extraNonces, diffTarget, err := desoMiner.BlockProducer.GetHeadersAndExtraDatas(
-			publicKey, 1 /*numHeaders*/, CurrentHeaderVersion)
+			publicKey, 1 /*numHeaders*/, core.CurrentHeaderVersion)
 		if err != nil {
 			glog.Errorf("DeSoMiner._startThread: Error getting header to "+
 				"hash on; this should never happen unless we're starting up: %v", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		header := &MsgDeSoHeader{}
+		header := &net.MsgDeSoHeader{}
 		if err := header.FromBytes(headerBytes[0]); err != nil {
 			glog.Errorf("DeSoMiner._startThread: Error parsing header to " +
 				"hash on; this should never happen")
@@ -158,7 +159,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *c
 		// Swap in the public key and extraNonce. This should make the block consistent with
 		// the header we were just mining on.
 		blockToMine.Txns[0].TxOutputs[0].PublicKey = publicKey
-		blockToMine.Txns[0].TxnMeta.(*BlockRewardMetadataa).ExtraData = UintToBuf(extraNonces[0])
+		blockToMine.Txns[0].TxnMeta.(*net.BlockRewardMetadataa).ExtraData = core.UintToBuf(extraNonces[0])
 
 		// Set the header for the block, which should update the merkle root.
 		blockToMine.Header = header
@@ -172,7 +173,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *c
 	return nil, nil
 }
 
-func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoolToUpdate *DeSoMempool) (_block *MsgDeSoBlock, _err error) {
+func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoolToUpdate *lib.DeSoMempool) (_block *net.MsgDeSoBlock, _err error) {
 	// Add a call to update the BlockProducer.
 	// TODO(performance): We shouldn't have to do this, it just makes tests pass right now.
 	if err := desoMiner.BlockProducer.UpdateLatestBlockTemplate(); err != nil {
@@ -210,7 +211,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		return nil, err
 	}
 	glog.V(1).Infof("Block bytes hex %d: %s", blockToMine.Header.Height, hex.EncodeToString(blockBytes))
-	blockFromBytes := &MsgDeSoBlock{}
+	blockFromBytes := &net.MsgDeSoBlock{}
 	err = blockFromBytes.FromBytes(blockBytes)
 	if err != nil || !reflect.DeepEqual(*blockToMine, *blockFromBytes) {
 		glog.Error(err)
@@ -220,7 +221,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		scs.Dump(blockFromBytes)
 		glog.V(1).Infof("In case you missed the hex %d: %s", blockToMine.Header.Height, hex.EncodeToString(blockBytes))
 		glog.Errorf("DeSoMiner.MineAndProcessSingleBlock: ERROR: Problem with block "+
-			"serialization (see above for dumps of blocks): Diff: %v, err?: %v", Diff(blockToMine, blockFromBytes), err)
+			"serialization (see above for dumps of blocks): Diff: %v, err?: %v", lib.Diff(blockToMine, blockFromBytes), err)
 	}
 	glog.V(2).Infof("Mined block height:num_txns: %d:%d\n", blockToMine.Header.Height, len(blockToMine.Txns))
 
@@ -338,10 +339,10 @@ func CopyBytesIntoBlockHash(data []byte) *core.BlockHash {
 func ProofOfWorkHash(inputBytes []byte, version uint32) *core.BlockHash {
 	output := core.BlockHash{}
 
-	if version == HeaderVersion0 {
+	if version == core.HeaderVersion0 {
 		hashBytes := desohash.DeSoHashV0(inputBytes)
 		copy(output[:], hashBytes[:])
-	} else if version == HeaderVersion1 {
+	} else if version == core.HeaderVersion1 {
 		hashBytes := desohash.DeSoHashV1(inputBytes)
 		copy(output[:], hashBytes[:])
 	} else {
@@ -352,13 +353,6 @@ func ProofOfWorkHash(inputBytes []byte, version uint32) *core.BlockHash {
 	}
 
 	return &output
-}
-
-func Sha256DoubleHash(input []byte) *core.BlockHash {
-	hashBytes := merkletree.Sha256DoubleHash(input)
-	ret := &core.BlockHash{}
-	copy(ret[:], hashBytes[:])
-	return ret
 }
 
 func HashToBigint(hash *core.BlockHash) *big.Int {
@@ -423,7 +417,7 @@ func BigintToBytes(bigint *big.Int) []byte {
 // of the passed blockHeader field as it iterates. This makes it easy to
 // continue a subsequent batch of iterations after we return.
 func FindLowestHash(
-	blockHeaderr *MsgDeSoHeader, iterations uint64) (
+	blockHeaderr *net.MsgDeSoHeader, iterations uint64) (
 	lowestHash *core.BlockHash, lowestNonce uint64, ee error) {
 	//// Compute a hash of the header with the current nonce value.
 	bestNonce := blockHeaderr.Nonce

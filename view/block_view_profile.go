@@ -8,6 +8,7 @@ import (
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -431,7 +432,7 @@ func (bav *UtxoView) _deleteDerivedKeyMapping(derivedKeyEntry *DerivedKeyEntry) 
 }
 
 // Takes a Postgres Profile, sets all the mappings on the view, returns the equivalent ProfileEntry and PKIDEntry
-func (bav *UtxoView) setProfileMappings(profile *lib.PGProfile) (*ProfileEntry, *PKIDEntry) {
+func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKIDEntry) {
 	pkidEntry := &PKIDEntry{
 		PKID:      profile.PKID,
 		PublicKey: profile.PublicKey.ToBytes(),
@@ -506,16 +507,16 @@ func (bav *UtxoView) GetProfilesForUsernamePrefixByCoinValue(usernamePrefix stri
 }
 
 func (bav *UtxoView) _connectUpdateProfile(
-	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool,
+	txn *net.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool,
 	ignoreUtxos bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != lib.TxnTypeUpdateProfile {
+	if txn.TxnMeta.GetTxnType() != net.TxnTypeUpdateProfile {
 		return 0, 0, nil, fmt.Errorf("_connectUpdateProfile: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*lib.UpdateProfileMetadata)
+	txMeta := txn.TxnMeta.(*net.UpdateProfileMetadata)
 
 	// See comment on ForgivenProfileUsernameClaims. This fixes a bug in the blockchain
 	// where users could claim usernames that weren't actually available.
@@ -529,46 +530,46 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 	// Validate the fields to make sure they don't exceed our limits.
 	if uint64(len(txMeta.NewUsername)) > bav.Params.MaxUsernameLengthBytes {
-		return 0, 0, nil, lib.RuleErrorProfileUsernameTooLong
+		return 0, 0, nil, core.RuleErrorProfileUsernameTooLong
 	}
 	if uint64(len(txMeta.NewDescription)) > bav.Params.MaxUserDescriptionLengthBytes {
-		return 0, 0, nil, lib.RuleErrorProfileDescriptionTooLong
+		return 0, 0, nil, core.RuleErrorProfileDescriptionTooLong
 	}
 	if uint64(len(txMeta.NewProfilePic)) > bav.Params.MaxProfilePicLengthBytes {
-		return 0, 0, nil, lib.RuleErrorMaxProfilePicSize
+		return 0, 0, nil, core.RuleErrorMaxProfilePicSize
 	}
 	if txMeta.NewCreatorBasisPoints > bav.Params.MaxCreatorBasisPoints || txMeta.NewCreatorBasisPoints < 0 {
-		return 0, 0, nil, lib.RuleErrorProfileCreatorPercentageSize
+		return 0, 0, nil, core.RuleErrorProfileCreatorPercentageSize
 	}
 	if txMeta.NewStakeMultipleBasisPoints <= 100*100 ||
 		txMeta.NewStakeMultipleBasisPoints > bav.Params.MaxStakeMultipleBasisPoints {
 
-		return 0, 0, nil, lib.RuleErrorProfileStakeMultipleSize
+		return 0, 0, nil, core.RuleErrorProfileStakeMultipleSize
 	}
 	// If a username is set then it must adhere to a particular regex.
-	if len(txMeta.NewUsername) != 0 && !lib.UsernameRegex.Match(txMeta.NewUsername) {
-		return 0, 0, nil, errors.Wrapf(lib.RuleErrorInvalidUsername, "Username: %v", string(txMeta.NewUsername))
+	if len(txMeta.NewUsername) != 0 && !core.UsernameRegex.Match(txMeta.NewUsername) {
+		return 0, 0, nil, errors.Wrapf(core.RuleErrorInvalidUsername, "Username: %v", string(txMeta.NewUsername))
 	}
 
 	profilePublicKey := txn.PublicKey
 	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 	if len(txMeta.ProfilePublicKey) != 0 {
 		if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
-			return 0, 0, nil, errors.Wrapf(lib.RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
+			return 0, 0, nil, errors.Wrapf(core.RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
 		}
 		_, err := btcec.ParsePubKey(txMeta.ProfilePublicKey, btcec.S256())
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(lib.RuleErrorProfileBadPublicKey, "_connectUpdateProfile: %v", err)
+			return 0, 0, nil, errors.Wrapf(core.RuleErrorProfileBadPublicKey, "_connectUpdateProfile: %v", err)
 		}
 		profilePublicKey = txMeta.ProfilePublicKey
 
-		if blockHeight > lib.UpdateProfileFixBlockHeight {
+		if blockHeight > core.UpdateProfileFixBlockHeight {
 			// Make sure that either (1) the profile pub key is the txn signer's  public key or
 			// (2) the signer is a param updater
 			if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) && !updaterIsParamUpdater {
 
 				return 0, 0, nil, errors.Wrapf(
-					lib.RuleErrorProfilePubKeyNotAuthorized,
+					core.RuleErrorProfilePubKeyNotAuthorized,
 					"_connectUpdateProfile: Profile pub key: %v, signer public key: %v",
 					db.PkToStringBoth(txn.PublicKey), db.PkToStringBoth(txMeta.ProfilePublicKey))
 			}
@@ -584,7 +585,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 			!reflect.DeepEqual(existingProfileEntry.PublicKey, profilePublicKey) {
 
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorProfileUsernameExists, "Username: %v, TxHashHex: %v",
+				core.RuleErrorProfileUsernameExists, "Username: %v, TxHashHex: %v",
 				string(txMeta.NewUsername), hex.EncodeToString(txHash[:]))
 		}
 	}
@@ -608,7 +609,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// Force the input to be non-zero so that we can prevent replay attacks.
 		if totalInput == 0 {
-			return 0, 0, nil, lib.RuleErrorProfileUpdateRequiresNonZeroInput
+			return 0, 0, nil, core.RuleErrorProfileUpdateRequiresNonZeroInput
 		}
 	}
 
@@ -619,7 +620,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		createProfileFeeNanos := bav.GlobalParamsEntry.CreateProfileFeeNanos
 		totalOutput += createProfileFeeNanos
 		if totalInput < totalOutput {
-			return 0, 0, nil, lib.RuleErrorCreateProfileTxnOutputExceedsInput
+			return 0, 0, nil, core.RuleErrorCreateProfileTxnOutputExceedsInput
 		}
 	}
 	// Save a copy of the profile entry so so that we can safely modify it.
@@ -648,7 +649,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 			!updaterIsParamUpdater {
 
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorProfileModificationNotAuthorized,
+				core.RuleErrorProfileModificationNotAuthorized,
 				"_connectUpdateProfile: Profile: %v, profile public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", existingProfileEntry,
 				db.PkToStringBoth(existingProfileEntry.PublicKey),
@@ -680,7 +681,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// When there's no pre-existing profile entry we need to do more
 		// checks.
 		if len(txMeta.NewUsername) == 0 {
-			return 0, 0, nil, lib.RuleErrorProfileUsernameTooShort
+			return 0, 0, nil, core.RuleErrorProfileUsernameTooShort
 		}
 		// We allow users to create profiles without a description or picture
 		// in the consensus code. If desired, frontends can filter out profiles
@@ -694,7 +695,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// If below block height, use transaction public key.
 		// If above block height, use ProfilePublicKey if available.
 		profileEntryPublicKey := txn.PublicKey
-		if blockHeight > lib.ParamUpdaterProfileUpdateFixBlockHeight {
+		if blockHeight > core.ParamUpdaterProfileUpdateFixBlockHeight {
 			profileEntryPublicKey = profilePublicKey
 		} else if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) {
 			// In this case a clobbering will occur if there was a pre-existing profile
@@ -755,21 +756,21 @@ func (bav *UtxoView) _connectUpdateProfile(
 }
 
 func (bav *UtxoView) _connectSwapIdentity(
-	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *net.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != lib.TxnTypeSwapIdentity {
+	if txn.TxnMeta.GetTxnType() != net.TxnTypeSwapIdentity {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectSwapIdentity: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*lib.SwapIdentityMetadataa)
+	txMeta := txn.TxnMeta.(*net.SwapIdentityMetadataa)
 
 	// The txn.PublicKey must be paramUpdater
 	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
-		return 0, 0, nil, lib.RuleErrorSwapIdentityIsParamUpdaterOnly
+		return 0, 0, nil, core.RuleErrorSwapIdentityIsParamUpdaterOnly
 	}
 
 	// call _connectBasicTransfer to verify signatures
@@ -781,25 +782,25 @@ func (bav *UtxoView) _connectSwapIdentity(
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
-		return 0, 0, nil, lib.RuleErrorProfileUpdateRequiresNonZeroInput
+		return 0, 0, nil, core.RuleErrorProfileUpdateRequiresNonZeroInput
 	}
 
 	// The "from " public key must be set and valid.
 	fromPublicKey := txMeta.FromPublicKey
 	if len(fromPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, lib.RuleErrorFromPublicKeyIsRequired
+		return 0, 0, nil, core.RuleErrorFromPublicKeyIsRequired
 	}
 	if _, err := btcec.ParsePubKey(fromPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(lib.RuleErrorInvalidFromPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(core.RuleErrorInvalidFromPublicKey, err.Error())
 	}
 
 	// The "to" public key must be set and valid.
 	toPublicKey := txMeta.ToPublicKey
 	if len(toPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, lib.RuleErrorToPublicKeyIsRequired
+		return 0, 0, nil, core.RuleErrorToPublicKeyIsRequired
 	}
 	if _, err := btcec.ParsePubKey(toPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(lib.RuleErrorInvalidToPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(core.RuleErrorInvalidToPublicKey, err.Error())
 	}
 
 	if verifySignatures {
@@ -828,12 +829,12 @@ func (bav *UtxoView) _connectSwapIdentity(
 	oldFromPKIDEntry := bav.GetPKIDForPublicKey(fromPublicKey)
 	if oldFromPKIDEntry == nil || oldFromPKIDEntry.isDeleted {
 		// This should basically never happen since we never delete PKIDs.
-		return 0, 0, nil, lib.RuleErrorOldFromPublicKeyHasDeletedPKID
+		return 0, 0, nil, core.RuleErrorOldFromPublicKeyHasDeletedPKID
 	}
 	oldToPKIDEntry := bav.GetPKIDForPublicKey(toPublicKey)
 	if oldToPKIDEntry == nil || oldToPKIDEntry.isDeleted {
 		// This should basically never happen since we never delete PKIDs.
-		return 0, 0, nil, lib.RuleErrorOldToPublicKeyHasDeletedPKID
+		return 0, 0, nil, core.RuleErrorOldToPublicKeyHasDeletedPKID
 	}
 
 	// At this point, we are certain that the *from* and the *to* public keys
@@ -926,7 +927,7 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	// Compute a hash of derivedPublicKey+expirationBlock.
 	expirationBlockBytes := db.EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
-	accessHash := lib.Sha256DoubleHash(accessBytes)
+	accessHash := core.Sha256DoubleHash(accessBytes)
 
 	// Convert accessSignature to *btcec.Signature.
 	signature, err := btcec.ParseDERSignature(accessSignature, btcec.S256())
@@ -943,56 +944,56 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(
-	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *net.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < lib.NFTTransferOrBurnAndDerivedKeysBlockHeight {
-		return 0, 0, nil, lib.RuleErrorDerivedKeyBeforeBlockHeight
+	if blockHeight < core.NFTTransferOrBurnAndDerivedKeysBlockHeight {
+		return 0, 0, nil, core.RuleErrorDerivedKeyBeforeBlockHeight
 	}
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != lib.TxnTypeAuthorizeDerivedKey {
+	if txn.TxnMeta.GetTxnType() != net.TxnTypeAuthorizeDerivedKey {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
 
-	txMeta := txn.TxnMeta.(*lib.AuthorizeDerivedKeyMetadata)
+	txMeta := txn.TxnMeta.(*net.AuthorizeDerivedKeyMetadata)
 
 	// Validate the operation type.
-	if txMeta.OperationType != lib.AuthorizeDerivedKeyOperationValid &&
-		txMeta.OperationType != lib.AuthorizeDerivedKeyOperationNotValid {
+	if txMeta.OperationType != net.AuthorizeDerivedKeyOperationValid &&
+		txMeta.OperationType != net.AuthorizeDerivedKeyOperationNotValid {
 		return 0, 0, nil, fmt.Errorf("_connectAuthorizeDerivedKey: called with bad OperationType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
 
 	// Make sure transaction hasn't expired.
 	if txMeta.ExpirationBlock <= uint64(blockHeight) {
-		return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyExpiredDerivedPublicKey
+		return 0, 0, nil, core.RuleErrorAuthorizeDerivedKeyExpiredDerivedPublicKey
 	}
 
 	// Validate the owner public key.
 	ownerPublicKey := txn.PublicKey
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey
+		return 0, 0, nil, core.RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey
 	}
 	if _, err := btcec.ParsePubKey(ownerPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(lib.RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(core.RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey, err.Error())
 	}
 
 	// Validate the derived public key.
 	derivedPublicKey := txMeta.DerivedPublicKey
 	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey
+		return 0, 0, nil, core.RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey
 	}
 	if _, err := btcec.ParsePubKey(derivedPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(lib.RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey, err.Error())
+		return 0, 0, nil, errors.Wrap(core.RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey, err.Error())
 	}
 
 	// Verify that the access signature is valid. This means the derived key is authorized.
 	err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
 		txMeta.ExpirationBlock, txMeta.AccessSignature)
 	if err != nil {
-		return 0, 0, nil, errors.Wrap(lib.RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
+		return 0, 0, nil, errors.Wrap(core.RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 	}
 
 	// Get current (previous) derived key entry. We might revert to it later so we copy it.
@@ -1004,8 +1005,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// To prevent this, the following check completely blocks a derived key once it has been
 	// de-authorized. This makes the lifecycle of a derived key more controllable.
 	if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
-		if prevDerivedKeyEntry.OperationType == lib.AuthorizeDerivedKeyOperationNotValid {
-			return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey
+		if prevDerivedKeyEntry.OperationType == net.AuthorizeDerivedKeyOperationNotValid {
+			return 0, 0, nil, core.RuleErrorAuthorizeDerivedKeyDeletedDerivedPublicKey
 		}
 	}
 
@@ -1026,7 +1027,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		OwnerPublicKey:   *core.NewPublicKey(ownerPublicKey),
 		DerivedPublicKey: *core.NewPublicKey(derivedPublicKey),
 		ExpirationBlock:  txMeta.ExpirationBlock,
-		OperationType:    lib.AuthorizeDerivedKeyOperationValid,
+		OperationType:    net.AuthorizeDerivedKeyOperationValid,
 		isDeleted:        false,
 	}
 	bav._setDerivedKeyMapping(&derivedKeyEntry)
@@ -1048,7 +1049,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		// We're doing this manually because we've set a temporary entry in UtxoView.
 		bav._deleteDerivedKeyMapping(&derivedKeyEntry)
 		bav._setDerivedKeyMapping(prevDerivedKeyEntry)
-		return 0, 0, nil, lib.RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput
+		return 0, 0, nil, core.RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput
 	}
 
 	// Earlier we've set a temporary derived key entry that had OperationType set to Valid.
@@ -1073,7 +1074,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 }
 
 func (bav *UtxoView) _disconnectUpdateProfile(
-	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
+	operationType OperationType, currentTxn *net.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an UpdateProfile opration
@@ -1089,7 +1090,7 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 	}
 
 	// Now we know the txMeta is UpdateProfile
-	txMeta := currentTxn.TxnMeta.(*lib.UpdateProfileMetadata)
+	txMeta := currentTxn.TxnMeta.(*net.UpdateProfileMetadata)
 
 	// Extract the public key of the profile from the meta if necessary and run some
 	// sanity checks.
@@ -1133,7 +1134,7 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 }
 
 func (bav *UtxoView) _disconnectSwapIdentity(
-	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
+	operationType OperationType, currentTxn *net.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an SwapIdentity operation
@@ -1149,7 +1150,7 @@ func (bav *UtxoView) _disconnectSwapIdentity(
 	}
 
 	// Now we know the txMeta is SwapIdentity
-	txMeta := currentTxn.TxnMeta.(*lib.SwapIdentityMetadataa)
+	txMeta := currentTxn.TxnMeta.(*net.SwapIdentityMetadataa)
 
 	// Swap the public keys within the profiles back. Note that this *must* be done
 	// before the swapping of the PKID mappings occurs. Not doing this would cause
@@ -1190,7 +1191,7 @@ func (bav *UtxoView) _disconnectSwapIdentity(
 }
 
 func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
-	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
+	operationType OperationType, currentTxn *net.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a AuthorizeDerivedKey operation.
@@ -1204,7 +1205,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 			utxoOpsForTxn[operationIndex].Type)
 	}
 
-	txMeta := currentTxn.TxnMeta.(*lib.AuthorizeDerivedKeyMetadata)
+	txMeta := currentTxn.TxnMeta.(*net.AuthorizeDerivedKeyMetadata)
 	prevDerivedKeyEntry := utxoOpsForTxn[operationIndex].PrevDerivedKeyEntry
 
 	// Sanity check that txn public key is valid. Assign this public key to ownerPublicKey.

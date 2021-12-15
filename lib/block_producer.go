@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 	"github.com/tyler-smith/go-bip39"
 	"math"
@@ -35,7 +36,7 @@ type DeSoBlockProducer struct {
 	// The most recent N blocks that we've produced indexed by their hash.
 	// Keeping this list allows us to accept a valid header from a miner without
 	// requiring them to download/send the whole block.
-	recentBlockTemplatesProduced map[core.BlockHash]*MsgDeSoBlock
+	recentBlockTemplatesProduced map[core.BlockHash]*net.MsgDeSoBlock
 	latestBlockTemplateHash      *core.BlockHash
 	currentDifficultyTarget      *core.BlockHash
 
@@ -43,12 +44,12 @@ type DeSoBlockProducer struct {
 
 	mempool *DeSoMempool
 	chain   *Blockchain
-	params  *DeSoParams
+	params  *core.DeSoParams
 
 	producerWaitGroup   sync.WaitGroup
 	stopProducerChannel chan struct{}
 
-	postgres *Postgres
+	postgres *view.Postgres
 }
 
 type BlockTemplateStats struct {
@@ -71,8 +72,8 @@ func NewDeSoBlockProducer(
 	blockProducerSeed string,
 	mempool *DeSoMempool,
 	chain *Blockchain,
-	params *DeSoParams,
-	postgres *Postgres,
+	params *core.DeSoParams,
+	postgres *view.Postgres,
 ) (*DeSoBlockProducer, error) {
 
 	var privKey *btcec.PrivateKey
@@ -93,7 +94,7 @@ func NewDeSoBlockProducer(
 		minBlockUpdateIntervalSeconds: minBlockUpdateIntervalSeconds,
 		maxBlockTemplatesToCache:      maxBlockTemplatesToCache,
 		blockProducerPrivateKey:       privKey,
-		recentBlockTemplatesProduced:  make(map[core.BlockHash]*MsgDeSoBlock),
+		recentBlockTemplatesProduced:  make(map[core.BlockHash]*net.MsgDeSoBlock),
 
 		mempool:             mempool,
 		chain:               chain,
@@ -107,7 +108,7 @@ func (bbp *DeSoBlockProducer) GetLatestBlockTemplateStats() *BlockTemplateStats 
 	return bbp.latestBlockTemplateStats
 }
 
-func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *MsgDeSoBlock, lastNode *BlockNode) {
+func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *net.MsgDeSoBlock, lastNode *BlockNode) {
 	// Set the block's timestamp. If the timesource's time happens to be before
 	// the timestamp set in the last block then set the time based on the last
 	// block's timestamp instead. We do this because consensus rules require a
@@ -120,7 +121,7 @@ func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *MsgDeSoBl
 }
 
 func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) (
-	_blk *MsgDeSoBlock, _diffTarget *core.BlockHash, _lastNode *BlockNode, _err error) {
+	_blk *net.MsgDeSoBlock, _diffTarget *core.BlockHash, _lastNode *BlockNode, _err error) {
 
 	// Get the current tip of the best block chain. Note that using the tip of the
 	// best block chain as opposed to the best header chain means we'll be mining
@@ -136,7 +137,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	}
 
 	// Construct the next block.
-	blockRewardOutput := &DeSoOutput{}
+	blockRewardOutput := &net.DeSoOutput{}
 	if rewardPk != nil {
 		// This is to account for a really weird edge case where somebody stops the BlockProducer
 		// in the middle of us getting a block.
@@ -149,20 +150,20 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Block reward txn only needs a single output. No need to specify spending
 	// pk or sigs.
-	blockRewardTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+	blockRewardTxn := net.NewMessage(net.MsgTypeTxn).(*net.MsgDeSoTxn)
 	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
 	// Set the ExtraData to zero. This gives miners something they can
 	// twiddle if they run out of space on their actual nonce.
-	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{
-		ExtraData: UintToBuf(0),
+	blockRewardTxn.TxnMeta = &net.BlockRewardMetadataa{
+		ExtraData: core.UintToBuf(0),
 	}
 
 	// Create the block and add the BlockReward txn to it.
-	blockRet := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+	blockRet := net.NewMessage(net.MsgTypeBlock).(*net.MsgDeSoBlock)
 	blockRet.Txns = append(blockRet.Txns, blockRewardTxn)
 	// The version may be swapped out in a call to GetBlockTemplate in order to remain
 	// backwards-compatible with existing miners that use an older version.
-	blockRet.Header.Version = CurrentHeaderVersion
+	blockRet.Header.Version = core.CurrentHeaderVersion
 	blockRet.Header.Height = uint64(lastNode.Height + 1)
 	blockRet.Header.PrevBlockHash = lastNode.Hash
 	desoBlockProducer._updateBlockTimestamp(blockRet, lastNode)
@@ -197,7 +198,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		if err != nil {
 			return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem serializing block: ")
 		}
-		currentBlockSize := uint64(len(blockBytes) + MaxVarintLen64)
+		currentBlockSize := uint64(len(blockBytes) + core.MaxVarintLen64)
 
 		// Create a new view object.
 		utxoView, err := view.NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
@@ -223,11 +224,11 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				txnErrorString := fmt.Sprintf(
 					"DeSoBlockProducer._getBlockTemplate: Stopping at txn %v because it's not ready yet: %v", ii, err)
 				glog.Infof(txnErrorString)
-				if mempoolTx.Tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
+				if mempoolTx.Tx.TxnMeta.GetTxnType() == net.TxnTypeBitcoinExchange {
 					// Print the Bitcoin block hash when we break out due to this.
 					btcErrorString := fmt.Sprintf("A bad BitcoinExchange transaction may be holding "+
 						"up block production: %v",
-						mempoolTx.Tx.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction.TxHash())
+						mempoolTx.Tx.TxnMeta.(*net.BitcoinExchangeMetadata).BitcoinTransaction.TxHash())
 					glog.Infof(btcErrorString)
 					txnErrorString += (" " + btcErrorString)
 					scs := spew.ConfigState{DisableMethods: true, Indent: "  "}
@@ -267,7 +268,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 			// If we get here then it means the txn is ready to be processed *and* we've added
 			// all of its dependencies to the block already. So go ahead and it to the block.
-			currentBlockSize += mempoolTx.TxSizeBytes + MaxVarintLen64
+			currentBlockSize += mempoolTx.TxSizeBytes + core.MaxVarintLen64
 			blockRet.Txns = append(blockRet.Txns, mempoolTx.Tx)
 			txnsAddedToBlock[*mempoolTx.Hash] = true
 		}
@@ -321,7 +322,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Compute the next difficulty target given the current tip.
 	diffTarget, err := CalcNextDifficultyTarget(
-		lastNode, CurrentHeaderVersion, desoBlockProducer.params)
+		lastNode, core.CurrentHeaderVersion, desoBlockProducer.params)
 	if err != nil {
 		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem computing next difficulty: ")
 	}
@@ -336,7 +337,7 @@ func (desoBlockProducer *DeSoBlockProducer) Stop() {
 	desoBlockProducer.producerWaitGroup.Wait()
 }
 
-func (desoBlockProducer *DeSoBlockProducer) GetRecentBlock(blockHash *core.BlockHash) *MsgDeSoBlock {
+func (desoBlockProducer *DeSoBlockProducer) GetRecentBlock(blockHash *core.BlockHash) *net.MsgDeSoBlock {
 	// Find the block and quickly lock/unlock for reading.
 	desoBlockProducer.mtxRecentBlockTemplatesProduced.RLock()
 	defer desoBlockProducer.mtxRecentBlockTemplatesProduced.RUnlock()
@@ -349,7 +350,7 @@ func (desoBlockProducer *DeSoBlockProducer) GetRecentBlock(blockHash *core.Block
 	return blockFound
 }
 
-func (desoBlockProducer *DeSoBlockProducer) GetCopyOfRecentBlock(blockID string) (*MsgDeSoBlock, error) {
+func (desoBlockProducer *DeSoBlockProducer) GetCopyOfRecentBlock(blockID string) (*net.MsgDeSoBlock, error) {
 	blockHashBytes, err := hex.DecodeString(blockID)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
@@ -373,7 +374,7 @@ func (desoBlockProducer *DeSoBlockProducer) GetCopyOfRecentBlock(blockID string)
 		return nil, fmt.Errorf("Error serializing block: %v", err)
 	}
 
-	newBlock := &MsgDeSoBlock{}
+	newBlock := &net.MsgDeSoBlock{}
 	err = newBlock.FromBytes(blockFoundBytes)
 	if err != nil {
 		return nil, fmt.Errorf("Error de-serializing block: %v", err)
@@ -382,7 +383,7 @@ func (desoBlockProducer *DeSoBlockProducer) GetCopyOfRecentBlock(blockID string)
 	return newBlock, nil
 }
 
-func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock, diffTarget *core.BlockHash) {
+func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *net.MsgDeSoBlock, diffTarget *core.BlockHash) {
 	desoBlockProducer.mtxRecentBlockTemplatesProduced.Lock()
 	defer desoBlockProducer.mtxRecentBlockTemplatesProduced.Unlock()
 
@@ -419,7 +420,7 @@ func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 	if blockProducer.latestBlockTemplateHash == nil {
 		// Use a dummy public key.
 		currentBlockTemplate, diffTarget, _, err :=
-			blockProducer._getBlockTemplate(MustBase58CheckDecode(ArchitectPubKeyBase58Check))
+			blockProducer._getBlockTemplate(MustBase58CheckDecode(core.ArchitectPubKeyBase58Check))
 		if err != nil {
 			return "", nil, nil, nil,
 				fmt.Errorf("GetBlockTemplate: Problem computing first block template: %v", err)
@@ -454,7 +455,7 @@ func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 			return "", nil, nil, nil, errors.Wrap(
 				fmt.Errorf("GetBlockTemplate: Error computing extraNonce: %v", err), "")
 		}
-		latestBLockCopy.Txns[0].TxnMeta.(*BlockRewardMetadataa).ExtraData = UintToBuf(extraNonce)
+		latestBLockCopy.Txns[0].TxnMeta.(*net.BlockRewardMetadataa).ExtraData = core.UintToBuf(extraNonce)
 
 		// Compute the merkle root for the block now that all of the transactions have
 		// been added.
@@ -485,7 +486,7 @@ func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 func (desoBlockProducer *DeSoBlockProducer) UpdateLatestBlockTemplate() error {
 	// Use a dummy public key.
 	currentBlockTemplate, diffTarget, lastNode, err :=
-		desoBlockProducer._getBlockTemplate(MustBase58CheckDecode(ArchitectPubKeyBase58Check))
+		desoBlockProducer._getBlockTemplate(MustBase58CheckDecode(core.ArchitectPubKeyBase58Check))
 	if err != nil {
 		return err
 	}
@@ -498,7 +499,7 @@ func (desoBlockProducer *DeSoBlockProducer) UpdateLatestBlockTemplate() error {
 	return nil
 }
 
-func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) error {
+func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *net.MsgDeSoBlock) error {
 	// If there's no private key on this BlockProducer then there's nothing to do.
 	if desoBlockProducer.blockProducerPrivateKey == nil {
 		return nil
@@ -520,7 +521,7 @@ func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) 
 	// If we get here, we now have a valid signature for the block.
 
 	// Embed the signature into the block.
-	blockFound.BlockProducerInfo = &BlockProducerInfo{
+	blockFound.BlockProducerInfo = &net.BlockProducerInfo{
 		PublicKey: desoBlockProducer.blockProducerPrivateKey.PubKey().SerializeCompressed(),
 		Signature: signature,
 	}

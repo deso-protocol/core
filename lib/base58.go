@@ -4,11 +4,12 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/btcsuite/btcutil/base58"
+	"github.com/deso-protocol/core"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
-func Base58CheckEncode(input []byte, isPrivate bool, params *DeSoParams) string {
+func Base58CheckEncode(input []byte, isPrivate bool, params *core.DeSoParams) string {
 	prefix := params.Base58PrefixPublicKey
 	if isPrivate {
 		prefix = params.Base58PrefixPrivateKey

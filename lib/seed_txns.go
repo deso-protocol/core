@@ -1,6 +1,9 @@
 package lib
 
-import "github.com/deso-protocol/core"
+import (
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/net"
+)
 
 var (
 	// These transactions are simply here to bootstrap the profiles on the network. We had
@@ -34,7 +37,7 @@ var (
 		// CryptoTrump SubmitPost 11
 		"013e42215a120a6e9d4848117f5829a2c4d9f692360fd14b78daea483a72d142dc000102397b1a80eba0a60644650af13c2a6ffdfbbf38830cafc34937a75ddd44b8ce52f9fbae5f054600203e42215a120a6e9d4848117f5829a2c4d9f692360fd14b78daea483a72d142dc167b22426f6479223a226666666666666666666666227d00d461a682a4f9f18198a116002102397b1a80eba0a60644650af13c2a6ffdfbbf38830cafc34937a75ddd44b8ce520046304402203ae6599a5b81e0c0a85cc5efbf008ed1e78a82c6152b2ad9127e10952faecbdd0220211475a8384c52d7a04781f7d704835e6ed8543a466551dd7c39187cecb714a0",
 	}
-	SeedBalances = []*DeSoOutput{
+	SeedBalances = []*net.DeSoOutput{
 		{
 			PublicKey:   MustBase58CheckDecode("BC1YLitoioHvpKXnR3fWcgSk5hMX72driKBrhFwehG5inVBnvp6kF4A"),
 			AmountNanos: uint64(177204235393800),
@@ -1969,10 +1972,10 @@ var (
 	// assign a new username to the profile. It maps transaction hashes to new
 	// usernames.
 	ForgivenProfileUsernameClaims = map[core.BlockHash]string{
-		*mustDecodeHexBlockHash("1f30c115192d72aa01149f08879db14158e66d859c1bd3bee3a2127cbd6f89fd"): "_nbatopshot",
-		*mustDecodeHexBlockHash("8fe4f1ec5e5c53d610be773aa8e45680a3d7a55abf29aaab4e9ce2482e06c994"): "__nbatopshot",
-		*mustDecodeHexBlockHash("3337781344dd5005541d028e8605bbc0851219d70b28d86a7f352877f3a1fde5"): "___nbatopshot",
-		*mustDecodeHexBlockHash("5f52811f80c73764d887d7f82c6c233bb11da00a77dff11a85f7be851bd5745b"): "____nbatopshot",
-		*mustDecodeHexBlockHash("02a3a9e28622b59ee59148847814deedb41b160c1edb5100b6964909351b4c04"): "_JulSwap",
+		*core.mustDecodeHexBlockHash("1f30c115192d72aa01149f08879db14158e66d859c1bd3bee3a2127cbd6f89fd"): "_nbatopshot",
+		*core.mustDecodeHexBlockHash("8fe4f1ec5e5c53d610be773aa8e45680a3d7a55abf29aaab4e9ce2482e06c994"): "__nbatopshot",
+		*core.mustDecodeHexBlockHash("3337781344dd5005541d028e8605bbc0851219d70b28d86a7f352877f3a1fde5"): "___nbatopshot",
+		*core.mustDecodeHexBlockHash("5f52811f80c73764d887d7f82c6c233bb11da00a77dff11a85f7be851bd5745b"): "____nbatopshot",
+		*core.mustDecodeHexBlockHash("02a3a9e28622b59ee59148847814deedb41b160c1edb5100b6964909351b4c04"): "_JulSwap",
 	}
 )

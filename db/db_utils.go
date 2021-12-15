@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/miner"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 	"io"
 	"log"
@@ -319,7 +321,7 @@ func DBGetPublicKeyForPKID(db *badger.DB, pkidd *core.PKID) []byte {
 }
 
 func DBPutPKIDMappingsWithTxn(
-	txn *badger.Txn, publicKey []byte, pkidEntry *view.PKIDEntry, params *lib.DeSoParams) error {
+	txn *badger.Txn, publicKey []byte, pkidEntry *view.PKIDEntry, params *core.DeSoParams) error {
 
 	// Set the main pub key -> pkid mapping.
 	{
@@ -352,7 +354,7 @@ func DBPutPKIDMappingsWithTxn(
 }
 
 func DBDeletePKIDMappingsWithTxn(
-	txn *badger.Txn, publicKey []byte, params *lib.DeSoParams) error {
+	txn *badger.Txn, publicKey []byte, params *core.DeSoParams) error {
 
 	// Look up the pkid for the public key.
 	pkidEntry := DBGetPKIDEntryForPublicKeyWithTxn(txn, publicKey)
@@ -736,7 +738,7 @@ func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte)
 
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
-	_, valuesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefix, uint64(lib.MessagesToFetchPerInboxCall))
+	_, valuesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefix, uint64(core.MessagesToFetchPerInboxCall))
 
 	privateMessages := []*view.MessageEntry{}
 	for _, valBytes := range valuesFound {
@@ -1844,7 +1846,7 @@ func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, globalParamsEntry view.Globa
 func DbGetGlobalParamsEntryWithTxn(txn *badger.Txn) *view.GlobalParamsEntry {
 	globalParamsEntryItem, err := txn.Get(_KeyGlobalParams)
 	if err != nil {
-		return &lib.InitialGlobalParamsEntry
+		return &core.InitialGlobalParamsEntry
 	}
 	globalParamsEntryObj := &view.GlobalParamsEntry{}
 	err = globalParamsEntryItem.Value(func(valBytes []byte) error {
@@ -1853,7 +1855,7 @@ func DbGetGlobalParamsEntryWithTxn(txn *badger.Txn) *view.GlobalParamsEntry {
 	if err != nil {
 		glog.Errorf("DbGetGlobalParamsEntryWithTxn: Problem reading "+
 			"GlobalParamsEntry: %v", err)
-		return &lib.InitialGlobalParamsEntry
+		return &core.InitialGlobalParamsEntry
 	}
 
 	return globalParamsEntryObj
@@ -2202,7 +2204,7 @@ func SerializeBlockNode(blockNode *lib.BlockNode) ([]byte, error) {
 	data = append(data, blockNode.Hash[:]...)
 
 	// Height
-	data = append(data, lib.UintToBuf(uint64(blockNode.Height))...)
+	data = append(data, core.UintToBuf(uint64(blockNode.Height))...)
 
 	// DifficultyTarget
 	if blockNode.DifficultyTarget == nil {
@@ -2211,19 +2213,19 @@ func SerializeBlockNode(blockNode *lib.BlockNode) ([]byte, error) {
 	data = append(data, blockNode.DifficultyTarget[:]...)
 
 	// CumWork
-	data = append(data, lib.BigintToHash(blockNode.CumWork)[:]...)
+	data = append(data, miner.BigintToHash(blockNode.CumWork)[:]...)
 
 	// Header
 	serializedHeader, err := blockNode.Header.ToBytes(false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "SerializeBlockNode: Problem serializing header")
 	}
-	data = append(data, lib.IntToBuf(int64(len(serializedHeader)))...)
+	data = append(data, core.IntToBuf(int64(len(serializedHeader)))...)
 	data = append(data, serializedHeader...)
 
 	// Status
 	// It's assumed this field is one byte long.
-	data = append(data, lib.UintToBuf(uint64(blockNode.Status))...)
+	data = append(data, core.UintToBuf(uint64(blockNode.Status))...)
 
 	return data, nil
 }
@@ -2249,7 +2251,7 @@ func DeserializeBlockNode(data []byte) (*lib.BlockNode, error) {
 	}
 
 	// Height
-	height, err := lib.ReadUvarint(rr)
+	height, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Height")
 	}
@@ -2267,10 +2269,10 @@ func DeserializeBlockNode(data []byte) (*lib.BlockNode, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
 	}
-	blockNode.CumWork = lib.HashToBigint(&tmp)
+	blockNode.CumWork = miner.HashToBigint(&tmp)
 
 	// Header
-	payloadLen, err := lib.ReadVarint(rr)
+	payloadLen, err := core.ReadVarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Header length")
 	}
@@ -2279,14 +2281,14 @@ func DeserializeBlockNode(data []byte) (*lib.BlockNode, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem reading Header bytes")
 	}
-	blockNode.Header = lib.NewMessage(lib.MsgTypeHeader).(*lib.MsgDeSoHeader)
+	blockNode.Header = net.NewMessage(net.MsgTypeHeader).(*net.MsgDeSoHeader)
 	err = blockNode.Header.FromBytes(headerBytes)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem parsing Header bytes")
 	}
 
 	// Status
-	status, err := lib.ReadUvarint(rr)
+	status, err := core.ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Status")
 	}
@@ -2353,9 +2355,9 @@ func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *core.BlockH
 	return key
 }
 
-func GetBlockWithTxn(txn *badger.Txn, blockHash *core.BlockHash) *lib.MsgDeSoBlock {
+func GetBlockWithTxn(txn *badger.Txn, blockHash *core.BlockHash) *net.MsgDeSoBlock {
 	hashKey := BlockHashToBlockKey(blockHash)
-	var blockRet *lib.MsgDeSoBlock
+	var blockRet *net.MsgDeSoBlock
 
 	item, err := txn.Get(hashKey)
 	if err != nil {
@@ -2363,7 +2365,7 @@ func GetBlockWithTxn(txn *badger.Txn, blockHash *core.BlockHash) *lib.MsgDeSoBlo
 	}
 
 	err = item.Value(func(valBytes []byte) error {
-		ret := lib.NewMessage(lib.MsgTypeBlock).(*lib.MsgDeSoBlock)
+		ret := net.NewMessage(net.MsgTypeBlock).(*net.MsgDeSoBlock)
 		if err := ret.FromBytes(valBytes); err != nil {
 			return err
 		}
@@ -2378,9 +2380,9 @@ func GetBlockWithTxn(txn *badger.Txn, blockHash *core.BlockHash) *lib.MsgDeSoBlo
 	return blockRet
 }
 
-func GetBlock(blockHash *core.BlockHash, handle *badger.DB) (*lib.MsgDeSoBlock, error) {
+func GetBlock(blockHash *core.BlockHash, handle *badger.DB) (*net.MsgDeSoBlock, error) {
 	hashKey := BlockHashToBlockKey(blockHash)
-	var blockRet *lib.MsgDeSoBlock
+	var blockRet *net.MsgDeSoBlock
 	err := handle.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(hashKey)
 		if err != nil {
@@ -2388,7 +2390,7 @@ func GetBlock(blockHash *core.BlockHash, handle *badger.DB) (*lib.MsgDeSoBlock, 
 		}
 
 		err = item.Value(func(valBytes []byte) error {
-			ret := lib.NewMessage(lib.MsgTypeBlock).(*lib.MsgDeSoBlock)
+			ret := net.NewMessage(net.MsgTypeBlock).(*net.MsgDeSoBlock)
 			if err := ret.FromBytes(valBytes); err != nil {
 				return err
 			}
@@ -2410,7 +2412,7 @@ func GetBlock(blockHash *core.BlockHash, handle *badger.DB) (*lib.MsgDeSoBlock, 
 	return blockRet, nil
 }
 
-func PutBlockWithTxn(txn *badger.Txn, desoBlock *lib.MsgDeSoBlock) error {
+func PutBlockWithTxn(txn *badger.Txn, desoBlock *net.MsgDeSoBlock) error {
 	if desoBlock.Header == nil {
 		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
 	}
@@ -2439,7 +2441,7 @@ func PutBlockWithTxn(txn *badger.Txn, desoBlock *lib.MsgDeSoBlock) error {
 		return fmt.Errorf("PutBlockWithTxn: Got block without any txns %v", desoBlock)
 	}
 	blockRewardTxn := desoBlock.Txns[0]
-	if blockRewardTxn.TxnMeta.GetTxnType() != lib.TxnTypeBlockReward {
+	if blockRewardTxn.TxnMeta.GetTxnType() != net.TxnTypeBlockReward {
 		return fmt.Errorf("PutBlockWithTxn: Got block without block reward as first txn %v", desoBlock)
 	}
 	// It's possible the block reward is split across multiple public keys.
@@ -2462,7 +2464,7 @@ func PutBlockWithTxn(txn *badger.Txn, desoBlock *lib.MsgDeSoBlock) error {
 	return nil
 }
 
-func PutBlock(desoBlock *lib.MsgDeSoBlock, handle *badger.DB) error {
+func PutBlock(desoBlock *net.MsgDeSoBlock, handle *badger.DB) error {
 	err := handle.Update(func(txn *badger.Txn) error {
 		return PutBlockWithTxn(txn, desoBlock)
 	})
@@ -2613,20 +2615,20 @@ func DbBulkDeleteHeightHashToNodeInfo(
 
 // InitDbWithGenesisBlock initializes the database to contain only the genesis
 // block.
-func InitDbWithDeSoGenesisBlock(params *lib.DeSoParams, handle *badger.DB, eventManager *lib.EventManager) error {
+func InitDbWithDeSoGenesisBlock(params *core.DeSoParams, handle *badger.DB, eventManager *lib.EventManager) error {
 	// Construct a node for the genesis block. Its height is zero and it has
 	// no parents. Its difficulty should be set to the initial
 	// difficulty specified in the parameters and it should be assumed to be
 	// valid and stored by the end of this function.
 	genesisBlock := params.GenesisBlock
-	diffTarget := lib.MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
-	blockHash := lib.MustDecodeHexBlockHash(params.GenesisBlockHashHex)
+	diffTarget := core.MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
+	blockHash := core.MustDecodeHexBlockHash(params.GenesisBlockHashHex)
 	genesisNode := lib.NewBlockNode(
 		nil, // Parent
 		blockHash,
 		0, // Height
 		diffTarget,
-		lib.BytesToBigint(lib.ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		miner.BytesToBigint(lib.ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
 		genesisBlock.Header, // Header
 		lib.StatusHeaderValidated|lib.StatusBlockProcessed|lib.StatusBlockStored|lib.StatusBlockValidated, // Status
 	)
@@ -2650,7 +2652,7 @@ func InitDbWithDeSoGenesisBlock(params *lib.DeSoParams, handle *badger.DB, event
 	if err := DbPutNanosPurchased(handle, params.DeSoNanosPurchasedAtGenesis); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 	}
-	if err := DbPutGlobalParamsEntry(handle, lib.InitialGlobalParamsEntry); err != nil {
+	if err := DbPutGlobalParamsEntry(handle, core.InitialGlobalParamsEntry); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting GlobalParamsEntry into db for block chain")
 	}
 
@@ -2702,7 +2704,7 @@ func InitDbWithDeSoGenesisBlock(params *lib.DeSoParams, handle *badger.DB, event
 					"txn HEX: %v, txn index: %v, txn hex: %v",
 				err, txnIndex, txnHex)
 		}
-		txn := &lib.MsgDeSoTxn{}
+		txn := &net.MsgDeSoTxn{}
 		if err := txn.FromBytes(txnBytes); err != nil {
 			return fmt.Errorf(
 				"InitDbWithDeSoGenesisBlock: Error decoding seed "+
@@ -2880,16 +2882,16 @@ func BlocksPerDuration(duration time.Duration, timeBetweenBlocks time.Duration) 
 	return uint32(int64(duration) / int64(timeBetweenBlocks))
 }
 
-func PkToString(pk []byte, params *lib.DeSoParams) string {
+func PkToString(pk []byte, params *core.DeSoParams) string {
 	return lib.Base58CheckEncode(pk, false, params)
 }
 
-func PrivToString(priv []byte, params *lib.DeSoParams) string {
+func PrivToString(priv []byte, params *core.DeSoParams) string {
 	return lib.Base58CheckEncode(priv, true, params)
 }
 
 func PkToStringMainnet(pk []byte) string {
-	return lib.Base58CheckEncode(pk, false, &lib.DeSoMainnetParams)
+	return lib.Base58CheckEncode(pk, false, &core.DeSoMainnetParams)
 }
 
 func PkToStringBoth(pk []byte) string {
@@ -2897,7 +2899,7 @@ func PkToStringBoth(pk []byte) string {
 }
 
 func PkToStringTestnet(pk []byte) string {
-	return lib.Base58CheckEncode(pk, false, &lib.DeSoTestnetParams)
+	return lib.Base58CheckEncode(pk, false, &core.DeSoTestnetParams)
 }
 
 func DbGetTxindexTip(handle *badger.DB) *core.BlockHash {
@@ -3014,7 +3016,7 @@ func _DbGetTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte
 	if err != nil {
 		return nil
 	}
-	nextIndexVal, bytesRead := lib.Uvarint(valBytes)
+	nextIndexVal, bytesRead := core.Uvarint(valBytes)
 	if bytesRead <= 0 {
 		return nil
 	}
@@ -3024,7 +3026,7 @@ func _DbGetTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte
 
 func DbPutTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte, nextIndex uint64) error {
 	key := _DbTxindexPublicKeyNextIndexPrefix(publicKey)
-	valBuf := lib.UintToBuf(nextIndex)
+	valBuf := core.UintToBuf(nextIndex)
 
 	return txn.Set(key, valBuf)
 }
@@ -3234,7 +3236,7 @@ type TransactionMetadata struct {
 
 	// We store these outputs so we don't have to load the full transaction from disk
 	// when looking up output amounts
-	TxnOutputs []*lib.DeSoOutput
+	TxnOutputs []*net.DeSoOutput
 
 	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
 	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
@@ -3314,7 +3316,7 @@ func DbPutTxindexTransaction(
 }
 
 func _getPublicKeysForTxn(
-	txn *lib.MsgDeSoTxn, txnMeta *TransactionMetadata, params *lib.DeSoParams) map[view.PkMapKey]bool {
+	txn *net.MsgDeSoTxn, txnMeta *TransactionMetadata, params *core.DeSoParams) map[view.PkMapKey]bool {
 
 	// Collect the public keys in the transaction.
 	publicKeys := make(map[view.PkMapKey]bool)
@@ -3354,7 +3356,7 @@ func _getPublicKeysForTxn(
 }
 
 func DbPutTxindexTransactionMappingsWithTxn(
-	dbTx *badger.Txn, txn *lib.MsgDeSoTxn, params *lib.DeSoParams, txnMeta *TransactionMetadata) error {
+	dbTx *badger.Txn, txn *net.MsgDeSoTxn, params *core.DeSoParams, txnMeta *TransactionMetadata) error {
 
 	txID := txn.Hash()
 
@@ -3378,7 +3380,7 @@ func DbPutTxindexTransactionMappingsWithTxn(
 }
 
 func DbPutTxindexTransactionMappings(
-	handle *badger.DB, desoTxn *lib.MsgDeSoTxn, params *lib.DeSoParams, txnMeta *TransactionMetadata) error {
+	handle *badger.DB, desoTxn *net.MsgDeSoTxn, params *core.DeSoParams, txnMeta *TransactionMetadata) error {
 
 	return handle.Update(func(dbTx *badger.Txn) error {
 		return DbPutTxindexTransactionMappingsWithTxn(
@@ -3387,7 +3389,7 @@ func DbPutTxindexTransactionMappings(
 }
 
 func DbDeleteTxindexTransactionMappingsWithTxn(
-	dbTxn *badger.Txn, txn *lib.MsgDeSoTxn, params *lib.DeSoParams) error {
+	dbTxn *badger.Txn, txn *net.MsgDeSoTxn, params *core.DeSoParams) error {
 
 	txID := txn.Hash()
 
@@ -3418,7 +3420,7 @@ func DbDeleteTxindexTransactionMappingsWithTxn(
 }
 
 func DbDeleteTxindexTransactionMappings(
-	handle *badger.DB, txn *lib.MsgDeSoTxn, params *lib.DeSoParams) error {
+	handle *badger.DB, txn *net.MsgDeSoTxn, params *core.DeSoParams) error {
 
 	return handle.Update(func(dbTx *badger.Txn) error {
 		return DbDeleteTxindexTransactionMappingsWithTxn(dbTx, txn, params)
@@ -3430,9 +3432,9 @@ func DbDeleteTxindexTransactionMappings(
 // problem for a while, but keep an eye on it.
 func DbGetTxindexFullTransactionByTxID(
 	txindexDBHandle *badger.DB, blockchainDBHandle *badger.DB, txID *core.BlockHash) (
-	_txn *lib.MsgDeSoTxn, _txnMeta *TransactionMetadata) {
+	_txn *net.MsgDeSoTxn, _txnMeta *TransactionMetadata) {
 
-	var txnFound *lib.MsgDeSoTxn
+	var txnFound *net.MsgDeSoTxn
 	var txnMeta *TransactionMetadata
 	err := txindexDBHandle.View(func(dbTxn *badger.Txn) error {
 		txnMeta = DbGetTxindexTransactionRefByTxIDWithTxn(dbTxn, txID)
@@ -3544,7 +3546,7 @@ func DBGetPostEntryByPostHash(db *badger.DB, postHash *core.BlockHash) *view.Pos
 }
 
 func DBDeletePostEntryMappingsWithTxn(
-	txn *badger.Txn, postHash *core.BlockHash, params *lib.DeSoParams) error {
+	txn *badger.Txn, postHash *core.BlockHash, params *core.DeSoParams) error {
 
 	// First pull up the mapping that exists for the post hash passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -3630,7 +3632,7 @@ func DBDeletePostEntryMappingsWithTxn(
 }
 
 func DBDeletePostEntryMappings(
-	handle *badger.DB, postHash *core.BlockHash, params *lib.DeSoParams) error {
+	handle *badger.DB, postHash *core.BlockHash, params *core.DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeletePostEntryMappingsWithTxn(txn, postHash, params)
@@ -3638,7 +3640,7 @@ func DBDeletePostEntryMappings(
 }
 
 func DBPutPostEntryMappingsWithTxn(
-	txn *badger.Txn, postEntry *view.PostEntry, params *lib.DeSoParams) error {
+	txn *badger.Txn, postEntry *view.PostEntry, params *core.DeSoParams) error {
 
 	postDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(postDataBuf).Encode(postEntry)
@@ -3736,7 +3738,7 @@ func DBPutPostEntryMappingsWithTxn(
 	return nil
 }
 
-func DBPutPostEntryMappings(handle *badger.DB, postEntry *view.PostEntry, params *lib.DeSoParams) error {
+func DBPutPostEntryMappings(handle *badger.DB, postEntry *view.PostEntry, params *core.DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutPostEntryMappingsWithTxn(txn, postEntry, params)
@@ -3982,7 +3984,7 @@ func _dbKeyForNFTPostHashSerialNumber(nftPostHash *core.BlockHash, serialNumber 
 func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *core.PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *core.BlockHash, serialNumber uint64) []byte {
 	prefixCopy := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	key := append(prefixCopy, pkid[:]...)
-	key = append(key, lib.BoolToByte(isForSale))
+	key = append(key, net.BoolToByte(isForSale))
 	key = append(key, EncodeUint64(bidAmountNanos)...)
 	key = append(key, nftPostHash[:]...)
 	key = append(key, EncodeUint64(serialNumber)...)
@@ -4717,7 +4719,7 @@ func DBGetProfileEntryForPKID(db *badger.DB, pkid *core.PKID) *view.ProfileEntry
 }
 
 func DBDeleteProfileEntryMappingsWithTxn(
-	txn *badger.Txn, pkid *core.PKID, params *lib.DeSoParams) error {
+	txn *badger.Txn, pkid *core.PKID, params *core.DeSoParams) error {
 
 	// First pull up the mapping that exists for the profile pub key passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -4753,7 +4755,7 @@ func DBDeleteProfileEntryMappingsWithTxn(
 }
 
 func DBDeleteProfileEntryMappings(
-	handle *badger.DB, pkid *core.PKID, params *lib.DeSoParams) error {
+	handle *badger.DB, pkid *core.PKID, params *core.DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteProfileEntryMappingsWithTxn(txn, pkid, params)
@@ -4761,7 +4763,7 @@ func DBDeleteProfileEntryMappings(
 }
 
 func DBPutProfileEntryMappingsWithTxn(
-	txn *badger.Txn, profileEntry *view.ProfileEntry, pkid *core.PKID, params *lib.DeSoParams) error {
+	txn *badger.Txn, profileEntry *view.ProfileEntry, pkid *core.PKID, params *core.DeSoParams) error {
 
 	profileDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(profileDataBuf).Encode(profileEntry)
@@ -4795,7 +4797,7 @@ func DBPutProfileEntryMappingsWithTxn(
 }
 
 func DBPutProfileEntryMappings(
-	handle *badger.DB, profileEntry *view.ProfileEntry, pkid *core.PKID, params *lib.DeSoParams) error {
+	handle *badger.DB, profileEntry *view.ProfileEntry, pkid *core.PKID, params *core.DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutProfileEntryMappingsWithTxn(txn, profileEntry, pkid, params)
@@ -4949,7 +4951,7 @@ func DBGetCreatorCoinBalanceEntryForCreatorPKIDAndHODLerPubKeyWithTxn(
 
 func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 	txn *badger.Txn, hodlerPKID *core.PKID, creatorPKID *core.PKID,
-	params *lib.DeSoParams) error {
+	params *core.DeSoParams) error {
 
 	// First pull up the mappings that exists for the keys passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -4980,7 +4982,7 @@ func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 
 func DBDeleteCreatorCoinBalanceEntryMappings(
 	handle *badger.DB, hodlerPKID *core.PKID, creatorPKID *core.PKID,
-	params *lib.DeSoParams) error {
+	params *core.DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
@@ -4990,7 +4992,7 @@ func DBDeleteCreatorCoinBalanceEntryMappings(
 
 func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 	txn *badger.Txn, balanceEntry *view.BalanceEntry,
-	params *lib.DeSoParams) error {
+	params *core.DeSoParams) error {
 
 	balanceEntryDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(balanceEntryDataBuf).Encode(balanceEntry)
@@ -5021,7 +5023,7 @@ func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 }
 
 func DBPutCreatorCoinBalanceEntryMappings(
-	handle *badger.DB, balanceEntry *view.BalanceEntry, params *lib.DeSoParams) error {
+	handle *badger.DB, balanceEntry *view.BalanceEntry, params *core.DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutCreatorCoinBalanceEntryMappingsWithTxn(
@@ -5458,9 +5460,9 @@ func DbPutMempoolTxn(handle *badger.DB, mempoolTx *lib.MempoolTx) error {
 	})
 }
 
-func DbGetMempoolTxnWithTxn(txn *badger.Txn, mempoolTx *lib.MempoolTx) *lib.MsgDeSoTxn {
+func DbGetMempoolTxnWithTxn(txn *badger.Txn, mempoolTx *lib.MempoolTx) *net.MsgDeSoTxn {
 
-	mempoolTxnObj := &lib.MsgDeSoTxn{}
+	mempoolTxnObj := &net.MsgDeSoTxn{}
 	mempoolTxnItem, err := txn.Get(_dbKeyForMempoolTxn(mempoolTx))
 	if err != nil {
 		return nil
@@ -5476,8 +5478,8 @@ func DbGetMempoolTxnWithTxn(txn *badger.Txn, mempoolTx *lib.MempoolTx) *lib.MsgD
 	return mempoolTxnObj
 }
 
-func DbGetMempoolTxn(db *badger.DB, mempoolTx *lib.MempoolTx) *lib.MsgDeSoTxn {
-	var ret *lib.MsgDeSoTxn
+func DbGetMempoolTxn(db *badger.DB, mempoolTx *lib.MempoolTx) *net.MsgDeSoTxn {
+	var ret *net.MsgDeSoTxn
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetMempoolTxnWithTxn(txn, mempoolTx)
 		return nil
@@ -5485,12 +5487,12 @@ func DbGetMempoolTxn(db *badger.DB, mempoolTx *lib.MempoolTx) *lib.MsgDeSoTxn {
 	return ret
 }
 
-func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*lib.MsgDeSoTxn, _error error) {
+func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*net.MsgDeSoTxn, _error error) {
 	_, valuesFound := _enumerateKeysForPrefix(handle, _PrefixMempoolTxnHashToMsgDeSoTxn)
 
-	mempoolTxns := []*lib.MsgDeSoTxn{}
+	mempoolTxns := []*net.MsgDeSoTxn{}
 	for _, mempoolTxnBytes := range valuesFound {
-		mempoolTxn := &lib.MsgDeSoTxn{}
+		mempoolTxn := &net.MsgDeSoTxn{}
 		err := mempoolTxn.FromBytes(mempoolTxnBytes)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DbGetAllMempoolTxnsSortedByTimeAdded: failed to decode mempoolTxnBytes.")

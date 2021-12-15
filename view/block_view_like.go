@@ -6,6 +6,7 @@ import (
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -112,15 +113,15 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *core.BlockHash) (_likerPubKey
 }
 
 func (bav *UtxoView) _connectLike(
-	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *net.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != lib.TxnTypeLike {
+	if txn.TxnMeta.GetTxnType() != net.TxnTypeLike {
 		return 0, 0, nil, fmt.Errorf("_connectLike: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*lib.LikeMetadata)
+	txMeta := txn.TxnMeta.(*net.LikeMetadata)
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -147,7 +148,7 @@ func (bav *UtxoView) _connectLike(
 	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.LikedPostHash)
 	if existingPostEntry == nil || existingPostEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(
-			lib.RuleErrorCannotLikeNonexistentPost,
+			core.RuleErrorCannotLikeNonexistentPost,
 			"_connectLike: Post hash: %v", txMeta.LikedPostHash)
 	}
 
@@ -164,7 +165,7 @@ func (bav *UtxoView) _connectLike(
 		// Ensure that there *is* an existing like entry to delete.
 		if existingLikeEntry == nil || existingLikeEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorCannotUnlikeWithoutAnExistingLike,
+				core.RuleErrorCannotUnlikeWithoutAnExistingLike,
 				"_connectLike: Like key: %v", &likeKey)
 		}
 
@@ -175,7 +176,7 @@ func (bav *UtxoView) _connectLike(
 		// Ensure that there *is not* an existing like entry.
 		if existingLikeEntry != nil && !existingLikeEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorLikeEntryAlreadyExists,
+				core.RuleErrorLikeEntryAlreadyExists,
 				"_connectLike: Like key: %v", &likeKey)
 		}
 
@@ -203,7 +204,7 @@ func (bav *UtxoView) _connectLike(
 }
 
 func (bav *UtxoView) _disconnectLike(
-	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
+	operationType OperationType, currentTxn *net.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a Like operation
@@ -218,7 +219,7 @@ func (bav *UtxoView) _disconnectLike(
 	}
 
 	// Now we know the txMeta is a Like
-	txMeta := currentTxn.TxnMeta.(*lib.LikeMetadata)
+	txMeta := currentTxn.TxnMeta.(*net.LikeMetadata)
 
 	// Before we do anything, let's get the post so we can adjust the like counter later.
 	likedPostEntry := bav.GetPostEntryForPostHash(txMeta.LikedPostHash)

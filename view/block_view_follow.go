@@ -5,7 +5,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
-	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -122,7 +122,7 @@ func (bav *UtxoView) GetFollowEntriesForPublicKey(publicKey []byte, getEntriesFo
 
 	// Start by fetching all the follows we have in the db.
 	if bav.Postgres != nil {
-		var follows []*lib.PGFollow
+		var follows []*PGFollow
 		if getEntriesFollowingPublicKey {
 			follows = bav.Postgres.GetFollowers(pkidForPublicKey.PKID)
 		} else {
@@ -189,20 +189,20 @@ func (bav *UtxoView) _deleteFollowEntryMappings(followEntry *FollowEntry) {
 }
 
 func (bav *UtxoView) _connectFollow(
-	txn *lib.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *net.MsgDeSoTxn, txHash *core.BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != lib.TxnTypeFollow {
+	if txn.TxnMeta.GetTxnType() != net.TxnTypeFollow {
 		return 0, 0, nil, fmt.Errorf("_connectFollow: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*lib.FollowMetadata)
+	txMeta := txn.TxnMeta.(*net.FollowMetadata)
 
 	// Check that a proper public key is provided in the message metadata
 	if len(txMeta.FollowedPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, errors.Wrapf(
-			lib.RuleErrorFollowPubKeyLen, "_connectFollow: "+
+			core.RuleErrorFollowPubKeyLen, "_connectFollow: "+
 				"FollowedPubKeyLen = %d; Expected length = %d",
 			len(txMeta.FollowedPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
@@ -218,7 +218,7 @@ func (bav *UtxoView) _connectFollow(
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.FollowedPublicKey)
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(
-			lib.RuleErrorFollowingNonexistentProfile,
+			core.RuleErrorFollowingNonexistentProfile,
 			"_connectFollow: Profile pub key: %v",
 			db.PkToStringBoth(txMeta.FollowedPublicKey))
 	}
@@ -258,7 +258,7 @@ func (bav *UtxoView) _connectFollow(
 		// If this is an unfollow, a FollowEntry *should* exist.
 		if existingFollowEntry == nil || existingFollowEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorCannotUnfollowNonexistentFollowEntry,
+				core.RuleErrorCannotUnfollowNonexistentFollowEntry,
 				"_connectFollow: Follow key: %v", &followKey)
 		}
 
@@ -268,7 +268,7 @@ func (bav *UtxoView) _connectFollow(
 		if existingFollowEntry != nil && !existingFollowEntry.isDeleted {
 			// If this is a follow, a Follow entry *should not* exist.
 			return 0, 0, nil, errors.Wrapf(
-				lib.RuleErrorFollowEntryAlreadyExists,
+				core.RuleErrorFollowEntryAlreadyExists,
 				"_connectFollow: Follow key: %v", &followKey)
 		}
 
@@ -289,7 +289,7 @@ func (bav *UtxoView) _connectFollow(
 }
 
 func (bav *UtxoView) _disconnectFollow(
-	operationType OperationType, currentTxn *lib.MsgDeSoTxn, txnHash *core.BlockHash,
+	operationType OperationType, currentTxn *net.MsgDeSoTxn, txnHash *core.BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is a Follow operation
@@ -304,7 +304,7 @@ func (bav *UtxoView) _disconnectFollow(
 	}
 
 	// Now we know the txMeta is a Follow
-	txMeta := currentTxn.TxnMeta.(*lib.FollowMetadata)
+	txMeta := currentTxn.TxnMeta.(*net.FollowMetadata)
 
 	// Look up the PKIDs for the follower and the followed.
 	// Get the PKIDs for the public keys associated with the follower and the followed.

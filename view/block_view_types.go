@@ -7,7 +7,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
-	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"strings"
 )
 
@@ -322,7 +322,7 @@ func (utxoEntry *UtxoEntry) String() string {
 
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
 // This needs to be in-sync with DeSoMainnetParams.MaxUsernameLengthBytes
-type UsernameMapKey [lib.MaxUsernameLengthBytes]byte
+type UsernameMapKey [core.MaxUsernameLengthBytes]byte
 
 func MakeUsernameMapKey(nonLowercaseUsername []byte) UsernameMapKey {
 	// Always lowercase the username when we use it as a key in our map. This allows
@@ -365,7 +365,7 @@ func (mm *MessageKey) String() string {
 }
 
 // StringKey is useful for creating maps that need to be serialized to JSON.
-func (mm *MessageKey) StringKey(params *lib.DeSoParams) string {
+func (mm *MessageKey) StringKey(params *core.DeSoParams) string {
 	return db.PkToString(mm.PublicKey[:], params) + "_" + fmt.Sprint(mm.TstampNanos)
 }
 
@@ -492,7 +492,7 @@ type DerivedKeyEntry struct {
 
 	// Operation type determines if the derived key is
 	// authorized or de-authorized.
-	OperationType lib.AuthorizeDerivedKeyOperationType
+	OperationType net.AuthorizeDerivedKeyOperationType
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
@@ -724,7 +724,7 @@ func IsQuotedRepost(postEntry *PostEntry) bool {
 }
 
 func (pe *PostEntry) HasMedia() bool {
-	bodyJSONObj := lib.DeSoBodySchema{}
+	bodyJSONObj := net.DeSoBodySchema{}
 	err := json.Unmarshal(pe.Body, &bodyJSONObj)
 	//Return true if body json can be parsed and ImageURLs or VideoURLs is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
 	if (err == nil && len(bodyJSONObj.ImageURLs) > 0 || len(bodyJSONObj.VideoURLs) > 0) || len(pe.PostExtraData["EmbedVideoURL"]) > 0 {

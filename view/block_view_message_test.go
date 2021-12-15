@@ -3,7 +3,9 @@ package view
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,10 +14,10 @@ import (
 )
 
 func _privateMessage(t *testing.T, chain *lib.Blockchain, db *badger.DB,
-	params *lib.DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
+	params *core.DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
 	recipientPkBase58Check string,
 	senderPrivBase58Check string, unencryptedMessageText string, tstampNanos uint64) (
-	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -33,7 +35,7 @@ func _privateMessage(t *testing.T, chain *lib.Blockchain, db *badger.DB,
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
-		tstampNanos, feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
+		tstampNanos, feeRateNanosPerKB, nil, []*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -91,7 +93,7 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Setup some convenience functions for the test.
 	txnOps := [][]*UtxoOperation{}
-	txns := []*lib.MsgDeSoTxn{}
+	txns := []*net.MsgDeSoTxn{}
 	expectedSenderBalances := []uint64{}
 	expectedRecipientBalances := []uint64{}
 
@@ -161,7 +163,7 @@ func TestPrivateMessage(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		m0Pub, m0Priv, "test" /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey)
+	require.Contains(err.Error(), core.RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey)
 
 	// Message with length too long should fail.
 	badMessage := string(append([]byte("badMessage: "),
@@ -170,14 +172,14 @@ func TestPrivateMessage(t *testing.T) {
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, badMessage /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorPrivateMessageEncryptedTextLengthExceedsMax)
+	require.Contains(err.Error(), core.RuleErrorPrivateMessageEncryptedTextLengthExceedsMax)
 
 	// Zero tstamp should fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, message1 /*unencryptedMessageText*/, 0)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorPrivateMessageTstampIsZero)
+	require.Contains(err.Error(), core.RuleErrorPrivateMessageTstampIsZero)
 
 	// m0 -> m1: message1, tstamp1
 	privateMessage(
@@ -188,28 +190,28 @@ func TestPrivateMessage(t *testing.T) {
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, message1 /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple)
+	require.Contains(err.Error(), core.RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple)
 
 	// Duplicating (m1, tstamp1) should fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m1Pub,
 		m0Pub, m1Priv, message1 /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple)
+	require.Contains(err.Error(), core.RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple)
 
 	// Duplicating (m0, tstamp1) with a different sender should still fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m2Pub,
 		m0Pub, m2Priv, message1 /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple)
+	require.Contains(err.Error(), core.RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple)
 
 	// Duplicating (m1, tstamp1) with a different sender should still fail.
 	_, _, _, err = _privateMessage(
 		t, chain, db, params, 0 /*feeRateNanosPerKB*/, m2Pub,
 		m1Pub, m2Priv, message1 /*unencryptedMessageText*/, tstamp1)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple)
+	require.Contains(err.Error(), core.RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple)
 
 	// m2 -> m1: message2, tstamp2
 	privateMessage(
@@ -248,7 +250,7 @@ func TestPrivateMessage(t *testing.T) {
 		require.Equal(messageEntry.TstampNanos, tstamp1)
 		require.Equal(messageEntry.isDeleted, false)
 		priv, _ := btcec.PrivKeyFromBytes(btcec.S256(), _strToPk(t, m1Priv))
-		decryptedBytes, err := lib.DecryptBytesWithPrivateKey(messageEntry.EncryptedText, priv.ToECDSA())
+		decryptedBytes, err := net.DecryptBytesWithPrivateKey(messageEntry.EncryptedText, priv.ToECDSA())
 		require.NoError(err)
 		require.Equal(message1, string(decryptedBytes))
 	}

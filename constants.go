@@ -1,9 +1,9 @@
-package lib
+package core
 
 import (
 	"encoding/hex"
-	"fmt"
-	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 	"log"
 	"math/big"
@@ -36,16 +36,6 @@ const (
 	// MessagesToFetchPerCall is used to limit the number of messages to fetch
 	// when getting a user's inbox.
 	MessagesToFetchPerInboxCall = 10000
-)
-
-type NetworkType uint64
-
-const (
-	// The different network types. For now we have a mainnet and a testnet.
-	// Also create an UNSET value to catch errors.
-	NetworkType_UNSET   NetworkType = 0
-	NetworkType_MAINNET NetworkType = 1
-	NetworkType_TESTNET NetworkType = 2
 )
 
 const (
@@ -127,19 +117,6 @@ var (
 	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
 )
 
-func (nt NetworkType) String() string {
-	switch nt {
-	case NetworkType_UNSET:
-		return "UNSET"
-	case NetworkType_MAINNET:
-		return "MAINNET"
-	case NetworkType_TESTNET:
-		return "TESTNET"
-	default:
-		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", nt)
-	}
-}
-
 const (
 	MaxUsernameLengthBytes = 25
 )
@@ -157,7 +134,7 @@ var (
 // DeSo network.
 type DeSoParams struct {
 	// The network type (mainnet, testnet, etc).
-	NetworkType NetworkType
+	NetworkType net.NetworkType
 	// The current protocol version we're running.
 	ProtocolVersion uint64
 	// The minimum protocol version we'll allow a peer we connect to
@@ -186,7 +163,7 @@ type DeSoParams struct {
 	// some reason there becomes a different main chain that is stronger than
 	// this one, then we will still switch to that one even with this parameter
 	// set such as it is.
-	BitcoinStartBlockNode *BlockNode
+	BitcoinStartBlockNode *lib.BlockNode
 
 	// The base58Check-encoded Bitcoin address that users must send Bitcoin to in order
 	// to purchase DeSo. Note that, unfortunately, simply using an all-zeros or
@@ -219,7 +196,7 @@ type DeSoParams struct {
 	VersionNegotiationTimeout time.Duration
 
 	// The genesis block to use as the base of our chain.
-	GenesisBlock *MsgDeSoBlock
+	GenesisBlock *net.MsgDeSoBlock
 	// The expected hash of the genesis block. Should align with what one
 	// would get from actually hashing the provided genesis block.
 	GenesisBlockHashHex string
@@ -300,7 +277,7 @@ type DeSoParams struct {
 
 	// A list of balances to initialize the blockchain with. This is useful for
 	// testing and useful in the event that the devs need to hard fork the chain.
-	SeedBalances []*DeSoOutput
+	SeedBalances []*net.DeSoOutput
 
 	// This is a small fee charged on creator coin transactions. It helps
 	// prevent issues related to floating point calculations.
@@ -346,7 +323,7 @@ type DeSoParams struct {
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
 // can be spent as soon as they are mined. It also removes the default testnet seeds
 func (params *DeSoParams) EnableRegtest() {
-	if params.NetworkType != NetworkType_TESTNET {
+	if params.NetworkType != net.NetworkType_TESTNET {
 		glog.Error("Regtest mode can only be enabled in testnet mode")
 		return
 	}
@@ -363,7 +340,7 @@ func (params *DeSoParams) EnableRegtest() {
 
 	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
 	// Seed: verb find card ship another until version devote guilt strong lemon six
-	params.ParamUpdaterPublicKeys[view.MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
+	params.ParamUpdaterPublicKeys[view.MakePkMapKey(lib.MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
 }
 
 // GenesisBlock defines the genesis block used for the DeSo maainnet and testnet
@@ -372,24 +349,24 @@ var (
 	// This is the public key corresponding to the BitcoinBurnAddress on mainnet.
 	BurnPubKeyBase58Check = "BC1YLjWBf2qnDJmi8HZzzCPeXqy4dCKq95oqqzerAyW8MUTbuXTb1QT"
 
-	GenesisBlock = MsgDeSoBlock{
-		Header: &MsgDeSoHeader{
+	GenesisBlock = net.MsgDeSoBlock{
+		Header: &net.MsgDeSoHeader{
 			Version:               0,
-			PrevBlockHash:         &core.BlockHash{},
+			PrevBlockHash:         &BlockHash{},
 			TransactionMerkleRoot: mustDecodeHexBlockHash("4b71d103dd6fff1bd6110bc8ed0a2f3118bbe29a67e45c6c7d97546ad126906f"),
 			TstampSecs:            uint64(1610948544),
 			Height:                uint64(0),
 			Nonce:                 uint64(0),
 		},
-		Txns: []*MsgDeSoTxn{
+		Txns: []*net.MsgDeSoTxn{
 			{
-				TxInputs: []*DeSoInput{},
+				TxInputs: []*net.DeSoInput{},
 				// The outputs in the genesis block aren't actually used by anything, but
 				// including them helps our block explorer return the genesis transactions
 				// without needing an explicit special case.
-				TxOutputs: SeedBalances,
+				TxOutputs: lib.SeedBalances,
 				// TODO: Pick a better string
-				TxnMeta: &BlockRewardMetadataa{
+				TxnMeta: &net.BlockRewardMetadataa{
 					ExtraData: []byte(
 						"They came here, to the New World. World 2.0, version 1776."),
 				},
@@ -403,19 +380,19 @@ var (
 
 	ParamUpdaterPublicKeys = map[view.PkMapKey]bool{
 		// 19Hg2mAJUTKFac2F2BBpSEm7BcpkgimrmD
-		view.MakePkMapKey(MustBase58CheckDecode(ArchitectPubKeyBase58Check)):                                true,
-		view.MakePkMapKey(MustBase58CheckDecode("BC1YLiXwGTte8oXEEVzm4zqtDpGRx44Y4rqbeFeAs5MnzsmqT5RcqkW")): true,
-		view.MakePkMapKey(MustBase58CheckDecode("BC1YLgGLKjuHUFZZQcNYrdWRrHsDKUofd9MSxDq4NY53x7vGt4H32oZ")): true,
-		view.MakePkMapKey(MustBase58CheckDecode("BC1YLj8UkNMbCsmTUTx5Z2bhtp8q86csDthRmK6zbYstjjbS5eHoGkr")): true,
-		view.MakePkMapKey(MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
-		view.MakePkMapKey(MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
-		view.MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
+		view.MakePkMapKey(lib.MustBase58CheckDecode(ArchitectPubKeyBase58Check)):                                true,
+		view.MakePkMapKey(lib.MustBase58CheckDecode("BC1YLiXwGTte8oXEEVzm4zqtDpGRx44Y4rqbeFeAs5MnzsmqT5RcqkW")): true,
+		view.MakePkMapKey(lib.MustBase58CheckDecode("BC1YLgGLKjuHUFZZQcNYrdWRrHsDKUofd9MSxDq4NY53x7vGt4H32oZ")): true,
+		view.MakePkMapKey(lib.MustBase58CheckDecode("BC1YLj8UkNMbCsmTUTx5Z2bhtp8q86csDthRmK6zbYstjjbS5eHoGkr")): true,
+		view.MakePkMapKey(lib.MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
+		view.MakePkMapKey(lib.MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
+		view.MakePkMapKey(lib.MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
 	}
 )
 
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
 var DeSoMainnetParams = DeSoParams{
-	NetworkType:        NetworkType_MAINNET,
+	NetworkType:        net.NetworkType_MAINNET,
 	ProtocolVersion:    1,
 	MinProtocolVersion: 1,
 	UserAgent:          "Architect",
@@ -474,20 +451,20 @@ var DeSoMainnetParams = DeSoParams{
 	//   value should equal the amount of work it takes to get from whatever start node you
 	//   choose and the tip. This is done by running once, letting it fail, and then rerunning
 	//   with the value it outputs.
-	BitcoinStartBlockNode: NewBlockNode(
+	BitcoinStartBlockNode: lib.NewBlockNode(
 		nil,
 		mustDecodeHexBlockHashBitcoin("000000000000000000092d577cc673bede24b6d7199ee69c67eeb46c18fc978c"),
 		// Note the height is always one greater than the parent node.
 		653184,
-		_difficultyBitsToHash(386798414),
+		lib._difficultyBitsToHash(386798414),
 		// CumWork shouldn't matter.
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
-		&MsgDeSoHeader{
+		&net.MsgDeSoHeader{
 			TstampSecs: 1602950620,
 			Height:     0,
 		},
-		StatusBitcoinHeaderValidated,
+		lib.StatusBitcoinHeaderValidated,
 	),
 
 	BitcoinExchangeFeeBasisPoints: 10,
@@ -571,18 +548,18 @@ var DeSoMainnetParams = DeSoParams{
 	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
-	SeedTxns: SeedTxns,
+	SeedTxns: lib.SeedTxns,
 
 	// Set some seed balances if desired
-	SeedBalances: SeedBalances,
+	SeedBalances: lib.SeedBalances,
 
 	// Just charge one basis point on creator coin trades for now.
 	CreatorCoinTradeFeeBasisPoints: 1,
 	// Note that Uniswap is quadratic (i.e. its price equation is
 	// - price ~= currentCreatorCoinSupply^2,
 	// and we think quadratic makes sense in this context as well.
-	CreatorCoinSlope:        NewFloat().SetFloat64(0.003),
-	CreatorCoinReserveRatio: NewFloat().SetFloat64(0.3333333),
+	CreatorCoinSlope:        lib.NewFloat().SetFloat64(0.003),
+	CreatorCoinReserveRatio: lib.NewFloat().SetFloat64(0.3333333),
 
 	// 10 was seen as a threshold reachable in almost all transaction.
 	// It's just high enough where you avoid drifting creating coin
@@ -593,19 +570,19 @@ var DeSoMainnetParams = DeSoParams{
 	DeflationBombBlockHeight: 33783,
 }
 
-func mustDecodeHexBlockHashBitcoin(ss string) *core.BlockHash {
+func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
 	hash, err := chainhash.NewHashFromStr(ss)
 	if err != nil {
 		panic(err)
 	}
-	return (*core.BlockHash)(hash)
+	return (*BlockHash)(hash)
 }
 
-func MustDecodeHexBlockHash(ss string) *core.BlockHash {
+func MustDecodeHexBlockHash(ss string) *BlockHash {
 	return mustDecodeHexBlockHash(ss)
 }
 
-func mustDecodeHexBlockHash(ss string) *core.BlockHash {
+func mustDecodeHexBlockHash(ss string) *BlockHash {
 	bb, err := hex.DecodeString(ss)
 	if err != nil {
 		log.Fatalf("Problem decoding hex string to bytes: (%s): %v", ss, err)
@@ -613,14 +590,14 @@ func mustDecodeHexBlockHash(ss string) *core.BlockHash {
 	if len(bb) != 32 {
 		log.Fatalf("mustDecodeHexBlockHash: Block hash has length (%d) but should be (%d)", len(bb), 32)
 	}
-	ret := core.BlockHash{}
+	ret := BlockHash{}
 	copy(ret[:], bb)
 	return &ret
 }
 
 // DeSoTestnetParams defines the DeSo parameters for the testnet.
 var DeSoTestnetParams = DeSoParams{
-	NetworkType:        NetworkType_TESTNET,
+	NetworkType:        net.NetworkType_TESTNET,
 	ProtocolVersion:    0,
 	MinProtocolVersion: 0,
 	UserAgent:          "Architect",
@@ -639,21 +616,21 @@ var DeSoTestnetParams = DeSoParams{
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 
 	// See comment in mainnet config.
-	BitcoinStartBlockNode: NewBlockNode(
+	BitcoinStartBlockNode: lib.NewBlockNode(
 		nil,
 		mustDecodeHexBlockHashBitcoin("000000000000003aae8fb976056413aa1d863eb5bee381ff16c9642283b1da1a"),
 		1897056,
-		_difficultyBitsToHash(424073553),
+		lib._difficultyBitsToHash(424073553),
 
 		// CumWork: We set the work of the start node such that, when added to all of the
 		// blocks that follow it, it hurdles the min chain work.
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
-		&MsgDeSoHeader{
+		&net.MsgDeSoHeader{
 			TstampSecs: 1607659152,
 			Height:     0,
 		},
-		StatusBitcoinHeaderValidated,
+		lib.StatusBitcoinHeaderValidated,
 	),
 
 	// ===================================================================================
@@ -737,19 +714,19 @@ var DeSoTestnetParams = DeSoParams{
 	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
-	SeedTxns: TestSeedTxns,
+	SeedTxns: lib.TestSeedTxns,
 
 	// Set some seed balances if desired
 	// Note: For now these must be the same as mainnet because GenesisBlock is the same
-	SeedBalances: SeedBalances,
+	SeedBalances: lib.SeedBalances,
 
 	// Just charge one basis point on creator coin trades for now.
 	CreatorCoinTradeFeeBasisPoints: 1,
 	// Note that Uniswap is quadratic (i.e. its price equation is
 	// - price ~= currentCreatorCoinSupply^2,
 	// and we think quadratic makes sense in this context as well.
-	CreatorCoinSlope:        NewFloat().SetFloat64(0.003),
-	CreatorCoinReserveRatio: NewFloat().SetFloat64(0.3333333),
+	CreatorCoinSlope:        lib.NewFloat().SetFloat64(0.003),
+	CreatorCoinReserveRatio: lib.NewFloat().SetFloat64(0.3333333),
 
 	// 10 was seen as a threshold reachable in almost all transaction.
 	// It's just high enough where you avoid drifting creating coin
@@ -822,14 +799,14 @@ const (
 	// MinNetworkFeeNanosPerKBValue - Minimum value to which the minimum network fee per KB can be set.
 	MinNetworkFeeNanosPerKBValue = 0
 	// MaxNetworkFeeNanosPerKBValue - Maximum value to which the maximum network fee per KB can be set.
-	MaxNetworkFeeNanosPerKBValue = 100 * NanosPerUnit
+	MaxNetworkFeeNanosPerKBValue = 100 * lib.NanosPerUnit
 	// MinCreateProfileFeeNanos - Minimum value to which the create profile fee can be set.
 	MinCreateProfileFeeNanos = 0
 	// MaxCreateProfileFeeNanos - Maximum value to which the create profile fee can be set.
-	MaxCreateProfileFeeNanos = 100 * NanosPerUnit
+	MaxCreateProfileFeeNanos = 100 * lib.NanosPerUnit
 	// Min/MaxCreateNFTFeeNanos - Min/max value to which the create NFT fee can be set.
 	MinCreateNFTFeeNanos = 0
-	MaxCreateNFTFeeNanos = 100 * NanosPerUnit
+	MaxCreateNFTFeeNanos = 100 * lib.NanosPerUnit
 	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
 	MinMaxCopiesPerNFT = 1
 	MaxMaxCopiesPerNFT = 10000

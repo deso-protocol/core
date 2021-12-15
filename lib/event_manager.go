@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 )
 
@@ -9,7 +10,7 @@ type TransactionEventFunc func(event *TransactionEvent)
 type BlockEventFunc func(event *BlockEvent)
 
 type TransactionEvent struct {
-	Txn     *MsgDeSoTxn
+	Txn     *net.MsgDeSoTxn
 	TxnHash *core.BlockHash
 
 	// Optional
@@ -18,7 +19,7 @@ type TransactionEvent struct {
 }
 
 type BlockEvent struct {
-	Block *MsgDeSoBlock
+	Block *net.MsgDeSoBlock
 
 	// Optional
 	UtxoView *view.UtxoView

@@ -4,6 +4,7 @@ import (
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/db"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,11 +13,11 @@ import (
 	"testing"
 )
 
-func _createNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *lib.DeSoParams,
+func _createNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *core.DeSoParams,
 	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
 	nftPostHash *core.BlockHash, numCopies uint64, hasUnlockable bool, isForSale bool, minBidAmountNanos uint64,
 	nftFee uint64, nftRoyaltyToCreatorBasisPoints uint64, nftRoyaltyToCoinBasisPoints uint64,
-) (_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+) (_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -40,7 +41,7 @@ func _createNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *lib.
 		nftRoyaltyToCreatorBasisPoints,
 		nftRoyaltyToCoinBasisPoints,
 		feeRateNanosPerKB,
-		nil, []*lib.DeSoOutput{})
+		nil, []*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -122,10 +123,10 @@ func _createNFTWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _createNFTBid(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *lib.DeSoParams,
+func _createNFTBid(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *core.DeSoParams,
 	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
 	nftPostHash *core.BlockHash, serialNumber uint64, bidAmountNanos uint64,
-) (_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+) (_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -145,7 +146,7 @@ func _createNFTBid(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *l
 		bidAmountNanos,
 		feeRateNanosPerKB,
 		nil,
-		[]*lib.DeSoOutput{})
+		[]*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -204,10 +205,10 @@ func _createNFTBidWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _acceptNFTBid(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *lib.DeSoParams,
+func _acceptNFTBid(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *core.DeSoParams,
 	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string, nftPostHash *core.BlockHash,
 	serialNumber uint64, bidderPkBase58Check string, bidAmountNanos uint64, unencryptedUnlockableText string,
-) (_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+) (_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -235,7 +236,7 @@ func _acceptNFTBid(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *l
 		[]byte(unencryptedUnlockableText),
 		feeRateNanosPerKB,
 		nil,
-		[]*lib.DeSoOutput{})
+		[]*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -260,7 +261,7 @@ func _acceptNFTBid(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *l
 	// We should have one SPEND UtxoOperation for each input, one SPEND
 	// operation for each BidderInpout, one ADD operation
 	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
-	numInputs := len(txn.TxInputs) + len(txn.TxnMeta.(*lib.AcceptNFTBidMetadata).BidderInputs)
+	numInputs := len(txn.TxInputs) + len(txn.TxnMeta.(*net.AcceptNFTBidMetadata).BidderInputs)
 	numOps := len(utxoOps)
 	for ii := 0; ii < numInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
@@ -303,10 +304,10 @@ func _acceptNFTBidWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _updateNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *lib.DeSoParams,
+func _updateNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *core.DeSoParams,
 	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
 	nftPostHash *core.BlockHash, serialNumber uint64, isForSale bool, minBidAmountNanos uint64,
-) (_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+) (_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -327,7 +328,7 @@ func _updateNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *lib.
 		minBidAmountNanos,
 		feeRateNanosPerKB,
 		nil,
-		[]*lib.DeSoOutput{})
+		[]*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -388,10 +389,10 @@ func _updateNFTWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _transferNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *lib.DeSoParams,
+func _transferNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *core.DeSoParams,
 	feeRateNanosPerKB uint64, senderPk string, senderPriv string, receiverPk string,
 	nftPostHash *core.BlockHash, serialNumber uint64, unlockableText string,
-) (_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+) (_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -415,7 +416,7 @@ func _transferNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB, params *li
 		[]byte(unlockableText),
 		feeRateNanosPerKB,
 		nil,
-		[]*lib.DeSoOutput{})
+		[]*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -477,9 +478,9 @@ func _transferNFTWithTestMeta(
 }
 
 func _acceptNFTTransfer(t *testing.T, chain *lib.Blockchain, db *badger.DB,
-	params *lib.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	params *core.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, nftPostHash *core.BlockHash, serialNumber uint64,
-) (_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+) (_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -498,7 +499,7 @@ func _acceptNFTTransfer(t *testing.T, chain *lib.Blockchain, db *badger.DB,
 		serialNumber,
 		feeRateNanosPerKB,
 		nil,
-		[]*lib.DeSoOutput{})
+		[]*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -556,9 +557,9 @@ func _acceptNFTTransferWithTestMeta(
 }
 
 func _burnNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB,
-	params *lib.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	params *core.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, nftPostHash *core.BlockHash, serialNumber uint64,
-) (_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+) (_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -577,7 +578,7 @@ func _burnNFT(t *testing.T, chain *lib.Blockchain, db *badger.DB,
 		serialNumber,
 		feeRateNanosPerKB,
 		nil,
-		[]*lib.DeSoOutput{})
+		[]*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -635,7 +636,7 @@ func _burnNFTWithTestMeta(
 }
 
 func TestNFTBasic(t *testing.T) {
-	lib.BrokenNFTBidsFixBlockHeight = uint32(0)
+	core.BrokenNFTBidsFixBlockHeight = uint32(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -697,7 +698,7 @@ func TestNFTBasic(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -721,7 +722,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCantCreateNFTWithoutProfileEntry)
+		require.Contains(err.Error(), core.RuleErrorCantCreateNFTWithoutProfileEntry)
 	}
 
 	// Create a profile so we can make an NFT.
@@ -749,7 +750,7 @@ func TestNFTBasic(t *testing.T) {
 			m0Priv,                /*updaterPrivBase58Check*/
 			[]byte{},              /*postHashToModify*/
 			[]byte{},              /*parentStakeID*/
-			&lib.DeSoBodySchema{}, /*body*/
+			&net.DeSoBodySchema{}, /*body*/
 			post1Hash[:],          /*repostedPostHash*/
 			1502947011*1e9,        /*tstampNanos*/
 			false /*isHidden*/)
@@ -770,7 +771,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCreateNFTOnVanillaRepost)
+		require.Contains(err.Error(), core.RuleErrorCreateNFTOnVanillaRepost)
 	}
 
 	// Error case: m1 should not be able to turn m0's post into an NFT.
@@ -790,7 +791,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCreateNFTMustBeCalledByPoster)
+		require.Contains(err.Error(), core.RuleErrorCreateNFTMustBeCalledByPoster)
 	}
 
 	// Error case: m0 should not be able to make more than MaxCopiesPerNFT.
@@ -810,7 +811,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorTooManyNFTCopies)
+		require.Contains(err.Error(), core.RuleErrorTooManyNFTCopies)
 	}
 
 	// Error case: m0 should not be able to make an NFT with zero copies.
@@ -830,7 +831,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTMustHaveNonZeroCopies)
+		require.Contains(err.Error(), core.RuleErrorNFTMustHaveNonZeroCopies)
 	}
 
 	// Error case: non-existent post.
@@ -856,7 +857,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCreateNFTOnNonexistentPost)
+		require.Contains(err.Error(), core.RuleErrorCreateNFTOnNonexistentPost)
 	}
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
@@ -901,7 +902,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
+		require.Contains(err.Error(), core.RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
 	}
 
 	// Error case: cannot modify a post after it is NFTed.
@@ -913,13 +914,13 @@ func TestNFTBasic(t *testing.T) {
 			m0Priv,
 			post1Hash[:],
 			[]byte{},
-			&lib.DeSoBodySchema{Body: "modified m0 post"},
+			&net.DeSoBodySchema{Body: "modified m0 post"},
 			[]byte{},
 			1502947011*1e9,
 			false)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorSubmitPostCannotUpdateNFT)
+		require.Contains(err.Error(), core.RuleErrorSubmitPostCannotUpdateNFT)
 	}
 
 	// Now let's try adding a fee to creating NFT copies. This fee exists since creating
@@ -945,7 +946,7 @@ func TestNFTBasic(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 2"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -968,7 +969,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCreateNFTWithInsufficientFunds)
+		require.Contains(err.Error(), core.RuleErrorCreateNFTWithInsufficientFunds)
 	}
 
 	// Creating an NFT with the correct NFT fee should succeed.
@@ -1023,7 +1024,7 @@ func TestNFTBasic(t *testing.T) {
 			1000000000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNonExistentPost)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNonExistentPost)
 	}
 
 	// Have m0 create another post that has not been NFTed.
@@ -1035,7 +1036,7 @@ func TestNFTBasic(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 3"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 3"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -1053,7 +1054,7 @@ func TestNFTBasic(t *testing.T) {
 			1000000000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnPostThatIsNotAnNFT)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnPostThatIsNotAnNFT)
 	}
 
 	// Error case: Bidding on a serial number that does not exist should fail (post1 has 5 copies).
@@ -1067,7 +1068,7 @@ func TestNFTBasic(t *testing.T) {
 			1000000000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnInvalidSerialNumber)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnInvalidSerialNumber)
 	}
 
 	// Error case: cannot make a bid with a sufficient deso balance to fill the bid.
@@ -1081,7 +1082,7 @@ func TestNFTBasic(t *testing.T) {
 			1000000000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorInsufficientFundsForNFTBid)
+		require.Contains(err.Error(), core.RuleErrorInsufficientFundsForNFTBid)
 	}
 
 	// Error case: m0 cannot bid on its own NFT.
@@ -1095,7 +1096,7 @@ func TestNFTBasic(t *testing.T) {
 			1000000000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTOwnerCannotBidOnOwnedNFT)
+		require.Contains(err.Error(), core.RuleErrorNFTOwnerCannotBidOnOwnedNFT)
 	}
 
 	// Have m1 and m2 bid on post #1 / serial #1.
@@ -1142,7 +1143,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*MinBidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorUpdateNFTByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorUpdateNFTByNonOwner)
 
 		// m1 trying to be sneaky by accepting their own bid.
 		_, _, _, err = _acceptNFTBid(
@@ -1156,7 +1157,7 @@ func TestNFTBasic(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptNFTBidByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorAcceptNFTBidByNonOwner)
 	}
 
 	// Error case: accepting a bid that does not match the bid entry.
@@ -1173,7 +1174,7 @@ func TestNFTBasic(t *testing.T) {
 			"",  /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptedNFTBidAmountDoesNotMatch)
+		require.Contains(err.Error(), core.RuleErrorAcceptedNFTBidAmountDoesNotMatch)
 	}
 
 	// Error case: can't accept a non-existent bid.
@@ -1190,7 +1191,7 @@ func TestNFTBasic(t *testing.T) {
 			"",  /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCantAcceptNonExistentBid)
+		require.Contains(err.Error(), core.RuleErrorCantAcceptNonExistentBid)
 	}
 
 	// Error case: can't accept or update a non-existent NFT.
@@ -1205,7 +1206,7 @@ func TestNFTBasic(t *testing.T) {
 			0,     /*MinBidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCannotUpdateNonExistentNFT)
+		require.Contains(err.Error(), core.RuleErrorCannotUpdateNonExistentNFT)
 
 		_, _, _, err = _acceptNFTBid(
 			t, chain, db, params, 10,
@@ -1218,7 +1219,7 @@ func TestNFTBasic(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNonExistentNFTEntry)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNonExistentNFTEntry)
 	}
 
 	// Error case: can't submit an update txn that doesn't actually update anything.
@@ -1234,7 +1235,7 @@ func TestNFTBasic(t *testing.T) {
 			0,    /*MinBidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTUpdateMustUpdateIsForSaleStatus)
+		require.Contains(err.Error(), core.RuleErrorNFTUpdateMustUpdateIsForSaleStatus)
 	}
 
 	// Finally, accept m2's bid on <post1, #1>.
@@ -1281,7 +1282,7 @@ func TestNFTBasic(t *testing.T) {
 			1000000000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNFTThatIsNotForSale)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNFTThatIsNotForSale)
 
 		_, _, _, err = _createNFTBid(
 			t, chain, db, params, 10,
@@ -1292,7 +1293,7 @@ func TestNFTBasic(t *testing.T) {
 			1000000000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNFTThatIsNotForSale)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNFTThatIsNotForSale)
 	}
 
 	// Have m1, m2, and m3 bid on <post #2, #1> (which has an unlockable).
@@ -1382,7 +1383,7 @@ func TestNFTBasic(t *testing.T) {
 			"", /*UnencryptedUnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorUnlockableNFTMustProvideUnlockableText)
+		require.Contains(err.Error(), core.RuleErrorUnlockableNFTMustProvideUnlockableText)
 	}
 
 	{
@@ -1474,7 +1475,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -1505,7 +1506,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			m0Pub,  /*updaterPkBase58Check*/
 			m0Priv, /*updaterPrivBase58Check*/
 			m0Pub,  /*profilePubKeyBase58Check*/
-			lib.CreatorCoinOperationTypeBuy,
+			net.CreatorCoinOperationTypeBuy,
 			29, /*DeSoToSellNanos*/
 			0,  /*CreatorCoinToSellNanos*/
 			0,  /*DeSoToAddNanos*/
@@ -1536,7 +1537,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			1,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
+		require.Contains(err.Error(), core.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
@@ -1552,7 +1553,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			10000, /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
+		require.Contains(err.Error(), core.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 	}
 
 	// Error case: royalty values big enough to overflow should fail.
@@ -1571,7 +1572,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			2,                /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTRoyaltyOverflow)
+		require.Contains(err.Error(), core.RuleErrorNFTRoyaltyOverflow)
 	}
 
 	// Create NFT: Let's have m0 create an NFT with 10% royalties for the creator and 20% for the coin.
@@ -1872,7 +1873,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			m0Pub,  /*updaterPkBase58Check*/
 			m0Priv, /*updaterPrivBase58Check*/
 			m0Pub,  /*profilePubKeyBase58Check*/
-			lib.CreatorCoinOperationTypeSell,
+			net.CreatorCoinOperationTypeSell,
 			0,                       /*DeSoToSellNanos*/
 			coinsInCirculationNanos, /*CreatorCoinToSellNanos*/
 			0,                       /*DeSoToAddNanos*/
@@ -2000,7 +2001,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -2012,7 +2013,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 2"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -2183,7 +2184,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			"",   /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptedNFTBidAmountDoesNotMatch)
+		require.Contains(err.Error(), core.RuleErrorAcceptedNFTBidAmountDoesNotMatch)
 
 		_, _, _, err = _acceptNFTBid(
 			t, chain, db, params, 10,
@@ -2196,7 +2197,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			"",  /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptedNFTBidAmountDoesNotMatch)
+		require.Contains(err.Error(), core.RuleErrorAcceptedNFTBidAmountDoesNotMatch)
 	}
 
 	// Accept some bids!
@@ -2324,7 +2325,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -2384,7 +2385,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 			0, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Contains(err.Error(), core.RuleErrorNFTBidLessThanMinBidAmountNanos)
 
 		_, _, _, err = _createNFTBid(
 			t, chain, db, params, 10,
@@ -2395,7 +2396,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 			1110, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Contains(err.Error(), core.RuleErrorNFTBidLessThanMinBidAmountNanos)
 	}
 
 	// Have m1,m2,m3 make some legitimate bids, including a bid on serial #0.
@@ -2574,7 +2575,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -2634,7 +2635,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			1000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNFTThatIsNotForSale)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNFTThatIsNotForSale)
 
 		// None of the serial numbers should accept bids.
 		_, _, _, err = _createNFTBid(
@@ -2646,7 +2647,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			1000, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNFTThatIsNotForSale)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNFTThatIsNotForSale)
 	}
 
 	// Update <post1, #1>, so that it is for sale.
@@ -2786,7 +2787,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -2826,7 +2827,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
+		require.Contains(err.Error(), core.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
@@ -2843,7 +2844,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
+		require.Contains(err.Error(), core.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 
 		_, _, _, err = _createNFT(
 			t, chain, db, params, 10,
@@ -2860,7 +2861,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
+		require.Contains(err.Error(), core.RuleErrorNFTRoyaltyHasTooManyBasisPoints)
 	}
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
@@ -2906,7 +2907,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
+		require.Contains(err.Error(), core.RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
 
 		// Should behave the same if we change the NFT metadata.
 		_, _, _, err = _createNFT(
@@ -2924,7 +2925,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
+		require.Contains(err.Error(), core.RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
 
 		// Should behave the same if we change the NFT metadata.
 		_, _, _, err = _createNFT(
@@ -2942,7 +2943,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
+		require.Contains(err.Error(), core.RuleErrorCreateNFTOnPostThatAlreadyIsNFT)
 	}
 
 	// Have m1 make a standing offer on post1.
@@ -2977,7 +2978,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNFTThatIsNotForSale)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNFTThatIsNotForSale)
 	}
 
 	// Update <post1, #1>, so that it is on sale.
@@ -3006,7 +3007,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			1, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Contains(err.Error(), core.RuleErrorNFTBidLessThanMinBidAmountNanos)
 	}
 
 	// A bid above the min bid amount should succeed.
@@ -3118,7 +3119,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -3282,7 +3283,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptedNFTBidAmountDoesNotMatch)
+		require.Contains(err.Error(), core.RuleErrorAcceptedNFTBidAmountDoesNotMatch)
 	}
 
 	// Accept m2's bid on the post. Make sure all bids are deleted.
@@ -3317,7 +3318,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNFTThatIsNotForSale)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNFTThatIsNotForSale)
 
 		_, _, _, err = _acceptNFTBid(
 			t, chain, db, params, 10,
@@ -3330,7 +3331,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidOnNFTThatIsNotForSale)
+		require.Contains(err.Error(), core.RuleErrorNFTBidOnNFTThatIsNotForSale)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
@@ -3402,7 +3403,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -3512,7 +3513,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			99, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Contains(err.Error(), core.RuleErrorNFTBidLessThanMinBidAmountNanos)
 
 		_, _, _, err = _createNFTBid(
 			t, chain, db, params, 10,
@@ -3523,7 +3524,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			299, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Contains(err.Error(), core.RuleErrorNFTBidLessThanMinBidAmountNanos)
 
 		_, _, _, err = _createNFTBid(
 			t, chain, db, params, 10,
@@ -3534,7 +3535,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			499, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Contains(err.Error(), core.RuleErrorNFTBidLessThanMinBidAmountNanos)
 
 		_, _, _, err = _createNFTBid(
 			t, chain, db, params, 10,
@@ -3545,7 +3546,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			399, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Contains(err.Error(), core.RuleErrorNFTBidLessThanMinBidAmountNanos)
 
 		_, _, _, err = _createNFTBid(
 			t, chain, db, params, 10,
@@ -3556,7 +3557,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			199, /*BidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTBidLessThanMinBidAmountNanos)
+		require.Contains(err.Error(), core.RuleErrorNFTBidLessThanMinBidAmountNanos)
 	}
 
 	// Bids at the min bid amount nanos threshold should not error.
@@ -3681,7 +3682,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -3693,7 +3694,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 2"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -3705,7 +3706,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 3"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 3"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -3746,7 +3747,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorTooManyNFTCopies)
+		require.Contains(err.Error(), core.RuleErrorTooManyNFTCopies)
 	}
 
 	// Make post 1 an NFT with 1000 copies, the default MaxCopiesPerNFT.
@@ -3795,7 +3796,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			0,     /*nftRoyaltyToCoinBasisPoints*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorTooManyNFTCopies)
+		require.Contains(err.Error(), core.RuleErrorTooManyNFTCopies)
 	}
 
 	// Making an NFT with only 1 copy should succeed.
@@ -3818,8 +3819,8 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 
 	// Error case: setting MaxCopiesPerNFT to be >MaxMaxCopiesPerNFT or <MinMaxCopiesPerNFT should fail.
 	{
-		require.Equal(1, lib.MinMaxCopiesPerNFT)
-		require.Equal(10000, lib.MaxMaxCopiesPerNFT)
+		require.Equal(1, core.MinMaxCopiesPerNFT)
+		require.Equal(10000, core.MaxMaxCopiesPerNFT)
 
 		_, _, _, err := _updateGlobalParamsEntry(
 			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
@@ -3827,10 +3828,10 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m3Pub,
 			m3Priv,
 			-1, -1, -1, -1,
-			lib.MaxMaxCopiesPerNFT+1, /*maxCopiesPerNFT*/
-			true)                     /*flushToDB*/
+			core.MaxMaxCopiesPerNFT+1, /*maxCopiesPerNFT*/
+			true)                      /*flushToDB*/
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorMaxCopiesPerNFTTooHigh)
+		require.Contains(err.Error(), core.RuleErrorMaxCopiesPerNFTTooHigh)
 
 		_, _, _, err = _updateGlobalParamsEntry(
 			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
@@ -3838,10 +3839,10 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m3Pub,
 			m3Priv,
 			-1, -1, -1, -1,
-			lib.MinMaxCopiesPerNFT-1, /*maxCopiesPerNFT*/
-			true)                     /*flushToDB*/
+			core.MinMaxCopiesPerNFT-1, /*maxCopiesPerNFT*/
+			true)                      /*flushToDB*/
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorMaxCopiesPerNFTTooLow)
+		require.Contains(err.Error(), core.RuleErrorMaxCopiesPerNFTTooLow)
 	}
 
 	// Now let's try making the MaxCopiesPerNFT ridiculously large.
@@ -3985,7 +3986,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -4071,7 +4072,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			0,     /*MinBidAmountNanos*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorUpdateNFTByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorUpdateNFTByNonOwner)
 	}
 
 	// Have m1 place the NFT for sale and m2 bid on it.
@@ -4113,7 +4114,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptNFTBidByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorAcceptNFTBidByNonOwner)
 	}
 
 	// Have m1 accept the bid, m2 put the NFT for sale, and m3 bid on the NFT.
@@ -4169,7 +4170,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptNFTBidByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorAcceptNFTBidByNonOwner)
 
 		_, _, _, err = _acceptNFTBid(
 			t, chain, db, params, 10,
@@ -4182,7 +4183,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			"", /*UnlockableText*/
 		)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptNFTBidByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorAcceptNFTBidByNonOwner)
 	}
 
 	// Have m2 accept the bid.
@@ -4211,8 +4212,8 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 }
 
 func TestNFTTransfersAndBurns(t *testing.T) {
-	lib.BrokenNFTBidsFixBlockHeight = uint32(0)
-	lib.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	core.BrokenNFTBidsFixBlockHeight = uint32(0)
+	core.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -4293,7 +4294,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -4305,7 +4306,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			m0Priv,                                 /*updaterPrivBase58Check*/
 			[]byte{},                               /*postHashToModify*/
 			[]byte{},                               /*parentStakeID*/
-			&lib.DeSoBodySchema{Body: "m0 post 2"}, /*body*/
+			&net.DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
 			false /*isHidden*/)
@@ -4439,7 +4440,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCannotTransferNonExistentNFT)
+		require.Contains(err.Error(), core.RuleErrorCannotTransferNonExistentNFT)
 	}
 
 	// Error case: transfer by non-owner.
@@ -4455,7 +4456,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorNFTTransferByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorNFTTransferByNonOwner)
 	}
 
 	// Error case: cannot transfer NFT that is for sale.
@@ -4471,7 +4472,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCannotTransferForSaleNFT)
+		require.Contains(err.Error(), core.RuleErrorCannotTransferForSaleNFT)
 	}
 
 	// Error case: cannot transfer unlockable NFT without unlockable text.
@@ -4487,7 +4488,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCannotTransferUnlockableNFTWithoutUnlockable)
+		require.Contains(err.Error(), core.RuleErrorCannotTransferUnlockableNFTWithoutUnlockable)
 	}
 
 	// Let's transfer some NFTs!
@@ -4560,7 +4561,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCannotAcceptTransferOfNonExistentNFT)
+		require.Contains(err.Error(), core.RuleErrorCannotAcceptTransferOfNonExistentNFT)
 	}
 
 	// Error case: transfer by non-owner (m1 owns <post 2, #1>).
@@ -4574,7 +4575,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptNFTTransferByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorAcceptNFTTransferByNonOwner)
 	}
 
 	// Error case: cannot accept NFT transfer on non-pending NFT.
@@ -4588,7 +4589,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorAcceptNFTTransferForNonPendingNFT)
+		require.Contains(err.Error(), core.RuleErrorAcceptNFTTransferForNonPendingNFT)
 	}
 
 	// Let's accept some NFT transfers!
@@ -4634,7 +4635,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCannotBurnNonExistentNFT)
+		require.Contains(err.Error(), core.RuleErrorCannotBurnNonExistentNFT)
 	}
 
 	// Error case: transfer by non-owner (m1 owns <post 2, #1>).
@@ -4648,7 +4649,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorBurnNFTByNonOwner)
+		require.Contains(err.Error(), core.RuleErrorBurnNFTByNonOwner)
 	}
 
 	// Error case: cannot burn an NFT that is for sale (<post 1, #1> is still for sale).
@@ -4662,7 +4663,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorCannotBurnNFTThatIsForSale)
+		require.Contains(err.Error(), core.RuleErrorCannotBurnNFTThatIsForSale)
 	}
 
 	// Let's burn some NFTs!!

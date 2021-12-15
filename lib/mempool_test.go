@@ -3,6 +3,7 @@ package lib
 import (
 	"fmt"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 	"testing"
 
@@ -19,7 +20,7 @@ func _filterOutBlockRewards(utxoEntries []*view.UtxoEntry) []*view.UtxoEntry {
 	return nonBlockRewardUtxos
 }
 
-func _setupFiveBlocks(t *testing.T) (*Blockchain, *DeSoParams, []byte, []byte) {
+func _setupFiveBlocks(t *testing.T) (*Blockchain, *core.DeSoParams, []byte, []byte) {
 	require := require.New(t)
 	chain, params, db := NewLowDifficultyBlockchain()
 	_ = db
@@ -72,20 +73,20 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 			fmt.Printf("TestMempoolRateLimit: Processing txn %d\n", ii)
 		}
 		prevTxnHash := prevTxn.Hash()
-		newTxn := &MsgDeSoTxn{
-			TxInputs: []*DeSoInput{
-				&DeSoInput{
+		newTxn := &net.MsgDeSoTxn{
+			TxInputs: []*net.DeSoInput{
+				&net.DeSoInput{
 					TxID:  *prevTxnHash,
 					Index: 0,
 				},
 			},
-			TxOutputs: []*DeSoOutput{
-				&DeSoOutput{
+			TxOutputs: []*net.DeSoOutput{
+				&net.DeSoOutput{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
-			TxnMeta:   &BasicTransferMetadata{},
+			TxnMeta:   &net.BasicTransferMetadata{},
 			PublicKey: recipientPkBytes,
 		}
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
@@ -136,13 +137,13 @@ func TestMempoolRateLimit(t *testing.T) {
 		"" /*dataDir*/, "")
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.Error(err)
-	require.Contains(err.Error(), TxErrorInsufficientFeeMinFee)
+	require.Contains(err.Error(), core.TxErrorInsufficientFeeMinFee)
 
 	// It shoud be accepted if we set rateLimit to false.
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.NoError(err)
 
-	txnsCreated := []*MsgDeSoTxn{txn1}
+	txnsCreated := []*net.MsgDeSoTxn{txn1}
 	prevTxn := txn1
 	// Create fewer than the maximum number of dependencies allowed by the
 	// mempool to avoid transactions being rejected.
@@ -151,20 +152,20 @@ func TestMempoolRateLimit(t *testing.T) {
 			fmt.Printf("TestMempoolRateLimit: Processing txn %d\n", ii)
 		}
 		prevTxnHash := prevTxn.Hash()
-		newTxn := &MsgDeSoTxn{
-			TxInputs: []*DeSoInput{
-				&DeSoInput{
+		newTxn := &net.MsgDeSoTxn{
+			TxInputs: []*net.DeSoInput{
+				&net.DeSoInput{
 					TxID:  *prevTxnHash,
 					Index: 0,
 				},
 			},
-			TxOutputs: []*DeSoOutput{
-				&DeSoOutput{
+			TxOutputs: []*net.DeSoOutput{
+				&net.DeSoOutput{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
-			TxnMeta:   &BasicTransferMetadata{},
+			TxnMeta:   &net.BasicTransferMetadata{},
 			PublicKey: recipientPkBytes,
 		}
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
@@ -194,7 +195,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	require.NoError(firstError, "First transaction should not be rate-limited")
 	// If we got rate-limited, there should be at least one transaction in
 	// the list that has the rate-limited error.
-	require.Contains(processingErrors, TxErrorInsufficientFeeRateLimit)
+	require.Contains(processingErrors, core.TxErrorInsufficientFeeRateLimit)
 
 	_, _ = require, senderPkBytes
 }
@@ -221,49 +222,49 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	// Construct a second transaction that depends on the first. Send 1
 	// DeSo to the recipient and set the rest as change.
 	txn1Hash := txn1.Hash()
-	txn2 := &MsgDeSoTxn{
+	txn2 := &net.MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*DeSoInput{
-			&DeSoInput{
+		TxInputs: []*net.DeSoInput{
+			&net.DeSoInput{
 				TxID:  *txn1Hash,
 				Index: 1,
 			},
 		},
-		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+		TxOutputs: []*net.DeSoOutput{
+			&net.DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, &net.DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: changeOutput.AmountNanos - 1,
 			},
 		},
 		PublicKey: senderPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
+		TxnMeta:   &net.BasicTransferMetadata{},
 	}
 	_signTxn(t, txn2, senderPrivString)
 
 	// Construct a third transaction that depends on the second.
 	txn2Hash := txn2.Hash()
-	txn3 := &MsgDeSoTxn{
+	txn3 := &net.MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*DeSoInput{
-			&DeSoInput{
+		TxInputs: []*net.DeSoInput{
+			&net.DeSoInput{
 				TxID:  *txn2Hash,
 				Index: 1,
 			},
 		},
-		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+		TxOutputs: []*net.DeSoOutput{
+			&net.DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, &net.DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: changeOutput.AmountNanos - 2,
 			},
 		},
 		PublicKey: senderPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
+		TxnMeta:   &net.BasicTransferMetadata{},
 	}
 	_signTxn(t, txn3, senderPrivString)
 	txn3Hash := txn3.Hash()
@@ -271,29 +272,29 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	// Construct a fourth transaction that spends an output from the recipient's
 	// key sending the DeSo back to the sender with some change going back to
 	// herself. Make the output come from the first and second transaction above.
-	txn4 := &MsgDeSoTxn{
+	txn4 := &net.MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
-		TxInputs: []*DeSoInput{
-			&DeSoInput{
+		TxInputs: []*net.DeSoInput{
+			&net.DeSoInput{
 				TxID:  *txn1Hash,
 				Index: 0,
 			},
-			&DeSoInput{
+			&net.DeSoInput{
 				TxID:  *txn2Hash,
 				Index: 0,
 			},
 		},
-		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+		TxOutputs: []*net.DeSoOutput{
+			&net.DeSoOutput{
 				PublicKey:   senderPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, &net.DeSoOutput{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
 			},
 		},
 		PublicKey: recipientPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
+		TxnMeta:   &net.BasicTransferMetadata{},
 	}
 	_signTxn(t, txn4, recipientPrivString)
 	txn4Hash := txn4.Hash()

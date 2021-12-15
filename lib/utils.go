@@ -5,6 +5,8 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
+	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/net"
 	"github.com/unrolled/secure"
 )
 
@@ -56,8 +58,8 @@ func MinUint32(a, b uint32) uint32 {
 	return b
 }
 
-func ComputeKeysFromSeed(seedBytes []byte, index uint32, params *DeSoParams) (_pubKey *btcec.PublicKey, _privKey *btcec.PrivateKey, _btcAddress string, _err error) {
-	isTestnet := params.NetworkType == NetworkType_TESTNET
+func ComputeKeysFromSeed(seedBytes []byte, index uint32, params *core.DeSoParams) (_pubKey *btcec.PublicKey, _privKey *btcec.PrivateKey, _btcAddress string, _err error) {
+	isTestnet := params.NetworkType == net.NetworkType_TESTNET
 	return ComputeKeysFromSeedWithNet(seedBytes, index, isTestnet)
 }
 

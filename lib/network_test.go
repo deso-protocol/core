@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/hex"
 	"github.com/deso-protocol/core"
+	"github.com/deso-protocol/core/miner"
+	"github.com/deso-protocol/core/net"
 	"reflect"
 	"strings"
 	"testing"
@@ -28,9 +30,9 @@ var postHashForTesting1 = core.BlockHash{
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
 
-var expectedVer = &MsgDeSoVersion{
+var expectedVer = &net.MsgDeSoVersion{
 	Version:              1,
-	Services:             SFFullNode,
+	Services:             net.SFFullNode,
 	TstampSecs:           2,
 	Nonce:                uint64(0xffffffffffffffff),
 	UserAgent:            "abcdef",
@@ -48,7 +50,7 @@ func TestVersionConversion(t *testing.T) {
 		data, err := expectedVer.ToBytes(false)
 		assert.NoError(err)
 
-		testVer := NewMessage(MsgTypeVersion)
+		testVer := net.NewMessage(net.MsgTypeVersion)
 		err = testVer.FromBytes(data)
 		assert.NoError(err)
 
@@ -67,20 +69,20 @@ func TestVerack(t *testing.T) {
 	_ = assert
 	_ = require
 
-	networkType := NetworkType_MAINNET
+	networkType := net.NetworkType_MAINNET
 	var buf bytes.Buffer
 
 	nonce := uint64(12345678910)
-	_, err := WriteMessage(&buf, &MsgDeSoVerack{Nonce: nonce}, networkType)
+	_, err := net.WriteMessage(&buf, &net.MsgDeSoVerack{Nonce: nonce}, networkType)
 	require.NoError(err)
 	verBytes := buf.Bytes()
-	testMsg, _, err := ReadMessage(bytes.NewReader(verBytes),
+	testMsg, _, err := net.ReadMessage(bytes.NewReader(verBytes),
 		networkType)
 	require.NoError(err)
-	require.Equal(&MsgDeSoVerack{Nonce: nonce}, testMsg)
+	require.Equal(&net.MsgDeSoVerack{Nonce: nonce}, testMsg)
 }
 
-var expectedBlockHeader = &MsgDeSoHeader{
+var expectedBlockHeader = &net.MsgDeSoHeader{
 	Version: 1,
 	PrevBlockHash: &core.BlockHash{
 		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
@@ -106,13 +108,13 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 	require := require.New(t)
 	_ = assert
 	_ = require
-	networkType := NetworkType_MAINNET
+	networkType := net.NetworkType_MAINNET
 
 	{
 		data, err := expectedBlockHeader.ToBytes(false)
 		assert.NoError(err)
 
-		testHdr := NewMessage(MsgTypeHeader)
+		testHdr := net.NewMessage(net.MsgTypeHeader)
 		err = testHdr.FromBytes(data)
 		assert.NoError(err)
 
@@ -120,10 +122,10 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 
 		// Test read write.
 		var buf bytes.Buffer
-		payload, err := WriteMessage(&buf, expectedBlockHeader, networkType)
+		payload, err := net.WriteMessage(&buf, expectedBlockHeader, networkType)
 		assert.NoError(err)
 		// Form the header from the payload and make sure it matches.
-		hdrFromPayload := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
+		hdrFromPayload := net.NewMessage(net.MsgTypeHeader).(*net.MsgDeSoHeader)
 		assert.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
 		assert.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice.")
 		err = hdrFromPayload.FromBytes(payload)
@@ -131,7 +133,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		assert.Equal(expectedBlockHeader, hdrFromPayload)
 
 		hdrBytes := buf.Bytes()
-		testMsg, data, err := ReadMessage(bytes.NewReader(hdrBytes),
+		testMsg, data, err := net.ReadMessage(bytes.NewReader(hdrBytes),
 			networkType)
 		assert.NoError(err)
 		assert.Equal(expectedBlockHeader, testMsg)
@@ -157,14 +159,14 @@ func TestGetHeadersSerialization(t *testing.T) {
 	hash1 := expectedBlockHeader.PrevBlockHash
 	hash2 := expectedBlockHeader.TransactionMerkleRoot
 
-	getHeaders := &MsgDeSoGetHeaders{
+	getHeaders := &net.MsgDeSoGetHeaders{
 		StopHash:     hash1,
 		BlockLocator: []*core.BlockHash{hash1, hash2, hash1},
 	}
 
 	messageBytes, err := getHeaders.ToBytes(false)
 	require.NoError(err)
-	newMessage := &MsgDeSoGetHeaders{}
+	newMessage := &net.MsgDeSoGetHeaders{}
 	err = newMessage.FromBytes(messageBytes)
 	require.NoError(err)
 	require.Equal(getHeaders, newMessage)
@@ -178,15 +180,15 @@ func TestHeaderBundleSerialization(t *testing.T) {
 
 	hash1 := expectedBlockHeader.PrevBlockHash
 
-	headerBundle := &MsgDeSoHeaderBundle{
-		Headers:   []*MsgDeSoHeader{expectedBlockHeader, expectedBlockHeader},
+	headerBundle := &net.MsgDeSoHeaderBundle{
+		Headers:   []*net.MsgDeSoHeader{expectedBlockHeader, expectedBlockHeader},
 		TipHash:   hash1,
 		TipHeight: 12345,
 	}
 
 	messageBytes, err := headerBundle.ToBytes(false)
 	require.NoError(err)
-	newMessage := &MsgDeSoHeaderBundle{}
+	newMessage := &net.MsgDeSoHeaderBundle{}
 	err = newMessage.FromBytes(messageBytes)
 	require.NoError(err)
 	require.Equal(headerBundle, newMessage)
@@ -200,14 +202,14 @@ func TestEnumExtras(t *testing.T) {
 
 	// For all the enum strings we've defined, ensure we return
 	// a non-nil NewMessage.
-	for ii := uint8(1); !strings.Contains(MsgType(ii).String(), "UNRECOGNIZED"); ii++ {
-		assert.NotNilf(NewMessage(MsgType(ii)), "String() defined for MsgType (%v) but NewMessage() returns nil.", MsgType(ii))
+	for ii := uint8(1); !strings.Contains(net.MsgType(ii).String(), "UNRECOGNIZED"); ii++ {
+		assert.NotNilf(net.NewMessage(net.MsgType(ii)), "String() defined for MsgType (%v) but NewMessage() returns nil.", net.MsgType(ii))
 	}
 
 	// For all the NewMessage() calls that return non-nil, ensure we have a String()
-	for ii := uint8(1); NewMessage(MsgType(ii)) != nil; ii++ {
-		hasString := !strings.Contains(MsgType(ii).String(), "UNRECOGNIZED")
-		assert.Truef(hasString, "String() undefined for MsgType (%v) but NewMessage() returns non-nil.", MsgType(ii))
+	for ii := uint8(1); net.NewMessage(net.MsgType(ii)) != nil; ii++ {
+		hasString := !strings.Contains(net.MsgType(ii).String(), "UNRECOGNIZED")
+		assert.Truef(hasString, "String() undefined for MsgType (%v) but NewMessage() returns non-nil.", net.MsgType(ii))
 	}
 }
 
@@ -217,20 +219,20 @@ func TestReadWrite(t *testing.T) {
 	_ = assert
 	_ = require
 
-	networkType := NetworkType_MAINNET
+	networkType := net.NetworkType_MAINNET
 	var buf bytes.Buffer
 
-	payload, err := WriteMessage(&buf, expectedVer, networkType)
+	payload, err := net.WriteMessage(&buf, expectedVer, networkType)
 	assert.NoError(err)
 	// Form the version from the payload and make sure it matches.
-	verFromPayload := NewMessage(MsgTypeVersion)
+	verFromPayload := net.NewMessage(net.MsgTypeVersion)
 	assert.NotNil(verFromPayload, "NewMessage(MsgTypeVersion) should not return nil.")
 	err = verFromPayload.FromBytes(payload)
 	assert.NoError(err)
 	assert.Equal(expectedVer, verFromPayload)
 
 	verBytes := buf.Bytes()
-	testMsg, data, err := ReadMessage(bytes.NewReader(verBytes),
+	testMsg, data, err := net.ReadMessage(bytes.NewReader(verBytes),
 		networkType)
 	assert.NoError(err)
 	assert.Equal(expectedVer, testMsg)
@@ -241,24 +243,24 @@ func TestReadWrite(t *testing.T) {
 	assert.Equal(verPayload, data)
 
 	// Incorrect network type should error.
-	_, _, err = ReadMessage(bytes.NewReader(verBytes),
-		NetworkType_TESTNET)
+	_, _, err = net.ReadMessage(bytes.NewReader(verBytes),
+		net.NetworkType_TESTNET)
 	assert.Error(err, "Incorrect network should fail.")
 
 	// Payload too large should error.
-	bigBytes := make([]byte, MaxMessagePayload*1.1)
-	_, _, err = ReadMessage(bytes.NewReader(bigBytes),
-		NetworkType_MAINNET)
+	bigBytes := make([]byte, net.MaxMessagePayload*1.1)
+	_, _, err = net.ReadMessage(bytes.NewReader(bigBytes),
+		net.NetworkType_MAINNET)
 	assert.Error(err, "Payload too large should fail.")
 }
 
-var expectedBlock = &MsgDeSoBlock{
+var expectedBlock = &net.MsgDeSoBlock{
 	Header: expectedBlockHeader,
-	Txns: []*MsgDeSoTxn{
+	Txns: []*net.MsgDeSoTxn{
 		{
-			TxInputs: []*DeSoInput{
+			TxInputs: []*net.DeSoInput{
 				{
-					TxID: *CopyBytesIntoBlockHash([]byte{
+					TxID: *miner.CopyBytesIntoBlockHash([]byte{
 						// random bytes
 						0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10,
 						0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20,
@@ -268,7 +270,7 @@ var expectedBlock = &MsgDeSoBlock{
 					Index: 111,
 				},
 				{
-					TxID: *CopyBytesIntoBlockHash([]byte{
+					TxID: *miner.CopyBytesIntoBlockHash([]byte{
 						// random bytes
 						0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50,
 						0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x70,
@@ -278,7 +280,7 @@ var expectedBlock = &MsgDeSoBlock{
 					Index: 222,
 				},
 			},
-			TxOutputs: []*DeSoOutput{
+			TxOutputs: []*net.DeSoOutput{
 				{
 					PublicKey: []byte{
 						// random bytes
@@ -300,7 +302,7 @@ var expectedBlock = &MsgDeSoBlock{
 					AmountNanos: 333,
 				},
 			},
-			TxnMeta: &BlockRewardMetadataa{
+			TxnMeta: &net.BlockRewardMetadataa{
 				ExtraData: []byte{
 					// random bytes
 					0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x10,
@@ -313,9 +315,9 @@ var expectedBlock = &MsgDeSoBlock{
 			//Signature: []byte{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90},
 		},
 		{
-			TxInputs: []*DeSoInput{
+			TxInputs: []*net.DeSoInput{
 				{
-					TxID: *CopyBytesIntoBlockHash([]byte{
+					TxID: *miner.CopyBytesIntoBlockHash([]byte{
 						// random bytes
 						0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30,
 						0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20,
@@ -325,7 +327,7 @@ var expectedBlock = &MsgDeSoBlock{
 					Index: 111,
 				},
 				{
-					TxID: *CopyBytesIntoBlockHash([]byte{
+					TxID: *miner.CopyBytesIntoBlockHash([]byte{
 						// random bytes
 						0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x70,
 						0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50,
@@ -335,7 +337,7 @@ var expectedBlock = &MsgDeSoBlock{
 					Index: 222,
 				},
 			},
-			TxOutputs: []*DeSoOutput{
+			TxOutputs: []*net.DeSoOutput{
 				{
 					PublicKey: []byte{
 						// random bytes
@@ -357,7 +359,7 @@ var expectedBlock = &MsgDeSoBlock{
 					AmountNanos: 333,
 				},
 			},
-			TxnMeta: &BlockRewardMetadataa{
+			TxnMeta: &net.BlockRewardMetadataa{
 				ExtraData: []byte{
 					// random bytes
 					0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x90,
@@ -370,7 +372,7 @@ var expectedBlock = &MsgDeSoBlock{
 		},
 	},
 
-	BlockProducerInfo: &BlockProducerInfo{
+	BlockProducerInfo: &net.BlockProducerInfo{
 		PublicKey: []byte{
 			// random bytes
 			0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x30,
@@ -381,7 +383,7 @@ var expectedBlock = &MsgDeSoBlock{
 	},
 }
 
-var expectedV0Header = &MsgDeSoHeader{
+var expectedV0Header = &net.MsgDeSoHeader{
 	Version: 0,
 	PrevBlockHash: &core.BlockHash{
 		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
@@ -415,7 +417,7 @@ func TestBlockSerialize(t *testing.T) {
 	data, err := expectedBlock.ToBytes(false)
 	require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+	testBlock := net.NewMessage(net.MsgTypeBlock).(*net.MsgDeSoBlock)
 	err = testBlock.FromBytes(data)
 	require.NoError(err)
 
@@ -435,7 +437,7 @@ func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
 	data, err := blockWithoutProducerInfo.ToBytes(false)
 	require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+	testBlock := net.NewMessage(net.MsgTypeBlock).(*net.MsgDeSoBlock)
 	err = testBlock.FromBytes(data)
 	require.NoError(err)
 
@@ -457,7 +459,7 @@ func TestBlockRewardTransactionSerialize(t *testing.T) {
 	data, err := expectedBlock.Txns[0].ToBytes(false)
 	require.NoError(err)
 
-	testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+	testTxn := net.NewMessage(net.MsgTypeTxn).(*net.MsgDeSoTxn)
 	err = testTxn.FromBytes(data)
 	require.NoError(err)
 	require.Equal(expectedBlock.Txns[0], testTxn)
@@ -469,14 +471,14 @@ func TestSerializeInv(t *testing.T) {
 	_ = assert
 	_ = require
 
-	invMsg := &MsgDeSoInv{
-		InvList: []*InvVect{
+	invMsg := &net.MsgDeSoInv{
+		InvList: []*net.InvVect{
 			{
-				Type: InvTypeBlock,
+				Type: net.InvTypeBlock,
 				Hash: core.BlockHash{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 			},
 			{
-				Type: InvTypeTx,
+				Type: net.InvTypeTx,
 				Hash: core.BlockHash{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
 			},
 		},
@@ -485,7 +487,7 @@ func TestSerializeInv(t *testing.T) {
 
 	bb, err := invMsg.ToBytes(false)
 	require.NoError(err)
-	invMsgFromBuf := &MsgDeSoInv{}
+	invMsgFromBuf := &net.MsgDeSoInv{}
 	invMsgFromBuf.FromBytes(bb)
 	require.Equal(*invMsg, *invMsgFromBuf)
 }
@@ -493,11 +495,11 @@ func TestSerializeInv(t *testing.T) {
 func TestSerializeAddresses(t *testing.T) {
 	require := require.New(t)
 
-	addrs := &MsgDeSoAddr{
-		AddrList: []*SingleAddr{
+	addrs := &net.MsgDeSoAddr{
+		AddrList: []*net.SingleAddr{
 			{
 				Timestamp: time.Unix(1000, 0),
-				Services:  SFFullNode,
+				Services:  net.SFFullNode,
 				IP:        []byte{0x01, 0x02, 0x03, 0x04},
 				Port:      12345,
 			},
@@ -512,7 +514,7 @@ func TestSerializeAddresses(t *testing.T) {
 
 	bb, err := addrs.ToBytes(false)
 	require.NoError(err)
-	parsedAddrs := &MsgDeSoAddr{}
+	parsedAddrs := &net.MsgDeSoAddr{}
 	err = parsedAddrs.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(addrs, parsedAddrs)
@@ -521,7 +523,7 @@ func TestSerializeAddresses(t *testing.T) {
 func TestSerializeGetBlocks(t *testing.T) {
 	require := require.New(t)
 
-	msg := &MsgDeSoGetBlocks{
+	msg := &net.MsgDeSoGetBlocks{
 		HashList: []*core.BlockHash{
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 			{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
@@ -531,7 +533,7 @@ func TestSerializeGetBlocks(t *testing.T) {
 
 	bb, err := msg.ToBytes(false)
 	require.NoError(err)
-	parsedMsg := &MsgDeSoGetBlocks{}
+	parsedMsg := &net.MsgDeSoGetBlocks{}
 	err = parsedMsg.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(msg, parsedMsg)
@@ -541,25 +543,25 @@ func TestSerializePingPong(t *testing.T) {
 	require := require.New(t)
 
 	{
-		msg := &MsgDeSoPing{
+		msg := &net.MsgDeSoPing{
 			Nonce: uint64(1234567891011),
 		}
 
 		bb, err := msg.ToBytes(false)
 		require.NoError(err)
-		parsedMsg := &MsgDeSoPing{}
+		parsedMsg := &net.MsgDeSoPing{}
 		err = parsedMsg.FromBytes(bb)
 		require.NoError(err)
 		require.Equal(msg, parsedMsg)
 	}
 	{
-		msg := &MsgDeSoPong{
+		msg := &net.MsgDeSoPong{
 			Nonce: uint64(1234567891011),
 		}
 
 		bb, err := msg.ToBytes(false)
 		require.NoError(err)
-		parsedMsg := &MsgDeSoPong{}
+		parsedMsg := &net.MsgDeSoPong{}
 		err = parsedMsg.FromBytes(bb)
 		require.NoError(err)
 		require.Equal(msg, parsedMsg)
@@ -569,7 +571,7 @@ func TestSerializePingPong(t *testing.T) {
 func TestSerializeGetTransactions(t *testing.T) {
 	require := require.New(t)
 
-	msg := &MsgDeSoGetTransactions{
+	msg := &net.MsgDeSoGetTransactions{
 		HashList: []*core.BlockHash{
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 			{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
@@ -579,7 +581,7 @@ func TestSerializeGetTransactions(t *testing.T) {
 
 	bb, err := msg.ToBytes(false)
 	require.NoError(err)
-	parsedMsg := &MsgDeSoGetTransactions{}
+	parsedMsg := &net.MsgDeSoGetTransactions{}
 	err = parsedMsg.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(msg, parsedMsg)
@@ -588,13 +590,13 @@ func TestSerializeGetTransactions(t *testing.T) {
 func TestSerializeTransactionBundle(t *testing.T) {
 	require := require.New(t)
 
-	msg := &MsgDeSoTransactionBundle{
+	msg := &net.MsgDeSoTransactionBundle{
 		Transactions: expectedBlock.Txns,
 	}
 
 	bb, err := msg.ToBytes(false)
 	require.NoError(err)
-	parsedMsg := &MsgDeSoTransactionBundle{}
+	parsedMsg := &net.MsgDeSoTransactionBundle{}
 	err = parsedMsg.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(msg, parsedMsg)
@@ -604,13 +606,13 @@ func TestSerializeMempool(t *testing.T) {
 	require := require.New(t)
 
 	{
-		msg := &MsgDeSoMempool{}
-		networkType := NetworkType_MAINNET
+		msg := &net.MsgDeSoMempool{}
+		networkType := net.NetworkType_MAINNET
 		var buf bytes.Buffer
-		_, err := WriteMessage(&buf, msg, networkType)
+		_, err := net.WriteMessage(&buf, msg, networkType)
 		require.NoError(err)
 		verBytes := buf.Bytes()
-		testMsg, _, err := ReadMessage(bytes.NewReader(verBytes),
+		testMsg, _, err := net.ReadMessage(bytes.NewReader(verBytes),
 			networkType)
 		require.NoError(err)
 		require.Equal(msg, testMsg)
@@ -621,13 +623,13 @@ func TestSerializeGetAddr(t *testing.T) {
 	require := require.New(t)
 
 	{
-		msg := &MsgDeSoGetAddr{}
-		networkType := NetworkType_MAINNET
+		msg := &net.MsgDeSoGetAddr{}
+		networkType := net.NetworkType_MAINNET
 		var buf bytes.Buffer
-		_, err := WriteMessage(&buf, msg, networkType)
+		_, err := net.WriteMessage(&buf, msg, networkType)
 		require.NoError(err)
 		verBytes := buf.Bytes()
-		testMsg, _, err := ReadMessage(bytes.NewReader(verBytes),
+		testMsg, _, err := net.ReadMessage(bytes.NewReader(verBytes),
 			networkType)
 		require.NoError(err)
 		require.Equal(msg, testMsg)
@@ -645,7 +647,7 @@ func TestSerializeBitcoinExchange(t *testing.T) {
 	bitcoinTx := wire.MsgTx{}
 	bitcoinTx.Deserialize(bytes.NewReader(bitcoinTxBytes))
 
-	txMeta := &BitcoinExchangeMetadata{
+	txMeta := &net.BitcoinExchangeMetadata{
 		BitcoinTransaction: &bitcoinTx,
 		BitcoinBlockHash:   &core.BlockHash{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 		BitcoinMerkleRoot:  &core.BlockHash{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
@@ -664,7 +666,7 @@ func TestSerializeBitcoinExchange(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeBitcoinExchange)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeBitcoinExchange)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -677,7 +679,7 @@ func TestSerializePrivateMessage(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &PrivateMessageMetadata{
+	txMeta := &net.PrivateMessageMetadata{
 		RecipientPublicKey: pkForTesting1,
 		EncryptedText:      []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
 		TimestampNanos:     uint64(1234578901234),
@@ -686,7 +688,7 @@ func TestSerializePrivateMessage(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypePrivateMessage)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypePrivateMessage)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -699,12 +701,12 @@ func TestSerializeLike(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &LikeMetadata{LikedPostHash: &postHashForTesting1}
+	txMeta := &net.LikeMetadata{LikedPostHash: &postHashForTesting1}
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeLike)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeLike)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -717,7 +719,7 @@ func TestSerializeUnlike(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &LikeMetadata{
+	txMeta := &net.LikeMetadata{
 		LikedPostHash: &postHashForTesting1,
 		IsUnlike:      true,
 	}
@@ -725,7 +727,7 @@ func TestSerializeUnlike(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeLike)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeLike)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -738,12 +740,12 @@ func TestSerializeFollow(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &FollowMetadata{FollowedPublicKey: pkForTesting1}
+	txMeta := &net.FollowMetadata{FollowedPublicKey: pkForTesting1}
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeFollow)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeFollow)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -756,7 +758,7 @@ func TestSerializeUnfollow(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &FollowMetadata{
+	txMeta := &net.FollowMetadata{
 		FollowedPublicKey: pkForTesting1,
 		IsUnfollow:        true,
 	}
@@ -764,7 +766,7 @@ func TestSerializeUnfollow(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeFollow)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeFollow)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -777,7 +779,7 @@ func TestSerializeSubmitPost(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &SubmitPostMetadata{
+	txMeta := &net.SubmitPostMetadata{
 		PostHashToModify:         pkForTesting1,
 		ParentStakeID:            pkForTesting1,
 		Body:                     []byte("This is a body text"),
@@ -790,7 +792,7 @@ func TestSerializeSubmitPost(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeSubmitPost)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeSubmitPost)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -803,7 +805,7 @@ func TestSerializeUpdateProfile(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &UpdateProfileMetadata{
+	txMeta := &net.UpdateProfileMetadata{
 		ProfilePublicKey:            pkForTesting1,
 		NewUsername:                 []byte("new username"),
 		NewDescription:              []byte("new description"),
@@ -815,7 +817,7 @@ func TestSerializeUpdateProfile(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeUpdateProfile)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeUpdateProfile)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -828,7 +830,7 @@ func TestSerializeCreatorCoin(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &CreatorCoinMetadataa{}
+	txMeta := &net.CreatorCoinMetadataa{}
 	txMeta.ProfilePublicKey = []byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
@@ -839,7 +841,7 @@ func TestSerializeCreatorCoin(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeCreatorCoin)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeCreatorCoin)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -852,7 +854,7 @@ func TestSerializeCreatorCoinTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &CreatorCoinTransferMetadataa{}
+	txMeta := &net.CreatorCoinTransferMetadataa{}
 	txMeta.ProfilePublicKey = []byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
@@ -863,7 +865,7 @@ func TestSerializeCreatorCoinTransfer(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeCreatorCoinTransfer)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeCreatorCoinTransfer)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -876,7 +878,7 @@ func TestSerializeCreateNFT(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &CreateNFTMetadata{}
+	txMeta := &net.CreateNFTMetadata{}
 	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -891,7 +893,7 @@ func TestSerializeCreateNFT(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeCreateNFT)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeCreateNFT)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -904,7 +906,7 @@ func TestSerializeUpdateNFT(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &UpdateNFTMetadata{}
+	txMeta := &net.UpdateNFTMetadata{}
 	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -916,7 +918,7 @@ func TestSerializeUpdateNFT(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeUpdateNFT)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeUpdateNFT)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -929,7 +931,7 @@ func TestSerializeAcceptNFTBid(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &AcceptNFTBidMetadata{}
+	txMeta := &net.AcceptNFTBidMetadata{}
 	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -941,9 +943,9 @@ func TestSerializeAcceptNFTBid(t *testing.T) {
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02})
 	txMeta.BidAmountNanos = 999
-	txMeta.BidderInputs = []*DeSoInput{
+	txMeta.BidderInputs = []*net.DeSoInput{
 		{
-			TxID: *CopyBytesIntoBlockHash([]byte{
+			TxID: *miner.CopyBytesIntoBlockHash([]byte{
 				// random bytes
 				0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10,
 				0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20,
@@ -953,7 +955,7 @@ func TestSerializeAcceptNFTBid(t *testing.T) {
 			Index: 111,
 		},
 		{
-			TxID: *CopyBytesIntoBlockHash([]byte{
+			TxID: *miner.CopyBytesIntoBlockHash([]byte{
 				// random bytes
 				0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50,
 				0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x70,
@@ -968,7 +970,7 @@ func TestSerializeAcceptNFTBid(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeAcceptNFTBid)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeAcceptNFTBid)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -981,7 +983,7 @@ func TestSerializeNFTBid(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &NFTBidMetadata{}
+	txMeta := &net.NFTBidMetadata{}
 	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -992,7 +994,7 @@ func TestSerializeNFTBid(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeNFTBid)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeNFTBid)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -1005,7 +1007,7 @@ func TestSerializeNFTTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &NFTTransferMetadata{}
+	txMeta := &net.NFTTransferMetadata{}
 	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -1021,7 +1023,7 @@ func TestSerializeNFTTransfer(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeNFTTransfer)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeNFTTransfer)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -1034,7 +1036,7 @@ func TestAcceptNFTTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &AcceptNFTTransferMetadata{}
+	txMeta := &net.AcceptNFTTransferMetadata{}
 	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -1044,7 +1046,7 @@ func TestAcceptNFTTransfer(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeAcceptNFTTransfer)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeAcceptNFTTransfer)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -1057,7 +1059,7 @@ func TestBurnNFT(t *testing.T) {
 	_ = assert
 	_ = require
 
-	txMeta := &BurnNFTMetadata{}
+	txMeta := &net.BurnNFTMetadata{}
 	txMeta.NFTPostHash = &core.BlockHash{
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -1067,7 +1069,7 @@ func TestBurnNFT(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testMeta, err := NewTxnMetadata(TxnTypeBurnNFT)
+	testMeta, err := net.NewTxnMetadata(net.TxnTypeBurnNFT)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -1083,7 +1085,7 @@ func TestDecodeHeaderVersion0(t *testing.T) {
 	headerHex := "0000000002030405060708091011121314151617181920212223242526272829303132333435363738394041424344454647484950515253545556575859606162636465737271709f86010040e20100"
 	headerBytes, err := hex.DecodeString(headerHex)
 	require.NoError(err)
-	v0Header := &MsgDeSoHeader{}
+	v0Header := &net.MsgDeSoHeader{}
 	v0Header.FromBytes(headerBytes)
 
 	require.Equal(expectedV0Header, v0Header)
@@ -1103,7 +1105,7 @@ func TestDecodeBlockVersion0(t *testing.T) {
 	blockHex := "500000000002030405060708091011121314151617181920212223242526272829303132333435363738394041424344454647484950515253545556575859606162636465737271709f86010040e2010002bd010201020304050607080910111213141516171819202122232425262728293031326f4142434445464748495061626364656667686970818283848586878889909192de0102010203040506070809102122232425262728293021222324252627282930212223cd02313233343536373839104142434445464748493021222324252627282930212223cd02011514919293949596979899107172737475767778799009112233445566778899010864756d6d796b657905010203040500ae010221222324252627282930111213141516171819200102030405060708091031326f6162636465666768697041424344454647484950818283848586878889909192de0102212223242526272829300102030405060708091021222324252627282930212223cd02414243444546474849303132333435363738391021222324252627282930212223cd020115147172737475767778799091929394959697989910095566778811223344990000"
 	blockBytes, err := hex.DecodeString(blockHex)
 	require.NoError(err)
-	v0Block := &MsgDeSoBlock{}
+	v0Block := &net.MsgDeSoBlock{}
 	v0Block.FromBytes(blockBytes)
 
 	expectedV0Block := *expectedBlock

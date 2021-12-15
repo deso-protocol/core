@@ -2,7 +2,9 @@ package view
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -10,9 +12,9 @@ import (
 )
 
 func _doFollowTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
-	params *lib.DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
+	params *core.DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
 	followedPkBase58Check string, senderPrivBase58Check string, isUnfollow bool) (
-	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -29,7 +31,7 @@ func _doFollowTxn(t *testing.T, chain *lib.Blockchain, db *badger.DB,
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateFollowTxn(
-		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*lib.DeSoOutput{})
+		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -89,7 +91,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Setup some convenience functions for the test.
 	txnOps := [][]*UtxoOperation{}
-	txns := []*lib.MsgDeSoTxn{}
+	txns := []*net.MsgDeSoTxn{}
 	expectedSenderBalances := []uint64{}
 	expectedRecipientBalances := []uint64{}
 
@@ -177,7 +179,7 @@ func TestFollowTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, false /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorFollowingNonexistentProfile)
+	require.Contains(err.Error(), core.RuleErrorFollowingNonexistentProfile)
 
 	// Add profiles so they can be followed.
 	updateProfile(
@@ -224,7 +226,7 @@ func TestFollowTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, false /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorFollowEntryAlreadyExists)
+	require.Contains(err.Error(), core.RuleErrorFollowEntryAlreadyExists)
 
 	// m2 -> m1
 	doFollowTxn(m2Pub, m1Pub, m2Priv, false /*isUnfollow*/, 10 /*feeRateNanosPerKB*/)
@@ -364,7 +366,7 @@ func TestFollowTxns(t *testing.T) {
 		t, chain, db, params, 10 /*feeRateNanosPerKB*/, m0Pub,
 		m1Pub, m0Priv, true /*isUnfollow*/)
 	require.Error(err)
-	require.Contains(err.Error(), lib.RuleErrorCannotUnfollowNonexistentFollowEntry)
+	require.Contains(err.Error(), core.RuleErrorCannotUnfollowNonexistentFollowEntry)
 
 	followingM1 = [][]byte{
 		_strToPk(t, m2Pub),

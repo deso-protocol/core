@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core"
 	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/net"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
@@ -45,8 +46,8 @@ const (
 
 func GetTestParamsCopy(
 	startHeader *wire.BlockHeader, startHeight uint32,
-	paramss *lib.DeSoParams, minBurnBlocks uint32,
-) *lib.DeSoParams {
+	paramss *core.DeSoParams, minBurnBlocks uint32,
+) *core.DeSoParams {
 	// Set the BitcoinExchange-related params to canned values.
 	paramsCopy := *paramss
 	headerHash := (core.BlockHash)(startHeader.BlockHash())
@@ -59,7 +60,7 @@ func GetTestParamsCopy(
 		// blocks that follow it, it hurdles the min chain work.
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
-		&lib.MsgDeSoHeader{
+		&net.MsgDeSoHeader{
 			TstampSecs: uint64(startHeader.Timestamp.Unix()),
 			Height:     0,
 		},
@@ -158,9 +159,9 @@ func _privStringToKeys(t *testing.T, privString string) (*btcec.PrivateKey, *btc
 }
 
 func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *lib.Blockchain, db *badger.DB,
-	params *lib.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	params *core.DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin uint64) (
-	_utxoOps []*UtxoOperation, _txn *lib.MsgDeSoTxn, _height uint32, _err error) {
+	_utxoOps []*UtxoOperation, _txn *net.MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -175,7 +176,7 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *lib.Blockchain, 
 		usdCentsPerBitcoin,
 		feeRateNanosPerKB,
 		nil,
-		[]*lib.DeSoOutput{})
+		[]*net.DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -231,7 +232,7 @@ func TestBitcoinExchange(t *testing.T) {
 		lib.InitialUSDCentsPerBitcoinExchangeRate = oldInitialUSDCentsPerBitcoinExchangeRate
 	}()
 
-	paramsTmp := lib.DeSoTestnetParams
+	paramsTmp := core.DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 0
 	chain, params, db := lib.NewLowDifficultyBlockchainWithParams(&paramsTmp)
 	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
@@ -240,7 +241,7 @@ func TestBitcoinExchange(t *testing.T) {
 	bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights := _readBitcoinExchangeTestData(t)
 
 	// Extract BitcoinExchange transactions from the test Bitcoin blocks.
-	bitcoinExchangeTxns := []*lib.MsgDeSoTxn{}
+	bitcoinExchangeTxns := []*net.MsgDeSoTxn{}
 	for _, block := range bitcoinBlocks {
 		currentBurnTxns, err :=
 			lib.ExtractBitcoinExchangeTransactionsFromBitcoinBlock(
@@ -280,7 +281,7 @@ func TestBitcoinExchange(t *testing.T) {
 	}
 	blockIndexesForTransactions := []int{1, 1, 1, 1, 1, 1, 1, 3, 3}
 	for ii, bitcoinExchangeTxn := range bitcoinExchangeTxns {
-		txnMeta := bitcoinExchangeTxn.TxnMeta.(*lib.BitcoinExchangeMetadata)
+		txnMeta := bitcoinExchangeTxn.TxnMeta.(*net.BitcoinExchangeMetadata)
 		burnTxn := txnMeta.BitcoinTransaction
 		burnOutput, err := _computeBitcoinBurnOutput(
 			burnTxn, BitcoinTestnetBurnAddress, params.BitcoinBtcdParams)
@@ -332,7 +333,7 @@ func TestBitcoinExchange(t *testing.T) {
 		// Verify that serializing and deserializing work for this transaction.
 		bb, err := bitcoinExchangeTxn.ToBytes(false /*preSignature*/)
 		require.NoError(err)
-		parsedBitcoinExchangeTxn := &lib.MsgDeSoTxn{}
+		parsedBitcoinExchangeTxn := &net.MsgDeSoTxn{}
 		parsedBitcoinExchangeTxn.FromBytes(bb)
 		require.Equal(bitcoinExchangeTxn, parsedBitcoinExchangeTxn)
 	}
@@ -378,8 +379,8 @@ func TestBitcoinExchange(t *testing.T) {
 		require.Equal(1, len(mempool.poolMap))
 		mempoolTxRet := mempool.poolMap[*mempoolTxs[0].Hash]
 		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*lib.BitcoinExchangeMetadata),
-			burnTxn1.TxnMeta.(*lib.BitcoinExchangeMetadata))
+			mempoolTxRet.Tx.TxnMeta.(*net.BitcoinExchangeMetadata),
+			burnTxn1.TxnMeta.(*net.BitcoinExchangeMetadata))
 	}
 
 	// According to the mempool, the balance of the user whose public key created
@@ -405,8 +406,8 @@ func TestBitcoinExchange(t *testing.T) {
 		require.Equal(2, len(mempool.poolMap))
 		mempoolTxRet := mempool.poolMap[*mempoolTxsAdded[0].Hash]
 		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*lib.BitcoinExchangeMetadata),
-			burnTxn2.TxnMeta.(*lib.BitcoinExchangeMetadata))
+			mempoolTxRet.Tx.TxnMeta.(*net.BitcoinExchangeMetadata),
+			burnTxn2.TxnMeta.(*net.BitcoinExchangeMetadata))
 	}
 
 	// According to the mempool, the balances should have updated.
@@ -449,7 +450,7 @@ func TestBitcoinExchange(t *testing.T) {
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
-		fff := append([]*lib.MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
+		fff := append([]*net.MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
 		fff = append(fff, nil)
 		fff = append(fff, bitcoinExchangeTxns[rateUpdateIndex:]...)
 		bitcoinExchangeTxns = fff
@@ -928,7 +929,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		lib.InitialUSDCentsPerBitcoinExchangeRate = oldInitialUSDCentsPerBitcoinExchangeRate
 	}()
 
-	paramsTmp := lib.DeSoTestnetParams
+	paramsTmp := core.DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 0
 	chain, params, db := lib.NewLowDifficultyBlockchainWithParams(&paramsTmp)
 	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
@@ -937,7 +938,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights := _readBitcoinExchangeTestData(t)
 
 	// Extract BitcoinExchange transactions from the test Bitcoin blocks.
-	bitcoinExchangeTxns := []*lib.MsgDeSoTxn{}
+	bitcoinExchangeTxns := []*net.MsgDeSoTxn{}
 	for _, block := range bitcoinBlocks {
 		currentBurnTxns, err :=
 			lib.ExtractBitcoinExchangeTransactionsFromBitcoinBlock(
@@ -977,7 +978,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	}
 	blockIndexesForTransactions := []int{1, 1, 1, 1, 1, 1, 1, 3, 3}
 	for ii, bitcoinExchangeTxn := range bitcoinExchangeTxns {
-		txnMeta := bitcoinExchangeTxn.TxnMeta.(*lib.BitcoinExchangeMetadata)
+		txnMeta := bitcoinExchangeTxn.TxnMeta.(*net.BitcoinExchangeMetadata)
 		burnTxn := txnMeta.BitcoinTransaction
 		burnOutput, err := _computeBitcoinBurnOutput(
 			burnTxn, BitcoinTestnetBurnAddress, params.BitcoinBtcdParams)
@@ -1029,7 +1030,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		// Verify that serializing and deserializing work for this transaction.
 		bb, err := bitcoinExchangeTxn.ToBytes(false /*preSignature*/)
 		require.NoError(err)
-		parsedBitcoinExchangeTxn := &lib.MsgDeSoTxn{}
+		parsedBitcoinExchangeTxn := &net.MsgDeSoTxn{}
 		parsedBitcoinExchangeTxn.FromBytes(bb)
 		require.Equal(bitcoinExchangeTxn, parsedBitcoinExchangeTxn)
 	}
@@ -1084,8 +1085,8 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		require.Equal(1, len(mempool.poolMap))
 		mempoolTxRet := mempool.poolMap[*mempoolTxs[0].Hash]
 		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*lib.BitcoinExchangeMetadata),
-			burnTxn1.TxnMeta.(*lib.BitcoinExchangeMetadata))
+			mempoolTxRet.Tx.TxnMeta.(*net.BitcoinExchangeMetadata),
+			burnTxn1.TxnMeta.(*net.BitcoinExchangeMetadata))
 	}
 
 	// Applying the full txns a second time should fail.
@@ -1097,8 +1098,8 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		require.Equal(1, len(mempool.poolMap))
 		mempoolTxRet := mempool.poolMap[*burnTxn1.Hash()]
 		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*lib.BitcoinExchangeMetadata),
-			burnTxn1.TxnMeta.(*lib.BitcoinExchangeMetadata))
+			mempoolTxRet.Tx.TxnMeta.(*net.BitcoinExchangeMetadata),
+			burnTxn1.TxnMeta.(*net.BitcoinExchangeMetadata))
 	}
 
 	// According to the mempool, the balance of the user whose public key created
@@ -1123,8 +1124,8 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		require.Equal(2, len(mempool.poolMap))
 		mempoolTxRet := mempool.poolMap[*mempoolTxsAdded[0].Hash]
 		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*lib.BitcoinExchangeMetadata),
-			burnTxn2.TxnMeta.(*lib.BitcoinExchangeMetadata))
+			mempoolTxRet.Tx.TxnMeta.(*net.BitcoinExchangeMetadata),
+			burnTxn2.TxnMeta.(*net.BitcoinExchangeMetadata))
 	}
 
 	// According to the mempool, the balances should have updated.
@@ -1179,7 +1180,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
-		fff := append([]*lib.MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
+		fff := append([]*net.MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
 		fff = append(fff, nil)
 		fff = append(fff, bitcoinExchangeTxns[rateUpdateIndex:]...)
 		bitcoinExchangeTxns = fff
@@ -1650,7 +1651,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		lib.InitialUSDCentsPerBitcoinExchangeRate = oldInitialUSDCentsPerBitcoinExchangeRate
 	}()
 
-	paramsTmp := lib.DeSoTestnetParams
+	paramsTmp := core.DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 0
 	chain, params, db := lib.NewLowDifficultyBlockchainWithParams(&paramsTmp)
 	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
@@ -1659,7 +1660,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights := _readBitcoinExchangeTestData(t)
 
 	// Extract BitcoinExchange transactions from the test Bitcoin blocks.
-	bitcoinExchangeTxns := []*lib.MsgDeSoTxn{}
+	bitcoinExchangeTxns := []*net.MsgDeSoTxn{}
 	for _, block := range bitcoinBlocks {
 		currentBurnTxns, err :=
 			lib.ExtractBitcoinExchangeTransactionsFromBitcoinBlock(
@@ -1701,7 +1702,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	//}
 	blockIndexesForTransactions := []int{1, 1, 1, 1, 1, 1, 1, 3, 3}
 	for ii, bitcoinExchangeTxn := range bitcoinExchangeTxns {
-		txnMeta := bitcoinExchangeTxn.TxnMeta.(*lib.BitcoinExchangeMetadata)
+		txnMeta := bitcoinExchangeTxn.TxnMeta.(*net.BitcoinExchangeMetadata)
 		burnTxn := txnMeta.BitcoinTransaction
 		burnOutput, err := _computeBitcoinBurnOutput(
 			burnTxn, BitcoinTestnetBurnAddress, params.BitcoinBtcdParams)
@@ -1753,7 +1754,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		// Verify that serializing and deserializing work for this transaction.
 		bb, err := bitcoinExchangeTxn.ToBytes(false /*preSignature*/)
 		require.NoError(err)
-		parsedBitcoinExchangeTxn := &lib.MsgDeSoTxn{}
+		parsedBitcoinExchangeTxn := &net.MsgDeSoTxn{}
 		parsedBitcoinExchangeTxn.FromBytes(bb)
 		require.Equal(bitcoinExchangeTxn, parsedBitcoinExchangeTxn)
 	}
@@ -1800,8 +1801,8 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// is empty, since it skips the merkle proof checks in this case.
 	{
 		txnCopy := *burnTxn1
-		txnCopy.TxnMeta = &lib.BitcoinExchangeMetadata{
-			BitcoinTransaction: txnCopy.TxnMeta.(*lib.BitcoinExchangeMetadata).BitcoinTransaction,
+		txnCopy.TxnMeta = &net.BitcoinExchangeMetadata{
+			BitcoinTransaction: txnCopy.TxnMeta.(*net.BitcoinExchangeMetadata).BitcoinTransaction,
 			BitcoinBlockHash:   &core.BlockHash{},
 			BitcoinMerkleRoot:  &core.BlockHash{},
 			BitcoinMerkleProof: []*merkletree.ProofPart{},
@@ -1834,8 +1835,8 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// The mempool should be able to process a burn transaction directly.
 	{
 		txnCopy := *burnTxn2
-		txnCopy.TxnMeta = &lib.BitcoinExchangeMetadata{
-			BitcoinTransaction: txnCopy.TxnMeta.(*lib.BitcoinExchangeMetadata).BitcoinTransaction,
+		txnCopy.TxnMeta = &net.BitcoinExchangeMetadata{
+			BitcoinTransaction: txnCopy.TxnMeta.(*net.BitcoinExchangeMetadata).BitcoinTransaction,
 			BitcoinBlockHash:   &core.BlockHash{},
 			BitcoinMerkleRoot:  &core.BlockHash{},
 			BitcoinMerkleProof: []*merkletree.ProofPart{},
@@ -1848,8 +1849,8 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		require.Equal(2, len(mempool.poolMap))
 		mempoolTxRet := mempool.poolMap[*mempoolTxsAdded[0].Hash]
 		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*lib.BitcoinExchangeMetadata),
-			txnCopy.TxnMeta.(*lib.BitcoinExchangeMetadata))
+			mempoolTxRet.Tx.TxnMeta.(*net.BitcoinExchangeMetadata),
+			txnCopy.TxnMeta.(*net.BitcoinExchangeMetadata))
 	}
 
 	// According to the mempool, the balances should have updated.
@@ -1877,7 +1878,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// in all of them being added.
 	{
 		// Add a placeholder where the rate update is going to be
-		fff := append([]*lib.MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
+		fff := append([]*net.MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
 		fff = append(fff, nil)
 		fff = append(fff, bitcoinExchangeTxns[rateUpdateIndex:]...)
 		bitcoinExchangeTxns = fff
@@ -1898,7 +1899,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 					nil,
 					100, /*feeRateNanosPerKB*/
 					nil,
-					[]*lib.DeSoOutput{})
+					[]*net.DeSoOutput{})
 				require.NoError(err)
 				// Sign the transaction now that its inputs are set up.
 				lib._signTxn(t, rateUpdateTxn, lib.moneyPrivString)
@@ -1917,8 +1918,8 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			}
 
 			txnCopy := *burnTxn
-			txnCopy.TxnMeta = &lib.BitcoinExchangeMetadata{
-				BitcoinTransaction: txnCopy.TxnMeta.(*lib.BitcoinExchangeMetadata).BitcoinTransaction,
+			txnCopy.TxnMeta = &net.BitcoinExchangeMetadata{
+				BitcoinTransaction: txnCopy.TxnMeta.(*net.BitcoinExchangeMetadata).BitcoinTransaction,
 				BitcoinBlockHash:   &core.BlockHash{},
 				BitcoinMerkleRoot:  &core.BlockHash{},
 				BitcoinMerkleProof: []*merkletree.ProofPart{},
@@ -2255,7 +2256,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		lib.InitialUSDCentsPerBitcoinExchangeRate = oldInitialUSDCentsPerBitcoinExchangeRate
 	}()
 
-	paramsTmp := lib.DeSoTestnetParams
+	paramsTmp := core.DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 500000123456789
 	chain, params, db := lib.NewLowDifficultyBlockchainWithParams(&paramsTmp)
 	mempool, miner := lib.NewTestMiner(t, chain, params, true /*isSender*/)
@@ -2264,7 +2265,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights := _readBitcoinExchangeTestData(t)
 
 	// Extract BitcoinExchange transactions from the test Bitcoin blocks.
-	bitcoinExchangeTxns := []*lib.MsgDeSoTxn{}
+	bitcoinExchangeTxns := []*net.MsgDeSoTxn{}
 	for _, block := range bitcoinBlocks {
 		currentBurnTxns, err :=
 			lib.ExtractBitcoinExchangeTransactionsFromBitcoinBlock(
@@ -2304,7 +2305,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	}
 	blockIndexesForTransactions := []int{1, 1, 1, 1, 1, 1, 1, 3, 3}
 	for ii, bitcoinExchangeTxn := range bitcoinExchangeTxns {
-		txnMeta := bitcoinExchangeTxn.TxnMeta.(*lib.BitcoinExchangeMetadata)
+		txnMeta := bitcoinExchangeTxn.TxnMeta.(*net.BitcoinExchangeMetadata)
 		burnTxn := txnMeta.BitcoinTransaction
 		burnOutput, err := _computeBitcoinBurnOutput(
 			burnTxn, BitcoinTestnetBurnAddress, params.BitcoinBtcdParams)
@@ -2356,7 +2357,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		// Verify that serializing and deserializing work for this transaction.
 		bb, err := bitcoinExchangeTxn.ToBytes(false /*preSignature*/)
 		require.NoError(err)
-		parsedBitcoinExchangeTxn := &lib.MsgDeSoTxn{}
+		parsedBitcoinExchangeTxn := &net.MsgDeSoTxn{}
 		parsedBitcoinExchangeTxn.FromBytes(bb)
 		require.Equal(bitcoinExchangeTxn, parsedBitcoinExchangeTxn)
 	}
@@ -2406,8 +2407,8 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		require.Equal(1, len(mempool.poolMap))
 		mempoolTxRet := mempool.poolMap[*mempoolTxs[0].Hash]
 		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*lib.BitcoinExchangeMetadata),
-			burnTxn1.TxnMeta.(*lib.BitcoinExchangeMetadata))
+			mempoolTxRet.Tx.TxnMeta.(*net.BitcoinExchangeMetadata),
+			burnTxn1.TxnMeta.(*net.BitcoinExchangeMetadata))
 	}
 
 	// According to the mempool, the balance of the user whose public key created
@@ -2433,8 +2434,8 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		require.Equal(2, len(mempool.poolMap))
 		mempoolTxRet := mempool.poolMap[*mempoolTxsAdded[0].Hash]
 		require.Equal(
-			mempoolTxRet.Tx.TxnMeta.(*lib.BitcoinExchangeMetadata),
-			burnTxn2.TxnMeta.(*lib.BitcoinExchangeMetadata))
+			mempoolTxRet.Tx.TxnMeta.(*net.BitcoinExchangeMetadata),
+			burnTxn2.TxnMeta.(*net.BitcoinExchangeMetadata))
 	}
 
 	// According to the mempool, the balances should have updated.
@@ -2466,7 +2467,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
-		fff := append([]*lib.MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
+		fff := append([]*net.MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
 		fff = append(fff, nil)
 		fff = append(fff, bitcoinExchangeTxns[rateUpdateIndex:]...)
 		bitcoinExchangeTxns = fff
@@ -2933,11 +2934,11 @@ func TestUpdateExchangeRate(t *testing.T) {
 			m0Priv,
 			newUSDCentsPerBitcoin)
 		require.Error(err)
-		require.Contains(err.Error(), lib.RuleErrorUserNotAuthorizedToUpdateExchangeRate)
+		require.Contains(err.Error(), core.RuleErrorUserNotAuthorizedToUpdateExchangeRate)
 	}
 
 	// Should pass when founder key is equal to moneyPk
-	var updateExchangeRateTxn *lib.MsgDeSoTxn
+	var updateExchangeRateTxn *net.MsgDeSoTxn
 	var err error
 	{
 		newUSDCentsPerBitcoin := uint64(27000 * 100)

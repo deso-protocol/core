@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/deso-protocol/core"
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -20,7 +21,7 @@ func TestCheckDoubleSpend(t *testing.T) {
 
 	// Mainnet checks
 	{
-		params := &DeSoMainnetParams
+		params := &core.DeSoMainnetParams
 
 		// This txn is not a double-spend
 		{
@@ -41,7 +42,7 @@ func TestCheckDoubleSpend(t *testing.T) {
 
 	{
 		// Testnet checks
-		params := &DeSoTestnetParams
+		params := &core.DeSoTestnetParams
 
 		// This txn is not a double-spend
 		{

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/deso-protocol/core"
 	db2 "github.com/deso-protocol/core/db"
+	"github.com/deso-protocol/core/miner"
+	"github.com/deso-protocol/core/net"
 	"github.com/deso-protocol/core/view"
 	"log"
 	"math/big"
@@ -44,14 +46,14 @@ func TestProcessBlock(t *testing.T) {
 	{
 		hexBytes, err := hex.DecodeString("00000000e9a0b8435a2fc5e19952ceb3a2d5042fb87b6d5f180ea825f3a4cd65")
 		assert.NoError(err)
-		assert.Equal("000000000000000000000000000000000000000000000000000000011883b96c", fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(CopyBytesIntoBlockHash(hexBytes))))
+		assert.Equal("000000000000000000000000000000000000000000000000000000011883b96c", fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(miner.CopyBytesIntoBlockHash(hexBytes))))
 
 	}
 	// Satoshi's genesis block hash.
 	{
 		hexBytes, err := hex.DecodeString("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
 		assert.NoError(err)
-		assert.Equal("000000000000000000000000000000000000000000000000000009e8770a5c23", fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(CopyBytesIntoBlockHash(hexBytes))))
+		assert.Equal("000000000000000000000000000000000000000000000000000009e8770a5c23", fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(miner.CopyBytesIntoBlockHash(hexBytes))))
 	}
 	// A more serious block.
 	{
@@ -60,7 +62,7 @@ func TestProcessBlock(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(
 			"000000000000000000000000000000000000000000014d0aa0d2497b13fcd703",
-			fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(CopyBytesIntoBlockHash(hexBytes))))
+			fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(miner.CopyBytesIntoBlockHash(hexBytes))))
 	}
 	// Some annoying edge cases.
 	{
@@ -68,35 +70,35 @@ func TestProcessBlock(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(
 			"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-			fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(CopyBytesIntoBlockHash(hexBytes))))
+			fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(miner.CopyBytesIntoBlockHash(hexBytes))))
 	}
 	{
 		hexBytes, err := hex.DecodeString("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 		assert.NoError(err)
 		assert.Equal(
 			"0000000000000000000000000000000000000000000000000000000000000000",
-			fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(CopyBytesIntoBlockHash(hexBytes))))
+			fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(miner.CopyBytesIntoBlockHash(hexBytes))))
 	}
 	{
 		hexBytes, err := hex.DecodeString("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe")
 		assert.NoError(err)
 		assert.Equal(
 			"0000000000000000000000000000000000000000000000000000000000000001",
-			fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(CopyBytesIntoBlockHash(hexBytes))))
+			fmt.Sprintf("%064x", *ExpectedWorkForBlockHash(miner.CopyBytesIntoBlockHash(hexBytes))))
 	}
 }
 
-func _copyBlock(blk *MsgDeSoBlock) *MsgDeSoBlock {
+func _copyBlock(blk *net.MsgDeSoBlock) *net.MsgDeSoBlock {
 	data, _ := blk.ToBytes(false)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+	testBlock := net.NewMessage(net.MsgTypeBlock).(*net.MsgDeSoBlock)
 	_ = testBlock.FromBytes(data)
 
 	return testBlock
 }
 
 func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
-	blockB3, blockB4, blockB5 *MsgDeSoBlock) {
+	blockB3, blockB4, blockB5 *net.MsgDeSoBlock) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -136,7 +138,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 	return
 }
 
-func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
+func NewTestBlockchain() (*Blockchain, *core.DeSoParams, *badger.DB) {
 	db, _ := db2.GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
 
@@ -145,7 +147,7 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
-	paramsCopy := DeSoTestnetParams
+	paramsCopy := core.DeSoTestnetParams
 
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, &paramsCopy,
 		timesource, db, nil, nil)
@@ -157,16 +159,16 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 }
 
 func NewLowDifficultyBlockchain() (
-	*Blockchain, *DeSoParams, *badger.DB) {
+	*Blockchain, *core.DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	return NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	return NewLowDifficultyBlockchainWithParams(&core.DeSoTestnetParams)
 }
 
-func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
-	*Blockchain, *DeSoParams, *badger.DB) {
+func NewLowDifficultyBlockchainWithParams(params *core.DeSoParams) (
+	*Blockchain, *core.DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
@@ -177,21 +179,21 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
 	paramsCopy := *params
-	paramsCopy.GenesisBlock = &MsgDeSoBlock{
-		Header: &MsgDeSoHeader{
+	paramsCopy.GenesisBlock = &net.MsgDeSoBlock{
+		Header: &net.MsgDeSoHeader{
 			Version:               0,
-			PrevBlockHash:         mustDecodeHexBlockHash("0000000000000000000000000000000000000000000000000000000000000000"),
-			TransactionMerkleRoot: mustDecodeHexBlockHash("097158f0d27e6d10565c4dc696c784652c3380e0ff8382d3599a4d18b782e965"),
+			PrevBlockHash:         core.mustDecodeHexBlockHash("0000000000000000000000000000000000000000000000000000000000000000"),
+			TransactionMerkleRoot: core.mustDecodeHexBlockHash("097158f0d27e6d10565c4dc696c784652c3380e0ff8382d3599a4d18b782e965"),
 			TstampSecs:            uint64(1560735050),
 			Height:                uint64(0),
 			Nonce:                 uint64(0),
 			// No ExtraNonce is set in the genesis block
 		},
-		Txns: []*MsgDeSoTxn{
+		Txns: []*net.MsgDeSoTxn{
 			{
-				TxInputs:  []*DeSoInput{},
-				TxOutputs: []*DeSoOutput{},
-				TxnMeta: &BlockRewardMetadataa{
+				TxInputs:  []*net.DeSoInput{},
+				TxOutputs: []*net.DeSoOutput{},
+				TxnMeta: &net.BlockRewardMetadataa{
 					ExtraData: []byte("They came here, to the new world. World 2.0, version 1776."),
 				},
 				// A signature is not required for BLOCK_REWARD transactions since they
@@ -209,7 +211,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	paramsCopy.BlockRewardMaturity = time.Second * 4
 	paramsCopy.TimeBetweenDifficultyRetargets = 100 * time.Second
 	paramsCopy.MaxDifficultyRetargetFactor = 2
-	paramsCopy.SeedBalances = []*DeSoOutput{
+	paramsCopy.SeedBalances = []*net.DeSoOutput{
 		{
 			PublicKey:   MustBase58CheckDecode(moneyPkString),
 			AmountNanos: uint64(2000000 * NanosPerUnit),
@@ -227,7 +229,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	return chain, &paramsCopy, db
 }
 
-func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender bool) (*DeSoMempool, *DeSoMiner) {
+func NewTestMiner(t *testing.T, chain *Blockchain, params *core.DeSoParams, isSender bool) (*DeSoMempool, *miner.DeSoMiner) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -251,7 +253,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 		params, nil)
 	require.NoError(err)
 
-	newMiner, err := NewDeSoMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
+	newMiner, err := miner.NewDeSoMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
 	require.NoError(err)
 	return mempool, newMiner
 }
@@ -285,7 +287,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 	return balanceForUserNanos
 }
 
-func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr string,
+func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *core.DeSoParams, pkStr string,
 ) (_desoLocked uint64, _coinsInCirculation uint64) {
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
@@ -373,7 +375,7 @@ func TestBasicTransferReorg(t *testing.T) {
 				senderPkString, recipientPkString, recipientPrivString, mempool1)
 			_, err := mempool1.ProcessTransaction(txn, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 			require.Error(err)
-			require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+			require.Contains(err.Error(), core.RuleErrorInvalidTransactionSignature)
 		}
 
 		// Have the recipient send some DeSo back and mine that into a block.
@@ -397,7 +399,7 @@ func TestBasicTransferReorg(t *testing.T) {
 	// from the sender to the recipient right before the third block
 	// just to make things interesting.
 	chain2, _, _ := NewLowDifficultyBlockchain()
-	forkBlocks := []*MsgDeSoBlock{}
+	forkBlocks := []*net.MsgDeSoBlock{}
 	{
 		mempool2, miner2 := NewTestMiner(t, chain2, params, true /*isSender*/)
 
@@ -473,7 +475,7 @@ func TestProcessBlockConnectBlocks(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	var blockA1 *MsgDeSoBlock
+	var blockA1 *net.MsgDeSoBlock
 	{
 		chain1, params, _ := NewLowDifficultyBlockchain()
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
@@ -489,7 +491,7 @@ func TestProcessBlockConnectBlocks(t *testing.T) {
 	_shouldConnectBlock(blockA1, t, chain)
 }
 
-func _shouldConnectBlock(blk *MsgDeSoBlock, t *testing.T, chain *Blockchain) {
+func _shouldConnectBlock(blk *net.MsgDeSoBlock, t *testing.T, chain *Blockchain) {
 	require := require.New(t)
 
 	blockHash, _ := blk.Hash()
@@ -704,7 +706,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 	}
 }
 
-func _assembleBasicTransferTxnNoInputs(t *testing.T, amountNanos uint64) *MsgDeSoTxn {
+func _assembleBasicTransferTxnNoInputs(t *testing.T, amountNanos uint64) *net.MsgDeSoTxn {
 	require := require.New(t)
 
 	// manual_entropy_hex=0
@@ -717,17 +719,17 @@ func _assembleBasicTransferTxnNoInputs(t *testing.T, amountNanos uint64) *MsgDeS
 
 	// Assemble the transaction so that inputs can be found and fees can
 	// be computed.
-	txnOutputs := []*DeSoOutput{}
-	txnOutputs = append(txnOutputs, &DeSoOutput{
+	txnOutputs := []*net.DeSoOutput{}
+	txnOutputs = append(txnOutputs, &net.DeSoOutput{
 		PublicKey:   recipientPkBytes,
 		AmountNanos: amountNanos,
 	})
-	txn := &MsgDeSoTxn{
+	txn := &net.MsgDeSoTxn{
 		// The inputs will be set below.
-		TxInputs:  []*DeSoInput{},
+		TxInputs:  []*net.DeSoInput{},
 		TxOutputs: txnOutputs,
 		PublicKey: senderPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
+		TxnMeta:   &net.BasicTransferMetadata{},
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -735,7 +737,7 @@ func _assembleBasicTransferTxnNoInputs(t *testing.T, amountNanos uint64) *MsgDeS
 	return txn
 }
 
-func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
+func _signTxn(t *testing.T, txn *net.MsgDeSoTxn, privKeyStrArg string) {
 	require := require.New(t)
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
@@ -748,7 +750,7 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 
 // Signs the transaction with a derived key. Transaction ExtraData contains the derived
 // public key, so that _verifySignature() knows transaction wasn't signed by the owner.
-func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
+func _signTxnWithDerivedKey(t *testing.T, txn *net.MsgDeSoTxn, privKeyStrArg string) {
 	require := require.New(t)
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
@@ -757,7 +759,7 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string)
 	if txn.ExtraData == nil {
 		txn.ExtraData = make(map[string][]byte)
 	}
-	txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
+	txn.ExtraData[core.DerivedPublicKey] = publicKey.SerializeCompressed()
 	txnSignature, err := txn.Sign(privateKey)
 	require.NoError(err)
 
@@ -767,7 +769,7 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string)
 func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,
 	amountNanos uint64, feeRateNanosPerKB uint64, senderPkStrArg string,
 	recipientPkStrArg string, privKeyStrArg string,
-	mempool *DeSoMempool) *MsgDeSoTxn {
+	mempool *DeSoMempool) *net.MsgDeSoTxn {
 
 	require := require.New(t)
 
@@ -781,17 +783,17 @@ func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,
 
 	// Assemble the transaction so that inputs can be found and fees can
 	// be computed.
-	txnOutputs := []*DeSoOutput{}
-	txnOutputs = append(txnOutputs, &DeSoOutput{
+	txnOutputs := []*net.DeSoOutput{}
+	txnOutputs = append(txnOutputs, &net.DeSoOutput{
 		PublicKey:   recipientPkBytes,
 		AmountNanos: amountNanos,
 	})
-	txn := &MsgDeSoTxn{
+	txn := &net.MsgDeSoTxn{
 		// The inputs will be set below.
-		TxInputs:  []*DeSoInput{},
+		TxInputs:  []*net.DeSoInput{},
 		TxOutputs: txnOutputs,
 		PublicKey: senderPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
+		TxnMeta:   &net.BasicTransferMetadata{},
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -963,7 +965,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 		{
 			senderPkBytes, _, err := Base58CheckDecode(senderPkString)
 			require.NoError(err)
-			txn.TxOutputs = append(txn.TxOutputs, &DeSoOutput{
+			txn.TxOutputs = append(txn.TxOutputs, &net.DeSoOutput{
 				PublicKey: senderPkBytes,
 				// Guaranteed to be more than we're allowed to spend.
 				AmountNanos: firstBlockReward,
@@ -974,7 +976,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 
 		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnOutputExceedsInput)
+		require.Contains(err.Error(), core.RuleErrorTxnOutputExceedsInput)
 	}
 
 	// Verify that a transaction spending an immature block reward is shot down.
@@ -987,7 +989,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 		// yet.
 		b2RewardHash := blockB2.Txns[0].Hash()
 		require.NotNil(b2RewardHash)
-		txn.TxInputs = append(txn.TxInputs, &DeSoInput{
+		txn.TxInputs = append(txn.TxInputs, &net.DeSoInput{
 			TxID:  *b2RewardHash,
 			Index: 0,
 		})
@@ -995,7 +997,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 		_signTxn(t, txn, senderPrivString)
 		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInputSpendsImmatureBlockReward)
+		require.Contains(err.Error(), core.RuleErrorInputSpendsImmatureBlockReward)
 	}
 }
 
@@ -1032,8 +1034,8 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &DeSoParams{
-		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
+	fakeParams := &core.DeSoParams{
+		MinDifficultyTargetHex:         hex.EncodeToString(miner.BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
@@ -1046,7 +1048,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := CalcNextDifficultyTarget(lastNode, core.HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
@@ -1054,14 +1056,14 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgDeSoHeader{
+			&net.MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampSecs: uint64(ii),
 			},
 			StatusNone,
 		))
 
-		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
+		diffsAsInts = append(diffsAsInts, miner.HashToBigint(nextDiff).Int64())
 	}
 
 	assert.Equal([]int64{
@@ -1083,7 +1085,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 30; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := CalcNextDifficultyTarget(lastNode, core.HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
@@ -1091,14 +1093,14 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgDeSoHeader{
+			&net.MsgDeSoHeader{
 				// Blocks generating every 4 second, which is 2x too slow.
 				TstampSecs: uint64(ii * 4),
 			},
 			StatusNone,
 		))
 
-		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
+		diffsAsInts = append(diffsAsInts, miner.HashToBigint(nextDiff).Int64())
 	}
 
 	assert.Equal([]int64{
@@ -1128,8 +1130,8 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &DeSoParams{
-		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
+	fakeParams := &core.DeSoParams{
+		MinDifficultyTargetHex:         hex.EncodeToString(miner.BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
@@ -1142,7 +1144,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := CalcNextDifficultyTarget(lastNode, core.HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
@@ -1150,14 +1152,14 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgDeSoHeader{
+			&net.MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampSecs: uint64(ii),
 			},
 			StatusNone,
 		))
 
-		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
+		diffsAsInts = append(diffsAsInts, miner.HashToBigint(nextDiff).Int64())
 	}
 
 	assert.Equal([]int64{
@@ -1179,7 +1181,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 30; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := CalcNextDifficultyTarget(lastNode, core.HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
@@ -1187,14 +1189,14 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgDeSoHeader{
+			&net.MsgDeSoHeader{
 				// Blocks generating every 8 second, which is >2x too slow.
 				TstampSecs: uint64(ii * 4),
 			},
 			StatusNone,
 		))
 
-		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
+		diffsAsInts = append(diffsAsInts, miner.HashToBigint(nextDiff).Int64())
 	}
 
 	assert.Equal([]int64{
@@ -1224,8 +1226,8 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &DeSoParams{
-		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
+	fakeParams := &core.DeSoParams{
+		MinDifficultyTargetHex:         hex.EncodeToString(miner.BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
@@ -1238,7 +1240,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := CalcNextDifficultyTarget(lastNode, core.HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
@@ -1246,14 +1248,14 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgDeSoHeader{
+			&net.MsgDeSoHeader{
 				// Blocks generating all at once.
 				TstampSecs: uint64(0),
 			},
 			StatusNone,
 		))
 
-		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
+		diffsAsInts = append(diffsAsInts, miner.HashToBigint(nextDiff).Int64())
 	}
 
 	assert.Equal([]int64{
@@ -1279,8 +1281,8 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &DeSoParams{
-		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
+	fakeParams := &core.DeSoParams{
+		MinDifficultyTargetHex:         hex.EncodeToString(miner.BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    3,
@@ -1293,7 +1295,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := CalcNextDifficultyTarget(lastNode, core.HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
@@ -1301,14 +1303,14 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgDeSoHeader{
+			&net.MsgDeSoHeader{
 				// Blocks generating every 2 second, which is under the limit.
 				TstampSecs: uint64(ii * 2),
 			},
 			StatusNone,
 		))
 
-		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
+		diffsAsInts = append(diffsAsInts, miner.HashToBigint(nextDiff).Int64())
 	}
 
 	assert.Equal([]int64{
@@ -1334,8 +1336,8 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &DeSoParams{
-		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
+	fakeParams := &core.DeSoParams{
+		MinDifficultyTargetHex:         hex.EncodeToString(miner.BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
@@ -1348,7 +1350,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := CalcNextDifficultyTarget(lastNode, core.HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
@@ -1356,14 +1358,14 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgDeSoHeader{
+			&net.MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampSecs: uint64(ii),
 			},
 			StatusNone,
 		))
 
-		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
+		diffsAsInts = append(diffsAsInts, miner.HashToBigint(nextDiff).Int64())
 	}
 
 	assert.Equal([]int64{
@@ -1385,7 +1387,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 34; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := CalcNextDifficultyTarget(lastNode, core.HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
@@ -1393,14 +1395,14 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgDeSoHeader{
+			&net.MsgDeSoHeader{
 				// Blocks generating every 3 seconds, which is slow but under the limit.
 				TstampSecs: uint64(float32(ii) * 3),
 			},
 			StatusNone,
 		))
 
-		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
+		diffsAsInts = append(diffsAsInts, miner.HashToBigint(nextDiff).Int64())
 	}
 
 	assert.Equal([]int64{
@@ -1428,7 +1430,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	}, diffsAsInts)
 }
 
-func _testMerkleRoot(t *testing.T, shouldFail bool, blk *MsgDeSoBlock) {
+func _testMerkleRoot(t *testing.T, shouldFail bool, blk *net.MsgDeSoBlock) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
@@ -1460,7 +1462,7 @@ func TestBadBlockSignature(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(&core.DeSoTestnetParams)
 
 	// Change the trusted public keys expected by the blockchain.
 	chain.trustedBlockProducerPublicKeys = make(map[view.PkMapKey]bool)
@@ -1472,11 +1474,11 @@ func TestBadBlockSignature(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorBlockProducerPublicKeyNotInWhitelist)
+	require.Contains(err.Error(), core.RuleErrorBlockProducerPublicKeyNotInWhitelist)
 
 	// Since MineAndProcesssSingleBlock returns a valid block above, we can play with its
 	// signature and re-process the block to see what happens.
-	blockProducerInfoCopy := &BlockProducerInfo{Signature: &btcec.Signature{}}
+	blockProducerInfoCopy := &net.BlockProducerInfo{Signature: &btcec.Signature{}}
 	blockProducerInfoCopy.PublicKey = append([]byte{}, finalBlock1.BlockProducerInfo.PublicKey...)
 	*blockProducerInfoCopy.Signature = *finalBlock1.BlockProducerInfo.Signature
 
@@ -1484,7 +1486,7 @@ func TestBadBlockSignature(t *testing.T) {
 	finalBlock1.BlockProducerInfo.PublicKey = senderPkBytes
 	_, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorInvalidBlockProducerSIgnature)
+	require.Contains(err.Error(), core.RuleErrorInvalidBlockProducerSIgnature)
 
 	// A signature that's outright missing should fail
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
@@ -1493,13 +1495,13 @@ func TestBadBlockSignature(t *testing.T) {
 	finalBlock1.BlockProducerInfo.Signature = nil
 	_, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorMissingBlockProducerSignature)
+	require.Contains(err.Error(), core.RuleErrorMissingBlockProducerSignature)
 
 	// If all the BlockProducerInfo is missing, things should fail
 	finalBlock1.BlockProducerInfo = nil
 	_, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorMissingBlockProducerSignature)
+	require.Contains(err.Error(), core.RuleErrorMissingBlockProducerSignature)
 
 	// Now let's add blockSignerPK to the map of trusted keys and confirm that the block processes.
 	chain.trustedBlockProducerPublicKeys[view.MakePkMapKey(blockSignerPkBytes)] = true
@@ -1515,7 +1517,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, _ := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	chain, params, _ := NewLowDifficultyBlockchainWithParams(&core.DeSoTestnetParams)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Make the senderPk a paramUpdater for this test
@@ -1536,7 +1538,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
 	require.NoError(err)
 	txn, _, _, _, err := chain.CreateUpdateGlobalParamsTxn(
-		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil, []*DeSoOutput{})
+		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil, []*net.DeSoOutput{})
 	require.NoError(err)
 
 	// Mine a few blocks to give the senderPkString some money.
@@ -1565,5 +1567,5 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	// Now mining a block should fail now that the block signer pub key is forbidden.
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.Error(err)
-	require.Contains(err.Error(), RuleErrorForbiddenBlockProducerPublicKey)
+	require.Contains(err.Error(), core.RuleErrorForbiddenBlockProducerPublicKey)
 }
