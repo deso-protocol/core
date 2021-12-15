@@ -3835,12 +3835,15 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 		nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
 
+		if nftEntry != nil && nftEntry.isDeleted {
+			return 0, 0, 0, 0, errors.New(
+				"_computeInputsForTxn: nftEntry is deleted")
+		}
+
 		if nftEntry != nil && nftEntry.IsBuyNow {
 			spendAmount += txMeta.BidAmountNanos
 		}
 	}
-
-
 
 	// Add additional fees to the spend amount.
 	spendAmount += additionalFees

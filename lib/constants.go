@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -125,9 +126,8 @@ var (
 	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
 
 	// BuyNowNFTBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an auction style.
-	// Note: this will be adjusted, 90000 is a placeholder until a block height is decided.
-	// Triggers: TBD on TBD
-	BuyNowNFTBlockHeight = uint32(90000)
+	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
+	BuyNowNFTBlockHeight = uint32(math.MaxUint32 - 1)
 )
 
 func (nt NetworkType) String() string {

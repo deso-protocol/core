@@ -15557,13 +15557,13 @@ func TestNFTBasic(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			1,     /*NumCopies*/
+			1,    /*NumCopies*/
 			true, /*HasUnlockable*/
-			true,  /*IsForSale*/
-			0,     /*MinBidAmountNanos*/
-			0,     /*nftFee*/
-			0,     /*nftRoyaltyToCreatorBasisPoints*/
-			0,     /*nftRoyaltyToCoinBasisPoints*/
+			true, /*IsForSale*/
+			0,    /*MinBidAmountNanos*/
+			0,    /*nftFee*/
+			0,    /*nftRoyaltyToCreatorBasisPoints*/
+			0,    /*nftRoyaltyToCoinBasisPoints*/
 			true, /*IsBuyNow*/
 		)
 
@@ -15711,7 +15711,7 @@ func TestNFTBasic(t *testing.T) {
 			nftFee, /*nftFee*/
 			0,      /*nftRoyaltyToCreatorBasisPoints*/
 			0,      /*nftRoyaltyToCoinBasisPoints*/
-			false, /*IsBuyNow*/
+			false,  /*IsBuyNow*/
 		)
 
 		// Check that m0 was charged the correct nftFee.
@@ -15947,30 +15947,13 @@ func TestNFTBasic(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
-			true, /*IsForSale*/
-			0,    /*MinBidAmountNanos*/
+			1,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTUpdateMustUpdateIsForSaleStatus)
-	}
-
-	// Error case: can't set IsBuyNow to true and have MinBidAmountNanos be zero
-	{
-		// <post1, #1> is already for sale.
-		_, _, _, err := _updateNFT(
-			t, chain, db, params, 10,
-			m0Pub,
-			m0Priv,
-			post1Hash,
-			1,    /*SerialNumber*/
-			false, /*IsForSale*/
-			0,    /*MinBidAmountNanos*/
-			true, /*IsBuyNow*/
-		)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBuyNowMustHaveMinBidAmountNanos)
 	}
 
 	// Finally, accept m2's bid on <post1, #1>.
@@ -16153,7 +16136,7 @@ func TestNFTBasic(t *testing.T) {
 			true,
 			12,
 			true,
-			)
+		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCannotHaveUnlockableAndBuyNowNFT)
 	}
@@ -16323,7 +16306,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			0,                /*nftFee*/
 			math.MaxUint64-1, /*nftRoyaltyToCreatorBasisPoints*/
 			2,                /*nftRoyaltyToCoinBasisPoints*/
-			false, /*IsBuyNow*/
+			false,            /*IsBuyNow*/
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorNFTRoyaltyOverflow)
@@ -16542,9 +16525,9 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			m1Pub,
 			m1Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
-			true, /*IsForSale*/
-			0,    /*MinBidAmountNanos*/
+			1,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 	}
@@ -17418,9 +17401,9 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
-			true, /*IsForSale*/
-			0,    /*MinBidAmountNanos*/
+			1,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 	}
@@ -17647,7 +17630,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,       /*nftFee*/
 			0,       /*nftRoyaltyToCreatorBasisPoints*/
 			0,       /*nftRoyaltyToCoinBasisPoints*/
-			false, /*IsBuyNow*/
+			false,   /*IsBuyNow*/
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
@@ -17669,7 +17652,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,       /*nftFee*/
 			0,       /*nftRoyaltyToCreatorBasisPoints*/
 			0,       /*nftRoyaltyToCoinBasisPoints*/
-			false, /*IsBuyNow*/
+			false,   /*IsBuyNow*/
 		)
 
 		require.Error(err)
@@ -17688,7 +17671,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			0,       /*nftFee*/
 			0,       /*nftRoyaltyToCreatorBasisPoints*/
 			0,       /*nftRoyaltyToCoinBasisPoints*/
-			false, /*IsBuyNow*/
+			false,   /*IsBuyNow*/
 		)
 
 		require.Error(err)
@@ -17757,9 +17740,9 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
-			true, /*IsForSale*/
-			1000, /*MinBidAmountNanos*/
+			1,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			1000,  /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 	}
@@ -18223,9 +18206,9 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
-			true, /*IsForSale*/
-			100,  /*MinBidAmountNanos*/
+			1,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			100,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 
@@ -18235,9 +18218,9 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			2,    /*SerialNumber*/
-			true, /*IsForSale*/
-			300,  /*MinBidAmountNanos*/
+			2,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			300,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 
@@ -18247,9 +18230,9 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			3,    /*SerialNumber*/
-			true, /*IsForSale*/
-			500,  /*MinBidAmountNanos*/
+			3,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			500,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 
@@ -18259,9 +18242,9 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			4,    /*SerialNumber*/
-			true, /*IsForSale*/
-			400,  /*MinBidAmountNanos*/
+			4,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			400,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 
@@ -18271,9 +18254,9 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			5,    /*SerialNumber*/
-			true, /*IsForSale*/
-			200,  /*MinBidAmountNanos*/
+			5,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			200,   /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 	}
@@ -18866,9 +18849,9 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			m1Pub,
 			m1Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
-			true, /*IsForSale*/
-			0,    /*MinBidAmountNanos*/
+			1,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 
@@ -18923,9 +18906,9 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			m2Pub,
 			m2Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
-			true, /*IsForSale*/
-			0,    /*MinBidAmountNanos*/
+			1,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 
@@ -19061,7 +19044,7 @@ func TestNFTBuyNow(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false           /*isHidden*/)
+			false /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -19079,7 +19062,7 @@ func TestNFTBuyNow(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false          /*isHidden*/)
+			false /*isHidden*/)
 	}
 	// Make sure that m0 has coins in circulation so that creator coin royalties can be paid.
 	{
@@ -19123,27 +19106,6 @@ func TestNFTBuyNow(t *testing.T) {
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCannotHaveUnlockableAndBuyNowNFT)
-	}
-
-	// Error case: Cannot create Buy Now NFT with Min Bid Amount of 0.
-	{
-		_, _, _, err := _createNFT(
-			t, chain, db, params, 10,
-			m0Pub,
-			m0Priv,
-			post1Hash,
-			100,   /*NumCopies*/
-			false, /*HasUnlockable*/
-			true,  /*IsForSale*/
-			0,     /*MinBidAmountNanos*/
-			0,     /*nftFee*/
-			0,     /*nftRoyaltyToCreatorBasisPoints*/
-			0,     /*nftRoyaltyToCoinBasisPoints*/
-			true,  /*IsBuyNow*/
-		)
-
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBuyNowMustHaveMinBidAmountNanos)
 	}
 
 	// Create NFT with a minimum bid amount and IsBuyNow true and 10% coin + 10% creator royalties
@@ -19250,22 +19212,6 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(m0InitialDeSoLocked+expectedCoinRoyalty, desoLocked)
 	}
 
-	// Error case: can't make the NFT buy-now and have min bid amount be 0.
-	{
-		_, _, _, err := _updateNFT(
-			t, chain, db, params, 10,
-			m1Pub,
-			m1Priv,
-			post1Hash,
-			1,     /*SerialNumber*/
-			true, /*IsForSale*/
-			0,     /*MinBidAmountNanos*/
-			true, /*IsBuyNow*/
-		)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBuyNowMustHaveMinBidAmountNanos)
-	}
-
 	// Have m1 put the NFT up for sale again as a buy now NFT
 	{
 		_updateNFTWithTestMeta(
@@ -19276,7 +19222,7 @@ func TestNFTBuyNow(t *testing.T) {
 			post1Hash,
 			1,    /*SerialNumber*/
 			true, /*IsForSale*/
-			150,    /*MinBidAmountNanos*/
+			150,  /*MinBidAmountNanos*/
 			true, /*IsBuyNow*/
 		)
 	}
@@ -19326,17 +19272,17 @@ func TestNFTBuyNow(t *testing.T) {
 		// Creator Balance after. M0's balance should increase by the creator royalties (15)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
 		require.Equal(uint64(1024), m0BalAfter)
-		require.Equal(m0BalAfter, m0BalBefore + 15)
+		require.Equal(m0BalAfter, m0BalBefore+15)
 
 		// Seller Balance after. M1's balance should increase by the bid amount (150) less coin royalties (30) and creator royalties (15)
 		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
 		require.Equal(uint64(1003), m1BalAfter)
-		require.Equal(m1BalAfter, m1BalBefore + bidAmountNanos - 30 - 15)
+		require.Equal(m1BalAfter, m1BalBefore+bidAmountNanos-30-15)
 
 		// Bidder Balance after. m2 should pay for the bid amount (150) + cover the transaction fee (1).
 		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
 		require.Equal(uint64(849), m2BalAfter)
-		require.Equal(m2BalAfter, m2BalBefore - bidAmountNanos - 1)
+		require.Equal(m2BalAfter, m2BalBefore-bidAmountNanos-1)
 
 		// Make sure royalties to creator and to coin are paid out correctly.
 		expectedCreatorRoyalty := bidAmountNanos / 10
@@ -19355,9 +19301,9 @@ func TestNFTBuyNow(t *testing.T) {
 			m2Pub,
 			m2Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
-			true, /*IsForSale*/
-			0,    /*MinBidAmountNanos*/
+			1,     /*SerialNumber*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
 			false, /*IsBuyNow*/
 		)
 	}
@@ -19374,7 +19320,7 @@ func TestNFTBuyNow(t *testing.T) {
 			m1Pub,
 			m1Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
+			1,  /*SerialNumber*/
 			10, /*BidAmountNanos*/
 		)
 
@@ -19389,7 +19335,7 @@ func TestNFTBuyNow(t *testing.T) {
 			m0Pub,
 			m0Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
+			1, /*SerialNumber*/
 			8, /*BidAmountNanos*/
 		)
 
@@ -19404,7 +19350,7 @@ func TestNFTBuyNow(t *testing.T) {
 			m3Pub,
 			m3Priv,
 			post1Hash,
-			1,    /*SerialNumber*/
+			1,  /*SerialNumber*/
 			20, /*BidAmountNanos*/
 		)
 
@@ -19447,7 +19393,7 @@ func TestNFTBuyNow(t *testing.T) {
 			1, /*SerialNumber*/
 			m3Pub,
 			bidAmountNanos, /*BidAmountNanos*/
-			"", /*UnlockableText*/
+			"",             /*UnlockableText*/
 		)
 		// All outstanding bids on serial #1 are cancelled.
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
@@ -19462,17 +19408,17 @@ func TestNFTBuyNow(t *testing.T) {
 		// Creator Balance after. M0's balance should increase by the creator royalties (2)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
 		require.Equal(uint64(1025), m0BalAfter)
-		require.Equal(m0BalAfter, m0BalBefore + 2)
+		require.Equal(m0BalAfter, m0BalBefore+2)
 
 		// Bidder Balance after. M1's balance should decrease by the bid amount (20)
 		m3BalAfter := _getBalance(t, testMeta.chain, nil, m3Pub)
 		require.Equal(uint64(979), m3BalAfter)
-		require.Equal(m3BalAfter, m3BalBefore - 20)
+		require.Equal(m3BalAfter, m3BalBefore-20)
 
 		// Seller Balance after. m2's balance should increase by the bid amount (20) less creator royalties (2), coin royalties (4) and the transaction fee (2).
 		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
 		require.Equal(uint64(860), m2BalAfter)
-		require.Equal(m2BalAfter, m2BalBefore + 20 - 4 - 2 - 2)
+		require.Equal(m2BalAfter, m2BalBefore+20-4-2-2)
 
 		// Make sure royalties to creator and to coin are paid out correctly.
 		expectedCreatorRoyalty := bidAmountNanos / 10

@@ -231,7 +231,6 @@ const (
 	RuleErrorCreateNFTWithInsufficientFunds       RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
 	RuleErrorCreateNFTOnPostThatAlreadyIsNFT      RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
 	RuleErrorCannotHaveUnlockableAndBuyNowNFT     RuleError = "RuleErrorCannotHaveUnlockableAndBuyNowNFT"
-	RuleErrorBuyNowMustHaveMinBidAmountNanos      RuleError = "RuleErrorBuyNowMustHaveMinBidAmountNanos"
 	RuleErrorCreateNFTMustBeCalledByPoster        RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
 	RuleErrorNFTMustHaveNonZeroCopies             RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
 	RuleErrorCannotUpdateNonExistentNFT           RuleError = "RuleErrorCannotUpdateNonExistentNFT"
@@ -252,6 +251,7 @@ const (
 	RuleErrorNFTBidTxnOutputWithInvalidBidAmount           RuleError = "RuleErrorNFTBidTxnOutputWithInvalidBidAmount"
 	RuleErrorBuyNowNFTBidTxnOutputExceedsInput             RuleError = "RuleErrorBuyNowNFTBidTxnOutputExceedsInput"
 	RuleErrorBuyNowNFTBidMustBidNonZeroDeSo                RuleError = "RuleErrorBuyNowNFTBidMustBidNonZeroDeSo"
+	RuleErrorBuyNowNFTBidMustHaveMinBidAmountNanos         RuleError = "RuleErrorBuyNowNFTBidMustHaveMinBidAmountNanos"
 	RuleErrorNFTBidOnNonExistentPost                       RuleError = "RuleErrorNFTBidOnNonExistentPost"
 	RuleErrorNFTBidOnPostThatIsNotAnNFT                    RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
 	RuleErrorNFTBidOnInvalidSerialNumber                   RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"
@@ -333,6 +333,6 @@ func IsRuleError(err error) bool {
 	// eventually we should clean this up and get rid of the string comparison both
 	// for the code's sake but also for the sake of our tests.
 	return strings.Contains(err.Error(), "RuleError") ||
-			strings.Contains(err.Error(), "HeaderError") ||
-			strings.Contains(err.Error(), "TxError")
+		strings.Contains(err.Error(), "HeaderError") ||
+		strings.Contains(err.Error(), "TxError")
 }
