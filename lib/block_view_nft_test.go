@@ -4706,3 +4706,213 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
+
+func TestBidAmountZero(t *testing.T) {
+
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3, m4 a paramUpdater for this test
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund all the keys.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 1000)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+
+	// Set max copies to a non-zero value to activate NFTs.
+	{
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m4Pub,
+			m4Priv,
+			-1, -1, -1, -1,
+			1000, /*maxCopiesPerNFT*/
+		)
+	}
+
+	// Create a post for testing.
+	{
+		_submitPostWithTestMeta(
+			testMeta,
+			10,                                 /*feeRateNanosPerKB*/
+			m0Pub,                              /*updaterPkBase58Check*/
+			m0Priv,                             /*updaterPrivBase58Check*/
+			[]byte{},                           /*postHashToModify*/
+			[]byte{},                           /*parentStakeID*/
+			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
+			[]byte{},
+			1502947011*1e9, /*tstampNanos*/
+			false /*isHidden*/)
+	}
+	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
+
+	// NFT the post.
+	{
+		// You need a profile in order to create an NFT.
+		_updateProfileWithTestMeta(
+			testMeta,
+			10,            /*feeRateNanosPerKB*/
+			m0Pub,         /*updaterPkBase58Check*/
+			m0Priv,        /*updaterPrivBase58Check*/
+			[]byte{},      /*profilePubKey*/
+			"m2",          /*newUsername*/
+			"i am the m2", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+
+		// We only need 1 copy for this test.
+		_createNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,     /*NumCopies*/
+			false, /*HasUnlockable*/
+			true,  /*IsForSale*/
+			0,     /*MinBidAmountNanos*/
+			0,     /*nftFee*/
+			0,     /*nftRoyaltyToCreatorBasisPoints*/
+			0,     /*nftRoyaltyToCoinBasisPoints*/
+		)
+
+		// Post 1 should have 1 copies.
+		dbEntries := DBGetNFTEntriesForPostHash(db, post1Hash)
+		require.Equal(1, len(dbEntries))
+	}
+
+	// Case: User can submit a bid of amount 0 on an NFT with MinBidAmountNanos of 0. It doesn't do anything though.
+	{
+		// M1 places a pointless bid of 0.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			0, /*BidAmountNanos*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+	}
+	// Case: User submits bid and cancels it. Bid cannot be accepted. Users submits new bid. It can be accepted.
+	// Have m1 place a bid and m0 accept it.
+	{
+		// Place a bid of 1 nano
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			1, /*BidAmountNanos*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+
+		// Cancel bid.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			0, /*BidAmountNanos*/
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		{
+			_, _, _, err = _acceptNFTBid(
+				t, chain, db, params, 10,
+				m0Pub,
+				m0Priv,
+				post1Hash,
+				1, /*SerialNumber*/
+				m1Pub,
+				1, /*BidAmountNanos*/
+				"",  /*UnlockableText*/
+			)
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorCantAcceptNonExistentBid)
+		}
+
+		// Place a bid of 2 nanos
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			2, /*BidAmountNanos*/
+		)
+
+		// Accept that bid
+		_acceptNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1, /*SerialNumber*/
+			m1Pub,
+			2,  /*BidAmountNanos*/
+			"", /*UnlockableText*/
+		)
+
+		// There are no bid entries after it has been accepted.
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 1)
+		m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+		require.Equal(nftEntry.OwnerPKID, m1PKID.PKID)
+	}
+
+	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+
+
+}
