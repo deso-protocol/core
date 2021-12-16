@@ -1826,14 +1826,14 @@ func (bav *UtxoView) _disconnectNFTBid(
 	}
 	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
-	// Sanity-check that it exists.
-	if nftBidEntry == nil || nftBidEntry.isDeleted {
-		return fmt.Errorf("_disconnectNFTBid: Bid entry for "+
-			"nftBidKey %v doesn't exist; this should never happen", nftBidKey)
-	}
 
-	// Delete the existing NFT bid entry.
-	bav._deleteNFTBidEntryMappings(nftBidEntry)
+	// Only delete the bid entry mapping if it exists. Bids of 0 nanos delete bids without creating new ones.
+	if nftBidEntry != nil {
+		// We do not check if the existing entry is deleted or not. Because a bid amount of 0 cancels a bid (deletes
+		// without creating one), if a user were to create a bid, cancel it, and create a new one, this disconnect logic
+		// would encounter a state where the bid entry is delete.
+		bav._deleteNFTBidEntryMappings(nftBidEntry)
+	}
 
 	// If a previous entry exists, set it.
 	if operationData.PrevNFTBidEntry != nil {
