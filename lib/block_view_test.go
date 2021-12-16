@@ -19914,6 +19914,118 @@ func TestNFTBuyNow(t *testing.T) {
 
 	// Case: NFT is transferred. Before being accepted, it can't be put on sale as a buy now NFT. Once accepted, all is good.
 	{
+		NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+		_transferNFTWithTestMeta(
+			testMeta,
+			10,
+			m2Pub,
+			m2Priv,
+			m3Pub,
+			post1Hash,
+			1,
+			"",
+		)
+
+		m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+		m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+		// Check the state of the transferred NFTs.
+		transferredNFT := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 1)
+		require.Equal(transferredNFT.IsPending, true)
+		require.True(reflect.DeepEqual(transferredNFT.OwnerPKID, m3PKID.PKID))
+		require.True(reflect.DeepEqual(transferredNFT.LastOwnerPKID, m2PKID.PKID))
+
+		// The NFT is not for sale and is not buy now
+		require.False(transferredNFT.IsBuyNow)
+		require.False(transferredNFT.IsForSale)
+
+		// You can't bid on a pending NFT. A Pending NFT can't be on sale.
+		{
+			_, _, _, err := _createNFTBid(
+				t, chain, db, params, 10,
+				m2Pub,
+				m2Priv,
+				post1Hash,
+				1, /*SerialNumber*/
+				10, /*BidAmountNanos*/
+			)
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorNFTBidOnNFTThatIsNotForSale)
+		}
+
+		// M3 accepts the transfer
+		_acceptNFTTransferWithTestMeta(
+			testMeta,
+			10,
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			1,
+		)
+
+		acceptedNFT := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 1)
+		require.False(acceptedNFT.IsPending)
+		require.False(acceptedNFT.IsBuyNow)
+		require.False(acceptedNFT.IsForSale)
+
+		// M3 puts it on sale as a buy now NFT
+		_updateNFTWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			1,    /*SerialNumber*/
+			true, /*IsForSale*/
+			0,    /*MinBidAmountNanos*/
+			true, /*IsBuyNow*/
+			20,
+		)
+
+		// M3 can't transfer an NFT that is for sale
+		{
+			_, _, _, err := _transferNFT(
+				t, chain, db, params, 10,
+				m3Pub,
+				m3Priv,
+				m0Pub,
+				post1Hash,
+				1,
+				"",
+			)
+
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorCannotTransferForSaleNFT)
+		}
+
+		// M1 submits a bid less than Buy Now Price
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10, /*FeeRateNanosPerKB*/
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,              /*SerialNumber*/
+			10, /*BidAmountNanos*/
+		)
+		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+
+		// Finally just have M2 buy this NFT.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10,
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1,
+			20,
+		)
+
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(0, len(bidEntries))
+
+		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 1)
+		require.Equal(nftEntry.OwnerPKID, m2PKID.PKID)
 
 	}
 
