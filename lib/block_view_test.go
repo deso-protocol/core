@@ -20010,6 +20010,20 @@ func TestNFTBuyNow(t *testing.T) {
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
 		require.Equal(1, len(bidEntries))
 
+		// M0 submits a bid on serial number 0. Bidding on serial number zero does not trigger a buy now operation.
+		_createNFTBidWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			0,
+			101)
+
+		// There is still 1 bid now.
+		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
+		require.Equal(1, len(bidEntries))
+
 		// Finally just have M2 buy this NFT.
 		_createNFTBidWithTestMeta(
 			testMeta,
