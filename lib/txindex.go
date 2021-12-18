@@ -10,8 +10,8 @@ import (
 	"time"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
-	"github.com/sasha-s/go-deadlock"
 )
 
 type TXIndex struct {
@@ -170,7 +170,7 @@ func (txi *TXIndex) Start() {
 						glog.Error(fmt.Errorf("tryUpdateTxindex: Problem running update: %v", err))
 					}
 				} else {
-					glog.Debugf("TXIndex: Waiting for node to sync before updating")
+					glog.V(1).Infof("TXIndex: Waiting for node to sync before updating")
 				}
 				break
 			}
@@ -260,7 +260,7 @@ func (txi *TXIndex) Update() error {
 	// If the tip of the txindex is the same as the block tip, don't do
 	// an update.
 	if reflect.DeepEqual(txindexTipNode.Hash[:], blockTipNode.Hash[:]) {
-		glog.Debugf("Update: Skipping update since block tip equals "+
+		glog.V(1).Infof("Update: Skipping update since block tip equals "+
 			"txindex tip: Height: %d, Hash: %v", txindexTipNode.Height, txindexTipNode.Hash)
 		return nil
 	}
@@ -277,7 +277,7 @@ func (txi *TXIndex) Update() error {
 	for _, blockToDetach := range detachBlocks {
 		// Go through each txn in the block and delete its mappings from our
 		// txindex.
-		glog.Debugf("Update: Detaching block (height: %d, hash: %v)",
+		glog.V(1).Infof("Update: Detaching block (height: %d, hash: %v)",
 			blockToDetach.Height, blockToDetach.Hash)
 		blockMsg, err := GetBlock(blockToDetach.Hash, txi.TXIndexChain.DB())
 		if err != nil {
@@ -364,7 +364,7 @@ func (txi *TXIndex) Update() error {
 			glog.Infof("Update: Txindex progress: block %d / %d",
 				blockToAttach.Height, blockTipNode.Height)
 		}
-		glog.Tracef("Update: Attaching block (height: %d, hash: %v)",
+		glog.V(2).Infof("Update: Attaching block (height: %d, hash: %v)",
 			blockToAttach.Height, blockToAttach.Hash)
 
 		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB())

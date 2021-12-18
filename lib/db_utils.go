@@ -434,62 +434,7 @@ func DBStreamPrefixKeys(db *badger.DB) (*map[string][]byte, error) {
 	return &output, nil
 }
 
-// A PKID is an ID associated with a public key. In the DB, various fields are
-// indexed using the PKID rather than the user's public key directly in order to
-// create one layer of indirection between the public key and the user's data. This
-// makes it easy for the user to transfer certain data to a new public key.
-type PKID [33]byte
-type PublicKey [33]byte
-
-func NewPKID(pkidBytes []byte) *PKID {
-	if len(pkidBytes) == 0 {
-		return nil
-	}
-	pkid := &PKID{}
-	copy(pkid[:], pkidBytes)
-	return pkid
-}
-
-func (pkid *PKID) ToBytes() []byte {
-	return pkid[:]
-}
-
-func (pkid *PKID) NewPKID() *PKID {
-	newPkid := &PKID{}
-	copy(newPkid[:], pkid[:])
-	return newPkid
-}
-
-func NewPublicKey(publicKeyBytes []byte) *PublicKey {
-	if len(publicKeyBytes) == 0 {
-		return nil
-	}
-	publicKey := &PublicKey{}
-	copy(publicKey[:], publicKeyBytes)
-	return publicKey
-}
-
-func (publicKey *PublicKey) ToBytes() []byte {
-	return publicKey[:]
-}
-
-func PublicKeyToPKID(publicKey []byte) *PKID {
-	if len(publicKey) == 0 {
-		return nil
-	}
-	pkid := &PKID{}
-	copy(pkid[:], publicKey)
-	return pkid
-}
-
-func PKIDToPublicKey(pkid *PKID) []byte {
-	if pkid == nil {
-		return nil
-	}
-	return pkid[:]
-}
-
-func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte) *PKIDEntry {
+func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
 	if len(publicKey) == 0 {
 		return nil
 	}
@@ -723,6 +668,10 @@ func _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey []byte) []byte {
 	prefixCopy := append([]byte{}, _PrefixPublicKeyToDeSoBalanceNanos...)
 	key := append(prefixCopy, publicKey...)
 	return key
+}
+
+func DbGetPrefixForPublicKeyToDesoBalanceNanos() []byte {
+	return append([]byte{}, _PrefixPublicKeyToDeSoBalanceNanos...)
 }
 
 func DbGetDeSoBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte,
@@ -3348,6 +3297,11 @@ type AcceptNFTBidTxindexMetadata struct {
 	CreatorPublicKeyBase58Check string
 }
 
+type NFTTransferTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber   uint64
+}
+
 type TransactionMetadata struct {
 	BlockHashHex    string
 	TxnIndexInBlock uint64
@@ -3375,6 +3329,7 @@ type TransactionMetadata struct {
 	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
 	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
 	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
+	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, snap *Snapshot, txID *BlockHash) bool {
@@ -4759,6 +4714,10 @@ func _dbKeyForCreatorDeSoLockedNanosCreatorPKID(desoLockedNanos uint64, pkid *PK
 	key = append(key, EncodeUint64(desoLockedNanos)...)
 	key = append(key, pkid[:]...)
 	return key
+}
+
+func DbPrefixForCreatorDeSoLockedNanosCreatorPKID() []byte {
+	return append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
 }
 
 func DBGetPKIDForUsernameWithTxn(txn *badger.Txn,

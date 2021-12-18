@@ -18,11 +18,11 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/go-deadlock"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
-	merkletree "github.com/laser/go-merkle-tree"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
 )
 
 // blockchain.go is the work-horse for validating DeSo blocks and updating the
@@ -945,12 +945,12 @@ func (bc *Blockchain) HeaderAtHeight(blockHeight uint32) *BlockNode {
 func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 	node, nodeExists := bc.blockIndex[*blockHash]
 	if !nodeExists {
-		glog.Tracef("Blockchain.HasBlock: Node with hash %v does not exist in node index", blockHash)
+		glog.V(2).Infof("Blockchain.HasBlock: Node with hash %v does not exist in node index", blockHash)
 		return false
 	}
 
 	if (node.Status & StatusBlockProcessed) == 0 {
-		glog.Tracef("Blockchain.HasBlock: Node %v does not have StatusBlockProcessed so we don't have the block", node)
+		glog.V(2).Infof("Blockchain.HasBlock: Node %v does not have StatusBlockProcessed so we don't have the block", node)
 		return false
 	}
 
@@ -962,7 +962,7 @@ func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 func (bc *Blockchain) GetBlock(blockHash *BlockHash) *MsgDeSoBlock {
 	blk, err := GetBlock(blockHash, bc.db)
 	if err != nil {
-		glog.Tracef("Blockchain.GetBlock: Failed to fetch node with hash %v from the db: %v", blockHash, err)
+		glog.V(2).Infof("Blockchain.GetBlock: Failed to fetch node with hash %v from the db: %v", blockHash, err)
 		return nil
 	}
 
@@ -984,7 +984,7 @@ func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 
 	// Not current if the cumulative work is below the threshold.
 	if tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
-		//glog.Tracef("Blockchain.isTipCurrent: Tip not current because "+
+		//glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
 		//"CumWork (%v) is less than minChainWorkBytes (%v)",
 		//tip.CumWork, BytesToBigint(minChainWorkBytes))
 		return false
@@ -1354,7 +1354,7 @@ func CheckTransactionSanity(txn *MsgDeSoTxn) error {
 	canHaveZeroInputs := (txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange ||
 		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage)
 	if len(txn.TxInputs) == 0 && !canHaveZeroInputs {
-		glog.Tracef("CheckTransactionSanity: Txn needs at least one input: %v", spew.Sdump(txn))
+		glog.V(2).Infof("CheckTransactionSanity: Txn needs at least one input: %v", spew.Sdump(txn))
 		return RuleErrorTxnMustHaveAtLeastOneInput
 	}
 	// Every txn must have at least one output unless it is one of the following transaction
@@ -1373,7 +1373,7 @@ func CheckTransactionSanity(txn *MsgDeSoTxn) error {
 		txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin) // TODO: add a test for this case
 
 	if len(txn.TxOutputs) == 0 && !canHaveZeroOutputs {
-		glog.Tracef("CheckTransactionSanity: Txn needs at least one output: %v", spew.Sdump(txn))
+		glog.V(2).Infof("CheckTransactionSanity: Txn needs at least one output: %v", spew.Sdump(txn))
 		return RuleErrorTxnMustHaveAtLeastOneOutput
 	}
 
@@ -1491,7 +1491,7 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// Reject the header if it is more than N seconds in the future.
 	tstampDiff := int64(blockHeader.TstampSecs) - bc.timeSource.AdjustedTime().Unix()
 	if tstampDiff > int64(bc.params.MaxTstampOffsetSeconds) {
-		glog.Debugf("HeaderErrorBlockTooFarInTheFuture: tstampDiff %d > "+
+		glog.V(1).Infof("HeaderErrorBlockTooFarInTheFuture: tstampDiff %d > "+
 			"MaxTstampOffsetSeconds %d. blockHeader.TstampSecs=%d; adjustedTime=%d",
 			tstampDiff, bc.params.MaxTstampOffsetSeconds, blockHeader.TstampSecs,
 			bc.timeSource.AdjustedTime().Unix())
@@ -3574,6 +3574,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	expirationBlock uint64,
 	accessSignature []byte,
 	deleteKey bool,
+	derivedKeySignature bool,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3601,6 +3602,11 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		operationType = AuthorizeDerivedKeyOperationValid
 	}
 
+	extraData := make(map[string][]byte)
+	if derivedKeySignature {
+		extraData[DerivedPublicKey] = derivedPublicKey
+	}
+
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: ownerPublicKey,
@@ -3611,6 +3617,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 			accessSignature,
 		},
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
