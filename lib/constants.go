@@ -34,6 +34,8 @@ const (
 	// MessagesToFetchPerCall is used to limit the number of messages to fetch
 	// when getting a user's inbox.
 	MessagesToFetchPerInboxCall = 10000
+
+	MaxKeysFetch = 10
 )
 
 type NetworkType uint64
@@ -211,6 +213,9 @@ type DeSoParams struct {
 	// Port used for the limited JSON API that supports light clients.
 	DefaultJSONPort uint16
 
+	// Size of the database cache.
+	DefaultCacheSize uint32
+
 	// The amount of time we wait when connecting to a peer.
 	DialTimeout time.Duration
 	// The amount of time we wait to receive a version message from a peer.
@@ -364,7 +369,7 @@ func (params *DeSoParams) EnableRegtest() {
 	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
 }
 
-// GenesisBlock defines the genesis block used for the DeSo maainnet and testnet
+// GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
 var (
 	ArchitectPubKeyBase58Check = "BC1YLg3oh6Boj8e2boCo1vQCYHLk1rjsHF6jthBdvSw79bixQvKK6Qa"
 	// This is the public key corresponding to the BitcoinBurnAddress on mainnet.
@@ -493,6 +498,8 @@ var DeSoMainnetParams = DeSoParams{
 	DeSoNanosPurchasedAtGenesis:     uint64(6000000000000000),
 	DefaultSocketPort:               uint16(17000),
 	DefaultJSONPort:                 uint16(17001),
+
+	DefaultCacheSize:                uint32(100000),
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
@@ -659,6 +666,8 @@ var DeSoTestnetParams = DeSoParams{
 	// ===================================================================================
 	DefaultSocketPort: uint16(18000),
 	DefaultJSONPort:   uint16(18001),
+
+	DefaultCacheSize:  uint32(100000),
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,

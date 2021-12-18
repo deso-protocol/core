@@ -174,7 +174,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	db, dir := GetTestBadgerDb()
 	defer os.RemoveAll(dir)
 
-	err := InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil)
+	err := InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil, nil)
 	require.NoError(err)
 
 	// Check the block index.

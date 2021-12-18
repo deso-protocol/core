@@ -130,8 +130,8 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 
 	// Note that we *DONT* pass server here because it is already tied to the to the main blockchain.
 	txIndexChain, err := NewBlockchain(
-		[]string{}, 0,
-		params, chainlib.NewMedianTime(), txIndexDb, nil, nil)
+		[]string{}, 0, params, chainlib.NewMedianTime(),
+		txIndexDb, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err)
 	}
@@ -298,7 +298,7 @@ func (txi *TXIndex) Update() error {
 
 		// Now that all the transactions have been deleted from our txindex,
 		// it's safe to disconnect the block from our txindex chain.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, txi.TXIndexChain.snapshot)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
@@ -377,7 +377,7 @@ func (txi *TXIndex) Update() error {
 		// us to extract custom metadata fields that we can show in our block explorer.
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, txi.TXIndexChain.snapshot)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)

@@ -99,8 +99,8 @@ type Peer struct {
 	expectedResponses []*ExpectedResponse
 
 	// The addresses this peer is aware of.
-	knownAddressMapLock deadlock.RWMutex
-	knownAddressesmap   map[string]bool
+	knownAddressesMapLock deadlock.RWMutex
+	knownAddressesMap     map[string]bool
 
 	// Output queue for messages that need to be sent to the peer.
 	outputQueueChan chan DeSoMessage
@@ -131,7 +131,7 @@ type Peer struct {
 	// We process GetTransaction requests in a separate loop. This allows us
 	// to ensure that the responses are ordered.
 	mtxMessageQueue deadlock.RWMutex
-	messagQueue     []*DeSoMessageMeta
+	messageQueue    []*DeSoMessageMeta
 
 	requestedBlocks map[BlockHash]bool
 }
@@ -146,7 +146,7 @@ func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
 	pp.mtxMessageQueue.Lock()
 	defer pp.mtxMessageQueue.Unlock()
 
-	pp.messagQueue = append(pp.messagQueue, &DeSoMessageMeta{
+	pp.messageQueue = append(pp.messageQueue, &DeSoMessageMeta{
 		DeSoMessage: desoMessage,
 		Inbound:     inbound,
 	})
@@ -157,13 +157,13 @@ func (pp *Peer) MaybeDequeueDeSoMessage() *DeSoMessageMeta {
 	defer pp.mtxMessageQueue.Unlock()
 
 	// If we don't have any requests to process just return
-	if len(pp.messagQueue) == 0 {
+	if len(pp.messageQueue) == 0 {
 		return nil
 	}
 	// If we get here then we know we have messages to process.
 
-	messageToReturn := pp.messagQueue[0]
-	pp.messagQueue = pp.messagQueue[1:]
+	messageToReturn := pp.messageQueue[0]
+	pp.messageQueue = pp.messageQueue[1:]
 
 	return messageToReturn
 }
@@ -397,7 +397,7 @@ func (pp *Peer) cleanupMessageProcessor() {
 	// We assume that no more elements will be added to the message queue once this function
 	// is called.
 	glog.Infof("StartDeSoMessageProcessor: Cleaning up message queue for peer: %v", pp)
-	pp.messagQueue = nil
+	pp.messageQueue = nil
 	// Set a few more things to nil just to make sure the garbage collector doesn't
 	// get confused when freeing up this Peer's memory. This is to fix a bug where
 	// inbound peers disconnecting was causing an OOM.
@@ -481,7 +481,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		blocksToSend:           make(map[BlockHash]bool),
 		stallTimeoutSeconds:    _stallTimeoutSeconds,
 		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
-		knownAddressesmap:      make(map[string]bool),
+		knownAddressesMap:      make(map[string]bool),
 		Params:                 params,
 		MessageChan:            messageChan,
 		requestedBlocks:        make(map[BlockHash]bool),
@@ -697,29 +697,29 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 }
 
 func (pp *Peer) _filterAddrMsg(addrMsg *MsgDeSoAddr) *MsgDeSoAddr {
-	pp.knownAddressMapLock.Lock()
-	defer pp.knownAddressMapLock.Unlock()
+	pp.knownAddressesMapLock.Lock()
+	defer pp.knownAddressesMapLock.Unlock()
 
 	filteredAddrMsg := &MsgDeSoAddr{}
 	for _, addr := range addrMsg.AddrList {
-		if _, hasAddr := pp.knownAddressesmap[addr.StringWithPort(false /*includePort*/)]; hasAddr {
+		if _, hasAddr := pp.knownAddressesMap[addr.StringWithPort(false /*includePort*/)]; hasAddr {
 			continue
 		}
 
 		// If we get here this is an address the peer hasn't seen before so
 		// don't filter it out. Also add it to the known address map.
 		filteredAddrMsg.AddrList = append(filteredAddrMsg.AddrList, addr)
-		pp.knownAddressesmap[addr.StringWithPort(false /*includePort*/)] = true
+		pp.knownAddressesMap[addr.StringWithPort(false /*includePort*/)] = true
 	}
 
 	return filteredAddrMsg
 }
 
 func (pp *Peer) _setKnownAddressesMap(key string, val bool) {
-	pp.knownAddressMapLock.Lock()
-	defer pp.knownAddressMapLock.Unlock()
+	pp.knownAddressesMapLock.Lock()
+	defer pp.knownAddressesMapLock.Unlock()
 
-	pp.knownAddressesmap[key] = val
+	pp.knownAddressesMap[key] = val
 }
 
 func (pp *Peer) outHandler() {
@@ -1087,6 +1087,9 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	// TODO: Right now all peers are full nodes. Later on we'll want to change this,
 	// at which point we'll need to do a little refactoring.
 	ver.Services = SFFullNode
+	if pp.cmgr.hyperSync {
+		ver.Services |= SFHyperSync
+	}
 
 	// When a node asks you for what height you have, you should reply with
 	// the height of the latest actual block you have. This makes it so that

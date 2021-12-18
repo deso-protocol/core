@@ -57,7 +57,6 @@ func (node *Node) Start() {
 	if node.Config.Regtest {
 		node.Params.EnableRegtest()
 	}
-
 	// Validate params
 	validateParams(node.Params)
 
@@ -155,6 +154,7 @@ func (node *Node) Start() {
 		node.Config.ConnectIPs,
 		node.chainDB,
 		node.Postgres,
+		node.Config.CacheSize,
 		node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers,
 		node.Config.MinerPublicKeys,

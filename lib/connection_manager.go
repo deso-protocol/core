@@ -368,12 +368,12 @@ func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *DeSoParams)
 	return netAddr, nil
 }
 
-// Connect either an INBOUND or OUTBOUND peer. If conn == nil, then we will set up
-// an OUTBOUND peer. Otherwise we will use the conn to create an INBOUND
-// peer. If the connectoin is OUTBOUND and the persistentAddr is set, then
-// we will connect only to that addr. Otherwise, we will use the addrmgr to
-// randomly select addrs and create OUTBOUND connections with them until
-// we find a worthy peer.
+// ConnectPeer connects either an INBOUND or OUTBOUND peer. If conn == nil,
+// then we will set up an OUTBOUND peer. Otherwise we will use the conn to
+// create an INBOUND peer. If the connection is OUTBOUND and the persistentAddr
+// is set, then we will connect only to that addr. Otherwise, we will use
+// the addrmgr to randomly select addrs and create OUTBOUND connections
+// with them until we find a worthy peer.
 func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.NetAddress) {
 	// If we don't have a connection object then we will try and make an
 	// outbound connection to a peer to get one.
@@ -468,7 +468,7 @@ func (cmgr *ConnectionManager) _initiateOutboundConnections() {
 		return
 	}
 	if len(cmgr.connectIps) > 0 {
-		// Connect to addresses passed via the --connectips flag. These addresses
+		// Connect to addresses passed via the --connect-ips flag. These addresses
 		// are persistent in the sense that if we disconnect from one, we will
 		// try to reconnect to the same one.
 		for _, connectIp := range cmgr.connectIps {
@@ -484,7 +484,7 @@ func (cmgr *ConnectionManager) _initiateOutboundConnections() {
 		}
 		return
 	}
-	// Only connect to addresses from the addrmgr if we don't specify --connectips.
+	// Only connect to addresses from the addrmgr if we don't specify --connect-ips.
 	// These addresses are *not* persistent, meaning if we disconnect from one we'll
 	// try a different one.
 	//
@@ -713,6 +713,8 @@ func (cmgr *ConnectionManager) RemovePeer(pp *Peer) {
 	}
 
 	// Update the last seen time before we finish removing the peer.
+	// TODO: Really, we call 'Connected()' on removing a peer?
+	// I can't find a Disconnected() but seems odd.
 	cmgr.addrMgr.Connected(pp.netAddr)
 
 	// Remove the peer from our data structure.
@@ -785,7 +787,7 @@ func (cmgr *ConnectionManager) Start() {
 	// - Have the peer enter a switch statement listening for all kinds of messages.
 	// - Send addr and getaddr messages as appropriate.
 
-	// Initiate outbound connections with peers either using the --connectips passed
+	// Initiate outbound connections with peers either using the --connect-ips passed
 	// in or using the addrmgr.
 	cmgr._initiateOutboundConnections()
 

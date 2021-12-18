@@ -53,6 +53,7 @@ type Server struct {
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
+	snapshot      *Snapshot
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -144,7 +145,7 @@ func (srv *Server) ResetRequestQueues() {
 
 // dataLock must be acquired for writing before calling this function.
 func (srv *Server) _removeRequest(hash *BlockHash) {
-	// Just be lazy and remove the hash from everything indiscriminantly to
+	// Just be lazy and remove the hash from everything indiscriminately to
 	// make sure it's good and purged.
 	delete(srv.requestedTransactionsMap, *hash)
 
@@ -274,6 +275,7 @@ func NewServer(
 	_connectIps []string,
 	_db *badger.DB,
 	postgres *Postgres,
+	_cacheSize uint32,
 	_targetOutboundPeers uint32,
 	_maxInboundPeers uint32,
 	_minerPublicKeys []string,
@@ -335,10 +337,11 @@ func NewServer(
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
 
+	_snapshot, err := NewSnapshot(_cacheSize)
+
 	_chain, err := NewBlockchain(
-		_trustedBlockProducerPublicKeys,
-		_trustedBlockProducerStartHeight,
-		_params, timesource, _db, postgres, eventManager)
+		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight,
+		_params, timesource, _db, postgres, eventManager, _snapshot)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain")
 	}
@@ -433,7 +436,6 @@ func NewServer(
 
 	// This will initialize the request queues.
 	srv.ResetRequestQueues()
-	glog.Infof("Server.NewServer Hyper Sync %v", srv.cmgr.hyperSync)
 
 	return srv, nil
 }
@@ -454,7 +456,7 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	// on the block locator and fetch all of the headers after it until either
 	// MaxHeadersPerMsg have been fetched or the provided stop
 	// hash is encountered. Note that the headers we return are based on
-	// our best *block* chain not our best *header* chain. The reaason for
+	// our best *block* chain not our best *header* chain. The reason for
 	// this is that the peer will likely follow up this request by asking
 	// us for the blocks corresponding to the headers and we need to be
 	// able to deliver them in this case.
@@ -549,12 +551,13 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		}
 
 		// If we get here then we have a header we haven't seen before.
+		// TODO: Delete? This is redundant.
 		numNewHeaders++
 
 		// Process the header, as we haven't seen it before.
 		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash)
 
-		// If this header is an orphan or we encoutnered an error for any reason,
+		// If this header is an orphan or we encountered an error for any reason,
 		// disconnect from the peer. Because every header is sent in response to
 		// a GetHeaders request, the peer should know enough to never send us
 		// unconnectedTxns unless it's misbehaving.
@@ -598,6 +601,11 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				srv.blockchain.headerTip().Header.Height)
 			pp.Disconnect()
 			return
+		}
+
+		if srv.blockchain.chainState() == SyncStateSyncingSnapshot {
+			glog.Debugf("Server._handleHeaderBundle: SYNCING SHOULD HAPPEN NOW, IS HYPER SYNC PEER? %v", pp.serviceFlags & SFHyperSync)
+			srv.blockchain.stateSynced = true
 		}
 
 		// If we have exhausted the peer's headers but our blocks aren't current,
@@ -729,7 +737,7 @@ func (srv *Server) _startSync() {
 	}
 
 	// Note we don't need to reset requestedBlocks when the SyncPeer changes
-	// since we update requestedBLocks when a Peer disconnects to remove any
+	// since we update requestedBlocks when a Peer disconnects to remove any
 	// blocks that are currently being requested. This means that either a
 	// still-connected Peer will eventually deliver the blocks OR we'll eventually
 	// disconnect from that Peer, removing the blocks we requested from her from
@@ -773,7 +781,7 @@ func (srv *Server) _handleNewPeer(pp *Peer) {
 	}
 }
 
-func (srv *Server) _cleanupDonePeerPeerState(pp *Peer) {
+func (srv *Server) _cleanupDonePeerState(pp *Peer) {
 	// Grab the dataLock since we'll be modifying requestedBlocks
 	srv.dataLock.Lock()
 	defer srv.dataLock.Unlock()
@@ -892,7 +900,8 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 
 			// If we're fully current after accepting all the BitcoinExchange txns then let the
 			// peer start sending us INV messages
-			srv._maybeRequestSync(nil)
+			// TODO: Delete, redundant
+			// srv._maybeRequestSync(nil)
 
 			glog.Tracef("Server._handleBitcoinManagerUpdate: Successfully added %d out of %d "+
 				"transactions", totalAdded, len(bmUpdate.TransactionsFound))
@@ -922,7 +931,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 		}, false)
 	}
 
-	// Note there is an edge case where we may be stuck in state SyncingBlocks. Calilng
+	// Note there is an edge case where we may be stuck in state SyncingBlocks. Calling
 	// GetBlocks when we're in this state fixes the edge case and doesn't have any
 	// negative side-effects otherwise.
 	if srv.blockchain.chainState() == SyncStateSyncingBlocks ||
@@ -943,7 +952,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 func (srv *Server) _handleDonePeer(pp *Peer) {
 	glog.Debugf("Server._handleDonePeer: Processing DonePeer: %v", pp)
 
-	srv._cleanupDonePeerPeerState(pp)
+	srv._cleanupDonePeerState(pp)
 
 	// Attempt to find a new peer to sync from if the quitting peer is the
 	// sync peer and if our blockchain isn't current.

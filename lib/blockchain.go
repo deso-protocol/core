@@ -349,7 +349,7 @@ func CalcNextDifficultyTarget(
 	}
 
 	// If we get here we know we are dealing with a block whose height exceeds
-	// the height of the first difficulty adjustment (that is
+	// the height of the first difficulty adjustment, that is
 	//   lastNode.Height > blocksPerRetarget
 
 	// If we're not at a difficulty retarget point, return the previous
@@ -402,6 +402,7 @@ type OrphanBlock struct {
 type Blockchain struct {
 	db                              *badger.DB
 	postgres                        *Postgres
+	snapshot                        *Snapshot
 	timeSource                      chainlib.MedianTimeSource
 	trustedBlockProducerPublicKeys  map[PkMapKey]bool
 	trustedBlockProducerStartHeight uint64
@@ -410,7 +411,6 @@ type Blockchain struct {
 	// Returns true once all of the housekeeping in creating the
 	// blockchain is complete. This includes setting up the genesis block.
 	isInitialized bool
-
 	// Protects most of the fields below this point.
 	ChainLock deadlock.RWMutex
 
@@ -431,6 +431,11 @@ type Blockchain struct {
 	// are not written to disk and are only cached in memory. Moreover we only keep
 	// up to MaxOrphansInMemory of them in order to prevent memory exhaustion.
 	orphanList *list.List
+
+	// State checksum is used to verify integrity of state data and when
+	// syncing from snapshot in the hyper sync protocol.
+	stateChecksum StateChecksum
+	stateSynced   bool
 }
 
 func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
@@ -491,7 +496,7 @@ func (bc *Blockchain) _initChain() error {
 		if bc.postgres != nil {
 			err = bc.postgres.InitGenesisBlock(bc.params, bc.db)
 		} else {
-			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager)
+			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager, bc.snapshot)
 		}
 		if err != nil {
 			return errors.Wrapf(err, "_initChain: Problem initializing db with genesis block")
@@ -562,6 +567,9 @@ func (bc *Blockchain) _initChain() error {
 		}
 	}
 
+	// Initialize the state checksum.
+	bc.stateChecksum.Initialize()
+
 	bc.isInitialized = true
 
 	return nil
@@ -580,6 +588,7 @@ func NewBlockchain(
 	db *badger.DB,
 	postgres *Postgres,
 	eventManager *EventManager,
+	snapshot *Snapshot,
 ) (*Blockchain, error) {
 
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
@@ -594,6 +603,7 @@ func NewBlockchain(
 	bc := &Blockchain{
 		db:                              db,
 		postgres:                        postgres,
+		snapshot:                        snapshot,
 		timeSource:                      timeSource,
 		trustedBlockProducerPublicKeys:  trustedBlockProducerPublicKeys,
 		trustedBlockProducerStartHeight: trustedBlockProducerStartHeight,
@@ -761,6 +771,7 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 //
 // This function is safe for concurrent access.
 func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash *BlockHash) []*MsgDeSoHeader {
+	// TODO: Shouldn't we hold a ChainLock here?
 	headers := locateHeaders(locator, stopHash, MaxHeadersPerMsg,
 		bc.blockIndex, bc.bestChain, bc.bestChainMap)
 
@@ -998,6 +1009,13 @@ const (
 	// validate them before we download blocks, SyncingHeaders implies that
 	// the block tip is also not current yet.
 	SyncStateSyncingHeaders SyncState = iota
+	// SyncStateSyncingSnapshot indicates that our header chain is current, and
+	// we're syncing state from a snapshot. This is part of the hyper sync
+	// protocol, where the node first downloads the header chain and then
+	// proceeds to download state from some recent point in time. After we
+	// download the snapshot, we will continue downloading blocks from the
+	// snapshot height, rather than from genesis.
+	SyncStateSyncingSnapshot
 	// SyncStateSyncingBlocks indicates that our header chain is current but
 	// that the block chain we have is not current yet. In particular, it
 	// means, among other things, that the tip of the block chain is still
@@ -1016,6 +1034,8 @@ func (ss SyncState) String() string {
 	switch ss {
 	case SyncStateSyncingHeaders:
 		return "SYNCING_HEADERS"
+	case SyncStateSyncingSnapshot:
+		return "SYNCING_SNAPSHOT"
 	case SyncStateSyncingBlocks:
 		return "SYNCING_BLOCKS"
 	case SyncStateNeedBlocksss:
@@ -1042,12 +1062,19 @@ func (bc *Blockchain) chainState() SyncState {
 	// the SyncStateSyncingBlocks state.
 	blockTip := bc.blockTip()
 	if !bc.isTipCurrent(blockTip) {
+		// TODO: Probably not the ideal condition we want but good for now
+		if !bc.stateSynced {
+			return SyncStateSyncingSnapshot
+		}
 		return SyncStateSyncingBlocks
 	}
 
 	// If the header tip is current and the block tip is current but the block
 	// tip is not equal to the header tip then we're in SyncStateNeedBlocks.
 	if *blockTip.Hash != *headerTip.Hash {
+		if !bc.stateSynced {
+			return SyncStateSyncingSnapshot
+		}
 		return SyncStateNeedBlocksss
 	}
 
@@ -1439,7 +1466,7 @@ func updateBestChainInMemory(mainChainList []*BlockNode, mainChainMap map[BlockH
 	mainChainList = mainChainList[:len(mainChainList)-len(detachBlocks)]
 
 	// Add the nodes we attached to the end of the list. Note that this loop iterates
-	// forward because because attachBlocks has the node right after the common ancestor
+	// forward because attachBlocks has the node right after the common ancestor
 	// first, with the new tip at the end.
 	for _, attachNode := range attachBlocks {
 		mainChainList = append(mainChainList, attachNode)
@@ -1909,7 +1936,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output.
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
 		}
@@ -2053,7 +2080,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// of the block is greater than our tip. This means we have a fork that has
 		// the potential to become our new main chain so we need to do a reorg to
 		// process it. A reorg consists of the following:
-		// 1) Find the common ancecstor of this block and the main chain.
+		// 1) Find the common ancestor of this block and the main chain.
 		// 2) Roll back all of the main chain blocks back to this common ancestor.
 		// 3) Verify and add the new blocks up to this one.
 		//
@@ -2079,7 +2106,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "processblock: Problem initializing UtxoView in reorg")
 		}
@@ -2262,7 +2289,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			return false, false, errors.Errorf("ProcessBlock: Problem updating: %v", err)
 		}
 
-		// Now the the db has been updated, update our in-memory best chain. Note that there
+		// Now the db has been updated, update our in-memory best chain. Note that there
 		// is no need to update the node index because it was updated as we went along.
 		newBestChain, newBestChainMap := bc.CopyBestChain()
 		newBestChain, newBestChainMap = updateBestChainInMemory(
@@ -2277,6 +2304,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// if ProcessBlock is called by a consumer of incomingMessages we don't
 		// have any risk of deadlocking.
 		for _, nodeToDetach := range detachBlocks {
+
+			// TODO: We could just cache this block from when we were detaching blocks
 			// Fetch the block itself since we need some info from it to roll
 			// it back.
 			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db)
@@ -2294,6 +2323,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		}
 		for _, attachNode := range attachBlocks {
 
+			// TODO: We could just cache this block from when we were adding blocks
 			// Fetch the block itself since we need some info from it to try and
 			// connect it.
 			blockToAttach, err := GetBlock(attachNode.Hash, bc.db)
@@ -2310,7 +2340,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		}
 
 		// If we have a Server object then call its function
-		// TODO: Is this duplicated / necessary?
+		// TODO: Is this duplicated / necessary? A: Yes because current block was part of attachBlocks list
 		if bc.eventManager != nil {
 			// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
 			// For now it's fine because reorgs are virtually impossible.
@@ -2346,7 +2376,7 @@ func (bc *Blockchain) ValidateTransaction(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem Problem creating new utxo view: ")
 	}
@@ -2453,7 +2483,7 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem initializing UtxoView: ")
 	}
@@ -3259,7 +3289,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
@@ -3460,7 +3490,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
@@ -3600,7 +3630,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, 0, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
@@ -3946,7 +3976,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// If the block is more than X% full, use the maximum between the min
 	// fee rate and the median fees of all the transactions in the block.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}

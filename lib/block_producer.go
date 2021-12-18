@@ -198,7 +198,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		currentBlockSize := uint64(len(blockBytes) + MaxVarintLen64)
 
 		// Create a new view object.
-		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
+		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+			desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
 		if err != nil {
 			return nil, nil, nil, errors.Wrapf(err,
 				"DeSoBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
@@ -283,7 +284,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Compute the total fee the BlockProducer should get.
 	totalFeeNanos := uint64(0)
-	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
+	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf(
 			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)

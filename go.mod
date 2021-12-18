@@ -12,13 +12,15 @@ require (
 	github.com/DataDog/datadog-go v4.5.0+incompatible
 	github.com/DataDog/zstd v1.4.8 // indirect
 	github.com/Microsoft/go-winio v0.4.16 // indirect
+	github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5 // indirect
 	github.com/btcsuite/btcd v0.21.0-beta
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/bxcodec/faker v2.0.1+incompatible
 	github.com/davecgh/go-spew v1.1.1
-	github.com/decred/dcrd/lru v1.0.0
+	github.com/decred/dcrd/lru v1.1.1
 	github.com/dgraph-io/badger/v3 v3.2103.0
 	github.com/dgraph-io/ristretto v0.1.0 // indirect
+	github.com/elliotchance/orderedmap v1.4.0 // indirect
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-pg/pg/v10 v10.10.0

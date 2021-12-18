@@ -932,7 +932,7 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// Note that it is safe to use this because we expect that the blockchain
 	// lock is held for the duration of this function call so there shouldn't
 	// be any shifting of the db happening beneath our fee.
-	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres)
+	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres, mp.bc.snapshot)
 	if err != nil {
 		return 0, errors.Wrapf(err,
 			"_helpConnectDepsAndFinalTxn: Problem initializing UtxoView")
@@ -1981,7 +1981,7 @@ func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
 		for {
 			select {
 			case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
-				glog.Tracef("StartReadOnlyUtxoViewRegenerator: Woke up!")
+				glog.Debugf("StartReadOnlyUtxoViewRegenerator: Woke up!")
 
 				// When we wake up, only do an update if one didn't occur since before
 				// we slept. Note that the number of transactions being processed can
@@ -2131,9 +2131,9 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *DeSoMempool {
 
-	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
-	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
-	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
+	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
+	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
 	newPool := &DeSoMempool{
 		quit:                            make(chan struct{}),
 		bc:                              _bc,

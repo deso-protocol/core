@@ -117,7 +117,12 @@ const (
 	// MsgTypeGetAddr is used to solicit Addr messages from peers.
 	MsgTypeGetAddr MsgType = 16
 
-	// NEXT_TAG = 18
+	// MsgTypeGetSnapshot is used to retrieve state from peers.
+	MsgTypeGetSnapshot  MsgType = 17
+	MsgTypeSnapshotData MsgType = 18
+	MsgTypeSnapshotInfo MsgType = 19
+
+	// NEXT_TAG = 20
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -189,6 +194,12 @@ func (msgType MsgType) String() string {
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypeGetSnapshot:
+		return "GET_SNAPSHOT"
+	case MsgTypeSnapshotData:
+		return "SNAPSHOT_DATA"
+	case MsgTypeSnapshotInfo:
+		return "SNAPSHOT_INFO"
 	default:
 		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", msgType)
 	}
@@ -659,6 +670,18 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		{
 			return &MsgDeSoGetAddr{}
 		}
+	case MsgTypeGetSnapshot:
+		{
+			return &MsgDeSoGetSnapshot{}
+		}
+	case MsgTypeSnapshotData:
+		{
+			return &MsgDeSoSnapshotData{}
+		}
+	case MsgTypeSnapshotInfo:
+		{
+			return &MsgDeSoSnapshotInfo{}
+		}
 	default:
 		{
 			return nil
@@ -914,7 +937,7 @@ func (msg *MsgDeSoGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
-	// Parse the nmber of block hashes.
+	// Parse the number of block hashes.
 	numHashes, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes: Problem "+
@@ -1193,7 +1216,7 @@ func _readInvList(rr io.Reader) ([]*InvVect, error) {
 		invHash := BlockHash{}
 		_, err = io.ReadFull(rr, invHash[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readInvList:: Error reading Hash for InvVect: ")
+			return nil, errors.Wrapf(err, "_readInvList: Error reading Hash for InvVect: ")
 		}
 
 		invVect := &InvVect{
@@ -1292,6 +1315,8 @@ type ServiceFlag uint64
 const (
 	// SFFullNode is a flag used to indicate a peer is a full node.
 	SFFullNode ServiceFlag = 1 << iota
+	// SFHyperSync is a flag used to indicate peer supports hyper sync.
+	SFHyperSync
 )
 
 type MsgDeSoVersion struct {
@@ -2266,6 +2291,191 @@ func (msg *MsgDeSoBlock) String() string {
 		return "<nil block or header>"
 	}
 	return fmt.Sprintf("<Header: %v, %v>", msg.Header.String(), msg.BlockProducerInfo)
+}
+
+// ==================================================================
+// SNAPSHOT Message
+// ==================================================================
+
+type MsgDeSoGetSnapshot struct {
+	// SnapshotStartKey is the first key to fetch.
+	SnapshotStartKey  []byte
+	// FetchKeysOnly is set to true when we want to sync keys first.
+	FetchKeysOnly     bool
+	// FetchSnapshotInfo indicates if we're asking for snapshot info or data
+	FetchSnapshotInfo bool
+}
+
+func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Serialize the snapshot start key
+	if len(msg.SnapshotStartKey) == 0 {
+		return nil, fmt.Errorf("MsgDeSoGetSnapshot.ToBytes: Called with an empty SnapshotStartKey, this should never happen.")
+	}
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotStartKey)))...)
+	data = append(data, msg.SnapshotStartKey...)
+
+	// Serialize the fetch keys only flag
+	data = append(data, BoolToByte(msg.FetchKeysOnly))
+
+	// Serialize the fetch snapshot info flag
+	data = append(data, BoolToByte(msg.FetchSnapshotInfo))
+
+	return data, nil
+}
+
+func (msg *MsgDeSoGetSnapshot) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// Read the length of the snapshot start key
+	length, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading snapshot start key length")
+	}
+	snapshotStartKey := make([]byte, length)
+	_, err = io.ReadFull(rr, snapshotStartKey[:])
+	if err != nil {
+		return errors.Wrapf(err,"MsgDeSoGetSnapshot.FromBytes: Error reading snapshost start key")
+	}
+
+	fetchKeysOnly := ReadBoolByte(rr)
+	fetchSnapshotInfo := ReadBoolByte(rr)
+
+	*msg = MsgDeSoGetSnapshot{
+		SnapshotStartKey: snapshotStartKey,
+		FetchKeysOnly: fetchKeysOnly,
+		FetchSnapshotInfo: fetchSnapshotInfo,
+	}
+	return nil
+}
+
+func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
+	return MsgTypeGetSnapshot
+}
+
+type MsgDeSoSnapshotData struct {
+	// SnapshotKeysOnly indicates if we want the chunk will only contain keys.
+	SnapshotKeysOnly  bool
+	// SnapshotKeys are BadgerDB prefixes of the state data.
+	// TODO: make these strings
+	SnapshotKeys      [][]byte
+	// SnapshotData is the data associated with StateKeys.
+	SnapshotStateData [][]byte
+}
+
+func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Encode the keys only flag
+	data = append(data, BoolToByte(msg.SnapshotKeysOnly))
+
+	// Encode the snapshot keys
+	if len(msg.SnapshotKeys) == 0 {
+		return nil, fmt.Errorf("MsgDeSoSnapshotData.ToBytes: Snapshot keys should not be empty")
+	}
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotKeys)))...)
+	for _, vv := range msg.SnapshotKeys {
+		data = append(data, UintToBuf(uint64(len(vv)))...)
+		data = append(data, vv...)
+	}
+
+	// Encode snapshot state data
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotStateData)))...)
+	for _, vv := range msg.SnapshotStateData {
+		data = append(data, UintToBuf(uint64(len(vv)))...)
+		data = append(data, vv...)
+	}
+
+	return data, nil
+}
+
+func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// Decode keys only flag
+	snapshotKeysOnly := ReadBoolByte(rr)
+
+	// Decode snapshot keys
+	keysLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotKeys")
+	}
+	snapshotKeys := [][]byte{}
+	for i := uint64(0); i < keysLen ; i++ {
+		keyLength, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of key of SnapshotKeys")
+		}
+
+		key := make([]byte, keyLength)
+		_, err = io.ReadFull(rr, key[:])
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding key of SnapshotKeys")
+		}
+		snapshotKeys = append(snapshotKeys, key)
+	}
+
+	// Decode snapshot state data
+	dataLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotKeys")
+	}
+	snapshotData := [][]byte{}
+	for i := uint64(0); i < dataLen ; i++ {
+		keyLength, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of key of SnapshotKeys")
+		}
+
+		key := make([]byte, keyLength)
+		_, err = io.ReadFull(rr, key[:])
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding key of SnapshotKeys")
+		}
+		snapshotData = append(snapshotData, key)
+	}
+
+	*msg = MsgDeSoSnapshotData{
+		SnapshotKeysOnly: snapshotKeysOnly,
+		SnapshotKeys: snapshotKeys,
+		SnapshotStateData: snapshotData,
+	}
+	return nil
+}
+
+func (msg *MsgDeSoSnapshotData) GetMsgType() MsgType {
+	return MsgTypeSnapshotData
+}
+
+type MsgDeSoSnapshotInfo struct {
+	//
+	Nonce uint64
+}
+
+func (msg *MsgDeSoSnapshotInfo) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	data = append(data, UintToBuf(msg.Nonce)...)
+	return data, nil
+}
+
+func (msg *MsgDeSoSnapshotInfo) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	nonce, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotInfo.FromBytes: Problem reading nonce from bytes")
+	}
+
+	*msg = MsgDeSoSnapshotInfo{
+		Nonce: nonce,
+	}
+	return nil
+}
+
+func (msg *MsgDeSoSnapshotInfo) GetMsgType() MsgType {
+	return MsgTypeSnapshotInfo
 }
 
 // ==================================================================

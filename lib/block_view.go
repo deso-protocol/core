@@ -765,6 +765,7 @@ type UtxoView struct {
 	Handle   *badger.DB
 	Postgres *Postgres
 	Params   *DeSoParams
+	Snapshot *Snapshot
 }
 
 type OperationType uint
@@ -1031,7 +1032,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres)
+	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -1203,6 +1204,7 @@ func NewUtxoView(
 	_handle *badger.DB,
 	_params *DeSoParams,
 	_postgres *Postgres,
+	_snapshot *Snapshot,
 ) (*UtxoView, error) {
 
 	view := UtxoView{
@@ -1216,6 +1218,7 @@ func NewUtxoView(
 		TipHash: DbGetBestHash(_handle, ChainTypeDeSoBlock /* don't get the header chain */),
 
 		Postgres: _postgres,
+		Snapshot: _snapshot,
 		// Set everything else in _ResetViewMappings()
 	}
 
@@ -10606,7 +10609,7 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	return balanceNanos - immatureBlockRewards, nil
 }
 
-func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, snap *Snapshot) error {
 	glog.Debugf("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
 
 	for utxoKeyIter, utxoEntry := range bav.UtxoKeyToUtxoEntry {
@@ -10641,7 +10644,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the entry is unspent, then we need to re-set its mappings in the db
 			// appropriately.
-			if err := PutMappingsForUtxoWithTxn(txn, &utxoKey, utxoEntry); err != nil {
+			if err := PutMappingsForUtxoWithTxn(txn, snap, &utxoKey, utxoEntry); err != nil {
 				return err
 			}
 		}
@@ -10650,7 +10653,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 	glog.Debugf("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// Now update the number of entries in the db with confidence.
-	if err := PutUtxoNumEntriesWithTxn(txn, bav.NumUtxoEntries); err != nil {
+	if err := PutUtxoNumEntriesWithTxn(txn, snap, bav.NumUtxoEntries); err != nil {
 		return err
 	}
 
@@ -11376,7 +11379,15 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, snapshot *Snapshot) error {
+	// We hold write lock on the snapshot mutex. While this might
+	// look like a bottleneck, realistically snapshots won't hold
+	// the read lock too often. Also, each time we hold snapshot
+	// read lock we're fetching at most 32 MB of data which limits
+	// the time this thread will wait. The alternative is an atomic
+	// map of mutexes per DB key, which will allow ...
+	// TODO: what about a channel that locks the snapshot reads mid-way?
+	//snapshot.Mutex.Lock()
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
 		if err := bav._flushUtxosToDbWithTxn(txn); err != nil {

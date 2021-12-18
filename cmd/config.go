@@ -17,6 +17,7 @@ type Config struct {
 	Regtest              bool
 	PostgresURI          string
 	HyperSync            bool
+	CacheSize            uint32
 
 	// Peers
 	ConnectIPs          []string
@@ -59,7 +60,6 @@ type Config struct {
 
 func LoadConfig() *Config {
 	config := Config{}
-
 	// Core
 	testnet := viper.GetBool("testnet")
 	if testnet {
@@ -80,12 +80,17 @@ func LoadConfig() *Config {
 	if err := os.MkdirAll(config.DataDirectory, os.ModePerm); err != nil {
 		glog.Fatalf("Could not create data directories (%s): %v", config.DataDirectory, err)
 	}
+	config.CacheSize = viper.GetUint32("cache-size")
+	if config.CacheSize == 0 {
+		config.CacheSize = config.CacheSize
+	}
 
 	config.MempoolDumpDirectory = viper.GetString("mempool-dump-dir")
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
 	config.HyperSync = viper.GetBool("hyper-sync")
+	config.CacheSize = viper.GetUint32("cache-size")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
@@ -146,6 +151,10 @@ func (config *Config) Print() {
 
 	if config.HyperSync {
 		glog.Infof("Hyper Sync: ON")
+	}
+
+	if config.CacheSize > 0 {
+		glog.Infof("Cache size set to: %v", config.CacheSize)
 	}
 
 	if len(config.ConnectIPs) > 0 {

@@ -144,7 +144,7 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 	paramsCopy := DeSoTestnetParams
 
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, &paramsCopy,
-		timesource, db, nil, nil)
+		timesource, db, nil, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Temporarily modify the seed balances to make a specific public
 	// key have some DeSo
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0,
-		&paramsCopy, timesource, db, nil, nil)
+		&paramsCopy, timesource, db, nil, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
 
-	utxoView, err := NewUtxoView(chain.db, chain.params, nil)
+	utxoView, err := NewUtxoView(chain.db, chain.params, nil, chain.snapshot)
 	require.NoError(t, err)
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
@@ -286,7 +286,7 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr 
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoView, _ := NewUtxoView(db, params, nil)
+	utxoView, _ := NewUtxoView(db, params, nil, nil)
 
 	// Profile fields
 	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)
