@@ -27,7 +27,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateSwapIdentityTxn(
@@ -88,7 +88,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
@@ -940,7 +940,7 @@ func TestUpdateProfile(t *testing.T) {
 	// user5
 	// m5Pub, m5_paramUpdater, m5 created by paramUpdater, otherShortPic, 11*100, 1.5*100*100, false
 	checkProfilesExist := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -995,7 +995,7 @@ func TestUpdateProfile(t *testing.T) {
 	checkProfilesExist()
 
 	checkProfilesDeleted := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -1039,7 +1039,7 @@ func TestUpdateProfile(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
@@ -1070,7 +1070,7 @@ func TestUpdateProfile(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -1091,7 +1091,7 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -1118,14 +1118,14 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
@@ -3312,7 +3312,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			require.NoError(err)
 		}
 		if utxoView == nil {
-			utxoView, err = NewUtxoView(db, params, nil)
+			utxoView, err = NewUtxoView(db, params, nil, nil)
 			require.NoError(err)
 		}
 
@@ -3329,7 +3329,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *DeSoMempool) {
 		// Verify that expiration block was persisted in the db or is in mempool utxoView
 		if mempool == nil {
-			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
+			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, nil, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil {
@@ -3361,7 +3361,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Just for the sake of consistency, we run the _basicTransfer on unauthorized
 	// derived key. It should fail since blockchain hasn't seen this key yet.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
@@ -3373,7 +3373,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Attempt sending an AuthorizeDerivedKey txn signed with an invalid private key.
 	// This must fail because the txn has to be signed either by owner or derived key.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
@@ -3399,7 +3399,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Attempt sending an AuthorizeDerivedKey txn where access signature is signed with
 	// an invalid private key. This must fail.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
@@ -3428,7 +3428,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed with still unauthorized derived key.
 	// Should fail.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
@@ -3440,7 +3440,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Now attempt to send the same transaction but signed with the correct derived key.
 	// This must pass. The new derived key will be flushed to the db here.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, _, err := _doAuthorizeTxn(
 			t,
@@ -3468,7 +3468,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed by the owner key.
 	// Should succeed. Flush to db.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
@@ -3483,7 +3483,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed with now authorized derived key.
 	// Should succeed. Flush to db.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
@@ -3502,7 +3502,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
@@ -3521,7 +3521,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			fmt.Println("currentTxn.String()", currentTxn.String())
 
 			// Disconnect the transaction
-			utxoView, err := NewUtxoView(db, params, nil)
+			utxoView, err := NewUtxoView(db, params, nil, nil)
 			require.NoError(err)
 			blockHeight := chain.blockTip().Height + 1
 			fmt.Printf("Disconnecting test index: %v\n", testIndex)
@@ -3538,7 +3538,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// After disconnecting, check basic transfer signed with unauthorized derived key.
 	// Should fail.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
@@ -3550,7 +3550,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Connect all txns to a single UtxoView flushing only at the end.
 	{
 		// Create a new UtxoView
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		for testIndex, txn := range testTxns {
 			fmt.Printf("Applying test index: %v\n", testIndex)
@@ -3576,7 +3576,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
@@ -3588,7 +3588,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Disconnect all txns on a single UtxoView flushing only at the end
 	{
 		// Create a new UtxoView
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		for iterIndex := range testTxns {
 			testIndex := len(testTxns) - 1 - iterIndex
@@ -3683,7 +3683,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed by the owner key.
 	// Should succeed. Flush to db.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
@@ -3698,7 +3698,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed with authorized derived key. Now the auth txn is persisted in the db.
 	// Should succeed. Flush to db.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
@@ -3717,7 +3717,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			randomPrivBase58Check, utxoView, nil, false)
@@ -3735,7 +3735,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			fmt.Println("currentTxn.String()", currentTxn.String())
 
 			// Disconnect the transaction
-			utxoView, err := NewUtxoView(db, params, nil)
+			utxoView, err := NewUtxoView(db, params, nil, nil)
 			require.NoError(err)
 			blockHeight := chain.blockTip().Height + 1
 			fmt.Printf("Disconnecting test index: %v\n", testIndex)
@@ -3761,7 +3761,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed by the owner key.
 	// Should succeed.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
@@ -3774,7 +3774,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed with expired authorized derived key.
 	// Should fail.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
@@ -3796,7 +3796,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Send an authorize transaction signed with the correct derived key.
 	// This must pass.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, _, err := _doAuthorizeTxn(
 			t,
@@ -3846,7 +3846,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed with new authorized derived key.
 	// Sanity check. Should pass. We're not flushing to the db yet.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
@@ -3863,7 +3863,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Doesn't matter if it's signed by the owner or not, once a isDeleted
 	// txn appears, the key should be forever expired. This must pass.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, _, err := _doAuthorizeTxn(
 			t,
@@ -3889,7 +3889,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check basic transfer signed with new authorized derived key.
 	// Now that key has been de-authorized this must fail.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
@@ -3902,7 +3902,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Sanity check basic transfer signed by the owner key.
 	// Should succeed.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
@@ -3918,7 +3918,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Send an authorize transaction signed with a derived key.
 	// Since we've already deleted this derived key, this must fail.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
 			t,
@@ -3947,7 +3947,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			fmt.Println("currentTxn.String()", currentTxn.String())
 
 			// Disconnect the transaction
-			utxoView, err := NewUtxoView(db, params, nil)
+			utxoView, err := NewUtxoView(db, params, nil, nil)
 			require.NoError(err)
 			blockHeight := chain.blockTip().Height + 1
 			fmt.Printf("Disconnecting test index: %v\n", testIndex)
@@ -4019,7 +4019,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Check adding basic transfer signed with new authorized derived key.
 	// Now that key has been de-authorized this must fail.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
@@ -4032,7 +4032,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Attempt re-authorizing a previously de-authorized derived key.
 	// Since we've already deleted this derived key, this must fail.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
 			t,
@@ -4055,7 +4055,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Sanity check basic transfer signed by the owner key.
 	// Should succeed.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
@@ -4071,7 +4071,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := blockToDisconnect.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
@@ -4080,7 +4080,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps))
 	}
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 
 		for iterIndex := range testBlocks {

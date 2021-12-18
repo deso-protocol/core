@@ -20,9 +20,10 @@ func (bav *UtxoView) _getLikeEntryForLikeKey(likeKey *LikeKey) *LikeEntry {
 	// nil. Either way, save the value to the in-memory view mapping got later.
 	likeExists := false
 	if bav.Postgres != nil {
-		likeExists = bav.Postgres.GetLike(likeKey.LikerPubKey[:], &likeKey.LikedPostHash) != nil
+		likeExists = nil != bav.Postgres.GetLike(likeKey.LikerPubKey[:], &likeKey.LikedPostHash)
 	} else {
-		likeExists = DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, likeKey.LikerPubKey[:], likeKey.LikedPostHash) != nil
+		likeExists = nil != DbGetLikerPubKeyToLikedPostHashMapping(bav.Handle, bav.Snapshot,
+			likeKey.LikerPubKey[:], likeKey.LikedPostHash)
 	}
 
 	if likeExists {

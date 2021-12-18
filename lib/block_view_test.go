@@ -323,7 +323,7 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(testMeta.t, err)
-		utxoOps, err := GetUtxoOperationsForBlock(testMeta.db, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(testMeta.db, nil, hash)
 		require.NoError(testMeta.t, err)
 
 		// Compute the hashes for all the transactions.
@@ -416,7 +416,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			CreateNFTFeeNanos:           uint64(newCreateNFTFeeNanos),
 			MaxCopiesPerNFT:             123,
 		}
-		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle), &expectedGlobalParams)
+		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle, nil), &expectedGlobalParams)
 
 		require.Equal(utxoView.GlobalParamsEntry, &expectedGlobalParams)
 
@@ -427,7 +427,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 	{
 
 		// Save the prev global params entry so we can check it after disconnect.
-		prevGlobalParams := DbGetGlobalParamsEntry(db)
+		prevGlobalParams := DbGetGlobalParamsEntry(db, nil)
 
 		newUSDCentsPerBitcoin := int64(270434 * 100)
 		newMinimumNetworkFeeNanosPerKB := int64(131)
@@ -456,7 +456,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			MaxCopiesPerNFT:             uint64(newMaxCopiesPerNFT),
 		}
 
-		require.Equal(DbGetGlobalParamsEntry(db), expectedGlobalParams)
+		require.Equal(DbGetGlobalParamsEntry(db, nil), expectedGlobalParams)
 
 		// Now let's do a disconnect and make sure the values reflect the previous entry.
 		utxoView, err := NewUtxoView(db, params, nil, nil)
@@ -467,7 +467,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		require.NoError(utxoView.FlushToDb())
 
-		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle), prevGlobalParams)
+		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle, nil), prevGlobalParams)
 		require.Equal(utxoView.GlobalParamsEntry, prevGlobalParams)
 
 		// Check the balance of the updater after this txn
@@ -583,7 +583,7 @@ func TestBasicTransfer(t *testing.T) {
 			},
 		}
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params, nil, nil)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -618,7 +618,7 @@ func TestBasicTransfer(t *testing.T) {
 		require.Greater(totalInput, uint64(0))
 
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params, nil, nil)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -642,7 +642,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params, nil, nil)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
@@ -658,7 +658,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, nil)
+		utxoView, _ := NewUtxoView(db, params, nil, nil)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil)
 		require.NoError(err)
 	}

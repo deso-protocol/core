@@ -34,7 +34,7 @@ func (bav *UtxoView) _getFollowEntryForFollowKey(followKey *FollowKey) *FollowEn
 	if bav.Postgres != nil {
 		followExists = bav.Postgres.GetFollow(&followKey.FollowerPKID, &followKey.FollowedPKID) != nil
 	} else {
-		followExists = DbGetFollowerToFollowedMapping(bav.Handle, &followKey.FollowerPKID, &followKey.FollowedPKID) != nil
+		followExists = DbGetFollowerToFollowedMapping(bav.Handle, bav.Snapshot, &followKey.FollowerPKID, &followKey.FollowedPKID) != nil
 	}
 
 	if followExists {

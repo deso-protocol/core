@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"encoding/hex"
 	"fmt"
 	"math"
 	"reflect"
@@ -95,13 +94,13 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Utxo data
 	bav.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry)
 	// TODO: Deprecate this value
-	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle)
+	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle, bav.Snapshot)
 	bav.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64)
 
 	// BitcoinExchange data
-	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle)
-	bav.USDCentsPerBitcoin = DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle)
-	bav.GlobalParamsEntry = DbGetGlobalParamsEntry(bav.Handle)
+	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle, bav.Snapshot)
+	bav.USDCentsPerBitcoin = DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle, bav.Snapshot)
+	bav.GlobalParamsEntry = DbGetGlobalParamsEntry(bav.Handle, bav.Snapshot)
 	bav.BitcoinBurnTxIDs = make(map[BlockHash]bool)
 
 	// Forbidden block signature pub key info.
@@ -326,7 +325,7 @@ func NewUtxoView(
 		// flush operation. Moreover, its value is consistent with the view regardless of
 		// whether the view is flushed or not. Additionally, the utxo view does not concern
 		// itself with the header chain (see comment on GetBestHash for more info on that).
-		TipHash: DbGetBestHash(_handle, ChainTypeDeSoBlock /* don't get the header chain */),
+		TipHash: DbGetBestHash(_handle, _snapshot, ChainTypeDeSoBlock /* don't get the header chain */),
 
 		Postgres: _postgres,
 		Snapshot: _snapshot,
@@ -336,7 +335,7 @@ func NewUtxoView(
 	if view.Postgres != nil {
 		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
 	} else {
-		view.TipHash = DbGetBestHash(view.Handle, ChainTypeDeSoBlock /* don't get the header chain */)
+		view.TipHash = DbGetBestHash(view.Handle, view.Snapshot, ChainTypeDeSoBlock /* don't get the header chain */)
 	}
 
 	// This function is generally used to reset the view after a flush has been performed
@@ -384,7 +383,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 		if bav.Postgres != nil {
 			utxoEntry = bav.Postgres.GetUtxoEntryForUtxoKey(utxoKey)
 		} else {
-			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
+			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, bav.Snapshot, utxoKey)
 		}
 		if utxoEntry == nil {
 			// This means the utxo is neither in our map nor in the db so
@@ -417,7 +416,7 @@ func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, 
 		balanceNanos = bav.Postgres.GetBalance(NewPublicKey(publicKey))
 	} else {
 		var err error
-		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, publicKey)
+		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, bav.Snapshot, publicKey)
 		if err != nil {
 			return uint64(0), errors.Wrap(err, "GetDeSoBalanceNanosForPublicKey: ")
 		}
@@ -2040,7 +2039,7 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	if bav.Postgres != nil {
 		utxoEntriesForPublicKey = bav.Postgres.GetUtxoEntriesForPublicKey(pkBytes)
 	} else {
-		utxoEntriesForPublicKey, err = DbGetUtxosForPubKey(pkBytes, bav.Handle)
+		utxoEntriesForPublicKey, err = DbGetUtxosForPubKey(pkBytes, bav.Handle, bav.Snapshot)
 	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GetUnspentUtxoEntrysForPublicKey: Problem fetching "+
@@ -2095,13 +2094,13 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 				break
 			}
 
-			blockNode := GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
+			blockNode := GetHeightHashToNodeInfo(bav.Handle, bav.Snapshot, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
 				return uint64(0), fmt.Errorf(
 					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 					nextBlockHash.String())
 			}
-			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
+			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, bav.Snapshot, pkBytes, nextBlockHash)
 			if err != nil {
 				return uint64(0), errors.Wrapf(
 					err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block reward for "+

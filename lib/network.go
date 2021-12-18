@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/glog"
 	"io"
 	"math"
 	"net"
@@ -2438,6 +2439,31 @@ type UtxoKey struct {
 
 func (utxoKey *UtxoKey) String() string {
 	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
+}
+
+func (utxoKey *UtxoKey) Encode() []byte {
+	var data []byte
+	data = append(data, utxoKey.TxID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(utxoKey.Index))...)
+	return data
+}
+
+func (utxoKey *UtxoKey) Decode(rr *bytes.Reader) {
+	// Read TxIndex
+	txIdBytes := make([]byte, HashSizeBytes)
+	_, err := io.ReadFull(rr, txIdBytes)
+	if err != nil {
+		glog.Errorf("UtxoKey.Decode: ReadFull: %v", err)
+		return
+	}
+	utxoKey.TxID = *NewBlockHash(txIdBytes)
+
+	index, err := ReadUvarint(rr)
+	if err != nil {
+		glog.Errorf("UtxoKey.Decode: ReadUvarint: %v", err)
+		return
+	}
+	utxoKey.Index = uint32(index)
 }
 
 const (

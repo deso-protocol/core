@@ -252,7 +252,6 @@ var statePrefixes = [][]byte{
 	_KeyGlobalParams,
 	_PrefixBitcoinBurnTxIDs,
 	_PrefixPublicKeyTimestampToPrivateMessage,
-	_PrefixPublicKeyIndexToTransactionIDs,
 	_PrefixPostHashToPostEntry,
 	_PrefixPosterPublicKeyPostHash,
 	_PrefixTstampNanosPostHash,
@@ -297,6 +296,7 @@ var NonStatePrefixes = [][]byte{
 	_KeyBestBitcoinHeaderHash,
 	_PrefixBlockHashToUtxoOperations,
 	_PrefixTransactionIDToMetadata,
+	_PrefixPublicKeyIndexToTransactionIDs,
 	_KeyUSDCentsPerBitcoinExchangeRate,
 	_KeyTransactionIndexTip,
 	_PrefixPublicKeyToNextIndex,
@@ -315,28 +315,29 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 			break
 		}
 	}
-	_ = isStatePrefix
 
-	snap.Cache = lru.NewKVCache(100)
+	if snap != nil {
+		keyString := hex.EncodeToString(key)
 
-	// Race condition occurs when you're writing a record to DB & ancestral records
-	// and you're also fetching the same key while sending snapshot information
-	keyString := hex.EncodeToString(key)
-	if isStatePrefix {
-		if val, exists := snap.Cache.Lookup(keyString); exists {
+		if isStatePrefix {
+			// and you're also fetching the same key while sending snapshot information
+			// Race condition occurs when you're writing a record to DB & ancestral records
+			snap.Cache = lru.NewKVCache(100)
+			if val, exists := snap.Cache.Lookup(keyString); exists {
+				_ = val
+				// Do snapshot stuff
+			}
+			val, err := DBGetWithTxn(txn, snap, key)
+			if err != nil && err != badger.ErrKeyNotFound {
+				return err
+			}
+
 			_ = val
 			// Do snapshot stuff
+			snap.Cache.Add(keyString, value)
 		}
-		val, err := DBGetWithTxn(txn, snap, key)
-		if err != nil && err != badger.ErrKeyNotFound {
-			return err
-		}
-
-		_ = val
-		// Do snapshot stuff
 	}
 
-	snap.Cache.Add(keyString, value)
 	return txn.Set(key, value)
 }
 
@@ -345,11 +346,11 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 // Whenever we read/write records in the DB, we place a copy in the LRU cache to save
 // us lookup time.
 func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
-	var snapshot = Snapshot{}
-	snapshot.Cache = lru.NewKVCache(100)
 	keyString := hex.EncodeToString(key)
-	if val, exists := snapshot.Cache.Lookup(keyString); exists {
-		return val.([]byte), nil
+	if snap != nil {
+		if val, exists := snap.Cache.Lookup(keyString); exists {
+			return val.([]byte), nil
+		}
 	}
 
 	item, err := txn.Get(key)
@@ -358,7 +359,9 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	}
 	itemData, err := item.ValueCopy(nil)
 
-	snapshot.Cache.Add(keyString, itemData)
+	if snap != nil {
+		snap.Cache.Add(keyString, itemData)
+	}
 	return itemData, nil
 }
 
@@ -430,11 +433,10 @@ func DBStreamPrefixKeys(db *badger.DB) (*map[string][]byte, error) {
 	if err := stream.Orchestrate(context.Background()); err != nil {
 		return nil, err
 	}
-	fmt.Println("FINISHED!")
 	return &output, nil
 }
 
-func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
+func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte) *PKIDEntry {
 	if len(publicKey) == 0 {
 		return nil
 	}
@@ -680,6 +682,10 @@ func DbGetDeSoBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, p
 	key := _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey)
 
 	desoBalanceBytes, err := DBGetWithTxn(txn, snap, key)
+	// If balance hasn't been set before, then we would error with key not found.
+	if err == badger.ErrKeyNotFound {
+		return uint64(0), nil
+	}
 	if err != nil {
 		return uint64(0), errors.Wrapf(
 			err, "DbGetDeSoBalanceNanosForPublicKeyWithTxn: Problem getting balance for: %s ",
@@ -2480,7 +2486,7 @@ func GetBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash) *Msg
 	return blockRet
 }
 
-func GetBlock(blockHash *BlockHash, snap *Snapshot, handle *badger.DB) (*MsgDeSoBlock, error) {
+func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSoBlock, error) {
 	hashKey := BlockHashToBlockKey(blockHash)
 	var blockRet *MsgDeSoBlock
 	err := handle.View(func(txn *badger.Txn) error {
@@ -3523,7 +3529,7 @@ func DbGetTxindexFullTransactionByTxID(txindexDBHandle *badger.DB, snap *Snapsho
 		}
 		blockHash := &BlockHash{}
 		copy(blockHash[:], blockHashBytes)
-		blockFound, err := GetBlock(blockHash, snap, blockchainDBHandle)
+		blockFound, err := GetBlock(blockHash, blockchainDBHandle, snap)
 		if blockFound == nil || err != nil {
 			return fmt.Errorf("DbGetTxindexFullTransactionByTxID: Block corresponding to txn not found")
 		}
@@ -5550,9 +5556,9 @@ func FlushMempoolToDbWithTxn(txn *badger.Txn, snap *Snapshot, allTxns []*Mempool
 	return nil
 }
 
-func FlushMempoolToDb(handle *badger.DB, allTxns []*MempoolTx) error {
+func FlushMempoolToDb(handle *badger.DB, snap *Snapshot, allTxns []*MempoolTx) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return FlushMempoolToDbWithTxn(txn, allTxns)
+		return FlushMempoolToDbWithTxn(txn, snap, allTxns)
 	})
 	if err != nil {
 		return err

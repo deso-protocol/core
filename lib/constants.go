@@ -36,6 +36,8 @@ const (
 	MessagesToFetchPerInboxCall = 10000
 
 	MaxKeysFetch = 10
+
+	MaxBlocksInView = 10
 )
 
 type NetworkType uint64

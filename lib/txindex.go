@@ -50,7 +50,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	}
 
 	// See if we have a best chain hash stored in the txindex db.
-	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, ChainTypeDeSoBlock)
+	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, nil, ChainTypeDeSoBlock)
 
 	// If we haven't initialized the txIndexChain before, set up the
 	// seed mappings.
@@ -75,7 +75,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				})
 				totalOutput += seedBal.AmountNanos
 			}
-			err := DbPutTxindexTransactionMappings(txIndexDb, dummyTxn, params, &TransactionMetadata{
+			err := DbPutTxindexTransactionMappings(txIndexDb, nil, dummyTxn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: dummyPk,
 				AffectedPublicKeys:             affectedPublicKeys,
 				BlockHashHex:                   GenesisBlockHashHex,
@@ -102,7 +102,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 			if err := txn.FromBytes(txnBytes); err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
-			err = DbPutTxindexTransactionMappings(txIndexDb, txn, params, &TransactionMetadata{
+			err = DbPutTxindexTransactionMappings(txIndexDb, nil, txn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: PkToString(txn.PublicKey, params),
 				// Note that we don't set AffectedPublicKeys for the SeedTxns
 				BlockHashHex:    GenesisBlockHashHex,
@@ -279,7 +279,7 @@ func (txi *TXIndex) Update() error {
 		// txindex.
 		glog.V(1).Infof("Update: Detaching block (height: %d, hash: %v)",
 			blockToDetach.Height, blockToDetach.Hash)
-		blockMsg, err := GetBlock(blockToDetach.Hash, txi.TXIndexChain.DB())
+		blockMsg, err := GetBlock(blockToDetach.Hash, txi.TXIndexChain.DB(), nil)
 		if err != nil {
 			return fmt.Errorf("Update: Problem fetching detach block "+
 				"with hash %v: %v", blockToDetach.Hash, err)
@@ -289,7 +289,7 @@ func (txi *TXIndex) Update() error {
 		// distinct and isolated from our core blockchain db.
 		for _, txn := range blockMsg.Txns {
 			if err := DbDeleteTxindexTransactionMappings(
-				txi.TXIndexChain.DB(), txn, txi.Params); err != nil {
+				txi.TXIndexChain.DB(), nil, txn, txi.Params); err != nil {
 
 				return fmt.Errorf("Update: Problem deleting "+
 					"transaction mappings for transaction %v: %v", txn.Hash(), err)
@@ -304,7 +304,7 @@ func (txi *TXIndex) Update() error {
 				"Update: Error initializing UtxoView: %v", err)
 		}
 		utxoOps, err := GetUtxoOperationsForBlock(
-			txi.TXIndexChain.DB(), blockToDetach.Hash)
+			txi.TXIndexChain.DB(), nil, blockToDetach.Hash)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error getting UtxoOps for block %v: %v", blockToDetach, err)
@@ -325,12 +325,12 @@ func (txi *TXIndex) Update() error {
 				"%v: %v", blockToDetach, err)
 		}
 		// We have to flush a couple of extra things that the view doesn't flush...
-		if err := PutBestHash(utxoView.TipHash, txi.TXIndexChain.DB(), ChainTypeDeSoBlock); err != nil {
+		if err := PutBestHash(txi.TXIndexChain.DB(), nil, utxoView.TipHash, ChainTypeDeSoBlock); err != nil {
 			return fmt.Errorf("Update: Error putting best hash for block "+
 				"%v: %v", blockToDetach, err)
 		}
 		err = txi.TXIndexChain.DB().Update(func(txn *badger.Txn) error {
-			if err := DeleteUtxoOperationsForBlockWithTxn(txn, blockToDetach.Hash); err != nil {
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, blockToDetach.Hash); err != nil {
 				return fmt.Errorf("Update: Error deleting UtxoOperations 1 for block %v, %v", blockToDetach.Hash, err)
 			}
 			if err := txn.Delete(BlockHashToBlockKey(blockToDetach.Hash)); err != nil {
@@ -367,7 +367,7 @@ func (txi *TXIndex) Update() error {
 		glog.V(2).Infof("Update: Attaching block (height: %d, hash: %v)",
 			blockToAttach.Height, blockToAttach.Hash)
 
-		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB())
+		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB(), nil)
 		if err != nil {
 			return fmt.Errorf("Update: Problem fetching attach block "+
 				"with hash %v: %v", blockToAttach.Hash, err)
@@ -399,7 +399,7 @@ func (txi *TXIndex) Update() error {
 						txn, err)
 				}
 
-				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, txn, txi.Params, txnMeta)
+				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, txn, txi.Params, txnMeta)
 				if err != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
 						txn, err)

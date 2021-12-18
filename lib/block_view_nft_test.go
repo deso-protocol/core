@@ -23,7 +23,7 @@ func _createNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreateNFTTxn(
@@ -132,7 +132,7 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateNFTBidTxn(
@@ -217,7 +217,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	bidderPkBytes, _, err := Base58CheckDecode(bidderPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	bidderPKID := utxoView.GetPKIDForPublicKey(bidderPkBytes)
@@ -313,7 +313,7 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateNFTTxn(
@@ -401,7 +401,7 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 	receiverPkBytes, _, err := Base58CheckDecode(receiverPk)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateNFTTransferTxn(
@@ -486,7 +486,7 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAcceptNFTTransferTxn(
@@ -565,7 +565,7 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateBurnNFTTxn(
@@ -971,7 +971,7 @@ func TestNFTBasic(t *testing.T) {
 	// Creating an NFT with the correct NFT fee should succeed.
 	// This time set HasUnlockable to 'true'.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, nil)
 		require.NoError(err)
 
 		numCopies := uint64(10)
@@ -1399,7 +1399,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		// Check and make sure the unlockable looks gucci.
-		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 1)
+		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, nil, post2Hash, 1)
 		require.Equal(nftEntry.IsForSale, false)
 	}
 
@@ -4251,22 +4251,22 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	// Get PKIDs for checking nft ownership.
 	m0PkBytes, _, err := Base58CheckDecode(m0Pub)
 	require.NoError(err)
-	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
+	m0PKID := DBGetPKIDEntryForPublicKey(db, nil, m0PkBytes)
 	_ = m0PKID
 
 	m1PkBytes, _, err := Base58CheckDecode(m1Pub)
 	require.NoError(err)
-	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+	m1PKID := DBGetPKIDEntryForPublicKey(db, nil, m1PkBytes)
 	_ = m1PKID
 
 	m2PkBytes, _, err := Base58CheckDecode(m2Pub)
 	require.NoError(err)
-	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+	m2PKID := DBGetPKIDEntryForPublicKey(db, nil, m2PkBytes)
 	_ = m2PKID
 
 	m3PkBytes, _, err := Base58CheckDecode(m3Pub)
 	require.NoError(err)
-	m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+	m3PKID := DBGetPKIDEntryForPublicKey(db, nil, m3PkBytes)
 	_ = m3PKID
 
 	// Set max copies to a non-zero value to activate NFTs.
@@ -4527,17 +4527,17 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		// Check the state of the transferred NFTs.
-		transferredNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 2)
+		transferredNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, nil, post1Hash, 2)
 		require.Equal(transferredNFT1.IsPending, true)
 		require.True(reflect.DeepEqual(transferredNFT1.OwnerPKID, m2PKID.PKID))
 		require.True(reflect.DeepEqual(transferredNFT1.LastOwnerPKID, m0PKID.PKID))
 
-		transferredNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 5)
+		transferredNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, nil, post1Hash, 5)
 		require.Equal(transferredNFT2.IsPending, true)
 		require.True(reflect.DeepEqual(transferredNFT2.OwnerPKID, m3PKID.PKID))
 		require.True(reflect.DeepEqual(transferredNFT2.LastOwnerPKID, m1PKID.PKID))
 
-		transferredNFT3 := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 1)
+		transferredNFT3 := DBGetNFTEntryByPostHashSerialNumber(db, nil, post2Hash, 1)
 		require.Equal(transferredNFT3.IsPending, true)
 		require.True(reflect.DeepEqual(transferredNFT3.OwnerPKID, m1PKID.PKID))
 		require.True(reflect.DeepEqual(transferredNFT3.LastOwnerPKID, m0PKID.PKID))
@@ -4611,10 +4611,10 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		// Check the state of the accepted NFTs.
-		acceptedNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 2)
+		acceptedNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, nil, post1Hash, 2)
 		require.Equal(acceptedNFT1.IsPending, false)
 
-		acceptedNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 1)
+		acceptedNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, nil, post2Hash, 1)
 		require.Equal(acceptedNFT2.IsPending, false)
 	}
 
@@ -4685,17 +4685,17 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		// Check the burned NFTs no longer exist.
-		burnedNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 5)
+		burnedNFT1 := DBGetNFTEntryByPostHashSerialNumber(db, nil, post1Hash, 5)
 		require.Nil(burnedNFT1)
 
-		burnedNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 3)
+		burnedNFT2 := DBGetNFTEntryByPostHashSerialNumber(db, nil, post2Hash, 3)
 		require.Nil(burnedNFT2)
 
 		// Check that the post entries have the correct burn count.
-		post1 := DBGetPostEntryByPostHash(db, post1Hash)
+		post1 := DBGetPostEntryByPostHash(db, nil, post1Hash)
 		require.Equal(uint64(1), post1.NumNFTCopiesBurned)
 
-		post2 := DBGetPostEntryByPostHash(db, post2Hash)
+		post2 := DBGetPostEntryByPostHash(db, nil, post2Hash)
 		require.Equal(uint64(1), post2.NumNFTCopiesBurned)
 	}
 
@@ -4902,8 +4902,8 @@ func TestBidAmountZero(t *testing.T) {
 		bidEntries = DBGetNFTBidEntries(db, post1Hash, 1)
 		require.Equal(0, len(bidEntries))
 
-		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, post1Hash, 1)
-		m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, nil, post1Hash, 1)
+		m1PKID := DBGetPKIDEntryForPublicKey(db, nil, m1PkBytes)
 		require.Equal(nftEntry.OwnerPKID, m1PKID.PKID)
 	}
 

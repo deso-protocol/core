@@ -49,7 +49,8 @@ func (bav *UtxoView) GetNFTEntryForNFTKey(nftKey *NFTKey) *NFTEntry {
 			nftEntry = nft.NewNFTEntry()
 		}
 	} else {
-		nftEntry = DBGetNFTEntryByPostHashSerialNumber(bav.Handle, &nftKey.NFTPostHash, nftKey.SerialNumber)
+		nftEntry = DBGetNFTEntryByPostHashSerialNumber(bav.Handle, bav.Snapshot,
+			&nftKey.NFTPostHash, nftKey.SerialNumber)
 	}
 
 	if nftEntry != nil {
@@ -351,7 +352,8 @@ func (bav *UtxoView) GetAcceptNFTBidHistoryForNFTKey(nftKey *NFTKey) *[]*NFTBidE
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil.
-	dbNFTBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(bav.Handle, &nftKey.NFTPostHash, nftKey.SerialNumber)
+	dbNFTBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(
+		bav.Handle, bav.Snapshot, &nftKey.NFTPostHash, nftKey.SerialNumber)
 	if dbNFTBidEntries != nil {
 		bav._setAcceptNFTBidHistoryMappings(*nftKey, dbNFTBidEntries)
 		return dbNFTBidEntries
@@ -399,7 +401,7 @@ func (bav *UtxoView) GetNFTBidEntryForNFTBidKey(nftBidKey *NFTBidKey) *NFTBidEnt
 			dbNFTBidEntry = bidEntry.NewNFTBidEntry()
 		}
 	} else {
-		dbNFTBidEntry = DBGetNFTBidEntryForNFTBidKey(bav.Handle, nftBidKey)
+		dbNFTBidEntry = DBGetNFTBidEntryForNFTBidKey(bav.Handle, bav.Snapshot, nftBidKey)
 	}
 
 	if dbNFTBidEntry != nil {

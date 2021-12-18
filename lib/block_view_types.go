@@ -1,10 +1,15 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
+	"io"
+	"sort"
 	"strings"
 )
 
@@ -317,6 +322,36 @@ func (utxoEntry *UtxoEntry) String() string {
 		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
 }
 
+func (utxo *UtxoEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(utxo.AmountNanos)...)
+	data = append(data, EncodeByteArray(utxo.PublicKey)...)
+	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
+	data = append(data, byte(utxo.UtxoType))
+	data = append(data, BoolToByte(utxo.isSpent))
+	data = append(data, utxo.UtxoKey.Encode()...)
+	return data
+}
+
+func (utxo *UtxoEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	utxo.AmountNanos, _ = ReadUvarint(rr)
+	utxo.PublicKey = DecodeByteArray(rr)
+
+	blockHeight, _ := ReadUvarint(rr)
+	utxo.BlockHeight = uint32(blockHeight)
+
+	utxoType, _ := rr.ReadByte()
+	utxo.UtxoType = UtxoType(utxoType)
+	utxo.isSpent = ReadBoolByte(rr)
+
+	var utxoKey UtxoKey
+	utxoKey.Decode(rr)
+	utxo.UtxoKey = &utxoKey
+}
+
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
 // This needs to be in-sync with DeSoMainnetParams.MaxUsernameLengthBytes
 type UsernameMapKey [MaxUsernameLengthBytes]byte
@@ -391,6 +426,30 @@ type MessageEntry struct {
 	Version uint8
 }
 
+func (me *MessageEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(me.SenderPublicKey)...)
+	data = append(data, EncodeByteArray(me.RecipientPublicKey)...)
+	data = append(data, EncodeByteArray(me.EncryptedText)...)
+	data = append(data, UintToBuf(me.TstampNanos)...)
+	data = append(data, UintToBuf(uint64(me.Version))...)
+
+	return data
+}
+
+func (me *MessageEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	me.SenderPublicKey = DecodeByteArray(rr)
+	me.RecipientPublicKey = DecodeByteArray(rr)
+	me.EncryptedText = DecodeByteArray(rr)
+	me.TstampNanos, _ = ReadUvarint(rr)
+
+	version, _ := ReadUvarint(rr)
+	me.Version = uint8(version)
+}
+
 // Entry for a public key forbidden from signing blocks.
 type ForbiddenPubKeyEntry struct {
 	PubKey []byte
@@ -452,6 +511,52 @@ type NFTEntry struct {
 	isDeleted bool
 }
 
+func (nft *NFTEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(nft.LastOwnerPKID.ToBytes())...)
+
+	if nft.OwnerPKID != nil {
+		data = append(data, EncodeByteArray(nft.OwnerPKID.ToBytes())...)
+	} else {
+		data = append(data, UintToBuf(0)...)
+	}
+
+	data = append(data, EncodeByteArray(nft.NFTPostHash.ToBytes())...)
+	data = append(data, UintToBuf(nft.SerialNumber)...)
+	data = append(data, BoolToByte(nft.IsForSale))
+	data = append(data, UintToBuf(nft.MinBidAmountNanos)...)
+	data = append(data, UintToBuf(uint64(len(nft.UnlockableText)))...)
+	data = append(data, nft.UnlockableText...)
+	data = append(data, UintToBuf(nft.LastAcceptedBidAmountNanos)...)
+	data = append(data, BoolToByte(nft.IsPending))
+
+	return data
+}
+
+func (nft *NFTEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	nft.LastOwnerPKID = NewPKID(DecodeByteArray(rr))
+
+	ownerPkid := DecodeByteArray(rr)
+	if ownerPkid != nil {
+		nft.OwnerPKID = NewPKID(ownerPkid)
+	}
+
+	nft.NFTPostHash = NewBlockHash(DecodeByteArray(rr))
+	nft.SerialNumber, _ = ReadUvarint(rr)
+	nft.IsForSale = ReadBoolByte(rr)
+	nft.MinBidAmountNanos, _ = ReadUvarint(rr)
+
+	unlockableLen, _ := ReadUvarint(rr)
+	nft.UnlockableText = make([]byte, unlockableLen)
+	_, _ = io.ReadFull(rr, nft.UnlockableText)
+
+	nft.LastAcceptedBidAmountNanos, _ = ReadUvarint(rr)
+	nft.IsPending = ReadBoolByte(rr)
+}
+
 func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
 	return NFTBidKey{
 		BidderPKID:   *bidderPKID,
@@ -477,6 +582,28 @@ type NFTBidEntry struct {
 	isDeleted bool
 }
 
+func (be *NFTBidEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(be.BidderPKID.ToBytes())...)
+	data = append(data, EncodeByteArray(be.NFTPostHash.ToBytes())...)
+	data = append(data, UintToBuf(be.SerialNumber)...)
+	data = append(data, UintToBuf(be.BidAmountNanos)...)
+
+	return data
+}
+
+func (be *NFTBidEntry) Decode(data []byte) {
+	be.DecodeWithReader(bytes.NewReader(data))
+}
+
+func (be *NFTBidEntry) DecodeWithReader(rr io.Reader) {
+	be.BidderPKID = NewPKID(DecodeByteArray(rr))
+	be.NFTPostHash = NewBlockHash(DecodeByteArray(rr))
+	be.SerialNumber, _ = ReadUvarint(rr)
+	be.BidAmountNanos, _ = ReadUvarint(rr)
+}
+
 type DerivedKeyEntry struct {
 	// Owner public key
 	OwnerPublicKey PublicKey
@@ -493,6 +620,28 @@ type DerivedKeyEntry struct {
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+func (key *DerivedKeyEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(key.OwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(key.DerivedPublicKey.ToBytes())...)
+	data = append(UintToBuf(key.ExpirationBlock))
+	data = append(UintToBuf(uint64(key.OperationType)))
+
+	return data
+}
+
+func (key *DerivedKeyEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	key.OwnerPublicKey = *NewPublicKey(DecodeByteArray(rr))
+	key.DerivedPublicKey = *NewPublicKey(DecodeByteArray(rr))
+	key.ExpirationBlock, _ = ReadUvarint(rr)
+
+	operationType, _ := ReadUvarint(rr)
+	key.OperationType = AuthorizeDerivedKeyOperationType(operationType)
 }
 
 type DerivedKeyMapKey struct {
@@ -564,6 +713,28 @@ type DiamondEntry struct {
 	isDeleted bool
 }
 
+func (de *DiamondEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(de.SenderPKID.ToBytes())...)
+	data = append(data, EncodeByteArray(de.ReceiverPKID.ToBytes())...)
+	data = append(data, EncodeByteArray(de.DiamondPostHash.ToBytes())...)
+	data = append(data, IntToBuf(de.DiamondLevel)...)
+
+	return data
+}
+
+func (de *DiamondEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	de.SenderPKID = NewPKID(DecodeByteArray(rr))
+	de.ReceiverPKID = NewPKID(DecodeByteArray(rr))
+	de.DiamondPostHash = NewBlockHash(DecodeByteArray(rr))
+
+	diamondLevel, _ := ReadVarint(rr)
+	de.DiamondLevel = diamondLevel
+}
+
 func MakeRepostKey(userPk []byte, RepostedPostHash BlockHash) RepostKey {
 	return RepostKey{
 		ReposterPubKey:   MakePkMapKey(userPk),
@@ -591,6 +762,24 @@ type RepostEntry struct {
 	isDeleted bool
 }
 
+func (re *RepostEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(re.ReposterPubKey)...)
+	data = append(data, EncodeByteArray(re.RepostPostHash.ToBytes())...)
+	data = append(data, EncodeByteArray(re.RepostedPostHash.ToBytes())...)
+
+	return data
+}
+
+func (re *RepostEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	re.ReposterPubKey = DecodeByteArray(rr)
+	re.RepostPostHash = NewBlockHash(DecodeByteArray(rr))
+	re.RepostedPostHash = NewBlockHash(DecodeByteArray(rr))
+}
+
 type GlobalParamsEntry struct {
 	// The new exchange rate to set.
 	USDCentsPerBitcoin uint64
@@ -606,6 +795,28 @@ type GlobalParamsEntry struct {
 
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
+}
+
+func (gp *GlobalParamsEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(gp.USDCentsPerBitcoin)...)
+	data = append(data, UintToBuf(gp.CreateProfileFeeNanos)...)
+	data = append(data, UintToBuf(gp.CreateNFTFeeNanos)...)
+	data = append(data, UintToBuf(gp.MaxCopiesPerNFT)...)
+	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
+
+	return data
+}
+
+func (gp *GlobalParamsEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	gp.USDCentsPerBitcoin, _ = ReadUvarint(rr)
+	gp.CreateProfileFeeNanos, _ = ReadUvarint(rr)
+	gp.CreateNFTFeeNanos, _ = ReadUvarint(rr)
+	gp.MaxCopiesPerNFT, _ = ReadUvarint(rr)
+	gp.MinimumNetworkFeeNanosPerKB, _ = ReadUvarint(rr)
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.
@@ -736,6 +947,78 @@ func IsVanillaRepost(postEntry *PostEntry) bool {
 	return !postEntry.IsQuotedRepost && postEntry.RepostedPostHash != nil
 }
 
+func (pe *PostEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(pe.PostHash.ToBytes())...)
+	data = append(data, EncodeByteArray(pe.PosterPublicKey)...)
+	data = append(data, EncodeByteArray(pe.ParentStakeID)...)
+	data = append(data, EncodeByteArray(pe.Body)...)
+	if pe.RepostedPostHash != nil {
+		data = append(data, EncodeByteArray(pe.RepostedPostHash.ToBytes())...)
+	} else {
+		data = append(data, UintToBuf(0)...)
+	}
+	data = append(data, BoolToByte(pe.IsQuotedRepost))
+	data = append(data, UintToBuf(pe.CreatorBasisPoints)...)
+	data = append(data, UintToBuf(pe.StakeMultipleBasisPoints)...)
+	data = append(data, UintToBuf(uint64(pe.ConfirmationBlockHeight))...)
+	data = append(data, UintToBuf(pe.TimestampNanos)...)
+	data = append(data, BoolToByte(pe.IsHidden))
+	data = append(data, UintToBuf(pe.LikeCount)...)
+	data = append(data, UintToBuf(pe.RepostCount)...)
+	data = append(data, UintToBuf(pe.QuoteRepostCount)...)
+	data = append(data, UintToBuf(pe.DiamondCount)...)
+	data = append(data, BoolToByte(pe.IsPinned))
+	data = append(data, BoolToByte(pe.IsNFT))
+	data = append(data, UintToBuf(pe.NumNFTCopies)...)
+	data = append(data, UintToBuf(pe.NumNFTCopiesForSale)...)
+	data = append(data, UintToBuf(pe.NumNFTCopiesBurned)...)
+	data = append(data, BoolToByte(pe.HasUnlockable))
+	data = append(data, UintToBuf(pe.NFTRoyaltyToCreatorBasisPoints)...)
+	data = append(data, UintToBuf(pe.NFTRoyaltyToCoinBasisPoints)...)
+	data = append(data, EncodeExtraData(pe.PostExtraData)...)
+
+	return data
+}
+
+func (pe *PostEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	pe.PostHash = NewBlockHash(DecodeByteArray(rr))
+	pe.PosterPublicKey = DecodeByteArray(rr)
+	pe.ParentStakeID = DecodeByteArray(rr)
+	pe.Body = DecodeByteArray(rr)
+
+	repostedPostHash := DecodeByteArray(rr)
+	if repostedPostHash != nil {
+		pe.RepostedPostHash = NewBlockHash(repostedPostHash)
+	}
+
+	pe.IsQuotedRepost = ReadBoolByte(rr)
+	pe.CreatorBasisPoints, _ = ReadUvarint(rr)
+	pe.StakeMultipleBasisPoints, _ = ReadUvarint(rr)
+
+	confirmationBlockHeight, _ := ReadUvarint(rr)
+	pe.ConfirmationBlockHeight = uint32(confirmationBlockHeight)
+
+	pe.TimestampNanos, _ = ReadUvarint(rr)
+	pe.IsHidden = ReadBoolByte(rr)
+	pe.LikeCount, _ = ReadUvarint(rr)
+	pe.RepostCount, _ = ReadUvarint(rr)
+	pe.QuoteRepostCount, _ = ReadUvarint(rr)
+	pe.DiamondCount, _ = ReadUvarint(rr)
+	pe.IsPinned = ReadBoolByte(rr)
+	pe.IsNFT = ReadBoolByte(rr)
+	pe.NumNFTCopies, _ = ReadUvarint(rr)
+	pe.NumNFTCopiesForSale, _ = ReadUvarint(rr)
+	pe.NumNFTCopiesBurned, _ = ReadUvarint(rr)
+	pe.HasUnlockable = ReadBoolByte(rr)
+	pe.NFTRoyaltyToCreatorBasisPoints, _ = ReadUvarint(rr)
+	pe.NFTRoyaltyToCoinBasisPoints, _ = ReadUvarint(rr)
+	pe.PostExtraData, _ = DecodeExtraData(rr)
+}
+
 type BalanceEntryMapKey struct {
 	HODLerPKID  PKID
 	CreatorPKID PKID
@@ -770,6 +1053,26 @@ type BalanceEntry struct {
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+func (be *BalanceEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(be.HODLerPKID.ToBytes())...)
+	data = append(data, EncodeByteArray(be.CreatorPKID.ToBytes())...)
+	data = append(data, UintToBuf(be.BalanceNanos)...)
+	data = append(data, BoolToByte(be.HasPurchased))
+
+	return data
+}
+
+func (be *BalanceEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	be.HODLerPKID = NewPKID(DecodeByteArray(rr))
+	be.CreatorPKID = NewPKID(DecodeByteArray(rr))
+	be.BalanceNanos, _ = ReadUvarint(rr)
+	be.HasPurchased = ReadBoolByte(rr)
 }
 
 // This struct contains all the information required to support coin
@@ -820,6 +1123,22 @@ func (pkid *PKIDEntry) String() string {
 	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
 }
 
+func (pkid *PKIDEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(pkid.PKID.ToBytes())...)
+	data = append(data, EncodeByteArray(pkid.PublicKey)...)
+
+	return data
+}
+
+func (pkid *PKIDEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	pkid.PKID = NewPKID(DecodeByteArray(rr))
+	pkid.PublicKey = DecodeByteArray(rr)
+}
+
 type ProfileEntry struct {
 	// PublicKey is the key used by the user to sign for things and generally
 	// verify her identity.
@@ -856,4 +1175,161 @@ type ProfileEntry struct {
 
 func (pe *ProfileEntry) IsDeleted() bool {
 	return pe.isDeleted
+}
+
+func (pe *ProfileEntry) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(pe.PublicKey)...)
+	data = append(data, EncodeByteArray(pe.Username)...)
+	data = append(data, EncodeByteArray(pe.Description)...)
+	data = append(data, EncodeByteArray(pe.ProfilePic)...)
+	data = append(data, BoolToByte(pe.IsHidden))
+
+	// CoinEntry
+	data = append(data, UintToBuf(pe.CreatorBasisPoints)...)
+	data = append(data, UintToBuf(pe.DeSoLockedNanos)...)
+	data = append(data, UintToBuf(pe.NumberOfHolders)...)
+	data = append(data, UintToBuf(pe.CoinsInCirculationNanos)...)
+	data = append(data, UintToBuf(pe.CoinWatermarkNanos)...)
+
+	return data
+}
+
+func (pe *ProfileEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	pe.PublicKey = DecodeByteArray(rr)
+	pe.Username = DecodeByteArray(rr)
+	pe.Description = DecodeByteArray(rr)
+	pe.ProfilePic = DecodeByteArray(rr)
+	pe.IsHidden = ReadBoolByte(rr)
+
+	// CoinEntry
+	pe.CreatorBasisPoints, _ = ReadUvarint(rr)
+	pe.DeSoLockedNanos, _ = ReadUvarint(rr)
+	pe.NumberOfHolders, _ = ReadUvarint(rr)
+	pe.CoinsInCirculationNanos, _ = ReadUvarint(rr)
+	pe.CoinWatermarkNanos, _ = ReadUvarint(rr)
+}
+
+func EncodeByteArray(bytes []byte) []byte {
+	data := []byte{}
+
+	data = append(data, UintToBuf(uint64(len(bytes)))...)
+	data = append(data, bytes...)
+
+	return data
+}
+
+func DecodeByteArray(reader io.Reader) []byte {
+	pkLen, err := ReadUvarint(reader)
+	if err != nil {
+		glog.Errorf("DecodeByteArray: ReadUvarint: %v", err)
+		return nil
+	}
+
+	if pkLen > 0 {
+		result := make([]byte, pkLen)
+
+		_, err = io.ReadFull(reader, result)
+		if err != nil {
+			glog.Errorf("DecodeByteArray: ReadFull: %v", err)
+			return nil
+		}
+
+		return result
+	} else {
+		return nil
+	}
+}
+
+// EncodeExtraData is used in consensus so don't change it
+func EncodeExtraData(extraData map[string][]byte) []byte {
+	var data []byte
+
+	extraDataLength := uint64(len(extraData))
+	data = append(data, UintToBuf(extraDataLength)...)
+	if extraDataLength > 0 {
+		// Sort the keys of the map
+		keys := make([]string, 0, len(extraData))
+		for key := range extraData {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
+		// Encode the length of the key, the key itself
+		// then the length of the value, then the value itself.
+		for _, key := range keys {
+			data = append(data, UintToBuf(uint64(len(key)))...)
+			data = append(data, []byte(key)...)
+			value := extraData[key]
+			data = append(data, UintToBuf(uint64(len(value)))...)
+			data = append(data, value...)
+		}
+	}
+
+	return data
+}
+
+// DecodeExtraData is used in consensus so don't change it
+func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
+	extraDataLen, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeExtraData: Problem reading")
+	}
+
+	if extraDataLen > MaxMessagePayload {
+		return nil, fmt.Errorf("DecodeExtraData: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
+	}
+
+	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
+	if extraDataLen != 0 {
+		extraData := make(map[string][]byte, extraDataLen)
+
+		// Loop over each key
+		for ii := uint64(0); ii < extraDataLen; ii++ {
+			// De-serialize the length of the key
+			var keyLen uint64
+			keyLen, err = ReadUvarint(rr)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
+			}
+
+			// De-serialize the key
+			keyBytes := make([]byte, keyLen)
+			_, err = io.ReadFull(rr, keyBytes)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
+			}
+
+			// Convert the key to a string and check if it already exists in the map.
+			// If it already exists in the map, this is an error as a map cannot have duplicate keys.
+			key := string(keyBytes)
+			if _, keyExists := extraData[key]; keyExists {
+				return nil, fmt.Errorf("DecodeExtraData: Key [#{ii}] ({key}) already exists in ExtraData")
+			}
+
+			// De-serialize the length of the value
+			var valueLen uint64
+			valueLen, err = ReadUvarint(rr)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
+			}
+
+			// De-serialize the value
+			value := make([]byte, valueLen)
+			_, err = io.ReadFull(rr, value)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem read value #{ii}")
+			}
+
+			// Map the key to the value
+			extraData[key] = value
+		}
+
+		return extraData, nil
+	}
+
+	return nil, nil
 }

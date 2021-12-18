@@ -787,7 +787,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 		if len(txnsToDump)%1000 == 0 || ii == len(allTxns)-1 {
 			glog.Infof("OpenTempDBAndDumpTxns: Dumping txns %v to %v", ii-len(txnsToDump)+1, ii)
 			err := tempMempoolDB.Update(func(txn *badger.Txn) error {
-				return FlushMempoolToDbWithTxn(txn, txnsToDump)
+				return FlushMempoolToDbWithTxn(txn, nil, txnsToDump)
 			})
 			if err != nil {
 				return fmt.Errorf("OpenTempDBAndDumpTxns: Error flushing mempool txns to DB: %v", err)

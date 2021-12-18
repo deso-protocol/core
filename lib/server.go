@@ -604,7 +604,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		}
 
 		if srv.blockchain.chainState() == SyncStateSyncingSnapshot {
-			glog.Debugf("Server._handleHeaderBundle: SYNCING SHOULD HAPPEN NOW, IS HYPER SYNC PEER? %v", pp.serviceFlags & SFHyperSync)
+			glog.V(1).Infof("Server._handleHeaderBundle: SYNCING SHOULD HAPPEN NOW, IS HYPER SYNC PEER? %v", pp.serviceFlags & SFHyperSync)
 			srv.blockchain.stateSynced = true
 		}
 

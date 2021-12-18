@@ -479,7 +479,7 @@ func (bc *Blockchain) _initChain() error {
 			bestBlockHash = chain.TipHash
 		}
 	} else {
-		bestBlockHash = DbGetBestHash(bc.db, ChainTypeDeSoBlock)
+		bestBlockHash = DbGetBestHash(bc.db, bc.snapshot, ChainTypeDeSoBlock)
 	}
 	// When we load up initially, the best header hash is just the tip of the best
 	// block chain, since we don't store headers for which we don't have corresponding
@@ -960,7 +960,7 @@ func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 
 // Don't need a lock because blocks don't get removed from the db after they're added
 func (bc *Blockchain) GetBlock(blockHash *BlockHash) *MsgDeSoBlock {
-	blk, err := GetBlock(blockHash, bc.db)
+	blk, err := GetBlock(blockHash, bc.db, bc.snapshot)
 	if err != nil {
 		glog.V(2).Infof("Blockchain.GetBlock: Failed to fetch node with hash %v from the db: %v", blockHash, err)
 		return nil
@@ -1708,7 +1708,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Verify that the public key has not been forbidden.
-			dbEntry := DbGetForbiddenBlockSignaturePubKey(bc.db, publicKey)
+			dbEntry := DbGetForbiddenBlockSignaturePubKey(bc.db, bc.snapshot, publicKey)
 			if dbEntry != nil {
 				return false, false, errors.Wrapf(RuleErrorForbiddenBlockProducerPublicKey,
 					"ProcessBlock: Block producer public key %v is forbidden", PkToStringBoth(publicKey))
@@ -1793,7 +1793,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				"ProcessBlock: Problem saving block with StatusBlockProcessed")
 		}
 	} else {
-		if err := PutHeightHashToNodeInfo(nodeToValidate, bc.db, false /*bitcoinNodes*/); err != nil {
+		if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, nodeToValidate,false /*bitcoinNodes*/); err != nil {
 			return false, false, errors.Wrapf(
 				err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo with StatusBlockProcessed")
 		}
@@ -1889,14 +1889,14 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// Store the new block in the db under the
 			//   <blockHash> -> <serialized block>
 			// index.
-			if err := PutBlockWithTxn(txn, desoBlock); err != nil {
+			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
 			}
 
 			// Store the new block's node in our node index in the db under the
 			//   <height uin32, blockhash BlockHash> -> <node info>
 			// index.
-			if err := PutHeightHashToNodeInfoWithTxn(txn, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+			if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
 			}
 
@@ -1997,27 +1997,27 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		} else {
 			err = bc.db.Update(func(txn *badger.Txn) error {
 				// This will update the node's status.
-				if err := PutHeightHashToNodeInfoWithTxn(txn, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+				if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
 					return errors.Wrapf(
 						err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
 				}
 
 				// Set the best node hash to this one. Note the header chain should already
 				// be fully aware of this block so we shouldn't update it here.
-				if err := PutBestHashWithTxn(txn, blockHash, ChainTypeDeSoBlock); err != nil {
+				if err := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock); err != nil {
 					return err
 				}
 
 				// Write the modified utxo set to the view.
-				if bc.blocksInView%1000 == 0 {
-					if err := bc.blockView.FlushToDbWithTxn(); err != nil {
+				if bc.blocksInView % MaxBlocksInView == 0 {
+					if err := bc.blockView.FlushToDbWithTxn(txn); err != nil {
 						return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 					}
 				}
 
 				// Write the utxo operations for this block to the db so we can have the
 				// ability to roll it back in the future.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, blockHash, utxoOpsForBlock); err != nil {
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHash, utxoOpsForBlock); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 
@@ -2077,7 +2077,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			})
 		}
 
-		if bc.blocksInView%1000 == 0 {
+		if bc.blocksInView % MaxBlocksInView == 0 {
 			bc.blockView = nil
 		}
 
@@ -2134,7 +2134,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		for _, nodeToDetach := range detachBlocks {
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
-			utxoOps, err := GetUtxoOperationsForBlock(bc.db, nodeToDetach.Hash)
+			utxoOps, err := GetUtxoOperationsForBlock(bc.db, bc.snapshot, nodeToDetach.Hash)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"utxo operations during detachment of block (%v) "+
@@ -2143,7 +2143,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Fetch the block itself since we need some info from it to roll
 			// it back.
-			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db)
+			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db, bc.snapshot)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during detach in reorg", nodeToDetach)
@@ -2191,7 +2191,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Fetch the block itself since we need some info from it to try and
 			// connect it.
-			blockToAttach, err := GetBlock(attachNode.Hash, bc.db)
+			blockToAttach, err := GetBlock(attachNode.Hash, bc.db, bc.snapshot)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during attach in reorg", attachNode)
@@ -2234,7 +2234,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// If we made it here then we were able to connect the block successfully.
 			// So mark its status as valid and update the node index accordingly.
 			attachNode.Status |= StatusBlockValidated
-			if err := PutHeightHashToNodeInfo(attachNode, bc.db, false /*bitcoinNodes*/); err != nil {
+			if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, attachNode, false /*bitcoinNodes*/); err != nil {
 				return false, false, errors.Wrapf(
 					err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation in reorg")
 			}
@@ -2265,14 +2265,14 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// single transaction.
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			// Set the best node hash to the new tip.
-			if err := PutBestHashWithTxn(txn, newTipNode.Hash, ChainTypeDeSoBlock); err != nil {
+			if err := PutBestHashWithTxn(txn, bc.snapshot, newTipNode.Hash, ChainTypeDeSoBlock); err != nil {
 				return err
 			}
 
 			for _, detachNode := range detachBlocks {
 				// Delete the utxo operations for the blocks we're detaching since we don't need
 				// them anymore.
-				if err := DeleteUtxoOperationsForBlockWithTxn(txn, detachNode.Hash); err != nil {
+				if err := DeleteUtxoOperationsForBlockWithTxn(txn, bc.snapshot, detachNode.Hash); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem deleting utxo operations for block")
 				}
 
@@ -2285,13 +2285,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			for ii, attachNode := range attachBlocks {
 				// Add the utxo operations for the blocks we're attaching so we can roll them back
 				// in the future if necessary.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem putting utxo operations for block")
 				}
 			}
 
 			// Write the modified utxo set to the view.
-			if err := utxoView.FlushToDbWithTxn(); err != nil {
+			if err := utxoView.FlushToDbWithTxn(txn); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem flushing to db")
 			}
 
@@ -2320,7 +2320,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// TODO: We could just cache this block from when we were detaching blocks
 			// Fetch the block itself since we need some info from it to roll
 			// it back.
-			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db)
+			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db, bc.snapshot)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during detach in server signal", nodeToDetach)
@@ -2338,7 +2338,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// TODO: We could just cache this block from when we were adding blocks
 			// Fetch the block itself since we need some info from it to try and
 			// connect it.
-			blockToAttach, err := GetBlock(attachNode.Hash, bc.db)
+			blockToAttach, err := GetBlock(attachNode.Hash, bc.db, bc.snapshot)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during attach in server signal", attachNode)
@@ -2555,7 +2555,6 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 		// If we get here we know the utxo is spendable so add it to our list.
 		spendableUtxoEntries = append(spendableUtxoEntries, utxoEntry)
 	}
-
 	return spendableUtxoEntries, nil
 }
 
@@ -3978,7 +3977,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// Get the block at the tip of our block chain.
 	tipNode := bc.blockTip()
-	blk, err := GetBlock(tipNode.Hash, bc.db)
+	blk, err := GetBlock(tipNode.Hash, bc.db, bc.snapshot)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}
@@ -3999,7 +3998,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}
-	utxoOps, err := GetUtxoOperationsForBlock(bc.db, tipNode.Hash)
+	utxoOps, err := GetUtxoOperationsForBlock(bc.db, bc.snapshot, tipNode.Hash)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}

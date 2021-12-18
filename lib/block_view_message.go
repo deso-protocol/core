@@ -19,7 +19,7 @@ func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *Mess
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	dbMessageEntry := DbGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
+	dbMessageEntry := DbGetMessageEntry(bav.Handle, bav.Snapshot, messageKey.PublicKey[:], messageKey.TstampNanos)
 	if dbMessageEntry != nil {
 		bav._setMessageEntryMappings(dbMessageEntry)
 	}

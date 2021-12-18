@@ -25,7 +25,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	//
 	// TODO(performance): This currently fetches all profiles. We should implement
 	// some kind of pagination instead though.
-	_, _, dbProfileEntries, err := DBGetAllProfilesByCoinValue(bav.Handle, true /*fetchEntries*/)
+	_, _, dbProfileEntries, err := DBGetAllProfilesByCoinValue(bav.Handle, bav.Snapshot, true)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrapf(
 			err, "GetAllProfiles: Problem fetching ProfileEntrys from db: ")
@@ -50,7 +50,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 		}
 		commentsByProfilePublicKey[MakePkMapKey(profileEntry.PublicKey)] = []*PostEntry{}
 		_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(
-			bav.Handle, profileEntry.PublicKey, false /*fetchEntries*/)
+			bav.Handle, bav.Snapshot, profileEntry.PublicKey, false)
 		if err != nil {
 			return nil, nil, nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching comment PostEntry's from db: ")
 		}
@@ -62,7 +62,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	// has made, just go ahead and load *all* the posts into the view so that
 	// they'll get returned in the mapping. Later, we should use the db index
 	// to do this.
-	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
+	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, bav.Snapshot, true)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrapf(
 			err, "GetAllPosts: Problem fetching PostEntry's from db: ")
@@ -153,7 +153,7 @@ func (bav *UtxoView) GetProfileEntryForUsername(nonLowercaseUsername []byte) *Pr
 		profileEntry, _ := bav.setProfileMappings(profile)
 		return profileEntry
 	} else {
-		dbProfileEntry := DBGetProfileEntryForUsername(bav.Handle, nonLowercaseUsername)
+		dbProfileEntry := DBGetProfileEntryForUsername(bav.Handle, bav.Snapshot, nonLowercaseUsername)
 		if dbProfileEntry != nil {
 			bav._setProfileEntryMappings(dbProfileEntry)
 		}
@@ -189,7 +189,7 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKey []byte) *PKIDEntry {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry
 	} else {
-		dbPKIDEntry := DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
+		dbPKIDEntry := DBGetPKIDEntryForPublicKey(bav.Handle, bav.Snapshot, publicKey)
 		if dbPKIDEntry != nil {
 			bav._setPKIDMappings(dbPKIDEntry)
 		}
@@ -225,7 +225,7 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry.PublicKey
 	} else {
-		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
+		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, bav.Snapshot, pkid)
 		if len(dbPublicKey) != 0 {
 			bav._setPKIDMappings(&PKIDEntry{
 				PKID:      pkid,
@@ -289,7 +289,7 @@ func (bav *UtxoView) GetProfileEntryForPKID(pkid *PKID) *ProfileEntry {
 		profileEntry, _ := bav.setProfileMappings(profile)
 		return profileEntry
 	} else {
-		dbProfileEntry := DBGetProfileEntryForPKID(bav.Handle, pkid)
+		dbProfileEntry := DBGetProfileEntryForPKID(bav.Handle, bav.Snapshot, pkid)
 		if dbProfileEntry != nil {
 			bav._setProfileEntryMappings(dbProfileEntry)
 		}
@@ -342,7 +342,7 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 			entry = nil
 		}
 	} else {
-		entry = DBGetOwnerToDerivedKeyMapping(bav.Handle, *ownerPk, *derivedPk)
+		entry = DBGetOwnerToDerivedKeyMapping(bav.Handle, bav.Snapshot, *ownerPk, *derivedPk)
 	}
 
 	// If an entry exists, update the UtxoView map.
