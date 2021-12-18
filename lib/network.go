@@ -10,7 +10,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"sort"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -134,7 +133,7 @@ const (
 	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
 	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
 	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
-	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4
+	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
 
 	// NEXT_TAG = 7
 )
@@ -736,25 +735,6 @@ func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
 
 func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
-}
-
-type MsgDeSoBitcoinManagerUpdate struct {
-	// Keep it simple for now. A BitcoinManagerUpdate just signals that
-	// the BitcoinManager has added at least one block or done a reorg.
-	// No serialization because we don't want this sent on the wire ever.
-	TransactionsFound []*MsgDeSoTxn
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) GetMsgType() MsgType {
-	return MsgTypeBitcoinManagerUpdate
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoBitcoinManagerUpdate.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoBitcoinManagerUpdate.FromBytes not implemented")
 }
 
 // ==================================================================
@@ -2649,25 +2629,7 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, msg.PublicKey...)
 
 	// ExtraData
-	extraDataLength := uint64(len(msg.ExtraData))
-	data = append(data, UintToBuf(extraDataLength)...)
-	if extraDataLength > 0 {
-		// Sort the keys of the map
-		keys := make([]string, 0, len(msg.ExtraData))
-		for key := range msg.ExtraData {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		// Encode the length of the key, the key itself
-		// then the length of the value, then the value itself.
-		for _, key := range keys {
-			data = append(data, UintToBuf(uint64(len(key)))...)
-			data = append(data, []byte(key)...)
-			value := msg.ExtraData[key]
-			data = append(data, UintToBuf(uint64(len(value)))...)
-			data = append(data, value...)
-		}
-	}
+	data = append(data, EncodeExtraData(msg.ExtraData)...)
 
 	// Serialize the signature. Since this can be variable length, encode
 	// the length first and then the signature. If there is no signature, then
@@ -2785,51 +2747,9 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	// De-serialize the ExtraData
-	extraDataLen, err := ReadUvarint(rr)
+	ret.ExtraData, err = DecodeExtraData(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.ExtraData)")
-	}
-	if extraDataLen > MaxMessagePayload {
-		return nil, fmt.Errorf("_readTransaction.FromBytes: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
-	}
-	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
-	if extraDataLen != 0 {
-		ret.ExtraData = make(map[string][]byte, extraDataLen)
-		// Loop over each key
-		for ii := uint64(0); ii < extraDataLen; ii++ {
-			// De-serialize the length of the key
-			var keyLen uint64
-			keyLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
-			}
-			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
-			_, err = io.ReadFull(rr, keyBytes)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading key #{ii}")
-			}
-			// Convert the key to a string and check if it already exists in the map.
-			// If it already exists in the map, this is an error as a map cannot have duplicate keys.
-			key := string(keyBytes)
-			if _, keyExists := ret.ExtraData[key]; keyExists {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Key [#{ii}] ({key}) already exists in ExtraData")
-			}
-			// De-serialize the length of the value
-			var valueLen uint64
-			valueLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
-			}
-			// De-serialize the value
-			value := make([]byte, valueLen)
-			_, err = io.ReadFull(rr, value)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem read value #{ii}")
-			}
-			// Map the key to the value
-			ret.ExtraData[key] = value
-		}
 	}
 
 	// De-serialize the signature if there is one.

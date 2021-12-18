@@ -109,7 +109,7 @@ func (node *Node) Start() {
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
 	opts := badger.DefaultOptions(dbDir)
 	opts.ValueDir = dbDir
-	opts.MemTableSize = 1024 << 20
+	opts.MemTableSize = 2000 << 20
 	node.chainDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)

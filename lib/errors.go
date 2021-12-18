@@ -302,14 +302,13 @@ const (
 	HeaderErrorHeightInvalid                                                     RuleError = "HeaderErrorHeightInvalid"
 	HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent RuleError = "HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent"
 
-	TxErrorTooLarge                                                 RuleError = "TxErrorTooLarge"
-	TxErrorDuplicate                                                RuleError = "TxErrorDuplicate"
-	TxErrorIndividualBlockReward                                    RuleError = "TxErrorIndividualBlockReward"
-	TxErrorInsufficientFeeMinFee                                    RuleError = "TxErrorInsufficientFeeMinFee"
-	TxErrorInsufficientFeeRateLimit                                 RuleError = "TxErrorInsufficientFeeRateLimit"
-	TxErrorInsufficientFeePriorityQueue                             RuleError = "TxErrorInsufficientFeePriorityQueue"
-	TxErrorUnconnectedTxnNotAllowed                                 RuleError = "TxErrorUnconnectedTxnNotAllowed"
-	TxErrorCannotProcessBitcoinExchangeUntilBitcoinManagerIsCurrent RuleError = "TxErrorCannotProcessBitcoinExchangeUntilBitcoinManagerIsCurrent"
+	TxErrorTooLarge                     RuleError = "TxErrorTooLarge"
+	TxErrorDuplicate                    RuleError = "TxErrorDuplicate"
+	TxErrorIndividualBlockReward        RuleError = "TxErrorIndividualBlockReward"
+	TxErrorInsufficientFeeMinFee        RuleError = "TxErrorInsufficientFeeMinFee"
+	TxErrorInsufficientFeeRateLimit     RuleError = "TxErrorInsufficientFeeRateLimit"
+	TxErrorInsufficientFeePriorityQueue RuleError = "TxErrorInsufficientFeePriorityQueue"
+	TxErrorUnconnectedTxnNotAllowed     RuleError = "TxErrorUnconnectedTxnNotAllowed"
 )
 
 func (e RuleError) Error() string {
@@ -326,6 +325,6 @@ func IsRuleError(err error) bool {
 	// eventually we should clean this up and get rid of the string comparison both
 	// for the code's sake but also for the sake of our tests.
 	return strings.Contains(err.Error(), "RuleError") ||
-			strings.Contains(err.Error(), "HeaderError") ||
-			strings.Contains(err.Error(), "TxError")
+		strings.Contains(err.Error(), "HeaderError") ||
+		strings.Contains(err.Error(), "TxError")
 }

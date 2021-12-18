@@ -69,15 +69,8 @@ const (
 	StatusBlockValidated
 	StatusBlockValidateFailed
 
-	// These statuses are only used for Bitcoin header blocks in the BitcoinManager,
-	// not DeSo blocks. As such, you should only see these referenced in the BitcoinManager.
-	// We include them here because overloading the DeSo data structures to make it
-	// so that the BitcoinManager can use them is easier than defining whole new data
-	// structures that are incompatible with existing methods like LatestLocator(). If
-	// Go supported generics, this would probably not be necessary but it doesn't and
-	// so this is the path of least resistance.
-	StatusBitcoinHeaderValidated
-	StatusBitcoinHeaderValidateFailed
+	StatusBitcoinHeaderValidated      // Deprecated
+	StatusBitcoinHeaderValidateFailed // Deprecated
 )
 
 func (blockStatus BlockStatus) String() string {
@@ -411,6 +404,7 @@ type Blockchain struct {
 	// Returns true once all of the housekeeping in creating the
 	// blockchain is complete. This includes setting up the genesis block.
 	isInitialized bool
+
 	// Protects most of the fields below this point.
 	ChainLock deadlock.RWMutex
 
@@ -431,6 +425,10 @@ type Blockchain struct {
 	// are not written to disk and are only cached in memory. Moreover we only keep
 	// up to MaxOrphansInMemory of them in order to prevent memory exhaustion.
 	orphanList *list.List
+
+	// We connect many blocks in the same view and flush every X number of blocks
+	blockView    *UtxoView
+	blocksInView uint64
 
 	// State checksum is used to verify integrity of state data and when
 	// syncing from snapshot in the hyper sync protocol.
@@ -1657,15 +1655,6 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	return bc.processHeader(blockHeader, headerHash)
 }
 
-// Note: It is the caller's responsibility to ensure that the BitcoinManager is
-// time-current prior to calling ProcessBlock on any transactions that require the
-// BitcoinManager for validation (e.g. BitcoinExchange transactions). Failure to
-// do so will cause ProcessBlock to error on blocks that could otherwise be valid
-// if a time-current BitcoinManager were available. If it is known for sure that
-// no BitcoinExchange transactions need to be validated then it is OK for the
-// BitcoinManager to not be time-current and even for it to be nil entirely. This
-// is useful e.g. for tests where we want to exercise ProcessBlock without setting
-// up a time-current BitcoinManager.
 func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
 	// TODO: Move this to be more isolated.
 	bc.ChainLock.Lock()
@@ -1936,26 +1925,43 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output.
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
-		if err != nil {
-			return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
+
+		if bc.blockView == nil {
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+			if err != nil {
+				return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
+			}
+
+			bc.blockView = utxoView
+		}
+
+		// We need to do this cuz RPH said so
+		if nodeToValidate.Height <= BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight {
+			for _, entry := range bc.blockView.HODLerPKIDCreatorPKIDToBalanceEntry {
+				if entry.isDeleted {
+					entry.isDeleted = false
+					entry.BalanceNanos = 0
+				}
+			}
 		}
 
 		// Preload the view with almost all of the data it will need to connect the block
-		err = utxoView.Preload(desoBlock)
+		err := bc.blockView.Preload(desoBlock)
 		if err != nil {
 			glog.Errorf("ProcessBlock: Problem preloading the view: %v", err)
 		}
 
 		// Verify that the utxo view is pointing to the current tip.
-		if *utxoView.TipHash != *currentTip.Hash {
+		if *bc.blockView.TipHash != *currentTip.Hash {
 			//return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
 			//	"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
-			glog.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
-				"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
+			glog.Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
+				"not the current tip hash (%v)", bc.blockView.TipHash, currentTip.Hash)
 		}
 
-		utxoOpsForBlock, err := utxoView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
+		bc.blocksInView += 1
+
+		utxoOpsForBlock, err := bc.blockView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
 		if err != nil {
 			if IsRuleError(err) {
 				// If we have a RuleError, mark the block as invalid before
@@ -1985,7 +1991,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// Write the modified utxo set to the view.
 			// FIXME: This codepath breaks the balance computation in handleBlock for Rosetta
 			// because it clears the UtxoView before balances can be snapshotted.
-			if err := utxoView.FlushToDb(); err != nil {
+			if err := bc.blockView.FlushToDb(); err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem flushing view to db")
 			}
 		} else {
@@ -2003,8 +2009,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				}
 
 				// Write the modified utxo set to the view.
-				if err := utxoView.FlushToDbWithTxn(txn); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+				if bc.blocksInView%1000 == 0 {
+					if err := bc.blockView.FlushToDbWithTxn(); err != nil {
+						return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+					}
 				}
 
 				// Write the utxo operations for this block to the db so we can have the
@@ -2064,9 +2072,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		if bc.eventManager != nil {
 			bc.eventManager.blockConnected(&BlockEvent{
 				Block:    desoBlock,
-				UtxoView: utxoView,
+				UtxoView: bc.blockView,
 				UtxoOps:  utxoOpsForBlock,
 			})
+		}
+
+		if bc.blocksInView%1000 == 0 {
+			bc.blockView = nil
 		}
 
 	} else if nodeToValidate.CumWork.Cmp(currentTip.CumWork) <= 0 {
@@ -2279,7 +2291,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Write the modified utxo set to the view.
-			if err := utxoView.FlushToDbWithTxn(txn); err != nil {
+			if err := utxoView.FlushToDbWithTxn(); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem flushing to db")
 			}
 

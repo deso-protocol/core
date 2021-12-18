@@ -2,7 +2,6 @@ package lib
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -33,364 +32,6 @@ import (
 // good place to start in this file is ConnectTransaction and DisconnectTransaction.
 // ConnectBlock is also good.
 
-type UtxoType uint8
-
-const (
-	// UTXOs can come from different sources. We document all of those sources
-	// in the UTXOEntry using these types.
-	UtxoTypeOutput      UtxoType = 0
-	UtxoTypeBlockReward UtxoType = 1
-	UtxoTypeBitcoinBurn UtxoType = 2
-	// TODO(DELETEME): Remove the StakeReward txn type
-	UtxoTypeStakeReward              UtxoType = 3
-	UtxoTypeCreatorCoinSale          UtxoType = 4
-	UtxoTypeCreatorCoinFounderReward UtxoType = 5
-	UtxoTypeNFTSeller                UtxoType = 6
-	UtxoTypeNFTBidderChange          UtxoType = 7
-	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
-
-	// NEXT_TAG = 9
-)
-
-func (mm UtxoType) String() string {
-	if mm == UtxoTypeOutput {
-		return "UtxoTypeOutput"
-	} else if mm == UtxoTypeBlockReward {
-		return "UtxoTypeBlockReward"
-	} else if mm == UtxoTypeBitcoinBurn {
-		return "UtxoTypeBitcoinBurn"
-	} else if mm == UtxoTypeStakeReward {
-		return "UtxoTypeStakeReward"
-	}
-
-	return "UtxoTypeUnknown"
-}
-
-// UtxoEntry identifies the data associated with a UTXO.
-type UtxoEntry struct {
-	AmountNanos uint64
-	PublicKey   []byte
-	BlockHeight uint32
-	UtxoType    UtxoType
-
-	// The fields below aren't serialized or hashed. They are only kept
-	// around for in-memory bookkeeping purposes.
-
-	// Whether or not the UTXO is spent. This is not used by the database,
-	// (in fact it's not even stored in the db) it's used
-	// only by the in-memory data structure. The database is simple: A UTXO
-	// is unspent if and only if it exists in the db. However, for the view,
-	// a UTXO is unspent if it (exists in memory and is unspent) OR (it does not
-	// exist in memory at all but does exist in the database).
-	//
-	// Note that we are relying on the code that serializes the entry to the
-	// db to ignore private fields, which is why this variable is lowerCamelCase
-	// rather than UpperCamelCase. We are also relying on it defaulting to
-	// false when newly-read from the database.
-	isSpent bool
-
-	// A back-reference to the utxo key associated with this entry.
-	UtxoKey *UtxoKey
-}
-
-func (utxoEntry *UtxoEntry) String() string {
-	return fmt.Sprintf("< PublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
-		"isSpent: %v, utxoKey: %v>", PkToStringMainnet(utxoEntry.PublicKey),
-		utxoEntry.BlockHeight, utxoEntry.AmountNanos,
-		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
-}
-
-// Have to define these because Go doesn't let you use raw byte slices as map keys.
-// This needs to be in-sync with DeSoMainnetParams.MaxUsernameLengthBytes
-type UsernameMapKey [MaxUsernameLengthBytes]byte
-
-func MakeUsernameMapKey(nonLowercaseUsername []byte) UsernameMapKey {
-	// Always lowercase the username when we use it as a key in our map. This allows
-	// us to check uniqueness in a case-insensitive way.
-	lowercaseUsername := []byte(strings.ToLower(string(nonLowercaseUsername)))
-	usernameMapKey := UsernameMapKey{}
-	copy(usernameMapKey[:], lowercaseUsername)
-	return usernameMapKey
-}
-
-// DEPRECATED: Replace all instances with lib.PublicKey
-type PkMapKey [btcec.PubKeyBytesLenCompressed]byte
-
-func (mm PkMapKey) String() string {
-	return PkToStringBoth(mm[:])
-}
-
-func MakePkMapKey(pk []byte) PkMapKey {
-	pkMapKey := PkMapKey{}
-	copy(pkMapKey[:], pk)
-	return pkMapKey
-}
-
-func MakeMessageKey(pk []byte, tstampNanos uint64) MessageKey {
-	return MessageKey{
-		PublicKey:   MakePkMapKey(pk),
-		TstampNanos: tstampNanos,
-	}
-}
-
-type MessageKey struct {
-	PublicKey   PkMapKey
-	BlockHeight uint32
-	TstampNanos uint64
-}
-
-func (mm *MessageKey) String() string {
-	return fmt.Sprintf("<Public Key: %s, TstampNanos: %d>",
-		PkToStringMainnet(mm.PublicKey[:]), mm.TstampNanos)
-}
-
-// StringKey is useful for creating maps that need to be serialized to JSON.
-func (mm *MessageKey) StringKey(params *DeSoParams) string {
-	return PkToString(mm.PublicKey[:], params) + "_" + fmt.Sprint(mm.TstampNanos)
-}
-
-// MessageEntry stores the essential content of a message transaction.
-type MessageEntry struct {
-	SenderPublicKey    []byte
-	RecipientPublicKey []byte
-	EncryptedText      []byte
-	// TODO: Right now a sender can fake the timestamp and make it appear to
-	// the recipient that she sent messages much earlier than she actually did.
-	// This isn't a big deal because there is generally not much to gain from
-	// faking a timestamp, and it's still impossible for a user to impersonate
-	// another user, which is the important thing. Moreover, it is easy to fix
-	// the timestamp spoofing issue: You just need to make it so that the nodes
-	// index messages based on block height in addition to on the tstamp. The
-	// reason I didn't do it yet is because it adds some complexity around
-	// detecting duplicates, particularly if a transaction is allowed to have
-	// zero inputs/outputs, which is advantageous for various reasons.
-	TstampNanos uint64
-
-	isDeleted bool
-
-	// Indicates message encryption method
-	// Version = 2 : message encrypted using shared secret
-	// Version = 1 : message encrypted using public key
-	Version uint8
-}
-
-// Entry for a public key forbidden from signing blocks.
-type ForbiddenPubKeyEntry struct {
-	PubKey []byte
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-func MakeLikeKey(userPk []byte, LikedPostHash BlockHash) LikeKey {
-	return LikeKey{
-		LikerPubKey:   MakePkMapKey(userPk),
-		LikedPostHash: LikedPostHash,
-	}
-}
-
-type LikeKey struct {
-	LikerPubKey   PkMapKey
-	LikedPostHash BlockHash
-}
-
-// LikeEntry stores the content of a like transaction.
-type LikeEntry struct {
-	LikerPubKey   []byte
-	LikedPostHash *BlockHash
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-func MakeNFTKey(nftPostHash *BlockHash, serialNumber uint64) NFTKey {
-	return NFTKey{
-		NFTPostHash:  *nftPostHash,
-		SerialNumber: serialNumber,
-	}
-}
-
-type NFTKey struct {
-	NFTPostHash  BlockHash
-	SerialNumber uint64
-}
-
-// This struct defines an individual NFT owned by a PKID. An NFT entry  maps to a single
-// postEntry, but a single postEntry can map to multiple NFT entries. Each NFT copy is
-// defined by a serial number, which denotes it's place in the set (ie. #1 of 100).
-type NFTEntry struct {
-	LastOwnerPKID              *PKID // This is needed to decrypt unlockable text.
-	OwnerPKID                  *PKID
-	NFTPostHash                *BlockHash
-	SerialNumber               uint64
-	IsForSale                  bool
-	MinBidAmountNanos          uint64
-	UnlockableText             []byte
-	LastAcceptedBidAmountNanos uint64
-
-	// If this NFT was transferred to the current owner, it will be pending until accepted.
-	IsPending bool
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
-	return NFTBidKey{
-		BidderPKID:   *bidderPKID,
-		NFTPostHash:  *nftPostHash,
-		SerialNumber: serialNumber,
-	}
-}
-
-type NFTBidKey struct {
-	BidderPKID   PKID
-	NFTPostHash  BlockHash
-	SerialNumber uint64
-}
-
-// This struct defines a single bid on an NFT.
-type NFTBidEntry struct {
-	BidderPKID     *PKID
-	NFTPostHash    *BlockHash
-	SerialNumber   uint64
-	BidAmountNanos uint64
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-type DerivedKeyEntry struct {
-	// Owner public key
-	OwnerPublicKey PublicKey
-
-	// Derived public key
-	DerivedPublicKey PublicKey
-
-	// Expiration Block
-	ExpirationBlock uint64
-
-	// Operation type determines if the derived key is
-	// authorized or de-authorized.
-	OperationType AuthorizeDerivedKeyOperationType
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-type DerivedKeyMapKey struct {
-	// Owner public key
-	OwnerPublicKey PublicKey
-
-	// Derived public key
-	DerivedPublicKey PublicKey
-}
-
-func MakeDerivedKeyMapKey(ownerPublicKey PublicKey, derivedPublicKey PublicKey) DerivedKeyMapKey {
-	return DerivedKeyMapKey{
-		OwnerPublicKey:   ownerPublicKey,
-		DerivedPublicKey: derivedPublicKey,
-	}
-}
-
-func MakeFollowKey(followerPKID *PKID, followedPKID *PKID) FollowKey {
-	return FollowKey{
-		FollowerPKID: *followerPKID,
-		FollowedPKID: *followedPKID,
-	}
-}
-
-type FollowKey struct {
-	FollowerPKID PKID
-	FollowedPKID PKID
-}
-
-// FollowEntry stores the content of a follow transaction.
-type FollowEntry struct {
-	// Note: It's a little redundant to have these in the entry because they're
-	// already used as the key in the DB but it doesn't hurt for now.
-	FollowerPKID *PKID
-	FollowedPKID *PKID
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-type DiamondKey struct {
-	SenderPKID      PKID
-	ReceiverPKID    PKID
-	DiamondPostHash BlockHash
-}
-
-func MakeDiamondKey(senderPKID *PKID, receiverPKID *PKID, diamondPostHash *BlockHash) DiamondKey {
-	return DiamondKey{
-		SenderPKID:      *senderPKID,
-		ReceiverPKID:    *receiverPKID,
-		DiamondPostHash: *diamondPostHash,
-	}
-}
-
-func (mm *DiamondKey) String() string {
-	return fmt.Sprintf("<SenderPKID: %v, ReceiverPKID: %v, DiamondPostHash: %v>",
-		PkToStringMainnet(mm.SenderPKID[:]), PkToStringMainnet(mm.ReceiverPKID[:]),
-		hex.EncodeToString(mm.DiamondPostHash[:]))
-}
-
-// DiamondEntry stores the number of diamonds given by a sender to a post.
-type DiamondEntry struct {
-	SenderPKID      *PKID
-	ReceiverPKID    *PKID
-	DiamondPostHash *BlockHash
-	DiamondLevel    int64
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-func MakeRepostKey(userPk []byte, RepostedPostHash BlockHash) RepostKey {
-	return RepostKey{
-		ReposterPubKey:   MakePkMapKey(userPk),
-		RepostedPostHash: RepostedPostHash,
-	}
-}
-
-type RepostKey struct {
-	ReposterPubKey PkMapKey
-	// Post Hash of post that was reposted
-	RepostedPostHash BlockHash
-}
-
-// RepostEntry stores the content of a Repost transaction.
-type RepostEntry struct {
-	ReposterPubKey []byte
-
-	// BlockHash of the repost
-	RepostPostHash *BlockHash
-
-	// Post Hash of post that was reposted
-	RepostedPostHash *BlockHash
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-type GlobalParamsEntry struct {
-	// The new exchange rate to set.
-	USDCentsPerBitcoin uint64
-
-	// The new create profile fee
-	CreateProfileFeeNanos uint64
-
-	// The fee to create a single NFT (NFTs with n copies incur n of these fees).
-	CreateNFTFeeNanos uint64
-
-	// The maximum number of NFT copies that are allowed to be minted.
-	MaxCopiesPerNFT uint64
-
-	// The new minimum fee the network will accept
-	MinimumNetworkFeeNanosPerKB uint64
-}
-
 // The blockchain used to store the USD to BTC exchange rate in bav.USDCentsPerBitcoin, which was set by a
 // UPDATE_BITCOIN_USD_EXCHANGE_RATE txn, but has since moved to the GlobalParamsEntry, which is set by a
 // UPDATE_GLOBAL_PARAMS txn.
@@ -400,22 +41,6 @@ func (bav *UtxoView) GetCurrentUSDCentsPerBitcoin() uint64 {
 		usdCentsPerBitcoin = bav.GlobalParamsEntry.USDCentsPerBitcoin
 	}
 	return usdCentsPerBitcoin
-}
-
-// This struct holds info on a readers interactions (e.g. likes) with a post.
-// It is added to a post entry response in the frontend server api.
-type PostEntryReaderState struct {
-	// This is true if the reader has liked the associated post.
-	LikedByReader bool
-
-	// The number of diamonds that the reader has given this post.
-	DiamondLevelBestowed int64
-
-	// This is true if the reader has reposted the associated post.
-	RepostedByReader bool
-
-	// This is the post hash hex of the repost
-	RepostPostHashHex string
 }
 
 func (bav *UtxoView) GetPostEntryReaderState(
@@ -468,240 +93,6 @@ func (bav *UtxoView) GetRepostPostEntryStateForReader(readerPK []byte, postHash 
 	// handle undo-ing (AKA hiding) a repost.
 	// If the user's repost of this post is hidden, we set RepostedByReader to false.
 	return hex.EncodeToString(repostEntry.RepostPostHash[:]), !repostPostEntry.IsHidden
-}
-
-type PostEntry struct {
-	// The hash of this post entry. Used as the ID for the entry.
-	PostHash *BlockHash
-
-	// The public key of the user who made the post.
-	PosterPublicKey []byte
-
-	// The parent post. This is used for comments.
-	ParentStakeID []byte
-
-	// The body of this post.
-	Body []byte
-
-	// The PostHash of the post this post reposts
-	RepostedPostHash *BlockHash
-
-	// Indicator if this PostEntry is a quoted repost or not
-	IsQuotedRepost bool
-
-	// The amount the creator of the post gets when someone stakes
-	// to the post.
-	CreatorBasisPoints uint64
-
-	// The multiple of the payout when a user stakes to a post.
-	// 2x multiple = 200% = 20,000bps
-	StakeMultipleBasisPoints uint64
-
-	// The block height when the post was confirmed.
-	ConfirmationBlockHeight uint32
-
-	// A timestamp used for ordering messages when displaying them to
-	// users. The timestamp must be unique. Note that we use a nanosecond
-	// timestamp because it makes it easier to deal with the uniqueness
-	// constraint technically (e.g. If one second spacing is required
-	// as would be the case with a standard Unix timestamp then any code
-	// that generates these transactions will need to potentially wait
-	// or else risk a timestamp collision. This complexity is avoided
-	// by just using a nanosecond timestamp). Note that the timestamp is
-	// an unsigned int as opposed to a signed int, which means times
-	// before the zero time are not represented which doesn't matter
-	// for our purposes. Restricting the timestamp in this way makes
-	// lexicographic sorting based on bytes easier in our database which
-	// is one of the reasons we do it.
-	TimestampNanos uint64
-
-	// Users can "delete" posts, but right now we just implement this as
-	// setting a flag on the post to hide it rather than actually deleting
-	// it. This simplifies the implementation and makes it easier to "undelete"
-	// posts in certain situations.
-	IsHidden bool
-
-	// Counter of users that have liked this post.
-	LikeCount uint64
-
-	// Counter of users that have reposted this post.
-	RepostCount uint64
-
-	// Counter of quote reposts for this post.
-	QuoteRepostCount uint64
-
-	// Counter of diamonds that the post has received.
-	DiamondCount uint64
-
-	// The private fields below aren't serialized or hashed. They are only kept
-	// around for in-memory bookkeeping purposes.
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-
-	// How many comments this post has
-	CommentCount uint64
-
-	// Indicator if a post is pinned or not.
-	IsPinned bool
-
-	// NFT info.
-	IsNFT                          bool
-	NumNFTCopies                   uint64
-	NumNFTCopiesForSale            uint64
-	NumNFTCopiesBurned             uint64
-	HasUnlockable                  bool
-	NFTRoyaltyToCreatorBasisPoints uint64
-	NFTRoyaltyToCoinBasisPoints    uint64
-
-	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
-	PostExtraData map[string][]byte
-}
-
-func (pe *PostEntry) IsDeleted() bool {
-	return pe.isDeleted
-}
-
-func IsQuotedRepost(postEntry *PostEntry) bool {
-	return postEntry.IsQuotedRepost && postEntry.RepostedPostHash != nil
-}
-
-func (pe *PostEntry) HasMedia() bool {
-	bodyJSONObj := DeSoBodySchema{}
-	err := json.Unmarshal(pe.Body, &bodyJSONObj)
-	//Return true if body json can be parsed and ImageURLs or VideoURLs is not nil/non-empty or EmbedVideoUrl is not nil/non-empty
-	if (err == nil && len(bodyJSONObj.ImageURLs) > 0 || len(bodyJSONObj.VideoURLs) > 0) || len(pe.PostExtraData["EmbedVideoURL"]) > 0 {
-		return true
-	}
-	return false
-}
-
-// Return true if postEntry is a vanilla repost.  A vanilla repost is a post that reposts another post,
-// but does not have a body.
-func IsVanillaRepost(postEntry *PostEntry) bool {
-	return !postEntry.IsQuotedRepost && postEntry.RepostedPostHash != nil
-}
-
-type BalanceEntryMapKey struct {
-	HODLerPKID  PKID
-	CreatorPKID PKID
-}
-
-func MakeCreatorCoinBalanceKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntryMapKey {
-	return BalanceEntryMapKey{
-		HODLerPKID:  *hodlerPKID,
-		CreatorPKID: *creatorPKID,
-	}
-}
-func (mm BalanceEntryMapKey) String() string {
-	return fmt.Sprintf("BalanceEntryMapKey: <HODLer Pub Key: %v, Creator Pub Key: %v>",
-		PkToStringBoth(mm.HODLerPKID[:]), PkToStringBoth(mm.CreatorPKID[:]))
-}
-
-// This struct is mainly used to track a user's balance of a particular
-// creator coin. In the database, we store it as the value in a mapping
-// that looks as follows:
-// <HodlerPKID, CreatorPKID> -> HODLerEntry
-type BalanceEntry struct {
-	// The PKID of the HODLer. This should never change after it's set initially.
-	HODLerPKID *PKID
-	// The PKID of the creator. This should never change after it's set initially.
-	CreatorPKID *PKID
-
-	// How much this HODLer owns of a particular creator coin.
-	BalanceNanos uint64
-
-	// Has the hodler purchased any amount of this user's coin
-	HasPurchased bool
-
-	// Whether or not this entry is deleted in the view.
-	isDeleted bool
-}
-
-// This struct contains all the information required to support coin
-// buy/sell transactions on profiles.
-type CoinEntry struct {
-	// The amount the owner of this profile receives when there is a
-	// "net new" purchase of their coin.
-	CreatorBasisPoints uint64
-
-	// The amount of DeSo backing the coin. Whenever a user buys a coin
-	// from the protocol this amount increases, and whenever a user sells a
-	// coin to the protocol this decreases.
-	DeSoLockedNanos uint64
-
-	// The number of public keys who have holdings in this creator coin.
-	// Due to floating point truncation, it can be difficult to simultaneously
-	// reset CoinsInCirculationNanos and DeSoLockedNanos to zero after
-	// everyone has sold all their creator coins. Initially NumberOfHolders
-	// is set to zero. Once it returns to zero after a series of buys & sells
-	// we reset the DeSoLockedNanos and CoinsInCirculationNanos to prevent
-	// abnormal bancor curve behavior.
-	NumberOfHolders uint64
-
-	// The number of coins currently in circulation. Whenever a user buys a
-	// coin from the protocol this increases, and whenever a user sells a
-	// coin to the protocol this decreases.
-	CoinsInCirculationNanos uint64
-
-	// This field keeps track of the highest number of coins that has ever
-	// been in circulation. It is used to determine when a creator should
-	// receive a "founder reward." In particular, whenever the number of
-	// coins being minted would push the number of coins in circulation
-	// beyond the watermark, we allocate a percentage of the coins being
-	// minted to the creator as a "founder reward."
-	CoinWatermarkNanos uint64
-}
-
-type PKIDEntry struct {
-	PKID *PKID
-	// We add the public key only so we can reuse this struct to store the reverse
-	// mapping of pkid -> public key.
-	PublicKey []byte
-
-	isDeleted bool
-}
-
-func (pkid *PKIDEntry) String() string {
-	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
-}
-
-type ProfileEntry struct {
-	// PublicKey is the key used by the user to sign for things and generally
-	// verify her identity.
-	PublicKey []byte
-
-	// Username is a unique human-readable identifier associated with a profile.
-	Username []byte
-
-	// Some text describing the profile.
-	Description []byte
-
-	// The profile pic string encoded as a link e.g.
-	// data:image/png;base64,<data in base64>
-	ProfilePic []byte
-
-	// Users can "delete" profiles, but right now we just implement this as
-	// setting a flag on the post to hide it rather than actually deleting
-	// it. This simplifies the implementation and makes it easier to "undelete"
-	// profiles in certain situations.
-	IsHidden bool
-
-	// CoinEntry tracks the information required to buy/sell coins on a user's
-	// profile. We "embed" it here for convenience so we can access the fields
-	// directly on the ProfileEntry object. Embedding also makes it so that we
-	// don't need to initialize it explicitly.
-	CoinEntry
-
-	// Whether or not this entry should be deleted when the view is flushed
-	// to the db. This is initially set to false, but can become true if for
-	// example we update a user entry and need to delete the data associated
-	// with the old entry.
-	isDeleted bool
-}
-
-func (pe *ProfileEntry) IsDeleted() bool {
-	return pe.isDeleted
 }
 
 type UtxoView struct {
@@ -766,216 +157,6 @@ type UtxoView struct {
 	Postgres *Postgres
 	Params   *DeSoParams
 	Snapshot *Snapshot
-}
-
-type OperationType uint
-
-const (
-	// Every operation has a type that we document here. This information is
-	// used when rolling back a txn to determine what kind of operations need
-	// to be performed. For example, rolling back a BitcoinExchange may require
-	// rolling back an AddUtxo operation.
-	OperationTypeAddUtxo                      OperationType = 0
-	OperationTypeSpendUtxo                    OperationType = 1
-	OperationTypeBitcoinExchange              OperationType = 2
-	OperationTypePrivateMessage               OperationType = 3
-	OperationTypeSubmitPost                   OperationType = 4
-	OperationTypeUpdateProfile                OperationType = 5
-	OperationTypeDeletePost                   OperationType = 7
-	OperationTypeUpdateBitcoinUSDExchangeRate OperationType = 8
-	OperationTypeFollow                       OperationType = 9
-	OperationTypeLike                         OperationType = 10
-	OperationTypeCreatorCoin                  OperationType = 11
-	OperationTypeSwapIdentity                 OperationType = 12
-	OperationTypeUpdateGlobalParams           OperationType = 13
-	OperationTypeCreatorCoinTransfer          OperationType = 14
-	OperationTypeCreateNFT                    OperationType = 15
-	OperationTypeUpdateNFT                    OperationType = 16
-	OperationTypeAcceptNFTBid                 OperationType = 17
-	OperationTypeNFTBid                       OperationType = 18
-	OperationTypeDeSoDiamond                  OperationType = 19
-	OperationTypeNFTTransfer                  OperationType = 20
-	OperationTypeAcceptNFTTransfer            OperationType = 21
-	OperationTypeBurnNFT                      OperationType = 22
-	OperationTypeAuthorizeDerivedKey          OperationType = 23
-
-	// NEXT_TAG = 24
-)
-
-func (op OperationType) String() string {
-	switch op {
-	case OperationTypeAddUtxo:
-		{
-			return "OperationTypeAddUtxo"
-		}
-	case OperationTypeSpendUtxo:
-		{
-			return "OperationTypeSpendUtxo"
-		}
-	case OperationTypeBitcoinExchange:
-		{
-			return "OperationTypeBitcoinExchange"
-		}
-	case OperationTypePrivateMessage:
-		{
-			return "OperationTypePrivateMessage"
-		}
-	case OperationTypeSubmitPost:
-		{
-			return "OperationTypeSubmitPost"
-		}
-	case OperationTypeUpdateProfile:
-		{
-			return "OperationTypeUpdateProfile"
-		}
-	case OperationTypeDeletePost:
-		{
-			return "OperationTypeDeletePost"
-		}
-	case OperationTypeUpdateBitcoinUSDExchangeRate:
-		{
-			return "OperationTypeUpdateBitcoinUSDExchangeRate"
-		}
-	case OperationTypeFollow:
-		{
-			return "OperationTypeFollow"
-		}
-	case OperationTypeCreatorCoin:
-		{
-			return "OperationTypeCreatorCoin"
-		}
-	case OperationTypeCreateNFT:
-		{
-			return "OperationTypeCreateNFT"
-		}
-	case OperationTypeUpdateNFT:
-		{
-			return "OperationTypeUpdateNFT"
-		}
-	case OperationTypeAcceptNFTBid:
-		{
-			return "OperationTypeAcceptNFTBid"
-		}
-	case OperationTypeNFTBid:
-		{
-			return "OperationTypeNFTBid"
-		}
-	case OperationTypeAuthorizeDerivedKey:
-		{
-			return "OperationTypeAuthorizeDerivedKey"
-		}
-	}
-	return "OperationTypeUNKNOWN"
-}
-
-type UtxoOperation struct {
-	Type OperationType
-
-	// Only set for OperationTypeSpendUtxo
-	//
-	// When we SPEND a UTXO entry we delete it from the utxo set but we still
-	// store its info in case we want to reverse
-	// it in the future. This information is not needed for ADD since
-	// reversing an ADD just means deleting an entry from the end of our list.
-	//
-	// SPEND works by swapping the UTXO we want to spend with the UTXO at
-	// the end of the list and then deleting from the end of the list. Obviously
-	// this is more efficient than deleting the element in-place and then shifting
-	// over everything after it. In order to be able to undo this operation,
-	// however, we need to store the original index of the item we are
-	// spending/deleting. Reversing the operation then amounts to adding a utxo entry
-	// at the end of the list and swapping with this index. Given this, the entry
-	// we store here has its position set to the position it was at right before the
-	// SPEND operation was performed.
-	Entry *UtxoEntry
-
-	// Only set for OperationTypeSpendUtxo
-	//
-	// Store the UtxoKey as well. This isn't necessary but it helps
-	// with error-checking during a roll-back so we just keep it.
-	//
-	// TODO: We can probably delete this at some point and save some space. UTXOs
-	// are probably our biggest disk hog so getting rid of this should materially
-	// improve disk usage.
-	Key *UtxoKey
-
-	// Used to revert BitcoinExchange transaction.
-	PrevNanosPurchased uint64
-	// Used to revert UpdateBitcoinUSDExchangeRate transaction.
-	PrevUSDCentsPerBitcoin uint64
-
-	// Save the previous post entry when making an update to a post.
-	PrevPostEntry            *PostEntry
-	PrevParentPostEntry      *PostEntry
-	PrevGrandparentPostEntry *PostEntry
-	PrevRepostedPostEntry    *PostEntry
-
-	// Save the previous profile entry when making an update.
-	PrevProfileEntry *ProfileEntry
-
-	// Save the previous like entry and like count when making an update.
-	PrevLikeEntry *LikeEntry
-	PrevLikeCount uint64
-
-	// For disconnecting diamonds.
-	PrevDiamondEntry *DiamondEntry
-
-	// For disconnecting NFTs.
-	PrevNFTEntry              *NFTEntry
-	PrevNFTBidEntry           *NFTBidEntry
-	DeletedNFTBidEntries      []*NFTBidEntry
-	NFTPaymentUtxoKeys        []*UtxoKey
-	NFTSpentUtxoEntries       []*UtxoEntry
-	PrevAcceptedNFTBidEntries *[]*NFTBidEntry
-
-	// For disconnecting AuthorizeDerivedKey transactions.
-	PrevDerivedKeyEntry *DerivedKeyEntry
-
-	// Save the previous repost entry and repost count when making an update.
-	PrevRepostEntry *RepostEntry
-	PrevRepostCount uint64
-
-	// Save the state of a creator coin prior to updating it due to a
-	// buy/sell/add transaction.
-	PrevCoinEntry *CoinEntry
-	// Save the creator coin balance of both the transactor and the creator.
-	// We modify the transactor's balances when they buys/sell a creator coin
-	// and we modify the creator's balance when we pay them a founder reward.
-	PrevTransactorBalanceEntry *BalanceEntry
-	PrevCreatorBalanceEntry    *BalanceEntry
-	// We use this to revert founder's reward UTXOs created by creator coin buys.
-	FounderRewardUtxoKey *UtxoKey
-
-	// Save balance entries for the sender and receiver when creator coins are transferred.
-	PrevSenderBalanceEntry   *BalanceEntry
-	PrevReceiverBalanceEntry *BalanceEntry
-
-	// Save the global params when making an update.
-	PrevGlobalParamsEntry    *GlobalParamsEntry
-	PrevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
-
-	// This value is used by Rosetta to adjust for a bug whereby a ParamUpdater
-	// CoinEntry could get clobbered if updating a profile on someone else's
-	// behalf. This is super confusing.
-	ClobberedProfileBugDESOLockedNanos uint64
-
-	// This value is used by Rosetta to return the amount of DESO that was added
-	// or removed from a profile during a CreatorCoin transaction. It's needed
-	// in order to avoid having to reconnect all transactions.
-	CreatorCoinDESOLockedNanosDiff int64
-
-	// This value is used by Rosetta to create a proper input/output when we
-	// encounter a SwapIdentity txn. This makes it so that we don't have to
-	// reconnect all txns in order to get these values.
-	SwapIdentityFromDESOLockedNanos uint64
-	SwapIdentityToDESOLockedNanos uint64
-
-	// These values are used by Rosetta in order to create input and output
-	// operations. They make it so that we don't have to reconnect all txns
-	// in order to get these values.
-	AcceptNFTBidCreatorPublicKey []byte
-	AcceptNFTBidBidderPublicKey []byte
-	AcceptNFTBidCreatorRoyaltyNanos uint64
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -2194,6 +1375,10 @@ func (bav *UtxoView) _disconnectSwapIdentity(
 	// Get the PKIDEntries for the *from* and *to* public keys embedded in the txn
 	oldFromPKIDEntry := bav.GetPKIDForPublicKey(txMeta.FromPublicKey)
 	oldToPKIDEntry := bav.GetPKIDForPublicKey(txMeta.ToPublicKey)
+
+	// Mark all the entries as dirty so they get flushed. This marks the new entries as dirty too.
+	oldFromPKIDEntry.isDirty = true
+	oldToPKIDEntry.isDirty = true
 
 	// Create copies of the old entries with swapped PKIDs.
 	newFromPKIDEntry := *oldFromPKIDEntry
@@ -4874,11 +4059,17 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKey []byte) *PKIDEntry {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry
 	} else {
-		dbPKIDEntry := DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
-		if dbPKIDEntry != nil {
-			bav._setPKIDMappings(dbPKIDEntry)
+		pkidEntry := DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
+		if pkidEntry == nil {
+			pkidEntry = &PKIDEntry{
+				PKID:      PublicKeyToPKID(publicKey),
+				PublicKey: publicKey,
+			}
 		}
-		return dbPKIDEntry
+
+		bav._setPKIDMappings(pkidEntry)
+
+		return pkidEntry
 	}
 }
 
@@ -4910,14 +4101,17 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry.PublicKey
 	} else {
-		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
-		if len(dbPublicKey) != 0 {
-			bav._setPKIDMappings(&PKIDEntry{
-				PKID:      pkid,
-				PublicKey: dbPublicKey,
-			})
+		publicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
+		if len(publicKey) == 0 {
+			publicKey = pkid.ToBytes()
 		}
-		return dbPublicKey
+
+		bav._setPKIDMappings(&PKIDEntry{
+			PKID:      pkid,
+			PublicKey: publicKey,
+		})
+
+		return publicKey
 	}
 }
 
@@ -7357,8 +6551,8 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 
 		// Rosetta fields.
-		AcceptNFTBidCreatorPublicKey: nftPostEntry.PosterPublicKey,
-		AcceptNFTBidBidderPublicKey: bidderPublicKey,
+		AcceptNFTBidCreatorPublicKey:    nftPostEntry.PosterPublicKey,
+		AcceptNFTBidBidderPublicKey:     bidderPublicKey,
 		AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
 	})
 
@@ -7926,6 +7120,10 @@ func (bav *UtxoView) _connectSwapIdentity(
 	// At this point, we are certain that the *from* and the *to* public keys
 	// have valid PKID's.
 
+	// Mark all the entries as dirty so they get flushed. This marks the new entries as dirty too.
+	oldFromPKIDEntry.isDirty = true
+	oldToPKIDEntry.isDirty = true
+
 	// Create copies of the old PKID's so we can safely update the mappings.
 	newFromPKIDEntry := *oldFromPKIDEntry
 	newToPKIDEntry := *oldToPKIDEntry
@@ -7977,7 +7175,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 		Type: OperationTypeSwapIdentity,
 		// Rosetta fields
 		SwapIdentityFromDESOLockedNanos: fromNanos,
-		SwapIdentityToDESOLockedNanos: toNanos,
+		SwapIdentityToDESOLockedNanos:   toNanos,
 
 		// Note that we don't need any metadata on this operation, since the swap is reversible
 		// without it.
@@ -8690,7 +7888,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// and it's much more efficient to compute it here than it is to recompute
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing " +
+		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing "+
 			"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
@@ -8699,12 +7897,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevBuyerBalanceEntry,
-		PrevCreatorBalanceEntry:    &prevCreatorBalanceEntry,
-		FounderRewardUtxoKey:       outputKey,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevBuyerBalanceEntry,
+		PrevCreatorBalanceEntry:        &prevCreatorBalanceEntry,
+		FounderRewardUtxoKey:           outputKey,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	return totalInput, totalOutput, coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, utxoOpsForTxn, nil
@@ -8970,8 +8168,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// it later.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, 0, nil, errors.Wrapf(
-			err, "HelpConnectCreatorCoinSell: Error computing " +
-			"desoLockedNanosDiff: Missing profile")
+			err, "HelpConnectCreatorCoinSell: Error computing "+
+				"desoLockedNanosDiff: Missing profile")
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
@@ -8979,11 +8177,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeCreatorCoin,
-		PrevCoinEntry:              &prevCoinEntry,
-		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
-		PrevCreatorBalanceEntry:    nil,
-		CreatorCoinDESOLockedNanosDiff: 		desoLockedNanosDiff,
+		Type:                           OperationTypeCreatorCoin,
+		PrevCoinEntry:                  &prevCoinEntry,
+		PrevTransactorBalanceEntry:     &prevTransactorBalanceEntry,
+		PrevCreatorBalanceEntry:        nil,
+		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
 	// The DeSo that the user gets from selling their creator coin counts
@@ -10609,8 +9807,7 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	return balanceNanos - immatureBlockRewards, nil
 }
 
-func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, snap *Snapshot) error {
-	glog.Debugf("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
+func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 
 	for utxoKeyIter, utxoEntry := range bav.UtxoKeyToUtxoEntry {
 		// Make a copy of the iterator since it might change from under us.
@@ -10624,66 +9821,39 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, snap *Snapshot) err
 				utxoEntry, utxoKey, utxoEntry.UtxoKey)
 		}
 
-		// Start by deleting the pre-existing mappings in the db for this key if they
-		// have not yet been modified.
-		if err := DeleteUnmodifiedMappingsForUtxoWithTxn(txn, &utxoKey); err != nil {
-			return err
-		}
-	}
-	numDeleted := 0
-	numPut := 0
-	for utxoKeyIter, utxoEntry := range bav.UtxoKeyToUtxoEntry {
-		// Make a copy of the iterator since it might change from under us.
-		utxoKey := utxoKeyIter
-
 		if utxoEntry.isSpent {
-			numDeleted++
-			// If an entry is spent then there's nothing to do, since the mappings in
-			// the db have already been deleted.
+			// Delete the entry if it was spent
+			if err := DeleteUnmodifiedMappingsForUtxoWithTxn(txn, &utxoKey); err != nil {
+				return err
+			}
 		} else {
-			numPut++
-			// If the entry is unspent, then we need to re-set its mappings in the db
-			// appropriately.
-			if err := PutMappingsForUtxoWithTxn(txn, snap, &utxoKey, utxoEntry); err != nil {
+			// If the entry is unspent, then we need to re-set its mappings in the db appropriately.
+			if err := PutMappingsForUtxoWithTxn(txn, &utxoKey, utxoEntry); err != nil {
 				return err
 			}
 		}
 	}
 
-	glog.Debugf("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-
 	// Now update the number of entries in the db with confidence.
-	if err := PutUtxoNumEntriesWithTxn(txn, snap, bav.NumUtxoEntries); err != nil {
+	if err := PutUtxoNumEntriesWithTxn(txn, bav.NumUtxoEntries); err != nil {
 		return err
 	}
-
-	// At this point, the db's position index should be updated and the (key -> entry)
-	// index should be updated to remove all spent utxos. The number of entries field
-	// in the db should also be accurate.
 
 	return nil
 }
 
 func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
-		len(bav.PublicKeyToDeSoBalanceNanos))
 
-	for pubKeyIter := range bav.PublicKeyToDeSoBalanceNanos {
-		// Make a copy of the iterator since it might change from under us.
-		pubKey := pubKeyIter[:]
-
-		// Start by deleting the pre-existing mappings in the db for this key if they
-		// have not yet been modified.
-		if err := DbDeletePublicKeyToDeSoBalanceWithTxn(txn, pubKey); err != nil {
-			return err
-		}
-	}
 	for pubKeyIter, balanceNanos := range bav.PublicKeyToDeSoBalanceNanos {
 		// Make a copy of the iterator since it might change from under us.
 		pubKey := pubKeyIter[:]
 
 		if balanceNanos > 0 {
 			if err := DbPutDeSoBalanceForPublicKeyWithTxn(txn, pubKey, balanceNanos); err != nil {
+				return err
+			}
+		} else {
+			if err := DbDeletePublicKeyToDeSoBalanceWithTxn(txn, pubKey); err != nil {
 				return err
 			}
 		}
@@ -10702,7 +9872,6 @@ func (bav *UtxoView) _flushGlobalParamsEntryToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the KeyTorepostEntry map.
 	for _, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		// Delete the existing mappings in the db for this ForbiddenPubKeyEntry. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
@@ -10714,6 +9883,7 @@ func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) er
 					"forbidden public key: %v: ", &forbiddenPubKeyEntry.PubKey)
 		}
 	}
+
 	for _, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		if forbiddenPubKeyEntry.isDeleted {
 			// If the ForbiddenPubKeyEntry has isDeleted=true then there's nothing to do because
@@ -10765,22 +9935,19 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 			"Problem putting USDCentsPerBitcoin %d to db", bav.USDCentsPerBitcoin)
 	}
 
-	// DB should be fully up to date as far as BitcoinBurnTxIDs and NanosPurchased go.
 	return nil
 }
 
 func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
-	// Go through all the entries in the MessageKeyToMessageEntry map.
+
 	for messageKeyIter, messageEntry := range bav.MessageKeyToMessageEntry {
 		// Make a copy of the iterator since we take references to it below.
 		messageKey := messageKeyIter
 
 		// Sanity-check that one of the MessageKey computed from the MEssageEntry is
 		// equal to the MessageKey that maps to that entry.
-		senderMessageKeyInEntry := MakeMessageKey(
-			messageEntry.SenderPublicKey, messageEntry.TstampNanos)
-		recipientMessageKeyInEntry := MakeMessageKey(
-			messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
+		senderMessageKeyInEntry := MakeMessageKey(messageEntry.SenderPublicKey, messageEntry.TstampNanos)
+		recipientMessageKeyInEntry := MakeMessageKey(messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
 		if senderMessageKeyInEntry != messageKey && recipientMessageKeyInEntry != messageKey {
 			return fmt.Errorf("_flushMessageEntriesToDbWithTxn: MessageEntry has "+
 				"SenderMessageKey: %v and RecipientMessageKey %v, neither of which match "+
@@ -10788,21 +9955,13 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 				&senderMessageKeyInEntry, &recipientMessageKeyInEntry, &messageKey)
 		}
 
-		// Delete the existing mappings in the db for this MessageKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteMessageEntryMappingsWithTxn(
-			txn, messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushMessageEntriesToDbWithTxn: Problem deleting mappings "+
-					"for MessageKey: %v: ", &messageKey)
-		}
-	}
-	// Go through all the entries in the MessageKeyToMessageEntry map.
-	for _, messageEntry := range bav.MessageKeyToMessageEntry {
 		if messageEntry.isDeleted {
-			// If the MessageEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this MessageKey. They will be re-added
+			// if the corresponding entry in memory has isDeleted=false.
+			if err := DbDeleteMessageEntryMappingsWithTxn(txn, messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
+				return errors.Wrapf(err, "_flushMessageEntriesToDbWithTxn: Problem deleting mappings "+
+					"for MessageKey: %v: ", &messageKey)
+			}
 		} else {
 			// If the MessageEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
@@ -10813,20 +9972,16 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// At this point all of the MessageEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the repostKeyTorepostEntry map.
 	for repostKeyIter, repostEntry := range bav.RepostKeyToRepostEntry {
 		// Make a copy of the iterator since we make references to it below.
 		repostKey := repostKeyIter
 
-		// Sanity-check that the RepostKey computed from the RepostEntry is
-		// equal to the RepostKey that maps to that entry.
+		// Sanity-check that the RepostKey computed from the RepostEntry is equal to the RepostKey for that entry.
 		repostKeyInEntry := MakeRepostKey(repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash)
 		if repostKeyInEntry != repostKey {
 			return fmt.Errorf("_flushRepostEntriesToDbWithTxn: RepostEntry has "+
@@ -10834,23 +9989,16 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 				&repostKeyInEntry, &repostKey)
 		}
 
-		// Delete the existing mappings in the db for this RepostKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteRepostMappingsWithTxn(
-			txn, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushRepostEntriesToDbWithTxn: Problem deleting mappings "+
-					"for RepostKey: %v: ", &repostKey)
-		}
-	}
-	for _, repostEntry := range bav.RepostKeyToRepostEntry {
 		if repostEntry.isDeleted {
-			// If the RepostedEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this RepostKey.
+			if err := DbDeleteRepostMappingsWithTxn(txn, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash); err != nil {
+
+				return errors.Wrapf(
+					err, "_flushRepostEntriesToDbWithTxn: Problem deleting mappings "+
+						"for RepostKey: %v: ", &repostKey)
+			}
 		} else {
-			// If the RepostEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the RepostEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DbPutRepostMappingsWithTxn(
 				txn, repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry); err != nil {
 				return err
@@ -10858,20 +10006,16 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// At this point all of the RepostEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the LikeKeyToLikeEntry map.
 	for likeKeyIter, likeEntry := range bav.LikeKeyToLikeEntry {
 		// Make a copy of the iterator since we make references to it below.
 		likeKey := likeKeyIter
 
-		// Sanity-check that the LikeKey computed from the LikeEntry is
-		// equal to the LikeKey that maps to that entry.
+		// Sanity-check that the LikeKey computed from the LikeEntry is equal to the LikeKey for that entry.
 		likeKeyInEntry := MakeLikeKey(likeEntry.LikerPubKey, *likeEntry.LikedPostHash)
 		if likeKeyInEntry != likeKey {
 			return fmt.Errorf("_flushLikeEntriesToDbWithTxn: LikeEntry has "+
@@ -10879,28 +10023,16 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 				&likeKeyInEntry, &likeKey)
 		}
 
-		// Delete the existing mappings in the db for this LikeKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteLikeMappingsWithTxn(
-			txn, likeKey.LikerPubKey[:], likeKey.LikedPostHash); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushLikeEntriesToDbWithTxn: Problem deleting mappings "+
-					"for LikeKey: %v: ", &likeKey)
-		}
-	}
-
-	// Go through all the entries in the LikeKeyToLikeEntry map.
-	for _, likeEntry := range bav.LikeKeyToLikeEntry {
-
 		if likeEntry.isDeleted {
-			// If the LikeEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this LikeKey.
+			if err := DbDeleteLikeMappingsWithTxn(txn, likeKey.LikerPubKey[:], likeKey.LikedPostHash); err != nil {
+				return errors.Wrapf(
+					err, "_flushLikeEntriesToDbWithTxn: Problem deleting mappings "+
+						"for LikeKey: %v: ", &likeKey)
+			}
 		} else {
-			// If the LikeEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
-			if err := DbPutLikeMappingsWithTxn(
-				txn, likeEntry.LikerPubKey, *likeEntry.LikedPostHash); err != nil {
+			// If the LikeEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
+			if err := DbPutLikeMappingsWithTxn(txn, likeEntry.LikerPubKey, *likeEntry.LikedPostHash); err != nil {
 
 				return err
 			}
@@ -10912,43 +10044,28 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the FollowKeyToFollowEntry map.
 	for followKeyIter, followEntry := range bav.FollowKeyToFollowEntry {
 		// Make a copy of the iterator since we make references to it below.
 		followKey := followKeyIter
 
-		// Sanity-check that the FollowKey computed from the FollowEntry is
-		// equal to the FollowKey that maps to that entry.
-		followKeyInEntry := MakeFollowKey(
-			followEntry.FollowerPKID, followEntry.FollowedPKID)
+		// Sanity-check that the FollowKey computed from the FollowEntry is equal to the FollowKey for that entry.
+		followKeyInEntry := MakeFollowKey(followEntry.FollowerPKID, followEntry.FollowedPKID)
 		if followKeyInEntry != followKey {
 			return fmt.Errorf("_flushFollowEntriesToDbWithTxn: FollowEntry has "+
 				"FollowKey: %v, which doesn't match the FollowKeyToFollowEntry map key %v",
 				&followKeyInEntry, &followKey)
 		}
 
-		// Delete the existing mappings in the db for this FollowKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteFollowMappingsWithTxn(
-			txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushFollowEntriesToDbWithTxn: Problem deleting mappings "+
-					"for FollowKey: %v: ", &followKey)
-		}
-	}
-
-	// Go through all the entries in the FollowKeyToFollowEntry map.
-	for _, followEntry := range bav.FollowKeyToFollowEntry {
+		// Delete the existing mappings in the db for this FollowKey
 		if followEntry.isDeleted {
-			// If the FollowEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			if err := DbDeleteFollowMappingsWithTxn(txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
+				return errors.Wrapf(
+					err, "_flushFollowEntriesToDbWithTxn: Problem deleting mappings "+
+						"for FollowKey: %v: ", &followKey)
+			}
 		} else {
-			// If the FollowEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
-			if err := DbPutFollowMappingsWithTxn(
-				txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
-
+			// If the FollowEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
+			if err := DbPutFollowMappingsWithTxn(txn, followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
 				return err
 			}
 		}
@@ -10959,13 +10076,11 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through and delete all the entries so they can be added back fresh.
 	for nftKeyIter, nftEntry := range bav.NFTKeyToNFTEntry {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
 
-		// Sanity-check that the NFTKey computed from the NFTEntry is
-		// equal to the NFTKey that maps to that entry.
+		// Sanity-check that the NFTKey computed from the NFTEntry is  equal to the NFTKey for that entry.
 		nftKeyInEntry := MakeNFTKey(nftEntry.NFTPostHash, nftEntry.SerialNumber)
 		if nftKeyInEntry != nftKey {
 			return fmt.Errorf("_flushNFTEntriesToDbWithTxn: NFTEntry has "+
@@ -10973,24 +10088,15 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 				&nftKeyInEntry, &nftKey)
 		}
 
-		// Delete the existing mappings in the db for this NFTKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
-					"for NFTKey: %v: ", &nftKey)
-		}
-	}
-
-	// Add back all of the entries that aren't deleted.
-	for _, nftEntry := range bav.NFTKeyToNFTEntry {
 		if nftEntry.isDeleted {
-			// If the NFTEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this NFTKey.
+			if err := DBDeleteNFTMappingsWithTxn(txn, nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+				return errors.Wrapf(
+					err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
+						"for NFTKey: %v: ", &nftKey)
+			}
 		} else {
-			// If the NFTEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the NFTEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutNFTEntryMappingsWithTxn(txn, nftEntry); err != nil {
 				return err
 			}
@@ -11002,29 +10108,21 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through and delete all the entries so they can be added back fresh.
-	for nftKeyIter, _ := range bav.NFTKeyToAcceptedNFTBidHistory {
+	for nftKeyIter, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
 
 		// We skip the standard sanity check.  Since it is possible to accept a bid on serial number 0, it is possible
 		// that none of the accepted bids have the same serial number as the key.
 
-		// Delete the existing mappings in the db for this NFTKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, &nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushAcceptedBidEntriesToDbWithTxn: Problem deleting mappings "+
-					"for NFTKey: %v: ", &nftKey)
-		}
-	}
-
-	// Add back all of the entries that aren't nil or of length 0
-	for nftKey, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
 		if acceptedNFTBidEntries == nil || len(*acceptedNFTBidEntries) == 0 {
-			// If the acceptedNFTBidEntries is nil or has length 0 then there's nothing to do because
-			// we already deleted the entry above. length 0 means that there are no accepted bids yet.
+			// If the acceptedNFTBidEntries is nil or has length 0 then we delete the entry.
+			// Length 0 means that there are no accepted bids yet.
+			if err := DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, &nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
+				return errors.Wrapf(
+					err, "_flushAcceptedBidEntriesToDbWithTxn: Problem deleting mappings "+
+						"for NFTKey: %v: ", &nftKey)
+			}
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
@@ -11039,39 +10137,29 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 
 func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through and delete all the entries so they can be added back fresh.
 	for nftBidKeyIter, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
 		// Make a copy of the iterator since we make references to it below.
 		nftBidKey := nftBidKeyIter
 
 		// Sanity-check that the NFTBidKey computed from the NFTBidEntry is
 		// equal to the NFTBidKey that maps to that entry.
-		nftBidKeyInEntry := MakeNFTBidKey(
-			nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)
+		nftBidKeyInEntry := MakeNFTBidKey(nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)
 		if nftBidKeyInEntry != nftBidKey {
 			return fmt.Errorf("_flushNFTBidEntriesToDbWithTxn: NFTBidEntry has "+
 				"NFTBidKey: %v, which doesn't match the NFTBidKeyToNFTEntry map key %v",
 				&nftBidKeyInEntry, &nftBidKey)
 		}
 
-		// Delete the existing mappings in the db for this NFTBidKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
+		// Delete the existing mappings in the db for this NFTBidKey.
+		// TODO: Why do we need to delete these even if isDeleted is false?
 		if err := DBDeleteNFTBidMappingsWithTxn(txn, &nftBidKey); err != nil {
-
 			return errors.Wrapf(
 				err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
 					"for NFTBidKey: %v: ", &nftBidKey)
 		}
-	}
 
-	// Add back all of the entries that aren't deleted.
-	for _, nftBidEntry := range bav.NFTBidKeyToNFTBidEntry {
-		if nftBidEntry.isDeleted {
-			// If the NFTEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
-		} else {
-			// If the NFTEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+		if !nftBidEntry.isDeleted {
+			// If the NFTEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutNFTBidEntryMappingsWithTxn(txn, nftBidEntry); err != nil {
 				return err
 			}
@@ -11083,7 +10171,6 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through and delete all the entries so they can be added back fresh.
 	for diamondKeyIter, diamondEntry := range bav.DiamondKeyToDiamondEntry {
 		// Make a copy of the iterator since we make references to it below.
 		diamondKey := diamondKeyIter
@@ -11098,48 +10185,32 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 				&diamondKeyInEntry, &diamondKey)
 		}
 
-		// Delete the existing mappings in the db for this DiamondKey. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushDiamondEntriesToDbWithTxn: Problem deleting mappings "+
-					"for DiamondKey: %v: ", &diamondKey)
-		}
-	}
-
-	// Add back all of the entries that aren't deleted.
-	for _, diamondEntry := range bav.DiamondKeyToDiamondEntry {
 		if diamondEntry.isDeleted {
-			// If the DiamondEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this DiamondKey.
+			if err := DbDeleteDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
+				return errors.Wrapf(
+					err, "_flushDiamondEntriesToDbWithTxn: Problem deleting mappings "+
+						"for DiamondKey: %v: ", &diamondKey)
+			}
 		} else {
 			// If the DiamondEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutDiamondMappingsWithTxn(
-				txn,
-				diamondEntry); err != nil {
+			if err := DbPutDiamondMappingsWithTxn(txn, diamondEntry); err != nil {
 				return err
 			}
 		}
 	}
 
-	// At this point all of the MessageEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
-	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
-	glog.Debugf("_flushPostEntriesToDbWithTxn: flushing %d mappings", len(bav.PostHashToPostEntry))
 
-	// Go through all the entries in the PostHashToPostEntry map.
 	for postHashIter, postEntry := range bav.PostHashToPostEntry {
 		// Make a copy of the iterator since we take references to it below.
 		postHash := postHashIter
 
-		// Sanity-check that the hash in the post is the same as the hash in the
-		// entry
+		// Sanity-check that the hash in the post is the same as the hash in the entry
 		if postHash != *postEntry.PostHash {
 			return fmt.Errorf("_flushPostEntriesToDbWithTxn: PostEntry has "+
 				"PostHash: %v, neither of which match "+
@@ -11147,25 +10218,15 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 				postHash, postEntry.PostHash)
 		}
 
-		// Delete the existing mappings in the db for this PostHash. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeletePostEntryMappingsWithTxn(txn, &postHash, bav.Params); err != nil {
-			return errors.Wrapf(
-				err, "_flushPostEntriesToDbWithTxn: Problem deleting mappings "+
-					"for PostHash: %v: ", postHash)
-		}
-	}
-	numDeleted := 0
-	numPut := 0
-	for _, postEntry := range bav.PostHashToPostEntry {
 		if postEntry.isDeleted {
-			numDeleted++
-			// If the PostEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this PostHash.
+			if err := DBDeletePostEntryMappingsWithTxn(txn, &postHash, bav.Params); err != nil {
+				return errors.Wrapf(
+					err, "_flushPostEntriesToDbWithTxn: Problem deleting mappings "+
+						"for PostHash: %v: ", postHash)
+			}
 		} else {
-			numPut++
-			// If the PostEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the PostEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutPostEntryMappingsWithTxn(txn, postEntry, bav.Params); err != nil {
 
 				return err
@@ -11173,37 +10234,32 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
-	glog.Debugf("_flushPostEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-
-	// At this point all of the PostEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
+
 	for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
 		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
 		copy(pubKeyCopy, pubKeyIter[:])
 
-		// Delete the existing mappings in the db for this PKID. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeletePKIDMappingsWithTxn(txn, pubKeyCopy, bav.Params); err != nil {
-			return errors.Wrapf(
-				err, "_flushPKIDEntriesToDbWithTxn: Problem deleting mappings "+
-					"for pkid: %v, public key: %v: ", PkToString(pkidEntry.PKID[:], bav.Params),
-				PkToString(pubKeyCopy, bav.Params))
+		// Delete deleted or dirty PKIDs
+		if pkidEntry.isDeleted || pkidEntry.isDirty {
+			// Delete the existing mappings in the db for this PKID
+			if err := DBDeletePKIDMappingsWithTxn(txn, pubKeyCopy, bav.Params); err != nil {
+				return errors.Wrapf(
+					err, "_flushPKIDEntriesToDbWithTxn: Problem deleting mappings "+
+						"for pkid: %v, public key: %v: ", PkToString(pkidEntry.PKID[:], bav.Params),
+					PkToString(pubKeyCopy, bav.Params))
+			}
 		}
 	}
 
-	// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
 	for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
 		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
 		copy(pubKeyCopy, pubKeyIter[:])
 
-		if pkidEntry.isDeleted {
-			// If the ProfileEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
-		} else {
+		// Only flush dirty pkid entries
+		if pkidEntry.isDirty {
 			// Sanity-check that the public key in the entry matches the public key in
 			// the mapping.
 			if !reflect.DeepEqual(pubKeyCopy, pkidEntry.PublicKey) {
@@ -11221,8 +10277,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 					PkToString(pubKeyCopy, bav.Params))
 			}
 
-			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
+			// If the ProfileEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
 			if err := DBPutPKIDMappingsWithTxn(txn, pubKeyCopy, pkidEntry, bav.Params); err != nil {
 				return err
 			}
@@ -11234,15 +10289,13 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushProfilesToDbWithTxn: flushing %d mappings", len(bav.ProfilePKIDToProfileEntry))
 
-	// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
 	for profilePKIDIter, profileEntry := range bav.ProfilePKIDToProfileEntry {
 		// Make a copy of the iterator since we take references to it below.
 		profilePKID := profilePKIDIter
 
-		// Delete the existing mappings in the db for this PKID. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
+		// Delete the existing mappings in the db for this PKID
+		// TODO: A number of things need to change so we can be smarter about deletions.
 		if err := DBDeleteProfileEntryMappingsWithTxn(txn, &profilePKID, bav.Params); err != nil {
 			return errors.Wrapf(
 				err, "_flushProfileEntriesToDbWithTxn: Problem deleting mappings "+
@@ -11250,20 +10303,13 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 				PkToString(profileEntry.PublicKey, bav.Params))
 		}
 	}
-	numDeleted := 0
-	numPut := 0
+
 	for profilePKIDIter, profileEntry := range bav.ProfilePKIDToProfileEntry {
 		// Make a copy of the iterator since we take references to it below.
 		profilePKID := profilePKIDIter
 
-		if profileEntry.isDeleted {
-			numDeleted++
-			// If the ProfileEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
-		} else {
-			numPut++
-			// Get the PKID according to another map in the view and
-			// sanity-check that it lines up.
+		if !profileEntry.isDeleted {
+			// Get the PKID according to another map in the view and sanity-check that it lines up.
 			viewPKIDEntry := bav.GetPKIDForPublicKey(profileEntry.PublicKey)
 			if viewPKIDEntry == nil || viewPKIDEntry.isDeleted || *viewPKIDEntry.PKID != profilePKID {
 				return fmt.Errorf("_flushProfileEntriesToDbWithTxn: Sanity-check failed: PKID %v does "+
@@ -11272,35 +10318,25 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 					PkToString(profileEntry.PublicKey, bav.Params))
 			}
 
-			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
-			if err := DBPutProfileEntryMappingsWithTxn(
-				txn, profileEntry, &profilePKID, bav.Params); err != nil {
+			// If the ProfileEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
+			if err := DBPutProfileEntryMappingsWithTxn(txn, profileEntry, &profilePKID, bav.Params); err != nil {
 
 				return err
 			}
 		}
 	}
 
-	glog.Debugf("_flushProfilesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-
-	// At this point all of the PostEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 
-	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
 	for balanceKeyIter, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
 		// Make a copy of the iterator since we take references to it below.
 		balanceKey := balanceKeyIter
 
-		// Sanity-check that the balance key in the map is the same
-		// as the public key in the entry.
-		computedBalanceKey := MakeCreatorCoinBalanceKey(
-			balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
+		// Sanity-check that the balance key in the map is the same as the public key in the entry.
+		computedBalanceKey := MakeCreatorCoinBalanceKey(balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
 		if !reflect.DeepEqual(balanceKey, computedBalanceKey) {
 			return fmt.Errorf("_flushBalanceEntriesToDbWithTxn: BalanceEntry has "+
 				"map key: %v which does not match match "+
@@ -11308,62 +10344,37 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 				balanceKey, computedBalanceKey)
 		}
 
-		// Delete the existing mappings in the db for this balance key. They will be re-added
-		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
-			txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), bav.Params); err != nil {
-
-			return errors.Wrapf(
-				err, "_flushBalanceEntriesToDbWithTxn: Problem deleting mappings "+
-					"for public key: %v: ", balanceKey)
-		}
-	}
-	numDeleted := 0
-	numPut := 0
-	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
-	for _, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
-		// Make a copy of the iterator since we take references to it below.
 		if balanceEntry.isDeleted {
-			numDeleted++
-			// If the ProfileEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			// Delete the existing mappings in the db for this balance key.
+			if err := DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
+				txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID)); err != nil {
+
+				return errors.Wrapf(
+					err, "_flushBalanceEntriesToDbWithTxn: Problem deleting mappings "+
+						"for public key: %v: ", balanceKey)
+			}
 		} else {
-			numPut++
-			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
-			if err := DBPutCreatorCoinBalanceEntryMappingsWithTxn(
-				txn, balanceEntry, bav.Params); err != nil {
+			// If the ProfileEntry has (isDeleted = false) then we put the corresponding mappings for it into the db.
+			if err := DBPutCreatorCoinBalanceEntryMappingsWithTxn(txn, balanceEntry); err != nil {
 
 				return err
 			}
 		}
 	}
 
-	glog.Debugf("_flushBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-
-	// At this point all of the PostEntry mappings in the db should be up-to-date.
-
 	return nil
 }
 
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
-	glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
 
-	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the DB.
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
-		// Delete the existing mapping in the DB for this map key, this will be re-added
-		// later if isDeleted=false.
-		if err := DBDeleteDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
-			derivedKeyMapKey.DerivedPublicKey); err != nil {
-			return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
-				"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
-		}
-
-		numDeleted := 0
-		numPut := 0
 		if derivedKeyEntry.isDeleted {
-			// Since entry is deleted, there's nothing to do.
-			numDeleted++
+			// Delete the existing mapping in the DB for this map key
+			if err := DBDeleteDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
+				derivedKeyMapKey.DerivedPublicKey); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
+					"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
+			}
 		} else {
 			// In this case we add the mapping to the DB.
 			if err := DBPutDerivedKeyMappingWithTxn(txn, derivedKeyMapKey.OwnerPublicKey,
@@ -11371,15 +10382,13 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 					"Problem putting DerivedKeyEntry %v to db", *derivedKeyEntry)
 			}
-			numPut++
 		}
-		glog.Debugf("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
 
 	return nil
 }
 
-func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, snapshot *Snapshot) error {
+func (bav *UtxoView) FlushToDbWithTxn() error {
 	// We hold write lock on the snapshot mutex. While this might
 	// look like a bottleneck, realistically snapshots won't hold
 	// the read lock too often. Also, each time we hold snapshot
@@ -11388,63 +10397,64 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, snapshot *Snapshot) error
 	// map of mutexes per DB key, which will allow ...
 	// TODO: what about a channel that locks the snapshot reads mid-way?
 	//snapshot.Mutex.Lock()
+
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
-		if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushUtxosToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushProfileEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushProfileEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushPKIDEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushPKIDEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushPostEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushPostEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushLikeEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushLikeEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushFollowEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushFollowEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushDiamondEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushDiamondEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushMessageEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushMessageEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushBalanceEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushBalanceEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushDeSoBalancesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushDeSoBalancesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushForbiddenPubKeyEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushForbiddenPubKeyEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushNFTEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushNFTEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushNFTBidEntriesToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushNFTBidEntriesToDbWithTxn); err != nil {
 			return err
 		}
-		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn); err != nil {
+		if err := bav.Handle.Update(bav._flushDerivedKeyEntryToDbWithTxn); err != nil {
 			return err
 		}
 	}
 
 	// Always flush to BadgerDB.
-	if err := bav._flushBitcoinExchangeDataWithTxn(txn); err != nil {
+	if err := bav.Handle.Update(bav._flushBitcoinExchangeDataWithTxn); err != nil {
 		return err
 	}
-	if err := bav._flushGlobalParamsEntryToDbWithTxn(txn); err != nil {
+	if err := bav.Handle.Update(bav._flushGlobalParamsEntryToDbWithTxn); err != nil {
 		return err
 	}
-	if err := bav._flushAcceptedBidEntriesToDbWithTxn(txn); err != nil {
+	if err := bav.Handle.Update(bav._flushAcceptedBidEntriesToDbWithTxn); err != nil {
 		return err
 	}
-	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
+	if err := bav.Handle.Update(bav._flushRepostEntriesToDbWithTxn); err != nil {
 		return err
 	}
 
@@ -11461,9 +10471,7 @@ func (bav *UtxoView) FlushToDb() error {
 		}
 	}
 
-	err = bav.Handle.Update(func(txn *badger.Txn) error {
-		return bav.FlushToDbWithTxn(txn)
-	})
+	err = bav.FlushToDbWithTxn()
 	if err != nil {
 		return err
 	}
