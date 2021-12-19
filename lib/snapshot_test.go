@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"github.com/NVIDIA/sortedmap"
 	"github.com/decred/dcrd/lru"
-	merkletree "github.com/laser/go-merkle-tree"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/require"
 	"math/big"
 	"math/rand"
@@ -16,6 +17,38 @@ import (
 	"testing"
 	"time"
 )
+
+
+func TestBadgerEmptyWrite(t *testing.T){
+	require := require.New(t)
+
+	db, _ := GetTestBadgerDb()
+	key := []byte{1, 2, 3}
+	val := []byte{}
+
+	err := db.Update(func(txn *badger.Txn) error {
+		return txn.Set(key, val)
+	})
+	require.NoError(err)
+
+	var readVal []byte
+	err = db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(key)
+		if err != nil {
+			return err
+		}
+
+		readVal, err = item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(err)
+
+	fmt.Println(readVal, val)
+	require.Equal(reflect.DeepEqual(hex.EncodeToString(val), hex.EncodeToString(readVal)), true)
+}
 
 // Part of the process of maintaining state snapshot involves writing
 // to so-called Ancestral Records after a DB flush in utxo_view.

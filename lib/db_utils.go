@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/ristretto/z"
 	"io"
 	"log"
@@ -19,6 +18,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -304,10 +304,7 @@ var NonStatePrefixes = [][]byte{
 	_PrefixAncestralRecords,
 }
 
-// DBSetWithTxn is a wrapper around badger.Txn.Set() which allows us to add
-// computation prior to DB writes. If we move to DB prefixes with more than
-// a single byte, then this function has to be updated.
-func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) error {
+func isStateKey(key []byte) bool {
 	isStatePrefix := true
 	for ii := 0; ii < len(NonStatePrefixes); ii++ {
 		if reflect.DeepEqual(NonStatePrefixes[ii][0], key[0]) {
@@ -315,29 +312,62 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 			break
 		}
 	}
+	return isStatePrefix
+}
 
-	if snap != nil {
+func deleteFromState(txn *badger.Txn, snap *Snapshot, key []byte) error {
+	// We only cache / update ancestral records when we're dealing with state prefix.
+	isState := snap != nil && isStateKey(key)
+
+	if isState {
 		keyString := hex.EncodeToString(key)
 
-		if isStatePrefix {
-			// and you're also fetching the same key while sending snapshot information
-			// Race condition occurs when you're writing a record to DB & ancestral records
-			snap.Cache = lru.NewKVCache(100)
-			if val, exists := snap.Cache.Lookup(keyString); exists {
-				_ = val
-				// Do snapshot stuff
-			}
-			val, err := DBGetWithTxn(txn, snap, key)
-			if err != nil && err != badger.ErrKeyNotFound {
-				return err
-			}
+		// We check if we've already read this key and stored it in the cache.
+		// Otherwise, we fetch the current value of this record from the DB.
+		currentValue, err := DBGetWithTxn(txn, snap, key)
 
-			_ = val
-			// Do snapshot stuff
-			snap.Cache.Add(keyString, value)
+		// If there is some error with the DB read, other than non-existent key, we return.
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+
+		// If the record was not found, we add it to the NotExistsMap, otherwise to AncestralMap.
+		if err == badger.ErrKeyNotFound {
+			snap.NotExistsMap[keyString] = true
+		} else {
+			snap.AncestralMap[keyString] = currentValue
+			// We also have to remove the previous value from the state checksum.
+			// Because checksum is commutative, we can safely remove the past value here.
+			snap.Checksum.RemoveBytes(currentValue)
 		}
 	}
 
+	return nil
+}
+
+// DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add
+// computation prior to DB writes. In particular, we use it to maintain a dynamic
+// LRU cache, and to build DB snapshots with ancestral records.
+func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) error {
+	// We only cache / update ancestral records when we're dealing with state prefix.
+	isState := snap != nil && isStateKey(key)
+
+	// If snapshot was provided, we will need to load the current value of the record
+	// so that we can later write it in the ancestral record. We first lookup cache.
+	if isState {
+		keyString := hex.EncodeToString(key)
+		err := deleteFromState(txn, snap, key)
+		if err != nil {
+			return err
+		}
+
+		// Now save the newest record to cache.
+		snap.Cache.Add(keyString, value)
+		// We also add the new record to the checksum.
+		snap.Checksum.AddBytes(value)
+	}
+
+	// We update the DB record with the intended value.
 	return txn.Set(key, value)
 }
 
@@ -346,26 +376,35 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 // Whenever we read/write records in the DB, we place a copy in the LRU cache to save
 // us lookup time.
 func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
+	// We only cache / update ancestral records when we're dealing with state prefix.
+	isState := snap != nil && isStateKey(key)
 	keyString := hex.EncodeToString(key)
-	if snap != nil {
-		if val, exists := snap.Cache.Lookup(keyString); exists {
-			return val.([]byte), nil
-		}
+
+	// Lookup the snapshot cache and check if we've already stored a value there.
+	if val, exists := snap.Cache.Lookup(keyString); isState && exists {
+		return val.([]byte), nil
 	}
 
+	// If record doesn't exist in cache, we get it from the DB.
 	item, err := txn.Get(key)
 	if err != nil {
 		return nil, err
 	}
 	itemData, err := item.ValueCopy(nil)
 
-	if snap != nil {
+	// If DBWriteLock semaphore indicates that a flush takes place, we don't update cache.
+	if isState && atomic.LoadUint32(&snap.DBWriteLock) == 0 {
 		snap.Cache.Add(keyString, itemData)
 	}
 	return itemData, nil
 }
 
 func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
+	err := deleteFromState(txn, snap, key)
+	if err != nil {
+		return err
+	}
+
 	return txn.Delete(key)
 }
 

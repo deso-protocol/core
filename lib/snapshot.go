@@ -3,10 +3,8 @@ package lib
 import (
 	"fmt"
 	"github.com/decred/dcrd/lru"
-	"github.com/elliotchance/orderedmap"
 	"golang.org/x/crypto/sha3"
 	"math/big"
-	"sync"
 )
 
 // MODP16 is a large MODP prime number taken from RFC 3526. We use the prime with index 16.
@@ -65,7 +63,7 @@ const ModulusLength = 512
 // K-Sum can be generalized to any algebraic group. That is, given a group G, zero element 0,
 // operation +, and set of group elements L, find a subset of L such the +(a_i) = 0.
 // https://link.springer.com/content/pdf/10.1007%2F3-540-45708-9_19.pdf
-// TODO: I think we need to use the multiplicative group, unfortunatelly. Seems like the DLP
+// TODO: I think we need to use the multiplicative group, unfortunately. Seems like the DLP
 // assumption only holds if the factorization is difficult.
 type StateChecksum struct {
 	Checksum big.Int
@@ -112,23 +110,44 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) {
 }
 
 type Snapshot struct {
-	Cache      lru.KVCache
-	Mutex      sync.RWMutex
-	Checksum   *StateChecksum
-	OrderedMap *orderedmap.OrderedMap
+	// Cache is used to store most recent DB records that we've read/wrote.
+	// This is particularly useful for maintaining ancestral records, because
+	// it saves us read time when we're writing to DB during utxo_view flush.
+	Cache        lru.KVCache
+
+	// Checksum allows us to confirm integrity of the state so that when we're
+	// syncing with peers, we are confident that data wasn't tampered with.
+	Checksum     *StateChecksum
+
+	// AncestralMap keeps track of original data in place of modified records
+	// during utxo_view flush, which is where we're modifying state data.
+	AncestralMap map[string][]byte
+
+	// NotExistsMap keeps track of non-existent records in the DB. We need to
+	// do this because we need to distinguish non-existent records from []byte{}.
+	NotExistsMap map[string]bool
+
+	// DBWriteLock is an atomically accessed semaphore counter that will be
+	// used to mitigate DB race conditions between sync and utxo_view flush.
+	DBWriteLock  uint32
+
 }
 
 func NewSnapshot(cacheSize uint32) (*Snapshot, error) {
-	checksum := &StateChecksum{}
-	checksum.Initialize()
-
 	if cacheSize == 0 {
 		return nil, fmt.Errorf("NewSnapshot: Error initializing snapshot, cache size should not be 0")
 	}
 
+	// Initialize the checksum.
+	checksum := &StateChecksum{}
+	checksum.Initialize()
+
 	snap := &Snapshot{
-		Cache:    lru.NewKVCache(uint(cacheSize)),
-		Checksum: checksum,
+		Cache:        lru.NewKVCache(uint(cacheSize)),
+		Checksum:     checksum,
+		AncestralMap: make(map[string][]byte),
+		NotExistsMap: make(map[string]bool),
+		DBWriteLock:  uint32(0),
 	}
 
 	return snap, nil
