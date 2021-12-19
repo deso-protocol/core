@@ -18,6 +18,95 @@ import (
 	"time"
 )
 
+func TestBadgerConcurrentWrite(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	db, _ := GetTestBadgerDb()
+	const keySize = 16
+	const valSize = 32
+	sequentialWrites := 128
+	concurrentWrites := 512
+
+	var keys [][keySize]byte
+	var vals [][valSize]byte
+	for ii := 0; ii < sequentialWrites + concurrentWrites; ii++ {
+		var key [keySize]byte
+		var val [valSize]byte
+		copy(key[:], RandomBytes(keySize))
+		copy(val[:], RandomBytes(valSize))
+		keys = append(keys, key)
+		vals = append(vals, val)
+	}
+
+	wait := sync.WaitGroup{}
+	wait.Add(1)
+
+	err := db.Update(func(txn *badger.Txn) error {
+		for ii :=0; ii < sequentialWrites; ii++ {
+			err := txn.Set(keys[ii][:], vals[ii][:])
+			if err != nil {
+				return err
+			}
+		}
+
+		// This won't work because of concurrency
+		//go func(txn *badger.Txn, wait *sync.WaitGroup) {
+		//	for jj := sequentialWrites; jj < sequentialWrites + concurrentWrites; jj++ {
+		//		_ = txn.Set(keys[jj][:], vals[jj][:])
+		//	}
+		//	wait.Done()
+		//}(txn, &wait)
+
+		go func(db *badger.DB, wait *sync.WaitGroup) {
+			err := db.Update(func(txn *badger.Txn) error {
+				for jj := sequentialWrites; jj < sequentialWrites + concurrentWrites; jj++ {
+					err := txn.Set(keys[jj][:], vals[jj][:])
+					if err != nil {
+						fmt.Printf("Error in concurrent write: %v", err)
+						return err
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				fmt.Printf("Error, failed to write concurrently: %v", err)
+			}
+			fmt.Println("Finished concurrent write")
+			wait.Done()
+		}(db, &wait)
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	fmt.Println("Finished sequential write")
+
+	wait.Wait()
+	fmt.Println("Finished everything")
+
+	err = db.View(func(txn *badger.Txn) error {
+		for ii := 0; ii < sequentialWrites + concurrentWrites; ii++ {
+			item, err := txn.Get(keys[ii][:])
+			if err != nil {
+				fmt.Printf("Error: %v, at index %v\n", err, ii)
+				return err
+			}
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			require.Equal(reflect.DeepEqual(hex.EncodeToString(value), hex.EncodeToString(vals[ii][:])), true)
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+	}
+	fmt.Println("Finished comparison")
+}
+
 
 func TestBadgerEmptyWrite(t *testing.T){
 	require := require.New(t)

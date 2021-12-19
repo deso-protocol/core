@@ -315,60 +315,47 @@ func isStateKey(key []byte) bool {
 	return isStatePrefix
 }
 
-func deleteFromState(txn *badger.Txn, snap *Snapshot, key []byte) error {
-	// We only cache / update ancestral records when we're dealing with state prefix.
-	isState := snap != nil && isStateKey(key)
-
-	if isState {
-		keyString := hex.EncodeToString(key)
-
-		// We check if we've already read this key and stored it in the cache.
-		// Otherwise, we fetch the current value of this record from the DB.
-		currentValue, err := DBGetWithTxn(txn, snap, key)
-
-		// If there is some error with the DB read, other than non-existent key, we return.
-		if err != nil && err != badger.ErrKeyNotFound {
-			return err
-		}
-
-		// If the record was not found, we add it to the NotExistsMap, otherwise to AncestralMap.
-		if err == badger.ErrKeyNotFound {
-			snap.NotExistsMap[keyString] = true
-		} else {
-			snap.AncestralMap[keyString] = currentValue
-			// We also have to remove the previous value from the state checksum.
-			// Because checksum is commutative, we can safely remove the past value here.
-			snap.Checksum.RemoveBytes(currentValue)
-		}
-	}
-
-	return nil
-}
-
 // DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add
 // computation prior to DB writes. In particular, we use it to maintain a dynamic
 // LRU cache, and to build DB snapshots with ancestral records.
 func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) error {
 	// We only cache / update ancestral records when we're dealing with state prefix.
 	isState := snap != nil && isStateKey(key)
+	var ancestralValue []byte
+	var getError error
 
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.
 	if isState {
-		keyString := hex.EncodeToString(key)
-		err := deleteFromState(txn, snap, key)
-		if err != nil {
-			return err
-		}
+		// We check if we've already read this key and stored it in the cache.
+		// Otherwise, we fetch the current value of this record from the DB.
+		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
 
+		// If there is some error with the DB read, other than non-existent key, we return.
+		if getError != nil && getError != badger.ErrKeyNotFound {
+			return errors.Wrapf(getError, "DBSetWithTxn: problem reading record " +
+				"from DB with key: %v", key)
+		}
+	}
+
+	// We update the DB record with the intended value.
+	err := txn.Set(key, value)
+	if err != nil {
+		return errors.Wrapf(err, "DBSetWithTxn: Problem setting record " +
+			"in DB with key: %v, value: %v", key, value)
+	}
+
+	// After a successful DB write, we update the snapshot.
+	if isState {
+		keyString := hex.EncodeToString(key)
+		// Update ancestral record structures depending on the existing DB record.
+		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
 		// Now save the newest record to cache.
 		snap.Cache.Add(keyString, value)
 		// We also add the new record to the checksum.
 		snap.Checksum.AddBytes(value)
 	}
-
-	// We update the DB record with the intended value.
-	return txn.Set(key, value)
+	return nil
 }
 
 // DBGetWithTxn is a wrapper function around the BadgerDB get function. It returns
@@ -388,24 +375,54 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	// If record doesn't exist in cache, we get it from the DB.
 	item, err := txn.Get(key)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "DBGetWithTxn: Problem reading record from DB " +
+			"with key %v", key)
 	}
 	itemData, err := item.ValueCopy(nil)
 
-	// If DBWriteLock semaphore indicates that a flush takes place, we don't update cache.
-	if isState && atomic.LoadUint32(&snap.DBWriteLock) == 0 {
+	// If DBWriteSemaphore semaphore indicates that a flush takes place, we don't update cache.
+	if isState && atomic.LoadInt32(&snap.DBWriteSemaphore) == 0 {
 		snap.Cache.Add(keyString, itemData)
 	}
 	return itemData, nil
 }
 
+// DBDeleteWithTxn is a wrapper function around BadgerDB delete function.
+// It allows us to update the snapshot LRU cache and ancestral records.
 func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
-	err := deleteFromState(txn, snap, key)
-	if err != nil {
-		return err
+	var ancestralValue []byte
+	var getError error
+	isState := snap != nil && isStateKey(key)
+
+	// If snapshot was provided, we will need to load the current value of the record
+	// so that we can later write it in the ancestral record. We first lookup cache.
+	if isState {
+		// We check if we've already read this key and stored it in the cache.
+		// Otherwise, we fetch the current value of this record from the DB.
+		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+
+		// If there is some error with the DB read, other than non-existent key, we return.
+		if getError != nil && getError != badger.ErrKeyNotFound {
+			return errors.Wrapf(getError, "DBDeleteWithTxn: problem checking for DB record " +
+				"with key: %v", key)
+		}
 	}
 
-	return txn.Delete(key)
+	err := txn.Delete(key)
+	if err != nil {
+		return errors.Wrapf(err, "DBDeleteWithTxn: Problem deleting record " +
+			"from DB with key: %v", key)
+	}
+
+	// After a successful DB delete, we update the snapshot.
+	if isState {
+		keyString := hex.EncodeToString(key)
+		// Update ancestral record structures depending on the existing DB record.
+		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
+		// Now delete the past record from the cache.
+		snap.Cache.Delete(keyString)
+	}
+	return nil
 }
 
 func DBIteratePrefixKeys(db *badger.DB, prefix []byte, maxBytes uint32) (

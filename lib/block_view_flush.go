@@ -39,6 +39,9 @@ func (bav *UtxoView) FlushToDb() error {
 }
 
 func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
+	// Increment snapshot semaphore counter to indicate we're about to flush.
+	bav.Snapshot.IncrementSemaphore()
+
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
 		if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
@@ -99,6 +102,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		return err
 	}
 
+	go bav.Snapshot.FlushAncestralRecords(bav.Handle)
 	return nil
 }
 

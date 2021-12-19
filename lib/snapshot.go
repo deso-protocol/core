@@ -1,10 +1,16 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/decred/dcrd/lru"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/sha3"
 	"math/big"
+	"sort"
+	"sync/atomic"
 )
 
 // MODP16 is a large MODP prime number taken from RFC 3526. We use the prime with index 16.
@@ -113,26 +119,40 @@ type Snapshot struct {
 	// Cache is used to store most recent DB records that we've read/wrote.
 	// This is particularly useful for maintaining ancestral records, because
 	// it saves us read time when we're writing to DB during utxo_view flush.
-	Cache        lru.KVCache
+	Cache            lru.KVCache
+
+	// BlockHeight is the height of the snapshot.
+	BlockHeight      uint64
 
 	// Checksum allows us to confirm integrity of the state so that when we're
 	// syncing with peers, we are confident that data wasn't tampered with.
-	Checksum     *StateChecksum
+	Checksum         *StateChecksum
 
 	// AncestralMap keeps track of original data in place of modified records
 	// during utxo_view flush, which is where we're modifying state data.
-	AncestralMap map[string][]byte
+	AncestralMap     map[string][]byte
 
 	// NotExistsMap keeps track of non-existent records in the DB. We need to
 	// do this because we need to distinguish non-existent records from []byte{}.
-	NotExistsMap map[string]bool
+	NotExistsMap     map[string]bool
 
-	// DBWriteLock is an atomically accessed semaphore counter that will be
+	// MapKeyList is a list of keys in AncestralMap and NotExistsMap. We will sort
+	// it so that writes to BadgerDB are faster
+	MapKeyList       []string
+
+	// DBWriteSemaphore is an atomically accessed semaphore counter that will be
 	// used to mitigate DB race conditions between sync and utxo_view flush.
-	DBWriteLock  uint32
+	DBWriteSemaphore int32
 
+	// brokenSnapshot indicates that we need to rebuild entire snapshot from scratch.
+	// Updates to the snapshot happen in the background, so sometimes they can be broken
+	// by unexpected concurrency. One such edge-case is long block reorg occurring after
+	// moving to next snapshot version. Health checks will detect these and set brokenSnapshot.
+	brokenSnapshot   bool
 }
 
+// NewSnapshot creates a new snapshot with specified cache size.
+// TODO: make sure we don't snapshot when using PG
 func NewSnapshot(cacheSize uint32) (*Snapshot, error) {
 	if cacheSize == 0 {
 		return nil, fmt.Errorf("NewSnapshot: Error initializing snapshot, cache size should not be 0")
@@ -142,14 +162,134 @@ func NewSnapshot(cacheSize uint32) (*Snapshot, error) {
 	checksum := &StateChecksum{}
 	checksum.Initialize()
 
+	// Set the snapshot
 	snap := &Snapshot{
-		Cache:        lru.NewKVCache(uint(cacheSize)),
-		Checksum:     checksum,
-		AncestralMap: make(map[string][]byte),
-		NotExistsMap: make(map[string]bool),
-		DBWriteLock:  uint32(0),
+		Cache:            lru.NewKVCache(uint(cacheSize)),
+		BlockHeight:      uint64(0),
+		Checksum:         checksum,
+		AncestralMap:     make(map[string][]byte),
+		NotExistsMap:     make(map[string]bool),
+		DBWriteSemaphore: int32(0),
+		brokenSnapshot:   false,
 	}
 
 	return snap, nil
+}
+
+func (snap *Snapshot) String() string {
+	return fmt.Sprintf("< Snapshot | height: %v >", snap.BlockHeight)
+}
+
+func (snap *Snapshot) IncrementSemaphore() {
+	currentSemaphore := atomic.LoadInt32(&snap.DBWriteSemaphore)
+	if currentSemaphore > 0 {
+		snap.brokenSnapshot = true
+		glog.Errorf("UtxoView.FlushToDbWithTxn: Race condition in flush to snapshot, " +
+			"current DBWriteSemaphore: %v", currentSemaphore)
+	}
+	atomic.AddInt32(&snap.DBWriteSemaphore, 1)
+}
+
+// PrepareAncestralRecord sets an adequate record in AncestralMap or NotExistsMap.
+func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed bool) {
+	// If the record was not found, we add it to the NotExistsMap, otherwise to AncestralMap.
+	// We record the key in MapKeyList.
+	snap.MapKeyList = append(snap.MapKeyList, key)
+	if existed {
+		snap.AncestralMap[key] = value
+		// We also have to remove the previous value from the state checksum.
+		// Because checksum is commutative, we can safely remove the past value here.
+		snap.Checksum.RemoveBytes(value)
+	} else {
+		snap.NotExistsMap[key] = true
+	}
+}
+
+// _getCurrentPrefixAndKey is used to get an ancestral record key from a main DB key.
+// 		<prefix, type [1]byte, blockHeight [10]byte, key> -> <>
+func (snap *Snapshot) _getCurrentPrefixAndKey (notExistsRecord bool, key []byte) []byte {
+	var prefix []byte
+
+	// Append the ancestral record prefix.
+	prefix = append(prefix, _PrefixAncestralRecords...)
+
+	// Append the type
+	// 		0 - non-existing main DB key
+	//		1 - existing main DB key
+	var typeByte []byte
+	if typeByte = []byte{1}; notExistsRecord {
+		typeByte = []byte{0}
+	}
+	prefix = append(prefix, typeByte...)
+
+	// Append block height, which is the current snapshot identifier.
+	prefix = append(prefix, UintToBuf(snap.BlockHeight)...)
+
+	// Finally, append the main DB key.
+	return append(prefix, key...)
+}
+
+// FlushAncestralRecords updates the ancestral records after a utxo_view flush.
+// This function should be called in a go-routine after all utxo_view flushes.
+func (snap *Snapshot) FlushAncestralRecords(handle *badger.DB) {
+	// If snapshot is broken then there's nothing to do.
+	if snap.brokenSnapshot {
+		return
+	}
+
+	// First sort the MapKeyList so that we write to BadgerDB in order.
+	sort.Strings(snap.MapKeyList)
+
+	// We launch a new read-write transaction to set the records.
+	err := handle.Update(func(txn *badger.Txn) error {
+		// Iterate through all now-sorted keys.
+		for _, key := range snap.MapKeyList {
+			// We store keys as strings because they're easier to store and sort this way.
+			keyBytes, err := hex.DecodeString(key)
+			if err != nil {
+				return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
+					"decoding MapKeyList key: %v", key)
+			}
+
+			// We check whether this record is already present in ancestral records,
+			// if so then there's nothing to do. What we want is err == badger.ErrKeyNotFound
+			_, err = txn.Get(keyBytes)
+			if err != nil && err != badger.ErrKeyNotFound {
+				return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
+					"reading exsiting record in the DB at key: %v", key)
+			}
+			if err == nil {
+				continue
+			}
+
+			// If we get here, it means that no record existed in ancestral records at key.
+			// The key was either added to AncestralMap or NotExistsMap during flush.
+			if value, exists := snap.AncestralMap[key]; exists {
+				err = txn.Set(snap._getCurrentPrefixAndKey(false, keyBytes), value)
+				if err != nil {
+					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
+						"flushing a record from AncestralMap at key %v:", key)
+				}
+			} else if _, exists = snap.NotExistsMap[key]; exists {
+				err = txn.Set(snap._getCurrentPrefixAndKey(true, keyBytes), []byte{})
+				if err != nil {
+					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
+						"flushing a record from NotExistsMap at key %v:", key)
+				}
+			} else {
+				return fmt.Errorf("Snapshot.FlushAncestralRecords: Error, key is not " +
+					"in AncestralMap nor NotExistsMap. This should never happen")
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		// If any error occurred, then the snapshot is potentially broken.
+		snap.brokenSnapshot = true
+		glog.Errorf("Snapshot.FlushAncestralRecords: Error flushing snapshot %v", snap)
+	}
+
+	// Decrement snapshot semaphore counter.
+	atomic.AddInt32(&snap.DBWriteSemaphore, int32(-1))
 }
 
