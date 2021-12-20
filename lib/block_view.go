@@ -78,6 +78,9 @@ type UtxoView struct {
 	// Derived Key entries. Map key is a combination of owner and derived public keys.
 	DerivedKeyToDerivedEntry map[DerivedKeyMapKey]*DerivedKeyEntry
 
+	// Messaging key entries.
+	PKIDToMessagingKey map[PKID]*MessagingKeyEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -609,9 +612,55 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 }
 
 func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
-	// First we check to see if the last utxoOp was a diamond operation. If it was, we disconnect
-	// the diamond-related changes and decrement the operation index to move past it.
 	operationIndex := len(utxoOpsForTxn) - 1
+	if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeMessagingKey {
+		// Sanity-check owner public key
+		if len(currentTxn.PublicKey) != btcec.PubKeyBytesLenCompressed {
+			return fmt.Errorf("_disconnectBasicTransfer invalid public key: %v", currentTxn.PublicKey)
+		}
+		_, err := btcec.ParsePubKey(currentTxn.PublicKey, btcec.S256())
+		if err != nil {
+			return fmt.Errorf("_disconnectBasicTransfer invalid public key: %v", err)
+		}
+
+		// If we get here, it means that we have a valid messaging public key.
+		// Sanity check messaging key name
+		keyName := utxoOpsForTxn[operationIndex].PrevMessagingKeyName
+		if len(keyName) < MinMessagingKeyNameCharacters {
+			return errors.Wrapf(
+				RuleErrorMessagingKeyNameTooShort, "_disconnectBasicTransfer: " +
+					"Too few characters in key name: min = %v, provided = %v",
+				MinMessagingKeyNameCharacters, len(keyName))
+		}
+		if len(keyName) > MaxMessagingKeyNameCharacters {
+			return errors.Wrapf(
+				RuleErrorMessagingKeyNameTooLong, "_disconnectBasicTransfer: " +
+					"Too many characters in key name: max = %v; provided = %v",
+				MaxMessagingKeyNameCharacters, len(keyName))
+		}
+
+		// Get the PKID for the user that submitted this transaction.
+		ownerPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+		if ownerPKIDEntry == nil || ownerPKIDEntry.isDeleted {
+			return fmt.Errorf("_disconnectBasicTransfer: ownerPKID was nil or deleted;" +
+				" this should never happen")
+		}
+
+		// Get the messaging key that the utxoOps.PrevMessagingKeyName points to
+		messagingKeyEntry := bav._getPKIDToMessagingKeyMapping(ownerPKIDEntry.PKID, keyName)
+		if messagingKeyEntry != nil {
+			return fmt.Errorf("_disconnectBasicTransfer: Error, this key already exists; " +
+				"ownerPKID: %v, messagingPublicKey: %v, messagingKeyName: %v",
+				ownerPKIDEntry.PKID, messagingKeyEntry.MessagingPublicKey, keyName)
+		}
+
+		// Delete this item from UtxoView to indicate we should remove this entry from DB.
+		bav._deletePKIDToMessagingKeyMapping(messagingKeyEntry)
+
+		operationIndex--
+	}
+	// We check to see if the latest utxoOp was a diamond operation. If it was, we disconnect
+	// the diamond-related changes and decrement the operation index to move past it.
 	if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeDeSoDiamond {
 		currentOperation := utxoOpsForTxn[operationIndex]
 
@@ -1304,6 +1353,17 @@ func (bav *UtxoView) _connectBasicTransfer(
 			PrevPostEntry:    previousDiamondPostEntry,
 			PrevDiamondEntry: previousDiamondEntry,
 		})
+	}
+
+	// We allow rotating messaging keys, which can be passed in transaction ExtraData.
+	// This is part of our Messaging V3 protocol where we encrypt/decrypt messages
+	// based on shared secrets of rotating messaging keys, instead of the main user's key.
+	// Lookup transaction ExtraData records for messaging keys.
+	utxoOp, err := bav._connectMessagingKeys(txn)
+	if utxoOp != nil && err == nil {
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+	} else if err != nil {
+		return 0, 0, nil, errors.Wrapf(RuleErrorMessagingKeyConnect, "_connectBasicTransfer: Error %v", err)
 	}
 
 	// If signature verification is requested then do that as well.

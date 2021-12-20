@@ -52,6 +52,44 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 	bav._setMessageEntryMappings(&tombstoneMessageEntry)
 }
 
+func (bav *UtxoView) _getPKIDToMessagingKeyMapping(ownerPKID *PKID, messagingKeyName []byte) *MessagingKeyEntry {
+	// If an entry exists in the in-memory map, return the value of that mapping.
+	mapValue, exists := bav.PKIDToMessagingKey[*ownerPKID]
+	if exists {
+		return mapValue
+	}
+
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil. Either way, save the value to the in-memory view mapping got later.
+	messagingKeyEntry := DBGetMessagingKeyEntry(bav.Handle, ownerPKID, messagingKeyName)
+	if messagingKeyEntry != nil {
+		bav._setPKIDToMessagingKeyMapping(messagingKeyEntry)
+	}
+	return messagingKeyEntry
+}
+
+func (bav *UtxoView) _setPKIDToMessagingKeyMapping(messagingKeyEntry *MessagingKeyEntry) {
+	// This function shouldn't be called with nil
+	if messagingKeyEntry == nil {
+		glog.Errorf("_setPKIDToMessagingKeyMapping: Called with nil MessagingKeyEntry; " +
+			"this should never happen.")
+		return
+	}
+
+	bav.PKIDToMessagingKey[*messagingKeyEntry.OwnerPKID] = messagingKeyEntry
+}
+
+func (bav *UtxoView) _deletePKIDToMessagingKeyMapping(messagingKeyEntry *MessagingKeyEntry) {
+
+	// Create a tombstone entry.
+	tombstoneMessageKeyEntry := *messagingKeyEntry
+	tombstoneMessageKeyEntry.isDeleted = true
+
+	// Set the mappings to point to the tombstone entry.
+	bav._setPKIDToMessagingKeyMapping(&tombstoneMessageKeyEntry)
+}
+
 //
 // Postgres messages
 //
@@ -356,4 +394,96 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	// the PrivateMessage operation at the end since we just reverted it.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
+}
+
+func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn) (*UtxoOperation, error) {
+	if txn.ExtraData == nil {
+		return nil, nil
+	}
+
+	var messagingPublicKey, messagingKeyName []byte
+	var exists bool
+
+	// Check for existence of the MessagingPublicKey in ExtraData
+	if messagingPublicKey, exists = txn.ExtraData[MessagingPublicKey]; !exists {
+		return nil, nil
+	}
+
+	// Check for existence of the MessagingKeyName in ExtraData
+	if messagingKeyName, exists = txn.ExtraData[MessagingKeyName]; !exists {
+		return nil, errors.Wrapf(
+			RuleErrorMessagingKeyNameNotProvided,"_connectMessagingKeys: " +
+				"Did you forget to add key name?")
+	}
+
+	// If we get here it means that this transaction is trying to update the messaging
+	// key. So sanity-check that the public key provided in ExtraData is valid.
+	if len(messagingPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return nil, errors.Wrapf(
+			RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKeys: "+
+				"MessagingPublicKey = %d; Expected length = %d",
+			len(messagingPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+	_, err := btcec.ParsePubKey(messagingPublicKey, btcec.S256())
+	if err != nil {
+		return nil, errors.Wrapf(
+			RuleErrorMessagingPublicParseError, "_connectMessagingKeys: " +
+				"Error parsing public key: %v", err)
+	}
+
+	// If we get here, it means that we have a valid messaging public key.
+	// Sanity check messaging key name
+	if len(messagingKeyName) < MinMessagingKeyNameCharacters {
+		return nil, errors.Wrapf(
+			RuleErrorMessagingKeyNameTooShort, "_connectMessagingKeys: " +
+				"Too few characters in key name: min = %v, provided = %v",
+				MinMessagingKeyNameCharacters, len(messagingKeyName))
+	}
+	if len(messagingKeyName) > MaxMessagingKeyNameCharacters {
+		return nil, errors.Wrapf(
+			RuleErrorMessagingKeyNameTooLong, "_connectMessagingKeys: " +
+			"Too many characters in key name: max = %v; provided = %v",
+			MaxMessagingKeyNameCharacters, len(messagingKeyName))
+	}
+
+	// Now we have a valid messaging public key and key name. So we will proceed
+	// to add keys to UtxoView, and generate UtxoOps in case we will revert.
+	// Sanity-check that transaction public key is valid.
+	if len(txn.PublicKey) != btcec.PubKeyBytesLenCompressed {
+		return nil, RuleErrorMessagingOwnerPublicKeyInvalid
+	}
+	if _, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256()); err != nil {
+		return nil, errors.Wrap(RuleErrorMessagingOwnerPublicKeyInvalid, err.Error())
+	}
+
+	// Create a MessagingKeyEntry struct
+	// Get the PKIDs for the public keys associated with the messaging key owner.
+	ownerPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if ownerPKIDEntry == nil || ownerPKIDEntry.isDeleted {
+		return nil, fmt.Errorf("_connectMessagingKeys: ownerPKID was nil or deleted;" +
+			" this should never happen")
+	}
+
+	if entry := bav._getPKIDToMessagingKeyMapping(ownerPKIDEntry.PKID, messagingKeyName); entry != nil {
+		return nil, fmt.Errorf("_connectMessagingKeys: Error, this key already exists; " +
+			"ownerPKID: %v, messagingPublicKey: %v, messagingKeyName: %v",
+			ownerPKIDEntry.PKID, entry.MessagingPublicKey, messagingKeyName)
+	}
+
+	// Add the messaging key entry to UtxoView
+	messagingKeyEntry := MessagingKeyEntry{
+		OwnerPKID:          ownerPKIDEntry.PKID,
+		MessagingPublicKey: messagingPublicKey,
+		MessagingKeyName:   messagingKeyName,
+		isDeleted:          false,
+	}
+	bav._setPKIDToMessagingKeyMapping(&messagingKeyEntry)
+
+	// Construct UtxoOperation.
+	messagingKeyOps := UtxoOperation{
+		Type:                 OperationTypeMessagingKey,
+		PrevMessagingKeyName: messagingKeyName,
+	}
+
+	return &messagingKeyOps, nil
 }

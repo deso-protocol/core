@@ -788,6 +788,10 @@ const (
 
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
+
+	// Messaging keys
+	MessagingPublicKey = "MessagingPublicKey"
+	MessagingKeyName   = "MessagingKeyName"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
@@ -831,4 +835,7 @@ const (
 	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
 	MinMaxCopiesPerNFT = 1
 	MaxMaxCopiesPerNFT = 10000
+	// Messaging key constants
+	MinMessagingKeyNameCharacters = 8
+	MaxMessagingKeyNameCharacters = 32
 )

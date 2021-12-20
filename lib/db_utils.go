@@ -233,10 +233,14 @@ var (
 	// 		<prefix, OwnerPublicKey [33]byte> -> <>
 	_PrefixAuthorizeDerivedKey = []byte{54}
 
+	// Prefix for Messaging Keys:
+	//		<prefix, ownerPKID [33]byte, keyName [32]byte> -> <>
+	_PrefixMessagingKey = []byte{57}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 55
+	// NEXT_TAG: 58
 )
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
@@ -751,6 +755,130 @@ func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte)
 	}
 
 	return privateMessages, nil
+}
+
+// -------------------------------------------------------------------------------------
+// MessagingKeyEntry mapping functions
+// <prefix, OwnerPKID (33 bytes) || KeyName (32 bytes)> -> <MessagingKeyEntry>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForMessagingKeyEntry(ownerPKID *PKID, messagingKeyName []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixMessagingKey...)
+	key := append(prefixCopy, ownerPKID[:]...)
+	key = append(key, MessagingKeyNameEncode(messagingKeyName)...)
+	return key
+}
+
+func _dbSeekPrefixForMessagingKeyEntry(ownerPKID *PKID) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixMessagingKey...)
+	return append(prefixCopy, ownerPKID[:]...)
+}
+
+func DBPutMessagingKeyEntryWithTxn(
+	txn *badger.Txn, messagingKeyEntry *MessagingKeyEntry) error {
+
+	if len(messagingKeyEntry.OwnerPKID) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutMessagingKeyEntryWithTxn: Owner PKID "+
+			"length %d != %d", len(messagingKeyEntry.OwnerPKID), btcec.PubKeyBytesLenCompressed)
+	}
+	if len(messagingKeyEntry.MessagingPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutMessagingKeyEntryWithTxn: Messaging Public Key "+
+			"length %d != %d", len(messagingKeyEntry.MessagingPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	messagingKeyEntryBytes := messagingKeyEntry.Encode()
+
+	if err := txn.Set(_dbKeyForMessagingKeyEntry(
+		messagingKeyEntry.OwnerPKID, messagingKeyEntry.MessagingKeyName), messagingKeyEntryBytes); err != nil {
+
+		return errors.Wrapf(err, "DBPutMessagingKeyEntryWithTxn: Problem adding messaging key entry mapping: ")
+	}
+
+	return nil
+}
+
+func DBPutMessagingKeyEntry(handle *badger.DB, messagingKeyEntry *MessagingKeyEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutMessagingKeyEntryWithTxn(txn, messagingKeyEntry)
+	})
+}
+
+func DBGetMessagingKeyEntryWithTxn(
+	txn *badger.Txn, ownerPKID *PKID, messagingKeyName []byte) *MessagingKeyEntry {
+
+	key := _dbKeyForMessagingKeyEntry(ownerPKID, messagingKeyName)
+	messagingKeyEntry := &MessagingKeyEntry{}
+	messagingKeyItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = messagingKeyItem.Value(func(valBytes []byte) error {
+		messagingKeyEntry.Decode(valBytes)
+		return nil
+	})
+	if err != nil {
+		glog.Errorf("DBGetMessagingKeyEntryWithTxn: Problem reading "+
+			"MessagingKeyEntry for ownerPKID %v with messagingKeyName %v",
+			ownerPKID, messagingKeyName)
+		return nil
+	}
+	return messagingKeyEntry
+}
+
+func DBGetMessagingKeyEntry(db *badger.DB, ownerPKID *PKID, messagingKeyName []byte) *MessagingKeyEntry {
+	var ret *MessagingKeyEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetMessagingKeyEntryWithTxn(txn, ownerPKID, messagingKeyName)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteMessagingKeyEntryWithTxn(
+	txn *badger.Txn, ownerPKID *PKID, messagingKeyName []byte) error {
+
+	// First pull up the entry that exists for the ownerPKID, messagingKeyName.
+	// If one doesn't exist then there's nothing to do.
+	if entry := DBGetMessagingKeyEntryWithTxn(txn, ownerPKID, messagingKeyName); entry == nil {
+		return nil
+	}
+
+	// When a messaging key entry exists, delete it from the DB.
+	if err := txn.Delete(_dbKeyForMessagingKeyEntry(ownerPKID, messagingKeyName)); err != nil {
+		return errors.Wrapf(err, "DbDeleteMessagingKeyEntryMappingsWithTxn: Deleting "+
+			"entry for ownerPkid %v and messagingKeyName %v failed", ownerPKID, messagingKeyName)
+	}
+
+	return nil
+}
+
+func DBDeleteMessagingKeyEntry(handle *badger.DB, ownerPKID *PKID, messagingKeyName []byte) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteMessagingKeyEntryWithTxn(txn, ownerPKID, messagingKeyName)
+	})
+}
+
+func DBGetMessagingKeyEntriesForOwnerPKID(handle *badger.DB, ownerPKID *PKID) (
+	messagingKeyEntries []*MessagingKeyEntry, _err error) {
+
+	// Setting the prefix to ownerPKID will allow us to fetch all messaging keys
+	// for the ownerPKID. We enumerate this prefix.
+	prefix := _dbSeekPrefixForMessagingKeyEntry(ownerPKID)
+	_, valuesFound := _enumerateKeysForPrefix(handle, prefix)
+
+	// Decode found messaging key entries.
+	messagingKeyEntries = []*MessagingKeyEntry{}
+	for _, valBytes := range valuesFound {
+		messagingKeyEntry := &MessagingKeyEntry{}
+		messagingKeyEntry.Decode(valBytes)
+
+		messagingKeyEntries = append(messagingKeyEntries, messagingKeyEntry)
+	}
+
+	return messagingKeyEntries, nil
 }
 
 // -------------------------------------------------------------------------------------

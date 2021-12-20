@@ -1,10 +1,13 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
+	"io"
 	"strings"
 )
 
@@ -98,8 +101,9 @@ const (
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
+	OperationTypeMessagingKey                 OperationType = 24
 
-	// NEXT_TAG = 24
+	// NEXT_TAG = 25
 )
 
 func (op OperationType) String() string {
@@ -196,6 +200,10 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeAuthorizeDerivedKey"
 		}
+	case OperationTypeMessagingKey:
+		{
+			return "OperationTypeMessagingKey"
+		}
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -244,6 +252,9 @@ type UtxoOperation struct {
 
 	// Save the previous profile entry when making an update.
 	PrevProfileEntry *ProfileEntry
+
+	// Save the key name of the previous messaging key entry.
+	PrevMessagingKeyName []byte
 
 	// Save the previous like entry and like count when making an update.
 	PrevLikeEntry *LikeEntry
@@ -389,6 +400,76 @@ type MessageEntry struct {
 	// Version = 2 : message encrypted using shared secret
 	// Version = 1 : message encrypted using public key
 	Version uint8
+}
+
+// MessagingKeyEntry is used to update messaging keys for a user, this was added in
+// the DeSoMessenger Version 3 protocol.
+type MessagingKeyEntry struct {
+	// OwnerPKID is the PKID of the main user.
+	OwnerPKID *PKID
+
+	// MessagingPublicKey is the messaging key added. This will be the new
+	// messaging key that other users should encrypt messages to.
+	MessagingPublicKey []byte
+
+	// MessagingKeyName is the name of the messaging key. This is used to identify
+	// the message public key. You can pass any 8-32 character string (byte array).
+	// The standard Messages V3 key is named "default-key"
+	MessagingKeyName []byte
+
+	// Whether this entry should be deleted when the view is flushed
+	// to the db. This is initially set to false, but can become true if
+	// we disconnect the messaging key from UtxoView
+	isDeleted bool
+}
+
+// Encode message key from varying length to a MaxMessagingKeyNameCharacters.
+func MessagingKeyNameEncode(messagingKey []byte) []byte {
+	var bytes []byte
+
+	bytes = append(bytes, messagingKey...)
+
+	// Fill with 0s to the MaxMessagingKeyNameCharacters.
+	for {
+		if len(bytes) < MaxMessagingKeyNameCharacters {
+			bytes = append(bytes, []byte{0}...)
+		} else {
+			return bytes
+		}
+	}
+}
+
+// Decode filled message key of length MaxMessagingKeyNameCharacters array.
+func MessagingKeyNameDecode(messagingKey []byte) []byte {
+	var bytes []byte
+
+	copy(bytes, messagingKey)
+
+	// Remove trailing 0s from the encoded message key.
+	for {
+		if len(bytes) > MinMessagingKeyNameCharacters && bytes[len(bytes) - 1] == byte(0) {
+			bytes = bytes[ : len(bytes) - 1]
+		} else {
+			return bytes
+		}
+	}
+}
+
+func (entry *MessagingKeyEntry) Encode() []byte {
+	var bytes []byte
+
+	bytes = append(bytes, EncodeByteArray(entry.OwnerPKID.ToBytes())...)
+	bytes = append(bytes, EncodeByteArray(entry.MessagingPublicKey)...)
+	bytes = append(bytes, EncodeByteArray(MessagingKeyNameEncode(entry.MessagingKeyName))...)
+	return bytes
+}
+
+func (entry *MessagingKeyEntry) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	entry.OwnerPKID = NewPKID(DecodeByteArray(rr))
+	entry.MessagingPublicKey = DecodeByteArray(rr)
+	entry.MessagingKeyName = MessagingKeyNameDecode(DecodeByteArray(rr))
 }
 
 // Entry for a public key forbidden from signing blocks.
@@ -856,4 +937,36 @@ type ProfileEntry struct {
 
 func (pe *ProfileEntry) IsDeleted() bool {
 	return pe.isDeleted
+}
+
+
+func EncodeByteArray(bytes []byte) []byte {
+	data := []byte{}
+
+	data = append(data, UintToBuf(uint64(len(bytes)))...)
+	data = append(data, bytes...)
+
+	return data
+}
+
+func DecodeByteArray(reader io.Reader) []byte {
+	pkLen, err := ReadUvarint(reader)
+	if err != nil {
+		glog.Errorf("DecodeByteArray: ReadUvarint: %v", err)
+		return nil
+	}
+
+	if pkLen > 0 {
+		result := make([]byte, pkLen)
+
+		_, err = io.ReadFull(reader, result)
+		if err != nil {
+			glog.Errorf("DecodeByteArray: ReadFull: %v", err)
+			return nil
+		}
+
+		return result
+	} else {
+		return nil
+	}
 }

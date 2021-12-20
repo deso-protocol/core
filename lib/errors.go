@@ -222,6 +222,15 @@ const (
 	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
 
+	// Messages
+	RuleErrorMessagingPublicKeyInvalid      RuleError = "RuleErrorMessagingPublicKeyInvalid"
+	RuleErrorMessagingPublicParseError      RuleError = "RuleErrorMessagingPublicParseError"
+	RuleErrorMessagingKeyNameNotProvided    RuleError = "RuleErrorMessagingKeyNameNotProvided"
+	RuleErrorMessagingKeyNameTooShort       RuleError = "RuleErrorMessagingKeyNameTooShort"
+	RuleErrorMessagingKeyNameTooLong        RuleError = "RuleErrorMessagingKeyNameTooLong"
+	RuleErrorMessagingOwnerPublicKeyInvalid RuleError = "RuleErrorMessagingOwnerPublicKeyInvalid"
+	RuleErrorMessagingKeyConnect            RuleError = "RuleErrorMessagingKeyConnect"
+
 	// NFTs
 	RuleErrorTooManyNFTCopies                     RuleError = "RuleErrorTooManyNFTCopies"
 	RuleErrorCreateNFTRequiresNonZeroInput        RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
