@@ -472,6 +472,42 @@ func (entry *MessagingKeyEntry) Decode(data []byte) {
 	entry.MessagingKeyName = MessagingKeyNameDecode(DecodeByteArray(rr))
 }
 
+type MessageParty struct {
+	SenderPublicKey           []byte
+	RecipientPublicKey        []byte
+	TstampNanos               uint64
+	SenderMessagingPk         []byte
+	SenderMessagingKeyName    []byte
+	RecipientMessagingPk      []byte
+	RecipientMessagingKeyName []byte
+	isDeleted bool
+}
+
+func (party *MessageParty) Encode() []byte {
+	var bytes []byte
+
+	bytes = append(bytes, EncodeByteArray(party.SenderPublicKey)...)
+	bytes = append(bytes, EncodeByteArray(party.RecipientPublicKey)...)
+	bytes = append(bytes, UintToBuf(party.TstampNanos)...)
+	bytes = append(bytes, EncodeByteArray(party.SenderMessagingPk)...)
+	bytes = append(bytes, EncodeByteArray(MessagingKeyNameEncode(party.SenderMessagingKeyName))...)
+	bytes = append(bytes, EncodeByteArray(party.RecipientMessagingPk)...)
+	bytes = append(bytes, EncodeByteArray(MessagingKeyNameEncode(party.RecipientMessagingKeyName))...)
+	return bytes
+}
+
+func (party *MessageParty) Decode(data []byte) {
+	rr := bytes.NewReader(data)
+
+	party.SenderPublicKey           = DecodeByteArray(rr)
+	party.RecipientPublicKey        = DecodeByteArray(rr)
+	party.TstampNanos, _            = ReadUvarint(rr)
+	party.SenderMessagingPk         = DecodeByteArray(rr)
+	party.SenderMessagingKeyName    = MessagingKeyNameDecode(DecodeByteArray(rr))
+	party.RecipientMessagingPk      = DecodeByteArray(rr)
+	party.RecipientMessagingKeyName = MessagingKeyNameDecode(DecodeByteArray(rr))
+}
+
 // Entry for a public key forbidden from signing blocks.
 type ForbiddenPubKeyEntry struct {
 	PubKey []byte

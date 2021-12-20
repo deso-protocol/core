@@ -90,6 +90,46 @@ func (bav *UtxoView) _deletePKIDToMessagingKeyMapping(messagingKeyEntry *Messagi
 	bav._setPKIDToMessagingKeyMapping(&tombstoneMessageKeyEntry)
 }
 
+func (bav *UtxoView) _getMessageKeyToMessageParty(key *MessageKey) *MessageParty {
+	// If an entry exists in the in-memory map, return the value of that mapping.
+	mapValue, existsMapValue := bav.MessageKeyToMessageParty[*key]
+	if existsMapValue {
+		return mapValue
+	}
+
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil. Either way, save the value to the in-memory view mapping got later.
+	dbMessageParty := DbGetMessageParty(bav.Handle, key.PublicKey[:], key.TstampNanos)
+	if dbMessageParty != nil {
+		bav._setMessageKeyToMessageParty(dbMessageParty)
+	}
+	return dbMessageParty
+}
+
+func (bav *UtxoView) _setMessageKeyToMessageParty(party *MessageParty) {
+	// This function shouldn't be called with nil
+	if party == nil {
+		glog.Errorf("_setMessageKeyToMessageParty: Called with nil party; " +
+			"this should never happen.")
+		return
+	}
+
+	bav.MessageKeyToMessageParty[MakeMessageKey(party.SenderPublicKey, party.TstampNanos)] = party
+	bav.MessageKeyToMessageParty[MakeMessageKey(party.RecipientPublicKey, party.TstampNanos)] = party
+}
+
+func (bav *UtxoView) _deleteMessagePartyMappings(party *MessageParty) {
+
+	// Create a tombstone entry.
+	tombstoneMessageParty := *party
+	tombstoneMessageParty.isDeleted = true
+
+	// Set the mappings to point to the tombstone entry.
+	bav._setMessageKeyToMessageParty(&tombstoneMessageParty)
+}
+
+
 //
 // Postgres messages
 //
@@ -297,10 +337,30 @@ func (bav *UtxoView) _connectPrivateMessage(
 	}
 
 	//Check if message is encrypted with shared secret
-	extraV, hasExtraV := txn.ExtraData["V"]
-	if hasExtraV {
+	if extraV, hasExtraV := txn.ExtraData["V"]; hasExtraV {
 		Version, _ := Uvarint(extraV)
 		messageEntry.Version = uint8(Version)
+	}
+
+	var senderMessagingPublicKey, recipientMessagingPublicKey, senderMessagingKeyName, recipientMessagingKeyName []byte
+	var existsSender, existsRecipient, existsSenderName, existsRecipientName bool
+	senderMessagingPublicKey, existsSender = txn.ExtraData[SenderMessagingPublicKey]
+	recipientMessagingPublicKey, existsRecipient = txn.ExtraData[RecipientMessagingPublicKey]
+	if existsSender || existsRecipient {
+		if senderMessagingKeyName, existsSenderName = txn.ExtraData[SenderMessagingKeyName];
+				existsSender && existsSenderName {
+			if err := ValidateKeyAndName(senderMessagingPublicKey, senderMessagingKeyName); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: "+
+					"failed to validate public key and key name")
+			}
+		}
+		if recipientMessagingKeyName, existsRecipientName = txn.ExtraData[RecipientMessagingKeyName];
+				existsRecipient || existsRecipientName {
+			if err := ValidateKeyAndName(recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: "+
+					"failed to validate public key and key name")
+			}
+		}
 	}
 
 	if bav.Postgres != nil {
@@ -323,6 +383,8 @@ func (bav *UtxoView) _connectPrivateMessage(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypePrivateMessage,
 	})
+
+
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

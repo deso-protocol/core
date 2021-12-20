@@ -793,6 +793,12 @@ const (
 	MessagingPublicKey    = "MessagingPublicKey"
 	MessagingKeyName      = "MessagingKeyName"
 	MessagingKeySignature = "MessagingKeySignature"
+
+	// Messaging keys in messages
+	SenderMessagingPublicKey    = "SenderMessagingPublicKey"
+	SenderMessagingKeyName      = "SenderMessagingKeyName"
+	RecipientMessagingPublicKey = "RecipientMessagingPublicKey"
+	RecipientMessagingKeyName   = "RecipientMessagingKeyName"
 )
 
 // Defines values that may exist in a transaction's ExtraData map

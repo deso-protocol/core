@@ -2558,9 +2558,36 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	return maxSizeBytes * minFeeRateNanosPerKB / 1000
 }
 
+
+func ValidateKeyAndName (publicKey, keyName []byte) error {
+	if len(publicKey) > 0 {
+		if err := IsByteArrayValidPublicKey(publicKey, fmt.Sprintf("ValidateKeyAndName: " +
+			"Problem validating sender's messaging key: %v", publicKey)); err != nil {
+			return err
+		}
+
+		// If we get here, it means that we have a valid messaging public key.
+		// Sanity check messaging key name
+		if len(keyName) < MinMessagingKeyNameCharacters {
+			return errors.Wrapf( RuleErrorMessagingKeyNameTooShort, "ValidateKeyAndName: " +
+				"Too few characters in key name: min = %v, provided = %v",
+				MinMessagingKeyNameCharacters, len(keyName))
+		}
+		if len(keyName) > MaxMessagingKeyNameCharacters {
+			return errors.Wrapf( RuleErrorMessagingKeyNameTooLong, "ValidateKeyAndName: " +
+				"Too many characters in key name: max = %v; provided = %v",
+				MaxMessagingKeyNameCharacters, len(keyName))
+		}
+	}
+	return nil
+}
+
+
 func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderPublicKey []byte, recipientPublicKey []byte,
 	unencryptedMessageText string, encryptedMessageText string,
+	senderMessagingPublicKey []byte, senderMessagingKeyName []byte,
+	recipientMessagingPublicKey []byte, recipientMessagingKeyName []byte,
 	tstampNanos uint64,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -2599,6 +2626,25 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		// Add {V : 2} version field to ExtraData to indicate we are
 		// encrypting using shared secret.
 		messageExtraData["V"] = UintToBuf(2)
+
+		if len(senderMessagingPublicKey) > 0 || len(recipientMessagingPublicKey) > 0 {
+			// If we're using rotating messaging keys, then we're on {V : 3} messages.
+			messageExtraData["V"] = UintToBuf(3)
+
+			if err = ValidateKeyAndName(senderMessagingPublicKey, senderMessagingKeyName); err != nil {
+				return nil, 0, 0, 0, err
+			} else {
+				messageExtraData[SenderMessagingPublicKey] = senderMessagingPublicKey
+				messageExtraData[SenderMessagingKeyName] = senderMessagingKeyName
+			}
+
+			if err = ValidateKeyAndName(recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+				return nil, 0, 0, 0, err
+			} else {
+				messageExtraData[RecipientMessagingPublicKey] = recipientMessagingPublicKey
+				messageExtraData[RecipientMessagingKeyName] = recipientMessagingKeyName
+			}
+		}
 	}
 
 	// Don't allow encryptedMessageBytes to be nil.

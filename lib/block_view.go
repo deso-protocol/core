@@ -42,6 +42,12 @@ type UtxoView struct {
 	// Messages data
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
+	// Messaging key entries.
+	PKIDToMessagingKey map[PKID]*MessagingKeyEntry
+
+	// Messages data to MessageParty
+	MessageKeyToMessageParty map[MessageKey]*MessageParty
+
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -77,9 +83,6 @@ type UtxoView struct {
 
 	// Derived Key entries. Map key is a combination of owner and derived public keys.
 	DerivedKeyToDerivedEntry map[DerivedKeyMapKey]*DerivedKeyEntry
-
-	// Messaging key entries.
-	PKIDToMessagingKey map[PKID]*MessagingKeyEntry
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -118,6 +121,12 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Messages data
 	bav.MessageKeyToMessageEntry = make(map[MessageKey]*MessageEntry)
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
+
+	// Messaging key entries
+	bav.PKIDToMessagingKey = make(map[PKID]*MessagingKeyEntry)
+
+	// Messaging key to message party
+	bav.MessageKeyToMessageParty = make(map[MessageKey]*MessageParty)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -232,6 +241,18 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for txnHash, message := range bav.MessageMap {
 		newMessage := *message
 		newView.MessageMap[txnHash] = &newMessage
+	}
+
+	newView.PKIDToMessagingKey = make(map[PKID]*MessagingKeyEntry, len(bav.PKIDToMessagingKey))
+	for pkid, entry := range bav.PKIDToMessagingKey {
+		newEntry := *entry
+		newView.PKIDToMessagingKey[pkid] = &newEntry
+	}
+
+	newView.MessageKeyToMessageParty = make(map[MessageKey]*MessageParty, len(bav.MessageKeyToMessageParty))
+	for msgKey, party := range bav.MessageKeyToMessageParty {
+		newEntry := *party
+		newView.MessageKeyToMessageParty[msgKey] = &newEntry
 	}
 
 	// Copy the follow data

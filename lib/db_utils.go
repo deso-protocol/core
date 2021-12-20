@@ -237,6 +237,9 @@ var (
 	//		<prefix, ownerPKID [33]byte, keyName [32]byte> -> <>
 	_PrefixMessagingKey = []byte{57}
 
+	// Prefix for Message to Message
+	_PrefixMessageToMessageParty = []byte{58}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
@@ -880,6 +883,166 @@ func DBGetMessagingKeyEntriesForOwnerPKID(handle *badger.DB, ownerPKID *PKID) (
 
 	return messagingKeyEntries, nil
 }
+
+// -------------------------------------------------------------------------------------
+// MessageParty mapping functions
+// <public key (33 bytes) || uint64 big-endian> -> < MessageParty >
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForMessageParty(publicKey []byte, tstampNanos uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixMessageToMessageParty...)
+	key := append(prefixCopy, publicKey...)
+	key = append(key, EncodeUint64(tstampNanos)...)
+	return key
+}
+
+func _dbSeekPrefixForMessagePartyPublicKey(publicKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixMessageToMessageParty...)
+	return append(prefixCopy, publicKey...)
+}
+
+func DbPutMessagePartyWithTxn(txn *badger.Txn, messageParty *MessageParty) error {
+
+	if len(messageParty.SenderPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutMessagePartyWithTxn: Sender public key "+
+			"length %d != %d", len(messageParty.SenderPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+	if len(messageParty.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutMessagePartyWithTxn: Recipient public key "+
+			"length %d != %d", len(messageParty.RecipientPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	if err := txn.Set(_dbKeyForMessageEntry(
+		messageParty.SenderPublicKey, messageParty.TstampNanos), messageParty.Encode()); err != nil {
+
+		return errors.Wrapf(err, "DbPutMessagePartyWithTxn: Problem adding mapping for sender: ")
+	}
+	if err := txn.Set(_dbKeyForMessageEntry(
+		messageParty.RecipientPublicKey, messageParty.TstampNanos), messageParty.Encode()); err != nil {
+
+		return errors.Wrapf(err, "DbPutMessagePartyWithTxn: Problem adding mapping for recipient: ")
+	}
+
+	return nil
+}
+
+func DbPutMessageParty(handle *badger.DB, messageParty *MessageParty) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutMessagePartyWithTxn(txn, messageParty)
+	})
+}
+
+func DbGetMessagePartyWithTxn(
+	txn *badger.Txn, publicKey []byte, tstampNanos uint64) *MessageParty {
+
+	key := _dbKeyForMessageParty(publicKey, tstampNanos)
+	messageParty := &MessageParty{}
+	messagePartyItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = messagePartyItem.Value(func(valBytes []byte) error {
+		messageParty.Decode(valBytes)
+		return nil
+	})
+	if err != nil {
+		glog.Errorf("DbGetMessagePartyWithTxn: Problem reading "+
+			"MessageParty for public key %s with tstampnanos %d",
+			PkToStringMainnet(publicKey), tstampNanos)
+		return nil
+	}
+	return messageParty
+}
+
+func DbGetMessageParty(db *badger.DB, publicKey []byte, tstampNanos uint64) *MessageParty {
+	var ret *MessageParty
+	db.View(func(txn *badger.Txn) error {
+		ret = DbGetMessagePartyWithTxn(txn, publicKey, tstampNanos)
+		return nil
+	})
+	return ret
+}
+
+// Note this deletes the message for the sender *and* receiver since a mapping
+// should exist for each.
+func DbDeleteMessagePartyMappingsWithTxn(
+	txn *badger.Txn, publicKey []byte, tstampNanos uint64) error {
+
+	// First pull up the mapping that exists for the public key passed in.
+	// If one doesn't exist then there's nothing to do.
+	existingMessage := DbGetMessagePartyWithTxn(txn, publicKey, tstampNanos)
+	if existingMessage == nil {
+		return nil
+	}
+
+	// When a message exists, delete the mapping for the sender and receiver.
+	if err := txn.Delete(_dbKeyForMessageParty(existingMessage.SenderPublicKey, tstampNanos)); err != nil {
+		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
+			"sender mapping for public key %s and tstamp %d failed",
+			PkToStringMainnet(existingMessage.SenderPublicKey), tstampNanos)
+	}
+	if err := txn.Delete(_dbKeyForMessageParty(existingMessage.RecipientPublicKey, tstampNanos)); err != nil {
+		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
+			"recipient mapping for public key %s and tstamp %d failed",
+			PkToStringMainnet(existingMessage.RecipientPublicKey), tstampNanos)
+	}
+
+	return nil
+}
+
+func DbDeleteMessagePartyMappings(handle *badger.DB, publicKey []byte, tstampNanos uint64) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbDeleteMessagePartyMappingsWithTxn(txn, publicKey, tstampNanos)
+	})
+}
+
+func DbGetMessagePartiesForPublicKey(handle *badger.DB, publicKey []byte) (
+	messageParty []*MessageParty, _err error) {
+
+	// Setting the prefix to a tstamp of zero should return all the messages
+	// for the public key in sorted order since 0 << the minimum timestamp in
+	// the db.
+	prefix := _dbSeekPrefixForMessagePartyPublicKey(publicKey)
+
+	// Goes backwards to get messages in time sorted order.
+	// Limit the number of keys to speed up load times.
+	_, valuesFound := _enumerateKeysForPrefix(handle, prefix)
+
+	messageParty = []*MessageParty{}
+	for _, valBytes := range valuesFound {
+		messagePartyObj := &MessageParty{}
+		messagePartyObj.Decode(valBytes)
+		messageParty = append(messageParty, messagePartyObj)
+	}
+
+	return messageParty, nil
+}
+
+func DbGetLimitedMessagePartiesForPublicKey(handle *badger.DB, publicKey []byte) (
+	messageParty []*MessageParty, _err error) {
+
+	// Setting the prefix to a tstamp of zero should return all the messages
+	// for the public key in sorted order since 0 << the minimum timestamp in
+	// the db.
+	prefix := _dbSeekPrefixForMessagePartyPublicKey(publicKey)
+
+	// Goes backwards to get messages in time sorted order.
+	// Limit the number of keys to speed up load times.
+	_, valuesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefix, uint64(MessagesToFetchPerInboxCall))
+
+	messageParty = []*MessageParty{}
+	for _, valBytes := range valuesFound {
+		messagePartyObj := &MessageParty{}
+		messagePartyObj.Decode(valBytes)
+		messageParty = append(messageParty, messagePartyObj)
+	}
+
+	return messageParty, nil
+}
+
 
 // -------------------------------------------------------------------------------------
 // Forbidden block signature public key functions
