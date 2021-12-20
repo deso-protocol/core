@@ -295,7 +295,8 @@ func (utxo *UtxoEntry) Encode() []byte {
 	data = append(data, UintToBuf(utxo.AmountNanos)...)
 	data = append(data, EncodeByteArray(utxo.PublicKey)...)
 	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
-	data = append(data, UintToBuf(uint64(utxo.UtxoType))...)
+	data = append(data, byte(utxo.UtxoType))
+	data = append(data, utxo.UtxoKey.Encode()...)
 
 	return data
 }
@@ -306,8 +307,12 @@ func (utxo *UtxoEntry) Decode(data []byte) {
 	utxo.AmountNanos, _ = ReadUvarint(rr)
 	utxo.PublicKey = DecodeByteArray(rr)
 
-	utxoType, _ := ReadUvarint(rr)
+	utxoType, _ := rr.ReadByte()
 	utxo.UtxoType = UtxoType(utxoType)
+
+	var utxoKey UtxoKey
+	utxoKey.Decode(rr)
+	utxo.UtxoKey = &utxoKey
 }
 
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
