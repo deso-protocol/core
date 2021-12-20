@@ -669,7 +669,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 
 		// Get the messaging key that the utxoOps.PrevMessagingKeyName points to
 		messagingKeyEntry := bav._getPKIDToMessagingKeyMapping(ownerPKIDEntry.PKID, keyName)
-		if messagingKeyEntry != nil {
+		if messagingKeyEntry != nil || messagingKeyEntry.isDeleted {
 			return fmt.Errorf("_disconnectBasicTransfer: Error, this key already exists; " +
 				"ownerPKID: %v, messagingPublicKey: %v, messagingKeyName: %v",
 				ownerPKIDEntry.PKID, messagingKeyEntry.MessagingPublicKey, keyName)

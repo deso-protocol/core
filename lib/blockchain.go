@@ -2558,31 +2558,6 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	return maxSizeBytes * minFeeRateNanosPerKB / 1000
 }
 
-
-func ValidateKeyAndName (publicKey, keyName []byte) error {
-	if len(publicKey) > 0 {
-		if err := IsByteArrayValidPublicKey(publicKey, fmt.Sprintf("ValidateKeyAndName: " +
-			"Problem validating sender's messaging key: %v", publicKey)); err != nil {
-			return err
-		}
-
-		// If we get here, it means that we have a valid messaging public key.
-		// Sanity check messaging key name
-		if len(keyName) < MinMessagingKeyNameCharacters {
-			return errors.Wrapf( RuleErrorMessagingKeyNameTooShort, "ValidateKeyAndName: " +
-				"Too few characters in key name: min = %v, provided = %v",
-				MinMessagingKeyNameCharacters, len(keyName))
-		}
-		if len(keyName) > MaxMessagingKeyNameCharacters {
-			return errors.Wrapf( RuleErrorMessagingKeyNameTooLong, "ValidateKeyAndName: " +
-				"Too many characters in key name: max = %v; provided = %v",
-				MaxMessagingKeyNameCharacters, len(keyName))
-		}
-	}
-	return nil
-}
-
-
 func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderPublicKey []byte, recipientPublicKey []byte,
 	unencryptedMessageText string, encryptedMessageText string,

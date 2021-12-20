@@ -102,8 +102,9 @@ const (
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
 	OperationTypeMessagingKey                 OperationType = 24
+	OperationTypeMessagingParty               OperationType = 25
 
-	// NEXT_TAG = 25
+	// NEXT_TAG = 26
 )
 
 func (op OperationType) String() string {
@@ -203,6 +204,10 @@ func (op OperationType) String() string {
 	case OperationTypeMessagingKey:
 		{
 			return "OperationTypeMessagingKey"
+		}
+	case OperationTypeMessagingParty:
+		{
+			return "OperationTypeMessagingParty"
 		}
 	}
 	return "OperationTypeUNKNOWN"

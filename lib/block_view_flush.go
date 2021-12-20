@@ -83,9 +83,6 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn); err != nil {
 			return err
 		}
-		if err := bav._flushMessagingKeysToDbWithTxn(txn); err != nil {
-			return err
-		}
 	}
 
 	// Always flush to BadgerDB.
@@ -100,6 +97,12 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
 		return err
+	}
+	if err := bav._flushMessagingKeysToDbWithTxn(txn); err != nil {
+		return err
+	}
+	if err := bav._flushMessagingPartiesToDbWithTxn(txn); err != nil {
+		return nil
 	}
 
 	return nil
@@ -903,5 +906,36 @@ func (bav *UtxoView) _flushMessagingKeysToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	glog.V(1).Infof("_flushMessagingKeysToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	return nil
+}
+
+func (bav *UtxoView) _flushMessagingPartiesToDbWithTxn(txn *badger.Txn) error {
+	glog.V(1).Infof("_flushMessagingPartiesToDbWithTxn: flushing %d mappings", len(bav.MessageKeyToMessageParty))
+	numDeleted := 0
+	numPut := 0
+
+	// Go through all entries in MessageKeyToMessageParty and add them to the DB.
+	for messageKey, messagingParty := range bav.MessageKeyToMessageParty {
+		// Delete the existing mapping in the DB for this map key, this will be re-added
+		// later if isDeleted=false.
+		if err := DbDeleteMessagePartyMappingsWithTxn(txn, messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
+			return errors.Wrapf(err, "UtxoView._flushMessagingPartiesToDbWithTxn: "+
+				"Problem deleting MessagingParty %v from db", *messagingParty)
+		}
+
+		if messagingParty.isDeleted {
+			// Since entry is deleted, there's nothing to do.
+			numDeleted++
+		} else {
+			// In this case we add the mapping to the DB.
+			if err := DbPutMessagePartyWithTxn(txn, messagingParty); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushMessagingPartiesToDbWithTxn: "+
+					"Problem putting MessagingParty %v to db", *messagingParty)
+			}
+			numPut++
+		}
+	}
+
+	glog.V(1).Infof("_flushMessagingPartiesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	return nil
 }
