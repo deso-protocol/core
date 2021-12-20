@@ -368,15 +368,16 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	keyString := hex.EncodeToString(key)
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
-	if val, exists := snap.Cache.Lookup(keyString); isState && exists {
-		return val.([]byte), nil
+	if isState {
+		if val, exists := snap.Cache.Lookup(keyString); exists {
+			return val.([]byte), nil
+		}
 	}
 
 	// If record doesn't exist in cache, we get it from the DB.
 	item, err := txn.Get(key)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetWithTxn: Problem reading record from DB " +
-			"with key %v", key)
+		return nil, err
 	}
 	itemData, err := item.ValueCopy(nil)
 
