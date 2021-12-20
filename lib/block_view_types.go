@@ -307,6 +307,9 @@ func (utxo *UtxoEntry) Decode(data []byte) {
 	utxo.AmountNanos, _ = ReadUvarint(rr)
 	utxo.PublicKey = DecodeByteArray(rr)
 
+	blockHeight, _ := ReadUvarint(rr)
+	utxo.BlockHeight = uint32(blockHeight)
+
 	utxoType, _ := rr.ReadByte()
 	utxo.UtxoType = UtxoType(utxoType)
 
@@ -932,6 +935,7 @@ func (pe *PostEntry) Encode() []byte {
 	data = append(data, UintToBuf(pe.RepostCount)...)
 	data = append(data, UintToBuf(pe.QuoteRepostCount)...)
 	data = append(data, UintToBuf(pe.DiamondCount)...)
+	data = append(data, UintToBuf(pe.CommentCount)...)
 	data = append(data, BoolToByte(pe.IsPinned))
 	data = append(data, BoolToByte(pe.IsNFT))
 	data = append(data, UintToBuf(pe.NumNFTCopies)...)
@@ -971,6 +975,7 @@ func (pe *PostEntry) Decode(data []byte) {
 	pe.RepostCount, _ = ReadUvarint(rr)
 	pe.QuoteRepostCount, _ = ReadUvarint(rr)
 	pe.DiamondCount, _ = ReadUvarint(rr)
+	pe.CommentCount, _ = ReadUvarint(rr)
 	pe.IsPinned = ReadBoolByte(rr)
 	pe.IsNFT = ReadBoolByte(rr)
 	pe.NumNFTCopies, _ = ReadUvarint(rr)
