@@ -1981,10 +1981,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				}
 
 				// Write the modified utxo set to the view.
-				if bc.blocksInView%1000 == 0 {
-					if err := bc.blockView.FlushToDbWithTxn(); err != nil {
-						return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
-					}
+				if err := bc.blockView.FlushToDbWithTxn(); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
 
 				// Write the utxo operations for this block to the db so we can have the
@@ -2049,9 +2047,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			})
 		}
 
-		if bc.blocksInView%1000 == 0 {
-			bc.blockView = nil
-		}
+		bc.blockView = nil
 
 	} else if nodeToValidate.CumWork.Cmp(currentTip.CumWork) <= 0 {
 		// A block has less cumulative work than our tip. In this case, we just ignore
