@@ -896,6 +896,23 @@ func (bav *UtxoView) _connectSwapIdentity(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
+func _verifyBytesSignature(signer, data, signature []byte) error {
+	bytes := Sha256DoubleHash(data)
+
+	// Convert signature to *btcec.Signature.
+	sign, err := btcec.ParseDERSignature(signature, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, "_verifyBytesSignature: Problem parsing access signature: ")
+	}
+
+	// Verify signature.
+	ownerPk, _ := btcec.ParsePubKey(signer, btcec.S256())
+	if !sign.Verify(bytes[:], ownerPk) {
+		return fmt.Errorf("_verifyBytesSignature: Invalid signature")
+	}
+	return nil
+}
+
 // _verifyAccessSignature verifies if the accessSignature is correct. Valid
 // accessSignature is the signed hash of (derivedPublicKey + expirationBlock)
 // in DER format, made with the ownerPublicKey.
@@ -903,40 +920,21 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	expirationBlock uint64, accessSignature []byte) error {
 
 	// Sanity-check and convert ownerPublicKey to *btcec.PublicKey.
-	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
-		fmt.Errorf("_verifyAccessSignature: Problem parsing owner public key")
-	}
-	ownerPk, err := btcec.ParsePubKey(ownerPublicKey, btcec.S256())
-	if err != nil {
-		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing owner public key: ")
+	if err := IsByteArrayValidPublicKey(ownerPublicKey, "_verifyAccessSignature: " +
+		"Problem parsing owner public key"); err != nil {
+		return err
 	}
 
 	// Sanity-check and convert derivedPublicKey to *btcec.PublicKey.
-	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
-		fmt.Errorf("_verifyAccessSignature: Problem parsing derived public key")
-	}
-	_, err = btcec.ParsePubKey(derivedPublicKey, btcec.S256())
-	if err != nil {
-		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing derived public key: ")
+	if err := IsByteArrayValidPublicKey(derivedPublicKey, "_verifyAccessSignature: " +
+		"Problem parsing derived public key"); err != nil {
+		return err
 	}
 
 	// Compute a hash of derivedPublicKey+expirationBlock.
 	expirationBlockBytes := EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
-	accessHash := Sha256DoubleHash(accessBytes)
-
-	// Convert accessSignature to *btcec.Signature.
-	signature, err := btcec.ParseDERSignature(accessSignature, btcec.S256())
-	if err != nil {
-		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing access signature: ")
-	}
-
-	// Verify signature.
-	if !signature.Verify(accessHash[:], ownerPk) {
-		return fmt.Errorf("_verifyAccessSignature: Invalid signature")
-	}
-
-	return nil
+	return _verifyBytesSignature(ownerPublicKey, accessBytes, accessSignature)
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(

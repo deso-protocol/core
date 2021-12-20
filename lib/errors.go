@@ -1,6 +1,11 @@
 package lib
 
-import "strings"
+import (
+	"fmt"
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/pkg/errors"
+	"strings"
+)
 
 // RuleError is an error type that specifies an error occurred during
 // block processing that is related to a consensus rule. By checking the
@@ -223,13 +228,14 @@ const (
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
 
 	// Messages
-	RuleErrorMessagingPublicKeyInvalid      RuleError = "RuleErrorMessagingPublicKeyInvalid"
-	RuleErrorMessagingPublicParseError      RuleError = "RuleErrorMessagingPublicParseError"
-	RuleErrorMessagingKeyNameNotProvided    RuleError = "RuleErrorMessagingKeyNameNotProvided"
-	RuleErrorMessagingKeyNameTooShort       RuleError = "RuleErrorMessagingKeyNameTooShort"
-	RuleErrorMessagingKeyNameTooLong        RuleError = "RuleErrorMessagingKeyNameTooLong"
-	RuleErrorMessagingOwnerPublicKeyInvalid RuleError = "RuleErrorMessagingOwnerPublicKeyInvalid"
-	RuleErrorMessagingKeyConnect            RuleError = "RuleErrorMessagingKeyConnect"
+	RuleErrorMessagingPublicKeyInvalid        RuleError = "RuleErrorMessagingPublicKeyInvalid"
+	RuleErrorMessagingPublicParseError        RuleError = "RuleErrorMessagingPublicParseError"
+	RuleErrorMessagingKeyNameNotProvided      RuleError = "RuleErrorMessagingKeyNameNotProvided"
+	RuleErrorMessagingKeyNameTooShort         RuleError = "RuleErrorMessagingKeyNameTooShort"
+	RuleErrorMessagingKeyNameTooLong          RuleError = "RuleErrorMessagingKeyNameTooLong"
+	RuleErrorMessagingOwnerPublicKeyInvalid   RuleError = "RuleErrorMessagingOwnerPublicKeyInvalid"
+	RuleErrorMessagingKeyConnect              RuleError = "RuleErrorMessagingKeyConnect"
+	RuleErrorMessagingKeySignatureNotProvided RuleError = "RuleErrorMessagingKeySignatureNotProvided"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                     RuleError = "RuleErrorTooManyNFTCopies"
@@ -337,4 +343,15 @@ func IsRuleError(err error) bool {
 	return strings.Contains(err.Error(), "RuleError") ||
 			strings.Contains(err.Error(), "HeaderError") ||
 			strings.Contains(err.Error(), "TxError")
+}
+
+func IsByteArrayValidPublicKey(bytes []byte, errorMsg string) error {
+	if len(bytes) != btcec.PubKeyBytesLenCompressed {
+		fmt.Errorf(errorMsg)
+	}
+	_, err := btcec.ParsePubKey(bytes, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, errorMsg)
+	}
+	return nil
 }

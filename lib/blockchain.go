@@ -3533,6 +3533,9 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	accessSignature []byte,
 	deleteKey bool,
 	derivedKeySignature bool,
+	messagingPublicKey string,
+	messagingKeyName string,
+	messagingKeySignature string,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3563,6 +3566,55 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	extraData := make(map[string][]byte)
 	if derivedKeySignature {
 		extraData[DerivedPublicKey] = derivedPublicKey
+	}
+
+	if messagingPublicKey != "" && messagingKeyName != "" && messagingKeySignature != "" {
+		messagingPk, err := hex.DecodeString(messagingPublicKey)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: " +
+				"Problem decoding messaging public key")
+		}
+
+		if err = IsByteArrayValidPublicKey([]byte(messagingPublicKey), "CreateAuthorizeDerivedKeyTxn: " +
+			"Problem parsing messagingPublicKey"); err != nil {
+			return nil, 0, 0, 0, err
+		}
+
+		// If we get here, it means that we have a valid messaging public key.
+		// Sanity check messaging key name
+		if len(messagingKeyName) < MinMessagingKeyNameCharacters {
+			return nil, 0, 0, 0, errors.Wrapf(
+				RuleErrorMessagingKeyNameTooShort, "CreateAuthorizeDerivedKeyTxn: " +
+					"Too few characters in key name: min = %v, provided = %v",
+				MinMessagingKeyNameCharacters, len(messagingKeyName))
+		}
+		if len(messagingKeyName) > MaxMessagingKeyNameCharacters {
+			return nil, 0, 0, 0, errors.Wrapf(
+				RuleErrorMessagingKeyNameTooLong, "CreateAuthorizeDerivedKeyTxn: " +
+					"Too many characters in key name: max = %v; provided = %v",
+				MaxMessagingKeyNameCharacters, len(messagingKeyName))
+		}
+
+		// Check that messagingKeySignature can be parsed into byte array correctly.
+		messagingKeySig, err := hex.DecodeString(messagingKeySignature)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: " +
+				"Problem decoding messagingKeySignature")
+		}
+
+		// If we get here, it means we have valid messaging public key, key name, and signature.
+		// Now we want to verify that the signature is correct for the owner public key.
+		bytes := append(messagingPk, []byte(messagingKeyName)...)
+		if err = _verifyBytesSignature(ownerPublicKey, bytes, messagingKeySig); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: " +
+				"Problem verifying signature bytes")
+		}
+
+		// If we got here, we have valid public key, key name, and matching signature.
+		// We add the records to ExtraData.
+		extraData[MessagingPublicKey] = messagingPk
+		extraData[MessagingKeyName] = []byte(messagingKeyName)
+		extraData[MessagingKeySignature] = messagingKeySig
 	}
 
 	// Create a transaction containing the authorize derived key fields.

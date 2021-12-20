@@ -790,8 +790,9 @@ const (
 	DerivedPublicKey = "DerivedPublicKey"
 
 	// Messaging keys
-	MessagingPublicKey = "MessagingPublicKey"
-	MessagingKeyName   = "MessagingKeyName"
+	MessagingPublicKey    = "MessagingPublicKey"
+	MessagingKeyName      = "MessagingKeyName"
+	MessagingKeySignature = "MessagingKeySignature"
 )
 
 // Defines values that may exist in a transaction's ExtraData map

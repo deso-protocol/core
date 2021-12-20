@@ -401,7 +401,7 @@ func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn) (*UtxoOperation, err
 		return nil, nil
 	}
 
-	var messagingPublicKey, messagingKeyName []byte
+	var messagingPublicKey, messagingKeyName, messagingKeySignature []byte
 	var exists bool
 
 	// Check for existence of the MessagingPublicKey in ExtraData
@@ -416,19 +416,19 @@ func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn) (*UtxoOperation, err
 				"Did you forget to add key name?")
 	}
 
+	// Check for existence of the MessagingKeySignature in ExtraData
+	if messagingKeySignature, exists = txn.ExtraData[MessagingKeySignature]; !exists {
+		return nil, errors.Wrapf(
+			RuleErrorMessagingKeySignatureNotProvided,"_connectMessagingKeys: " +
+				"Did you forget to add key signature?")
+	}
+
 	// If we get here it means that this transaction is trying to update the messaging
 	// key. So sanity-check that the public key provided in ExtraData is valid.
-	if len(messagingPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return nil, errors.Wrapf(
-			RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKeys: "+
-				"MessagingPublicKey = %d; Expected length = %d",
-			len(messagingPublicKey), btcec.PubKeyBytesLenCompressed)
-	}
-	_, err := btcec.ParsePubKey(messagingPublicKey, btcec.S256())
-	if err != nil {
-		return nil, errors.Wrapf(
-			RuleErrorMessagingPublicParseError, "_connectMessagingKeys: " +
-				"Error parsing public key: %v", err)
+	if err := IsByteArrayValidPublicKey(messagingPublicKey, fmt.Sprintf(
+		"%v: _connectMessagingKeys: Problem parsing public key: %v",
+		RuleErrorMessagingPublicKeyInvalid, messagingPublicKey)); err != nil {
+		return nil, err
 	}
 
 	// If we get here, it means that we have a valid messaging public key.
@@ -449,11 +449,17 @@ func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn) (*UtxoOperation, err
 	// Now we have a valid messaging public key and key name. So we will proceed
 	// to add keys to UtxoView, and generate UtxoOps in case we will revert.
 	// Sanity-check that transaction public key is valid.
-	if len(txn.PublicKey) != btcec.PubKeyBytesLenCompressed {
-		return nil, RuleErrorMessagingOwnerPublicKeyInvalid
+	if err := IsByteArrayValidPublicKey(txn.PublicKey, fmt.Sprintf("%v",
+		RuleErrorMessagingOwnerPublicKeyInvalid)); err != nil {
+		return nil, err
 	}
-	if _, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256()); err != nil {
-		return nil, errors.Wrap(RuleErrorMessagingOwnerPublicKeyInvalid, err.Error())
+
+	// We now have a valid messaging public key, key name, and owner public key.
+	// Verify the messagingKeySignature to check the signature( messagingPublicKey || messagingKeyName )
+	bytes := append(messagingPublicKey, messagingKeyName...)
+	if err := _verifyBytesSignature(txn.PublicKey, bytes, messagingKeySignature); err != nil {
+		return nil, errors.Wrapf(err, "_connectMessagingKeys: " +
+		"Problem verifying signature bytes")
 	}
 
 	// Create a MessagingKeyEntry struct
