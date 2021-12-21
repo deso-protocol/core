@@ -980,8 +980,6 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	// Create a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
-	params.DeSoDiamondsBlockHeight = uint32(52112)
-
 	// Give paramUpdater some mony
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, moneyPkString, paramUpdaterPub,
