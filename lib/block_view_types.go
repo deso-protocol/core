@@ -480,7 +480,11 @@ type NFTEntry struct {
 func (nft *NFTEntry) Encode() []byte {
 	var data []byte
 
-	data = append(data, EncodeByteArray(nft.LastOwnerPKID.ToBytes())...)
+	if nft.LastOwnerPKID != nil {
+		data = append(data, EncodeByteArray(nft.LastOwnerPKID.ToBytes())...)
+	} else {
+		data = append(data, UintToBuf(0)...)
+	}
 
 	if nft.OwnerPKID != nil {
 		data = append(data, EncodeByteArray(nft.OwnerPKID.ToBytes())...)
@@ -503,7 +507,10 @@ func (nft *NFTEntry) Encode() []byte {
 func (nft *NFTEntry) Decode(data []byte) {
 	rr := bytes.NewReader(data)
 
-	nft.LastOwnerPKID = NewPKID(DecodeByteArray(rr))
+	lastOwnerPkid := DecodeByteArray(rr)
+	if lastOwnerPkid != nil {
+		nft.LastOwnerPKID = NewPKID(lastOwnerPkid)
+	}
 
 	ownerPkid := DecodeByteArray(rr)
 	if ownerPkid != nil {
