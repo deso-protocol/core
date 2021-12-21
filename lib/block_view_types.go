@@ -600,8 +600,8 @@ func (key *DerivedKeyEntry) Encode() []byte {
 
 	data = append(data, EncodeByteArray(key.OwnerPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(key.DerivedPublicKey.ToBytes())...)
-	data = append(UintToBuf(key.ExpirationBlock))
-	data = append(UintToBuf(uint64(key.OperationType)))
+	data = append(data, UintToBuf(key.ExpirationBlock)...)
+	data = append(data, UintToBuf(uint64(key.OperationType))...)
 
 	return data
 }
