@@ -980,6 +980,8 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	// Create a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
+	params.DeSoDiamondsBlockHeight = uint32(52112)
+
 	// Give paramUpdater some mony
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, moneyPkString, paramUpdaterPub,
@@ -1290,7 +1292,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel)
+		require.Contains(err.Error(), RuleErrorCreatorCoinTransferInsufficientCoins)
 	}
 	// You can't apply the same number of Diamonds to a post twice
 	{
