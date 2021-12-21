@@ -758,10 +758,7 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	privateMessages := []*MessageEntry{}
 	for _, valBytes := range valuesFound {
 		privateMessageObj := &MessageEntry{}
-		if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj); err != nil {
-			return nil, errors.Wrapf(
-				err, "DbGetMessageEntriesForPublicKey: Problem decoding value: ")
-		}
+		privateMessageObj.Decode(valBytes)
 
 		privateMessages = append(privateMessages, privateMessageObj)
 	}
@@ -4577,6 +4574,8 @@ func DBGetOwnerToDerivedKeyMappingWithTxn(
 	}
 	derivedKeyEntry := &DerivedKeyEntry{}
 	err = derivedKeyEntryItem.Value(func(valBytes []byte) error {
+		glog.Info(valBytes)
+		glog.Info(len(valBytes))
 		derivedKeyEntry.Decode(valBytes)
 		return nil
 	})
