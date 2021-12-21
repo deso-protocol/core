@@ -466,10 +466,10 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 
 			// Sanity-check that the watermark delta equates to what the creator received.
 			deltaNanos := uint64(0)
-			if blockHeight > DeSoFounderRewardBlockHeight {
+			if blockHeight > bav.Params.DeSoFounderRewardBlockHeight {
 				// Do nothing.  After the DeSoFounderRewardBlockHeight, creator coins are not
 				// minted as a founder's reward, just DeSo (see utxo reverted later).
-			} else if blockHeight > SalomonFixBlockHeight {
+			} else if blockHeight > bav.Params.SalomonFixBlockHeight {
 				// Following the SalomonFixBlockHeight block, we calculate a founders reward
 				// on every buy, not just the ones that push a creator to a new all time high.
 				deltaNanos = existingProfileEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
@@ -818,7 +818,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// profile being bought, we do not cut a founder reward.
 	desoRemainingNanos := uint64(0)
 	desoFounderRewardNanos := uint64(0)
-	if blockHeight > DeSoFounderRewardBlockHeight &&
+	if blockHeight > bav.Params.DeSoFounderRewardBlockHeight &&
 		!reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) {
 
 		// This formula is equal to:
@@ -865,7 +865,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// This makes it prohibitively expensive for a user to buy themself above the
 	// CreatorCoinAutoSellThresholdNanos and then spam tiny nano DeSo creator
 	// coin purchases causing the effective Bancor Creator Coin Reserve Ratio to drift.
-	if blockHeight > SalomonFixBlockHeight {
+	if blockHeight > bav.Params.SalomonFixBlockHeight {
 		if creatorCoinToMintNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
 			return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanos
 		}
@@ -900,11 +900,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Calculate the *Creator Coin nanos* to give as a founder reward.
 	creatorCoinFounderRewardNanos := uint64(0)
-	if blockHeight > DeSoFounderRewardBlockHeight {
+	if blockHeight > bav.Params.DeSoFounderRewardBlockHeight {
 		// Do nothing. The chain stopped minting creator coins as a founder reward for
 		// creators at this blockheight.  It gives DeSo as a founder reward now instead.
 
-	} else if blockHeight > SalomonFixBlockHeight {
+	} else if blockHeight > bav.Params.SalomonFixBlockHeight {
 		// Following the SalomonFixBlockHeight block, creator coin buys continuously mint
 		// a founders reward based on the CreatorBasisPoints.
 
@@ -969,7 +969,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
 	if buyerBalanceEntry == nil ||
-		(buyerBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
+		(buyerBalanceEntry.isDeleted && blockHeight > bav.Params.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 		// If there is no balance entry for this mapping yet then just create it.
 		// In this case the balance will be zero.
 		buyerBalanceEntry = &BalanceEntry{
@@ -1000,7 +1000,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		// If the creator does not have a balance entry or the creator's balance entry is deleted and we have passed the
 		// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
 		if creatorBalanceEntry == nil ||
-			(creatorBalanceEntry.isDeleted && blockHeight > BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
+			(creatorBalanceEntry.isDeleted &&
+				blockHeight > bav.Params.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight) {
 			// If there is no balance entry then it means the creator doesn't own
 			// any of their coin yet. In this case we create a new entry for them
 			// with a zero balance.
@@ -1030,7 +1031,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Check that if the buyer is receiving nanos for the first time, it's enough
 	// to push them above the CreatorCoinAutoSellThresholdNanos threshold. This helps
 	// prevent tiny amounts of nanos from drifting the ratio of creator coins to DeSo locked.
-	if blockHeight > SalomonFixBlockHeight {
+	if blockHeight > bav.Params.SalomonFixBlockHeight {
 		if buyerBalanceEntry.BalanceNanos == 0 && coinsBuyerGetsNanos != 0 &&
 			coinsBuyerGetsNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
 			return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForBuyer
@@ -1064,7 +1065,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	if creatorBalanceEntry.BalanceNanos == 0 &&
 		creatorCoinFounderRewardNanos != 0 &&
 		creatorCoinFounderRewardNanos < bav.Params.CreatorCoinAutoSellThresholdNanos &&
-		blockHeight > SalomonFixBlockHeight {
+		blockHeight > bav.Params.SalomonFixBlockHeight {
 
 		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForCreator
 	}
@@ -1088,7 +1089,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Finally, if the creator is getting a deso founder reward, add a UTXO for it.
 	var outputKey *UtxoKey
-	if blockHeight > DeSoFounderRewardBlockHeight {
+	if blockHeight > bav.Params.DeSoFounderRewardBlockHeight {
 		if desoFounderRewardNanos > 0 {
 			// Create a new entry for this output and add it to the view. It should be
 			// added at the end of the utxo list.
@@ -1229,7 +1230,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	desoBeforeFeesNanos := uint64(0)
 	// Compute the amount of DeSo to return.
-	if blockHeight > SalomonFixBlockHeight {
+	if blockHeight > bav.Params.SalomonFixBlockHeight {
 		// Following the SalomonFixBlockHeight block, if a user would be left with less than
 		// bav.Params.CreatorCoinAutoSellThresholdNanos, we clear all their remaining holdings
 		// to prevent 1 or 2 lingering creator coin nanos from staying in their wallet.
@@ -1628,7 +1629,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 	var previousDiamondPostEntry *PostEntry
 	var previousDiamondEntry *DiamondEntry
 	// After the DeSoDiamondsBlockHeight, we no longer accept creator coin diamonds.
-	if hasDiamondPostHash && blockHeight > DeSoDiamondsBlockHeight {
+	if hasDiamondPostHash && blockHeight > bav.Params.DeSoDiamondsBlockHeight {
 		return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight
 	} else if hasDiamondPostHash {
 		if !hasDiamondLevel {

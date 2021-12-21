@@ -265,10 +265,6 @@ const (
 )
 
 func TestUpdateProfile(t *testing.T) {
-	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
-	ParamUpdaterProfileUpdateFixBlockHeight = 0
-	UpdateProfileFixBlockHeight = 0
-
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -278,6 +274,11 @@ func TestUpdateProfile(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+
+	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
+	params.ParamUpdaterProfileUpdateFixBlockHeight = 0
+	params.UpdateProfileFixBlockHeight = 0
+
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -3243,8 +3244,6 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 }
 
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {
-	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -3252,6 +3251,8 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+
+	params.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

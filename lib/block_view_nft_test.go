@@ -632,8 +632,6 @@ func _burnNFTWithTestMeta(
 }
 
 func TestNFTBasic(t *testing.T) {
-	BrokenNFTBidsFixBlockHeight = uint32(0)
-
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -644,6 +642,7 @@ func TestNFTBasic(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BrokenNFTBidsFixBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4208,9 +4207,6 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 }
 
 func TestNFTTransfersAndBurns(t *testing.T) {
-	BrokenNFTBidsFixBlockHeight = uint32(0)
-	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -4220,6 +4216,9 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+
+	params.BrokenNFTBidsFixBlockHeight = uint32(0)
+	params.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

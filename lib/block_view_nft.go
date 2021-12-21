@@ -1217,7 +1217,7 @@ func (bav *UtxoView) _connectNFTBid(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: Error getting bidder balance: ")
 
-	} else if txMeta.BidAmountNanos > spendableBalance && blockHeight > BrokenNFTBidsFixBlockHeight {
+	} else if txMeta.BidAmountNanos > spendableBalance && blockHeight > bav.Params.BrokenNFTBidsFixBlockHeight {
 		return 0, 0, nil, RuleErrorInsufficientFundsForNFTBid
 	}
 
@@ -1262,7 +1262,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
+	if blockHeight < bav.Params.NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorNFTTransferBeforeBlockHeight
 	}
 
@@ -1387,7 +1387,7 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
+	if blockHeight < bav.Params.NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorAcceptNFTTransferBeforeBlockHeight
 	}
 
@@ -1474,7 +1474,7 @@ func (bav *UtxoView) _connectBurnNFT(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
+	if blockHeight < bav.Params.NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorBurnNFTBeforeBlockHeight
 	}
 
