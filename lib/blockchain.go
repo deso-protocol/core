@@ -2733,7 +2733,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	maxCopiesPerNFT int64,
 	minimumNetworkFeeNanosPerKb int64,
 	forbiddenPubKey []byte,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -2782,10 +2782,10 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 }
 
 func (bc *Blockchain) CreateUpdateBitcoinUSDExchangeRateTxn(
-// Exchange rate update fields
+	// Exchange rate update fields
 	updaterPublicKey []byte,
 	usdCentsPerbitcoin uint64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -2817,7 +2817,7 @@ func (bc *Blockchain) CreateUpdateBitcoinUSDExchangeRateTxn(
 }
 
 func (bc *Blockchain) CreateSubmitPostTxn(
-// Post fields
+	// Post fields
 	updaterPublicKey []byte,
 	postHashToModify []byte,
 	parentStakeID []byte,
@@ -2827,7 +2827,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	tstampNanos uint64,
 	postExtraData map[string][]byte,
 	isHidden bool,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -2887,7 +2887,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 
 func (bc *Blockchain) CreateUpdateProfileTxn(
 	UpdaterPublicKeyBytes []byte,
-// Optional. Only set when the owner of the profile is != to the updater.
+	// Optional. Only set when the owner of the profile is != to the updater.
 	OptionalProfilePublicKeyBytes []byte,
 	NewUsername string,
 	NewDescription string,
@@ -2896,7 +2896,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	NewStakeMultipleBasisPoints uint64,
 	IsHidden bool,
 	AdditionalFees uint64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -2938,7 +2938,7 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 	FromPublicKeyBytes []byte,
 	ToPublicKeyBytes []byte,
 
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -2972,7 +2972,7 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 
 func (bc *Blockchain) CreateCreatorCoinTxn(
 	UpdaterPublicKey []byte,
-// See CreatorCoinMetadataa for an explanation of these fields.
+	// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKey []byte,
 	OperationType CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
@@ -2980,7 +2980,7 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 	DeSoToAddNanos uint64,
 	MinDeSoExpectedNanos uint64,
 	MinCreatorCoinExpectedNanos uint64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3027,7 +3027,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 	ProfilePublicKey []byte,
 	CreatorCoinToTransferNanos uint64,
 	RecipientPublicKey []byte,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3074,7 +3074,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTFee uint64,
 	NFTRoyaltyToCreatorBasisPoints uint64,
 	NFTRoyaltyToCoinBasisPoints uint64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3118,7 +3118,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	BidAmountNanos uint64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3159,7 +3159,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	EncryptedUnlockableTextBytes []byte,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3198,7 +3198,7 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 	UpdaterPublicKey []byte,
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3237,7 +3237,7 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 	UpdaterPublicKey []byte,
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3277,7 +3277,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	BidderPKID *PKID,
 	BidAmountNanos uint64,
 	EncryptedUnlockableTextBytes []byte,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3376,7 +3376,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	SerialNumber uint64,
 	IsForSale bool,
 	MinBidAmountNanos uint64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3478,7 +3478,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	ReceiverPublicKey []byte,
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3560,7 +3560,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	messagingPublicKey string,
 	messagingKeyName string,
 	messagingKeySignature string,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -3664,7 +3664,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	SenderPublicKey []byte,
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
-// Standard transaction fields
+	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _spendAmount uint64, _changeAmount uint64, _fees uint64, _err error) {
 
