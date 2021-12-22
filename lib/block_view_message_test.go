@@ -6,6 +6,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -486,5 +487,285 @@ func TestPrivateMessage(t *testing.T) {
 		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
+	}
+}
+
+func TestMessagingKeys(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	_ = require
+	_ = assert
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	_ = miner
+
+	// Mine two blocks to give the sender some DeSo.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	_generateMessagingKey := func(name []byte, signer []byte) (*btcec.PrivateKey, []byte, []byte) {
+		signPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), signer)
+
+		priv, _ := btcec.NewPrivateKey(btcec.S256())
+		pub := priv.PubKey().SerializeCompressed()
+
+		payload := append(pub, name...)
+		signature, _ := signPriv.Sign(Sha256DoubleHash(payload)[:])
+		return priv, pub, signature.Serialize()
+	}
+
+	// We create this inline function for attempting a basic transfer.
+	// This helps us test that the DeSoChain recognizes a derived key.
+	_basicTransfer := func(senderPk []byte, recipientPk []byte, signerPriv string, utxoView *UtxoView,
+		mempool *DeSoMempool, extraData map[string][]byte) ([]*UtxoOperation, *MsgDeSoTxn, error) {
+
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{},
+			TxOutputs: []*DeSoOutput{
+				{
+					PublicKey:   recipientPk,
+					AmountNanos: 1,
+				},
+			},
+			PublicKey: senderPk,
+			TxnMeta:   &BasicTransferMetadata{},
+			ExtraData: extraData,
+		}
+
+		totalInput, spendAmount, changeAmount, fees, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
+		require.NoError(err)
+		require.Equal(totalInput, spendAmount+changeAmount+fees)
+		require.Greater(totalInput, uint64(0))
+
+		_signTxn(t, txn, signerPriv)
+
+		// Get utxoView if it doesn't exist
+		if mempool != nil {
+			utxoView, err = mempool.GetAugmentedUniversalView()
+			require.NoError(err)
+		}
+		if utxoView == nil {
+			utxoView, err = NewUtxoView(db, params, nil)
+			require.NoError(err)
+		}
+
+		txHash := txn.Hash()
+		blockHeight := chain.blockTip().Height + 1
+		utxoOps, _, _, _, err :=
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
+				true /*verifySignature*/, false /*ignoreUtxos*/)
+		return utxoOps, txn, err
+	}
+
+	_verifyMessagingKey := func(utxoView *UtxoView, mempool *DeSoMempool, entry *MessagingKeyEntry) bool {
+		var utxoMessagingEntry *MessagingKeyEntry
+
+		messagingKey := NewMessagingKey(entry.PublicKey, entry.MessagingKeyName[:])
+		if utxoView == nil {
+			utxoView, err := mempool.GetAugmentedUniversalView()
+			if err != nil {
+				fmt.Println("_verifyMessagingKey: Error fetching augmented universal view")
+				return false
+			}
+			utxoMessagingEntry = utxoView._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+		} else {
+			utxoMessagingEntry = utxoView._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+		}
+
+		if utxoMessagingEntry == nil || utxoMessagingEntry.isDeleted {
+			return false
+		}
+
+		return reflect.DeepEqual(*entry.MessagingPublicKey, *utxoMessagingEntry.MessagingPublicKey) &&
+			reflect.DeepEqual(*entry.MessagingKeyName, *utxoMessagingEntry.MessagingKeyName) &&
+			reflect.DeepEqual(*entry.PublicKey, *utxoMessagingEntry.PublicKey)
+	}
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(err)
+	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	require.NoError(err)
+
+	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
+	require.NoError(err)
+	recipientPrivBytes, _, err := Base58CheckDecode(recipientPrivString)
+	_ = recipientPrivBytes
+	require.NoError(err)
+
+	// Test #1: Check that entry is correctly set in UtxoView and flushed to DB
+	{
+		extraData := make(map[string][]byte)
+		keyName := []byte("default-key")
+		priv, pub, sign := _generateMessagingKey(keyName, senderPrivBytes)
+		_ = priv
+
+		extraData[MessagingPublicKey] = pub
+		extraData[MessagingKeyName] = keyName
+		extraData[MessagingKeySignature] = sign
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes, senderPrivString, utxoView,
+			nil, extraData)
+
+		desiredMessagingKeyEntry := MessagingKeyEntry{
+			PublicKey:          NewPublicKey(senderPkBytes),
+			MessagingPublicKey: NewPublicKey(pub),
+			MessagingKeyName:   NewKeyName(keyName),
+		}
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry), true)
+
+		err = utxoView.FlushToDb()
+		require.NoError(err)
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry), true)
+		fmt.Println("PASSED Test #1: Check that entry is correctly set in UtxoView and flushed to DB")
+	}
+
+	// Test #2: Check if messaging key is correctly disconnected.
+	{
+		extraData := make(map[string][]byte)
+		keyName := []byte("default-key2")
+		priv, pub, sign := _generateMessagingKey(keyName, senderPrivBytes)
+		_ = priv
+
+		extraData[MessagingPublicKey] = pub
+		extraData[MessagingKeyName] = keyName
+		extraData[MessagingKeySignature] = sign
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes, senderPrivString, utxoView,
+			nil, extraData)
+		require.NoError(err)
+
+		desiredMessagingKeyEntry := MessagingKeyEntry{
+			PublicKey:          NewPublicKey(senderPkBytes),
+			MessagingPublicKey: NewPublicKey(pub),
+			MessagingKeyName:   NewKeyName(keyName),
+		}
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry), true)
+
+		require.NoError(utxoView.DisconnectTransaction(txn, txn.Hash(), utxoOps, chain.blockTip().Height+1))
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry), false)
+		fmt.Println("PASSED Test #2: Check if messaging key is correctly disconnected.")
+	}
+
+	// Test #3: Add messaging key in a mempool transaction and then remove it
+	// Test #4: Add messaging key in a block and then disconnect block.
+	{
+		extraData := make(map[string][]byte)
+		keyName := []byte("default-key3")
+		priv, pub, sign := _generateMessagingKey(keyName, senderPrivBytes)
+		_ = priv
+
+		extraData[MessagingPublicKey] = pub
+		extraData[MessagingKeyName] = keyName
+		extraData[MessagingKeySignature] = sign
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		_, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes, senderPrivString, utxoView,
+			nil, extraData)
+		require.NoError(err)
+
+		mempoolTxn, err := mempool.processTransaction(txn, true, true, 0, true)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxn))
+
+		desiredMessagingKeyEntry := MessagingKeyEntry{
+			PublicKey:          NewPublicKey(senderPkBytes),
+			MessagingPublicKey: NewPublicKey(pub),
+			MessagingKeyName:   NewKeyName(keyName),
+		}
+		require.Equal(_verifyMessagingKey(nil, mempool, &desiredMessagingKeyEntry), true)
+
+		mempool.inefficientRemoveTransaction(txn)
+		require.Equal(_verifyMessagingKey(nil, mempool, &desiredMessagingKeyEntry), false)
+		fmt.Println("PASSED Test #3: Add messaging key in a mempool transaction and then remove it")
+
+		// Test #4
+		mempoolTxn, err = mempool.processTransaction(txn, true, true, 0, true)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxn))
+		addedBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+		require.NoError(err)
+
+		// Verify the record was persisted in the DB
+		utxoView, err = NewUtxoView(db, params, nil)
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry), true)
+		_ = addedBlock
+
+		// Disconnect block
+		hash, err := addedBlock.Header.Hash()
+		require.NoError(err)
+		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		require.NoError(err)
+		// Compute the hashes for all the transactions.
+		txHashes, err := ComputeTransactionHashes(addedBlock.Txns)
+		require.NoError(err)
+		err = utxoView.DisconnectBlock(addedBlock, txHashes, utxoOps)
+		require.NoError(err)
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry), false)
+		err = utxoView.FlushToDb()
+		require.NoError(err)
+		fmt.Println("PASSED Test #4: Add messaging key in a block and then disconnect block.")
+	}
+
+	// Test #5: Make sure user can't have more than one public key assigned to the same key name.
+	// If the contrary was the case, we could make past messages un-decryptable (or rather hard to decrypt).
+	{
+		extraData := make(map[string][]byte)
+		keyName := []byte("default-key3")
+		priv, pub, sign := _generateMessagingKey(keyName, senderPrivBytes)
+		_ = priv
+
+		extraData[MessagingPublicKey] = pub
+		extraData[MessagingKeyName] = keyName
+		extraData[MessagingKeySignature] = sign
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		_, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes, senderPrivString, utxoView,
+			nil, extraData)
+		require.NoError(err)
+		_, err = mempool.processTransaction(txn, true, true, 0, true)
+		require.NoError(err)
+
+		desiredMessagingKeyEntry1 := MessagingKeyEntry{
+			PublicKey:          NewPublicKey(senderPkBytes),
+			MessagingPublicKey: NewPublicKey(pub),
+			MessagingKeyName:   NewKeyName(keyName),
+		}
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry1), true)
+
+		// Now let's try adding another public key for the same key name and make sure it silently fails.
+		priv2, pub2, sign2 := _generateMessagingKey(keyName, senderPrivBytes)
+		_ = priv2
+
+		extraData = make(map[string][]byte)
+		extraData[MessagingPublicKey] = pub2
+		extraData[MessagingKeyName] = keyName
+		extraData[MessagingKeySignature] = sign2
+
+		require.NoError(err)
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes, senderPrivString, nil,
+			mempool, extraData)
+		require.NoError(err)
+		// If we failed, then the previous messaging key entry should remain valid.
+		desiredMessagingKeyEntry2 := MessagingKeyEntry{
+			PublicKey:          NewPublicKey(senderPkBytes),
+			MessagingPublicKey: NewPublicKey(pub2),
+			MessagingKeyName:   NewKeyName(keyName),
+		}
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry1), true)
+		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry2), false)
+		fmt.Println("PASSED Test #5: Make sure user can't have more than one public key assigned to the same key name.")
 	}
 }

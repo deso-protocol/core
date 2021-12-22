@@ -78,8 +78,8 @@ func (bav *UtxoView) _setMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntr
 
 	// Create a key for the UtxoView mapping. We always put user's main public key as part of the map key.
 	messagingKey := MessagingKey{
-		PublicKey: messagingKeyEntry.PublicKey,
-		KeyName:   messagingKeyEntry.MessagingKeyName,
+		PublicKey: *messagingKeyEntry.PublicKey,
+		KeyName:   *messagingKeyEntry.MessagingKeyName,
 	}
 	bav.MessagingKeyToMessagingKeyEntry[messagingKey] = messagingKeyEntry
 }

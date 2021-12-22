@@ -789,8 +789,8 @@ func DBPutMessagingKeyEntryWithTxn(
 	}
 
 	messagingKey := &MessagingKey{
-		PublicKey: messagingKeyEntry.PublicKey,
-		KeyName:   messagingKeyEntry.MessagingKeyName,
+		PublicKey: *messagingKeyEntry.PublicKey,
+		KeyName:   *messagingKeyEntry.MessagingKeyName,
 	}
 	if err := txn.Set(_dbKeyForMessagingKeyEntry(messagingKey), messagingKeyEntry.Encode()); err != nil {
 		return errors.Wrapf(err, "DBPutMessagingKeyEntryWithTxn: Problem adding messaging key entry mapping: ")

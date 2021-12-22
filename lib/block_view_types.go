@@ -446,14 +446,14 @@ func MessagingKeyNameDecode(name *KeyName) []byte {
 
 // MessagingKey is similar to the MessageKey, and is used to index messaging keys for a user.
 type MessagingKey struct {
-	PublicKey *PublicKey
-	KeyName   *KeyName
+	PublicKey PublicKey
+	KeyName   KeyName
 }
 
 func NewMessagingKey(publicKey *PublicKey, keyName []byte) *MessagingKey {
 	return &MessagingKey{
-		PublicKey: publicKey,
-		KeyName:   NewKeyName(keyName),
+		PublicKey: *publicKey,
+		KeyName:   *NewKeyName(keyName),
 	}
 }
 
@@ -481,6 +481,11 @@ type MessagingKeyEntry struct {
 	// to the db. This is initially set to false, but can become true if
 	// we disconnect the messaging key from UtxoView
 	isDeleted bool
+}
+
+func (entry *MessagingKeyEntry) String() string {
+	return fmt.Sprintf("<MessagingKeyEntry | PublicKey : %v | MessagingPublicKey : %v | MessagingKeyName : %v | isDeleted : %v >",
+		entry.PublicKey, entry.MessagingPublicKey, entry.MessagingKeyName, entry.isDeleted)
 }
 
 func (entry *MessagingKeyEntry) Encode() []byte {
