@@ -281,17 +281,18 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 	// Fetch the messaging key entry from UtxoView.
 	messagingKey := NewMessagingKey(NewPublicKey(ownerPublicKey), keyName)
 	messagingKeyEntry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
-	if messagingKeyEntry != nil && !messagingKeyEntry.isDeleted {
+	if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent messaging key entry "+
 			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
 	}
 
 	// Compare the UtxoEntry with the provided key for more validation.
-	if reflect.DeepEqual(messagingKeyEntry.MessagingPublicKey[:], messagingPublicKey) != true {
+	if !reflect.DeepEqual(messagingKeyEntry.MessagingPublicKey[:], messagingPublicKey) {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: keys don't match for "+
 			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
 	}
-	if reflect.DeepEqual(messagingKeyEntry.MessagingKeyName[:], keyName) != true {
+
+	if !reflect.DeepEqual(*messagingKeyEntry.MessagingKeyName, *NewKeyName(keyName)) {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: key name don't match for "+
 			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
 	}
@@ -428,10 +429,9 @@ func (bav *UtxoView) _connectPrivateMessage(
 			}
 
 			// We will now proceed to add sender's or recipient's messaging keys to the messageParty.
-			var senderMessagingKeyName, recipientMessagingKeyName []byte
-			var existsSenderName, existsRecipientName bool
 			// We make sure that both sender public key and key name is present in transaction's ExtraData.
-			if senderMessagingKeyName, existsSenderName = txn.ExtraData[SenderMessagingKeyName]; existsSender && existsSenderName {
+			senderMessagingKeyName, existsSenderName := txn.ExtraData[SenderMessagingKeyName]
+			if existsSender && existsSenderName && len(senderMessagingPublicKey) > 0 && len(senderMessagingKeyName) > 0 {
 				// We validate the key and the name using this helper function to make sure messaging key has been previously authorized.
 				if err := bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName); err != nil {
 					glog.Errorf(fmt.Sprintf("_connectPrivateMessage: failed to validate public key and key name, error %v", err))
@@ -446,7 +446,8 @@ func (bav *UtxoView) _connectPrivateMessage(
 				messageParty.SenderMessagingKeyName = NewKeyName([]byte{})
 			}
 			// We do an analogous validation for the recipient's messaging key.
-			if recipientMessagingKeyName, existsRecipientName = txn.ExtraData[RecipientMessagingKeyName]; existsRecipient || existsRecipientName {
+			recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingKeyName]
+			if existsRecipient && existsRecipientName && len(recipientMessagingPublicKey) > 0 && len(recipientMessagingKeyName) > 0 {
 				if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
 					glog.Errorf(fmt.Sprintf("_connectPrivateMessage: failed to validate public key and key name, error %v", err))
 					break
@@ -454,8 +455,8 @@ func (bav *UtxoView) _connectPrivateMessage(
 				messageParty.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
 				messageParty.RecipientMessagingKeyName = NewKeyName(recipientMessagingKeyName)
 			} else {
-				messageParty.SenderMessagingPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
-				messageParty.SenderMessagingKeyName = NewKeyName([]byte{})
+				messageParty.RecipientMessagingPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
+				messageParty.RecipientMessagingKeyName = NewKeyName([]byte{})
 			}
 
 			// Now that we've confirmed that the messaging keys are correct, we set them in UtxoView.
@@ -615,6 +616,12 @@ func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn) (*UtxoOperation, err
 		return nil, errors.Wrapf(
 			RuleErrorMessagingKeyNameNotProvided, "_connectMessagingKeys: "+
 				"Did you forget to add key name?")
+	}
+
+	if reflect.DeepEqual(*NewKeyName(messagingKeyName), *NewKeyName([]byte{})) {
+		return nil, errors.Wrapf(
+			RuleErrorMessagingKeyNameCannotBeZeros, "_connectMessagingKeys: "+
+				"Cannot set a zeros-only key name?")
 	}
 
 	// Check for existence of the MessagingKeySignature in ExtraData. We need the signature in case a derived key

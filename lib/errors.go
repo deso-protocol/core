@@ -230,6 +230,7 @@ const (
 	RuleErrorMessagingKeyNameNotProvided      RuleError = "RuleErrorMessagingKeyNameNotProvided"
 	RuleErrorMessagingKeyNameTooShort         RuleError = "RuleErrorMessagingKeyNameTooShort"
 	RuleErrorMessagingKeyNameTooLong          RuleError = "RuleErrorMessagingKeyNameTooLong"
+	RuleErrorMessagingKeyNameCannotBeZeros    RuleError = "RuleErrorMessagingKeyNameCannotBeZeros"
 	RuleErrorMessagingOwnerPublicKeyInvalid   RuleError = "RuleErrorMessagingOwnerPublicKeyInvalid"
 	RuleErrorMessagingKeyConnect              RuleError = "RuleErrorMessagingKeyConnect"
 	RuleErrorMessagingKeySignatureNotProvided RuleError = "RuleErrorMessagingKeySignatureNotProvided"

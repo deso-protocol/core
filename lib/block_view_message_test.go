@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
@@ -722,7 +723,7 @@ func TestMessagingKeys(t *testing.T) {
 	// If the contrary was the case, we could make past messages un-decryptable (or rather hard to decrypt).
 	{
 		extraData := make(map[string][]byte)
-		keyName := []byte("default-key3")
+		keyName := []byte("default-key4")
 		priv, pub, sign := _generateMessagingKey(keyName, senderPrivBytes)
 		_ = priv
 
@@ -767,5 +768,218 @@ func TestMessagingKeys(t *testing.T) {
 		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry1), true)
 		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry2), false)
 		fmt.Println("PASSED Test #5: Make sure user can't have more than one public key assigned to the same key name.")
+	}
+}
+
+func TestMessageParty(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	_ = require
+	_ = assert
+
+	// In these tests we basically want to verify that MessageParty records are correctly added to UtxoView and DB
+	// after we send V3 messages.
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	_ = miner
+
+	// Mine two blocks to give the sender some DeSo.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	_generateMessagingKey := func(name []byte, signer []byte) (*btcec.PrivateKey, []byte, []byte) {
+		signPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), signer)
+
+		priv, _ := btcec.NewPrivateKey(btcec.S256())
+		pub := priv.PubKey().SerializeCompressed()
+
+		payload := append(pub, name...)
+		signature, _ := signPriv.Sign(Sha256DoubleHash(payload)[:])
+		return priv, pub, signature.Serialize()
+	}
+
+	_helpConnectPrivateMessage := func(senderPkBytes []byte, senderPrivBase58 string, recipientPkBytes,
+		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
+		recipientMessagingKeyName []byte, encryptedMessageText string, tstampNanos uint64,
+		utxoView *UtxoView) ([]*UtxoOperation, *MsgDeSoTxn, error) {
+
+		txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
+			senderPkBytes, recipientPkBytes, "", encryptedMessageText,
+			senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
+			recipientMessagingKeyName, tstampNanos, 10, nil, []*DeSoOutput{})
+		if err != nil {
+			return nil, nil, err
+		}
+
+		require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, senderPrivBase58)
+
+		txHash := txn.Hash()
+		// Always use height+1 for validation since it's assumed the transaction will
+		// get mined into the next block.
+		blockHeight := chain.blockTip().Height + 1
+		utxoOps, totalInput, totalOutput, fees, err :=
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		// ConnectTransaction should treat the amount locked as contributing to the
+		// output.
+		if err != nil {
+			return nil, nil, err
+		}
+		require.Equal(totalInput, totalOutput+fees)
+		require.Equal(totalInput, totalInputMake)
+
+		return utxoOps, txn, nil
+	}
+
+	_verifyExistsMessageEntryAndParty := func(utxoView *UtxoView, senderPk []byte, tstampNanos uint64) bool {
+		messageKey := MakeMessageKey(senderPk, tstampNanos)
+		messageEntry := utxoView._getMessageEntryForMessageKey(&messageKey)
+		messageParty := utxoView._getMessageKeyToMessageParty(&messageKey)
+		if messageEntry != nil && !messageEntry.isDeleted {
+			if messageParty != nil && !messageParty.isDeleted {
+				return reflect.DeepEqual((*messageParty.SenderPublicKey)[:], messageEntry.SenderPublicKey) &&
+					reflect.DeepEqual((*messageParty.RecipientPublicKey)[:], messageEntry.RecipientPublicKey)
+			} else {
+				return false
+			}
+		} else {
+			if messageParty != nil && !messageParty.isDeleted {
+				return false
+			}
+		}
+		return true
+	}
+
+	_verifyMessageParty := func(utxoView *UtxoView, senderPk []byte, tstampNanos uint64,
+		senderMsgPk, recipientMsgPk []byte, senderMsgKeyName, recipientMsgKeyName KeyName) bool {
+		messageKey := MakeMessageKey(senderPk, tstampNanos)
+		messageParty := utxoView._getMessageKeyToMessageParty(&messageKey)
+		return reflect.DeepEqual(senderMsgPk, (*messageParty.SenderMessagingPublicKey)[:]) &&
+			reflect.DeepEqual(recipientMsgPk, (*messageParty.RecipientMessagingPublicKey)[:]) &&
+			reflect.DeepEqual(senderMsgKeyName[:], (*messageParty.SenderMessagingKeyName)[:]) &&
+			reflect.DeepEqual(recipientMsgKeyName[:], (*messageParty.RecipientMessagingKeyName)[:])
+	}
+
+	// This helps us test that the DeSoChain recognizes a derived key.
+	_basicTransfer := func(senderPk []byte, recipientPk []byte, signerPriv string, utxoView *UtxoView,
+		mempool *DeSoMempool, extraData map[string][]byte) ([]*UtxoOperation, *MsgDeSoTxn, error) {
+
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{},
+			TxOutputs: []*DeSoOutput{
+				{
+					PublicKey:   recipientPk,
+					AmountNanos: 1,
+				},
+			},
+			PublicKey: senderPk,
+			TxnMeta:   &BasicTransferMetadata{},
+			ExtraData: extraData,
+		}
+
+		totalInput, spendAmount, changeAmount, fees, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
+		require.NoError(err)
+		require.Equal(totalInput, spendAmount+changeAmount+fees)
+		require.Greater(totalInput, uint64(0))
+
+		_signTxn(t, txn, signerPriv)
+
+		// Get utxoView if it doesn't exist
+		if mempool != nil {
+			utxoView, err = mempool.GetAugmentedUniversalView()
+			require.NoError(err)
+		}
+		if utxoView == nil {
+			utxoView, err = NewUtxoView(db, params, nil)
+			require.NoError(err)
+		}
+
+		txHash := txn.Hash()
+		blockHeight := chain.blockTip().Height + 1
+		utxoOps, _, _, _, err :=
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
+				true /*verifySignature*/, false /*ignoreUtxos*/)
+		return utxoOps, txn, err
+	}
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(err)
+	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	require.NoError(err)
+
+	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
+	require.NoError(err)
+	recipientPrivBytes, _, err := Base58CheckDecode(recipientPrivString)
+	_ = recipientPrivBytes
+	require.NoError(err)
+
+	// Test #1: Attempt sending a V3 private message without a previously authorized messaging key.
+	{
+		//extraData := make(map[string][]byte)
+		keyName := []byte("default-key")
+		priv, pub, _ := _generateMessagingKey(keyName, senderPrivBytes)
+		_ = priv
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+
+		tstampNanos := uint64(time.Now().UnixNano())
+
+		testMessage1 := hex.EncodeToString([]byte{1, 2, 3, 4, 5, 6})
+		_, _, err = _helpConnectPrivateMessage(senderPkBytes, senderPrivString,
+			recipientPkBytes, pub, keyName, []byte{}, []byte{}, testMessage1, tstampNanos, utxoView)
+		assert.NoError(err)
+		require.Equal(_verifyExistsMessageEntryAndParty(utxoView, senderPkBytes, tstampNanos), false)
+		fmt.Println("PASSED Test #1: Attempt sending a V3 private message without a previously authorized messaging key.")
+	}
+
+	// Test #2: Attempt sending a V3 private message with an authorized messaging key.
+	// Test #3: Attempt disconnecting a valid V3 private message.
+	{
+		extraData := make(map[string][]byte)
+		keyName := []byte("default-key")
+		priv, pub, sign := _generateMessagingKey(keyName, senderPrivBytes)
+		_ = priv
+
+		extraData[MessagingPublicKey] = pub
+		extraData[MessagingKeyName] = keyName
+		extraData[MessagingKeySignature] = sign
+
+		utxoView, err := NewUtxoView(db, params, nil)
+		require.NoError(err)
+		// Add the messaging key to the utxoView
+		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes, senderPrivString, utxoView,
+			nil, extraData)
+		require.NoError(utxoView.FlushToDb())
+		utxoView, err = NewUtxoView(db, params, nil)
+		tstampNanos := uint64(time.Now().UnixNano())
+		testMessage1 := hex.EncodeToString([]byte{1, 2, 3, 4, 5, 6})
+		_, _, err = _helpConnectPrivateMessage(senderPkBytes, senderPrivString,
+			recipientPkBytes, pub, keyName, []byte{}, []byte{}, testMessage1, tstampNanos, utxoView)
+		assert.NoError(err)
+		require.Equal(true, _verifyExistsMessageEntryAndParty(utxoView, senderPkBytes, tstampNanos))
+		require.Equal(true, _verifyMessageParty(utxoView, senderPkBytes, tstampNanos, pub, recipientPkBytes,
+			*NewKeyName(keyName), *NewKeyName([]byte{})))
+		fmt.Println("PASSED Test #2: Attempt sending a V3 private message with an authorized messaging key.")
+
+		require.NoError(utxoView.FlushToDb())
+		require.Equal(true, _verifyExistsMessageEntryAndParty(utxoView, senderPkBytes, tstampNanos))
+		require.Equal(true, _verifyMessageParty(utxoView, senderPkBytes, tstampNanos, pub, recipientPkBytes,
+			*NewKeyName(keyName), *NewKeyName([]byte{})))
+		fmt.Println("Successfully flushed to DB")
+		//require.NoError(utxoView.DisconnectTransaction(txn, txn.Hash(), utxoOps, chain.blockTip().Height+1))
+		//require.NoError(utxoView.FlushToDb())
+		//require.Equal(true, _verifyExistsMessageEntryAndParty(utxoView, senderPkBytes, tstampNanos))
+		//require.Equal(true, _verifyMessageParty(utxoView, senderPkBytes, tstampNanos, pub, recipientPkBytes,
+		//	*NewKeyName(keyName), *NewKeyName([]byte{})))
+		//fmt.Println("PASSED Test #3: Attempt disconnecting a valid V3 private message.")
+
 	}
 }
