@@ -1,9 +1,7 @@
 package lib
 
 import (
-	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/pkg/errors"
 	"strings"
 )
 
@@ -229,7 +227,6 @@ const (
 
 	// Messages
 	RuleErrorMessagingPublicKeyInvalid        RuleError = "RuleErrorMessagingPublicKeyInvalid"
-	RuleErrorMessagingPublicParseError        RuleError = "RuleErrorMessagingPublicParseError"
 	RuleErrorMessagingKeyNameNotProvided      RuleError = "RuleErrorMessagingKeyNameNotProvided"
 	RuleErrorMessagingKeyNameTooShort         RuleError = "RuleErrorMessagingKeyNameTooShort"
 	RuleErrorMessagingKeyNameTooLong          RuleError = "RuleErrorMessagingKeyNameTooLong"
@@ -341,17 +338,19 @@ func IsRuleError(err error) bool {
 	// eventually we should clean this up and get rid of the string comparison both
 	// for the code's sake but also for the sake of our tests.
 	return strings.Contains(err.Error(), "RuleError") ||
-			strings.Contains(err.Error(), "HeaderError") ||
-			strings.Contains(err.Error(), "TxError")
+		strings.Contains(err.Error(), "HeaderError") ||
+		strings.Contains(err.Error(), "TxError")
 }
 
-func IsByteArrayValidPublicKey(bytes []byte, errorMsg string) error {
+// IsByteArrayValidPublicKey is a general functionality that is used to verify if a
+// byte array is a valid secp256k1 public key
+func IsByteArrayValidPublicKey(bytes []byte) error {
 	if len(bytes) != btcec.PubKeyBytesLenCompressed {
-		fmt.Errorf(errorMsg)
+		return RuleErrorPubKeyLen
 	}
 	_, err := btcec.ParsePubKey(bytes, btcec.S256())
 	if err != nil {
-		return errors.Wrapf(err, errorMsg)
+		return RuleErrorParsePublicKey
 	}
 	return nil
 }

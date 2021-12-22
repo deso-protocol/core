@@ -258,9 +258,6 @@ type UtxoOperation struct {
 	// Save the previous profile entry when making an update.
 	PrevProfileEntry *ProfileEntry
 
-	// Save the key name of the previous messaging key entry.
-	PrevMessagingKeyName []byte
-
 	// Save the previous like entry and like count when making an update.
 	PrevLikeEntry *LikeEntry
 	PrevLikeCount uint64
@@ -407,20 +404,78 @@ type MessageEntry struct {
 	Version uint8
 }
 
+// KeyName helps with handling key names in MessagingKey
+type KeyName [MaxMessagingKeyNameCharacters]byte
+
+func (name *KeyName) ToBytes() []byte {
+	return name[:]
+}
+
+// Encode message key from varying length to a MaxMessagingKeyNameCharacters.
+// We fill the length of the messaging key to make sure there are no weird
+// prefix overlaps in DB.
+func NewKeyName(keyName []byte) *KeyName {
+	name := KeyName{}
+
+	// Fill with 0s to the MaxMessagingKeyNameCharacters.
+	for {
+		if len(keyName) < MaxMessagingKeyNameCharacters {
+			keyName = append(keyName, []byte{0}...)
+		} else {
+			copy(name[:], keyName)
+			return &name
+		}
+	}
+}
+
+// Decode filled message key of length MaxMessagingKeyNameCharacters array.
+func MessagingKeyNameDecode(name *KeyName) []byte {
+
+	bytes := make([]byte, MaxMessagingKeyNameCharacters)
+	copy(bytes, name[:])
+
+	// Remove trailing 0s from the encoded message key.
+	for {
+		if len(bytes) > MinMessagingKeyNameCharacters && bytes[len(bytes)-1] == byte(0) {
+			bytes = bytes[:len(bytes)-1]
+		} else {
+			return bytes
+		}
+	}
+}
+
+// MessagingKey is similar to the MessageKey, and is used to index messaging keys for a user.
+type MessagingKey struct {
+	PublicKey *PublicKey
+	KeyName   *KeyName
+}
+
+func NewMessagingKey(publicKey *PublicKey, keyName []byte) *MessagingKey {
+	return &MessagingKey{
+		PublicKey: publicKey,
+		KeyName:   NewKeyName(keyName),
+	}
+}
+
+func (key *MessagingKey) String() string {
+	return fmt.Sprintf("<PublicKey: %v, KeyName: %v",
+		key.PublicKey, key.KeyName)
+}
+
 // MessagingKeyEntry is used to update messaging keys for a user, this was added in
-// the DeSoMessenger Version 3 protocol.
+// the DeSo V3 Messages protocol.
 type MessagingKeyEntry struct {
-	// OwnerPKID is the PKID of the main user.
-	OwnerPKID *PKID
+	// PublicKey of the main user.
+	PublicKey *PublicKey
 
 	// MessagingPublicKey is the messaging key added. This will be the new
 	// messaging key that other users should encrypt messages to.
-	MessagingPublicKey []byte
+	MessagingPublicKey *PublicKey
 
 	// MessagingKeyName is the name of the messaging key. This is used to identify
 	// the message public key. You can pass any 8-32 character string (byte array).
 	// The standard Messages V3 key is named "default-key"
-	MessagingKeyName []byte
+	MessagingKeyName *KeyName
 
 	// Whether this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if
@@ -428,89 +483,78 @@ type MessagingKeyEntry struct {
 	isDeleted bool
 }
 
-// Encode message key from varying length to a MaxMessagingKeyNameCharacters.
-func MessagingKeyNameEncode(messagingKey []byte) []byte {
-	var bytes []byte
-
-	bytes = append(bytes, messagingKey...)
-
-	// Fill with 0s to the MaxMessagingKeyNameCharacters.
-	for {
-		if len(bytes) < MaxMessagingKeyNameCharacters {
-			bytes = append(bytes, []byte{0}...)
-		} else {
-			return bytes
-		}
-	}
-}
-
-// Decode filled message key of length MaxMessagingKeyNameCharacters array.
-func MessagingKeyNameDecode(messagingKey []byte) []byte {
-	var bytes []byte
-
-	copy(bytes, messagingKey)
-
-	// Remove trailing 0s from the encoded message key.
-	for {
-		if len(bytes) > MinMessagingKeyNameCharacters && bytes[len(bytes) - 1] == byte(0) {
-			bytes = bytes[ : len(bytes) - 1]
-		} else {
-			return bytes
-		}
-	}
-}
-
 func (entry *MessagingKeyEntry) Encode() []byte {
-	var bytes []byte
+	var entryBytes []byte
 
-	bytes = append(bytes, EncodeByteArray(entry.OwnerPKID.ToBytes())...)
-	bytes = append(bytes, EncodeByteArray(entry.MessagingPublicKey)...)
-	bytes = append(bytes, EncodeByteArray(MessagingKeyNameEncode(entry.MessagingKeyName))...)
-	return bytes
+	entryBytes = append(entryBytes, EncodeByteArray(entry.PublicKey.ToBytes())...)
+	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingPublicKey.ToBytes())...)
+	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingKeyName.ToBytes())...)
+	return entryBytes
 }
 
 func (entry *MessagingKeyEntry) Decode(data []byte) {
 	rr := bytes.NewReader(data)
 
-	entry.OwnerPKID = NewPKID(DecodeByteArray(rr))
-	entry.MessagingPublicKey = DecodeByteArray(rr)
-	entry.MessagingKeyName = MessagingKeyNameDecode(DecodeByteArray(rr))
+	entry.PublicKey = NewPublicKey(DecodeByteArray(rr))
+	entry.MessagingPublicKey = NewPublicKey(DecodeByteArray(rr))
+	entry.MessagingKeyName = NewKeyName(DecodeByteArray(rr))
 }
 
+// MessageParty is used to augment MessageEntry field with information about
+// the messaging parties of this message. This was introduced in the DeSo V3
+// Messages, and the data is stored under separate DB prefixes as they're a
+// non-forking change.
 type MessageParty struct {
-	SenderPublicKey           []byte
-	RecipientPublicKey        []byte
-	TstampNanos               uint64
-	SenderMessagingPk         []byte
-	SenderMessagingKeyName    []byte
-	RecipientMessagingPk      []byte
-	RecipientMessagingKeyName []byte
+	// SenderPublicKey is the public key of the message sender.
+	SenderPublicKey *PublicKey
+
+	// RecipientPublicKey is the public key of the message sender.
+	RecipientPublicKey *PublicKey
+
+	// TstampNanos is the timestamp corresponding to the message.
+	TstampNanos uint64
+
+	// SenderMessagingPublicKey is the sender's messaging public key that was used
+	// to encrypt the corresponding message.
+	SenderMessagingPublicKey *PublicKey
+
+	// SenderMessagingKeyName is the sender's key name of SenderMessagingPublicKey
+	SenderMessagingKeyName *KeyName
+
+	// RecipientMessagingPublicKey is the recipient's messaging public key that was
+	// used to encrypt the corresponding message.
+	RecipientMessagingPublicKey *PublicKey
+
+	// RecipientMEssagingKeyName is the recipient's key name of RecipientMessagingPublicKey
+	RecipientMessagingKeyName *KeyName
+
+	// Whether this entry is deleted.
 	isDeleted bool
 }
 
 func (party *MessageParty) Encode() []byte {
-	var bytes []byte
+	var partyBytes []byte
 
-	bytes = append(bytes, EncodeByteArray(party.SenderPublicKey)...)
-	bytes = append(bytes, EncodeByteArray(party.RecipientPublicKey)...)
-	bytes = append(bytes, UintToBuf(party.TstampNanos)...)
-	bytes = append(bytes, EncodeByteArray(party.SenderMessagingPk)...)
-	bytes = append(bytes, EncodeByteArray(MessagingKeyNameEncode(party.SenderMessagingKeyName))...)
-	bytes = append(bytes, EncodeByteArray(party.RecipientMessagingPk)...)
-	bytes = append(bytes, EncodeByteArray(MessagingKeyNameEncode(party.RecipientMessagingKeyName))...)
-	return bytes
+	partyBytes = append(partyBytes, EncodeByteArray(party.SenderPublicKey.ToBytes())...)
+	partyBytes = append(partyBytes, EncodeByteArray(party.RecipientPublicKey.ToBytes())...)
+	partyBytes = append(partyBytes, UintToBuf(party.TstampNanos)...)
+	partyBytes = append(partyBytes, EncodeByteArray(party.SenderMessagingPublicKey.ToBytes())...)
+	partyBytes = append(partyBytes, EncodeByteArray(party.SenderMessagingKeyName.ToBytes())...)
+	partyBytes = append(partyBytes, EncodeByteArray(party.RecipientMessagingPublicKey.ToBytes())...)
+	partyBytes = append(partyBytes, EncodeByteArray(party.RecipientMessagingKeyName.ToBytes())...)
+	return partyBytes
 }
 
 func (party *MessageParty) Decode(data []byte) {
 	rr := bytes.NewReader(data)
 
-	party.SenderPublicKey           = DecodeByteArray(rr)
-	party.RecipientPublicKey        = DecodeByteArray(rr)
-	party.TstampNanos, _            = ReadUvarint(rr)
-	party.SenderMessagingPk         = DecodeByteArray(rr)
-	party.SenderMessagingKeyName    = MessagingKeyNameDecode(DecodeByteArray(rr))
-	party.RecipientMessagingPk      = DecodeByteArray(rr)
-	party.RecipientMessagingKeyName = MessagingKeyNameDecode(DecodeByteArray(rr))
+	party.SenderPublicKey = NewPublicKey(DecodeByteArray(rr))
+	party.RecipientPublicKey = NewPublicKey(DecodeByteArray(rr))
+	party.TstampNanos, _ = ReadUvarint(rr)
+	party.SenderMessagingPublicKey = NewPublicKey(DecodeByteArray(rr))
+	party.SenderMessagingKeyName = NewKeyName(DecodeByteArray(rr))
+	party.RecipientMessagingPublicKey = NewPublicKey(DecodeByteArray(rr))
+	party.RecipientMessagingKeyName = NewKeyName(DecodeByteArray(rr))
 }
 
 // Entry for a public key forbidden from signing blocks.
@@ -979,7 +1023,6 @@ type ProfileEntry struct {
 func (pe *ProfileEntry) IsDeleted() bool {
 	return pe.isDeleted
 }
-
 
 func EncodeByteArray(bytes []byte) []byte {
 	data := []byte{}

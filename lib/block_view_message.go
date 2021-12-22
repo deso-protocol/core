@@ -52,42 +52,46 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 	bav._setMessageEntryMappings(&tombstoneMessageEntry)
 }
 
-func (bav *UtxoView) _getPKIDToMessagingKeyMapping(ownerPKID *PKID, messagingKeyName []byte) *MessagingKeyEntry {
+func (bav *UtxoView) _getMessagingKeyToMessagingKeyEntryMapping(messagingKey *MessagingKey) *MessagingKeyEntry {
 	// If an entry exists in the in-memory map, return the value of that mapping.
-	mapValue, exists := bav.PKIDToMessagingKey[*ownerPKID]
-	if exists {
+	if mapValue, exists := bav.MessagingKeyToMessagingKeyEntry[*messagingKey]; exists {
 		return mapValue
 	}
 
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
-	// nil. Either way, save the value to the in-memory view mapping got later.
-	messagingKeyEntry := DBGetMessagingKeyEntry(bav.Handle, ownerPKID, messagingKeyName)
+	// nil. Either way, save the value to the in-memory UtxoView mapping.
+	messagingKeyEntry := DBGetMessagingKeyEntry(bav.Handle, messagingKey)
 	if messagingKeyEntry != nil {
-		bav._setPKIDToMessagingKeyMapping(messagingKeyEntry)
+		bav._setMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntry)
 	}
 	return messagingKeyEntry
 }
 
-func (bav *UtxoView) _setPKIDToMessagingKeyMapping(messagingKeyEntry *MessagingKeyEntry) {
+func (bav *UtxoView) _setMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntry *MessagingKeyEntry) {
 	// This function shouldn't be called with nil
 	if messagingKeyEntry == nil {
-		glog.Errorf("_setPKIDToMessagingKeyMapping: Called with nil MessagingKeyEntry; " +
+		glog.Errorf("_setMessagingKeyToMessagingKeyEntryMapping: Called with nil MessagingKeyEntry; " +
 			"this should never happen.")
 		return
 	}
 
-	bav.PKIDToMessagingKey[*messagingKeyEntry.OwnerPKID] = messagingKeyEntry
+	// Create a key for the UtxoView mapping. We always put user's main public key as part of the map key.
+	messagingKey := MessagingKey{
+		PublicKey: messagingKeyEntry.PublicKey,
+		KeyName:   messagingKeyEntry.MessagingKeyName,
+	}
+	bav.MessagingKeyToMessagingKeyEntry[messagingKey] = messagingKeyEntry
 }
 
-func (bav *UtxoView) _deletePKIDToMessagingKeyMapping(messagingKeyEntry *MessagingKeyEntry) {
+func (bav *UtxoView) _deleteMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntry *MessagingKeyEntry) {
 
 	// Create a tombstone entry.
 	tombstoneMessageKeyEntry := *messagingKeyEntry
 	tombstoneMessageKeyEntry.isDeleted = true
 
 	// Set the mappings to point to the tombstone entry.
-	bav._setPKIDToMessagingKeyMapping(&tombstoneMessageKeyEntry)
+	bav._setMessagingKeyToMessagingKeyEntryMapping(&tombstoneMessageKeyEntry)
 }
 
 func (bav *UtxoView) _getMessageKeyToMessageParty(key *MessageKey) *MessageParty {
@@ -100,7 +104,7 @@ func (bav *UtxoView) _getMessageKeyToMessageParty(key *MessageKey) *MessageParty
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	dbMessageParty := DbGetMessageParty(bav.Handle, key.PublicKey[:], key.TstampNanos)
+	dbMessageParty := DbGetMessageParty(bav.Handle, NewPublicKey(key.PublicKey[:]), key.TstampNanos)
 	if dbMessageParty != nil {
 		bav._setMessageKeyToMessageParty(dbMessageParty)
 	}
@@ -115,8 +119,9 @@ func (bav *UtxoView) _setMessageKeyToMessageParty(party *MessageParty) {
 		return
 	}
 
-	bav.MessageKeyToMessageParty[MakeMessageKey(party.SenderPublicKey, party.TstampNanos)] = party
-	bav.MessageKeyToMessageParty[MakeMessageKey(party.RecipientPublicKey, party.TstampNanos)] = party
+	// We set the mapping both for the sender and the recipient.
+	bav.MessageKeyToMessageParty[MakeMessageKey(party.SenderPublicKey.ToBytes(), party.TstampNanos)] = party
+	bav.MessageKeyToMessageParty[MakeMessageKey(party.RecipientPublicKey.ToBytes(), party.TstampNanos)] = party
 }
 
 func (bav *UtxoView) _deleteMessagePartyMappings(party *MessageParty) {
@@ -128,7 +133,6 @@ func (bav *UtxoView) _deleteMessagePartyMappings(party *MessageParty) {
 	// Set the mappings to point to the tombstone entry.
 	bav._setMessageKeyToMessageParty(&tombstoneMessageParty)
 }
-
 
 //
 // Postgres messages
@@ -241,13 +245,14 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
 
 func ValidateKeyAndName(messagingPublicKey, keyName []byte) error {
 	if len(messagingPublicKey) > 0 {
-		if err := IsByteArrayValidPublicKey(messagingPublicKey, fmt.Sprintf("ValidateKeyAndNameWithUtxo: "+
-			"Problem validating sender's messaging key: %v", messagingPublicKey)); err != nil {
-			return err
+		// First validate the messagingPublicKey.
+		if err := IsByteArrayValidPublicKey(messagingPublicKey); err != nil {
+			return errors.Wrapf(err, "ValidateKeyAndNameWithUtxo: "+
+				"Problem validating sender's messaging key: %v", messagingPublicKey)
 		}
 
 		// If we get here, it means that we have a valid messaging public key.
-		// Sanity check messaging key name
+		// Sanity-check messaging key name.
 		if len(keyName) < MinMessagingKeyNameCharacters {
 			return errors.Wrapf(RuleErrorMessagingKeyNameTooShort, "ValidateKeyAndNameWithUtxo: "+
 				"Too few characters in key name: min = %v, provided = %v",
@@ -262,34 +267,33 @@ func ValidateKeyAndName(messagingPublicKey, keyName []byte) error {
 	return nil
 }
 
-
+// ValidateKeyAndNameWithUtxo validates public key and key name, which are used in DeSo V3 Messages protocol.
+// The function first checks that the key and name are valid and then fetches an entry from UtxoView or DB
+// to check if the key has been previously saved. This is particularly useful for connecting V3 messages.
 func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicKey, keyName []byte) error {
-	if len(messagingPublicKey) > 0 {
-		err := ValidateKeyAndName(messagingPublicKey, keyName)
-		if err != nil {
-			return errors.Wrapf(err, "ValidateKeyAndNameWithUtxo: Failed validating " +
-				"messagingPublicKey and keyName")
-		}
+	// First validate the public key and name with ValidateKeyAndName
+	err := ValidateKeyAndName(messagingPublicKey, keyName)
+	if err != nil {
+		return errors.Wrapf(err, "ValidateKeyAndNameWithUtxo: Failed validating "+
+			"messagingPublicKey and keyName")
+	}
 
-		pkidSender := bav.GetPKIDForPublicKey(ownerPublicKey)
-		if pkidSender == nil || pkidSender.isDeleted {
-			return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent PKID for " +
-				"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
-		}
-		messagingKey := bav._getPKIDToMessagingKeyMapping(pkidSender.PKID, keyName)
-		if messagingKey != nil && !messagingKey.isDeleted {
-			return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent PKID key for " +
-				"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
-		}
+	// Fetch the messaging key entry from UtxoView.
+	messagingKey := NewMessagingKey(NewPublicKey(ownerPublicKey), keyName)
+	messagingKeyEntry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+	if messagingKeyEntry != nil && !messagingKeyEntry.isDeleted {
+		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent messaging key entry "+
+			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
+	}
 
-		if reflect.DeepEqual(messagingKey.MessagingPublicKey, messagingPublicKey) != true {
-			return fmt.Errorf("ValidateKeyAndNameWithUtxo: keys don't match for " +
-				"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
-		}
-		if reflect.DeepEqual(messagingKey.MessagingKeyName, keyName) != true {
-			return fmt.Errorf("ValidateKeyAndNameWithUtxo: key name don't match for " +
-				"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
-		}
+	// Compare the UtxoEntry with the provided key for more validation.
+	if reflect.DeepEqual(messagingKeyEntry.MessagingPublicKey[:], messagingPublicKey) != true {
+		return fmt.Errorf("ValidateKeyAndNameWithUtxo: keys don't match for "+
+			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
+	}
+	if reflect.DeepEqual(messagingKeyEntry.MessagingKeyName[:], keyName) != true {
+		return fmt.Errorf("ValidateKeyAndNameWithUtxo: key name don't match for "+
+			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
 	}
 	return nil
 }
@@ -397,48 +401,72 @@ func (bav *UtxoView) _connectPrivateMessage(
 		messageEntry.Version = uint8(Version)
 	}
 
-	var senderMessagingPk, recipientMessagingPk, senderMessagingKeyName, recipientMessagingKeyName []byte
-	var existsSender, existsRecipient, existsSenderName, existsRecipientName bool
-	senderMessagingPk, existsSender = txn.ExtraData[SenderMessagingPublicKey]
-	recipientMessagingPk, existsRecipient = txn.ExtraData[RecipientMessagingPublicKey]
-	if existsSender || existsRecipient {
-		messageParty := &MessageParty{
-			SenderPublicKey: txn.PublicKey,
-			RecipientPublicKey: txMeta.RecipientPublicKey,
-			TstampNanos: txMeta.TimestampNanos,
-			isDeleted: false,
-		}
-
-		if senderMessagingKeyName, existsSenderName = txn.ExtraData[SenderMessagingKeyName];
-				existsSender && existsSenderName {
-			if err := bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPk, senderMessagingKeyName); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: "+
-					"failed to validate public key and key name")
+	// If message was encrypted using DeSo V3 Messages, we will look for messaging keys in
+	// ExtraData. V3 allows users to register messaging keys on-chain, and encrypt messages
+	// to these messaging keys, as opposed to always encrypting to user main keys.
+	if messageEntry.Version == 3 {
+		// We use a for loop, which in reality only executes once, so that we can quickly
+		// abort validating messaging keys if we encounter some error. DeSo V3 Messages are
+		// non-forking, and so we don't return on errors, instead we would just print an error.
+		for {
+			// Look for messaging keys in transaction ExtraData
+			senderMessagingPublicKey, existsSender := txn.ExtraData[SenderMessagingPublicKey]
+			recipientMessagingPublicKey, existsRecipient := txn.ExtraData[RecipientMessagingPublicKey]
+			if !existsSender && !existsRecipient {
+				break
 			}
-			messageParty.SenderMessagingPk = senderMessagingPk
-			messageParty.SenderMessagingKeyName = senderMessagingKeyName
-		} else {
-			messageParty.SenderMessagingPk = txn.PublicKey
-			messageParty.SenderMessagingKeyName = []byte{}
-		}
 
-		if recipientMessagingKeyName, existsRecipientName = txn.ExtraData[RecipientMessagingKeyName];
-				existsRecipient || existsRecipientName {
-			if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPk, recipientMessagingKeyName); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: "+
-					"failed to validate public key and key name")
+			// MessageParty is an enhancement to the MessageEntry record. It allows us to store
+			// information about the messaging keys that were used in encrypting this message.
+			// As we're non-forking, we need this new data structure, which we will store in
+			// a new prefix altogether.
+			messageParty := &MessageParty{
+				SenderPublicKey:    NewPublicKey(txn.PublicKey),
+				RecipientPublicKey: NewPublicKey(txMeta.RecipientPublicKey),
+				TstampNanos:        txMeta.TimestampNanos,
+				isDeleted:          false,
 			}
-			messageParty.RecipientMessagingPk = recipientMessagingPk
-			messageParty.RecipientMessagingKeyName = recipientMessagingKeyName
-		} else {
-			messageParty.SenderMessagingPk = txMeta.RecipientPublicKey
-			messageParty.SenderMessagingKeyName = []byte{}
-		}
 
-		bav._setMessageKeyToMessageParty(messageParty)
-		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-			Type: OperationTypeMessagingParty,
-		})
+			// We will now proceed to add sender's or recipient's messaging keys to the messageParty.
+			var senderMessagingKeyName, recipientMessagingKeyName []byte
+			var existsSenderName, existsRecipientName bool
+			// We make sure that both sender public key and key name is present in transaction's ExtraData.
+			if senderMessagingKeyName, existsSenderName = txn.ExtraData[SenderMessagingKeyName]; existsSender && existsSenderName {
+				// We validate the key and the name using this helper function to make sure messaging key has been previously authorized.
+				if err := bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName); err != nil {
+					glog.Errorf(fmt.Sprintf("_connectPrivateMessage: failed to validate public key and key name, error %v", err))
+					break
+				}
+				// If everything went well, update the messaging key information in the messageParty.
+				messageParty.SenderMessagingPublicKey = NewPublicKey(senderMessagingPublicKey)
+				messageParty.SenderMessagingKeyName = NewKeyName(senderMessagingKeyName)
+			} else {
+				// If the key doesn't exist, we will set the messaging key as the sender's main key, along with a byte identifier of 0s.
+				messageParty.SenderMessagingPublicKey = NewPublicKey(txn.PublicKey)
+				messageParty.SenderMessagingKeyName = NewKeyName([]byte{})
+			}
+			// We do an analogous validation for the recipient's messaging key.
+			if recipientMessagingKeyName, existsRecipientName = txn.ExtraData[RecipientMessagingKeyName]; existsRecipient || existsRecipientName {
+				if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+					glog.Errorf(fmt.Sprintf("_connectPrivateMessage: failed to validate public key and key name, error %v", err))
+					break
+				}
+				messageParty.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
+				messageParty.RecipientMessagingKeyName = NewKeyName(recipientMessagingKeyName)
+			} else {
+				messageParty.SenderMessagingPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
+				messageParty.SenderMessagingKeyName = NewKeyName([]byte{})
+			}
+
+			// Now that we've confirmed that the messaging keys are correct, we set them in UtxoView.
+			bav._setMessageKeyToMessageParty(messageParty)
+			// We add an UtxoOps for the messaging party so that we can revert in case of a disconnect.
+			// This UtxoOps will be previous to last, where the last utxoOps is the PrivateMessage.
+			utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+				Type: OperationTypeMessagingParty,
+			})
+			break
+		}
 	}
 
 	if bav.Postgres != nil {
@@ -461,8 +489,6 @@ func (bav *UtxoView) _connectPrivateMessage(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypePrivateMessage,
 	})
-
-
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -530,7 +556,13 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	// rolling back, use the entry to delete the mappings for this message.
 	bav._deleteMessageEntryMappings(messageEntry)
 
-	if len(utxoOpsForTxn) > 1 && utxoOpsForTxn[operationIndex-1].Type == OperationTypeMessagingParty{
+	// We look for the MessagingParty UtxoOps, in the previous to last position in the list.
+	// This is part of DeSo V3 Messages. Because it's a non-forking change, we would normally print error,
+	// but if we get here and error, it means something went wrong and we should return.
+	if len(utxoOpsForTxn) > 1 && utxoOpsForTxn[operationIndex-1].Type == OperationTypeMessagingParty {
+		// If we have indeed previously connected a messaging party operation, we will now disconnect it.
+		// Because we connected mappings both for the sender and the recipient, we will have to disconnect both.
+		// First let's make sure that the UtxoView mapping exists for the sender and isn't already deleted.
 		senderMessageKey = MakeMessageKey(currentTxn.PublicKey, txMeta.TimestampNanos)
 		messagePartySender := bav._getMessageKeyToMessageParty(&senderMessageKey)
 		if messagePartySender != nil && messagePartySender.isDeleted {
@@ -539,6 +571,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 				&senderMessageKey, messagePartySender)
 		}
 
+		// Now do the same for the recipient's records.
 		recipientMessageKey := MakeMessageKey(txMeta.RecipientPublicKey, txMeta.TimestampNanos)
 		messagePartyRecipient := bav._getMessageKeyToMessageParty(&recipientMessageKey)
 		if messagePartyRecipient != nil && messagePartyRecipient.isDeleted {
@@ -547,6 +580,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 				&recipientMessageKey, messagePartyRecipient)
 		}
 
+		// If all went well, we will delete the mappings.
 		if messagePartySender != nil {
 			bav._deleteMessagePartyMappings(messagePartySender)
 		}
@@ -579,83 +613,61 @@ func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn) (*UtxoOperation, err
 	// Check for existence of the MessagingKeyName in ExtraData
 	if messagingKeyName, exists = txn.ExtraData[MessagingKeyName]; !exists {
 		return nil, errors.Wrapf(
-			RuleErrorMessagingKeyNameNotProvided,"_connectMessagingKeys: " +
+			RuleErrorMessagingKeyNameNotProvided, "_connectMessagingKeys: "+
 				"Did you forget to add key name?")
 	}
 
-	// Check for existence of the MessagingKeySignature in ExtraData
+	// Check for existence of the MessagingKeySignature in ExtraData. We need the signature in case a derived key
+	// wants to authorize a messaging key, and we want to verify that the account owner is aware of this.
 	if messagingKeySignature, exists = txn.ExtraData[MessagingKeySignature]; !exists {
 		return nil, errors.Wrapf(
-			RuleErrorMessagingKeySignatureNotProvided,"_connectMessagingKeys: " +
+			RuleErrorMessagingKeySignatureNotProvided, "_connectMessagingKeys: "+
 				"Did you forget to add key signature?")
 	}
 
 	// If we get here it means that this transaction is trying to update the messaging
-	// key. So sanity-check that the public key provided in ExtraData is valid.
-	if err := IsByteArrayValidPublicKey(messagingPublicKey, fmt.Sprintf(
-		"%v: _connectMessagingKeys: Problem parsing public key: %v",
-		RuleErrorMessagingPublicKeyInvalid, messagingPublicKey)); err != nil {
-		return nil, err
+	// key. So sanity-check that the public key and key name provided in ExtraData are valid.
+	if err := ValidateKeyAndName(messagingPublicKey, messagingKeyName); err != nil {
+		return nil, errors.Wrapf(
+			RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKeys: "+
+				"Problem parsing public key: %v", messagingPublicKey)
 	}
 
-	// If we get here, it means that we have a valid messaging public key.
-	// Sanity check messaging key name
-	if len(messagingKeyName) < MinMessagingKeyNameCharacters {
-		return nil, errors.Wrapf(
-			RuleErrorMessagingKeyNameTooShort, "_connectMessagingKeys: " +
-				"Too few characters in key name: min = %v, provided = %v",
-				MinMessagingKeyNameCharacters, len(messagingKeyName))
-	}
-	if len(messagingKeyName) > MaxMessagingKeyNameCharacters {
-		return nil, errors.Wrapf(
-			RuleErrorMessagingKeyNameTooLong, "_connectMessagingKeys: " +
-			"Too many characters in key name: max = %v; provided = %v",
-			MaxMessagingKeyNameCharacters, len(messagingKeyName))
-	}
-
-	// Now we have a valid messaging public key and key name. So we will proceed
-	// to add keys to UtxoView, and generate UtxoOps in case we will revert.
 	// Sanity-check that transaction public key is valid.
-	if err := IsByteArrayValidPublicKey(txn.PublicKey, fmt.Sprintf("%v",
-		RuleErrorMessagingOwnerPublicKeyInvalid)); err != nil {
-		return nil, err
+	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
+		return nil, errors.Wrapf(err, "_connectMessagingKeys: error %v",
+			RuleErrorMessagingOwnerPublicKeyInvalid)
 	}
 
 	// We now have a valid messaging public key, key name, and owner public key.
 	// Verify the messagingKeySignature to check the signature( messagingPublicKey || messagingKeyName )
 	bytes := append(messagingPublicKey, messagingKeyName...)
 	if err := _verifyBytesSignature(txn.PublicKey, bytes, messagingKeySignature); err != nil {
-		return nil, errors.Wrapf(err, "_connectMessagingKeys: " +
-		"Problem verifying signature bytes")
+		return nil, errors.Wrapf(err, "_connectMessagingKeys: Problem verifying signature bytes")
 	}
 
-	// Create a MessagingKeyEntry struct
-	// Get the PKIDs for the public keys associated with the messaging key owner.
-	ownerPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
-	if ownerPKIDEntry == nil || ownerPKIDEntry.isDeleted {
-		return nil, fmt.Errorf("_connectMessagingKeys: ownerPKID was nil or deleted;" +
-			" this should never happen")
+	// We have validated all information. So we will proceed to add the key to UtxoView,
+	// and generate UtxoOps in case we will revert.
+
+	// First, let's check that this key doesn't already exist in UtxoView or in the DB.
+	messagingKey := NewMessagingKey(NewPublicKey(txn.PublicKey), messagingKeyName)
+	if entry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey); entry != nil && !entry.isDeleted {
+		return nil, fmt.Errorf("_connectMessagingKeys: Error, this key already exists; "+
+			"messagingKey %v, messagingPublicKey %v", messagingKey, messagingPublicKey)
 	}
 
-	if entry := bav._getPKIDToMessagingKeyMapping(ownerPKIDEntry.PKID, messagingKeyName); entry != nil && !entry.isDeleted {
-		return nil, fmt.Errorf("_connectMessagingKeys: Error, this key already exists; " +
-			"ownerPKID: %v, messagingPublicKey: %v, messagingKeyName: %v",
-			ownerPKIDEntry.PKID, entry.MessagingPublicKey, messagingKeyName)
-	}
-
-	// Add the messaging key entry to UtxoView
+	// Create a MessagingKeyEntry and add the entry to UtxoView.
 	messagingKeyEntry := MessagingKeyEntry{
-		OwnerPKID:          ownerPKIDEntry.PKID,
-		MessagingPublicKey: messagingPublicKey,
-		MessagingKeyName:   messagingKeyName,
+		PublicKey:          NewPublicKey(txn.PublicKey),
+		MessagingPublicKey: NewPublicKey(messagingPublicKey),
+		MessagingKeyName:   NewKeyName(messagingKeyName),
 		isDeleted:          false,
 	}
-	bav._setPKIDToMessagingKeyMapping(&messagingKeyEntry)
+	bav._setMessagingKeyToMessagingKeyEntryMapping(&messagingKeyEntry)
 
 	// Construct UtxoOperation.
 	messagingKeyOps := UtxoOperation{
-		Type:                 OperationTypeMessagingKey,
-		PrevMessagingKeyName: messagingKeyName,
+		Type: OperationTypeMessagingKey,
 	}
 
 	return &messagingKeyOps, nil

@@ -43,7 +43,7 @@ type UtxoView struct {
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
 	// Messaging key entries.
-	PKIDToMessagingKey map[PKID]*MessagingKeyEntry
+	MessagingKeyToMessagingKeyEntry map[MessagingKey]*MessagingKeyEntry
 
 	// Messages data to MessageParty
 	MessageKeyToMessageParty map[MessageKey]*MessageParty
@@ -123,7 +123,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
 
 	// Messaging key entries
-	bav.PKIDToMessagingKey = make(map[PKID]*MessagingKeyEntry)
+	bav.MessagingKeyToMessagingKeyEntry = make(map[MessagingKey]*MessagingKeyEntry)
 
 	// Messaging key to message party
 	bav.MessageKeyToMessageParty = make(map[MessageKey]*MessageParty)
@@ -243,10 +243,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageMap[txnHash] = &newMessage
 	}
 
-	newView.PKIDToMessagingKey = make(map[PKID]*MessagingKeyEntry, len(bav.PKIDToMessagingKey))
-	for pkid, entry := range bav.PKIDToMessagingKey {
+	newView.MessagingKeyToMessagingKeyEntry = make(map[MessagingKey]*MessagingKeyEntry, len(bav.MessagingKeyToMessagingKeyEntry))
+	for pkid, entry := range bav.MessagingKeyToMessagingKeyEntry {
 		newEntry := *entry
-		newView.PKIDToMessagingKey[pkid] = &newEntry
+		newView.MessagingKeyToMessagingKeyEntry[pkid] = &newEntry
 	}
 
 	newView.MessageKeyToMessageParty = make(map[MessageKey]*MessageParty, len(bav.MessageKeyToMessageParty))
@@ -633,50 +633,36 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 }
 
 func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+	// We first look for the messaging public key in the utxoOps. It should be on the last element of the list.
 	operationIndex := len(utxoOpsForTxn) - 1
 	if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeMessagingKey {
-		// Sanity-check owner public key
-		if len(currentTxn.PublicKey) != btcec.PubKeyBytesLenCompressed {
-			return fmt.Errorf("_disconnectBasicTransfer invalid public key: %v", currentTxn.PublicKey)
+		// Sanity-check that the messaging public key and name are present in transaction's ExtraData and
+		// that they're valid. Because this change is non-forking, we usually don't return errors, however
+		// if we got here and fail, we should return regardless because something went wrong.
+		var messagingPublicKey, messagingKeyName []byte
+		var exists bool
+		if messagingPublicKey, exists = currentTxn.ExtraData[MessagingPublicKey]; !exists {
+			return fmt.Errorf("_disconenctBasicTransfer: invalid messaging public key")
 		}
-		_, err := btcec.ParsePubKey(currentTxn.PublicKey, btcec.S256())
+		if messagingKeyName, exists = currentTxn.ExtraData[MessagingKeyName]; !exists {
+			return fmt.Errorf("_disconenctBasicTransfer: invalid messaging key name")
+		}
+		err := ValidateKeyAndName(messagingPublicKey, messagingKeyName)
 		if err != nil {
-			return fmt.Errorf("_disconnectBasicTransfer invalid public key: %v", err)
+			return errors.Wrapf(err, "_disconnectBasicTransfer: failed validating the messaging "+
+				"public key and key name")
 		}
 
-		// If we get here, it means that we have a valid messaging public key.
-		// Sanity check messaging key name
-		keyName := utxoOpsForTxn[operationIndex].PrevMessagingKeyName
-		if len(keyName) < MinMessagingKeyNameCharacters {
-			return errors.Wrapf(
-				RuleErrorMessagingKeyNameTooShort, "_disconnectBasicTransfer: " +
-					"Too few characters in key name: min = %v, provided = %v",
-				MinMessagingKeyNameCharacters, len(keyName))
-		}
-		if len(keyName) > MaxMessagingKeyNameCharacters {
-			return errors.Wrapf(
-				RuleErrorMessagingKeyNameTooLong, "_disconnectBasicTransfer: " +
-					"Too many characters in key name: max = %v; provided = %v",
-				MaxMessagingKeyNameCharacters, len(keyName))
-		}
-
-		// Get the PKID for the user that submitted this transaction.
-		ownerPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
-		if ownerPKIDEntry == nil || ownerPKIDEntry.isDeleted {
-			return fmt.Errorf("_disconnectBasicTransfer: ownerPKID was nil or deleted;" +
-				" this should never happen")
-		}
-
-		// Get the messaging key that the utxoOps.PrevMessagingKeyName points to
-		messagingKeyEntry := bav._getPKIDToMessagingKeyMapping(ownerPKIDEntry.PKID, keyName)
-		if messagingKeyEntry != nil || messagingKeyEntry.isDeleted {
-			return fmt.Errorf("_disconnectBasicTransfer: Error, this key already exists; " +
-				"ownerPKID: %v, messagingPublicKey: %v, messagingKeyName: %v",
-				ownerPKIDEntry.PKID, messagingKeyEntry.MessagingPublicKey, keyName)
+		// Get the messaging key that the messaging key from ExtraData points to.
+		messagingKey := NewMessagingKey(NewPublicKey(messagingPublicKey), messagingKeyName)
+		messagingKeyEntry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+		if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
+			return fmt.Errorf("_disconnectBasicTransfer: Error, this key was already deleted "+
+				"messagingKey: %v", messagingKey)
 		}
 
 		// Delete this item from UtxoView to indicate we should remove this entry from DB.
-		bav._deletePKIDToMessagingKeyMapping(messagingKeyEntry)
+		bav._deleteMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntry)
 
 		operationIndex--
 	}
@@ -1377,14 +1363,16 @@ func (bav *UtxoView) _connectBasicTransfer(
 	}
 
 	// We allow rotating messaging keys, which can be passed in transaction ExtraData.
-	// This is part of our Messaging V3 protocol where we encrypt/decrypt messages
-	// based on shared secrets of rotating messaging keys, instead of the main user's key.
-	// Lookup transaction ExtraData records for messaging keys.
+	// This is part of our Messaging V3 protocol where we encrypt/decrypt messages based
+	// on rotating messaging keys, instead of the main user's key. We lookup transaction
+	// ExtraData records for messaging keys, and if they're found, we will proceed to
+	// connect them to UtxoView. Messaging keys are added similarly to a transaction;
+	// however, they're intended as a non-forking change and so we won't return on error.
 	utxoOp, err := bav._connectMessagingKeys(txn)
 	if utxoOp != nil && err == nil {
 		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	} else if err != nil {
-		return 0, 0, nil, errors.Wrapf(RuleErrorMessagingKeyConnect, "_connectBasicTransfer: Error %v", err)
+		glog.Errorf("_connectBasicTransfer: Rule %v, Error %v", RuleErrorMessagingKeyConnect, err)
 	}
 
 	// If signature verification is requested then do that as well.

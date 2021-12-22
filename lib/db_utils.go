@@ -96,7 +96,7 @@ var (
 	// Messages are indexed by the public key of their senders and receivers. If
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
-	// <public key (33 bytes) || uint64 big-endian> -> < SenderMessagingPublicKey || RecipientMessagingPublicKey || EncryptedText >
+	// <public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientPublicKey || EncryptedText >
 	_PrefixPublicKeyTimestampToPrivateMessage = []byte{12}
 
 	// Tracks the tip of the transaction index. This is used to determine
@@ -234,10 +234,10 @@ var (
 	_PrefixAuthorizeDerivedKey = []byte{54}
 
 	// Prefix for Messaging Keys:
-	//		<prefix, ownerPKID [33]byte, keyName [32]byte> -> <>
+	//		<prefix, PublicKey [33]byte, KeyName [32]byte> -> <>
 	_PrefixMessagingKey = []byte{57}
 
-	// Prefix for Message to Message
+	// Prefix for Message to Message Party
 	_PrefixMessageToMessageParty = []byte{58}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
@@ -584,7 +584,7 @@ func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, publicKey []byte) error {
 // -------------------------------------------------------------------------------------
 // PrivateMessage mapping functions
 // <public key (33 bytes) || uint64 big-endian> ->
-// 		< SenderMessagingPublicKey || RecipientMessagingPublicKey || EncryptedText >
+// 		< SenderPublicKey || RecipientPublicKey || EncryptedText >
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessageEntry(publicKey []byte, tstampNanos uint64) []byte {
@@ -762,40 +762,37 @@ func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte)
 
 // -------------------------------------------------------------------------------------
 // MessagingKeyEntry mapping functions
-// <prefix, OwnerPKID (33 bytes) || KeyName (32 bytes)> -> <MessagingKeyEntry>
+// <prefix, PublicKey (33 bytes) || KeyName (32 bytes)> -> <MessagingKeyEntry>
 // -------------------------------------------------------------------------------------
 
-func _dbKeyForMessagingKeyEntry(ownerPKID *PKID, messagingKeyName []byte) []byte {
+func _dbKeyForMessagingKeyEntry(messagingKey *MessagingKey) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixMessagingKey...)
-	key := append(prefixCopy, ownerPKID[:]...)
-	key = append(key, MessagingKeyNameEncode(messagingKeyName)...)
+	key := append(prefixCopy, messagingKey.PublicKey[:]...)
+	key = append(key, messagingKey.KeyName[:]...)
 	return key
 }
 
-func _dbSeekPrefixForMessagingKeyEntry(ownerPKID *PKID) []byte {
+func _dbSeekPrefixForMessagingKeyEntry(publicKey *PublicKey) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixMessagingKey...)
-	return append(prefixCopy, ownerPKID[:]...)
+	return append(prefixCopy, publicKey[:]...)
 }
 
 func DBPutMessagingKeyEntryWithTxn(
 	txn *badger.Txn, messagingKeyEntry *MessagingKeyEntry) error {
 
-	if len(messagingKeyEntry.OwnerPKID) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DBPutMessagingKeyEntryWithTxn: Owner PKID "+
-			"length %d != %d", len(messagingKeyEntry.OwnerPKID), btcec.PubKeyBytesLenCompressed)
-	}
-	if len(messagingKeyEntry.MessagingPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DBPutMessagingKeyEntryWithTxn: Messaging Public Key "+
-			"length %d != %d", len(messagingKeyEntry.MessagingPublicKey), btcec.PubKeyBytesLenCompressed)
+	// Sanity-check that the public key has the correct length.
+	if len(messagingKeyEntry.PublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutMessagingKeyEntryWithTxn: Public Key "+
+			"length %d != %d", len(messagingKeyEntry.PublicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	messagingKeyEntryBytes := messagingKeyEntry.Encode()
-
-	if err := txn.Set(_dbKeyForMessagingKeyEntry(
-		messagingKeyEntry.OwnerPKID, messagingKeyEntry.MessagingKeyName), messagingKeyEntryBytes); err != nil {
-
+	messagingKey := &MessagingKey{
+		PublicKey: messagingKeyEntry.PublicKey,
+		KeyName:   messagingKeyEntry.MessagingKeyName,
+	}
+	if err := txn.Set(_dbKeyForMessagingKeyEntry(messagingKey), messagingKeyEntry.Encode()); err != nil {
 		return errors.Wrapf(err, "DBPutMessagingKeyEntryWithTxn: Problem adding messaging key entry mapping: ")
 	}
 
@@ -810,9 +807,9 @@ func DBPutMessagingKeyEntry(handle *badger.DB, messagingKeyEntry *MessagingKeyEn
 }
 
 func DBGetMessagingKeyEntryWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, messagingKeyName []byte) *MessagingKeyEntry {
+	txn *badger.Txn, messagingKey *MessagingKey) *MessagingKeyEntry {
 
-	key := _dbKeyForMessagingKeyEntry(ownerPKID, messagingKeyName)
+	key := _dbKeyForMessagingKeyEntry(messagingKey)
 	messagingKeyEntry := &MessagingKeyEntry{}
 	messagingKeyItem, err := txn.Get(key)
 	if err != nil {
@@ -824,52 +821,51 @@ func DBGetMessagingKeyEntryWithTxn(
 	})
 	if err != nil {
 		glog.Errorf("DBGetMessagingKeyEntryWithTxn: Problem reading "+
-			"MessagingKeyEntry for ownerPKID %v with messagingKeyName %v",
-			ownerPKID, messagingKeyName)
+			"MessagingKeyEntry for Messaging Key: %v", messagingKey)
 		return nil
 	}
 	return messagingKeyEntry
 }
 
-func DBGetMessagingKeyEntry(db *badger.DB, ownerPKID *PKID, messagingKeyName []byte) *MessagingKeyEntry {
+func DBGetMessagingKeyEntry(db *badger.DB, messagingKey *MessagingKey) *MessagingKeyEntry {
 	var ret *MessagingKeyEntry
 	db.View(func(txn *badger.Txn) error {
-		ret = DBGetMessagingKeyEntryWithTxn(txn, ownerPKID, messagingKeyName)
+		ret = DBGetMessagingKeyEntryWithTxn(txn, messagingKey)
 		return nil
 	})
 	return ret
 }
 
 func DBDeleteMessagingKeyEntryWithTxn(
-	txn *badger.Txn, ownerPKID *PKID, messagingKeyName []byte) error {
+	txn *badger.Txn, messagingKey *MessagingKey) error {
 
 	// First pull up the entry that exists for the ownerPKID, messagingKeyName.
 	// If one doesn't exist then there's nothing to do.
-	if entry := DBGetMessagingKeyEntryWithTxn(txn, ownerPKID, messagingKeyName); entry == nil {
+	if entry := DBGetMessagingKeyEntryWithTxn(txn, messagingKey); entry == nil {
 		return nil
 	}
 
 	// When a messaging key entry exists, delete it from the DB.
-	if err := txn.Delete(_dbKeyForMessagingKeyEntry(ownerPKID, messagingKeyName)); err != nil {
+	if err := txn.Delete(_dbKeyForMessagingKeyEntry(messagingKey)); err != nil {
 		return errors.Wrapf(err, "DbDeleteMessagingKeyEntryMappingsWithTxn: Deleting "+
-			"entry for ownerPkid %v and messagingKeyName %v failed", ownerPKID, messagingKeyName)
+			"entry for MessagingKey failed: %v", messagingKey)
 	}
 
 	return nil
 }
 
-func DBDeleteMessagingKeyEntry(handle *badger.DB, ownerPKID *PKID, messagingKeyName []byte) error {
+func DBDeleteMessagingKeyEntry(handle *badger.DB, messagingKey *MessagingKey) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteMessagingKeyEntryWithTxn(txn, ownerPKID, messagingKeyName)
+		return DBDeleteMessagingKeyEntryWithTxn(txn, messagingKey)
 	})
 }
 
-func DBGetMessagingKeyEntriesForOwnerPKID(handle *badger.DB, ownerPKID *PKID) (
+func DBGetMessagingKeyEntriesForOwnerPKID(handle *badger.DB, publicKey *PublicKey) (
 	messagingKeyEntries []*MessagingKeyEntry, _err error) {
 
 	// Setting the prefix to ownerPKID will allow us to fetch all messaging keys
 	// for the ownerPKID. We enumerate this prefix.
-	prefix := _dbSeekPrefixForMessagingKeyEntry(ownerPKID)
+	prefix := _dbSeekPrefixForMessagingKeyEntry(publicKey)
 	_, valuesFound := _enumerateKeysForPrefix(handle, prefix)
 
 	// Decode found messaging key entries.
@@ -889,10 +885,10 @@ func DBGetMessagingKeyEntriesForOwnerPKID(handle *badger.DB, ownerPKID *PKID) (
 // <public key (33 bytes) || uint64 big-endian> -> < MessageParty >
 // -------------------------------------------------------------------------------------
 
-func _dbKeyForMessageParty(publicKey []byte, tstampNanos uint64) []byte {
+func _dbKeyForMessageParty(publicKey *PublicKey, tstampNanos uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixMessageToMessageParty...)
-	key := append(prefixCopy, publicKey...)
+	key := append(prefixCopy, publicKey[:]...)
 	key = append(key, EncodeUint64(tstampNanos)...)
 	return key
 }
@@ -904,7 +900,7 @@ func _dbSeekPrefixForMessagePartyPublicKey(publicKey []byte) []byte {
 }
 
 func DbPutMessagePartyWithTxn(txn *badger.Txn, messageParty *MessageParty) error {
-
+	// Sanity-check that public keys have the correct length.
 	if len(messageParty.SenderPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutMessagePartyWithTxn: Sender public key "+
 			"length %d != %d", len(messageParty.SenderPublicKey), btcec.PubKeyBytesLenCompressed)
@@ -914,12 +910,17 @@ func DbPutMessagePartyWithTxn(txn *badger.Txn, messageParty *MessageParty) error
 			"length %d != %d", len(messageParty.RecipientPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	if err := txn.Set(_dbKeyForMessageEntry(
+	// We will add the message party information for both the message recipient and sender.
+	// Message party records are a part of DeSo V3 Messages and allow determining which keys
+	// were used to encrypt a message. This information corresponds to a MessageEntry and is
+	// used to augment the information we have about a given message. Messages V3 are non-forking,
+	// and that's why they are stored in separate records.
+	if err := txn.Set(_dbKeyForMessageParty(
 		messageParty.SenderPublicKey, messageParty.TstampNanos), messageParty.Encode()); err != nil {
 
 		return errors.Wrapf(err, "DbPutMessagePartyWithTxn: Problem adding mapping for sender: ")
 	}
-	if err := txn.Set(_dbKeyForMessageEntry(
+	if err := txn.Set(_dbKeyForMessageParty(
 		messageParty.RecipientPublicKey, messageParty.TstampNanos), messageParty.Encode()); err != nil {
 
 		return errors.Wrapf(err, "DbPutMessagePartyWithTxn: Problem adding mapping for recipient: ")
@@ -936,7 +937,7 @@ func DbPutMessageParty(handle *badger.DB, messageParty *MessageParty) error {
 }
 
 func DbGetMessagePartyWithTxn(
-	txn *badger.Txn, publicKey []byte, tstampNanos uint64) *MessageParty {
+	txn *badger.Txn, publicKey *PublicKey, tstampNanos uint64) *MessageParty {
 
 	key := _dbKeyForMessageParty(publicKey, tstampNanos)
 	messageParty := &MessageParty{}
@@ -951,13 +952,13 @@ func DbGetMessagePartyWithTxn(
 	if err != nil {
 		glog.Errorf("DbGetMessagePartyWithTxn: Problem reading "+
 			"MessageParty for public key %s with tstampnanos %d",
-			PkToStringMainnet(publicKey), tstampNanos)
+			PkToStringMainnet(publicKey[:]), tstampNanos)
 		return nil
 	}
 	return messageParty
 }
 
-func DbGetMessageParty(db *badger.DB, publicKey []byte, tstampNanos uint64) *MessageParty {
+func DbGetMessageParty(db *badger.DB, publicKey *PublicKey, tstampNanos uint64) *MessageParty {
 	var ret *MessageParty
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetMessagePartyWithTxn(txn, publicKey, tstampNanos)
@@ -969,7 +970,7 @@ func DbGetMessageParty(db *badger.DB, publicKey []byte, tstampNanos uint64) *Mes
 // Note this deletes the message for the sender *and* receiver since a mapping
 // should exist for each.
 func DbDeleteMessagePartyMappingsWithTxn(
-	txn *badger.Txn, publicKey []byte, tstampNanos uint64) error {
+	txn *badger.Txn, publicKey *PublicKey, tstampNanos uint64) error {
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -982,18 +983,18 @@ func DbDeleteMessagePartyMappingsWithTxn(
 	if err := txn.Delete(_dbKeyForMessageParty(existingMessage.SenderPublicKey, tstampNanos)); err != nil {
 		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
 			"sender mapping for public key %s and tstamp %d failed",
-			PkToStringMainnet(existingMessage.SenderPublicKey), tstampNanos)
+			PkToStringMainnet(existingMessage.SenderPublicKey[:]), tstampNanos)
 	}
 	if err := txn.Delete(_dbKeyForMessageParty(existingMessage.RecipientPublicKey, tstampNanos)); err != nil {
 		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
 			"recipient mapping for public key %s and tstamp %d failed",
-			PkToStringMainnet(existingMessage.RecipientPublicKey), tstampNanos)
+			PkToStringMainnet(existingMessage.RecipientPublicKey[:]), tstampNanos)
 	}
 
 	return nil
 }
 
-func DbDeleteMessagePartyMappings(handle *badger.DB, publicKey []byte, tstampNanos uint64) error {
+func DbDeleteMessagePartyMappings(handle *badger.DB, publicKey *PublicKey, tstampNanos uint64) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbDeleteMessagePartyMappingsWithTxn(txn, publicKey, tstampNanos)
 	})
@@ -1042,7 +1043,6 @@ func DbGetLimitedMessagePartiesForPublicKey(handle *badger.DB, publicKey []byte)
 
 	return messageParty, nil
 }
-
 
 // -------------------------------------------------------------------------------------
 // Forbidden block signature public key functions

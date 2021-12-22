@@ -3085,13 +3085,13 @@ func (txnData *PrivateMessageMetadata) ToBytes(preSignature bool) ([]byte, error
 	//
 	// Public key must be included and must have the expected length.
 	if len(txnData.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return nil, fmt.Errorf("PrivateMessageMetadata.ToBytes: RecipientMessagingPublicKey "+
+		return nil, fmt.Errorf("PrivateMessageMetadata.ToBytes: RecipientPublicKey "+
 			"has length %d != %d", len(txnData.RecipientPublicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
 	data := []byte{}
 
-	// RecipientMessagingPublicKey
+	// RecipientPublicKey
 	//
 	// We know the public key is set and has the expected length so we don't need
 	// to encode the length here.
@@ -3111,11 +3111,11 @@ func (txnData *PrivateMessageMetadata) FromBytes(data []byte) error {
 	ret := PrivateMessageMetadata{}
 	rr := bytes.NewReader(data)
 
-	// RecipientMessagingPublicKey
+	// RecipientPublicKey
 	ret.RecipientPublicKey = make([]byte, btcec.PubKeyBytesLenCompressed)
 	_, err := io.ReadFull(rr, ret.RecipientPublicKey)
 	if err != nil {
-		return fmt.Errorf("PrivateMessageMetadata.FromBytes: Error reading RecipientMessagingPublicKey: %v", err)
+		return fmt.Errorf("PrivateMessageMetadata.FromBytes: Error reading RecipientPublicKey: %v", err)
 	}
 
 	// EncryptedText
@@ -3253,7 +3253,7 @@ func (txnData *FollowMetadata) ToBytes(preSignature bool) ([]byte, error) {
 
 	data := []byte{}
 
-	// RecipientMessagingPublicKey
+	// RecipientPublicKey
 	//
 	// We know the public key is set and has the expected length so we don't need
 	// to encode the length here.

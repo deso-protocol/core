@@ -794,7 +794,7 @@ const (
 	MessagingKeyName      = "MessagingKeyName"
 	MessagingKeySignature = "MessagingKeySignature"
 
-	// Messaging keys in messages
+	// Messaging keys for messages
 	SenderMessagingPublicKey    = "SenderMessagingPublicKey"
 	SenderMessagingKeyName      = "SenderMessagingKeyName"
 	RecipientMessagingPublicKey = "RecipientMessagingPublicKey"

@@ -221,6 +221,9 @@ func TestPrivateMessages(t *testing.T) {
 	tstamp3 := uint64(12345)
 	tstamp4 := uint64(time.Now().UnixNano())
 	tstamp5 := uint64(time.Now().UnixNano())
+	if tstamp5 == tstamp4 {
+		tstamp5 = tstamp4 + 1
+	}
 
 	message1Str := []byte("message1: abcdef")
 	message2Str := []byte("message2: ghi")

@@ -98,11 +98,13 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
-	if err := bav._flushMessagingKeysToDbWithTxn(txn); err != nil {
-		return err
+	if err := bav._flushMessagingKeyEntriesToDbWithTxn(txn); err != nil {
+		// Because this change is non-forking, we won't actually return an error.
+		glog.Errorf(fmt.Sprintf("FlushToDbWithTxn: error %v", err))
 	}
 	if err := bav._flushMessagingPartiesToDbWithTxn(txn); err != nil {
-		return nil
+		// Because this change is non-forking, we won't actually return an error.
+		glog.Errorf(fmt.Sprintf("FlushToDbWithTxn: error %v", err))
 	}
 
 	return nil
@@ -878,17 +880,18 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushMessagingKeysToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushMessagingKeysToDbWithTxn: flushing %d mappings", len(bav.PKIDToMessagingKey))
+func (bav *UtxoView) _flushMessagingKeyEntriesToDbWithTxn(txn *badger.Txn) error {
+	glog.V(1).Infof("_flushMessagingKeyEntriesToDbWithTxn: flushing %d mappings", len(bav.MessagingKeyToMessagingKeyEntry))
 	numDeleted := 0
 	numPut := 0
 
-	// Go through all entries in PKIDToMessagingKey and add them to the DB.
-	for ownerPKID, messagingKeyEntry := range bav.PKIDToMessagingKey {
+	// Go through all entries in MessagingKeyToMessagingKeyEntry and add them to the DB.
+	// These records are part of the DeSo V3 Messages.
+	for messagingKey, messagingKeyEntry := range bav.MessagingKeyToMessagingKeyEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false.
-		if err := DBDeleteMessagingKeyEntryWithTxn(txn, &ownerPKID, messagingKeyEntry.MessagingKeyName); err != nil {
-			return errors.Wrapf(err, "UtxoView._flushMessagingKeysToDbWithTxn: "+
+		if err := DBDeleteMessagingKeyEntryWithTxn(txn, &messagingKey); err != nil {
+			return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
 				"Problem deleting MessagingKeyEntry %v from db", *messagingKeyEntry)
 		}
 
@@ -898,14 +901,14 @@ func (bav *UtxoView) _flushMessagingKeysToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// In this case we add the mapping to the DB.
 			if err := DBPutMessagingKeyEntryWithTxn(txn, messagingKeyEntry); err != nil {
-				return errors.Wrapf(err, "UtxoView._flushMessagingKeysToDbWithTxn: "+
+				return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
 					"Problem putting MessagingKeyEntry %v to db", *messagingKeyEntry)
 			}
 			numPut++
 		}
 	}
 
-	glog.V(1).Infof("_flushMessagingKeysToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(1).Infof("_flushMessagingKeyEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	return nil
 }
 
@@ -918,7 +921,7 @@ func (bav *UtxoView) _flushMessagingPartiesToDbWithTxn(txn *badger.Txn) error {
 	for messageKey, messagingParty := range bav.MessageKeyToMessageParty {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false.
-		if err := DbDeleteMessagePartyMappingsWithTxn(txn, messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
+		if err := DbDeleteMessagePartyMappingsWithTxn(txn, NewPublicKey(messageKey.PublicKey[:]), messageKey.TstampNanos); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushMessagingPartiesToDbWithTxn: "+
 				"Problem deleting MessagingParty %v from db", *messagingParty)
 		}
