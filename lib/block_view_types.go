@@ -102,7 +102,7 @@ const (
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
 	OperationTypeMessagingKey                 OperationType = 24
-	OperationTypeMessagingParty               OperationType = 25
+	OperationTypeMessageParty                 OperationType = 25
 
 	// NEXT_TAG = 26
 )
@@ -205,9 +205,9 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeMessagingKey"
 		}
-	case OperationTypeMessagingParty:
+	case OperationTypeMessageParty:
 		{
-			return "OperationTypeMessagingParty"
+			return "OperationTypeMessageParty"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -507,13 +507,13 @@ func (entry *MessagingKeyEntry) Decode(data []byte) {
 
 // MessageParty is used to augment MessageEntry field with information about
 // the messaging parties of this message. This was introduced in the DeSo V3
-// Messages, and the data is stored under separate DB prefixes as they're a
+// Messages, and the data is stored under separate DB prefixes as this is a
 // non-forking change.
 type MessageParty struct {
 	// SenderPublicKey is the public key of the message sender.
 	SenderPublicKey *PublicKey
 
-	// RecipientPublicKey is the public key of the message sender.
+	// RecipientPublicKey is the public key of the message recipient.
 	RecipientPublicKey *PublicKey
 
 	// TstampNanos is the timestamp corresponding to the message.
@@ -530,7 +530,7 @@ type MessageParty struct {
 	// used to encrypt the corresponding message.
 	RecipientMessagingPublicKey *PublicKey
 
-	// RecipientMEssagingKeyName is the recipient's key name of RecipientMessagingPublicKey
+	// RecipientMessagingKeyName is the recipient's key name of RecipientMessagingPublicKey
 	RecipientMessagingKeyName *KeyName
 
 	// Whether this entry is deleted.

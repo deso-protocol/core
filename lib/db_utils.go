@@ -237,7 +237,7 @@ var (
 	//		<prefix, PublicKey [33]byte, KeyName [32]byte> -> <>
 	_PrefixMessagingKey = []byte{57}
 
-	// Prefix for Message to Message Party
+	// Prefix for Message to Message Party. Prefix works similarly to regular private messages.
 	_PrefixMessageToMessageParty = []byte{58}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
@@ -766,7 +766,6 @@ func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte)
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessagingKeyEntry(messagingKey *MessagingKey) []byte {
-	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixMessagingKey...)
 	key := append(prefixCopy, messagingKey.PublicKey[:]...)
 	key = append(key, messagingKey.KeyName[:]...)
@@ -774,7 +773,6 @@ func _dbKeyForMessagingKeyEntry(messagingKey *MessagingKey) []byte {
 }
 
 func _dbSeekPrefixForMessagingKeyEntry(publicKey *PublicKey) []byte {
-	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixMessagingKey...)
 	return append(prefixCopy, publicKey[:]...)
 }
@@ -839,7 +837,7 @@ func DBGetMessagingKeyEntry(db *badger.DB, messagingKey *MessagingKey) *Messagin
 func DBDeleteMessagingKeyEntryWithTxn(
 	txn *badger.Txn, messagingKey *MessagingKey) error {
 
-	// First pull up the entry that exists for the ownerPKID, messagingKeyName.
+	// First pull up the entry that exists for the messaging key.
 	// If one doesn't exist then there's nothing to do.
 	if entry := DBGetMessagingKeyEntryWithTxn(txn, messagingKey); entry == nil {
 		return nil
@@ -863,8 +861,8 @@ func DBDeleteMessagingKeyEntry(handle *badger.DB, messagingKey *MessagingKey) er
 func DBGetMessagingKeyEntriesForOwnerPKID(handle *badger.DB, publicKey *PublicKey) (
 	messagingKeyEntries []*MessagingKeyEntry, _err error) {
 
-	// Setting the prefix to ownerPKID will allow us to fetch all messaging keys
-	// for the ownerPKID. We enumerate this prefix.
+	// Setting the prefix to owner's public key will allow us to fetch all messaging keys
+	// for the user. We enumerate this prefix.
 	prefix := _dbSeekPrefixForMessagingKeyEntry(publicKey)
 	_, valuesFound := _enumerateKeysForPrefix(handle, prefix)
 
@@ -886,7 +884,6 @@ func DBGetMessagingKeyEntriesForOwnerPKID(handle *badger.DB, publicKey *PublicKe
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessageParty(publicKey *PublicKey, tstampNanos uint64) []byte {
-	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixMessageToMessageParty...)
 	key := append(prefixCopy, publicKey[:]...)
 	key = append(key, EncodeUint64(tstampNanos)...)
@@ -894,7 +891,6 @@ func _dbKeyForMessageParty(publicKey *PublicKey, tstampNanos uint64) []byte {
 }
 
 func _dbSeekPrefixForMessagePartyPublicKey(publicKey []byte) []byte {
-	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, _PrefixMessageToMessageParty...)
 	return append(prefixCopy, publicKey...)
 }

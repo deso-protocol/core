@@ -2619,6 +2619,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 					return nil, 0, 0, 0, err
 				}
 			} else {
+				messageExtraData["V"] = UintToBuf(3)
 				messageExtraData[RecipientMessagingPublicKey] = recipientMessagingPublicKey
 				messageExtraData[RecipientMessagingKeyName] = recipientMessagingKeyName
 			}
@@ -3596,7 +3597,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		// Decode the messaging public key hex string into a byte array.
 		messagingPk, err := hex.DecodeString(messagingPublicKey)
 		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: "+
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
 				"Problem decoding messaging public key")
 		}
 
@@ -3609,7 +3610,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		// Check that messagingKeySignature can be parsed into byte array correctly.
 		messagingKeySig, err := hex.DecodeString(messagingKeySignature)
 		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: "+
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
 				"Problem decoding messagingKeySignature")
 		}
 
@@ -3617,7 +3618,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		// Now we want to verify that the signature is correct for the owner public key.
 		bytes := append(messagingPk, []byte(messagingKeyName)...)
 		if err = _verifyBytesSignature(ownerPublicKey, bytes, messagingKeySig); err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: "+
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
 				"Problem verifying signature bytes")
 		}
 

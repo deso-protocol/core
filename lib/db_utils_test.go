@@ -221,6 +221,7 @@ func TestPrivateMessages(t *testing.T) {
 	tstamp3 := uint64(12345)
 	tstamp4 := uint64(time.Now().UnixNano())
 	tstamp5 := uint64(time.Now().UnixNano())
+	// Because M1 actually evaluates two consecutive time.Now().UnixNano() to the same number lol!
 	if tstamp5 == tstamp4 {
 		tstamp5 = tstamp4 + 1
 	}
