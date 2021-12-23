@@ -808,13 +808,6 @@ var (
 	NotQuotedRepostVal = []byte{0}
 )
 
-var (
-	IsGraylisted   = []byte{1}
-	IsBlacklisted  = []byte{1}
-	NotGraylisted  = []byte{0}
-	NotBlacklisted = []byte{0}
-)
-
 // InitialGlobalParamsEntry to be used before ParamUpdater creates the first update.
 var (
 	InitialGlobalParamsEntry = GlobalParamsEntry{
