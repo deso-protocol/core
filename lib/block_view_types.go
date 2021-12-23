@@ -485,7 +485,6 @@ type NFTBidEntry struct {
 	NFTPostHash    *BlockHash
 	SerialNumber   uint64
 	BidAmountNanos uint64
-	IsBuyNowBid    bool
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool

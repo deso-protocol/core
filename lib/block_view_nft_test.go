@@ -645,6 +645,7 @@ func _burnNFTWithTestMeta(
 func TestNFTBasic(t *testing.T) {
 	BrokenNFTBidsFixBlockHeight = uint32(0)
 	BuyNowNFTBlockHeight = uint32(0)
+
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert

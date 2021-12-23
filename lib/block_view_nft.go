@@ -458,6 +458,7 @@ func (bav *UtxoView) _connectCreateNFT(
 	}
 	txMeta := txn.TxnMeta.(*CreateNFTMetadata)
 
+<<<<<<< HEAD
 	isBuyNow := false
 	buyNowPrice := uint64(0)
 	// Only extract the BuyNowPriceKey value if we are past the BuyNowNFTBlockHeight
@@ -471,6 +472,8 @@ func (bav *UtxoView) _connectCreateNFT(
 		isBuyNow = true
 	}
 
+=======
+>>>>>>> main
 	// Validate the txMeta.
 	if txMeta.NumCopies > bav.GlobalParamsEntry.MaxCopiesPerNFT {
 		return 0, 0, nil, RuleErrorTooManyNFTCopies
@@ -499,6 +502,7 @@ func (bav *UtxoView) _connectCreateNFT(
 	if postEntry.IsNFT {
 		return 0, 0, nil, RuleErrorCreateNFTOnPostThatAlreadyIsNFT
 	}
+<<<<<<< HEAD
 	// We can't encrypt unlockable content if Buy Now is enabled.
 	if txMeta.HasUnlockable && isBuyNow {
 		return 0, 0, nil, errors.Wrapf(RuleErrorCannotHaveUnlockableAndBuyNowNFT, "_connectCreateNFT: ")
@@ -507,6 +511,8 @@ func (bav *UtxoView) _connectCreateNFT(
 	if isBuyNow && txMeta.MinBidAmountNanos > buyNowPrice {
 		return 0, 0, nil, errors.Wrapf(RuleErrorCannotHaveBuyNowPriceBelowMinBidAmountNanos, "_connectCreateNFT: ")
 	}
+=======
+>>>>>>> main
 	profileEntry := bav.GetProfileEntryForPublicKey(postEntry.PosterPublicKey)
 	if profileEntry == nil || profileEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCantCreateNFTWithoutProfileEntry
@@ -574,8 +580,11 @@ func (bav *UtxoView) _connectCreateNFT(
 			SerialNumber:      ii,
 			IsForSale:         txMeta.IsForSale,
 			MinBidAmountNanos: txMeta.MinBidAmountNanos,
+<<<<<<< HEAD
 			IsBuyNow:          isBuyNow,
 			BuyNowPriceNanos:  buyNowPrice,
+=======
+>>>>>>> main
 		}
 		bav._setNFTEntryMappings(nftEntry)
 	}
@@ -603,6 +612,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 	}
 	txMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 
+<<<<<<< HEAD
 	isBuyNow := false
 	buyNowPrice := uint64(0)
 	// Only extract the BuyNowPriceKey value if we are past the BuyNowNFTBlockHeight
@@ -616,6 +626,8 @@ func (bav *UtxoView) _connectUpdateNFT(
 		isBuyNow = true
 	}
 
+=======
+>>>>>>> main
 	// Verify the NFT entry exists.
 	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 	prevNFTEntry := bav.GetNFTEntryForNFTKey(&nftKey)
@@ -635,6 +647,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 			txMeta.NFTPostHash.String())
 	}
 
+<<<<<<< HEAD
 	// We can't encrypt unlockable content if Buy Now is enabled.
 	if postEntry.HasUnlockable && isBuyNow {
 		return 0, 0, nil, errors.Wrapf(RuleErrorCannotHaveUnlockableAndBuyNowNFT, "_connectUpdateNFT: ")
@@ -645,6 +658,8 @@ func (bav *UtxoView) _connectUpdateNFT(
 		return 0, 0, nil, errors.Wrapf(RuleErrorCannotHaveBuyNowPriceBelowMinBidAmountNanos, "_connectUpdateNFT: ")
 	}
 
+=======
+>>>>>>> main
 	// Verify that the updater is the owner of the NFT.
 	updaterPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if updaterPKID == nil || updaterPKID.isDeleted {
@@ -701,8 +716,11 @@ func (bav *UtxoView) _connectUpdateNFT(
 		IsForSale:         txMeta.IsForSale,
 		MinBidAmountNanos: txMeta.MinBidAmountNanos,
 		UnlockableText:    prevNFTEntry.UnlockableText,
+<<<<<<< HEAD
 		IsBuyNow:          isBuyNow,
 		BuyNowPriceNanos:  buyNowPrice,
+=======
+>>>>>>> main
 		// Keep the last accepted bid amount nanos from the previous entry since this
 		// value is only updated when a new bid is accepted.
 		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
@@ -805,6 +823,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 			len(txMeta.UnlockableText), bav.Params.MaxPrivateMessageLengthBytes)
 	}
 
+<<<<<<< HEAD
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._helpConnectNFTSold(HelpConnectNFTSoldStruct{
 		NFTPostHash:    txMeta.NFTPostHash,
 		SerialNumber:   txMeta.SerialNumber,
@@ -1020,11 +1039,17 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// Get the post entry, verify it exists.
 	nftPostEntry := bav.GetPostEntryForPostHash(args.NFTPostHash)
 
+=======
+>>>>>>> main
 	// Get the poster's profile.
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(nftPostEntry.PosterPublicKey)
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
 		return 0, 0, nil, fmt.Errorf(
+<<<<<<< HEAD
 			"_helpConnectNFTSold: Profile missing for NFT pub key: %v %v",
+=======
+			"_connectAcceptNFTBid: Profile missing for NFT pub key: %v %v",
+>>>>>>> main
 			PkToStringMainnet(nftPostEntry.PosterPublicKey), PkToStringTestnet(nftPostEntry.PosterPublicKey))
 	}
 	// Save all the old values from the CoinEntry before we potentially
@@ -1035,12 +1060,17 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// Verify the NFT bid entry being accepted exists and has a bid consistent with the metadata.
 	// If we did not require an AcceptNFTBid txn to have a bid amount, it would leave the door
 	// open for an attack where someone replaces a high bid with a low bid after the owner accepts.
+<<<<<<< HEAD
 	nftBidKey := MakeNFTBidKey(args.BidderPKID, args.NFTPostHash, args.SerialNumber)
+=======
+	nftBidKey := MakeNFTBidKey(txMeta.BidderPKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+>>>>>>> main
 	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 	if nftBidEntry == nil || nftBidEntry.isDeleted {
 		// NOTE: Users can submit a bid for SerialNumber zero as a blanket bid for any SerialNumber
 		// in an NFT collection. Thus, we must check to see if a SerialNumber zero bid exists
 		// for this bidder before we return an error.
+<<<<<<< HEAD
 		nftBidKey = MakeNFTBidKey(args.BidderPKID, args.NFTPostHash, uint64(0))
 		nftBidEntry = bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 		if nftBidEntry == nil || nftBidEntry.isDeleted {
@@ -1053,12 +1083,26 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	}
 
 	bidderPublicKey := bav.GetPublicKeyForPKID(args.BidderPKID)
+=======
+		nftBidKey = MakeNFTBidKey(txMeta.BidderPKID, txMeta.NFTPostHash, uint64(0))
+		nftBidEntry = bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
+		if nftBidEntry == nil || nftBidEntry.isDeleted {
+			return 0, 0, nil, RuleErrorCantAcceptNonExistentBid
+		}
+	}
+	if nftBidEntry.BidAmountNanos != txMeta.BidAmountNanos {
+		return 0, 0, nil, RuleErrorAcceptedNFTBidAmountDoesNotMatch
+	}
+
+	bidderPublicKey := bav.GetPublicKeyForPKID(txMeta.BidderPKID)
+>>>>>>> main
 
 	//
 	// Store starting balances of all the participants to check diff later.
 	//
 	// We assume the tip is right before the block in which this txn is about to be applied.
 	tipHeight := uint32(0)
+<<<<<<< HEAD
 	blockHeight := args.BlockHeight
 	if blockHeight > 0 {
 		tipHeight = blockHeight - 1
@@ -1069,18 +1113,33 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		return 0, 0, nil, fmt.Errorf(
 			"_helpConnectNFTSold: Problem getting initial balance for seller pubkey: %v",
 			PkToStringBoth(sellerPublicKey))
+=======
+	if blockHeight > 0 {
+		tipHeight = blockHeight - 1
+	}
+	sellerBalanceBefore, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: Problem getting initial balance for seller pubkey: %v",
+			PkToStringBoth(txn.PublicKey))
+>>>>>>> main
 	}
 	bidderBalanceBefore, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(
 		bidderPublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
+<<<<<<< HEAD
 			"_helpConnectNFTSold: Problem getting initial balance for bidder pubkey: %v",
+=======
+			"_connectAcceptNFTBid: Problem getting initial balance for bidder pubkey: %v",
+>>>>>>> main
 			PkToStringBoth(bidderPublicKey))
 	}
 	creatorBalanceBefore, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(
 		nftPostEntry.PosterPublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
+<<<<<<< HEAD
 			"_helpConnectNFTSold: Problem getting initial balance for poster pubkey: %v",
 			PkToStringBoth(nftPostEntry.PosterPublicKey))
 	}
@@ -1181,24 +1240,84 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// Append the basic transfer utxoOps to our list
 	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsFromBasicTransfer...)
 
+=======
+			"_connectAcceptNFTBid: Problem getting initial balance for poster pubkey: %v",
+			PkToStringBoth(nftPostEntry.PosterPublicKey))
+	}
+
+	//
+	// Validate bidder UTXOs.
+	//
+	if len(txMeta.BidderInputs) == 0 {
+		return 0, 0, nil, RuleErrorAcceptedNFTBidMustSpecifyBidderInputs
+	}
+	totalBidderInput := uint64(0)
+	spentUtxoEntries := []*UtxoEntry{}
+	utxoOpsForTxn := []*UtxoOperation{}
+	for _, bidderInput := range txMeta.BidderInputs {
+		bidderUtxoKey := UtxoKey(*bidderInput)
+		bidderUtxoEntry := bav.GetUtxoEntryForUtxoKey(&bidderUtxoKey)
+		if bidderUtxoEntry == nil || bidderUtxoEntry.isSpent {
+			return 0, 0, nil, RuleErrorBidderInputForAcceptedNFTBidNoLongerExists
+		}
+
+		// Make sure that the utxo specified is actually from the bidder.
+		if !reflect.DeepEqual(bidderUtxoEntry.PublicKey, bidderPublicKey) {
+			return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
+		}
+
+		// If the utxo is from a block reward txn, make sure enough time has passed to
+		// make it spendable.
+		if _isEntryImmatureBlockReward(bidderUtxoEntry, blockHeight, bav.Params) {
+			return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
+		}
+		totalBidderInput += bidderUtxoEntry.AmountNanos
+
+		// Make sure we spend the utxo so that the bidder can't reuse it.
+		utxoOp, err := bav._spendUtxo(&bidderUtxoKey)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem spending bidder utxo")
+		}
+		spentUtxoEntries = append(spentUtxoEntries, bidderUtxoEntry)
+
+		// Track the UtxoOperations so we can rollback, and for Rosetta
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+	}
+
+	if totalBidderInput < txMeta.BidAmountNanos {
+		return 0, 0, nil, RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount
+	}
+
+	// The bidder gets back any unspent nanos from the inputs specified.
+	bidderChangeNanos := totalBidderInput - txMeta.BidAmountNanos
+>>>>>>> main
 	// The amount of deso that should go to the original creator from this purchase.
 	// Calculated as: (BidAmountNanos * NFTRoyaltyToCreatorBasisPoints) / (100 * 100)
 	creatorRoyaltyNanos := IntDiv(
 		IntMul(
+<<<<<<< HEAD
 			big.NewInt(int64(args.BidAmountNanos)),
+=======
+			big.NewInt(int64(txMeta.BidAmountNanos)),
+>>>>>>> main
 			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCreatorBasisPoints))),
 		big.NewInt(100*100)).Uint64()
 	// The amount of deso that should go to the original creator's coin from this purchase.
 	// Calculated as: (BidAmountNanos * NFTRoyaltyToCoinBasisPoints) / (100 * 100)
 	creatorCoinRoyaltyNanos := IntDiv(
 		IntMul(
+<<<<<<< HEAD
 			big.NewInt(int64(args.BidAmountNanos)),
+=======
+			big.NewInt(int64(txMeta.BidAmountNanos)),
+>>>>>>> main
 			big.NewInt(int64(nftPostEntry.NFTRoyaltyToCoinBasisPoints))),
 		big.NewInt(100*100)).Uint64()
 	//glog.Infof("Bid amount: %d, coin basis points: %d, coin royalty: %d",
 	//	txMeta.BidAmountNanos, nftPostEntry.NFTRoyaltyToCoinBasisPoints, creatorCoinRoyaltyNanos)
 
 	// Sanity check that the royalties are reasonable and won't cause underflow.
+<<<<<<< HEAD
 	if args.BidAmountNanos < (creatorRoyaltyNanos + creatorCoinRoyaltyNanos) {
 		return 0, 0, nil, fmt.Errorf(
 			"_helpConnectNFTSold: sum of royalties (%d, %d) is less than bid amount (%d)",
@@ -1211,6 +1330,35 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			// _connectBasicTransfer has already checked that the transaction is
 			// signed by the top-level public key, which we take to be the poster's
 			// public key.
+=======
+	if txMeta.BidAmountNanos < (creatorRoyaltyNanos + creatorCoinRoyaltyNanos) {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: sum of royalties (%d, %d) is less than bid amount (%d)",
+			creatorRoyaltyNanos, creatorCoinRoyaltyNanos, txMeta.BidAmountNanos)
+	}
+
+	bidAmountMinusRoyalties := txMeta.BidAmountNanos - creatorRoyaltyNanos - creatorCoinRoyaltyNanos
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsFromBasicTransfer, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: ")
+	}
+	// Append the basic transfer utxoOps to our list
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsFromBasicTransfer...)
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorAcceptNFTBidRequiresNonZeroInput
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+>>>>>>> main
 	}
 
 	// Now we are ready to accept the bid. When we accept, the following must happen:
@@ -1225,6 +1373,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// (1) Set an appropriate NFTEntry for the new owner.
 
 	newNFTEntry := &NFTEntry{
+<<<<<<< HEAD
 		LastOwnerPKID:  prevNFTEntry.OwnerPKID,
 		OwnerPKID:      args.BidderPKID,
 		NFTPostHash:    args.NFTPostHash,
@@ -1235,6 +1384,16 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		IsBuyNow: false,
 
 		LastAcceptedBidAmountNanos: args.BidAmountNanos,
+=======
+		LastOwnerPKID:  updaterPKID.PKID,
+		OwnerPKID:      txMeta.BidderPKID,
+		NFTPostHash:    txMeta.NFTPostHash,
+		SerialNumber:   txMeta.SerialNumber,
+		IsForSale:      false,
+		UnlockableText: txMeta.UnlockableText,
+
+		LastAcceptedBidAmountNanos: txMeta.BidAmountNanos,
+>>>>>>> main
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 
@@ -1244,11 +1403,19 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	bav._setAcceptNFTBidHistoryMappings(nftKey, &newAcceptedBidHistory)
 
 	// (2) Iterate over all the NFTBidEntries for this NFT and delete them.
+<<<<<<< HEAD
 	bidEntries := bav.GetAllNFTBidEntries(args.NFTPostHash, args.SerialNumber)
 	if len(bidEntries) == 0 && nftBidEntry.SerialNumber != 0 {
 		// Quick sanity check to make sure that we found bid entries. There should be at least 1.
 		return 0, 0, nil, fmt.Errorf(
 			"_helpConnectNFTSold: found zero bid entries to delete; this should never happen.")
+=======
+	bidEntries := bav.GetAllNFTBidEntries(txMeta.NFTPostHash, txMeta.SerialNumber)
+	if len(bidEntries) == 0 && nftBidEntry.SerialNumber != 0 {
+		// Quick sanity check to make sure that we found bid entries. There should be at least 1.
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: found zero bid entries to delete; this should never happen.")
+>>>>>>> main
 	}
 	deletedBidEntries := []*NFTBidEntry{}
 	for _, bidEntry := range bidEntries {
@@ -1263,15 +1430,25 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 	// (3) Pay the seller by creating a new entry for this output and add it to the view.
 	nftPaymentUtxoKeys := []*UtxoKey{}
+<<<<<<< HEAD
 	nextUtxoIndex := uint32(len(args.Txn.TxOutputs))
 	sellerOutputKey := &UtxoKey{
 		TxID:  *args.TxHash,
+=======
+	nextUtxoIndex := uint32(len(txn.TxOutputs))
+	sellerOutputKey := &UtxoKey{
+		TxID:  *txHash,
+>>>>>>> main
 		Index: nextUtxoIndex,
 	}
 
 	utxoEntry := UtxoEntry{
 		AmountNanos: bidAmountMinusRoyalties,
+<<<<<<< HEAD
 		PublicKey:   sellerPublicKey,
+=======
+		PublicKey:   txn.PublicKey,
+>>>>>>> main
 		BlockHeight: blockHeight,
 		UtxoType:    UtxoTypeNFTSeller,
 		UtxoKey:     sellerOutputKey,
@@ -1284,7 +1461,11 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		utxoOp, err := bav._addUtxo(&utxoEntry)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(
+<<<<<<< HEAD
 				err, "_helpConnectNFTSold: Problem adding output utxo")
+=======
+				err, "_connectAcceptNFTBid: Problem adding output utxo")
+>>>>>>> main
 		}
 		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, sellerOutputKey)
 
@@ -1296,7 +1477,11 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	if creatorRoyaltyNanos > 0 {
 		nextUtxoIndex += 1
 		royaltyOutputKey := &UtxoKey{
+<<<<<<< HEAD
 			TxID:  *args.TxHash,
+=======
+			TxID:  *txHash,
+>>>>>>> main
 			Index: nextUtxoIndex,
 		}
 
@@ -1313,8 +1498,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 		utxoOp, err := bav._addUtxo(&utxoEntry)
 		if err != nil {
+<<<<<<< HEAD
 			return 0, 0, nil, errors.Wrapf(err,
 				"_helpConnectNFTSold: Problem adding output utxo")
+=======
+			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
+>>>>>>> main
 		}
 		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, royaltyOutputKey)
 
@@ -1326,7 +1515,11 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	if bidderChangeNanos > 0 {
 		nextUtxoIndex += 1
 		bidderChangeOutputKey := &UtxoKey{
+<<<<<<< HEAD
 			TxID:  *args.TxHash,
+=======
+			TxID:  *txHash,
+>>>>>>> main
 			Index: nextUtxoIndex,
 		}
 
@@ -1343,8 +1536,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 		utxoOp, err := bav._addUtxo(&utxoEntry)
 		if err != nil {
+<<<<<<< HEAD
 			return 0, 0, nil, errors.Wrapf(err,
 				"_helpConnectNFTSold: Problem adding output utxo")
+=======
+			return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem adding output utxo")
+>>>>>>> main
 		}
 		nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, bidderChangeOutputKey)
 
@@ -1373,9 +1570,15 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	nftPostEntry.NumNFTCopiesForSale--
 	bav._setPostEntryMappings(nftPostEntry)
 
+<<<<<<< HEAD
 	// Create an Operation to add to the end of the list. Fill all fields except the type which depends upon
 	// if this is an AcceptNFTBid transaction or an NFTBid transaction.
 	transactionUtxoOp := &UtxoOperation{
+=======
+	// Add an operation to the list at the end indicating we've connected an NFT bid.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                      OperationTypeAcceptNFTBid,
+>>>>>>> main
 		PrevNFTEntry:              prevNFTEntry,
 		PrevPostEntry:             prevPostEntry,
 		PrevCoinEntry:             &prevCoinEntry,
@@ -1383,11 +1586,16 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		NFTPaymentUtxoKeys:        nftPaymentUtxoKeys,
 		NFTSpentUtxoEntries:       spentUtxoEntries,
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
+<<<<<<< HEAD
 		PrevNFTBidEntry:           args.PrevNFTBidEntry,
+=======
+
+>>>>>>> main
 		// Rosetta fields.
 		AcceptNFTBidCreatorPublicKey:    nftPostEntry.PosterPublicKey,
 		AcceptNFTBidBidderPublicKey:     bidderPublicKey,
 		AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
+<<<<<<< HEAD
 	}
 	if args.Txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		transactionUtxoOp.Type = OperationTypeAcceptNFTBid
@@ -1399,37 +1607,64 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 	// Add an operation to the list at the end indicating we've connected an NFT bid.
 	utxoOpsForTxn = append(utxoOpsForTxn, transactionUtxoOp)
+=======
+	})
+>>>>>>> main
 
 	// HARDCORE SANITY CHECK:
 	//  - Before returning we do one more sanity check that money hasn't been printed.
 	//
 	// Seller balance diff:
+<<<<<<< HEAD
 	sellerBalanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(sellerPublicKey, tipHeight)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_helpConnectNFTSold: Problem getting final balance for seller pubkey: %v",
 			PkToStringBoth(sellerPublicKey))
+=======
+	sellerBalanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectAcceptNFTBid: Problem getting final balance for seller pubkey: %v",
+			PkToStringBoth(txn.PublicKey))
+>>>>>>> main
 	}
 	sellerDiff := int64(sellerBalanceAfter) - int64(sellerBalanceBefore)
 	// Bidder balance diff (only relevant if bidder != seller):
 	bidderDiff := int64(0)
+<<<<<<< HEAD
 	if !reflect.DeepEqual(bidderPublicKey, sellerPublicKey) {
 		bidderBalanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(bidderPublicKey, tipHeight)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf(
 				"_helpConnectNFTSold: Problem getting final balance for bidder pubkey: %v",
+=======
+	if !reflect.DeepEqual(bidderPublicKey, txn.PublicKey) {
+		bidderBalanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(bidderPublicKey, tipHeight)
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf(
+				"_connectAcceptNFTBid: Problem getting final balance for bidder pubkey: %v",
+>>>>>>> main
 				PkToStringBoth(bidderPublicKey))
 		}
 		bidderDiff = int64(bidderBalanceAfter) - int64(bidderBalanceBefore)
 	}
 	// Creator balance diff (only relevant if creator != seller and creator != bidder):
 	creatorDiff := int64(0)
+<<<<<<< HEAD
 	if !reflect.DeepEqual(nftPostEntry.PosterPublicKey, sellerPublicKey) &&
+=======
+	if !reflect.DeepEqual(nftPostEntry.PosterPublicKey, txn.PublicKey) &&
+>>>>>>> main
 		!reflect.DeepEqual(nftPostEntry.PosterPublicKey, bidderPublicKey) {
 		creatorBalanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(nftPostEntry.PosterPublicKey, tipHeight)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf(
+<<<<<<< HEAD
 				"_helpConnectNFTSold: Problem getting final balance for poster pubkey: %v",
+=======
+				"_connectAcceptNFTBid: Problem getting final balance for poster pubkey: %v",
+>>>>>>> main
 				PkToStringBoth(nftPostEntry.PosterPublicKey))
 		}
 		creatorDiff = int64(creatorBalanceAfter) - int64(creatorBalanceBefore)
@@ -1442,13 +1677,145 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	totalDiff := big.NewInt(0).Add(sellerPlusBidderDiff, creatorPlusCoinDiff)
 	if totalDiff.Cmp(big.NewInt(0)) > 0 {
 		return 0, 0, nil, fmt.Errorf(
+<<<<<<< HEAD
 			"_helpConnectNFTSold: Sum of participant diffs is >0 (%d, %d, %d, %d)",
+=======
+			"_connectAcceptNFTBid: Sum of participant diffs is >0 (%d, %d, %d, %d)",
+>>>>>>> main
 			sellerDiff, bidderDiff, creatorDiff, coinDiff)
 	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
+<<<<<<< HEAD
+=======
+func (bav *UtxoView) _connectNFTBid(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+		return 0, 0, nil, fmt.Errorf("_connectNFTBid: called with zero MaxCopiesPerNFT")
+	}
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeNFTBid {
+		return 0, 0, nil, fmt.Errorf("_connectNFTBid: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*NFTBidMetadata)
+
+	// Verify that the postEntry being bid on exists, is an NFT, and supports the given serial #.
+	postEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	if postEntry == nil || postEntry.isDeleted {
+		return 0, 0, nil, RuleErrorNFTBidOnNonExistentPost
+	} else if !postEntry.IsNFT {
+		return 0, 0, nil, RuleErrorNFTBidOnPostThatIsNotAnNFT
+	} else if txMeta.SerialNumber > postEntry.NumNFTCopies {
+		return 0, 0, nil, RuleErrorNFTBidOnInvalidSerialNumber
+	}
+
+	// Validate the nftEntry.  Note that there is a special case where a bidder can submit a bid
+	// on SerialNumber zero.  This acts as a blanket bid on any serial number version of this NFT
+	// As a result, the nftEntry will be nil and should not be validated.
+	nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+	nftEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+	bidderPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if bidderPKID == nil || bidderPKID.isDeleted {
+		return 0, 0, nil, fmt.Errorf("_connectNFTBid: PKID for bidder public key %v doesn't exist; this should never happen", string(txn.PublicKey))
+	}
+
+	// Save a copy of the bid entry so that we can use it in the disconnect.
+	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
+	prevNFTBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
+
+	if txMeta.SerialNumber != uint64(0) {
+		// Verify the NFT entry that is being bid on exists.
+		if nftEntry == nil || nftEntry.isDeleted {
+			return 0, 0, nil, RuleErrorNFTBidOnNonExistentNFTEntry
+		}
+
+		// Verify the NFT entry being bid on is for sale.
+		if !nftEntry.IsForSale {
+			return 0, 0, nil, RuleErrorNFTBidOnNFTThatIsNotForSale
+		}
+
+		// Verify the NFT is not a pending transfer.
+		if nftEntry.IsPending {
+			return 0, 0, nil, RuleErrorCannotBidForPendingNFTTransfer
+		}
+
+		// Verify that the bidder is not the current owner of the NFT.
+		if reflect.DeepEqual(nftEntry.OwnerPKID, bidderPKID.PKID) {
+			return 0, 0, nil, RuleErrorNFTOwnerCannotBidOnOwnedNFT
+		}
+
+		// Verify that the bid amount is greater than the min bid amount for this NFT.
+		// We allow BidAmountNanos to be 0 if there exists a previous bid entry. A value of 0 indicates that we should delete the entry.
+		if txMeta.BidAmountNanos < nftEntry.MinBidAmountNanos && !(txMeta.BidAmountNanos == 0 && prevNFTBidEntry != nil) {
+			return 0, 0, nil, RuleErrorNFTBidLessThanMinBidAmountNanos
+		}
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: ")
+	}
+
+	// We assume the tip is right before the block in which this txn is about to be applied.
+	tipHeight := uint32(0)
+	if blockHeight > 0 {
+		tipHeight = blockHeight - 1
+	}
+	// Verify that the transaction creator has sufficient deso to create the bid.
+	spendableBalance, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: Error getting bidder balance: ")
+
+	} else if txMeta.BidAmountNanos > spendableBalance && blockHeight > BrokenNFTBidsFixBlockHeight {
+		return 0, 0, nil, RuleErrorInsufficientFundsForNFTBid
+	}
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorNFTBidRequiresNonZeroInput
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the poster's
+		// public key.
+	}
+
+	// If an old bid exists, delete it.
+	if prevNFTBidEntry != nil {
+		bav._deleteNFTBidEntryMappings(prevNFTBidEntry)
+	}
+
+	// If the new bid has a non-zero amount, set it.
+	if txMeta.BidAmountNanos != 0 {
+		// Zero bids are not allowed, submitting a zero bid effectively withdraws a prior bid.
+		newBidEntry := &NFTBidEntry{
+			BidderPKID:     bidderPKID.PKID,
+			NFTPostHash:    txMeta.NFTPostHash,
+			SerialNumber:   txMeta.SerialNumber,
+			BidAmountNanos: txMeta.BidAmountNanos,
+		}
+		bav._setNFTBidEntryMappings(newBidEntry)
+	}
+
+	// Add an operation to the list at the end indicating we've connected an NFT bid.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:            OperationTypeNFTBid,
+		PrevNFTBidEntry: prevNFTBidEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+>>>>>>> main
 func (bav *UtxoView) _connectNFTTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -1899,6 +2266,7 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		}
 	}
 	operationIndex -= numUtxoAdds - len(currentTxn.TxOutputs)
+<<<<<<< HEAD
 	if err := bav._helpDisconnectNFTSold(operationData, txMeta.NFTPostHash); err != nil {
 		return errors.Wrapf(err, "_disconnectAcceptNFTBid: ")
 	}
@@ -1910,17 +2278,29 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 
 func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPostHash *BlockHash) error {
 	// In order to disconnect the selling of an NFT, we need to do the following:
+=======
+
+>>>>>>> main
 	// In order to disconnect an accepted bid, we need to do the following:
 	// 	(1) Revert the NFT entry to the previous one with the previous owner.
 	//  (2) Add back all of the bids that were deleted.
 	//  (3) Disconnect payment UTXOs.
+<<<<<<< HEAD
 	//  (4) Unspend bidder UTXOs if this is not an NFT Bid type operation.
 	// (5) Revert profileEntry to undo royalties added to DeSoLockedNanos.
+=======
+	//  (4) Unspend bidder UTXOs.
+	//  (5) Revert profileEntry to undo royalties added to DeSoLockedNanos.
+>>>>>>> main
 	//  (6) Revert the postEntry since NumNFTCopiesForSale was decremented.
 
 	// (1) Set the old NFT entry.
 	if operationData.PrevNFTEntry == nil || operationData.PrevNFTEntry.isDeleted {
+<<<<<<< HEAD
 		return fmt.Errorf("_helpDisconnectNFTSold: prev NFT entry doesn't exist; " +
+=======
+		return fmt.Errorf("_disconnectAcceptNFTBid: prev NFT entry doesn't exist; " +
+>>>>>>> main
 			"this should never happen")
 	}
 
@@ -1932,7 +2312,11 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 
 	// (2) Set the old bids.
 	if operationData.DeletedNFTBidEntries == nil || len(operationData.DeletedNFTBidEntries) == 0 {
+<<<<<<< HEAD
 		return fmt.Errorf("_helpDisconnectNFTSold: DeletedNFTBidEntries doesn't exist; " +
+=======
+		return fmt.Errorf("_disconnectAcceptNFTBid: DeletedNFTBidEntries doesn't exist; " +
+>>>>>>> main
 			"this should never happen")
 	}
 
@@ -1942,13 +2326,18 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 
 	// (3) Revert payments made from accepting the NFT bids.
 	if operationData.NFTPaymentUtxoKeys == nil || len(operationData.NFTPaymentUtxoKeys) == 0 {
+<<<<<<< HEAD
 		return fmt.Errorf("_helpDisconnectNFTSold: NFTPaymentUtxoKeys was nil; " +
+=======
+		return fmt.Errorf("_disconnectAcceptNFTBid: NFTPaymentUtxoKeys was nil; " +
+>>>>>>> main
 			"this should never happen")
 	}
 	// Note: these UTXOs need to be unadded in reverse order.
 	for ii := len(operationData.NFTPaymentUtxoKeys) - 1; ii >= 0; ii-- {
 		paymentUtxoKey := operationData.NFTPaymentUtxoKeys[ii]
 		if err := bav._unAddUtxo(paymentUtxoKey); err != nil {
+<<<<<<< HEAD
 			return errors.Wrapf(err, "_helpDisconnectNFTSold: Problem unAdding utxo %v: ", paymentUtxoKey)
 		}
 	}
@@ -1985,6 +2374,23 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 		}
 	} else {
 		return fmt.Errorf("_helpDisconnectNFTSold: Invalid Operation type: %s", operationData.Type.String())
+=======
+			return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unAdding utxo %v: ", paymentUtxoKey)
+		}
+	}
+
+	// (4) Revert spent bidder UTXOs.
+	if operationData.NFTSpentUtxoEntries == nil || len(operationData.NFTSpentUtxoEntries) == 0 {
+		return fmt.Errorf("_disconnectAcceptNFTBid: NFTSpentUtxoEntries was nil; " +
+			"this should never happen")
+	}
+	// Note: these UTXOs need to be unspent in reverse order.
+	for ii := len(operationData.NFTSpentUtxoEntries) - 1; ii >= 0; ii-- {
+		spentUtxoEntry := operationData.NFTSpentUtxoEntries[ii]
+		if err := bav._unSpendUtxo(spentUtxoEntry); err != nil {
+			return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unSpending utxo %v: ", spentUtxoEntry)
+		}
+>>>>>>> main
 	}
 
 	// (5) Revert the creator's CoinEntry if a previous one exists.
@@ -1992,12 +2398,20 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 		nftPostEntry := bav.GetPostEntryForPostHash(operationData.PrevNFTEntry.NFTPostHash)
 		// We have to get the post entry first so that we have the poster's pub key.
 		if nftPostEntry == nil || nftPostEntry.isDeleted {
+<<<<<<< HEAD
 			return fmt.Errorf("_helpDisconnectNFTSold: nftPostEntry was nil; " +
+=======
+			return fmt.Errorf("_disconnectAcceptNFTBid: nftPostEntry was nil; " +
+>>>>>>> main
 				"this should never happen")
 		}
 		existingProfileEntry := bav.GetProfileEntryForPublicKey(nftPostEntry.PosterPublicKey)
 		if existingProfileEntry == nil || existingProfileEntry.isDeleted {
+<<<<<<< HEAD
 			return fmt.Errorf("_helpDisconnectNFTSold: existingProfileEntry was nil; " +
+=======
+			return fmt.Errorf("_disconnectAcceptNFTBid: existingProfileEntry was nil; " +
+>>>>>>> main
 				"this should never happen")
 		}
 		existingProfileEntry.CoinEntry = *operationData.PrevCoinEntry
@@ -2007,17 +2421,33 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 	// (6) Verify a postEntry exists and then revert it since NumNFTCopiesForSale was decremented.
 
 	// Get the postEntry corresponding to this txn.
+<<<<<<< HEAD
 	existingPostEntry := bav.GetPostEntryForPostHash(nftPostHash)
 	// Sanity-check that it exists.
 	if existingPostEntry == nil || existingPostEntry.isDeleted {
 		return fmt.Errorf("_helpDisconnectNFTSold: Post entry for "+
 			"post hash %v doesn't exist; this should never happen",
 			nftPostHash.String())
+=======
+	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.NFTPostHash)
+	// Sanity-check that it exists.
+	if existingPostEntry == nil || existingPostEntry.isDeleted {
+		return fmt.Errorf("_disconnectAcceptNFTBid: Post entry for "+
+			"post hash %v doesn't exist; this should never happen",
+			txMeta.NFTPostHash.String())
+>>>>>>> main
 	}
 
 	// Revert to the old post entry since we changed NumNFTCopiesForSale.
 	bav._setPostEntryMappings(operationData.PrevPostEntry)
+<<<<<<< HEAD
 	return nil
+=======
+
+	// Now revert the basic transfer with the remaining operations.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
+>>>>>>> main
 }
 
 func (bav *UtxoView) _disconnectNFTBid(
@@ -2038,6 +2468,7 @@ func (bav *UtxoView) _disconnectNFTBid(
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
+<<<<<<< HEAD
 	// We sometimes have some extra AddUtxo operations we need to remove
 	// These are "implicit" outputs that always occur at the end of the
 	// list of UtxoOperations. The number of implicit outputs is equal to
@@ -2073,6 +2504,13 @@ func (bav *UtxoView) _disconnectNFTBid(
 	}
 
 	// Now we can delete the NFT bid.
+=======
+	// Get the NFTBidEntry corresponding to this txn.
+	bidderPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if bidderPKID == nil || bidderPKID.isDeleted {
+		return fmt.Errorf("_disconnectNFTBid: PKID for bidder public key %v doesn't exist; this should never happen", string(currentTxn.PublicKey))
+	}
+>>>>>>> main
 	nftBidKey := MakeNFTBidKey(bidderPKID.PKID, txMeta.NFTPostHash, txMeta.SerialNumber)
 	nftBidEntry := bav.GetNFTBidEntryForNFTBidKey(&nftBidKey)
 
