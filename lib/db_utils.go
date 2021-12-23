@@ -974,21 +974,21 @@ func DbDeleteMessagePartyMappingsWithTxn(
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
-	existingMessage := DbGetMessagePartyWithTxn(txn, publicKey, tstampNanos)
-	if existingMessage == nil {
+	existingParty := DbGetMessagePartyWithTxn(txn, publicKey, tstampNanos)
+	if existingParty == nil {
 		return nil
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := txn.Delete(_dbKeyForMessageParty(existingMessage.SenderPublicKey, tstampNanos)); err != nil {
+	if err := txn.Delete(_dbKeyForMessageParty(existingParty.SenderPublicKey, tstampNanos)); err != nil {
 		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
 			"sender mapping for public key %s and tstamp %d failed",
-			PkToStringMainnet(existingMessage.SenderPublicKey[:]), tstampNanos)
+			PkToStringMainnet(existingParty.SenderPublicKey[:]), tstampNanos)
 	}
-	if err := txn.Delete(_dbKeyForMessageParty(existingMessage.RecipientPublicKey, tstampNanos)); err != nil {
+	if err := txn.Delete(_dbKeyForMessageParty(existingParty.RecipientPublicKey, tstampNanos)); err != nil {
 		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
 			"recipient mapping for public key %s and tstamp %d failed",
-			PkToStringMainnet(existingMessage.RecipientPublicKey[:]), tstampNanos)
+			PkToStringMainnet(existingParty.RecipientPublicKey[:]), tstampNanos)
 	}
 
 	return nil

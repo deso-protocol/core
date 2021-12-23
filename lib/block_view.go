@@ -636,35 +636,42 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	// We first look for the messaging public key in the utxoOps. It should be on the last element of the list.
 	operationIndex := len(utxoOpsForTxn) - 1
 	if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeMessagingKey {
-		// Sanity-check that the messaging public key and name are present in transaction's ExtraData and
-		// that they're valid. Because this change is non-forking, we usually don't return errors, however
-		// if we got here and fail, we should return regardless because something went wrong.
-		var messagingPublicKey, messagingKeyName []byte
-		var exists bool
-		if messagingPublicKey, exists = currentTxn.ExtraData[MessagingPublicKey]; !exists {
-			return fmt.Errorf("_disconenctBasicTransfer: invalid messaging public key")
-		}
-		if messagingKeyName, exists = currentTxn.ExtraData[MessagingKeyName]; !exists {
-			return fmt.Errorf("_disconenctBasicTransfer: invalid messaging key name")
-		}
-		err := ValidateKeyAndName(messagingPublicKey, messagingKeyName)
-		if err != nil {
-			return errors.Wrapf(err, "_disconnectBasicTransfer: failed validating the messaging "+
-				"public key and key name")
-		}
+		for {
+			// Sanity-check that the messaging public key and name are present in transaction's ExtraData and
+			// that they're valid. Because this change is non-forking, we won't return, only print errors; however,
+			// if we got here and failed, it would be pretty bad because it will result in to a memory leak.
+			var messagingPublicKey, messagingKeyName []byte
+			var exists bool
+			if messagingPublicKey, exists = currentTxn.ExtraData[MessagingPublicKey]; !exists {
+				glog.Errorf("_disconenctBasicTransfer: invalid messaging public key")
+				break
+			}
+			if messagingKeyName, exists = currentTxn.ExtraData[MessagingKeyName]; !exists {
+				glog.Errorf("_disconenctBasicTransfer: invalid messaging key name")
+				break
+			}
+			err := ValidateKeyAndName(messagingPublicKey, messagingKeyName)
+			if err != nil {
+				glog.Errorf(fmt.Sprintf("_disconnectBasicTransfer: failed validating the messaging "+
+					"public key and key name: error %v", err))
+				break
+			}
 
-		// Get the messaging key that the messaging key name from ExtraData points to.
-		messagingKey := NewMessagingKey(NewPublicKey(currentTxn.PublicKey), messagingKeyName)
-		messagingKeyEntry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
-		if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
-			return fmt.Errorf("_disconnectBasicTransfer: Error, this key was already deleted "+
-				"messagingKey: %v", messagingKey)
+			// Get the messaging key that the messaging key name from ExtraData points to.
+			messagingKey := NewMessagingKey(NewPublicKey(currentTxn.PublicKey), messagingKeyName)
+			messagingKeyEntry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+			if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
+				glog.Errorf(fmt.Sprintf("_disconnectBasicTransfer: Error, this key was already deleted "+
+					"messagingKey: %v", messagingKey))
+				break
+			}
+
+			// Delete this item from UtxoView to indicate we should remove this entry from DB.
+			bav._deleteMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntry)
+
+			operationIndex--
+			break
 		}
-
-		// Delete this item from UtxoView to indicate we should remove this entry from DB.
-		bav._deleteMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntry)
-
-		operationIndex--
 	}
 	// We check to see if the latest utxoOp was a diamond operation. If it was, we disconnect
 	// the diamond-related changes and decrement the operation index to move past it.

@@ -769,6 +769,10 @@ func TestMessagingKeys(t *testing.T) {
 		require.Equal(_verifyMessagingKey(utxoView, nil, &desiredMessagingKeyEntry2), false)
 		fmt.Println("PASSED Test #5: Make sure user can't have more than one public key assigned to the same key name.")
 	}
+
+	// Clear badger just in case.
+	err = db.DropAll()
+	require.NoError(err)
 }
 
 func TestMessageParty(t *testing.T) {
@@ -848,9 +852,10 @@ func TestMessageParty(t *testing.T) {
 				return false
 			}
 		} else {
-			if messageParty != nil && !messageParty.isDeleted {
-				return false
+			if messageParty == nil || messageParty.isDeleted {
+				return true
 			}
+			return false
 		}
 		return true
 	}
@@ -961,7 +966,7 @@ func TestMessageParty(t *testing.T) {
 		utxoView, err = NewUtxoView(db, params, nil)
 		tstampNanos := uint64(time.Now().UnixNano())
 		testMessage1 := hex.EncodeToString([]byte{1, 2, 3, 4, 5, 6})
-		_, _, err = _helpConnectPrivateMessage(senderPkBytes, senderPrivString,
+		utxoOps, txn, err := _helpConnectPrivateMessage(senderPkBytes, senderPrivString,
 			recipientPkBytes, pub, keyName, []byte{}, []byte{}, testMessage1, tstampNanos, utxoView)
 		assert.NoError(err)
 		require.Equal(true, _verifyExistsMessageEntryAndParty(utxoView, senderPkBytes, tstampNanos))
@@ -973,13 +978,14 @@ func TestMessageParty(t *testing.T) {
 		require.Equal(true, _verifyExistsMessageEntryAndParty(utxoView, senderPkBytes, tstampNanos))
 		require.Equal(true, _verifyMessageParty(utxoView, senderPkBytes, tstampNanos, pub, recipientPkBytes,
 			*NewKeyName(keyName), *NewKeyName([]byte{})))
-		fmt.Println("Successfully flushed to DB")
-		//require.NoError(utxoView.DisconnectTransaction(txn, txn.Hash(), utxoOps, chain.blockTip().Height+1))
-		//require.NoError(utxoView.FlushToDb())
-		//require.Equal(true, _verifyExistsMessageEntryAndParty(utxoView, senderPkBytes, tstampNanos))
-		//require.Equal(true, _verifyMessageParty(utxoView, senderPkBytes, tstampNanos, pub, recipientPkBytes,
-		//	*NewKeyName(keyName), *NewKeyName([]byte{})))
-		//fmt.Println("PASSED Test #3: Attempt disconnecting a valid V3 private message.")
+		require.NoError(utxoView.DisconnectTransaction(txn, txn.Hash(), utxoOps, chain.blockTip().Height+1))
+		require.NoError(utxoView.FlushToDb())
+		require.Equal(true, _verifyExistsMessageEntryAndParty(utxoView, senderPkBytes, tstampNanos))
+		fmt.Println("PASSED Test #3: Attempt disconnecting a valid V3 private message.")
 
 	}
+
+	// Clear badger just in case.
+	err = db.DropAll()
+	require.NoError(err)
 }

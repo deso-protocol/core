@@ -558,38 +558,32 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	bav._deleteMessageEntryMappings(messageEntry)
 
 	// We look for the MessagingParty UtxoOps, in the previous to last position in the list.
-	// This is part of DeSo V3 Messages. Because it's a non-forking change, we would normally print error,
-	// but if we get here and error, it means something went wrong and we should return.
+	// This is part of DeSo V3 Messages. Because it's a non-forking change, we will print instead of
+	// returning, but if there was an error here, it would be bad because it would lead to memory leak.
 	if len(utxoOpsForTxn) > 1 && utxoOpsForTxn[operationIndex-1].Type == OperationTypeMessagingParty {
-		// If we have indeed previously connected a messaging party operation, we will now disconnect it.
-		// Because we connected mappings both for the sender and the recipient, we will have to disconnect both.
-		// First let's make sure that the UtxoView mapping exists for the sender and isn't already deleted.
-		senderMessageKey = MakeMessageKey(currentTxn.PublicKey, txMeta.TimestampNanos)
-		messagePartySender := bav._getMessageKeyToMessageParty(&senderMessageKey)
-		if messagePartySender != nil && messagePartySender.isDeleted {
-			return fmt.Errorf("_disconnectPrivateMessage: messagePartySender for "+
-				"SenderMessageKey %v was found to be nil or deleted: %v",
-				&senderMessageKey, messagePartySender)
-		}
+		for {
+			// If we have indeed previously connected a messaging party operation, we will now disconnect it.
+			// Because we connected mappings both for the sender and the recipient, we will have to disconnect both.
+			// First let's make sure that the UtxoView mapping exists for the sender and isn't already deleted.
+			senderMessageKey = MakeMessageKey(currentTxn.PublicKey, txMeta.TimestampNanos)
+			messagePartySender := bav._getMessageKeyToMessageParty(&senderMessageKey)
+			if messagePartySender == nil || messagePartySender.isDeleted {
+				glog.Errorf(fmt.Sprintf("_disconnectPrivateMessage: messagePartySender for "+
+					"SenderMessageKey %v was found to be nil or deleted: %v",
+					&senderMessageKey, messagePartySender))
+				break
+			}
 
-		// Now do the same for the recipient's records.
-		recipientMessageKey := MakeMessageKey(txMeta.RecipientPublicKey, txMeta.TimestampNanos)
-		messagePartyRecipient := bav._getMessageKeyToMessageParty(&recipientMessageKey)
-		if messagePartyRecipient != nil && messagePartyRecipient.isDeleted {
-			return fmt.Errorf("_disconnectPrivateMessage: messagePartyRecipient for "+
-				"recipientMessageKey %v was found to be nil or deleted: %v",
-				&recipientMessageKey, messagePartyRecipient)
-		}
+			// If all went well, we will delete the mappings. It is worth noting that while there are really two
+			// records in the DB, for the sender and recipient, it's sufficient to only delete one of them as the
+			// _setMessagePartyMappings modifies both entries so in particular it will also delete both.
+			if messagePartySender != nil {
+				bav._deleteMessagePartyMappings(messagePartySender)
+			}
 
-		// If all went well, we will delete the mappings.
-		if messagePartySender != nil {
-			bav._deleteMessagePartyMappings(messagePartySender)
+			operationIndex--
+			break
 		}
-		if messagePartyRecipient != nil {
-			bav._deleteMessagePartyMappings(messagePartyRecipient)
-		}
-
-		operationIndex--
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
