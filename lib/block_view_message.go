@@ -204,43 +204,85 @@ func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
 
 // TODO: Update for Postgres
 func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
-	_messageEntries []*MessageEntry, _err error) {
+	_messageEntries []*MessageEntry, _messageParties []*MessageParty, _err error) {
 
 	// Start by fetching all the messages we have in the db.
-	dbMessageEntries, err := DbGetLimitedMessageEntriesForPublicKey(bav.Handle, publicKey)
+	dbMessageEntries, dbMessageParties, err := DbGetLimitedMessageAndPartyEntriesForPublicKey(bav.Handle, publicKey)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
+		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
 	}
 
+	// Welp this seems very, very inefficient.
 	// Iterate through the entries found in the db and force the view to load them.
 	// This fills in any gaps in the view so that, after this, the view should contain
 	// the union of what it had before plus what was in the db.
-	for _, dbMessageEntry := range dbMessageEntries {
-		messageKey := MakeMessageKey(publicKey, dbMessageEntry.TstampNanos)
-		bav._getMessageEntryForMessageKey(&messageKey)
-	}
-
+	//for _, dbMessageEntry := range dbMessageEntries {
+	//	messageKey := MakeMessageKey(publicKey, dbMessageEntry.TstampNanos)
+	//	bav._getMessageEntryForMessageKey(&messageKey)
+	//}
 	// Now that the view mappings are a complete picture, iterate through them
 	// and set them on the map we're returning. Skip entries that don't match
 	// our public key or that are deleted. Note that only considering mappings
 	// where our public key is part of the key should ensure there are no
 	// duplicates in the resulting list.
-	messageEntriesToReturn := []*MessageEntry{}
-	for viewMessageKey, viewMessageEntry := range bav.MessageKeyToMessageEntry {
-		if viewMessageEntry.isDeleted {
+
+	// We will add the DB entries to a map so we can easily compare them with the UtxoView entries.
+	// We have to expand our DB entries list with the UtxoView entries but also trim the deleted entries.
+	messagesMap := make(map[MessageKey]*MessageEntry)
+	partiesMap := make(map[MessageKey]*MessageParty)
+	for _, entry := range dbMessageEntries {
+		if entry == nil {
 			continue
 		}
+		messagesMap[MakeMessageKey(publicKey, entry.TstampNanos)] = entry
+	}
+	for _, entryy := range dbMessageParties {
+		if entryy == nil {
+			continue
+		}
+		partiesMap[MakeMessageKey(publicKey, entryy.TstampNanos)] = entryy
+	}
+
+	// We will look through entries in UtxoView to make sure we didn't record deleted messages,
+	// and so that we get most recent user messages.
+	for viewMessageKey, viewMessageEntry := range bav.MessageKeyToMessageEntry {
+		// First make sure we're only considering entries that are relevant to provided public key.
 		messageKey := MakeMessageKey(publicKey, viewMessageEntry.TstampNanos)
 		if viewMessageKey != messageKey {
 			continue
 		}
 
-		// At this point we are confident the map key is equal to the message
-		// key containing the passed-in public key so add it to the mapping.
-		messageEntriesToReturn = append(messageEntriesToReturn, viewMessageEntry)
+		// If the entry is deleted, then we have to make sure we remove it from messagesMap.
+		if viewMessageEntry.isDeleted {
+			delete(messagesMap, messageKey)
+			delete(partiesMap, messageKey)
+			continue
+		}
+
+		// At this point we are confident the map key is equal to the message key containing
+		// the passed-in public key so add it to the mapping.
+		messagesMap[messageKey] = viewMessageEntry
+		// Now we lookup corresponding party in UtxoView and if it exists, we add it to our partiesMap.
+		// We don't need to check if the entry is deleted or not, because we know messages and parties
+		// can't have mismatching isDeleted.
+		if party, exists := bav.MessageKeyToMessageParty[messageKey]; exists {
+			partiesMap[messageKey] = party
+		}
 	}
 
-	return messageEntriesToReturn, nil
+	// Now we will construct the message entry and party lists, which we will then return.
+	_messageEntries = []*MessageEntry{}
+	_messageParties = []*MessageParty{}
+	for _, entry := range messagesMap {
+		_messageEntries = append(_messageEntries, entry)
+		if party, exists := partiesMap[MakeMessageKey(publicKey, entry.TstampNanos)]; exists {
+			_messageParties = append(_messageParties, party)
+		} else {
+			_messageParties = append(_messageParties, nil)
+		}
+	}
+
+	return _messageEntries, _messageParties, nil
 }
 
 func ValidateKeyAndName(messagingPublicKey, keyName []byte) error {

@@ -399,7 +399,8 @@ type MessageEntry struct {
 	isDeleted bool
 
 	// Indicates message encryption method
-	// Version = 2 : message encrypted using shared secret
+	// Version = 3 : message encrypted using shared secrets with rotating keys
+	// Version = 2 : message encrypted using shared secrets
 	// Version = 1 : message encrypted using public key
 	Version uint8
 }

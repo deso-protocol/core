@@ -734,30 +734,50 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	return privateMessages, nil
 }
 
-func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
-	_privateMessages []*MessageEntry, _err error) {
+func DbGetLimitedMessageAndPartyEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
+	_privateMessages []*MessageEntry, _privateMessageParties []*MessageParty, _err error) {
 
 	// Setting the prefix to a tstamp of zero should return all the messages
 	// for the public key in sorted order since 0 << the minimum timestamp in
 	// the db.
-	prefix := _dbSeekPrefixForMessagePublicKey(publicKey)
+	prefixMessages := _dbSeekPrefixForMessagePublicKey(publicKey)
+	prefixParties := _dbSeekPrefixForMessagePartyPublicKey(publicKey)
 
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
-	_, valuesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefix, uint64(MessagesToFetchPerInboxCall))
+	_, messagesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefixMessages, uint64(MessagesToFetchPerInboxCall))
+	_, partiesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefixParties, uint64(MessagesToFetchPerInboxCall))
 
-	privateMessages := []*MessageEntry{}
-	for _, valBytes := range valuesFound {
+	// We will return message parties along with message entries, but because some messages might not have
+	// a sufficient version to have a corresponding message party (before V3), we will add them to a map so
+	// we can match message entries and message parties next.
+	partiesMap := make(map[MessageKey]*MessageParty)
+	for _, partiesBytes := range partiesFound {
+		party := MessageParty{}
+		party.Decode(partiesBytes)
+		partiesMap[MakeMessageKey(publicKey, party.TstampNanos)] = &party
+	}
+
+	_privateMessages = []*MessageEntry{}
+	_privateMessageParties = []*MessageParty{}
+	for _, valBytes := range messagesFound {
 		privateMessageObj := &MessageEntry{}
 		if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj); err != nil {
-			return nil, errors.Wrapf(
+			return nil, nil, errors.Wrapf(
 				err, "DbGetMessageEntriesForPublicKey: Problem decoding value: ")
 		}
 
-		privateMessages = append(privateMessages, privateMessageObj)
+		_privateMessages = append(_privateMessages, privateMessageObj)
+
+		// If there's a corresponding entry in partiesMap, we will include it in the output. Otherwise, we add nil.
+		if party, exists := partiesMap[MakeMessageKey(publicKey, privateMessageObj.TstampNanos)]; exists {
+			_privateMessageParties = append(_privateMessageParties, party)
+		} else {
+			_privateMessageParties = append(_privateMessageParties, nil)
+		}
 	}
 
-	return privateMessages, nil
+	return _privateMessages, _privateMessageParties, nil
 }
 
 // -------------------------------------------------------------------------------------
@@ -2914,8 +2934,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5546,7 +5566,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5671,7 +5691,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
