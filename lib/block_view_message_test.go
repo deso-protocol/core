@@ -587,9 +587,9 @@ func TestMessagingKeys(t *testing.T) {
 				fmt.Println("_verifyMessagingKey: Error fetching augmented universal view")
 				return false
 			}
-			utxoMessagingEntry = utxoView._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+			utxoMessagingEntry = utxoView.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
 		} else {
-			utxoMessagingEntry = utxoView._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+			utxoMessagingEntry = utxoView.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
 		}
 
 		if utxoMessagingEntry == nil || utxoMessagingEntry.isDeleted {

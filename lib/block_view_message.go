@@ -52,7 +52,7 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 	bav._setMessageEntryMappings(&tombstoneMessageEntry)
 }
 
-func (bav *UtxoView) _getMessagingKeyToMessagingKeyEntryMapping(messagingKey *MessagingKey) *MessagingKeyEntry {
+func (bav *UtxoView) GetMessagingKeyToMessagingKeyEntryMapping(messagingKey *MessagingKey) *MessagingKeyEntry {
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	if mapValue, exists := bav.MessagingKeyToMessagingKeyEntry[*messagingKey]; exists {
 		return mapValue
@@ -322,7 +322,7 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 
 	// Fetch the messaging key entry from UtxoView.
 	messagingKey := NewMessagingKey(NewPublicKey(ownerPublicKey), keyName)
-	messagingKeyEntry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+	messagingKeyEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
 	if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent messaging key entry "+
 			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
@@ -696,7 +696,7 @@ func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn) (*UtxoOperation, err
 	// First, let's check that this key doesn't already exist in UtxoView or in the DB.
 	// If a key already exists in the DB then it's non-nil and it wasn't deleted.
 	messagingKey := NewMessagingKey(NewPublicKey(txn.PublicKey), messagingKeyName)
-	if entry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey); entry != nil && !entry.isDeleted {
+	if entry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey); entry != nil && !entry.isDeleted {
 		return nil, fmt.Errorf("_connectMessagingKeys: Error, this key already exists; "+
 			"messagingKey %v, messagingPublicKey %v", messagingKey, messagingPublicKey)
 	}

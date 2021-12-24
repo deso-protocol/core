@@ -661,7 +661,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 
 			// Get the messaging key that the messaging key name from ExtraData points to.
 			messagingKey := NewMessagingKey(NewPublicKey(currentTxn.PublicKey), messagingKeyName)
-			messagingKeyEntry := bav._getMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+			messagingKeyEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
 			if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
 				glog.Errorf(fmt.Sprintf("_disconnectBasicTransfer: Error, this key was already deleted "+
 					"messagingKey: %v", messagingKey))

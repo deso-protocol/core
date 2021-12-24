@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"io"
+	"reflect"
 	"strings"
 )
 
@@ -434,6 +435,11 @@ func MessagingKeyNameDecode(name *KeyName) []byte {
 
 	bytes := make([]byte, MaxMessagingKeyNameCharacters)
 	copy(bytes, name[:])
+
+	// Return empty byte array if we have a non-existent key.
+	if reflect.DeepEqual(bytes, (*NewKeyName([]byte{}))[:]) {
+		return []byte{}
+	}
 
 	// Remove trailing 0s from the encoded message key.
 	for {
