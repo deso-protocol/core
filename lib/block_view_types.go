@@ -24,7 +24,10 @@ const (
 	UtxoTypeNFTBidderChange          UtxoType = 7
 	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
 
-	// NEXT_TAG = 9
+	// Do we want a new kind of UTXO for the additional NFT splits?
+	UtxoTypeNFTAdditionalDESORoyalty UtxoType = 9
+
+	// NEXT_TAG = 10
 )
 
 func (mm UtxoType) String() string {
@@ -270,6 +273,10 @@ type UtxoOperation struct {
 	// Save the state of a creator coin prior to updating it due to a
 	// buy/sell/add transaction.
 	PrevCoinEntry *CoinEntry
+
+	// TODO: comment
+	PrevCoinRoyaltyCoinEntries map[PKID]CoinEntry
+
 	// Save the creator coin balance of both the transactor and the creator.
 	// We modify the transactor's balances when they buys/sell a creator coin
 	// and we modify the creator's balance when we pay them a founder reward.
@@ -308,6 +315,9 @@ type UtxoOperation struct {
 	AcceptNFTBidCreatorPublicKey    []byte
 	AcceptNFTBidBidderPublicKey     []byte
 	AcceptNFTBidCreatorRoyaltyNanos uint64
+
+	// TODO: comment
+	AcceptNFTBidAdditionalDESORoyalties *map[PKID]uint64
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
@@ -720,6 +730,10 @@ type PostEntry struct {
 	HasUnlockable                  bool
 	NFTRoyaltyToCreatorBasisPoints uint64
 	NFTRoyaltyToCoinBasisPoints    uint64
+
+	// TODO: add comment about these maps
+	AdditionalNFTRoyaltiesToCreatorsBasisPoints map[PKID]uint64
+	AdditionalNFTRoyaltiesToCoinsBasisPoints    map[PKID]uint64
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte

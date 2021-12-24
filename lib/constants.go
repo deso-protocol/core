@@ -796,6 +796,12 @@ const (
 
 	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
 	BuyNowPriceKey = "BuyNowPriceNanos"
+
+	// Key in transaction's extra data map. If present, the value represents a map of public key to basis points.
+	//
+	DESORoyaltiesMapKey = "DESORoyaltiesMap"
+
+	CoinRoyaltiesMapKey = "CoinRoyaltiesMap"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
