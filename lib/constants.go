@@ -37,7 +37,7 @@ const (
 
 	MaxKeysFetch = 10
 
-	MaxBlocksInView = 10
+	MaxBlocksInView = 1
 )
 
 type NetworkType uint64
@@ -495,13 +495,13 @@ var DeSoMainnetParams = DeSoParams{
 		StatusBitcoinHeaderValidated,
 	),
 
-	BitcoinExchangeFeeBasisPoints:   10,
-	BitcoinDoubleSpendWaitSeconds:   5.0,
-	DeSoNanosPurchasedAtGenesis:     uint64(6000000000000000),
-	DefaultSocketPort:               uint16(17000),
-	DefaultJSONPort:                 uint16(17001),
+	BitcoinExchangeFeeBasisPoints: 10,
+	BitcoinDoubleSpendWaitSeconds: 5.0,
+	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
+	DefaultSocketPort:             uint16(17000),
+	DefaultJSONPort:               uint16(17001),
 
-	DefaultCacheSize:                uint32(100000),
+	DefaultCacheSize: uint32(100000),
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
@@ -669,7 +669,7 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultSocketPort: uint16(18000),
 	DefaultJSONPort:   uint16(18001),
 
-	DefaultCacheSize:  uint32(100000),
+	DefaultCacheSize: uint32(100000),
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
