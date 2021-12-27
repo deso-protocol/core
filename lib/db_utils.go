@@ -243,7 +243,6 @@ var (
 	_PrefixAncestralRecords = []byte{57}
 )
 
-
 var statePrefixes = [][]byte{
 	_PrefixUtxoKeyToUtxoEntry,
 	_PrefixPubKeyUtxoKey,
@@ -320,7 +319,7 @@ func isStateKey(key []byte) bool {
 // LRU cache, and to build DB snapshots with ancestral records.
 func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) error {
 	// We only cache / update ancestral records when we're dealing with state prefix.
-	isState := snap != nil && isStateKey(key)
+	isState := snap != nil && snap.isState(key)
 	var ancestralValue []byte
 	var getError error
 
@@ -364,7 +363,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 // us lookup time.
 func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	// We only cache / update ancestral records when we're dealing with state prefix.
-	isState := snap != nil && isStateKey(key)
+	isState := snap != nil && snap.isState(key)
 	keyString := hex.EncodeToString(key)
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
@@ -393,7 +392,7 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 	var ancestralValue []byte
 	var getError error
-	isState := snap != nil && isStateKey(key)
+	isState := snap != nil && snap.isState(key)
 
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.

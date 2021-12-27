@@ -183,7 +183,7 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
 
-	utxoView, err := NewUtxoView(db, params, nil, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 
 	txHash := txn.Hash()
@@ -443,7 +443,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -593,7 +593,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -629,7 +629,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -828,7 +828,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		{
@@ -1144,20 +1144,20 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// Verify that adding the transaction to the UtxoView fails because there is
 	// not enough work on the burn block yet.
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		blockHeight := chain.blockTip().Height + 1
 		utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	}
 
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		blockHeight := chain.blockTip().Height + 1
 		utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	}
 
 	// The transaction should pass now
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err :=
 			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -1173,7 +1173,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -1321,7 +1321,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -1357,7 +1357,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -1555,7 +1555,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		{
@@ -2032,7 +2032,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 
 	// The transaction should pass now
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		blockHeight := chain.blockTip().Height + 1
 
 		_, _, _, _, err :=
@@ -2123,7 +2123,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// the mempool's disconnect function to make sure we get the txns
 	// back during a reorg.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		{
@@ -2460,7 +2460,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -2608,7 +2608,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -2644,7 +2644,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -2822,7 +2822,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		{
@@ -2946,7 +2946,7 @@ func TestUpdateExchangeRate(t *testing.T) {
 			newUSDCentsPerBitcoin)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 		txnSize := getTxnSize(*updateExchangeRateTxn)
 		blockHeight := chain.blockTip().Height + 1

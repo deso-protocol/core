@@ -128,7 +128,7 @@ func TestComputeMaxTPS(t *testing.T) {
 		require.NoError(err)
 		pprof.StartCPUProfile(ff)
 
-		utxoView, err := NewUtxoView(db, params, nil, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		timeStart := time.Now()

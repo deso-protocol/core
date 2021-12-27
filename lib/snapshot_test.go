@@ -43,7 +43,7 @@ func TestBadgerConcurrentWrite(t *testing.T) {
 	wait.Add(1)
 
 	err := db.Update(func(txn *badger.Txn) error {
-		for ii :=0; ii < sequentialWrites; ii++ {
+		for ii := 0; ii < sequentialWrites; ii++ {
 			err := txn.Set(keys[ii][:], vals[ii][:])
 			if err != nil {
 				return err
@@ -107,8 +107,7 @@ func TestBadgerConcurrentWrite(t *testing.T) {
 	fmt.Println("Finished comparison")
 }
 
-
-func TestBadgerEmptyWrite(t *testing.T){
+func TestBadgerEmptyWrite(t *testing.T) {
 	require := require.New(t)
 
 	db, _ := GetTestBadgerDb()
@@ -150,7 +149,7 @@ func TestBadgerEmptyWrite(t *testing.T){
 // Result:
 // LLRB is about 2x slower than the map approach, but don't require
 // storing 2x keys, which could be useful when utxo_view becomes large.
-func TestSortedMap(t *testing.T){
+func TestSortedMap(t *testing.T) {
 	LLRB := sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
 
 	nodup := make(map[string]bool)
@@ -175,8 +174,8 @@ func TestSortedMap(t *testing.T){
 
 	timeLLRBAddKeys := 0.0
 
-	for ii:=0; ii<len(kList); ii++{
-		k,v := kList[ii], vList[ii]
+	for ii := 0; ii < len(kList); ii++ {
+		k, v := kList[ii], vList[ii]
 		timeStart := time.Now()
 		ok, err := LLRB.Put(k, v)
 		timeLLRBAddKeys += (time.Since(timeStart)).Seconds()
@@ -188,8 +187,8 @@ func TestSortedMap(t *testing.T){
 	timeSMapAddKeys := 0.0
 	SMap := make(map[string]string)
 	SKList := make([]string, 0)
-	for ii:=0; ii<len(kList); ii++{
-		k,v := kList[ii], vList[ii]
+	for ii := 0; ii < len(kList); ii++ {
+		k, v := kList[ii], vList[ii]
 		timeStart := time.Now()
 		SMap[k] = v
 		SKList = append(SKList, k)
@@ -203,7 +202,7 @@ func TestSortedMap(t *testing.T){
 	prevKey := hex.EncodeToString([]byte{0})
 	timeLLRBGetKeys := 0.0
 	timeSMapGetKeys := 0.0
-	for i:=0; i<len(kList); i++{
+	for i := 0; i < len(kList); i++ {
 		timeStart = time.Now()
 		kLLRB, vLLRB, ok, err := LLRB.GetByIndex(i)
 		timeLLRBGetKeys += (time.Since(timeStart)).Seconds()
@@ -228,7 +227,7 @@ func TestSortedMap(t *testing.T){
 	fmt.Printf("Total time to add and fetch keys in Sorted Map %v\n", timeSMapAddKeys + timeSMapGetKeys)
 }
 
-func TestRWLock(t *testing.T){
+func TestRWLock(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
@@ -240,16 +239,16 @@ func TestRWLock(t *testing.T){
 		time.Sleep(time.Second * 2)
 		mut.RLock()
 		fmt.Println("Routine 1 Start")
-		time.Sleep(time.Second * 2)
+		//time.Sleep(time.Second * 2)
 		fmt.Println("Routine 1 Stop")
 		mut.RUnlock()
 		wait.Done()
 	}()
 	go func() {
-		time.Sleep(time.Second * 2)
+		//time.Sleep(time.Second * 2)
 		mut.RLock()
 		fmt.Println("Routine 4 Start")
-		time.Sleep(time.Second * 2)
+		//time.Sleep(time.Second * 2)
 		fmt.Println("Routine 4 Stop")
 		mut.RUnlock()
 		wait.Done()
@@ -257,16 +256,16 @@ func TestRWLock(t *testing.T){
 	go func() {
 		mut.RLock()
 		fmt.Println("Routine 2 Start")
-		time.Sleep(time.Second * 3)
+		//time.Sleep(time.Second * 3)
 		fmt.Println("Routine 2 Stop")
 		mut.RUnlock()
 		wait.Done()
 	}()
 	go func() {
-		time.Sleep(time.Second * 1)
+		//time.Sleep(time.Second * 1)
 		mut.Lock()
 		fmt.Println("Routine 3 Start")
-		time.Sleep(time.Second * 4)
+		//time.Sleep(time.Second * 4)
 		fmt.Println("Routine 3 Stop")
 		mut.Unlock()
 		wait.Done()
@@ -274,7 +273,7 @@ func TestRWLock(t *testing.T){
 	wait.Wait()
 }
 
-func Concurrent1(wait *sync.WaitGroup, mutexMap *sync.Map, key interface{}){
+func Concurrent1(wait *sync.WaitGroup, mutexMap *sync.Map, key interface{}) {
 	defer wait.Done()
 
 	val, ok := mutexMap.Load(key)
@@ -286,11 +285,11 @@ func Concurrent1(wait *sync.WaitGroup, mutexMap *sync.Map, key interface{}){
 	defer val.(*sync.RWMutex).Unlock()
 
 	fmt.Println("Entered Concurrent1")
-	time.Sleep(time.Second * 3)
+	//time.Sleep(time.Second * 3)
 	fmt.Println("Leaving Concurrent1")
 }
 
-func Concurrent2(wait *sync.WaitGroup, mutexMap *sync.Map, key interface{}){
+func Concurrent2(wait *sync.WaitGroup, mutexMap *sync.Map, key interface{}) {
 	defer wait.Done()
 
 	val, ok := mutexMap.Load(key)
@@ -302,11 +301,11 @@ func Concurrent2(wait *sync.WaitGroup, mutexMap *sync.Map, key interface{}){
 	defer val.(*sync.RWMutex).Unlock()
 
 	fmt.Println("Entered Concurrent2")
-	time.Sleep(time.Second * 1)
+	//time.Sleep(time.Second * 1)
 	fmt.Println("Leaving Concurrent2")
 }
 
-func TestMutexMap(t *testing.T){
+func TestMutexMap(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
@@ -328,18 +327,6 @@ func TestMutexMap(t *testing.T){
 	go Concurrent2(&wait, &mutexMap, key)
 
 	wait.Wait()
-
-	//lastPrefix := _PrefixUtxoKeyToUtxoEntry
-	//for {
-	//	k1, v1, full, _ := DBIteratePrefixKeys(_db, lastPrefix, uint32(8 << 8))
-	//	for i := 0; i < len(*k1); i++{
-	//		fmt.Printf("Keys:%v\n Values:%v\n", (*k1)[i], (*v1)[i])
-	//	}
-	//	lastPrefix, _ = hex.DecodeString((*k1)[len(*k1) - 1])
-	//	if !full || !bytes.HasPrefix(lastPrefix, _PrefixUtxoKeyToUtxoEntry) {
-	//		break
-	//	}
-	//}
 }
 
 func TestStateChecksumBasicAddRemove(t *testing.T) {
@@ -349,15 +336,14 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	z := StateChecksum{}
 	z.Initialize()
 
-
 	x := lru.NewKVCache(5)
 	x.Add(hex.EncodeToString([]byte{4, 6, 12, 3}), 2222)
 	x.Add(hex.EncodeToString([]byte{1, 1}), 2444)
 	x.Add(hex.EncodeToString([]byte{8, 88, 22, 22, 4}), []byte{1, 5, 6, 8})
-	x.Add(hex.EncodeToString([]byte{5, 5, 5, 5}), []byte{5,5,5,5})
-	x.Add(hex.EncodeToString([]byte{5, 5, 5, 5}), []byte{5,5,5,7})
-	x.Add(hex.EncodeToString([]byte{8, 9, 9}), []byte{1,2,2,2,3})
-	x.Add(hex.EncodeToString([]byte{8, 9, 10}), []byte{1,2,2,2,7})
+	x.Add(hex.EncodeToString([]byte{5, 5, 5, 5}), []byte{5, 5, 5, 5})
+	x.Add(hex.EncodeToString([]byte{5, 5, 5, 5}), []byte{5, 5, 5, 7})
+	x.Add(hex.EncodeToString([]byte{8, 9, 9}), []byte{1, 2, 2, 2, 3})
+	x.Add(hex.EncodeToString([]byte{8, 9, 10}), []byte{1, 2, 2, 2, 7})
 	fmt.Printf("Contains: %v\n", x.Contains(hex.EncodeToString([]byte{1, 1})))
 
 	if val, ok := x.Lookup(hex.EncodeToString([]byte{1, 1})); ok {

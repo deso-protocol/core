@@ -124,7 +124,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
