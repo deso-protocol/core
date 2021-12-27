@@ -452,6 +452,10 @@ func (bav *UtxoView) _connectPrivateMessage(
 		// keys if we encounter some error. DeSo V3 Messages are non-forking, and so we don't
 		// return on errors, instead we would just print an error.
 		func() {
+			// Make sure DeSo V3 messages are live.
+			if blockHeight < DeSoV3MessagesBlockHeight {
+				return
+			}
 			// Look for messaging keys in transaction ExtraData
 			senderMessagingPublicKey, existsSender := txn.ExtraData[SenderMessagingPublicKey]
 			recipientMessagingPublicKey, existsRecipient := txn.ExtraData[RecipientMessagingPublicKey]
@@ -634,7 +638,13 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }
 
-func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn) (*UtxoOperation, error) {
+func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn, blockHeight uint32) (*UtxoOperation, error) {
+	// Make sure DeSo V3 messages are live.
+	if blockHeight < DeSoV3MessagesBlockHeight {
+		return nil, nil
+	}
+
+	// If ExtraData is nil, there's nothing for us to do.
 	if txn.ExtraData == nil {
 		return nil, nil
 	}

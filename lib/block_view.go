@@ -1377,7 +1377,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 	// ExtraData records for messaging keys, and if they're found, we will proceed to
 	// connect them to UtxoView. Messaging keys are added similarly to a transaction;
 	// however, they're intended as a non-forking change and so we won't return on error.
-	utxoOp, err := bav._connectMessagingKeys(txn)
+	utxoOp, err := bav._connectMessagingKeys(txn, blockHeight)
 	if utxoOp != nil && err == nil {
 		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	} else if err != nil {

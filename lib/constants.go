@@ -123,6 +123,10 @@ var (
 	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+
+	// DeSoV3MessagesBlockHeight defines the height at which messaging key and messsage party
+	// entries will be accepted by consensus.
+	DeSoV3MessagesBlockHeight = uint32(91100)
 )
 
 func (nt NetworkType) String() string {
