@@ -1552,7 +1552,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// Compute additional DESO royalties diff
 	additionalDESORoyaltiesDiff := big.NewInt(0)
 	for pkid, balanceBefore := range desoRoyaltiesBalancesBefore {
+		// Only relevant if additional royalty recipient != seller && != bidder (note: creator cannot be specified in
+		// additional DEOS (or coin) royalties maps, so we do not need to check against that public key)
 		pkBytes := bav.GetPublicKeyForPKID(&pkid)
+		if reflect.DeepEqual(pkBytes, bidderPublicKey) || reflect.DeepEqual(pkBytes, sellerPublicKey) {
+			continue
+		}
 		balanceAfter, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(pkBytes, tipHeight)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf(

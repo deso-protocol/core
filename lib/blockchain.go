@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"container/list"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -3052,6 +3053,8 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTRoyaltyToCoinBasisPoints uint64,
 	IsBuyNow bool,
 	BuyNowPriceNanos uint64,
+	AdditionalDESORoyalties map[PKID]uint64,
+	AdditionalCoinRoyalties map[PKID]uint64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3073,10 +3076,33 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 		// inputs and change.
 	}
 
+	extraData := make(map[string][]byte)
 	// If this transactions creates a Buy Now NFT, set the extra data appropriately.
 	if IsBuyNow {
-		extraData := make(map[string][]byte)
 		extraData[BuyNowPriceKey] = UintToBuf(BuyNowPriceNanos)
+	}
+
+	// If this NFT has royalties that go to other users coins, set the extra data appropriately
+	if len(AdditionalDESORoyalties) > 0 {
+		additionalDESORoyaltiesBuf := bytes.NewBuffer([]byte{})
+		if err := gob.NewEncoder(additionalDESORoyaltiesBuf).Encode(AdditionalDESORoyalties); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"CreateCreateNFTTxn: Problem encoding additional DESO Royalties map: ")
+		}
+		extraData[DESORoyaltiesMapKey] = additionalDESORoyaltiesBuf.Bytes()
+	}
+
+	// If this NFT has royalties that go to other users coins, set the extra data appropriately
+	if len(AdditionalCoinRoyalties) > 0 {
+		additionalCoinRoyaltiesBuf := bytes.NewBuffer([]byte{})
+		if err := gob.NewEncoder(additionalCoinRoyaltiesBuf).Encode(AdditionalCoinRoyalties); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"CreateCreateNFTTxn: Problem encoding additional Coin Royalties map: ")
+		}
+		extraData[CoinRoyaltiesMapKey] = additionalCoinRoyaltiesBuf.Bytes()
+	}
+
+	if len(extraData) > 0 {
 		txn.ExtraData = extraData
 	}
 
