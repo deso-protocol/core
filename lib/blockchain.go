@@ -1332,25 +1332,6 @@ func CheckTransactionSanity(txn *MsgDeSoTxn) error {
 		glog.V(2).Infof("CheckTransactionSanity: Txn needs at least one input: %v", spew.Sdump(txn))
 		return RuleErrorTxnMustHaveAtLeastOneInput
 	}
-	// Every txn must have at least one output unless it is one of the following transaction
-	// types.
-	// - BitcoinExchange transactions are deduped using the hash of the Bitcoin transaction
-	//   embedded in them and having an output adds no value because the output is implied
-	//   by the Bitcoin transaction embedded in it. In particular, the output is automatically
-	//   assumed to be the public key of the the first input in the Bitcoin transaction and
-	//   the fee is automatically assumed to be some percentage of the DeSo being created
-	//   (10bps at the time of this writing).
-	//
-	// - TxnTypeCreatorCoin are also ok to have no outputs (e.g. if you spend your whole deso
-	//   balance on a creator coin)
-	canHaveZeroOutputs := (txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange ||
-		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage ||
-		txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin) // TODO: add a test for this case
-
-	if len(txn.TxOutputs) == 0 && !canHaveZeroOutputs {
-		glog.V(2).Infof("CheckTransactionSanity: Txn needs at least one output: %v", spew.Sdump(txn))
-		return RuleErrorTxnMustHaveAtLeastOneOutput
-	}
 
 	// Loop through the outputs and do a few sanity checks.
 	var totalOutNanos uint64
