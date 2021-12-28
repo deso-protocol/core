@@ -847,6 +847,10 @@ func (pkid *PKIDEntry) String() string {
 	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
 }
 
+func (pkid *PKIDEntry) IsDeleted() bool {
+	return pkid.isDeleted
+}
+
 type ProfileEntry struct {
 	// PublicKey is the key used by the user to sign for things and generally
 	// verify her identity.
