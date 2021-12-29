@@ -710,7 +710,7 @@ func _burnNFTWithTestMeta(
 
 func TestNFTBasic(t *testing.T) {
 	BrokenNFTBidsFixBlockHeight = uint32(0)
-	BuyNowNFTBlockHeight = uint32(0)
+	BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -5137,7 +5137,7 @@ func TestBidAmountZero(t *testing.T) {
 }
 
 func TestNFTBuyNow(t *testing.T) {
-	BuyNowNFTBlockHeight = uint32(0)
+	BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -6149,7 +6149,7 @@ func TestNFTBuyNow(t *testing.T) {
 }
 
 func TestNFTSplits(t *testing.T) {
-	BuyNowNFTBlockHeight = uint32(0)
+	BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -6739,7 +6739,6 @@ func TestNFTSplits(t *testing.T) {
 		require.Equal(m1DeSoLockedBefore+expectedM1CoinRoyalty, desoLockedM1)
 	}
 
-	// TODO: add tests about coin royalties where there is no DESO locked
 	// Create a new post for testing.
 	{
 		_submitPostWithTestMeta(

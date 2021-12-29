@@ -274,7 +274,8 @@ type UtxoOperation struct {
 	// buy/sell/add transaction.
 	PrevCoinEntry *CoinEntry
 
-	// TODO: comment
+	// Save the state of coin entries associated with a PKID prior to updating
+	// it due to an additional coin royalty when an NFT is sold.
 	PrevCoinRoyaltyCoinEntries map[PKID]CoinEntry
 
 	// Save the creator coin balance of both the transactor and the creator.
@@ -312,11 +313,9 @@ type UtxoOperation struct {
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values.
-	AcceptNFTBidCreatorPublicKey    []byte
-	AcceptNFTBidBidderPublicKey     []byte
-	AcceptNFTBidCreatorRoyaltyNanos uint64
-
-	// TODO: comment
+	AcceptNFTBidCreatorPublicKey        []byte
+	AcceptNFTBidBidderPublicKey         []byte
+	AcceptNFTBidCreatorRoyaltyNanos     uint64
 	AcceptNFTBidAdditionalDESORoyalties *map[PKID]uint64
 
 	// These values are used by Rosetta in order to create input and output

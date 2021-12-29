@@ -462,8 +462,8 @@ func (bav *UtxoView) _connectCreateNFT(
 
 	isBuyNow := false
 	buyNowPrice := uint64(0)
-	// Only extract the BuyNowPriceKey value if we are past the BuyNowNFTBlockHeight
-	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
+	// Only extract the BuyNowPriceKey value if we are past the BuyNowAndNFTSplitsBlockHeight
+	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
 		var bytesRead int
 		buyNowPrice, bytesRead = Uvarint(val)
 		if bytesRead <= 0 {
@@ -473,11 +473,10 @@ func (bav *UtxoView) _connectCreateNFT(
 		isBuyNow = true
 	}
 
-	// TODO: Create new block height
 	// Extract additional DESO royalties
 	additionalDESONFTRoyalties := make(map[PKID]uint64)
 	additionalDESONFTRoyaltiesBasisPoints := uint64(0)
-	if val, exists := txn.ExtraData[DESORoyaltiesMapKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
+	if val, exists := txn.ExtraData[DESORoyaltiesMapKey]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
 		if err := gob.NewDecoder(bytes.NewReader(val)).Decode(&additionalDESONFTRoyalties); err != nil {
 			return 0, 0, nil, errors.Wrap(err, "_connectCreateNFT: "+
 				"Problem reading bytes for additional DESO NFT Royalties: ")
@@ -495,7 +494,7 @@ func (bav *UtxoView) _connectCreateNFT(
 
 	additionalCoinNFTRoyalties := make(map[PKID]uint64)
 	additionalCoinNFTRoyaltiesBasisPoints := uint64(0)
-	if val, exists := txn.ExtraData[CoinRoyaltiesMapKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
+	if val, exists := txn.ExtraData[CoinRoyaltiesMapKey]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
 		if err := gob.NewDecoder(bytes.NewReader(val)).Decode(&additionalCoinNFTRoyalties); err != nil {
 			return 0, 0, nil, errors.Wrap(err, "_connectCreateNFT: "+
 				"Problem reading bytes for additional creator coin NFT Royalties: ")
@@ -672,8 +671,8 @@ func (bav *UtxoView) _connectUpdateNFT(
 
 	isBuyNow := false
 	buyNowPrice := uint64(0)
-	// Only extract the BuyNowPriceKey value if we are past the BuyNowNFTBlockHeight
-	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
+	// Only extract the BuyNowPriceKey value if we are past the BuyNowAndNFTSplitsBlockHeight
+	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
 		var bytesRead int
 		buyNowPrice, bytesRead = Uvarint(val)
 		if bytesRead <= 0 {
@@ -957,7 +956,7 @@ func (bav *UtxoView) _connectNFTBid(
 			return 0, 0, nil, RuleErrorNFTBidLessThanMinBidAmountNanos
 		}
 		// Verify that we are not bidding on a Buy Now NFT before the Buy Now NFT Block Height. This should never happen.
-		if nftEntry.IsBuyNow && blockHeight < BuyNowNFTBlockHeight {
+		if nftEntry.IsBuyNow && blockHeight < BuyNowAndNFTSplitsBlockHeight {
 			return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowNFTBeforeBlockHeight, "_connectNFTBid: ")
 		}
 		// If the NFT is a Buy Now NFT and the bid amount is greater than the Buy Now Price, we treat this bid as a
@@ -1300,7 +1299,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 				big.NewInt(int64(args.BidAmountNanos)),
 				big.NewInt(int64(bps))),
 			big.NewInt(100*100)).Uint64()
-		// TODO: check for overflow?
+		if math.MaxUint64-desoRoyaltyNanos <  additionalDESORoyaltiesNanos {
+			return 0, 0, nil, fmt.Errorf(
+				"_helpConnectNFTSold: additional DESO royalty overflow")
+		}
 		additionalDESORoyaltiesNanos += desoRoyaltyNanos
 		additionalDESORoyaltiesNanosMap[pkid] = desoRoyaltyNanos
 	}
@@ -1313,7 +1315,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 				big.NewInt(int64(args.BidAmountNanos)),
 				big.NewInt(int64(bps))),
 			big.NewInt(100*100)).Uint64()
-		// TODO: check for overflow?
+		if math.MaxUint64-coinRoyaltyNanos < additionalCoinRoyaltyNanos  {
+			return 0, 0, nil, fmt.Errorf(
+				"_helpConnectNFTSold: additional coin royalty overflow")
+		}
 		additionalCoinRoyaltyNanos += coinRoyaltyNanos
 		additionalCoinRoyaltiesNanosMap[pkid] = coinRoyaltyNanos
 	}
