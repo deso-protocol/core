@@ -245,6 +245,9 @@ const (
 	RuleErrorNFTRoyaltyOverflow                          RuleError = "RuleErrorNFTRoyaltyOverflow"
 	RuleErrorNFTUpdateMustUpdateIsForSaleStatus          RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
 	RuleErrorBuyNowNFTBeforeBlockHeight                  RuleError = "RuleErrorBuyNowNFTBeforeBlockHeight"
+	RuleErrorAdditionalCoinRoyaltyMustHaveProfile        RuleError = "RuleErrorAdditionalCoinRoyaltyMustHaveProfile"
+	RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty     RuleError = "RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty"
+	RuleErrorAdditionalRoyaltyPKIDMustBeValid            RuleError = "RuleErrorAdditionalRoyaltyPKIDMustBeValid"
 
 	// NFT Bids
 	RuleErrorNFTBidRequiresNonZeroInput                    RuleError = "RuleErrorNFTBidRequiresNonZeroInput"

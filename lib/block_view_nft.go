@@ -476,32 +476,48 @@ func (bav *UtxoView) _connectCreateNFT(
 	// TODO: Create new block height
 	// Extract additional DESO royalties
 	additionalDESONFTRoyalties := make(map[PKID]uint64)
+	additionalDESONFTRoyaltiesBasisPoints := uint64(0)
 	if val, exists := txn.ExtraData[DESORoyaltiesMapKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
 		if err := gob.NewDecoder(bytes.NewReader(val)).Decode(&additionalDESONFTRoyalties); err != nil {
 			return 0, 0, nil, errors.Wrap(err, "_connectCreateNFT: "+
 				"Problem reading bytes for additional DESO NFT Royalties: ")
 		}
+		// Check that PKIDs are valid and sum basis points
+		for pkid, bps := range additionalDESONFTRoyalties {
+			pkBytes := bav.GetPublicKeyForPKID(&pkid)
+			if len(pkBytes) != btcec.PubKeyBytesLenCompressed {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAdditionalRoyaltyPKIDMustBeValid,
+					"_connectCreateNFT: PKID does not map to known public key")
+			}
+			additionalDESONFTRoyaltiesBasisPoints += bps
+		}
 	}
 
 	additionalCoinNFTRoyalties := make(map[PKID]uint64)
+	additionalCoinNFTRoyaltiesBasisPoints := uint64(0)
 	if val, exists := txn.ExtraData[CoinRoyaltiesMapKey]; exists && blockHeight >= BuyNowNFTBlockHeight {
 		if err := gob.NewDecoder(bytes.NewReader(val)).Decode(&additionalCoinNFTRoyalties); err != nil {
 			return 0, 0, nil, errors.Wrap(err, "_connectCreateNFT: "+
 				"Problem reading bytes for additional creator coin NFT Royalties: ")
 		}
-		for pkid, _ := range additionalCoinNFTRoyalties {
+		// Check that all PKIDs are valid and sum basis points
+		for pkid, bps := range additionalCoinNFTRoyalties {
+			pkBytes := bav.GetPublicKeyForPKID(&pkid)
+			if len(pkBytes) != btcec.PubKeyBytesLenCompressed {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAdditionalRoyaltyPKIDMustBeValid,
+					"_connectCreateNFT: PKID does not map to known public key")
+			}
+			additionalCoinNFTRoyaltiesBasisPoints += bps
 			// Validate that all PKIDs provided have a profile
 			existingProfileEntry := bav.GetProfileEntryForPKID(&pkid)
 			if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-				pkBytes := bav.GetPublicKeyForPKID(&pkid)
-				return 0, 0, nil, fmt.Errorf(
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorAdditionalCoinRoyaltyMustHaveProfile,
 					"_connectCreateNFT: Profile missing for additional Coin NFT royalty pub key: %v %v",
 					PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes))
 			}
 		}
 	}
-
-	// Extract additional Coin royalties
 
 	// Validate the txMeta.
 	if txMeta.NumCopies > bav.GlobalParamsEntry.MaxCopiesPerNFT {
@@ -546,24 +562,19 @@ func (bav *UtxoView) _connectCreateNFT(
 
 	// Make sure the creator of the post is not specified in the royalties maps
 	if _, exists := additionalDESONFTRoyalties[*posterPKID.PKID]; exists {
-		return 0, 0, nil, errors.New(
+		return 0, 0, nil, errors.Wrapf(RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty,
 			"_connectCreateNFT: cannot specify the post creator in the additional DESO royalties map")
 	}
 
 	if _, exists := additionalCoinNFTRoyalties[*posterPKID.PKID]; exists {
-		return 0, 0, nil, errors.New(
+		return 0, 0, nil, errors.Wrapf(RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty,
 			"_connectCreateNFT: cannot specify the post creator in the additional coin royalties map")
 	}
 
-	royaltyBasisPoints := txMeta.NFTRoyaltyToCreatorBasisPoints + txMeta.NFTRoyaltyToCoinBasisPoints
-	for _, basisPoints := range additionalDESONFTRoyalties {
-		royaltyBasisPoints += basisPoints
-	}
-	for _, basisPoints := range additionalCoinNFTRoyalties {
-		royaltyBasisPoints += basisPoints
-	}
+	creatorRoyaltyBasisPoints := txMeta.NFTRoyaltyToCreatorBasisPoints + txMeta.NFTRoyaltyToCoinBasisPoints
 
-	if royaltyBasisPoints > bav.Params.MaxNFTRoyaltyBasisPoints {
+	if creatorRoyaltyBasisPoints + additionalCoinNFTRoyaltiesBasisPoints +
+		additionalDESONFTRoyaltiesBasisPoints > bav.Params.MaxNFTRoyaltyBasisPoints {
 		return 0, 0, nil, RuleErrorNFTRoyaltyHasTooManyBasisPoints
 	}
 
