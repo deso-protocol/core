@@ -2,7 +2,6 @@ package lib
 
 import (
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"math"
 	"reflect"
 	"strings"
@@ -1541,91 +1540,6 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 	return desoToTransferNanos, netNewDiamonds, nil
 }
 
-
-func (bav *UtxoView) CheckTransactionSanity(txn *MsgDeSoTxn) error {
-	// We don't check the sanity of block reward transactions.
-	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-		return nil
-	}
-
-	// All transactions are required to have a valid public key set unless they are one
-	// of the following:
-	// - BitcoinExchange transactions don't need a PublicKey because the public key can
-	//   easily be derived from the BitcoinTransaction embedded in the TxnMeta.
-	requiresPublicKey := txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange
-	if requiresPublicKey {
-		if len(txn.PublicKey) != btcec.PubKeyBytesLenCompressed {
-			return errors.Wrapf(RuleErrorTransactionMissingPublicKey, "CheckTransactionSanity: ")
-		}
-	}
-
-	// Every txn must have at least one input unless it is one of the following
-	// transaction types.
-	// - BitcoinExchange transactions will be rejected if they're duplicates in
-	//   spite of the fact that they don't have inputs or outputs.
-	//
-	// Note this function isn't run on BlockReward transactions, but that they're
-	// allowed to have zero inputs as well. In the case of BlockRewards, they could
-	// have duplicates if someone uses the same public key without changing the
-	// ExtraNonce field, but this is not the default behavior, and in general the
-	// only thing a duplicate will do is make a previous transaction invalid, so
-	// there's not much incentive to do it.
-	//
-	// TODO: The above is easily fixed by requiring something like block height to
-	// be present in the ExtraNonce field.
-	canHaveZeroInputs := txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange ||
-		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage
-	if len(txn.TxInputs) == 0 && !canHaveZeroInputs {
-		glog.V(2).Infof("CheckTransactionSanity: Txn needs at least one input: %v", spew.Sdump(txn))
-		return RuleErrorTxnMustHaveAtLeastOneInput
-	}
-
-	// Check that inputs are greater than 0.
-	nonZeroInputAmount := false
-	for _, input := range txn.TxInputs {
-		utxoKey := UtxoKey(*input)
-		utxoEntry := bav.GetUtxoEntryForUtxoKey(&utxoKey)
-		if utxoEntry.AmountNanos > 0 {
-			nonZeroInputAmount = true
-		}
-	}
-	if !nonZeroInputAmount {
-		glog.V(2).Infof("CheckTransactionSanity: Txn needs inputs to be non-zero: %v", spew.Sdump(txn))
-		return errors.New("CheckTransactionSanity: Txn must have non-zero inputs")
-	}
-
-	// Loop through the outputs and do a few sanity checks.
-	var totalOutNanos uint64
-	for _, txout := range txn.TxOutputs {
-		// Check that each output's amount is not bigger than the max as a
-		// sanity check.
-		if txout.AmountNanos > MaxNanos {
-			return RuleErrorOutputExceedsMax
-		}
-		// Check that this output doesn't overflow the total as a sanity
-		// check. This is frankly impossible since our maximum limit is
-		// not close to the max size of a uint64 but check it nevertheless.
-		if totalOutNanos >= math.MaxUint64-txout.AmountNanos {
-			return RuleErrorOutputOverflowsTotal
-		}
-		// Check that the total isn't bigger than the max supply.
-		if totalOutNanos > MaxNanos {
-			return RuleErrorTotalOutputExceedsMax
-		}
-	}
-
-	// Loop through the inputs and do a few sanity checks.
-	existingInputs := make(map[DeSoInput]bool)
-	for _, txin := range txn.TxInputs {
-		if _, exists := existingInputs[*txin]; exists {
-			return RuleErrorDuplicateInputs
-		}
-		existingInputs[*txin] = true
-	}
-
-	return nil
-}
-
 func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	txnSizeBytes int64,
 	blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
@@ -1645,7 +1559,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	_fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
-	if err := bav.CheckTransactionSanity(txn); err != nil {
+	if err := CheckTransactionSanity(txn); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
 	}
 
