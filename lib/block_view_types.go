@@ -316,14 +316,15 @@ type UtxoOperation struct {
 	AcceptNFTBidCreatorPublicKey        []byte
 	AcceptNFTBidBidderPublicKey         []byte
 	AcceptNFTBidCreatorRoyaltyNanos     uint64
-	AcceptNFTBidAdditionalDESORoyalties *map[PKID]uint64
+	AcceptNFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values for NFT bid transactions on Buy Now NFTs.
-	NFTBidCreatorPublicKey    []byte
-	NFTBidBidderPublicKey     []byte
-	NFTBidCreatorRoyaltyNanos uint64
+	NFTBidCreatorPublicKey        []byte
+	NFTBidBidderPublicKey         []byte
+	NFTBidCreatorRoyaltyNanos     uint64
+	NFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -836,6 +837,11 @@ type CoinEntry struct {
 	// beyond the watermark, we allocate a percentage of the coins being
 	// minted to the creator as a "founder reward."
 	CoinWatermarkNanos uint64
+}
+
+type PublicKeyRoyaltyPair struct {
+	PublicKey              []byte
+	RoyaltyAmountNanos uint64
 }
 
 type PKIDEntry struct {
