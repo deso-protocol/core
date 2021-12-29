@@ -17,7 +17,6 @@ import (
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/go-deadlock"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
@@ -1295,76 +1294,6 @@ func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
 	return node1
 }
 
-func CheckTransactionSanity(txn *MsgDeSoTxn) error {
-	// We don't check the sanity of block reward transactions.
-	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-		return nil
-	}
-
-	// All transactions are required to have a valid public key set unless they are one
-	// of the following:
-	// - BitcoinExchange transactions don't need a PublicKey because the public key can
-	//   easily be derived from the BitcoinTransaction embedded in the TxnMeta.
-	requiresPublicKey := txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange
-	if requiresPublicKey {
-		if len(txn.PublicKey) != btcec.PubKeyBytesLenCompressed {
-			return errors.Wrapf(RuleErrorTransactionMissingPublicKey, "CheckTransactionSanity: ")
-		}
-	}
-
-	// Every txn must have at least one input unless it is one of the following
-	// transaction types.
-	// - BitcoinExchange transactions will be rejected if they're duplicates in
-	//   spite of the fact that they don't have inputs or outputs.
-	//
-	// Note this function isn't run on BlockReward transactions, but that they're
-	// allowed to have zero inputs as well. In the case of BlockRewards, they could
-	// have duplicates if someone uses the same public key without changing the
-	// ExtraNonce field, but this is not the default behavior, and in general the
-	// only thing a duplicate will do is make a previous transaction invalid, so
-	// there's not much incentive to do it.
-	//
-	// TODO: The above is easily fixed by requiring something like block height to
-	// be present in the ExtraNonce field.
-	canHaveZeroInputs := (txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange ||
-		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage)
-	if len(txn.TxInputs) == 0 && !canHaveZeroInputs {
-		glog.V(2).Infof("CheckTransactionSanity: Txn needs at least one input: %v", spew.Sdump(txn))
-		return RuleErrorTxnMustHaveAtLeastOneInput
-	}
-
-	// Loop through the outputs and do a few sanity checks.
-	var totalOutNanos uint64
-	for _, txout := range txn.TxOutputs {
-		// Check that each output's amount is not bigger than the max as a
-		// sanity check.
-		if txout.AmountNanos > MaxNanos {
-			return RuleErrorOutputExceedsMax
-		}
-		// Check that this output doesn't overflow the total as a sanity
-		// check. This is frankly impossible since our maximum limit is
-		// not close to the max size of a uint64 but check it nevertheless.
-		if totalOutNanos >= math.MaxUint64-txout.AmountNanos {
-			return RuleErrorOutputOverflowsTotal
-		}
-		// Check that the total isn't bigger than the max supply.
-		if totalOutNanos > MaxNanos {
-			return RuleErrorTotalOutputExceedsMax
-		}
-	}
-
-	// Loop through the inputs and do a few sanity checks.
-	existingInputs := make(map[DeSoInput]bool)
-	for _, txin := range txn.TxInputs {
-		if _, exists := existingInputs[*txin]; exists {
-			return RuleErrorDuplicateInputs
-		}
-		existingInputs[*txin] = true
-	}
-
-	return nil
-}
-
 func GetReorgBlocks(tip *BlockNode, newNode *BlockNode) (_commonAncestor *BlockNode, _detachNodes []*BlockNode, _attachNodes []*BlockNode) {
 	// Find the common ancestor of this block and the main header chain.
 	commonAncestor := _FindCommonAncestor(tip, newNode)
@@ -1801,6 +1730,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, false, RuleErrorFirstTxnMustBeBlockReward
 	}
 
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	if err != nil {
+		return false, false, fmt.Errorf(
+			"ProcessBlock: Problem generate UtxoView to sanity check transactions: %v", err)
+	}
 	// Do some txn sanity checks.
 	for _, txn := range desoBlock.Txns[1:] {
 		// There shouldn't be more than one block reward in the transaction list.
@@ -1809,7 +1743,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			return false, false, RuleErrorMoreThanOneBlockReward
 		}
 
-		if err := CheckTransactionSanity(txn); err != nil {
+		if err = utxoView.CheckTransactionSanity(txn); err != nil {
 			bc.MarkBlockInvalid(
 				nodeToValidate, RuleError(errors.Wrapf(RuleErrorTxnSanity, "Error: %v", err).Error()))
 			return false, false, err
