@@ -1385,10 +1385,6 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		NFTSpentUtxoEntries:       spentUtxoEntries,
 		PrevAcceptedNFTBidEntries: prevAcceptedBidHistory,
 		PrevNFTBidEntry:           args.PrevNFTBidEntry,
-		// Rosetta fields.
-		AcceptNFTBidCreatorPublicKey:    nftPostEntry.PosterPublicKey,
-		AcceptNFTBidBidderPublicKey:     bidderPublicKey,
-		AcceptNFTBidCreatorRoyaltyNanos: creatorCoinRoyaltyNanos,
 	}
 	if args.Txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		transactionUtxoOp.Type = OperationTypeAcceptNFTBid
