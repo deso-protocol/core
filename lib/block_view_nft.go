@@ -1392,10 +1392,18 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	}
 	if args.Txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		transactionUtxoOp.Type = OperationTypeAcceptNFTBid
+		// Rosetta fields
+		transactionUtxoOp.AcceptNFTBidCreatorPublicKey = nftPostEntry.PosterPublicKey
+		transactionUtxoOp.AcceptNFTBidBidderPublicKey = bidderPublicKey
+		transactionUtxoOp.AcceptNFTBidCreatorRoyaltyNanos = creatorCoinRoyaltyNanos
 	}
 
 	if args.Txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
 		transactionUtxoOp.Type = OperationTypeNFTBid
+		// Rosetta fields
+		transactionUtxoOp.NFTBidCreatorPublicKey = nftPostEntry.PosterPublicKey
+		transactionUtxoOp.NFTBidBidderPublicKey = bidderPublicKey
+		transactionUtxoOp.NFTBidCreatorRoyaltyNanos = creatorCoinRoyaltyNanos
 	}
 
 	// Add an operation to the list at the end indicating we've connected an NFT bid.
