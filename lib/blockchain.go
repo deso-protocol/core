@@ -1111,6 +1111,10 @@ func (bc *Blockchain) DB() *badger.DB {
 	return bc.db
 }
 
+func (bc *Blockchain) Snapshot() *Snapshot {
+	return bc.snapshot
+}
+
 // blockTip returns the tip of the main block chain. We fetch headers first
 // and then, once the header chain looks good, we fetch blocks. As such, we
 // store two separate "best" chains: One containing the best headers, and

@@ -876,9 +876,11 @@ func DbGetMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	key := _dbKeyForMessageEntry(publicKey, tstampNanos)
 	privateMessageBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
-		glog.Errorf("DbGetMessageEntryWithTxn: Problem reading "+
-			"MessageEntry for public key %s with tstampnanos %d",
-			PkToStringMainnet(publicKey), tstampNanos)
+		if err != badger.ErrKeyNotFound {
+			glog.Errorf("DbGetMessageEntryWithTxn: Problem reading "+
+				"MessageEntry for public key %s with tstampnanos %d",
+				PkToStringMainnet(publicKey), tstampNanos)
+		}
 		return nil
 	}
 
