@@ -211,6 +211,28 @@ const (
 	RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked               RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked"
 	RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller                  RuleError = "RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller"
 
+	RuleErrorDAOCoinTransferRequiresNonZeroInput        RuleError = "RuleErrorDAOCoinTransferRequiresNonZeroInput"
+	RuleErrorDAOCoinTransferInvalidProfilePubKeySize    RuleError = "RuleErrorDAOCoinTransferInvalidProfilePubKeySize"
+	RuleErrorDAOCoinTransferInvalidReceiverPubKeySize   RuleError = "RuleErrorDAOCoinTransferInvalidReceiverPubKeySize"
+	RuleErrorDAOCoinTransferOnNonexistentProfile        RuleError = "RuleErrorDAOCoinTransferOnNonexistentProfile"
+	RuleErrorDAOCoinTransferBalanceEntryDoesNotExist    RuleError = "RuleErrorDAOCoinTransferBalanceEntryDoesNotExist"
+	RuleErrorDAOCoinTransferInsufficientCoins           RuleError = "RuleErrorDAOCoinTransferInsufficientCoins"
+	RuleErrorDAOCoinTransferCannotTransferToSelf        RuleError = "RuleErrorDAOCoinTransferCannotTransferToSelf"
+	RuleErrorDAOCOinTransferMustTransferNonZeroDAOCoins RuleError = "RuleErrorDAOCOinTransferMustTransferNonZeroDAOCoins"
+
+	RuleErrorDAOCoinRequiresNonZeroInput                  RuleError = "RuleErrorDAOCoinRequiresNonZeroInput"
+	RuleErrorDAOCoinInvalidPubKeySize                     RuleError = "RuleErrorDAOCoinInvalidPubKeySize"
+	RuleErrorDAOCoinOperationOnNonexistentProfile         RuleError = "RuleErrorDAOCoinOperationOnNonexistentProfile"
+	RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin            RuleError = "RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin"
+	RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist        RuleError = "RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist"
+	RuleErrorDAOCoinBurnInsufficientCoins                 RuleError = "RuleErrorDAOCoinBurnInsufficientCoins"
+	RuleErrorOnlyProfileOwnerCanMintDAOCoin               RuleError = "RuleErrorOnlyProfileOwnerCanMintDAOCoin"
+	RuleErrorDAOCoinMustMintNonZeroDAOCoin                RuleError = "RuleErrorDAOCoinMustMintNonZeroDAOCoin"
+	RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation   RuleError = "RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation"
+	RuleErrorDAOCoinBeforeDAOCoinBlockHeight              RuleError = "RuleErrorDAOCoinBeforeDAOCoinBlockHeight"
+	RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled RuleError = "RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled"
+	RuleErrorDAOCoinCannotMintIfMintingIsDisabled         RuleError = "RuleErrorDAOCoinCannotMintIfMintingIsDisabled"
+
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
 	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput    RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
@@ -326,6 +348,6 @@ func IsRuleError(err error) bool {
 	// eventually we should clean this up and get rid of the string comparison both
 	// for the code's sake but also for the sake of our tests.
 	return strings.Contains(err.Error(), "RuleError") ||
-			strings.Contains(err.Error(), "HeaderError") ||
-			strings.Contains(err.Error(), "TxError")
+		strings.Contains(err.Error(), "HeaderError") ||
+		strings.Contains(err.Error(), "TxError")
 }

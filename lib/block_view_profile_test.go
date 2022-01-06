@@ -14,6 +14,24 @@ import (
 	"time"
 )
 
+func _swapIdentityWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	UpdaterPublicKeyBase58Check string,
+	UpdaterPrivKeyBase58Check string,
+	fromPublicKey []byte,
+	toPublicKey []byte) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, UpdaterPublicKeyBase58Check))
+
+	currentOps, currentTxn, _, err := _swapIdentity(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		feeRateNanosPerKB, UpdaterPublicKeyBase58Check, UpdaterPrivKeyBase58Check, fromPublicKey, toPublicKey)
+
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
 func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, fromPublicKey []byte, toPublicKey []byte) (

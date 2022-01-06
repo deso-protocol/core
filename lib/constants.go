@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -123,6 +124,11 @@ var (
 	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+
+	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
+	// transactions will be accepted.
+	// TODO: Update this to a real value when we decide on timing for the fork.
+	DAOCoinBlockHeight = uint32(math.MaxUint32 - 1)
 )
 
 func (nt NetworkType) String() string {

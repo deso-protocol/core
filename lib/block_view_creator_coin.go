@@ -3,189 +3,35 @@ package lib
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"math"
 	"math/big"
 	"reflect"
 )
 
-func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(
-	hodlerPKID *PKID, creatorPKID *PKID) *BalanceEntry {
-
-	// If an entry exists in the in-memory map, return the value of that mapping.
-	balanceEntryKey := MakeCreatorCoinBalanceKey(hodlerPKID, creatorPKID)
-	mapValue, existsMapValue := bav.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryKey]
-	if existsMapValue {
-		return mapValue
-	}
-
-	// If we get here it means no value exists in our in-memory map. In this case,
-	// defer to the db. If a mapping exists in the db, return it. If not, return
-	// nil.
-	var balanceEntry *BalanceEntry
-	if bav.Postgres != nil {
-		balance := bav.Postgres.GetCreatorCoinBalance(hodlerPKID, creatorPKID)
-		if balance != nil {
-			balanceEntry = &BalanceEntry{
-				HODLerPKID:   balance.HolderPKID,
-				CreatorPKID:  balance.CreatorPKID,
-				BalanceNanos: balance.BalanceNanos,
-				HasPurchased: balance.HasPurchased,
-			}
-		}
-	} else {
-		balanceEntry = DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(bav.Handle, hodlerPKID, creatorPKID)
-	}
-	if balanceEntry != nil {
-		bav._setBalanceEntryMappingsWithPKIDs(balanceEntry, hodlerPKID, creatorPKID)
-	}
-	return balanceEntry
-}
-
-func (bav *UtxoView) GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+func (bav *UtxoView) GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 	hodlerPubKey []byte, creatorPubKey []byte) (
 	_balanceEntry *BalanceEntry, _hodlerPKID *PKID, _creatorPKID *PKID) {
-
-	// These are guaranteed to be non-nil as long as the public keys are valid.
-	hodlerPKID := bav.GetPKIDForPublicKey(hodlerPubKey)
-	creatorPKID := bav.GetPKIDForPublicKey(creatorPubKey)
-
-	return bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID.PKID, creatorPKID.PKID), hodlerPKID.PKID, creatorPKID.PKID
+	return bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(hodlerPubKey, creatorPubKey, false)
 }
 
-func (bav *UtxoView) _setBalanceEntryMappingsWithPKIDs(
-	balanceEntry *BalanceEntry, hodlerPKID *PKID, creatorPKID *PKID) {
-
-	// This function shouldn't be called with nil.
-	if balanceEntry == nil {
-		glog.Errorf("_setBalanceEntryMappings: Called with nil BalanceEntry; " +
-			"this should never happen.")
-		return
-	}
-
-	// Add a mapping for the BalancEntry.
-	balanceEntryKey := MakeCreatorCoinBalanceKey(hodlerPKID, creatorPKID)
-	bav.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryKey] = balanceEntry
+func (bav *UtxoView) GetCreatorCoinHoldings(pkid *PKID, fetchProfiles bool) (
+	[]*BalanceEntry, []*ProfileEntry, error) {
+	return bav.GetHoldings(pkid, fetchProfiles, false)
 }
 
-func (bav *UtxoView) _setBalanceEntryMappings(
-	balanceEntry *BalanceEntry) {
-
-	bav._setBalanceEntryMappingsWithPKIDs(
-		balanceEntry, balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
+func (bav *UtxoView) GetCreatorCoinHolders(pkid *PKID, fetchProfiles bool) (
+	[]*BalanceEntry, []*ProfileEntry, error) {
+	return bav.GetHolders(pkid, fetchProfiles, false)
 }
 
-func (bav *UtxoView) _deleteBalanceEntryMappingsWithPKIDs(
-	balanceEntry *BalanceEntry, hodlerPKID *PKID, creatorPKID *PKID) {
-
-	// Create a tombstone entry.
-	tombstoneBalanceEntry := *balanceEntry
-	tombstoneBalanceEntry.isDeleted = true
-
-	// Set the mappings to point to the tombstone entry.
-	bav._setBalanceEntryMappingsWithPKIDs(&tombstoneBalanceEntry, hodlerPKID, creatorPKID)
+func (bav *UtxoView) _setCreatorCoinBalanceEntryMappings(balanceEntry *BalanceEntry) {
+	bav._setBalanceEntryMappings(balanceEntry, false)
 }
 
-func (bav *UtxoView) _deleteBalanceEntryMappings(
+func (bav *UtxoView) _deleteCreatorCoinBalanceEntryMappings(
 	balanceEntry *BalanceEntry, hodlerPublicKey []byte, creatorPublicKey []byte) {
-
-	// These are guaranteed to be non-nil as long as the public keys are valid.
-	hodlerPKID := bav.GetPKIDForPublicKey(hodlerPublicKey)
-	creatorPKID := bav.GetPKIDForPublicKey(creatorPublicKey)
-
-	// Set the mappings to point to the tombstone entry.
-	bav._deleteBalanceEntryMappingsWithPKIDs(balanceEntry, hodlerPKID.PKID, creatorPKID.PKID)
-}
-
-func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool) ([]*BalanceEntry, []*ProfileEntry, error) {
-	var entriesYouHold []*BalanceEntry
-	if bav.Postgres != nil {
-		balances := bav.Postgres.GetHoldings(pkid)
-		for _, balance := range balances {
-			entriesYouHold = append(entriesYouHold, balance.NewBalanceEntry())
-		}
-	} else {
-		holdings, err := DbGetBalanceEntriesYouHold(bav.Handle, pkid, true)
-		if err != nil {
-			return nil, nil, err
-		}
-		entriesYouHold = holdings
-	}
-
-	holdingsMap := make(map[PKID]*BalanceEntry)
-	for _, balanceEntry := range entriesYouHold {
-		holdingsMap[*balanceEntry.CreatorPKID] = balanceEntry
-	}
-
-	for _, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
-		if reflect.DeepEqual(balanceEntry.HODLerPKID, pkid) {
-			if _, ok := holdingsMap[*balanceEntry.CreatorPKID]; ok {
-				// We found both a mempool and a db balanceEntry. Update the BalanceEntry using mempool data.
-				holdingsMap[*balanceEntry.CreatorPKID].BalanceNanos = balanceEntry.BalanceNanos
-			} else {
-				// Add new entries to the list
-				entriesYouHold = append(entriesYouHold, balanceEntry)
-			}
-		}
-	}
-
-	// Optionally fetch all the profile entries as well.
-	var profilesYouHold []*ProfileEntry
-	if fetchProfiles {
-		for _, balanceEntry := range entriesYouHold {
-			// In this case you're the hodler so the creator is the one whose profile we need to fetch.
-			currentProfileEntry := bav.GetProfileEntryForPKID(balanceEntry.CreatorPKID)
-			profilesYouHold = append(profilesYouHold, currentProfileEntry)
-		}
-	}
-
-	return entriesYouHold, profilesYouHold, nil
-}
-
-func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool) ([]*BalanceEntry, []*ProfileEntry, error) {
-	var holderEntries []*BalanceEntry
-	if bav.Postgres != nil {
-		balances := bav.Postgres.GetHolders(pkid)
-		for _, balance := range balances {
-			holderEntries = append(holderEntries, balance.NewBalanceEntry())
-		}
-	} else {
-		holders, err := DbGetBalanceEntriesHodlingYou(bav.Handle, pkid, true)
-		if err != nil {
-			return nil, nil, err
-		}
-		holderEntries = holders
-	}
-
-	holdersMap := make(map[PKID]*BalanceEntry)
-	for _, balanceEntry := range holderEntries {
-		holdersMap[*balanceEntry.HODLerPKID] = balanceEntry
-	}
-
-	for _, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
-		if reflect.DeepEqual(balanceEntry.HODLerPKID, pkid) {
-			if _, ok := holdersMap[*balanceEntry.HODLerPKID]; ok {
-				// We found both a mempool and a db balanceEntry. Update the BalanceEntry using mempool data.
-				holdersMap[*balanceEntry.HODLerPKID].BalanceNanos = balanceEntry.BalanceNanos
-			} else {
-				// Add new entries to the list
-				holderEntries = append(holderEntries, balanceEntry)
-			}
-		}
-	}
-
-	// Optionally fetch all the profile entries as well.
-	var profilesYouHold []*ProfileEntry
-	if fetchProfiles {
-		for _, balanceEntry := range holderEntries {
-			// In this case you're the hodler so the creator is the one whose profile we need to fetch.
-			currentProfileEntry := bav.GetProfileEntryForPKID(balanceEntry.CreatorPKID)
-			profilesYouHold = append(profilesYouHold, currentProfileEntry)
-		}
-	}
-
-	return holderEntries, profilesYouHold, nil
+	bav._deleteBalanceEntryMappings(balanceEntry, hodlerPublicKey, creatorPublicKey, false)
 }
 
 func CalculateCreatorCoinToMintPolynomial(
@@ -421,7 +267,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	// Get the BalanceEntry of the transactor. This should always exist.
-	transactorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	transactorBalanceEntry, _, _ := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		currentTxn.PublicKey, txMeta.ProfilePublicKey)
 	// Sanity-check that the transactor BalanceEntry exists
 	if transactorBalanceEntry == nil || transactorBalanceEntry.isDeleted {
@@ -433,7 +279,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 
 	// Get the BalanceEntry of the creator. It could be nil if this is a sell
 	// transaction or if the balance entry was deleted by a creator coin transfer.
-	creatorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	creatorBalanceEntry, _, _ := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txMeta.ProfilePublicKey, txMeta.ProfilePublicKey)
 	if creatorBalanceEntry == nil || creatorBalanceEntry.isDeleted {
 		creatorPKID := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey)
@@ -492,7 +338,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 
 			// Reset the creator's BalanceEntry to what it was previously.
 			*creatorBalanceEntry = *operationData.PrevCreatorBalanceEntry
-			bav._setBalanceEntryMappings(creatorBalanceEntry)
+			bav._setCreatorCoinBalanceEntryMappings(creatorBalanceEntry)
 		} else {
 			// We do a simliar sanity-check as above, but in this case we don't need to
 			// reset the creator mappings.
@@ -508,7 +354,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 
 		// Reset the Buyer's BalanceEntry to what it was previously.
 		*transactorBalanceEntry = *operationData.PrevTransactorBalanceEntry
-		bav._setBalanceEntryMappings(transactorBalanceEntry)
+		bav._setCreatorCoinBalanceEntryMappings(transactorBalanceEntry)
 
 		// If a DeSo founder reward was created, revert it.
 		if operationData.FounderRewardUtxoKey != nil {
@@ -543,7 +389,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		// and we don't have to worry about the creator's balance.
 		// Reset the transactor's BalanceEntry to what it was previously.
 		*transactorBalanceEntry = *operationData.PrevTransactorBalanceEntry
-		bav._setBalanceEntryMappings(transactorBalanceEntry)
+		bav._setCreatorCoinBalanceEntryMappings(transactorBalanceEntry)
 
 		// Un-add the UTXO taht was created as a result of this transaction. It should
 		// be the one at the end of our UTXO list at this point.
@@ -603,7 +449,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	}
 
 	// Get the current / previous balance for the sender for sanity checking.
-	senderBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	senderBalanceEntry, _, _ := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		currentTxn.PublicKey, txMeta.ProfilePublicKey)
 	// Sanity-check that the sender had a previous BalanceEntry, it should always exist.
 	if operationData.PrevSenderBalanceEntry == nil || operationData.PrevSenderBalanceEntry.isDeleted {
@@ -620,7 +466,7 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	}
 
 	// Get the current / previous balance for the receiver for sanity checking.
-	receiverBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	receiverBalanceEntry, _, _ := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txMeta.ReceiverPublicKey, txMeta.ProfilePublicKey)
 	// Sanity-check that the receiver BalanceEntry exists, it should always exist here.
 	if receiverBalanceEntry == nil || receiverBalanceEntry.isDeleted {
@@ -662,17 +508,17 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	// need to revert the mappings.
 
 	// Delete the sender/receiver balance entries (they will be added back later if needed).
-	bav._deleteBalanceEntryMappings(
+	bav._deleteCreatorCoinBalanceEntryMappings(
 		receiverBalanceEntry, txMeta.ReceiverPublicKey, txMeta.ProfilePublicKey)
 	if senderBalanceEntry != nil {
-		bav._deleteBalanceEntryMappings(
+		bav._deleteCreatorCoinBalanceEntryMappings(
 			senderBalanceEntry, currentTxn.PublicKey, txMeta.ProfilePublicKey)
 	}
 
 	// Set the balance entries appropriately.
-	bav._setBalanceEntryMappings(operationData.PrevSenderBalanceEntry)
+	bav._setCreatorCoinBalanceEntryMappings(operationData.PrevSenderBalanceEntry)
 	if operationData.PrevReceiverBalanceEntry != nil && operationData.PrevReceiverBalanceEntry.BalanceNanos != 0 {
-		bav._setBalanceEntryMappings(operationData.PrevReceiverBalanceEntry)
+		bav._setCreatorCoinBalanceEntryMappings(operationData.PrevReceiverBalanceEntry)
 	}
 
 	// Reset the CoinEntry on the profile to what it was previously now that we
@@ -964,7 +810,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Look up a CreatorCoinBalanceEntry for the buyer and the creator. Create
 	// an entry for each if one doesn't exist already.
 	buyerBalanceEntry, hodlerPKID, creatorPKID :=
-		bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+		bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			txn.PublicKey, existingProfileEntry.PublicKey)
 	// If the user does not have a balance entry or the user's balance entry is deleted and we have passed the
 	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
@@ -995,7 +841,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		// In this case, the creator is distinct from the buyer, so fetch and
 		// potentially create a new BalanceEntry for them rather than using the
 		// existing one.
-		creatorBalanceEntry, hodlerPKID, creatorPKID = bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+		creatorBalanceEntry, hodlerPKID, creatorPKID = bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			existingProfileEntry.PublicKey, existingProfileEntry.PublicKey)
 		// If the creator does not have a balance entry or the creator's balance entry is deleted and we have passed the
 		// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight, we create a new balance entry.
@@ -1080,10 +926,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// At this point the balances for the buyer and the creator should be correct
 	// so set the mappings in the view.
-	bav._setBalanceEntryMappings(buyerBalanceEntry)
+	bav._setCreatorCoinBalanceEntryMappings(buyerBalanceEntry)
 	// Avoid setting the same entry twice if the creator is buying their own coin.
 	if buyerBalanceEntry != creatorBalanceEntry {
-		bav._setBalanceEntryMappings(creatorBalanceEntry)
+		bav._setCreatorCoinBalanceEntryMappings(creatorBalanceEntry)
 	}
 
 	// Finally, if the creator is getting a deso founder reward, add a UTXO for it.
@@ -1199,7 +1045,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// Look up a BalanceEntry for the seller. If it doesn't exist then the seller
 	// implicitly has a balance of zero coins, and so the sell transaction shouldn't be
 	// allowed.
-	sellerBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	sellerBalanceEntry, _, _ := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txn.PublicKey, existingProfileEntry.PublicKey)
 	if sellerBalanceEntry == nil || sellerBalanceEntry.isDeleted {
 		return 0, 0, 0, nil, RuleErrorCreatorCoinSellerBalanceEntryDoesNotExist
@@ -1345,7 +1191,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	// Set the new BalanceEntry in our mappings for the seller and set the
 	// ProfileEntry mappings as well since everything is up to date.
-	bav._setBalanceEntryMappings(sellerBalanceEntry)
+	bav._setCreatorCoinBalanceEntryMappings(sellerBalanceEntry)
 	bav._setProfileEntryMappings(existingProfileEntry)
 
 	// Charge a fee on the DeSo the seller is getting to hedge against
@@ -1519,7 +1365,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 
 	// Look up a BalanceEntry for the sender. If it doesn't exist then the sender implicitly
 	// has a balance of zero coins, and so the transfer shouldn't be allowed.
-	senderBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	senderBalanceEntry, _, _ := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txn.PublicKey, existingProfileEntry.PublicKey)
 	if senderBalanceEntry == nil || senderBalanceEntry.isDeleted {
 		return 0, 0, nil, RuleErrorCreatorCoinTransferBalanceEntryDoesNotExist
@@ -1543,7 +1389,7 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 	// Now that we have validated this transaction, let's build the new BalanceEntry state.
 
 	// Look up a BalanceEntry for the receiver.
-	receiverBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	receiverBalanceEntry, _, _ := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txMeta.ReceiverPublicKey, txMeta.ProfilePublicKey)
 
 	// Save the receiver's balance if it is non-nil.
@@ -1594,14 +1440,14 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 
 	// Delete the sender's balance entry under the assumption that the sender gave away all
 	// of their coins. We add it back later, if this is not the case.
-	bav._deleteBalanceEntryMappings(senderBalanceEntry, txn.PublicKey, txMeta.ProfilePublicKey)
+	bav._deleteCreatorCoinBalanceEntryMappings(senderBalanceEntry, txn.PublicKey, txMeta.ProfilePublicKey)
 	// Delete the receiver's balance entry just to be safe. Added back immediately after.
-	bav._deleteBalanceEntryMappings(
+	bav._deleteCreatorCoinBalanceEntryMappings(
 		receiverBalanceEntry, txMeta.ReceiverPublicKey, txMeta.ProfilePublicKey)
 
-	bav._setBalanceEntryMappings(receiverBalanceEntry)
+	bav._setCreatorCoinBalanceEntryMappings(receiverBalanceEntry)
 	if senderBalanceEntry.BalanceNanos > 0 {
-		bav._setBalanceEntryMappings(senderBalanceEntry)
+		bav._setCreatorCoinBalanceEntryMappings(senderBalanceEntry)
 	}
 
 	// Save all the old values from the CoinEntry before we potentially update them. Note
