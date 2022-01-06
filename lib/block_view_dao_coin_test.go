@@ -254,6 +254,16 @@ func TestDAOCoinBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorOnlyProfileOwnerCanMintDAOCoin)
 	}
 
+	// M1 can't disable minting for M0
+	{
+		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
+			ProfilePublicKey: m0PkBytes,
+			OperationType:    DAOCoinOperationTypeDisableMinting,
+		})
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin)
+	}
+
 	// Can't mint 0 DAO coins
 	{
 		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{

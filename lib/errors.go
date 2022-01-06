@@ -232,6 +232,7 @@ const (
 	RuleErrorDAOCoinBeforeDAOCoinBlockHeight              RuleError = "RuleErrorDAOCoinBeforeDAOCoinBlockHeight"
 	RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled RuleError = "RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled"
 	RuleErrorDAOCoinCannotMintIfMintingIsDisabled         RuleError = "RuleErrorDAOCoinCannotMintIfMintingIsDisabled"
+	RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin     RuleError = "RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"

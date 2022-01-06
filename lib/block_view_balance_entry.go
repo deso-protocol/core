@@ -239,4 +239,3 @@ func (bav *UtxoView) GetBalanceEntryHolders(pkid *PKID, isDAOCoin bool) []*Balan
 	}
 	return balanceEntries
 }
-

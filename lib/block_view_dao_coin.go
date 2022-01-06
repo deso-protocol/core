@@ -40,7 +40,7 @@ func (bav *UtxoView) _disconnectDAOCoin(
 	if blockHeight < DAOCoinBlockHeight {
 		return fmt.Errorf("_disconnectDAOCoin: DAOCoin transaction before block height")
 	}
-	// Verify that the last operation is a CreatorCoin opration
+	// Verify that the last operation is a DAO Coin operation
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectDAOCoin: utxoOperations are missing")
 	}
@@ -153,7 +153,7 @@ func (bav *UtxoView) _disconnectDAOCoin(
 	bav._setProfileEntryMappings(existingProfileEntry)
 
 	// Now revert the basic transfer with the remaining operations. Cut off
-	// the CreatorCoin operation at the end since we just reverted it.
+	// the DAO Coin operation at the end since we just reverted it.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }
@@ -162,7 +162,7 @@ func (bav *UtxoView) _disconnectDAOCoinTransfer(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	// Verify that the last operation is a CreatorCoinTransfer operation
+	// Verify that the last operation is a DAOCoinTransfer operation
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectDAOCoinTransfer: utxoOperations are missing")
 	}
@@ -175,7 +175,7 @@ func (bav *UtxoView) _disconnectDAOCoinTransfer(
 	txMeta := currentTxn.TxnMeta.(*DAOCoinTransferMetadata)
 	operationData := utxoOpsForTxn[operationIndex]
 
-	// Get the profile corresponding to the creator coin txn.
+	// Get the profile corresponding to the DAO coin transfer txn.
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
 	// Sanity-check that it exists.
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
@@ -263,15 +263,15 @@ func (bav *UtxoView) _disconnectDAOCoinTransfer(
 	bav._setProfileEntryMappings(existingProfileEntry)
 
 	// Now revert the basic transfer with the remaining operations. Cut off
-	// the CreatorCoin operation at the end since we just reverted it.
+	// the DAOCoinTransfer operation at the end since we just reverted it.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }
 
 func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
-	verifySignatures bool, mustOwnProfile bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation,
+	verifySignatures bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation,
 	_existingProfileEntry *ProfileEntry, _err error) {
-	// TODO: use real block height
+
 	if blockHeight < DAOCoinBlockHeight {
 		return 0, 0, nil, nil, RuleErrorDAOCoinBeforeDAOCoinBlockHeight
 	}
@@ -283,9 +283,7 @@ func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *B
 		return 0, 0, nil, nil, errors.Wrapf(err, "_connectDAOCoin: ")
 	}
 
-	// Force the input to be non-zero so that we can prevent replay attacks. If
-	// we didn't do this then someone could replay your sell over and over again
-	// to force-convert all your creator coin into DeSo. Think about it.
+	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
 		return 0, 0, nil, nil, RuleErrorDAOCoinRequiresNonZeroInput
 	}
@@ -293,11 +291,6 @@ func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *B
 	// At this point the inputs and outputs have been processed. Now we
 	// need to handle the metadata.
 	txMeta := txn.TxnMeta.(*DAOCoinMetadata)
-
-	// First, only the profile associated with the DAO coin can mint
-	if mustOwnProfile && !reflect.DeepEqual(txMeta.ProfilePublicKey, txn.PublicKey) {
-		return 0, 0, nil, nil, RuleErrorOnlyProfileOwnerCanMintDAOCoin
-	}
 
 	// Check that the specified profile public key is valid and that a profile
 	// corresponding to that public key exists.
@@ -319,25 +312,29 @@ func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *B
 
 func (bav *UtxoView) HelpConnectDAOCoinMint(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
-	_totalInput uint64, _totalOutput uint64, _daoCoinsMinted uint64,
-	_utxoOps []*UtxoOperation, _err error) {
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	totalInput, totalOutput, utxoOpsForTxn, existingProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
-		txn, txHash, blockHeight, verifySignatures, true)
+		txn, txHash, blockHeight, verifySignatures)
 
 	if err != nil {
-		return 0, 0, 0, nil, err
+		return 0, 0, nil, err
 	}
 
 	if existingProfileEntry.DAOCoinEntry.MintingDisabled {
-		return 0, 0, 0, nil, RuleErrorDAOCoinCannotMintIfMintingIsDisabled
+		return 0, 0, nil, RuleErrorDAOCoinCannotMintIfMintingIsDisabled
 	}
 
 	txMeta := txn.TxnMeta.(*DAOCoinMetadata)
 
+	// First, only the profile associated with the DAO coin can mint or disable minting
+	if !reflect.DeepEqual(txMeta.ProfilePublicKey, txn.PublicKey) {
+		return 0, 0, nil, RuleErrorOnlyProfileOwnerCanMintDAOCoin
+	}
+
 	// Must mint non-zero amount of DAO coins
 	if txMeta.CoinsToMintNanos == 0 {
-		return 0, 0, 0, nil, RuleErrorDAOCoinMustMintNonZeroDAOCoin
+		return 0, 0, nil, RuleErrorDAOCoinMustMintNonZeroDAOCoin
 	}
 
 	// At this point we are confident that we have the profile owner minting DAO coins for themselves.
@@ -345,7 +342,7 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 
 	// Increase coins in circulation
 	if existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos > math.MaxUint64-txMeta.CoinsToMintNanos {
-		return 0, 0, 0, nil, fmt.Errorf(
+		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoin: Overflow while summing CoinsInCirculationNanos and CoinsToMinNanos: %v, %v",
 			existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, txMeta.CoinsToMintNanos)
 	}
@@ -366,7 +363,7 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 	prevProfileOwnerBalanceEntry := *profileOwnerBalanceEntry
 
 	if profileOwnerBalanceEntry.BalanceNanos > math.MaxUint64-txMeta.CoinsToMintNanos {
-		return 0, 0, 0, nil, fmt.Errorf(
+		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoin: Overflow while summing profileOwnerBalanceEntry.BalanceNanos and CoinsToMintNanos: %v, %v",
 			profileOwnerBalanceEntry.BalanceNanos, txMeta.CoinsToMintNanos)
 	}
@@ -390,18 +387,17 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		PrevCreatorBalanceEntry: &prevProfileOwnerBalanceEntry,
 	})
 
-	return totalInput, totalOutput, txMeta.CoinsToMintNanos, utxoOpsForTxn, nil
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) HelpConnectDAOCoinBurn(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
-	_totalInput uint64, _totalOutput uint64, _daoCoinsBurned uint64,
-	_utxoOps []*UtxoOperation, _err error) {
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	totalInput, totalOutput, utxoOpsForTxn, existingProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
-		txn, txHash, blockHeight, verifySignatures, false)
+		txn, txHash, blockHeight, verifySignatures)
 
 	if err != nil {
-		return 0, 0, 0, nil, err
+		return 0, 0, nil, err
 	}
 
 	txMeta := txn.TxnMeta.(*DAOCoinMetadata)
@@ -415,18 +411,18 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 	burnerBalanceEntry, _, _ := bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txn.PublicKey, existingProfileEntry.PublicKey)
 	if burnerBalanceEntry == nil || burnerBalanceEntry.isDeleted {
-		return 0, 0, 0, nil, RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist
+		return 0, 0, nil, RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist
 	}
 
 	daoCoinToBurn := txMeta.CoinsToBurnNanos
 	// Check that the burner is burning a non-zero amount of DAO coin
 	if daoCoinToBurn == 0 {
-		return 0, 0, 0, nil, RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin
+		return 0, 0, nil, RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin
 	}
 
 	// Check that the amount of DAO coin being burned does not exceed the user's balance
 	if daoCoinToBurn > burnerBalanceEntry.BalanceNanos {
-		return 0, 0, 0, nil, errors.Wrapf(
+		return 0, 0, nil, errors.Wrapf(
 			RuleErrorDAOCoinBurnInsufficientCoins,
 			"_connectDAOCoin: DAO Coin nanos being burned %v exceeds user's DAO coin balance %v",
 			daoCoinToBurn,
@@ -435,7 +431,7 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 
 	// Sanity check that the amount being burned is less than the total circulation
 	if daoCoinToBurn > existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos {
-		return 0, 0, 0, nil, errors.Wrapf(
+		return 0, 0, nil, errors.Wrapf(
 			RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation,
 			"_connectDAOCoin: DAO Coin nanos being burned %v exceeds coins in circulation %v; this should never happen.",
 			daoCoinToBurn, existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos)
@@ -472,9 +468,7 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
 	})
 
-	// The DeSo that the user gets from selling their creator coin counts
-	// as both input and output in the transaction.
-	return totalInput, totalOutput, txMeta.CoinsToBurnNanos, utxoOpsForTxn, nil
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
@@ -482,10 +476,17 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	totalInput, totalOutput, utxoOpsForTxn, existingProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
-		txn, txHash, blockHeight, verifySignatures, true)
+		txn, txHash, blockHeight, verifySignatures)
 
 	if err != nil {
 		return 0, 0, nil, err
+	}
+
+	txMeta := txn.TxnMeta.(*DAOCoinMetadata)
+
+	// First, only the profile associated with the DAO coin can mint or disable minting
+	if !reflect.DeepEqual(txMeta.ProfilePublicKey, txn.PublicKey) {
+		return 0, 0, nil, RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin
 	}
 
 	// Make sure that minting has not been disabled yet.
@@ -518,26 +519,15 @@ func (bav *UtxoView) _connectDAOCoin(
 	}
 	txMeta := txn.TxnMeta.(*DAOCoinMetadata)
 
-	// We save the previous CoinEntry so that we can revert things easily during a
-	// disconnect. If we didn't do this, it would be annoying to reset the coin
-	// state when reverting a transaction.
 	switch txMeta.OperationType {
 	case DAOCoinOperationTypeMint:
-		// We don't need the daoCoinsMinted return value
-		totalInput, totalOutput, _, utxoOps, err :=
-			bav.HelpConnectDAOCoinMint(txn, txHash, blockHeight, verifySignatures)
-		return totalInput, totalOutput, utxoOps, err
+		return bav.HelpConnectDAOCoinMint(txn, txHash, blockHeight, verifySignatures)
 
 	case DAOCoinOperationTypeBurn:
-		// We don't need the daoCoinsBurned return value
-		totalInput, totalOutput, _, utxoOps, err :=
-			bav.HelpConnectDAOCoinBurn(txn, txHash, blockHeight, verifySignatures)
-		return totalInput, totalOutput, utxoOps, err
+		return bav.HelpConnectDAOCoinBurn(txn, txHash, blockHeight, verifySignatures)
 
 	case DAOCoinOperationTypeDisableMinting:
-		totalInput, totalOutput, utxoOps, err :=
-			bav.HelpConnectDAOCoinDisableMinting(txn, txHash, blockHeight, verifySignatures)
-		return totalInput, totalOutput, utxoOps, err
+		return bav.HelpConnectDAOCoinDisableMinting(txn, txHash, blockHeight, verifySignatures)
 	}
 
 	return 0, 0, nil, fmt.Errorf("_connectDAOCoin: Unrecognized DAOCoin "+
@@ -570,9 +560,7 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinTransfer: ")
 	}
 
-	// Force the input to be non-zero so that we can prevent replay attacks. If
-	// we didn't do this then someone could replay your transfer over and over again
-	// to force-convert all your creator coin into DeSo. Think about it.
+	// Force the input to be non-zero so that we can prevent replay attacks.
 	if totalInput == 0 {
 		return 0, 0, nil, RuleErrorDAOCoinTransferRequiresNonZeroInput
 	}
@@ -616,13 +604,13 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 		return 0, 0, nil, RuleErrorDAOCoinTransferBalanceEntryDoesNotExist
 	}
 
-	// Check that the amount of creator coin being transferred does not exceed the user's
-	// balance of this particular creator coin.
+	// Check that the amount of DAO coin being transferred does not exceed the user's
+	// balance of this particular DAO coin.
 	if txMeta.DAOCoinToTransferNanos > senderBalanceEntry.BalanceNanos {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorDAOCoinTransferInsufficientCoins,
 			"_connectDAOCoinTransfer: DAOCoin nanos being transferred %v exceeds "+
-				"user's creator coin balance %v",
+				"user's DAO coin balance %v",
 			txMeta.DAOCoinToTransferNanos, senderBalanceEntry.BalanceNanos)
 	}
 
@@ -662,9 +650,6 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	prevSenderBalanceEntry := *senderBalanceEntry
 
 	// Subtract the number of coins being given from the sender and add them to the receiver.
-	// TODO: We should avoid editing the pointer returned by "bav._getX" directly before
-	// deleting / setting. Since the pointer returned is the one held by the view, it
-	// makes setting redundant.  An alternative would be to not call _set after modification.
 	senderBalanceEntry.BalanceNanos -= txMeta.DAOCoinToTransferNanos
 	receiverBalanceEntry.BalanceNanos += txMeta.DAOCoinToTransferNanos
 
@@ -681,7 +666,7 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	}
 
 	// Save all the old values from the CoinEntry before we potentially update them. Note
-	// that CoinEntry doesn't contain any pointers and so a direct copy is OK.
+	// that DAOCoinEntry doesn't contain any pointers and so a direct copy is OK.
 	prevCoinEntry := existingProfileEntry.DAOCoinEntry
 
 	if prevReceiverBalanceEntry == nil || prevReceiverBalanceEntry.BalanceNanos == 0 ||
@@ -699,7 +684,7 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	bav._setProfileEntryMappings(existingProfileEntry)
 
 	// Add an operation to the list at the end indicating we've executed a
-	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
+	// DAOCoinTransfer txn. Save the previous state of the CoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                     OperationTypeDAOCoinTransfer,

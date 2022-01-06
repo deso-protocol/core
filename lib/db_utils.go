@@ -4891,24 +4891,30 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, fetchEntries bool) (
 // =====================================================================================
 //  Coin balance entry code - Supports both creator coins and DAO coins
 // =====================================================================================
-func _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) []byte {
-	var key []byte
+func _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin bool) []byte {
 	if isDAOCoin {
-		key = append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry...)
+		return _PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry
 	} else {
-		key = append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
+		return _PrefixHODLerPKIDCreatorPKIDToBalanceEntry
 	}
+}
+
+func _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin bool) []byte {
+	if isDAOCoin {
+		return _PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry
+	} else {
+		return _PrefixCreatorPKIDHODLerPKIDToBalanceEntry
+	}
+}
+
+func _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) []byte {
+	key := append([]byte{}, _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin)...)
 	key = append(key, hodlerPKID[:]...)
 	key = append(key, creatorPKID[:]...)
 	return key
 }
 func _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID *PKID, hodlerPKID *PKID, isDAOCoin bool) []byte {
-	var key []byte
-	if isDAOCoin {
-		key = append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry...)
-	} else {
-		key = append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
-	}
+	key := append([]byte{}, _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin)...)
 	key = append(key, creatorPKID[:]...)
 	key = append(key, hodlerPKID[:]...)
 	return key
@@ -4981,12 +4987,12 @@ func DBDeleteBalanceEntryMappingsWithTxn(
 
 	// When an entry exists, delete the mappings for it.
 	if err := txn.Delete(_dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID, isDAOCoin)); err != nil {
-		return errors.Wrapf(err, "DbDeleteCreatorCoinBalanceEntryMappingsWithTxn: Deleting "+
+		return errors.Wrapf(err, "DBDeleteBalanceEntryMappingsWithTxn: Deleting "+
 			"mappings with keys: %v %v",
 			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
 	}
 	if err := txn.Delete(_dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID, isDAOCoin)); err != nil {
-		return errors.Wrapf(err, "DbDeleteCreatorCoinBalanceEntryMappingsWithTxn: Deleting "+
+		return errors.Wrapf(err, "DBDeleteBalanceEntryMappingsWithTxn: Deleting "+
 			"mappings with keys: %v %v",
 			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
 	}
@@ -5049,7 +5055,7 @@ func DBPutBalanceEntryMappings(
 	})
 }
 
-// GetSingleBalanceEntryFromPublicKeys fetches a single balance entry of a holder's creator coin.
+// GetSingleBalanceEntryFromPublicKeys fetches a single balance entry of a holder's creator or DAO coin.
 // Returns nil if the balance entry never existed.
 func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView *UtxoView, isDAOCoin bool) (*BalanceEntry, error) {
 	holderPKIDEntry := utxoView.GetPKIDForPublicKey(holder)
@@ -5064,13 +5070,8 @@ func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView
 	creatorPKID := creatorPKIDEntry.PKID
 
 	// Check if there's a balance entry in the view
-	balanceEntryMapKey := BalanceEntryMapKey{HODLerPKID: *holderPKID, CreatorPKID: *creatorPKID}
-	var balanceEntryFromView *BalanceEntry
-	if isDAOCoin {
-		balanceEntryFromView = utxoView.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry[balanceEntryMapKey]
-	} else {
-		balanceEntryFromView = utxoView.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryMapKey]
-	}
+	balanceEntryMapKey := MakeBalanceEntryKey(holderPKID, creatorPKID)
+	balanceEntryFromView := utxoView.GetHODLerPKIDCreatorPKIDToBalanceEntryMap(isDAOCoin)[balanceEntryMapKey]
 	if balanceEntryFromView != nil {
 		return balanceEntryFromView, nil
 	}
@@ -5113,12 +5114,7 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances
 	// Get the balance entries for the coins that *you hold*
 	balanceEntriesYouHodl := []*BalanceEntry{}
 	{
-		var prefix []byte
-		if isDAOCoin {
-			prefix = append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry...)
-		} else {
-			prefix = append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
-		}
+		prefix := _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
@@ -5141,12 +5137,7 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalan
 	// Get the balance entries for the coins that *hold you*
 	balanceEntriesThatHodlYou := []*BalanceEntry{}
 	{
-		var prefix []byte
-		if isDAOCoin {
-			prefix = append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry...)
-		} else {
-			prefix = append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
-		}
+		prefix := _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
