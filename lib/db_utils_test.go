@@ -40,7 +40,7 @@ func _GetTestBlockNode() *BlockNode {
 	bs.CumWork = big.NewInt(5)
 
 	// Header (make a copy)
-	bs.Header = NewMessage(MsgTypeHeader).(*MsgBitCloutHeader)
+	bs.Header = NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
 	headerBytes, _ := expectedBlockHeader.ToBytes(false)
 	bs.Header.FromBytes(headerBytes)
 
@@ -174,14 +174,14 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	db, dir := GetTestBadgerDb()
 	defer os.RemoveAll(dir)
 
-	err := InitDbWithBitCloutGenesisBlock(&BitCloutTestnetParams, db)
+	err := InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil)
 	require.NoError(err)
 
 	// Check the block index.
 	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
 	require.NoError(err)
 	require.Len(blockIndex, 1)
-	genesisHash := *NewBlockHash(BitCloutTestnetParams.GenesisBlockHashHex)
+	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)
 	genesis, exists := blockIndex[genesisHash]
 	require.True(exists, "genesis block not found in index")
 	require.NotNil(genesis)

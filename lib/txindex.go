@@ -10,8 +10,8 @@ import (
 	"time"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
-	"github.com/sasha-s/go-deadlock"
 )
 
 type TXIndex struct {
@@ -24,11 +24,10 @@ type TXIndex struct {
 	TXIndexChain *Blockchain
 
 	// Core objects from Server
-	CoreChain      *Blockchain
-	BitcoinManager *BitcoinManager
+	CoreChain *Blockchain
 
 	// Core params object
-	Params *BitCloutParams
+	Params *DeSoParams
 
 	// Update wait group
 	updateWaitGroup sync.WaitGroup
@@ -37,7 +36,7 @@ type TXIndex struct {
 	stopUpdateChannel chan struct{}
 }
 
-func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *BitCloutParams, dataDirectory string) (*TXIndex, error) {
+func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (*TXIndex, error) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
 	txIndexOpts := badger.DefaultOptions(txIndexDir)
@@ -51,7 +50,7 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 	}
 
 	// See if we have a best chain hash stored in the txindex db.
-	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, ChainTypeBitCloutBlock)
+	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, ChainTypeDeSoBlock)
 
 	// If we haven't initialized the txIndexChain before, set up the
 	// seed mappings.
@@ -61,8 +60,8 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 		// set their block as the genesis block.
 		{
 			dummyPk := ArchitectPubKeyBase58Check
-			dummyTxn := &MsgBitCloutTxn{
-				TxInputs:  []*BitCloutInput{},
+			dummyTxn := &MsgDeSoTxn{
+				TxInputs:  []*DeSoInput{},
 				TxOutputs: params.SeedBalances,
 				TxnMeta:   &BlockRewardMetadataa{},
 				PublicKey: MustBase58CheckDecode(dummyPk),
@@ -99,7 +98,7 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 			if err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn HEX: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
-			txn := &MsgBitCloutTxn{}
+			txn := &MsgDeSoTxn{}
 			if err := txn.FromBytes(txnBytes); err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
@@ -132,8 +131,7 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 	// Note that we *DONT* pass server here because it is already tied to the to the main blockchain.
 	txIndexChain, err := NewBlockchain(
 		[]string{}, 0,
-		params, chainlib.NewMedianTime(), txIndexDb,
-		bitcoinManager, nil)
+		params, chainlib.NewMedianTime(), txIndexDb, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err)
 	}
@@ -146,7 +144,6 @@ func NewTXIndex(coreChain *Blockchain, bitcoinManager *BitcoinManager, params *B
 	return &TXIndex{
 		TXIndexChain:      txIndexChain,
 		CoreChain:         coreChain,
-		BitcoinManager:    bitcoinManager,
 		Params:            params,
 		stopUpdateChannel: make(chan struct{}),
 	}, nil
@@ -173,7 +170,7 @@ func (txi *TXIndex) Start() {
 						glog.Error(fmt.Errorf("tryUpdateTxindex: Problem running update: %v", err))
 					}
 				} else {
-					glog.Debugf("TXIndex: Waiting for node to sync before updating")
+					glog.V(1).Infof("TXIndex: Waiting for node to sync before updating")
 				}
 				break
 			}
@@ -263,7 +260,7 @@ func (txi *TXIndex) Update() error {
 	// If the tip of the txindex is the same as the block tip, don't do
 	// an update.
 	if reflect.DeepEqual(txindexTipNode.Hash[:], blockTipNode.Hash[:]) {
-		glog.Debugf("Update: Skipping update since block tip equals "+
+		glog.V(1).Infof("Update: Skipping update since block tip equals "+
 			"txindex tip: Height: %d, Hash: %v", txindexTipNode.Height, txindexTipNode.Hash)
 		return nil
 	}
@@ -280,7 +277,7 @@ func (txi *TXIndex) Update() error {
 	for _, blockToDetach := range detachBlocks {
 		// Go through each txn in the block and delete its mappings from our
 		// txindex.
-		glog.Debugf("Update: Detaching block (height: %d, hash: %v)",
+		glog.V(1).Infof("Update: Detaching block (height: %d, hash: %v)",
 			blockToDetach.Height, blockToDetach.Hash)
 		blockMsg, err := GetBlock(blockToDetach.Hash, txi.TXIndexChain.DB())
 		if err != nil {
@@ -301,8 +298,7 @@ func (txi *TXIndex) Update() error {
 
 		// Now that all the transactions have been deleted from our txindex,
 		// it's safe to disconnect the block from our txindex chain.
-		utxoView, err := NewUtxoView(
-			txi.TXIndexChain.DB(), txi.Params, txi.BitcoinManager)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
@@ -329,7 +325,7 @@ func (txi *TXIndex) Update() error {
 				"%v: %v", blockToDetach, err)
 		}
 		// We have to flush a couple of extra things that the view doesn't flush...
-		if err := PutBestHash(utxoView.TipHash, txi.TXIndexChain.DB(), ChainTypeBitCloutBlock); err != nil {
+		if err := PutBestHash(utxoView.TipHash, txi.TXIndexChain.DB(), ChainTypeDeSoBlock); err != nil {
 			return fmt.Errorf("Update: Error putting best hash for block "+
 				"%v: %v", blockToDetach, err)
 		}
@@ -368,7 +364,7 @@ func (txi *TXIndex) Update() error {
 			glog.Infof("Update: Txindex progress: block %d / %d",
 				blockToAttach.Height, blockTipNode.Height)
 		}
-		glog.Tracef("Update: Attaching block (height: %d, hash: %v)",
+		glog.V(2).Infof("Update: Attaching block (height: %d, hash: %v)",
 			blockToAttach.Height, blockToAttach.Hash)
 
 		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB())
@@ -381,7 +377,7 @@ func (txi *TXIndex) Update() error {
 		// us to extract custom metadata fields that we can show in our block explorer.
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, txi.BitcoinManager)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)

@@ -37,7 +37,7 @@ func TestTotalMiningSupply(t *testing.T) {
 func TestCalcBlockReward(t *testing.T) {
 	require := require.New(t)
 
-	blocksPerYear := (time.Hour * 24 * 365 / BitCloutMainnetParams.TimeBetweenBlocks)
+	blocksPerYear := (time.Hour * 24 * 365 / DeSoMainnetParams.TimeBetweenBlocks)
 	require.Equal(int64(blocksPerYear), int64(BlocksPerYear))
 
 	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(0))
@@ -79,7 +79,7 @@ func TestGetPrice(t *testing.T) {
 	}()
 	assert := assert.New(t)
 	{
-		startPriceSatoshis := GetStartPriceSatoshisPerBitClout(InitialUSDCentsPerBitcoinExchangeRate)
+		startPriceSatoshis := GetStartPriceSatoshisPerDeSo(InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(0, InitialUSDCentsPerBitcoinExchangeRate)))
 		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1, InitialUSDCentsPerBitcoinExchangeRate)))
 		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(10, InitialUSDCentsPerBitcoinExchangeRate)))
@@ -97,7 +97,7 @@ func TestGetPrice(t *testing.T) {
 	}
 	// Doubling the exchange rate should double the price outputted.
 	{
-		startPriceSatoshis := GetStartPriceSatoshisPerBitClout(2 * InitialUSDCentsPerBitcoinExchangeRate)
+		startPriceSatoshis := GetStartPriceSatoshisPerDeSo(2 * InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(0, 2*InitialUSDCentsPerBitcoinExchangeRate)))
 		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(1, 2*InitialUSDCentsPerBitcoinExchangeRate)))
 		assert.Equal(int64(startPriceSatoshis), int64(GetSatoshisPerUnitExchangeRate(10, 2*InitialUSDCentsPerBitcoinExchangeRate)))
@@ -142,8 +142,8 @@ func TestCalcNanosToCreate(t *testing.T) {
 	//fmt.Println(diff)
 	//fmt.Println(float64(diff) / float64(nanosToCreate2))
 
-	//startPriceSatoshisPerBitClout := GetStartPriceSatoshisPerBitClout(usdCentsPerBitcoin)
-	//assert.Equal(int64(1805), int64(startPriceSatoshisPerBitClout))
+	//startPriceSatoshisPerDeSo := GetStartPriceSatoshisPerDeSo(usdCentsPerBitcoin)
+	//assert.Equal(int64(1805), int64(startPriceSatoshisPerDeSo))
 
 	//nanosComponent := Div(NewFloat().SetUint64(NanosPerUnit), NewFloat().SetUint64(TrancheSizeNanos))
 	//{
@@ -151,13 +151,13 @@ func TestCalcNanosToCreate(t *testing.T) {
 	//assert.Equal(float64(1e-06), x)
 	//}
 
-	//bitcoinComponent := Div(NewFloat().SetUint64(satoshisToBurn), NewFloat().SetUint64(startPriceSatoshisPerBitClout))
+	//bitcoinComponent := Div(NewFloat().SetUint64(satoshisToBurn), NewFloat().SetUint64(startPriceSatoshisPerDeSo))
 	//{
 	//x, _ := bitcoinComponent.Float64()
 	//assert.Equal(float64(5.511003236565097e+06), x)
 	//}
 
-	//bigFloatFinalBitCloutNanos := Mul(NewFloat().SetUint64(TrancheSizeNanos), BigFloatLog2(
+	//bigFloatFinalDeSoNanos := Mul(NewFloat().SetUint64(TrancheSizeNanos), BigFloatLog2(
 	//Add(Mul(nanosComponent, Mul(bitcoinComponent, NaturalLogOfTwo)),
 	//BigFloatPow(BigTwo, Div(NewFloat().SetUint64(startNanos), NewFloat().SetUint64(TrancheSizeNanos))))))
 
@@ -194,7 +194,7 @@ func TestCalcNanosToCreate(t *testing.T) {
 	//}
 
 	//{
-	//x, _ := bigFloatFinalBitCloutNanos.Float64()
+	//x, _ := bigFloatFinalDeSoNanos.Float64()
 	//assert.Equal(float64(2.9525895391932652e+16), x)
 	//}
 	//require.Equal(int64(7129365), int64(nanosToCreate))
@@ -330,7 +330,7 @@ func TestCalcNanosToCreate(t *testing.T) {
 		assert.Equal(int64(2700494), int64(nanosToCreate))
 	}
 	{
-		// Print 1 BTC at the beginning. Should be about 10k BitClout, but less
+		// Print 1 BTC at the beginning. Should be about 10k DeSo, but less
 		// than that because the price is increasing slightly as they buy it.
 		nanosToCreate := CalcNanosToCreate(0*NanosPerUnit, satoshisPerBitcoin+1, InitialUSDCentsPerBitcoinExchangeRate)
 		assert.Equal(int64(26755493480681), int64(nanosToCreate))
@@ -481,7 +481,7 @@ func TestSumBalances(t *testing.T) {
 	_, _ = assert, require
 
 	// Balances should sum to the amount purchased.
-	params := &BitCloutMainnetParams
+	params := &DeSoMainnetParams
 	amounts := uint64(0)
 	balancesByPublicKey := make(map[string]int64)
 	for _, seedBal := range params.SeedBalances {
@@ -493,7 +493,7 @@ func TestSumBalances(t *testing.T) {
 		}
 		balancesByPublicKey[pkStr] = int64(seedBal.AmountNanos)
 	}
-	require.Equal(int64(params.BitCloutNanosPurchasedAtGenesis)+int64(2e6*NanosPerUnit), int64(amounts))
+	require.Equal(int64(params.DeSoNanosPurchasedAtGenesis)+int64(2e6*NanosPerUnit), int64(amounts))
 
 	// Spot-check a few balances
 	_checkBalance := func(pkStr string, expectedVal int64) {

@@ -3,7 +3,7 @@ DATE=`date +%Y%m%d-%H:%M:%S-%N`
 # Seeds. This is the account corresponding to the public key below.
 # * Mnemonic:
 #   * verb find card ship another until version devote guilt strong lemon six
-# * BitClout public keys:
+# * DeSo public keys:
 #   * BC1YLg7Bk5sq9iNY17bAwoAYiChLYpmWEi6nY6q5gnA1UQV6xixHjfV
 #   * tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV
 # * Bitcoin burn addresses:
@@ -29,7 +29,7 @@ rm /tmp/main.*.log
   --num-mining-threads=1 \
   --miner-public-keys=BC1YLjJ3FNgo1Q8NU9sEzK3B2obeuq9GvzYr1GnAJgpsVnYCuczcYBe \
   --block-producer-seed='essence camp ghost remove document vault ladder swim pupil index apart ring' \
-  --starter-bitclout-seed='road congress client market couple bid risk escape artwork rookie artwork food' \
+  --starter-deso-seed='road congress client market couple bid risk escape artwork rookie artwork food' \
   --data-dir=/tmp/n0_test \
   --access-control-allow-origins=http://localhost:4200,http://localhost:80,http://localhost:18002 \
   --secure-header-allow-hosts=localhost:4200 \

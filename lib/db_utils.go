@@ -42,7 +42,7 @@ var (
 
 	// The prefix for the block index:
 	// Key format: <hash BlockHash>
-	// Value format: serialized MsgBitCloutBlock
+	// Value format: serialized MsgDeSoBlock
 	_PrefixBlockHashToBlock = []byte{0}
 
 	// The prefix for the node index that we use to reconstruct the block tree.
@@ -58,7 +58,7 @@ var (
 	// We store the hash of the node that is the current tip of the main chain.
 	// This key is used to look it up.
 	// Value format: BlockHash
-	_KeyBestBitCloutBlockHash = []byte{3}
+	_KeyBestDeSoBlockHash = []byte{3}
 
 	_KeyBestBitcoinHeaderHash = []byte{4}
 
@@ -141,8 +141,8 @@ var (
 	// <prefix, username> -> <PKID>
 	_PrefixProfileUsernameToPKID = []byte{25}
 	// This allows us to sort the profiles by the value of their coin (since
-	// the amount of BitClout locked in a profile is proportional to coin price).
-	_PrefixCreatorBitCloutLockedNanosCreatorPKID = []byte{32}
+	// the amount of DeSo locked in a profile is proportional to coin price).
+	_PrefixCreatorDeSoLockedNanosCreatorPKID = []byte{32}
 
 	// The StakeID is a post hash for posts and a public key for users.
 	// <StakeIDType | AmountNanos uint64 | StakeID [var]byte> -> <>
@@ -177,58 +177,67 @@ var (
 
 	// Prefix for storing mempool transactions in badger. These stored transactions are
 	// used to restore the state of a node after it is shutdown.
-	// <prefix, tx hash BlockHash> -> <*MsgBitCloutTxn>
-	_PrefixMempoolTxnHashToMsgBitCloutTxn = []byte{38}
+	// <prefix, tx hash BlockHash> -> <*MsgDeSoTxn>
+	_PrefixMempoolTxnHashToMsgDeSoTxn = []byte{38}
 
-	// Prefixes for Reclouts:
-	// <prefix, user pub key [39]byte, reclouted post hash [39]byte> -> RecloutEntry
-	_PrefixReclouterPubKeyRecloutedPostHashToRecloutPostHash = []byte{39}
+	// Prefixes for Reposts:
+	// <prefix, user pub key [39]byte, reposted post hash [39]byte> -> RepostEntry
+	_PrefixReposterPubKeyRepostedPostHashToRepostPostHash = []byte{39}
 
 	// Prefixes for diamonds:
 	//  <prefix, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
 	//  <prefix, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
 	_PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash = []byte{41}
-	_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash  = []byte{43}
+	_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash = []byte{43}
 
 	// Public keys that have been restricted from signing blocks.
 	// <prefix, ForbiddenPublicKey [33]byte> -> <>
 	_PrefixForbiddenBlockSignaturePubKeys = []byte{44}
 
 	// These indexes are used in order to fetch the pub keys of users that liked or diamonded a post.
-	// 		Reclouts: <prefix, RecloutedPostHash, ReclouterPubKey> -> <>
-	// 		Quote Reclouts: <prefix, RecloutedPostHash, ReclouterPubKey, RecloutPostHash> -> <>
+	// 		Reposts: <prefix, RepostedPostHash, ReposterPubKey> -> <>
+	// 		Quote Reposts: <prefix, RepostedPostHash, ReposterPubKey, RepostPostHash> -> <>
 	// 		Diamonds: <prefix, DiamondedPostHash, DiamonderPubKey [33]byte> -> <DiamondLevel (uint64)>
-	_PrefixRecloutedPostHashReclouterPubKey                = []byte{45}
-	_PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash = []byte{46}
-	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel      = []byte{47}
+	_PrefixRepostedPostHashReposterPubKey               = []byte{45}
+	_PrefixRepostedPostHashReposterPubKeyRepostPostHash = []byte{46}
+	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   = []byte{47}
+
+	// Prefixes for NFT ownership:
+	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
+	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
+	//  <prefix, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
+	_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry = []byte{49}
+
+	// Prefixes for NFT bids:
+	//  <prefix, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
+	_PrefixPostHashSerialNumberBidNanosBidderPKID = []byte{50}
+	//  <BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
+	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{51}
+
+	// Prefix for NFT accepted bid entries:
+	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
+	//     not core to consensus and should not be relied upon as it could get inefficient.
+	//   - Schema: <prefix>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
+	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{54}
+
+	// <prefix, PublicKey [33]byte> -> uint64
+	_PrefixPublicKeyToDeSoBalanceNanos = []byte{52}
+	// Block reward prefix:
+	//   - This index is needed because block rewards take N blocks to mature, which means we need
+	//     a way to deduct them from balance calculations until that point. Without this index, it
+	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
+	//   - Schema: <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
+	_PrefixPublicKeyBlockHashToBlockReward = []byte{53}
+
+	// Prefix for Authorize Derived Key transactions:
+	// 		<prefix, OwnerPublicKey [33]byte> -> <>
+	_PrefixAuthorizeDerivedKey = []byte{54}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 48
+	// NEXT_TAG: 55
 )
-
-// A PKID is an ID associated with a public key. In the DB, various fields are
-// indexed using the PKID rather than the user's public key directly in order to
-// create one layer of indirection between the public key and the user's data. This
-// makes it easy for the user to transfer certain data to a new public key.
-type PKID [33]byte
-
-func PublicKeyToPKID(publicKey []byte) *PKID {
-	if len(publicKey) == 0 {
-		return nil
-	}
-	pkid := &PKID{}
-	copy(pkid[:], publicKey)
-	return pkid
-}
-
-func PKIDToPublicKey(pkid *PKID) []byte {
-	if pkid == nil {
-		return nil
-	}
-	return pkid[:]
-}
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
 	if len(publicKey) == 0 {
@@ -307,7 +316,7 @@ func DBGetPublicKeyForPKID(db *badger.DB, pkidd *PKID) []byte {
 }
 
 func DBPutPKIDMappingsWithTxn(
-	txn *badger.Txn, publicKey []byte, pkidEntry *PKIDEntry, params *BitCloutParams) error {
+	txn *badger.Txn, publicKey []byte, pkidEntry *PKIDEntry, params *DeSoParams) error {
 
 	// Set the main pub key -> pkid mapping.
 	{
@@ -340,7 +349,7 @@ func DBPutPKIDMappingsWithTxn(
 }
 
 func DBDeletePKIDMappingsWithTxn(
-	txn *badger.Txn, publicKey []byte, params *BitCloutParams) error {
+	txn *badger.Txn, publicKey []byte, params *DeSoParams) error {
 
 	// Look up the pkid for the public key.
 	pkidEntry := DBGetPKIDEntryForPublicKeyWithTxn(txn, publicKey)
@@ -468,6 +477,101 @@ func _enumerateLimitedKeysReversedForPrefixWithTxn(dbTxn *badger.Txn, dbPrefix [
 		valsFound = append(valsFound, valCopy)
 	}
 	return keysFound, valsFound, nil
+}
+
+// -------------------------------------------------------------------------------------
+// DeSo balance mapping functions
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPublicKeyToDeSoBalanceNanos...)
+	key := append(prefixCopy, publicKey...)
+	return key
+}
+
+func DbGetPrefixForPublicKeyToDesoBalanceNanos() []byte {
+	return append([]byte{}, _PrefixPublicKeyToDeSoBalanceNanos...)
+}
+
+func DbGetDeSoBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
+) (_balance uint64, _err error) {
+
+	key := _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey)
+	desoBalanceItem, err := txn.Get(key)
+	if err != nil {
+		return uint64(0), nil
+	}
+	desoBalanceBytes, err := desoBalanceItem.ValueCopy(nil)
+	if err != nil {
+		return uint64(0), errors.Wrapf(
+			err, "DbGetDeSoBalanceNanosForPublicKeyWithTxn: Problem getting balance for: %s ",
+			PkToStringBoth(publicKey))
+	}
+
+	desoBalance := DecodeUint64(desoBalanceBytes)
+
+	return desoBalance, nil
+}
+
+func DbGetDeSoBalanceNanosForPublicKey(db *badger.DB, publicKey []byte,
+) (_balance uint64, _err error) {
+	ret := uint64(0)
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetDeSoBalanceNanosForPublicKeyWithTxn(txn, publicKey)
+		if err != nil {
+			return fmt.Errorf("DbGetDeSoBalanceNanosForPublicKey: %v", err)
+		}
+		return nil
+	})
+	if dbErr != nil {
+		return ret, dbErr
+	}
+	return ret, nil
+}
+
+func DbPutDeSoBalanceForPublicKeyWithTxn(
+	txn *badger.Txn, publicKey []byte, balanceNanos uint64) error {
+
+	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutDeSoBalanceForPublicKeyWithTxn: Public key "+
+			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	balanceBytes := EncodeUint64(balanceNanos)
+
+	if err := txn.Set(_dbKeyForPublicKeyToDeSoBalanceNanos(publicKey), balanceBytes); err != nil {
+
+		return errors.Wrapf(
+			err, "DbPutDeSoBalanceForPublicKey: Problem adding balance mapping of %d for: %s ",
+			balanceNanos, PkToStringBoth(publicKey))
+	}
+
+	return nil
+}
+
+func DbPutDeSoBalanceForPublicKey(handle *badger.DB, publicKey []byte, balanceNanos uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutDeSoBalanceForPublicKeyWithTxn(txn, publicKey, balanceNanos)
+	})
+}
+
+func DbDeletePublicKeyToDeSoBalanceWithTxn(txn *badger.Txn, publicKey []byte) error {
+
+	if err := txn.Delete(_dbKeyForPublicKeyToDeSoBalanceNanos(publicKey)); err != nil {
+		return errors.Wrapf(err, "DbDeletePublicKeyToDeSoBalanceWithTxn: Problem deleting "+
+			"balance for public key %s", PkToStringMainnet(publicKey))
+	}
+
+	return nil
+}
+
+func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, publicKey []byte) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbDeletePublicKeyToDeSoBalanceWithTxn(txn, publicKey)
+	})
 }
 
 // -------------------------------------------------------------------------------------
@@ -770,17 +874,12 @@ func DbPutLikeMappingsWithTxn(
 			"length %d != %d", len(userPubKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	if err := txn.Set(_dbKeyForLikerPubKeyToLikedPostHashMapping(
-		userPubKey, likedPostHash), []byte{}); err != nil {
-
-		return errors.Wrapf(
-			err, "DbPutLikeMappingsWithTxn: Problem adding user to liked post mapping: ")
+	if err := txn.Set(_dbKeyForLikerPubKeyToLikedPostHashMapping(userPubKey, likedPostHash), []byte{}); err != nil {
+		return errors.Wrapf(err, "DbPutLikeMappingsWithTxn: Problem adding user to liked post mapping: ")
 	}
-	if err := txn.Set(_dbKeyForLikedPostHashToLikerPubKeyMapping(
-		likedPostHash, userPubKey), []byte{}); err != nil {
 
-		return errors.Wrapf(
-			err, "DbPutLikeMappingsWithTxn: Problem adding liked post to user mapping: ")
+	if err := txn.Set(_dbKeyForLikedPostHashToLikerPubKeyMapping(likedPostHash, userPubKey), []byte{}); err != nil {
+		return errors.Wrapf(err, "DbPutLikeMappingsWithTxn: Problem adding liked post to user mapping: ")
 	}
 
 	return nil
@@ -888,149 +987,149 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 }
 
 // -------------------------------------------------------------------------------------
-// Reclouts mapping functions
-// 		<prefix, user pub key [33]byte, reclouted post BlockHash> -> <>
-// 		<prefix, reclouted post BlockHash, user pub key [33]byte> -> <>
+// Reposts mapping functions
+// 		<prefix, user pub key [33]byte, reposted post BlockHash> -> <>
+// 		<prefix, reposted post BlockHash, user pub key [33]byte> -> <>
 // -------------------------------------------------------------------------------------
-//_PrefixReclouterPubKeyRecloutedPostHashToRecloutPostHash
-func _dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(userPubKey []byte, recloutedPostHash BlockHash) []byte {
+//_PrefixReposterPubKeyRepostedPostHashToRepostPostHash
+func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixReclouterPubKeyRecloutedPostHashToRecloutPostHash...)
+	prefixCopy := append([]byte{}, _PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
 	key := append(prefixCopy, userPubKey...)
-	key = append(key, recloutedPostHash[:]...)
+	key = append(key, repostedPostHash[:]...)
 	return key
 }
 
-//_PrefixRecloutedPostHashReclouterPubKey
-func _dbKeyForRecloutedPostHashReclouterPubKey(recloutedPostHash *BlockHash, reclouterPubKey []byte) []byte {
+//_PrefixRepostedPostHashReposterPubKey
+func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *BlockHash, reposterPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKey...)
-	key := append(prefixCopy, recloutedPostHash[:]...)
-	key = append(key, reclouterPubKey...)
+	prefixCopy := append([]byte{}, _PrefixRepostedPostHashReposterPubKey...)
+	key := append(prefixCopy, repostedPostHash[:]...)
+	key = append(key, reposterPubKey...)
 	return key
 }
 
-// **For quoted reclouts**
-//_PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash
-func _dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash(
-	recloutedPostHash *BlockHash, reclouterPubKey []byte, recloutPostHash *BlockHash) []byte {
+// **For quoted reposts**
+//_PrefixRepostedPostHashReposterPubKeyRepostPostHash
+func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
+	repostedPostHash *BlockHash, reposterPubKey []byte, repostPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixRecloutedPostHashReclouterPubKeyRecloutPostHash...)
-	key := append(prefixCopy, recloutedPostHash[:]...)
-	key = append(key, reclouterPubKey...)
-	key = append(key, recloutPostHash[:]...)
+	prefixCopy := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
+	key := append(prefixCopy, repostedPostHash[:]...)
+	key = append(key, reposterPubKey...)
+	key = append(key, repostPostHash[:]...)
 	return key
 }
 
-func _dbSeekPrefixForPostHashesYouReclout(yourPubKey []byte) []byte {
+func _dbSeekPrefixForPostHashesYouRepost(yourPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixReclouterPubKeyRecloutedPostHashToRecloutPostHash...)
+	prefixCopy := append([]byte{}, _PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
 	return append(prefixCopy, yourPubKey...)
 }
 
-// Note that this adds a mapping for the user *and* the reclouted post.
-func DbPutRecloutMappingsWithTxn(
-	txn *badger.Txn, userPubKey []byte, recloutedPostHash BlockHash, recloutEntry RecloutEntry) error {
+// Note that this adds a mapping for the user *and* the reposted post.
+func DbPutRepostMappingsWithTxn(
+	txn *badger.Txn, userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry) error {
 
 	if len(userPubKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DbPutRecloutMappingsWithTxn: User public key "+
+		return fmt.Errorf("DbPutRepostMappingsWithTxn: User public key "+
 			"length %d != %d", len(userPubKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	recloutDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(recloutDataBuf).Encode(recloutEntry)
+	repostDataBuf := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(repostDataBuf).Encode(repostEntry)
 
-	if err := txn.Set(_dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(
-		userPubKey, recloutedPostHash), recloutDataBuf.Bytes()); err != nil {
+	if err := txn.Set(_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
+		userPubKey, repostedPostHash), repostDataBuf.Bytes()); err != nil {
 
 		return errors.Wrapf(
-			err, "DbPutRecloutMappingsWithTxn: Problem adding user to reclouted post mapping: ")
+			err, "DbPutRepostMappingsWithTxn: Problem adding user to reposted post mapping: ")
 	}
 
 	return nil
 }
 
-func DbPutRecloutMappings(
-	handle *badger.DB, userPubKey []byte, recloutedPostHash BlockHash, recloutEntry RecloutEntry) error {
+func DbPutRepostMappings(
+	handle *badger.DB, userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutRecloutMappingsWithTxn(txn, userPubKey, recloutedPostHash, recloutEntry)
+		return DbPutRepostMappingsWithTxn(txn, userPubKey, repostedPostHash, repostEntry)
 	})
 }
 
-func DbGetReclouterPubKeyRecloutedPostHashToRecloutEntryWithTxn(
-	txn *badger.Txn, userPubKey []byte, recloutedPostHash BlockHash) *RecloutEntry {
+func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(
+	txn *badger.Txn, userPubKey []byte, repostedPostHash BlockHash) *RepostEntry {
 
-	key := _dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(userPubKey, recloutedPostHash)
-	recloutEntryObj := &RecloutEntry{}
-	recloutEntryItem, err := txn.Get(key)
+	key := _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
+	repostEntryObj := &RepostEntry{}
+	repostEntryItem, err := txn.Get(key)
 	if err != nil {
 		return nil
 	}
-	err = recloutEntryItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(recloutEntryObj)
+	err = repostEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(repostEntryObj)
 	})
 	if err != nil {
-		glog.Errorf("DbGetReclouterPubKeyRecloutedPostHashToRecloutedPostMappingWithTxn: Problem reading "+
-			"RecloutEntry for postHash %v", recloutedPostHash)
+		glog.Errorf("DbGetReposterPubKeyRepostedPostHashToRepostedPostMappingWithTxn: Problem reading "+
+			"RepostEntry for postHash %v", repostedPostHash)
 		return nil
 	}
-	return recloutEntryObj
+	return repostEntryObj
 }
 
-func DbReclouterPubKeyRecloutedPostHashToRecloutEntry(
-	db *badger.DB, userPubKey []byte, recloutedPostHash BlockHash) *RecloutEntry {
-	var ret *RecloutEntry
+func DbReposterPubKeyRepostedPostHashToRepostEntry(
+	db *badger.DB, userPubKey []byte, repostedPostHash BlockHash) *RepostEntry {
+	var ret *RepostEntry
 	db.View(func(txn *badger.Txn) error {
-		ret = DbGetReclouterPubKeyRecloutedPostHashToRecloutEntryWithTxn(txn, userPubKey, recloutedPostHash)
+		ret = DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(txn, userPubKey, repostedPostHash)
 		return nil
 	})
 	return ret
 }
 
-// Note this deletes the reclout for the user *and* the reclouted post since a mapping
+// Note this deletes the repost for the user *and* the reposted post since a mapping
 // should exist for each.
-func DbDeleteRecloutMappingsWithTxn(
-	txn *badger.Txn, userPubKey []byte, recloutedPostHash BlockHash) error {
+func DbDeleteRepostMappingsWithTxn(
+	txn *badger.Txn, userPubKey []byte, repostedPostHash BlockHash) error {
 
 	// First check that a mapping exists. If one doesn't exist then there's nothing to do.
-	existingMapping := DbGetReclouterPubKeyRecloutedPostHashToRecloutEntryWithTxn(
-		txn, userPubKey, recloutedPostHash)
+	existingMapping := DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(
+		txn, userPubKey, repostedPostHash)
 	if existingMapping == nil {
 		return nil
 	}
 
-	// When a reclout exists, delete the reclout entry mapping.
-	if err := txn.Delete(_dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(userPubKey, recloutedPostHash)); err != nil {
-		return errors.Wrapf(err, "DbDeleteRecloutMappingsWithTxn: Deleting "+
-			"user public key %s and reclouted post hash %s failed",
-			PkToStringMainnet(userPubKey[:]), PkToStringMainnet(recloutedPostHash[:]))
+	// When a repost exists, delete the repost entry mapping.
+	if err := txn.Delete(_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)); err != nil {
+		return errors.Wrapf(err, "DbDeleteRepostMappingsWithTxn: Deleting "+
+			"user public key %s and reposted post hash %s failed",
+			PkToStringMainnet(userPubKey[:]), PkToStringMainnet(repostedPostHash[:]))
 	}
 	return nil
 }
 
-func DbDeleteRecloutMappings(
-	handle *badger.DB, userPubKey []byte, recloutedPostHash BlockHash) error {
+func DbDeleteRepostMappings(
+	handle *badger.DB, userPubKey []byte, repostedPostHash BlockHash) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteRecloutMappingsWithTxn(txn, userPubKey, recloutedPostHash)
+		return DbDeleteRepostMappingsWithTxn(txn, userPubKey, repostedPostHash)
 	})
 }
 
-func DbGetPostHashesYouReclout(handle *badger.DB, yourPublicKey []byte) (
+func DbGetPostHashesYouRepost(handle *badger.DB, yourPublicKey []byte) (
 	_postHashes []*BlockHash, _err error) {
 
-	prefix := _dbSeekPrefixForPostHashesYouReclout(yourPublicKey)
+	prefix := _dbSeekPrefixForPostHashesYouRepost(yourPublicKey)
 	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
 
-	postHashesYouReclout := []*BlockHash{}
+	postHashesYouRepost := []*BlockHash{}
 	for _, keyBytes := range keysFound {
-		// We must slice off the first byte and userPubKey to get the recloutedPostHash.
+		// We must slice off the first byte and userPubKey to get the repostedPostHash.
 		postHash := &BlockHash{}
 		copy(postHash[:], keyBytes[1+btcec.PubKeyBytesLenCompressed:])
-		postHashesYouReclout = append(postHashesYouReclout, postHash)
+		postHashesYouRepost = append(postHashesYouRepost, postHash)
 	}
 
-	return postHashesYouReclout, nil
+	return postHashesYouRepost, nil
 }
 
 // -------------------------------------------------------------------------------------
@@ -2181,7 +2280,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem reading Header bytes")
 	}
-	blockNode.Header = NewMessage(MsgTypeHeader).(*MsgBitCloutHeader)
+	blockNode.Header = NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
 	err = blockNode.Header.FromBytes(headerBytes)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem parsing Header bytes")
@@ -2200,15 +2299,15 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 type ChainType uint8
 
 const (
-	ChainTypeBitCloutBlock = iota
+	ChainTypeDeSoBlock = iota
 	ChainTypeBitcoinHeader
 )
 
 func _prefixForChainType(chainType ChainType) []byte {
 	var prefix []byte
 	switch chainType {
-	case ChainTypeBitCloutBlock:
-		prefix = _KeyBestBitCloutBlockHash
+	case ChainTypeDeSoBlock:
+		prefix = _KeyBestDeSoBlockHash
 	case ChainTypeBitcoinHeader:
 		prefix = _KeyBestBitcoinHeaderHash
 	default:
@@ -2247,9 +2346,17 @@ func BlockHashToBlockKey(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, _PrefixBlockHashToBlock...), blockHash[:]...)
 }
 
-func GetBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) *MsgBitCloutBlock {
+func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPublicKeyBlockHashToBlockReward...)
+	key := append(prefixCopy, publicKey...)
+	key = append(key, blockHash[:]...)
+	return key
+}
+
+func GetBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) *MsgDeSoBlock {
 	hashKey := BlockHashToBlockKey(blockHash)
-	var blockRet *MsgBitCloutBlock
+	var blockRet *MsgDeSoBlock
 
 	item, err := txn.Get(hashKey)
 	if err != nil {
@@ -2257,7 +2364,7 @@ func GetBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) *MsgBitCloutBlock {
 	}
 
 	err = item.Value(func(valBytes []byte) error {
-		ret := NewMessage(MsgTypeBlock).(*MsgBitCloutBlock)
+		ret := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 		if err := ret.FromBytes(valBytes); err != nil {
 			return err
 		}
@@ -2272,9 +2379,9 @@ func GetBlockWithTxn(txn *badger.Txn, blockHash *BlockHash) *MsgBitCloutBlock {
 	return blockRet
 }
 
-func GetBlock(blockHash *BlockHash, handle *badger.DB) (*MsgBitCloutBlock, error) {
+func GetBlock(blockHash *BlockHash, handle *badger.DB) (*MsgDeSoBlock, error) {
 	hashKey := BlockHashToBlockKey(blockHash)
-	var blockRet *MsgBitCloutBlock
+	var blockRet *MsgDeSoBlock
 	err := handle.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(hashKey)
 		if err != nil {
@@ -2282,7 +2389,7 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB) (*MsgBitCloutBlock, error
 		}
 
 		err = item.Value(func(valBytes []byte) error {
-			ret := NewMessage(MsgTypeBlock).(*MsgBitCloutBlock)
+			ret := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 			if err := ret.FromBytes(valBytes); err != nil {
 				return err
 			}
@@ -2304,16 +2411,16 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB) (*MsgBitCloutBlock, error
 	return blockRet, nil
 }
 
-func PutBlockWithTxn(txn *badger.Txn, bitcloutBlock *MsgBitCloutBlock) error {
-	if bitcloutBlock.Header == nil {
-		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", bitcloutBlock)
+func PutBlockWithTxn(txn *badger.Txn, desoBlock *MsgDeSoBlock) error {
+	if desoBlock.Header == nil {
+		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
 	}
-	blockHash, err := bitcloutBlock.Header.Hash()
+	blockHash, err := desoBlock.Header.Hash()
 	if err != nil {
 		return errors.Wrapf(err, "PutBlockWithTxn: Problem hashing header: ")
 	}
 	blockKey := BlockHashToBlockKey(blockHash)
-	data, err := bitcloutBlock.ToBytes(false)
+	data, err := desoBlock.ToBytes(false)
 	if err != nil {
 		return err
 	}
@@ -2327,18 +2434,78 @@ func PutBlockWithTxn(txn *badger.Txn, bitcloutBlock *MsgBitCloutBlock) error {
 	if err := txn.Set(blockKey, data); err != nil {
 		return err
 	}
+
+	// Index the block reward. Used for deducting immature block rewards from user balances.
+	if len(desoBlock.Txns) == 0 {
+		return fmt.Errorf("PutBlockWithTxn: Got block without any txns %v", desoBlock)
+	}
+	blockRewardTxn := desoBlock.Txns[0]
+	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return fmt.Errorf("PutBlockWithTxn: Got block without block reward as first txn %v", desoBlock)
+	}
+	// It's possible the block reward is split across multiple public keys.
+	pubKeyToBlockRewardMap := make(map[PkMapKey]uint64)
+	for _, bro := range desoBlock.Txns[0].TxOutputs {
+		pkMapKey := MakePkMapKey(bro.PublicKey)
+		if _, hasKey := pubKeyToBlockRewardMap[pkMapKey]; !hasKey {
+			pubKeyToBlockRewardMap[pkMapKey] = bro.AmountNanos
+		} else {
+			pubKeyToBlockRewardMap[pkMapKey] += bro.AmountNanos
+		}
+	}
+	for pkMapKey, blockReward := range pubKeyToBlockRewardMap {
+		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
+		if err := txn.Set(blockRewardKey, EncodeUint64(blockReward)); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-func PutBlock(bitcloutBlock *MsgBitCloutBlock, handle *badger.DB) error {
+func PutBlock(desoBlock *MsgDeSoBlock, handle *badger.DB) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return PutBlockWithTxn(txn, bitcloutBlock)
+		return PutBlockWithTxn(txn, desoBlock)
 	})
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn *badger.Txn, publicKey []byte, blockHash *BlockHash,
+) (_balance uint64, _err error) {
+	key := PublicKeyBlockHashToBlockRewardKey(publicKey, blockHash)
+	desoBalanceItem, err := txn.Get(key)
+	if err != nil {
+		return uint64(0), nil
+	}
+	desoBalanceBytes, err := desoBalanceItem.ValueCopy(nil)
+	if err != nil {
+		return uint64(0), errors.Wrap(err, "DbGetBlockRewardForPublicKeyBlockHashWithTxn: "+
+			"Problem getting block reward value, this should never happen: ")
+	}
+	desoBalance := DecodeUint64(desoBalanceBytes)
+
+	return desoBalance, nil
+}
+
+func DbGetBlockRewardForPublicKeyBlockHash(db *badger.DB, publicKey []byte, blockHash *BlockHash,
+) (_balance uint64, _err error) {
+	ret := uint64(0)
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetBlockRewardForPublicKeyBlockHashWithTxn(txn, publicKey, blockHash)
+		if err != nil {
+			return errors.Wrap(err, "DbGetBlockRewardForPublicKeyBlockHash: ")
+		}
+		return nil
+	})
+	if dbErr != nil {
+		return uint64(0), dbErr
+	}
+	return ret, nil
 }
 
 func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
@@ -2447,14 +2614,14 @@ func DbBulkDeleteHeightHashToNodeInfo(
 
 // InitDbWithGenesisBlock initializes the database to contain only the genesis
 // block.
-func InitDbWithBitCloutGenesisBlock(params *BitCloutParams, handle *badger.DB) error {
+func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventManager *EventManager) error {
 	// Construct a node for the genesis block. Its height is zero and it has
 	// no parents. Its difficulty should be set to the initial
 	// difficulty specified in the parameters and it should be assumed to be
 	// valid and stored by the end of this function.
 	genesisBlock := params.GenesisBlock
-	diffTarget := NewBlockHash(params.MinDifficultyTargetHex)
-	blockHash := NewBlockHash(params.GenesisBlockHashHex)
+	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
+	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
 	genesisNode := NewBlockNode(
 		nil, // Parent
 		blockHash,
@@ -2470,7 +2637,7 @@ func InitDbWithBitCloutGenesisBlock(params *BitCloutParams, handle *badger.DB) e
 	// Set the best hash to the genesis block in the db since its the only node
 	// we're currently aware of. Set it for both the header chain and the block
 	// chain.
-	if err := PutBestHash(blockHash, handle, ChainTypeBitCloutBlock); err != nil {
+	if err := PutBestHash(blockHash, handle, ChainTypeDeSoBlock); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 	}
 	// Add the genesis block to the (hash -> block) index.
@@ -2481,7 +2648,7 @@ func InitDbWithBitCloutGenesisBlock(params *BitCloutParams, handle *badger.DB) e
 	if err := PutHeightHashToNodeInfo(genesisNode, handle, false /*bitcoinNodes*/); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting (height, hash -> node) in db")
 	}
-	if err := DbPutNanosPurchased(handle, params.BitCloutNanosPurchasedAtGenesis); err != nil {
+	if err := DbPutNanosPurchased(handle, params.DeSoNanosPurchasedAtGenesis); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 	}
 	if err := DbPutGlobalParamsEntry(handle, InitialGlobalParamsEntry); err != nil {
@@ -2500,7 +2667,7 @@ func InitDbWithBitCloutGenesisBlock(params *BitCloutParams, handle *badger.DB) e
 	utxoView, err := NewUtxoView(handle, params, nil)
 	if err != nil {
 		return fmt.Errorf(
-			"InitDbWithBitCloutGenesisBlock: Error initializing UtxoView")
+			"InitDbWithDeSoGenesisBlock: Error initializing UtxoView")
 	}
 
 	// Add the seed balances to the view.
@@ -2521,24 +2688,25 @@ func InitDbWithBitCloutGenesisBlock(params *BitCloutParams, handle *badger.DB) e
 
 		_, err := utxoView._addUtxo(&utxoEntry)
 		if err != nil {
-			return fmt.Errorf("InitDbWithBitCloutGenesisBlock: Error adding "+
+			return fmt.Errorf("InitDbWithDeSoGenesisBlock: Error adding "+
 				"seed balance at index %v ; output: %v: %v", index, txOutput, err)
 		}
 	}
 
 	// Add the seed txns to the view
+	utxoOpsForBlock := [][]*UtxoOperation{}
 	for txnIndex, txnHex := range params.SeedTxns {
 		txnBytes, err := hex.DecodeString(txnHex)
 		if err != nil {
 			return fmt.Errorf(
-				"InitDbWithBitCloutGenesisBlock: Error decoding seed "+
+				"InitDbWithDeSoGenesisBlock: Error decoding seed "+
 					"txn HEX: %v, txn index: %v, txn hex: %v",
 				err, txnIndex, txnHex)
 		}
-		txn := &MsgBitCloutTxn{}
+		txn := &MsgDeSoTxn{}
 		if err := txn.FromBytes(txnBytes); err != nil {
 			return fmt.Errorf(
-				"InitDbWithBitCloutGenesisBlock: Error decoding seed "+
+				"InitDbWithDeSoGenesisBlock: Error decoding seed "+
 					"txn BYTES: %v, txn index: %v, txn hex: %v",
 				err, txnIndex, txnHex)
 		}
@@ -2546,20 +2714,33 @@ func InitDbWithBitCloutGenesisBlock(params *BitCloutParams, handle *badger.DB) e
 		// processed, which is important.
 		// Set txnSizeBytes to 0 here as the minimum network fee is 0 at genesis block, so there is no need to serialize
 		// these transactions to check if they meet the minimum network fee requirement.
-		_, _, _, _, err = utxoView.ConnectTransaction(
+		var utxoOpsForTxn []*UtxoOperation
+		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(
 			txn, txn.Hash(), 0, 0 /*blockHeight*/, false /*verifySignatures*/, true /*ignoreUtxos*/)
 		if err != nil {
 			return fmt.Errorf(
-				"InitDbWithBitCloutGenesisBlock: Error connecting transaction: %v, "+
+				"InitDbWithDeSoGenesisBlock: Error connecting transaction: %v, "+
 					"txn index: %v, txn hex: %v",
 				err, txnIndex, txnHex)
 		}
+		utxoOpsForBlock = append(utxoOpsForBlock, utxoOpsForTxn)
 	}
+
+	// If we have an event manager, initialize the genesis block with the current
+	// state of the view.
+	if eventManager != nil {
+		eventManager.blockConnected(&BlockEvent{
+			Block:    genesisBlock,
+			UtxoView: utxoView,
+			UtxoOps:  utxoOpsForBlock,
+		})
+	}
+
 	// Flush all the data in the view.
 	err = utxoView.FlushToDb()
 	if err != nil {
 		return fmt.Errorf(
-			"InitDbWithBitCloutGenesisBlock: Error flushing seed txns to DB: %v", err)
+			"InitDbWithDeSoGenesisBlock: Error flushing seed txns to DB: %v", err)
 	}
 
 	return nil
@@ -2700,16 +2881,16 @@ func BlocksPerDuration(duration time.Duration, timeBetweenBlocks time.Duration) 
 	return uint32(int64(duration) / int64(timeBetweenBlocks))
 }
 
-func PkToString(pk []byte, params *BitCloutParams) string {
+func PkToString(pk []byte, params *DeSoParams) string {
 	return Base58CheckEncode(pk, false, params)
 }
 
-func PrivToString(priv []byte, params *BitCloutParams) string {
+func PrivToString(priv []byte, params *DeSoParams) string {
 	return Base58CheckEncode(priv, true, params)
 }
 
 func PkToStringMainnet(pk []byte) string {
-	return Base58CheckEncode(pk, false, &BitCloutMainnetParams)
+	return Base58CheckEncode(pk, false, &DeSoMainnetParams)
 }
 
 func PkToStringBoth(pk []byte) string {
@@ -2717,7 +2898,7 @@ func PkToStringBoth(pk []byte) string {
 }
 
 func PkToStringTestnet(pk []byte) string {
-	return Base58CheckEncode(pk, false, &BitCloutTestnetParams)
+	return Base58CheckEncode(pk, false, &DeSoTestnetParams)
 }
 
 func DbGetTxindexTip(handle *badger.DB) *BlockHash {
@@ -2931,10 +3112,13 @@ type BasicTransferTxindexMetadata struct {
 	TotalOutputNanos uint64
 	FeeNanos         uint64
 	UtxoOpsDump      string
+	UtxoOps          []*UtxoOperation
+	DiamondLevel     int64
+	PostHashHex      string
 }
 type BitcoinExchangeTxindexMetadata struct {
 	BitcoinSpendAddress string
-	// BitCloutOutputPubKeyBase58Check = TransactorPublicKeyBase58Check
+	// DeSoOutputPubKeyBase58Check = TransactorPublicKeyBase58Check
 	SatoshisBurned uint64
 	// NanosCreated = 0 OR TotalOutputNanos+FeeNanos
 	NanosCreated uint64
@@ -2949,9 +3133,13 @@ type CreatorCoinTxindexMetadata struct {
 	// CreatorPublicKeyBase58Check in AffectedPublicKeys
 
 	// Differs depending on OperationType.
-	BitCloutToSellNanos    uint64
+	DeSoToSellNanos        uint64
 	CreatorCoinToSellNanos uint64
-	BitCloutToAddNanos     uint64
+	DeSoToAddNanos         uint64
+
+	// Rosetta needs to know how much DESO was added or removed so it can
+	// model the change to the total deso locked in the creator coin
+	DESOLockedNanosDiff int64
 }
 
 type CreatorCoinTransferTxindexMetadata struct {
@@ -3008,8 +3196,30 @@ type SwapIdentityTxindexMetadata struct {
 	// ParamUpdater = TransactorPublicKeyBase58Check
 
 	FromPublicKeyBase58Check string
+	ToPublicKeyBase58Check   string
 
-	ToPublicKeyBase58Check string
+	// Rosetta needs this information to track creator coin balances
+	FromDeSoLockedNanos uint64
+	ToDeSoLockedNanos   uint64
+}
+
+type NFTBidTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber   uint64
+	BidAmountNanos uint64
+}
+
+type AcceptNFTBidTxindexMetadata struct {
+	NFTPostHashHex              string
+	SerialNumber                uint64
+	BidAmountNanos              uint64
+	CreatorCoinRoyaltyNanos     uint64
+	CreatorPublicKeyBase58Check string
+}
+
+type NFTTransferTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber   uint64
 }
 
 type TransactionMetadata struct {
@@ -3025,18 +3235,39 @@ type TransactionMetadata struct {
 
 	// We store these outputs so we don't have to load the full transaction from disk
 	// when looking up output amounts
-	TxnOutputs []*BitCloutOutput
+	TxnOutputs []*DeSoOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata `json:",omitempty"`
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata `json:",omitempty"`
+	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
+	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata         `json:",omitempty"`
 	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata `json:",omitempty"`
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata `json:",omitempty"`
-	LikeTxindexMetadata                *LikeTxindexMetadata `json:",omitempty"`
-	FollowTxindexMetadata              *FollowTxindexMetadata `json:",omitempty"`
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata `json:",omitempty"`
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata `json:",omitempty"`
+	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
+	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
+	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
+	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
+	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
+	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
+	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
+	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
+}
+
+func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
+	key := DbTxindexTxIDKey(txID)
+	_, err := txn.Get(key)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+func DbCheckTxnExistence(handle *badger.DB, txID *BlockHash) bool {
+	var exists bool
+	handle.View(func(txn *badger.Txn) error {
+		exists = DBCheckTxnExistenceWithTxn(txn, txID)
+		return nil
+	})
+	return exists
 }
 
 func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, txID *BlockHash) *TransactionMetadata {
@@ -3084,7 +3315,7 @@ func DbPutTxindexTransaction(
 }
 
 func _getPublicKeysForTxn(
-	txn *MsgBitCloutTxn, txnMeta *TransactionMetadata, params *BitCloutParams) map[PkMapKey]bool {
+	txn *MsgDeSoTxn, txnMeta *TransactionMetadata, params *DeSoParams) map[PkMapKey]bool {
 
 	// Collect the public keys in the transaction.
 	publicKeys := make(map[PkMapKey]bool)
@@ -3124,7 +3355,7 @@ func _getPublicKeysForTxn(
 }
 
 func DbPutTxindexTransactionMappingsWithTxn(
-	dbTx *badger.Txn, txn *MsgBitCloutTxn, params *BitCloutParams, txnMeta *TransactionMetadata) error {
+	dbTx *badger.Txn, txn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata) error {
 
 	txID := txn.Hash()
 
@@ -3148,16 +3379,16 @@ func DbPutTxindexTransactionMappingsWithTxn(
 }
 
 func DbPutTxindexTransactionMappings(
-	handle *badger.DB, bitcloutTxn *MsgBitCloutTxn, params *BitCloutParams, txnMeta *TransactionMetadata) error {
+	handle *badger.DB, desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata) error {
 
 	return handle.Update(func(dbTx *badger.Txn) error {
 		return DbPutTxindexTransactionMappingsWithTxn(
-			dbTx, bitcloutTxn, params, txnMeta)
+			dbTx, desoTxn, params, txnMeta)
 	})
 }
 
 func DbDeleteTxindexTransactionMappingsWithTxn(
-	dbTxn *badger.Txn, txn *MsgBitCloutTxn, params *BitCloutParams) error {
+	dbTxn *badger.Txn, txn *MsgDeSoTxn, params *DeSoParams) error {
 
 	txID := txn.Hash()
 
@@ -3188,7 +3419,7 @@ func DbDeleteTxindexTransactionMappingsWithTxn(
 }
 
 func DbDeleteTxindexTransactionMappings(
-	handle *badger.DB, txn *MsgBitCloutTxn, params *BitCloutParams) error {
+	handle *badger.DB, txn *MsgDeSoTxn, params *DeSoParams) error {
 
 	return handle.Update(func(dbTx *badger.Txn) error {
 		return DbDeleteTxindexTransactionMappingsWithTxn(dbTx, txn, params)
@@ -3200,9 +3431,9 @@ func DbDeleteTxindexTransactionMappings(
 // problem for a while, but keep an eye on it.
 func DbGetTxindexFullTransactionByTxID(
 	txindexDBHandle *badger.DB, blockchainDBHandle *badger.DB, txID *BlockHash) (
-	_txn *MsgBitCloutTxn, _txnMeta *TransactionMetadata) {
+	_txn *MsgDeSoTxn, _txnMeta *TransactionMetadata) {
 
-	var txnFound *MsgBitCloutTxn
+	var txnFound *MsgDeSoTxn
 	var txnMeta *TransactionMetadata
 	err := txindexDBHandle.View(func(dbTxn *badger.Txn) error {
 		txnMeta = DbGetTxindexTransactionRefByTxIDWithTxn(dbTxn, txID)
@@ -3232,7 +3463,7 @@ func DbGetTxindexFullTransactionByTxID(
 }
 
 // =======================================================================================
-// BitClout app code start
+// DeSo app code start
 // =======================================================================================
 
 func _dbKeyForPostEntryHash(postHash *BlockHash) []byte {
@@ -3313,32 +3544,8 @@ func DBGetPostEntryByPostHash(db *badger.DB, postHash *BlockHash) *PostEntry {
 	return ret
 }
 
-func _dbGetStakeIDPostDBKey(postHash *BlockHash, totalAmountStakedNanos uint64) []byte {
-	// <prefix, StakeIDType | AmountNanos uint64 | PostHash BlockHash> -> <>
-	key := append(_PrefixStakeIDTypeAmountStakeIDIndex, []byte{byte(StakeIDTypePost)}...)
-	key = append(key, EncodeUint64(totalAmountStakedNanos)...)
-	key = append(key, postHash[:]...)
-	return key
-}
-
-func HashToStakeID(hash *BlockHash) []byte {
-	stakeID := make([]byte, btcec.PubKeyBytesLenCompressed)
-	// We need to make the post hash into a uniform 33-byte thing so that
-	// it doesn't conflict with public key stake ids.
-	copy(stakeID, hash[:])
-	stakeID[btcec.PubKeyBytesLenCompressed-1] = 0x00
-
-	return stakeID
-}
-
-func StakeIDToHash(stakeID []byte) *BlockHash {
-	hash := &BlockHash{}
-	copy(hash[:], stakeID[:HashSizeBytes])
-	return hash
-}
-
 func DBDeletePostEntryMappingsWithTxn(
-	txn *badger.Txn, postHash *BlockHash, params *BitCloutParams) error {
+	txn *badger.Txn, postHash *BlockHash, params *DeSoParams) error {
 
 	// First pull up the mapping that exists for the post hash passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -3396,35 +3603,26 @@ func DBDeletePostEntryMappingsWithTxn(
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
 				"stakeMultiple mapping for post hash %v: %v", postHash, err)
 		}
-
-		// Delete the stats for the post.
-		stakeStats := GetStakeEntryStats(postEntry.StakeEntry, params)
-		if err := txn.Delete(_dbGetStakeIDPostDBKey(
-			postEntry.PostHash, stakeStats.TotalStakeNanos)); err != nil {
-
-			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
-				"StakeAmountNanos mapping for post hash %v", postHash)
-		}
 	}
 
-	// Delete the reclout entries for the post.
-	if IsVanillaReclout(postEntry) {
+	// Delete the repost entries for the post.
+	if IsVanillaRepost(postEntry) {
 		if err := txn.Delete(
-			_dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(postEntry.PosterPublicKey, *postEntry.RecloutedPostHash)); err != nil {
-			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem deleting mapping for recloutPostHash to ReclouterPubKey: %v", err)
+			_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash)); err != nil {
+			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem deleting mapping for repostPostHash to ReposterPubKey: %v", err)
 		}
 		if err := txn.Delete(
-			_dbKeyForRecloutedPostHashReclouterPubKey(postEntry.RecloutedPostHash, postEntry.PosterPublicKey)); err != nil {
+			_dbKeyForRepostedPostHashReposterPubKey(postEntry.RepostedPostHash, postEntry.PosterPublicKey)); err != nil {
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem adding "+
-				"mapping for _dbKeyForRecloutedPostHashReclouterPubKey: %v", err)
+				"mapping for _dbKeyForRepostedPostHashReposterPubKey: %v", err)
 		}
-	} else if IsQuotedReclout(postEntry) {
-		// Put quoted reclout stuff.
+	} else if IsQuotedRepost(postEntry) {
+		// Put quoted repost stuff.
 		if err := txn.Delete(
-			_dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash(
-				postEntry.RecloutedPostHash, postEntry.PosterPublicKey, postEntry.PostHash)); err != nil {
+			_dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
+				postEntry.RepostedPostHash, postEntry.PosterPublicKey, postEntry.PostHash)); err != nil {
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem adding "+
-				"mapping for _dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash: %v", err)
+				"mapping for _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash: %v", err)
 
 		}
 	}
@@ -3433,7 +3631,7 @@ func DBDeletePostEntryMappingsWithTxn(
 }
 
 func DBDeletePostEntryMappings(
-	handle *badger.DB, postHash *BlockHash, params *BitCloutParams) error {
+	handle *badger.DB, postHash *BlockHash, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeletePostEntryMappingsWithTxn(txn, postHash, params)
@@ -3441,7 +3639,7 @@ func DBDeletePostEntryMappings(
 }
 
 func DBPutPostEntryMappingsWithTxn(
-	txn *badger.Txn, postEntry *PostEntry, params *BitCloutParams) error {
+	txn *badger.Txn, postEntry *PostEntry, params *DeSoParams) error {
 
 	postDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(postDataBuf).Encode(postEntry)
@@ -3504,53 +3702,42 @@ func DBPutPostEntryMappingsWithTxn(
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for stakeMultipleBps: %v", postEntry)
 		}
-
-		// Get stats for the post.
-		// <prefix | PostType | AmountStaked | PostHash> -> <>
-		stakeStats := GetStakeEntryStats(postEntry.StakeEntry, params)
-		if err := txn.Set(
-			_dbGetStakeIDPostDBKey(
-				postEntry.PostHash, stakeStats.TotalStakeNanos), []byte{}); err != nil {
-
-			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
-				"adding mapping for stakeMultipleBps: %v", postEntry)
-		}
 	}
-	// We treat reclouting the same for both comments and posts.
-	// We only store reclout entry mappings for vanilla reclouts
-	if IsVanillaReclout(postEntry) {
-		recloutEntry := RecloutEntry{
-			RecloutPostHash:   postEntry.PostHash,
-			RecloutedPostHash: postEntry.RecloutedPostHash,
-			ReclouterPubKey:   postEntry.PosterPublicKey,
+	// We treat reposting the same for both comments and posts.
+	// We only store repost entry mappings for vanilla reposts
+	if IsVanillaRepost(postEntry) {
+		repostEntry := RepostEntry{
+			RepostPostHash:   postEntry.PostHash,
+			RepostedPostHash: postEntry.RepostedPostHash,
+			ReposterPubKey:   postEntry.PosterPublicKey,
 		}
-		recloutDataBuf := bytes.NewBuffer([]byte{})
-		gob.NewEncoder(recloutDataBuf).Encode(recloutEntry)
+		repostDataBuf := bytes.NewBuffer([]byte{})
+		gob.NewEncoder(repostDataBuf).Encode(repostEntry)
 		if err := txn.Set(
-			_dbKeyForReclouterPubKeyRecloutedPostHashToRecloutPostHash(postEntry.PosterPublicKey, *postEntry.RecloutedPostHash),
-			recloutDataBuf.Bytes()); err != nil {
-			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding mapping for recloutPostHash to ReclouterPubKey: %v", err)
+			_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash),
+			repostDataBuf.Bytes()); err != nil {
+			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding mapping for repostPostHash to ReposterPubKey: %v", err)
 		}
 		if err := txn.Set(
-			_dbKeyForRecloutedPostHashReclouterPubKey(postEntry.RecloutedPostHash, postEntry.PosterPublicKey),
+			_dbKeyForRepostedPostHashReposterPubKey(postEntry.RepostedPostHash, postEntry.PosterPublicKey),
 			[]byte{}); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
-				"mapping for _dbKeyForRecloutedPostHashReclouterPubKey: %v", err)
+				"mapping for _dbKeyForRepostedPostHashReposterPubKey: %v", err)
 		}
-	} else if IsQuotedReclout(postEntry) {
-		// Put quoted reclout stuff.
+	} else if IsQuotedRepost(postEntry) {
+		// Put quoted repost stuff.
 		if err := txn.Set(
-			_dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash(
-				postEntry.RecloutedPostHash, postEntry.PosterPublicKey, postEntry.PostHash),
+			_dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
+				postEntry.RepostedPostHash, postEntry.PosterPublicKey, postEntry.PostHash),
 			[]byte{}); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
-				"mapping for _dbKeyForRecloutedPostHashReclouterPubKeyRecloutPostHash: %v", err)
+				"mapping for _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash: %v", err)
 		}
 	}
 	return nil
 }
 
-func DBPutPostEntryMappings(handle *badger.DB, postEntry *PostEntry, params *BitCloutParams) error {
+func DBPutPostEntryMappings(handle *badger.DB, postEntry *PostEntry, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutPostEntryMappingsWithTxn(txn, postEntry, params)
@@ -3782,6 +3969,652 @@ func DBGetCommentPostHashesForParentStakeID(
 	return tstampsFetched, commentPostHashes, commentEntriesFetched, nil
 }
 
+// =======================================================================================
+// NFTEntry db functions
+// =======================================================================================
+func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
+	key := append(prefixCopy, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) []byte {
+	prefixCopy := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
+	key := append(prefixCopy, pkid[:]...)
+	key = append(key, BoolToByte(isForSale))
+	key = append(key, EncodeUint64(bidAmountNanos)...)
+	key = append(key, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func DBGetNFTEntryByPostHashSerialNumberWithTxn(
+	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+
+	key := _dbKeyForNFTPostHashSerialNumber(postHash, serialNumber)
+	nftEntryObj := &NFTEntry{}
+	nftEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftEntryObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetNFTEntryByPostHashSerialNumberWithTxn: Problem reading "+
+			"NFTEntry for postHash %v", postHash)
+		return nil
+	}
+	return nftEntryObj
+}
+
+func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+	var ret *NFTEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetNFTEntryByPostHashSerialNumberWithTxn(txn, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+
+	// First pull up the mapping that exists for the post / serial # passed in.
+	// If one doesn't exist then there's nothing to do.
+	nftEntry := DBGetNFTEntryByPostHashSerialNumberWithTxn(txn, nftPostHash, serialNumber)
+	if nftEntry == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete the mapping.
+	if err := txn.Delete(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
+			"nft mapping for pkid %v post hash %v serial number %d", nftEntry.OwnerPKID, nftPostHash, serialNumber)
+	}
+
+	// When an nftEntry exists, delete the mapping.
+	if err := txn.Delete(_dbKeyForNFTPostHashSerialNumber(nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
+			"nft mapping for post hash %v serial number %d", nftPostHash, serialNumber)
+	}
+
+	return nil
+}
+
+func DBDeleteNFTMappings(
+	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteNFTMappingsWithTxn(txn, postHash, serialNumber)
+	})
+}
+
+func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, nftEntry *NFTEntry) error {
+
+	nftDataBuf := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(nftDataBuf).Encode(nftEntry)
+
+	nftEntryBytes := nftDataBuf.Bytes()
+	if err := txn.Set(_dbKeyForNFTPostHashSerialNumber(
+		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+
+		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
+			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	}
+
+	if err := txn.Set(_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(
+		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
+			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
+	}
+
+	return nil
+}
+
+func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutNFTEntryMappingsWithTxn(txn, nftEntry)
+	})
+}
+
+// DBGetNFTEntriesForPostHash gets NFT Entries *from the DB*. Does not include mempool txns.
+func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nftEntries []*NFTEntry) {
+	nftEntries := []*NFTEntry{}
+	prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
+	keyPrefix := append(prefix, nftPostHash[:]...)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	for _, byteString := range entryByteStringsFound {
+		currentEntry := &NFTEntry{}
+		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+		nftEntries = append(nftEntries, currentEntry)
+	}
+	return nftEntries
+}
+
+// =======================================================================================
+// NFTOwnership db functions
+// NOTE: This index is not essential to running the protocol and should be computed
+// outside of the protocol layer once update to the creation of TxIndex are complete.
+// =======================================================================================
+
+func DBGetNFTEntryByNFTOwnershipDetailsWithTxn(
+	txn *badger.Txn, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+
+	key := _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
+	nftEntryObj := &NFTEntry{}
+	nftEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftEntryObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetNFTEntryByNFTOwnershipDetailsWithTxn: Problem reading "+
+			"NFTEntry for postHash %v serial number %d", postHash, serialNumber)
+		return nil
+	}
+	return nftEntryObj
+}
+
+func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSale bool, bidAmountNanos uint64, postHash *BlockHash, serialNumber uint64) *NFTEntry {
+	var ret *NFTEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetNFTEntryByNFTOwnershipDetailsWithTxn(txn, ownerPKID, isForSale, bidAmountNanos, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+// DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
+func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
+	nftEntries := []*NFTEntry{}
+	prefix := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
+	keyPrefix := append(prefix, ownerPKID[:]...)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	for _, byteString := range entryByteStringsFound {
+		currentEntry := &NFTEntry{}
+		gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
+		nftEntries = append(nftEntries, currentEntry)
+	}
+	return nftEntries
+}
+
+// =======================================================================================
+// AcceptedNFTBidEntries db functions
+// NOTE: This index is not essential to running the protocol and should be computed
+// outside of the protocol layer once update to the creation of TxIndex are complete.
+// =======================================================================================
+func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToAcceptedBidEntries...)
+	key := append(prefixCopy, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+	nftDataBuf := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(nftDataBuf).Encode(nftBidEntries)
+
+	acceptedNFTBidEntryBytes := nftDataBuf.Bytes()
+	if err := txn.Set(_dbKeyForPostHashSerialNumberToAcceptedBidEntries(
+		&nftKey.NFTPostHash, nftKey.SerialNumber), acceptedNFTBidEntryBytes); err != nil {
+
+		return errors.Wrapf(err, "DBPutAcceptedNFTBidEntriesMappingWithTxn: Problem "+
+			"adding accepted bid mapping for post: %v, serial number: %d", nftKey.NFTPostHash, nftKey.SerialNumber)
+	}
+	return nil
+}
+
+func DBPutAcceptedNFTBidEntriesMapping(handle *badger.DB, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, nftKey, nftBidEntries)
+	})
+}
+
+func DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(
+	txn *badger.Txn, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
+
+	key := _dbKeyForPostHashSerialNumberToAcceptedBidEntries(postHash, serialNumber)
+	nftBidEntriesObj := &[]*NFTBidEntry{}
+	nftBidEntriesItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = nftBidEntriesItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(nftBidEntriesObj)
+	})
+	if err != nil {
+		glog.Errorf("DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn: Problem reading "+
+			"NFTBidEntries for postHash %v serialNumber %d", postHash, serialNumber)
+		return nil
+	}
+	return nftBidEntriesObj
+}
+
+func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, postHash *BlockHash, serialNumber uint64) *[]*NFTBidEntry {
+	var ret *[]*NFTBidEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, postHash, serialNumber)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, nftPostHash *BlockHash, serialNumber uint64) error {
+
+	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
+	nftBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, nftPostHash, serialNumber)
+	if nftBidEntries == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete both mapping.
+	if err := txn.Delete(_dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash, serialNumber)); err != nil {
+		return errors.Wrapf(err, "DBDeleteAcceptedNFTBidEntriesMappingsWithTxn: Deleting "+
+			"accepted nft bid mapping for post hash %v serial number %d", nftPostHash, serialNumber)
+	}
+
+	return nil
+}
+
+func DBDeleteAcceptedNFTBidMappings(
+	handle *badger.DB, postHash *BlockHash, serialNumber uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, postHash, serialNumber)
+	})
+}
+
+// =======================================================================================
+// NFTBidEntry db functions
+// =======================================================================================
+
+func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *NFTBidEntry) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+	key := append(prefixCopy, bidEntry.NFTPostHash[:]...)
+	key = append(key, EncodeUint64(bidEntry.SerialNumber)...)
+	key = append(key, EncodeUint64(bidEntry.BidAmountNanos)...)
+	key = append(key, bidEntry.BidderPKID[:]...)
+	return key
+}
+
+func _dbKeyForNFTBidderPKIDPostHashSerialNumber(
+	bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
+	key := append(prefixCopy, bidderPKID[:]...)
+	key = append(key, nftPostHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func _dbSeekKeyForNFTBids(nftHash *BlockHash, serialNumber uint64) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+	key := append(prefixCopy, nftHash[:]...)
+	key = append(key, EncodeUint64(serialNumber)...)
+	return key
+}
+
+func DBGetNFTBidEntryForNFTBidKeyWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) *NFTBidEntry {
+
+	key := _dbKeyForNFTBidderPKIDPostHashSerialNumber(
+		&nftBidKey.BidderPKID, &nftBidKey.NFTPostHash, nftBidKey.SerialNumber)
+
+	nftBidItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+
+	// If we get here then it means we actually had a bid amount for this key in the DB.
+	nftBidBytes, err := nftBidItem.ValueCopy(nil)
+	if err != nil {
+		// If we had a problem reading the mapping then log an error and return nil.
+		glog.Errorf("DBGetNFTBidEntryForNFTBidKeyWithTxn: Problem reading "+
+			"bid bytes for bidKey: %v", nftBidKey)
+		return nil
+	}
+
+	nftBidAmountNanos := DecodeUint64(nftBidBytes)
+
+	nftBidEntry := &NFTBidEntry{
+		BidderPKID:     &nftBidKey.BidderPKID,
+		NFTPostHash:    &nftBidKey.NFTPostHash,
+		SerialNumber:   nftBidKey.SerialNumber,
+		BidAmountNanos: nftBidAmountNanos,
+	}
+
+	return nftBidEntry
+}
+
+func DBGetNFTBidEntryForNFTBidKey(db *badger.DB, nftBidKey *NFTBidKey) *NFTBidEntry {
+	var ret *NFTBidEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetNFTBidEntryForNFTBidKeyWithTxn(txn, nftBidKey)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, nftBidKey *NFTBidKey) error {
+
+	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
+	nftBidEntry := DBGetNFTBidEntryForNFTBidKeyWithTxn(txn, nftBidKey)
+	if nftBidEntry == nil {
+		return nil
+	}
+
+	// When an nftEntry exists, delete both mapping.
+	if err := txn.Delete(_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTBidMappingsWithTxn: Deleting "+
+			"nft bid mapping for nftBidKey %v", nftBidKey)
+	}
+
+	// When an nftEntry exists, delete both mapping.
+	if err := txn.Delete(_dbKeyForNFTBidderPKIDPostHashSerialNumber(
+		nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)); err != nil {
+		return errors.Wrapf(err, "DbDeleteNFTBidMappingsWithTxn: Deleting "+
+			"nft bid mapping for nftBidKey %v", nftBidKey)
+	}
+
+	return nil
+}
+
+func DBDeleteNFTBidMappings(handle *badger.DB, nftBidKey *NFTBidKey) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteNFTBidMappingsWithTxn(txn, nftBidKey)
+	})
+}
+
+func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, nftBidEntry *NFTBidEntry) error {
+	// We store two indexes for NFT bids. (1) sorted by bid amount nanos in the key and
+	// (2) sorted by the bidder PKID. Both come in handy.
+
+	// Put the first index --> []byte{} (no data needs to be stored since it all info is in the key)
+	if err := txn.Set(_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), []byte{}); err != nil {
+
+		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
+			"adding mapping to BidderPKID for bid entry: %v", nftBidEntry)
+	}
+
+	// Put the second index --> BidAmountNanos
+	if err := txn.Set(_dbKeyForNFTBidderPKIDPostHashSerialNumber(
+		nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber,
+	), EncodeUint64(nftBidEntry.BidAmountNanos)); err != nil {
+
+		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
+			"adding mapping to BidAmountNanos for bid entry: %v", nftBidEntry)
+	}
+
+	return nil
+}
+
+func DBPutNFTBidEntryMappings(handle *badger.DB, nftEntry *NFTBidEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutNFTBidEntryMappingsWithTxn(txn, nftEntry)
+	})
+}
+
+func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntries []*NFTBidEntry) {
+	nftBidEntries := []*NFTBidEntry{}
+	{
+		prefix := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
+		keyPrefix := append(prefix, bidderPKID[:]...)
+		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix)
+		bidderPKIDLength := len(bidderPKID[:])
+		for ii, keyFound := range keysFound {
+
+			postHashStartIdx := 1 + bidderPKIDLength           // The length of prefix + length of PKID
+			postHashEndIdx := postHashStartIdx + HashSizeBytes // Add the length of the bid amount (uint64).
+
+			// Cut the bid amount out of the key and decode.
+			postHashBytes := keyFound[postHashStartIdx:postHashEndIdx]
+
+			nftHash := &BlockHash{}
+			copy(nftHash[:], postHashBytes)
+
+			serialNumber := DecodeUint64(keyFound[postHashEndIdx:])
+
+			bidAmountNanos := DecodeUint64(valuesFound[ii])
+
+			currentEntry := &NFTBidEntry{
+				NFTPostHash:    nftHash,
+				SerialNumber:   serialNumber,
+				BidderPKID:     bidderPKID,
+				BidAmountNanos: bidAmountNanos,
+			}
+			nftBidEntries = append(nftBidEntries, currentEntry)
+		}
+	}
+	return nftBidEntries
+}
+
+// Get NFT bid Entries *from the DB*. Does not include mempool txns.
+func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber uint64,
+) (_nftBidEntries []*NFTBidEntry) {
+	nftBidEntries := []*NFTBidEntry{}
+	{
+		prefix := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+		keyPrefix := append(prefix, nftPostHash[:]...)
+		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
+		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix)
+		for _, keyFound := range keysFound {
+			bidAmountStartIdx := 1 + HashSizeBytes + 8 // The length of prefix + the post hash + the serial #.
+			bidAmountEndIdx := bidAmountStartIdx + 8   // Add the length of the bid amount (uint64).
+
+			// Cut the bid amount out of the key and decode.
+			bidAmountBytes := keyFound[bidAmountStartIdx:bidAmountEndIdx]
+			bidAmountNanos := DecodeUint64(bidAmountBytes)
+
+			// Cut the pkid bytes out of the keys
+			bidderPKIDBytes := keyFound[bidAmountEndIdx:]
+
+			// Construct the bidder PKID.
+			bidderPKID := PublicKeyToPKID(bidderPKIDBytes)
+
+			currentEntry := &NFTBidEntry{
+				NFTPostHash:    nftPostHash,
+				SerialNumber:   serialNumber,
+				BidderPKID:     bidderPKID,
+				BidAmountNanos: bidAmountNanos,
+			}
+			nftBidEntries = append(nftBidEntries, currentEntry)
+		}
+	}
+	return nftBidEntries
+}
+
+func DBGetNFTBidEntriesPaginated(
+	handle *badger.DB,
+	nftHash *BlockHash,
+	serialNumber uint64,
+	startEntry *NFTBidEntry,
+	limit int,
+	reverse bool,
+) (_bidEntries []*NFTBidEntry) {
+	seekKey := _dbSeekKeyForNFTBids(nftHash, serialNumber)
+	startKey := seekKey
+	if startEntry != nil {
+		startKey = _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(startEntry)
+	}
+	// The key length consists of: (1 prefix byte) + (BlockHash) + (2 x uint64) + (PKID)
+	maxKeyLen := 1 + HashSizeBytes + 16 + btcec.PubKeyBytesLenCompressed
+	keysBytes, _, _ := DBGetPaginatedKeysAndValuesForPrefix(
+		handle,
+		startKey,
+		seekKey,
+		maxKeyLen,
+		limit,
+		reverse,
+		false)
+	// TODO: We should probably handle the err case for this function.
+
+	// Chop up the keyBytes into bid entries.
+	var bidEntries []*NFTBidEntry
+	for _, keyBytes := range keysBytes {
+		serialNumStartIdx := 1 + HashSizeBytes
+		bidAmountStartIdx := serialNumStartIdx + 8
+		bidderPKIDStartIdx := bidAmountStartIdx + 8
+
+		nftHashBytes := keyBytes[1:serialNumStartIdx]
+		serialNumberBytes := keyBytes[serialNumStartIdx:bidAmountStartIdx]
+		bidAmountBytes := keyBytes[bidAmountStartIdx:bidderPKIDStartIdx]
+		bidderPKIDBytes := keyBytes[bidderPKIDStartIdx:]
+
+		nftHash := &BlockHash{}
+		copy(nftHash[:], nftHashBytes)
+		serialNumber := DecodeUint64(serialNumberBytes)
+		bidAmount := DecodeUint64(bidAmountBytes)
+		bidderPKID := &PKID{}
+		copy(bidderPKID[:], bidderPKIDBytes)
+
+		bidEntry := &NFTBidEntry{
+			NFTPostHash:    nftHash,
+			SerialNumber:   serialNumber,
+			BidAmountNanos: bidAmount,
+			BidderPKID:     bidderPKID,
+		}
+
+		bidEntries = append(bidEntries, bidEntry)
+	}
+
+	return bidEntries
+}
+
+// ======================================================================================
+// Authorize derived key functions
+//  	<prefix, owner pub key [33]byte, derived pub key [33]byte> -> <DerivedKeyEntry>
+// ======================================================================================
+
+func _dbKeyForOwnerToDerivedKeyMapping(
+	ownerPublicKey PublicKey, derivedPublicKey PublicKey) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
+	key := append(prefixCopy, ownerPublicKey[:]...)
+	key = append(key, derivedPublicKey[:]...)
+	return key
+}
+
+func _dbSeekPrefixForDerivedKeyMappings(
+	ownerPublicKey PublicKey) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
+	key := append(prefixCopy, ownerPublicKey[:]...)
+	return key
+}
+
+func DBPutDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+
+	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Owner Public Key "+
+			"length %d != %d", len(ownerPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Derived Public Key "+
+			"length %d != %d", len(derivedPublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
+
+	derivedKeyEntryBuffer := bytes.NewBuffer([]byte{})
+	gob.NewEncoder(derivedKeyEntryBuffer).Encode(derivedKeyEntry)
+	return txn.Set(key, derivedKeyEntryBuffer.Bytes())
+}
+
+func DBPutDerivedKeyMapping(
+	handle *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey, derivedKeyEntry)
+	})
+}
+
+func DBGetOwnerToDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
+
+	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
+	derivedKeyEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	derivedKeyEntryBytes, err := derivedKeyEntryItem.ValueCopy(nil)
+	if err != nil {
+		return nil
+	}
+	derivedKeyEntry := &DerivedKeyEntry{}
+	err = derivedKeyEntryItem.Value(func(valBytes []byte) error {
+		return gob.NewDecoder(bytes.NewReader(derivedKeyEntryBytes)).Decode(derivedKeyEntry)
+	})
+
+	return derivedKeyEntry
+}
+
+func DBGetOwnerToDerivedKeyMapping(
+	db *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
+
+	var derivedKeyEntry *DerivedKeyEntry
+	db.View(func(txn *badger.Txn) error {
+		derivedKeyEntry = DBGetOwnerToDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
+		return nil
+	})
+	return derivedKeyEntry
+}
+
+func DBDeleteDerivedKeyMappingWithTxn(
+	txn *badger.Txn, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
+
+	// First check that a mapping exists for the passed in public keys.
+	// If one doesn't exist then there's nothing to do.
+	derivedKeyEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
+		txn, ownerPublicKey, derivedPublicKey)
+	if derivedKeyEntry == nil {
+		return nil
+	}
+
+	// When a mapping exists, delete it.
+	if err := txn.Delete(_dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)); err != nil {
+		return errors.Wrapf(err, "DBDeleteDerivedKeyMappingWithTxn: Deleting "+
+			"ownerPublicKey %s and derivedPublicKey %s failed",
+			PkToStringMainnet(ownerPublicKey[:]), PkToStringMainnet(derivedPublicKey[:]))
+	}
+
+	return nil
+}
+
+func DBDeleteDerivedKeyMapping(
+	handle *badger.DB, ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteDerivedKeyMappingWithTxn(txn, ownerPublicKey, derivedPublicKey)
+	})
+}
+
+func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicKey) (
+	_entries []*DerivedKeyEntry, _err error) {
+
+	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPublicKey)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefix)
+
+	var derivedEntries []*DerivedKeyEntry
+	for _, keyBytes := range valsFound {
+		derivedKeyEntry := &DerivedKeyEntry{}
+		err := gob.NewDecoder(bytes.NewReader(keyBytes)).Decode(derivedKeyEntry)
+		if err != nil {
+			return nil, err
+		}
+		derivedEntries = append(derivedEntries, derivedKeyEntry)
+	}
+
+	return derivedEntries, nil
+}
+
 // ======================================================================================
 // Profile code
 // ======================================================================================
@@ -3800,12 +4633,16 @@ func _dbKeyForProfileUsernameToPKID(nonLowercaseUsername []byte) []byte {
 	return key
 }
 
-// This is the key we use to sort profiles by their amount of BitClout locked
-func _dbKeyForCreatorBitCloutLockedNanosCreatorPKID(bitCloutLockedNanos uint64, pkid *PKID) []byte {
-	key := append([]byte{}, _PrefixCreatorBitCloutLockedNanosCreatorPKID...)
-	key = append(key, EncodeUint64(bitCloutLockedNanos)...)
+// This is the key we use to sort profiles by their amount of DeSo locked
+func _dbKeyForCreatorDeSoLockedNanosCreatorPKID(desoLockedNanos uint64, pkid *PKID) []byte {
+	key := append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
+	key = append(key, EncodeUint64(desoLockedNanos)...)
 	key = append(key, pkid[:]...)
 	return key
+}
+
+func DbPrefixForCreatorDeSoLockedNanosCreatorPKID() []byte {
+	return append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
 }
 
 func DBGetPKIDForUsernameWithTxn(
@@ -3885,7 +4722,7 @@ func DBGetProfileEntryForPKID(db *badger.DB, pkid *PKID) *ProfileEntry {
 }
 
 func DBDeleteProfileEntryMappingsWithTxn(
-	txn *badger.Txn, pkid *PKID, params *BitCloutParams) error {
+	txn *badger.Txn, pkid *PKID, params *DeSoParams) error {
 
 	// First pull up the mapping that exists for the profile pub key passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -3908,10 +4745,10 @@ func DBDeleteProfileEntryMappingsWithTxn(
 			"username mapping for profile username %v", string(profileEntry.Username))
 	}
 
-	// The coin clout mapping
+	// The coin deso mapping
 	if err := txn.Delete(
-		_dbKeyForCreatorBitCloutLockedNanosCreatorPKID(
-			profileEntry.BitCloutLockedNanos, pkid)); err != nil {
+		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
+			profileEntry.DeSoLockedNanos, pkid)); err != nil {
 
 		return errors.Wrapf(err, "DbDeleteProfileEntryMappingsWithTxn: Deleting "+
 			"coin mapping for profile username %v", string(profileEntry.Username))
@@ -3921,7 +4758,7 @@ func DBDeleteProfileEntryMappingsWithTxn(
 }
 
 func DBDeleteProfileEntryMappings(
-	handle *badger.DB, pkid *PKID, params *BitCloutParams) error {
+	handle *badger.DB, pkid *PKID, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteProfileEntryMappingsWithTxn(txn, pkid, params)
@@ -3929,7 +4766,7 @@ func DBDeleteProfileEntryMappings(
 }
 
 func DBPutProfileEntryMappingsWithTxn(
-	txn *badger.Txn, profileEntry *ProfileEntry, pkid *PKID, params *BitCloutParams) error {
+	txn *badger.Txn, profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
 
 	profileDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(profileDataBuf).Encode(profileEntry)
@@ -3950,10 +4787,10 @@ func DBPutProfileEntryMappingsWithTxn(
 			"adding mapping for profile with username: %v", string(profileEntry.Username))
 	}
 
-	// The coin clout mapping
+	// The coin deso mapping
 	if err := txn.Set(
-		_dbKeyForCreatorBitCloutLockedNanosCreatorPKID(
-			profileEntry.BitCloutLockedNanos, pkid), []byte{}); err != nil {
+		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
+			profileEntry.DeSoLockedNanos, pkid), []byte{}); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile coin: ")
@@ -3963,7 +4800,7 @@ func DBPutProfileEntryMappingsWithTxn(
 }
 
 func DBPutProfileEntryMappings(
-	handle *badger.DB, profileEntry *ProfileEntry, pkid *PKID, params *BitCloutParams) error {
+	handle *badger.DB, profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutProfileEntryMappingsWithTxn(txn, profileEntry, pkid, params)
@@ -3976,13 +4813,13 @@ func DBPutProfileEntryMappings(
 // TODO(performance): This currently fetches all profiles. We should implement
 // some kind of pagination instead though.
 func DBGetAllProfilesByCoinValue(handle *badger.DB, fetchEntries bool) (
-	_lockedBitCloutNanos []uint64, _profilePublicKeys []*PKID,
+	_lockedDeSoNanos []uint64, _profilePublicKeys []*PKID,
 	_profileEntries []*ProfileEntry, _err error) {
 
-	lockedBitCloutNanosFetched := []uint64{}
+	lockedDeSoNanosFetched := []uint64{}
 	profilePublicKeysFetched := []*PKID{}
 	profileEntriesFetched := []*ProfileEntry{}
-	dbPrefixx := append([]byte{}, _PrefixCreatorBitCloutLockedNanosCreatorPKID...)
+	dbPrefixx := append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
 
 	err := handle.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
@@ -4004,22 +4841,22 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, fetchEntries bool) (
 
 			// Strip the prefix off the key and check its length. If it contains
 			// a big-endian uint64 then it should be at least eight bytes.
-			lockedBitCloutPubKeyConcatKey := rawKey[1:]
+			lockedDeSoPubKeyConcatKey := rawKey[1:]
 			uint64BytesLen := len(maxBigEndianUint64Bytes)
 			expectedLength := uint64BytesLen + btcec.PubKeyBytesLenCompressed
-			if len(lockedBitCloutPubKeyConcatKey) != expectedLength {
-				return fmt.Errorf("DBGetAllProfilesByLockedBitClout: Invalid key "+
-					"length %d should be at least %d", len(lockedBitCloutPubKeyConcatKey),
+			if len(lockedDeSoPubKeyConcatKey) != expectedLength {
+				return fmt.Errorf("DBGetAllProfilesByLockedDeSo: Invalid key "+
+					"length %d should be at least %d", len(lockedDeSoPubKeyConcatKey),
 					expectedLength)
 			}
 
-			lockedBitCloutNanos := DecodeUint64(lockedBitCloutPubKeyConcatKey[:uint64BytesLen])
+			lockedDeSoNanos := DecodeUint64(lockedDeSoPubKeyConcatKey[:uint64BytesLen])
 
 			// Appended to the stake should be the profile pub key so extract it here.
 			profilePKID := make([]byte, btcec.PubKeyBytesLenCompressed)
-			copy(profilePKID[:], lockedBitCloutPubKeyConcatKey[uint64BytesLen:])
+			copy(profilePKID[:], lockedDeSoPubKeyConcatKey[uint64BytesLen:])
 
-			lockedBitCloutNanosFetched = append(lockedBitCloutNanosFetched, lockedBitCloutNanos)
+			lockedDeSoNanosFetched = append(lockedDeSoNanosFetched, lockedDeSoNanos)
 			profilePublicKeysFetched = append(profilePublicKeysFetched, PublicKeyToPKID(profilePKID))
 		}
 		return nil
@@ -4029,20 +4866,20 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, fetchEntries bool) (
 	}
 
 	if !fetchEntries {
-		return lockedBitCloutNanosFetched, profilePublicKeysFetched, nil, nil
+		return lockedDeSoNanosFetched, profilePublicKeysFetched, nil, nil
 	}
 
 	for _, profilePKID := range profilePublicKeysFetched {
 		profileEntry := DBGetProfileEntryForPKID(handle, profilePKID)
 		if profileEntry == nil {
-			return nil, nil, nil, fmt.Errorf("DBGetAllProfilesByLockedBitClout: "+
+			return nil, nil, nil, fmt.Errorf("DBGetAllProfilesByLockedDeSo: "+
 				"ProfilePubKey %v does not have corresponding entry",
 				PkToStringBoth(profilePKID[:]))
 		}
 		profileEntriesFetched = append(profileEntriesFetched, profileEntry)
 	}
 
-	return lockedBitCloutNanosFetched, profilePublicKeysFetched, profileEntriesFetched, nil
+	return lockedDeSoNanosFetched, profilePublicKeysFetched, profileEntriesFetched, nil
 }
 
 // =====================================================================================
@@ -4117,7 +4954,7 @@ func DBGetCreatorCoinBalanceEntryForCreatorPKIDAndHODLerPubKeyWithTxn(
 
 func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 	txn *badger.Txn, hodlerPKID *PKID, creatorPKID *PKID,
-	params *BitCloutParams) error {
+	params *DeSoParams) error {
 
 	// First pull up the mappings that exists for the keys passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -4139,7 +4976,7 @@ func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
 	}
 
-	// Note: We don't update the CreatorBitCloutLockedNanosCreatorPubKeyIIndex
+	// Note: We don't update the CreatorDeSoLockedNanosCreatorPubKeyIIndex
 	// because we expect that the caller is keeping the individual holdings in
 	// sync with the "total" coins stored in the profile.
 
@@ -4148,7 +4985,7 @@ func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
 
 func DBDeleteCreatorCoinBalanceEntryMappings(
 	handle *badger.DB, hodlerPKID *PKID, creatorPKID *PKID,
-	params *BitCloutParams) error {
+	params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
@@ -4158,7 +4995,7 @@ func DBDeleteCreatorCoinBalanceEntryMappings(
 
 func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 	txn *badger.Txn, balanceEntry *BalanceEntry,
-	params *BitCloutParams) error {
+	params *DeSoParams) error {
 
 	balanceEntryDataBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(balanceEntryDataBuf).Encode(balanceEntry)
@@ -4189,7 +5026,7 @@ func DBPutCreatorCoinBalanceEntryMappingsWithTxn(
 }
 
 func DBPutCreatorCoinBalanceEntryMappings(
-	handle *badger.DB, balanceEntry *BalanceEntry, params *BitCloutParams) error {
+	handle *badger.DB, balanceEntry *BalanceEntry, params *DeSoParams) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutCreatorCoinBalanceEntryMappingsWithTxn(
@@ -4244,26 +5081,21 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, holder *PK
 		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(balanceEntryObj)
 	})
 	if err != nil {
-		glog.Errorf("DbGetReclouterPubKeyRecloutedPostHashToRecloutedPostMappingWithTxn: Problem decoding "+
+		glog.Errorf("DbGetReposterPubKeyRepostedPostHashToRepostedPostMappingWithTxn: Problem decoding "+
 			"balance entry for holder %v and creator %v", PkToStringMainnet(PKIDToPublicKey(holder)), PkToStringMainnet(PKIDToPublicKey(creator)))
 		return nil
 	}
 	return balanceEntryObj
 }
 
-// DbGetBalanceEntriesHodlingYou fetchs the BalanceEntries that the passed in pkid hodls.
-func DbGetBalanceEntriesYouHodl(pkid *PKIDEntry, fetchProfiles bool, filterOutZeroBalances bool, utxoView *UtxoView) (
-	_entriesYouHodl []*BalanceEntry,
-	_profilesYouHodl []*ProfileEntry,
-	_err error) {
-	handle := utxoView.Handle
-	// Get the balance entries for the coins that *you hodl*
+// DbGetBalanceEntriesHodlingYou fetchs the BalanceEntries that the passed in pkid holds.
+func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances bool) ([]*BalanceEntry, error) {
+	// Get the balance entries for the coins that *you hold*
 	balanceEntriesYouHodl := []*BalanceEntry{}
 	{
 		prefix := append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
-		keyPrefix := append(prefix, pkid.PKID[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(
-			handle, keyPrefix)
+		keyPrefix := append(prefix, pkid[:]...)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
@@ -4273,32 +5105,18 @@ func DbGetBalanceEntriesYouHodl(pkid *PKIDEntry, fetchProfiles bool, filterOutZe
 			balanceEntriesYouHodl = append(balanceEntriesYouHodl, currentEntry)
 		}
 	}
-	// Optionally fetch all the profile entries as well.
-	profilesYouHodl := []*ProfileEntry{}
-	if fetchProfiles {
-		for _, balanceEntry := range balanceEntriesYouHodl {
-			// In this case you're the hodler so the creator is the one whose
-			// profile we need to fetch.
-			currentProfileEntry := utxoView.GetProfileEntryForPKID(balanceEntry.CreatorPKID)
-			profilesYouHodl = append(profilesYouHodl, currentProfileEntry)
-		}
-	}
-	return balanceEntriesYouHodl, profilesYouHodl, nil
+
+	return balanceEntriesYouHodl, nil
 }
 
-// DbGetBalanceEntriesHodlingYou fetchs the BalanceEntries that hodl the pkid passed in.
-func DbGetBalanceEntriesHodlingYou(pkid *PKIDEntry, fetchProfiles bool, filterOutZeroBalances bool, utxoView *UtxoView) (
-	_entriesHodlingYou []*BalanceEntry,
-	_profilesHodlingYou []*ProfileEntry,
-	_err error) {
-	handle := utxoView.Handle
-	// Get the balance entries for the coins that *hodl you*
+// DbGetBalanceEntriesHodlingYou fetches the BalanceEntries that hold the pkid passed in.
+func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalances bool) ([]*BalanceEntry, error) {
+	// Get the balance entries for the coins that *hold you*
 	balanceEntriesThatHodlYou := []*BalanceEntry{}
 	{
 		prefix := append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
-		keyPrefix := append(prefix, pkid.PKID[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(
-			handle, keyPrefix)
+		keyPrefix := append(prefix, pkid[:]...)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry)
@@ -4308,39 +5126,8 @@ func DbGetBalanceEntriesHodlingYou(pkid *PKIDEntry, fetchProfiles bool, filterOu
 			balanceEntriesThatHodlYou = append(balanceEntriesThatHodlYou, currentEntry)
 		}
 	}
-	// Optionally fetch all the profile entries as well.
-	profilesThatHodlYou := []*ProfileEntry{}
-	if fetchProfiles {
-		for _, balanceEntry := range balanceEntriesThatHodlYou {
-			// In this case you're the creator and the hodler is the one whose
-			// profile we need to fetch.
-			currentProfileEntry := utxoView.GetProfileEntryForPKID(balanceEntry.HODLerPKID)
-			profilesThatHodlYou = append(profilesThatHodlYou, currentProfileEntry)
-		}
-	}
-	return balanceEntriesThatHodlYou, profilesThatHodlYou, nil
-}
 
-// DbGetCreatorCoinBalanceEntriesForPubKeyWithTxn finds the BalanceEntries corresponding
-// to the public key passed in. It fetched both the entries corresponding to the
-// profiles that *you HODL* and the entries corresponding to the profiles that
-// *HODL you*.
-func DbGetCreatorCoinBalanceEntriesForPubKey(
-	pkid *PKIDEntry, fetchProfiles bool, filterOutZeroBalances bool, utxoView *UtxoView) (
-	_entriesYouHodl []*BalanceEntry, _entriesThatHodlYou []*BalanceEntry,
-	_profilesYouHodl []*ProfileEntry, _profilesThatHodlYou []*ProfileEntry,
-	_err error) {
-
-	balanceEntriesYouHodl, profilesYouHodl, err := DbGetBalanceEntriesYouHodl(pkid, fetchProfiles, filterOutZeroBalances, utxoView)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	balanceEntriesThatHodlYou, profilesThatHodlYou, err := DbGetBalanceEntriesHodlingYou(pkid, fetchProfiles, filterOutZeroBalances, utxoView)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	// If there are no errors, return everything we found.
-	return balanceEntriesYouHodl, balanceEntriesThatHodlYou, profilesYouHodl, profilesThatHodlYou, nil
+	return balanceEntriesThatHodlYou, nil
 }
 
 // =====================================================================================
@@ -4508,7 +5295,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	return postHashes, tstamps, postEntries, nil
 }
 
-func DBGetProfilesByUsernamePrefixAndBitCloutLocked(
+func DBGetProfilesByUsernamePrefixAndDeSoLocked(
 	db *badger.DB, usernamePrefix string, utxoView *UtxoView) (
 	_profileEntries []*ProfileEntry, _err error) {
 
@@ -4523,7 +5310,7 @@ func DBGetProfilesByUsernamePrefixAndBitCloutLocked(
 		0 /*numToFetch (zero fetches all)*/, false, /*reverse*/
 		true /*fetchValues*/)
 	if err != nil {
-		return nil, fmt.Errorf("DBGetProfilesByUsernamePrefixAndBitCloutLocked: %v", err)
+		return nil, fmt.Errorf("DBGetProfilesByUsernamePrefixAndDeSoLocked: %v", err)
 	}
 
 	// Have to do this to convert the PKIDs back into public keys
@@ -4564,47 +5351,47 @@ func DBGetProfilesByUsernamePrefixAndBitCloutLocked(
 	// If there is no error, sort and return numToFetch. Username searches are always
 	// sorted by coin value.
 	sort.Slice(profilesFound, func(ii, jj int) bool {
-		return profilesFound[ii].CoinEntry.BitCloutLockedNanos > profilesFound[jj].CoinEntry.BitCloutLockedNanos
+		return profilesFound[ii].CoinEntry.DeSoLockedNanos > profilesFound[jj].CoinEntry.DeSoLockedNanos
 	})
 
 	return profilesFound, nil
 }
 
-// DBGetPaginatedProfilesByBitCloutLocked returns up to 'numToFetch' profiles from the db.
-func DBGetPaginatedProfilesByBitCloutLocked(
-	db *badger.DB, startBitCloutLockedNanos uint64,
+// DBGetPaginatedProfilesByDeSoLocked returns up to 'numToFetch' profiles from the db.
+func DBGetPaginatedProfilesByDeSoLocked(
+	db *badger.DB, startDeSoLockedNanos uint64,
 	startProfilePubKeyy []byte, numToFetch int, fetchProfileEntries bool) (
 	_profilePublicKeys [][]byte, _profileEntries []*ProfileEntry, _err error) {
 
 	// Convert the start public key to a PKID.
 	pkidEntry := DBGetPKIDEntryForPublicKey(db, startProfilePubKeyy)
 
-	startProfilePrefix := append([]byte{}, _PrefixCreatorBitCloutLockedNanosCreatorPKID...)
-	var startBitCloutLockedBytes []byte
+	startProfilePrefix := append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
+	var startDeSoLockedBytes []byte
 	if pkidEntry != nil {
-		startBitCloutLockedBytes = EncodeUint64(startBitCloutLockedNanos)
-		startProfilePrefix = append(startProfilePrefix, startBitCloutLockedBytes...)
+		startDeSoLockedBytes = EncodeUint64(startDeSoLockedNanos)
+		startProfilePrefix = append(startProfilePrefix, startDeSoLockedBytes...)
 		startProfilePrefix = append(startProfilePrefix, pkidEntry.PKID[:]...)
 	} else {
-		// If no pub key is provided, we just max out bitclout locked and start at the top of the list.
+		// If no pub key is provided, we just max out deso locked and start at the top of the list.
 		maxBigEndianUint64Bytes := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
-		startBitCloutLockedBytes = maxBigEndianUint64Bytes
-		startProfilePrefix = append(startProfilePrefix, startBitCloutLockedBytes...)
+		startDeSoLockedBytes = maxBigEndianUint64Bytes
+		startProfilePrefix = append(startProfilePrefix, startDeSoLockedBytes...)
 	}
 
-	keyLen := len(_PrefixCreatorBitCloutLockedNanosCreatorPKID) + len(startBitCloutLockedBytes) + btcec.PubKeyBytesLenCompressed
-	// We fetch in reverse to get the profiles with the most BitClout locked.
+	keyLen := len(_PrefixCreatorDeSoLockedNanosCreatorPKID) + len(startDeSoLockedBytes) + btcec.PubKeyBytesLenCompressed
+	// We fetch in reverse to get the profiles with the most DeSo locked.
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
-		db, startProfilePrefix, _PrefixCreatorBitCloutLockedNanosCreatorPKID, /*validForPrefix*/
+		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
 		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
-		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByBitCloutLocked: %v", err)
+		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
 
 	// Cut the pkids out of the returned keys.
 	profilePKIDs := [][]byte{}
-	startPKIDIndex := len(_PrefixCreatorBitCloutLockedNanosCreatorPKID) + len(startBitCloutLockedBytes)
+	startPKIDIndex := len(_PrefixCreatorDeSoLockedNanosCreatorPKID) + len(startDeSoLockedBytes)
 	endPKIDIndex := startPKIDIndex + btcec.PubKeyBytesLenCompressed
 	for _, profileKeyBytes := range profileIndexKeys {
 		currentPKID := make([]byte, btcec.PubKeyBytesLenCompressed)
@@ -4630,7 +5417,7 @@ func DBGetPaginatedProfilesByBitCloutLocked(
 		copy(pkid[:], profilePKID)
 		profileEntry := DBGetProfileEntryForPKID(db, pkid)
 		if profileEntry == nil {
-			return nil, nil, fmt.Errorf("DBGetAllProfilesByLockedBitClout: "+
+			return nil, nil, fmt.Errorf("DBGetAllProfilesByLockedDeSo: "+
 				"ProfilePKID %v does not have corresponding entry",
 				PkToStringBoth(profilePKID))
 		}
@@ -4642,12 +5429,12 @@ func DBGetPaginatedProfilesByBitCloutLocked(
 
 // -------------------------------------------------------------------------------------
 // Mempool Txn mapping funcions
-// <prefix, txn hash BlockHash> -> <*MsgBitCloutTxn>
+// <prefix, txn hash BlockHash> -> <*MsgDeSoTxn>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMempoolTxn(mempoolTx *MempoolTx) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixMempoolTxnHashToMsgBitCloutTxn...)
+	prefixCopy := append([]byte{}, _PrefixMempoolTxnHashToMsgDeSoTxn...)
 	timeAddedBytes := EncodeUint64(uint64(mempoolTx.Added.UnixNano()))
 	key := append(prefixCopy, timeAddedBytes...)
 	key = append(key, mempoolTx.Hash[:]...)
@@ -4676,9 +5463,9 @@ func DbPutMempoolTxn(handle *badger.DB, mempoolTx *MempoolTx) error {
 	})
 }
 
-func DbGetMempoolTxnWithTxn(txn *badger.Txn, mempoolTx *MempoolTx) *MsgBitCloutTxn {
+func DbGetMempoolTxnWithTxn(txn *badger.Txn, mempoolTx *MempoolTx) *MsgDeSoTxn {
 
-	mempoolTxnObj := &MsgBitCloutTxn{}
+	mempoolTxnObj := &MsgDeSoTxn{}
 	mempoolTxnItem, err := txn.Get(_dbKeyForMempoolTxn(mempoolTx))
 	if err != nil {
 		return nil
@@ -4694,8 +5481,8 @@ func DbGetMempoolTxnWithTxn(txn *badger.Txn, mempoolTx *MempoolTx) *MsgBitCloutT
 	return mempoolTxnObj
 }
 
-func DbGetMempoolTxn(db *badger.DB, mempoolTx *MempoolTx) *MsgBitCloutTxn {
-	var ret *MsgBitCloutTxn
+func DbGetMempoolTxn(db *badger.DB, mempoolTx *MempoolTx) *MsgDeSoTxn {
+	var ret *MsgDeSoTxn
 	db.View(func(txn *badger.Txn) error {
 		ret = DbGetMempoolTxnWithTxn(txn, mempoolTx)
 		return nil
@@ -4703,12 +5490,12 @@ func DbGetMempoolTxn(db *badger.DB, mempoolTx *MempoolTx) *MsgBitCloutTxn {
 	return ret
 }
 
-func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*MsgBitCloutTxn, _error error) {
-	_, valuesFound := _enumerateKeysForPrefix(handle, _PrefixMempoolTxnHashToMsgBitCloutTxn)
+func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*MsgDeSoTxn, _error error) {
+	_, valuesFound := _enumerateKeysForPrefix(handle, _PrefixMempoolTxnHashToMsgDeSoTxn)
 
-	mempoolTxns := []*MsgBitCloutTxn{}
+	mempoolTxns := []*MsgDeSoTxn{}
 	for _, mempoolTxnBytes := range valuesFound {
-		mempoolTxn := &MsgBitCloutTxn{}
+		mempoolTxn := &MsgDeSoTxn{}
 		err := mempoolTxn.FromBytes(mempoolTxnBytes)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DbGetAllMempoolTxnsSortedByTimeAdded: failed to decode mempoolTxnBytes.")
@@ -4723,7 +5510,7 @@ func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*Ms
 }
 
 func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn) error {
-	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, _PrefixMempoolTxnHashToMsgBitCloutTxn)
+	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, _PrefixMempoolTxnHashToMsgDeSoTxn)
 	if err != nil {
 		return errors.Wrapf(err, "DbDeleteAllMempoolTxnsWithTxn: ")
 	}

@@ -6,10 +6,10 @@ var (
 		"alexisohanian":   false,
 		"iamscientist":    false,
 		"travisscher":     false,
-		"bitcloutpulse":   false,
+		"desopulse":   false,
 		"v":               false,
 		"paul":            false,
-		"bitcloutlist":    false,
+		"desolist":    false,
 		"edwinhonoret":    false,
 		"fallows":         false,
 		"maebeam":         false,
@@ -17,7 +17,7 @@ var (
 		"merlin":          false,
 		"clippy":          false,
 		"neilstrauss":     false,
-		"bitclout":        false,
+		"deso":        false,
 		"wallstreetbets":  false,
 		"aplusk":          false,
 		"chamath":         false,
@@ -14115,5 +14115,6 @@ var (
 		"troygiorshev":    true,
 		"ummjackson":      true,
 		"maciejhirsz":     true,
+		"reesew":          true,
 	}
 )

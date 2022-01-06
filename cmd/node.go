@@ -4,29 +4,32 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/DataDog/datadog-go/statsd"
-	"github.com/bitclout/core/lib"
 	"net"
 	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/DataDog/datadog-go/statsd"
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/migrate"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
-	"github.com/sasha-s/go-deadlock"
+	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
 type Node struct {
-	Server  *lib.Server
-	chainDB *badger.DB
-	TXIndex *lib.TXIndex
-	Params  *lib.BitCloutParams
-	Config  *Config
+	Server   *lib.Server
+	chainDB  *badger.DB
+	TXIndex  *lib.TXIndex
+	Params   *lib.DeSoParams
+	Config   *Config
+	Postgres *lib.Postgres
 }
 
 func NewNode(config *Config) *Node {
@@ -39,11 +42,11 @@ func NewNode(config *Config) *Node {
 
 func (node *Node) Start() {
 	// TODO: Replace glog with logrus so we can also get rid of flag library
-	flag.Parse()
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
 	flag.Set("vmodule", node.Config.GlogVmodule)
-	glog.Init()
+	flag.Set("alsologtostderr", "true")
+	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
 
 	// Print config
@@ -73,34 +76,28 @@ func (node *Node) Start() {
 	}
 
 	// Setup listeners and peers
-	bitcloutAddrMgr := addrmgr.New(node.Config.DataDirectory, net.LookupIP)
-	bitcloutAddrMgr.Start()
+	desoAddrMgr := addrmgr.New(node.Config.DataDirectory, net.LookupIP)
+	desoAddrMgr.Start()
 
 	listeningAddrs, listeners := getAddrsToListenOn(node.Config.ProtocolPort)
 
 	for _, addr := range listeningAddrs {
 		netAddr := wire.NewNetAddress(&addr, 0)
-		_ = bitcloutAddrMgr.AddLocalAddress(netAddr, addrmgr.BoundPrio)
+		_ = desoAddrMgr.AddLocalAddress(netAddr, addrmgr.BoundPrio)
 	}
 
 	if len(node.Config.ConnectIPs) == 0 {
 		for _, host := range node.Config.AddIPs {
-			addIPsForHost(bitcloutAddrMgr, host, node.Params)
+			addIPsForHost(desoAddrMgr, host, node.Params)
 		}
 
 		for _, host := range node.Params.DNSSeeds {
-			addIPsForHost(bitcloutAddrMgr, host, node.Params)
+			addIPsForHost(desoAddrMgr, host, node.Params)
 		}
 
 		if !node.Config.PrivateMode {
-			go addSeedAddrsFromPrefixes(bitcloutAddrMgr, node.Params)
+			go addSeedAddrsFromPrefixes(desoAddrMgr, node.Params)
 		}
-	}
-
-	bitcoinDataDir := filepath.Join(node.Config.DataDirectory, "bitcoin_manager")
-	if err := os.MkdirAll(bitcoinDataDir, os.ModePerm); err != nil {
-		fmt.Errorf("Could not create Bitcoin datadir (%s): %v", node.Config.DataDirectory, err)
-		panic(err)
 	}
 
 	// Setup chain database
@@ -118,13 +115,40 @@ func (node *Node) Start() {
 		lib.StartDBSummarySnapshots(node.chainDB)
 	}
 
+	// Setup postgres using a remote URI
+	var db *pg.DB
+	if node.Config.PostgresURI != "" {
+		options, err := pg.ParseURL(node.Config.PostgresURI)
+		if err != nil {
+			panic(err)
+		}
+
+		db = pg.Connect(options)
+		node.Postgres = lib.NewPostgres(db)
+
+		// LoadMigrations registers all the migration files in the migrate package.
+		// See LoadMigrations for more info.
+		migrate.LoadMigrations()
+
+		// Migrate the database after loading all the migrations. This is equivalent
+		// to running "go run migrate.go migrate". See migrate.go for a migrations CLI tool
+		err = migrations.Run(db, "migrate", []string{"", "migrate"})
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Setup eventManager
+	eventManager := lib.NewEventManager()
+
 	// Setup the server
 	node.Server, err = lib.NewServer(
 		node.Params,
 		listeners,
-		bitcloutAddrMgr,
+		desoAddrMgr,
 		node.Config.ConnectIPs,
 		node.chainDB,
+		node.Postgres,
 		node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers,
 		node.Config.MinerPublicKeys,
@@ -133,7 +157,6 @@ func (node *Node) Start() {
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,
 		node.Config.StallTimeoutSeconds,
-		bitcoinDataDir,
 		node.Config.MaxBlockTemplatesCache,
 		node.Config.MinBlockUpdateInterval,
 		node.Config.BlockCypherAPIKey,
@@ -143,12 +166,11 @@ func (node *Node) Start() {
 		node.Config.DisableNetworking,
 		node.Config.ReadOnlyMode,
 		node.Config.IgnoreInboundInvs,
-		node.Config.BitcoinConnectPeer,
-		node.Config.IgnoreUnminedBitcoin,
 		statsdClient,
 		node.Config.BlockProducerSeed,
 		node.Config.TrustedBlockProducerPublicKeys,
 		node.Config.TrustedBlockProducerStartHeight,
+		eventManager,
 	)
 	if err != nil {
 		panic(err)
@@ -156,9 +178,9 @@ func (node *Node) Start() {
 
 	node.Server.Start()
 
-	// Setup TXIndex
-	if node.Config.TXIndex {
-		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Server.GetBitcoinManager(), node.Params, node.Config.DataDirectory)
+	// Setup TXIndex - not compatible with postgres
+	if node.Config.TXIndex && node.Postgres == nil {
+		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
 		if err != nil {
 			glog.Fatal(err)
 		}
@@ -169,22 +191,23 @@ func (node *Node) Start() {
 
 func (node *Node) Stop() {
 	node.Server.Stop()
-	node.chainDB.Close()
 
 	if node.TXIndex != nil {
 		node.TXIndex.Stop()
 	}
+
+	node.chainDB.Close()
 }
 
-func validateParams(params *lib.BitCloutParams) {
+func validateParams(params *lib.DeSoParams) {
 	if params.BitcoinBurnAddress == "" {
-		glog.Fatalf("The BitCloutParams being used are missing the BitcoinBurnAddress field.")
+		glog.Fatalf("The DeSoParams being used are missing the BitcoinBurnAddress field.")
 	}
 
 	// Check that TimeBetweenDifficultyRetargets is evenly divisible
 	// by TimeBetweenBlocks.
 	if params.TimeBetweenBlocks == 0 {
-		glog.Fatalf("The BitCloutParams being used have TimeBetweenBlocks=0")
+		glog.Fatalf("The DeSoParams being used have TimeBetweenBlocks=0")
 	}
 	numBlocks := params.TimeBetweenDifficultyRetargets / params.TimeBetweenBlocks
 	truncatedTime := params.TimeBetweenBlocks * numBlocks
@@ -195,7 +218,7 @@ func validateParams(params *lib.BitCloutParams) {
 	}
 
 	if params.GenesisBlock == nil || params.GenesisBlockHashHex == "" {
-		glog.Fatalf("The BitCloutParams are missing genesis block info.")
+		glog.Fatalf("The DeSoParams are missing genesis block info.")
 	}
 
 	// Compute the merkle root for the genesis block and make sure it matches.
@@ -212,28 +235,28 @@ func validateParams(params *lib.BitCloutParams) {
 	genesisHash, err := params.GenesisBlock.Header.Hash()
 	if err != nil {
 		glog.Fatalf("Problem hashing header for the GenesisBlock in "+
-			"the BitCloutParams (%+v): %v", params.GenesisBlock.Header, err)
+			"the DeSoParams (%+v): %v", params.GenesisBlock.Header, err)
 	}
 	genesisHashHex := hex.EncodeToString(genesisHash[:])
 	if genesisHashHex != params.GenesisBlockHashHex {
-		glog.Fatalf("GenesisBlockHash in BitCloutParams (%s) does not match the block "+
+		glog.Fatalf("GenesisBlockHash in DeSoParams (%s) does not match the block "+
 			"hash computed (%s) %d %d", params.GenesisBlockHashHex, genesisHashHex, len(params.GenesisBlockHashHex), len(genesisHashHex))
 	}
 
 	if params.MinDifficultyTargetHex == "" {
-		glog.Fatalf("The BitCloutParams MinDifficultyTargetHex (%s) should be non-empty",
+		glog.Fatalf("The DeSoParams MinDifficultyTargetHex (%s) should be non-empty",
 			params.MinDifficultyTargetHex)
 	}
 
 	// Check to ensure the genesis block hash meets the initial difficulty target.
 	hexBytes, err := hex.DecodeString(params.MinDifficultyTargetHex)
 	if err != nil || len(hexBytes) != 32 {
-		glog.Fatalf("The BitCloutParams MinDifficultyTargetHex (%s) with length (%d) is "+
+		glog.Fatalf("The DeSoParams MinDifficultyTargetHex (%s) with length (%d) is "+
 			"invalid: %v", params.MinDifficultyTargetHex, len(params.MinDifficultyTargetHex), err)
 	}
 
 	if params.MaxDifficultyRetargetFactor == 0 {
-		glog.Fatalf("The BitCloutParams MaxDifficultyRetargetFactor is unset")
+		glog.Fatalf("The DeSoParams MaxDifficultyRetargetFactor is unset")
 	}
 }
 
@@ -272,25 +295,25 @@ func getAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
 	return listeningAddrs, listeners
 }
 
-func addIPsForHost(bitcloutAddrMgr *addrmgr.AddrManager, host string, params *lib.BitCloutParams) {
+func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.DeSoParams) {
 	ipAddrs, err := net.LookupIP(host)
 	if err != nil {
-		glog.Tracef("_addSeedAddrs: DNS discovery failed on seed host (continuing on): %s %v\n", host, err)
+		glog.V(2).Infof("_addSeedAddrs: DNS discovery failed on seed host (continuing on): %s %v\n", host, err)
 		return
 	}
 	if len(ipAddrs) == 0 {
-		glog.Tracef("_addSeedAddrs: No IPs found for host: %s\n", host)
+		glog.V(2).Infof("_addSeedAddrs: No IPs found for host: %s\n", host)
 		return
 	}
 
 	// Don't take more than 5 IPs per host.
 	ipsPerHost := 5
 	if len(ipAddrs) > ipsPerHost {
-		glog.Debugf("_addSeedAddrs: Truncating IPs found from %d to %d\n", len(ipAddrs), ipsPerHost)
+		glog.V(1).Infof("_addSeedAddrs: Truncating IPs found from %d to %d\n", len(ipAddrs), ipsPerHost)
 		ipAddrs = ipAddrs[:ipsPerHost]
 	}
 
-	glog.Debugf("_addSeedAddrs: Adding seed IPs from seed %s: %v\n", host, ipAddrs)
+	glog.V(1).Infof("_addSeedAddrs: Adding seed IPs from seed %s: %v\n", host, ipAddrs)
 
 	// Convert addresses to NetAddress'es.
 	netAddrs := make([]*wire.NetAddress, len(ipAddrs))
@@ -305,18 +328,18 @@ func addIPsForHost(bitcloutAddrMgr *addrmgr.AddrManager, host string, params *li
 			ip,
 			params.DefaultSocketPort)
 	}
-	glog.Debugf("_addSeedAddrs: Computed the following wire.NetAddress'es: %s", spew.Sdump(netAddrs))
+	glog.V(1).Infof("_addSeedAddrs: Computed the following wire.NetAddress'es: %s", spew.Sdump(netAddrs))
 
 	// Normally the second argument is the source who told us about the
 	// addresses we're adding. In this case since the source is a DNS seed
 	// just use the first address in the fetch as the source.
-	bitcloutAddrMgr.AddAddresses(netAddrs, netAddrs[0])
+	desoAddrMgr.AddAddresses(netAddrs, netAddrs[0])
 }
 
 // Must be run in a goroutine. This function continuously adds IPs from a DNS seed
 // prefix+suffix by iterating up through all of the possible numeric values, which are typically
 // [0, 10]
-func addSeedAddrsFromPrefixes(bitcloutAddrMgr *addrmgr.AddrManager, params *lib.BitCloutParams) {
+func addSeedAddrsFromPrefixes(desoAddrMgr *addrmgr.AddrManager, params *lib.DeSoParams) {
 	MaxIterations := 20
 
 	go func() {
@@ -326,8 +349,8 @@ func addSeedAddrsFromPrefixes(bitcloutAddrMgr *addrmgr.AddrManager, params *lib.
 				wg.Add(1)
 				go func(dnsGenerator []string) {
 					dnsString := fmt.Sprintf("%s%d%s", dnsGenerator[0], dnsNumber, dnsGenerator[1])
-					glog.Tracef("_addSeedAddrsFromPrefixes: Querying DNS seed: %s", dnsString)
-					addIPsForHost(bitcloutAddrMgr, dnsString, params)
+					glog.V(2).Infof("_addSeedAddrsFromPrefixes: Querying DNS seed: %s", dnsString)
+					addIPsForHost(desoAddrMgr, dnsString, params)
 					wg.Done()
 				}(dnsGeneratorOuter)
 			}

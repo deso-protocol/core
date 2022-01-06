@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
@@ -82,17 +83,17 @@ func TestProcessBlock(t *testing.T) {
 	}
 }
 
-func _copyBlock(blk *MsgBitCloutBlock) *MsgBitCloutBlock {
+func _copyBlock(blk *MsgDeSoBlock) *MsgDeSoBlock {
 	data, _ := blk.ToBytes(false)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgBitCloutBlock)
+	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 	_ = testBlock.FromBytes(data)
 
 	return testBlock
 }
 
 func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
-	blockB3, blockB4, blockB5 *MsgBitCloutBlock) {
+	blockB3, blockB4, blockB5 *MsgDeSoBlock) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -104,7 +105,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
-		// Mine two blocks to give the sender some BitClout.
+		// Mine two blocks to give the sender some DeSo.
 		blockA1, err = miner1.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool1)
 		require.NoError(err)
 		blockA2, err = miner1.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool1)
@@ -115,7 +116,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
-		// Mine two blocks to give the sender some BitClout.
+		// Mine two blocks to give the sender some DeSo.
 		blockB1, err = miner1.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool1)
 		require.NoError(err)
 		blockB2, err = miner1.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool1)
@@ -132,7 +133,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 	return
 }
 
-func NewTestBlockchain() (*Blockchain, *BitCloutParams, *badger.DB) {
+func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 	db, _ := GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
 
@@ -141,7 +142,7 @@ func NewTestBlockchain() (*Blockchain, *BitCloutParams, *badger.DB) {
 
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
-	paramsCopy := BitCloutTestnetParams
+	paramsCopy := DeSoTestnetParams
 
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, &paramsCopy,
 		timesource, db, nil, nil)
@@ -153,16 +154,16 @@ func NewTestBlockchain() (*Blockchain, *BitCloutParams, *badger.DB) {
 }
 
 func NewLowDifficultyBlockchain() (
-	*Blockchain, *BitCloutParams, *badger.DB) {
+	*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	return NewLowDifficultyBlockchainWithParams(&BitCloutTestnetParams)
+	return NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
 }
 
-func NewLowDifficultyBlockchainWithParams(params *BitCloutParams) (
-	*Blockchain, *BitCloutParams, *badger.DB) {
+func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
+	*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
@@ -173,8 +174,8 @@ func NewLowDifficultyBlockchainWithParams(params *BitCloutParams) (
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
 	paramsCopy := *params
-	paramsCopy.GenesisBlock = &MsgBitCloutBlock{
-		Header: &MsgBitCloutHeader{
+	paramsCopy.GenesisBlock = &MsgDeSoBlock{
+		Header: &MsgDeSoHeader{
 			Version:               0,
 			PrevBlockHash:         mustDecodeHexBlockHash("0000000000000000000000000000000000000000000000000000000000000000"),
 			TransactionMerkleRoot: mustDecodeHexBlockHash("097158f0d27e6d10565c4dc696c784652c3380e0ff8382d3599a4d18b782e965"),
@@ -183,10 +184,10 @@ func NewLowDifficultyBlockchainWithParams(params *BitCloutParams) (
 			Nonce:                 uint64(0),
 			// No ExtraNonce is set in the genesis block
 		},
-		Txns: []*MsgBitCloutTxn{
+		Txns: []*MsgDeSoTxn{
 			{
-				TxInputs:  []*BitCloutInput{},
-				TxOutputs: []*BitCloutOutput{},
+				TxInputs:  []*DeSoInput{},
+				TxOutputs: []*DeSoOutput{},
 				TxnMeta: &BlockRewardMetadataa{
 					ExtraData: []byte("They came here, to the new world. World 2.0, version 1776."),
 				},
@@ -205,7 +206,7 @@ func NewLowDifficultyBlockchainWithParams(params *BitCloutParams) (
 	paramsCopy.BlockRewardMaturity = time.Second * 4
 	paramsCopy.TimeBetweenDifficultyRetargets = 100 * time.Second
 	paramsCopy.MaxDifficultyRetargetFactor = 2
-	paramsCopy.SeedBalances = []*BitCloutOutput{
+	paramsCopy.SeedBalances = []*DeSoOutput{
 		{
 			PublicKey:   MustBase58CheckDecode(moneyPkString),
 			AmountNanos: uint64(2000000 * NanosPerUnit),
@@ -213,7 +214,7 @@ func NewLowDifficultyBlockchainWithParams(params *BitCloutParams) (
 	}
 
 	// Temporarily modify the seed balances to make a specific public
-	// key have some BitClout
+	// key have some DeSo
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0,
 		&paramsCopy, timesource, db, nil, nil)
 	if err != nil {
@@ -223,13 +224,13 @@ func NewLowDifficultyBlockchainWithParams(params *BitCloutParams) (
 	return chain, &paramsCopy, db
 }
 
-func NewTestMiner(t *testing.T, chain *Blockchain, params *BitCloutParams, isSender bool) (*BitCloutMempool, *BitCloutMiner) {
+func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender bool) (*DeSoMempool, *DeSoMiner) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	mempool := NewBitCloutMempool(
+	mempool := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
@@ -240,19 +241,19 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *BitCloutParams, isSen
 		minerPubKeys = append(minerPubKeys, recipientPkString)
 	}
 
-	blockProducer, err := NewBitCloutBlockProducer(
+	blockProducer, err := NewDeSoBlockProducer(
 		0, 1,
 		blockSignerSeed,
 		mempool, chain,
-		nil, params)
+		params, nil)
 	require.NoError(err)
 
-	newMiner, err := NewBitCloutMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
+	newMiner, err := NewDeSoMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
 	require.NoError(err)
 	return mempool, newMiner
 }
 
-func _getBalance(t *testing.T, chain *Blockchain, mempool *BitCloutMempool, pkStr string) uint64 {
+func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr string) uint64 {
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
@@ -263,7 +264,38 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *BitCloutMempool, pkSt
 	for _, utxoEntry := range utxoEntriesFound {
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
+
+	utxoView, err := NewUtxoView(chain.db, chain.params, nil)
+	require.NoError(t, err)
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+	}
+
+	balanceNanos, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		pkBytes, chain.headerTip().Height)
+	require.NoError(t, err)
+
+	// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
+	require.Equal(t, balanceForUserNanos, balanceNanos)
+
 	return balanceForUserNanos
+}
+
+func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr string,
+) (_desoLocked uint64, _coinsInCirculation uint64) {
+	pkBytes, _, err := Base58CheckDecode(pkStr)
+	require.NoError(t, err)
+
+	utxoView, _ := NewUtxoView(db, params, nil)
+
+	// Profile fields
+	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)
+	if creatorProfile == nil {
+		return 0, 0
+	}
+
+	return creatorProfile.DeSoLockedNanos, creatorProfile.CoinsInCirculationNanos
 }
 
 func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {
@@ -291,13 +323,13 @@ func TestBasicTransferReorg(t *testing.T) {
 	{
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 
-		// Mine two blocks to give the sender some BitClout.
+		// Mine two blocks to give the sender some DeSo.
 		_, err := miner1.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool1)
 		require.NoError(err)
 		_, err = miner1.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool1)
 		require.NoError(err)
 
-		// Have the sender send some BitClout to the recipient and have the
+		// Have the sender send some DeSo to the recipient and have the
 		// recipient send some back. Mine both of these transactions into
 		// a block.
 		{
@@ -318,7 +350,7 @@ func TestBasicTransferReorg(t *testing.T) {
 		require.Equal(3, len(block.Txns))
 		require.Equal(uint64(13), _getBalance(t, chain1, mempool1, recipientPkString))
 
-		// Have the sender send a bit more BitClout over and mine that into a
+		// Have the sender send a bit more DeSo over and mine that into a
 		// block.
 		{
 			txn := _assembleBasicTransferTxnFullySigned(t, chain1, 2, 0,
@@ -341,7 +373,7 @@ func TestBasicTransferReorg(t *testing.T) {
 			require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 		}
 
-		// Have the recipient send some BitClout back and mine that into a block.
+		// Have the recipient send some DeSo back and mine that into a block.
 		{
 			txn := _assembleBasicTransferTxnFullySigned(t, chain1, 8, 0,
 				recipientPkString, senderPkString, recipientPrivString, mempool1)
@@ -353,7 +385,7 @@ func TestBasicTransferReorg(t *testing.T) {
 		// block reward adds one txn.
 		require.Equal(2, len(block.Txns))
 
-		// Recipient should have exactly 7 BitClout after all this.
+		// Recipient should have exactly 7 DeSo after all this.
 		require.Equal(uint64(7), _getBalance(t, chain1, mempool1, recipientPkString))
 	}
 
@@ -362,11 +394,11 @@ func TestBasicTransferReorg(t *testing.T) {
 	// from the sender to the recipient right before the third block
 	// just to make things interesting.
 	chain2, _, _ := NewLowDifficultyBlockchain()
-	forkBlocks := []*MsgBitCloutBlock{}
+	forkBlocks := []*MsgDeSoBlock{}
 	{
 		mempool2, miner2 := NewTestMiner(t, chain2, params, true /*isSender*/)
 
-		// Mine two blocks to give the sender some BitClout.
+		// Mine two blocks to give the sender some DeSo.
 		block, err := miner2.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool2)
 		require.NoError(err)
 		forkBlocks = append(forkBlocks, block)
@@ -374,7 +406,7 @@ func TestBasicTransferReorg(t *testing.T) {
 		require.NoError(err)
 		forkBlocks = append(forkBlocks, block)
 
-		// Have the sender send some BitClout to the recipient and have the
+		// Have the sender send some DeSo to the recipient and have the
 		// recipient send some back. Mine both of these transactions into
 		// a block.
 		{
@@ -438,13 +470,13 @@ func TestProcessBlockConnectBlocks(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	var blockA1 *MsgBitCloutBlock
+	var blockA1 *MsgDeSoBlock
 	{
 		chain1, params, _ := NewLowDifficultyBlockchain()
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
-		// Mine two blocks to give the sender some BitClout.
+		// Mine two blocks to give the sender some DeSo.
 		var err error
 		blockA1, err = miner1.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool1)
 		require.NoError(err)
@@ -454,7 +486,7 @@ func TestProcessBlockConnectBlocks(t *testing.T) {
 	_shouldConnectBlock(blockA1, t, chain)
 }
 
-func _shouldConnectBlock(blk *MsgBitCloutBlock, t *testing.T, chain *Blockchain) {
+func _shouldConnectBlock(blk *MsgDeSoBlock, t *testing.T, chain *Blockchain) {
 	require := require.New(t)
 
 	blockHash, _ := blk.Hash()
@@ -476,7 +508,7 @@ func TestSeedBalancesTest(t *testing.T) {
 
 	chain, params, db := NewTestBlockchain()
 	for _, seedBalance := range params.SeedBalances {
-		require.Equal(int64(1), int64(GetUtxoNumEntries(db)))
+		require.Equal(int64(482), int64(GetUtxoNumEntries(db)))
 		foundUtxos, err := chain.GetSpendableUtxosForPublicKey(seedBalance.PublicKey, nil, nil)
 		require.NoError(err)
 		require.Equal(int64(1), int64(len(foundUtxos)))
@@ -486,11 +518,7 @@ func TestSeedBalancesTest(t *testing.T) {
 
 func init() {
 	// Set up logging.
-	glog.GlogFlags.AlsoToStderr = true
-	glog.Init()
-	log.Printf("Logging to folder: %s", glog.GlogFlags.LogDir)
-	log.Printf("Symlink to latest: %s", glog.GlogFlags.Symlink)
-	log.Println("To log output on commandline, run with -alsologtostderr")
+	flag.Set("alsologtostderr", "true")
 	glog.CopyStandardLogTo("INFO")
 }
 
@@ -673,7 +701,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 	}
 }
 
-func _assembleBasicTransferTxnNoInputs(t *testing.T, amountNanos uint64) *MsgBitCloutTxn {
+func _assembleBasicTransferTxnNoInputs(t *testing.T, amountNanos uint64) *MsgDeSoTxn {
 	require := require.New(t)
 
 	// manual_entropy_hex=0
@@ -686,14 +714,14 @@ func _assembleBasicTransferTxnNoInputs(t *testing.T, amountNanos uint64) *MsgBit
 
 	// Assemble the transaction so that inputs can be found and fees can
 	// be computed.
-	txnOutputs := []*BitCloutOutput{}
-	txnOutputs = append(txnOutputs, &BitCloutOutput{
+	txnOutputs := []*DeSoOutput{}
+	txnOutputs = append(txnOutputs, &DeSoOutput{
 		PublicKey:   recipientPkBytes,
 		AmountNanos: amountNanos,
 	})
-	txn := &MsgBitCloutTxn{
+	txn := &MsgDeSoTxn{
 		// The inputs will be set below.
-		TxInputs:  []*BitCloutInput{},
+		TxInputs:  []*DeSoInput{},
 		TxOutputs: txnOutputs,
 		PublicKey: senderPkBytes,
 		TxnMeta:   &BasicTransferMetadata{},
@@ -704,22 +732,39 @@ func _assembleBasicTransferTxnNoInputs(t *testing.T, amountNanos uint64) *MsgBit
 	return txn
 }
 
-func _signTxn(t *testing.T, txn *MsgBitCloutTxn, privKeyStrArg string) {
+func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 	require := require.New(t)
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	require.NoError(err)
 	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
+	txn.Signature = txnSignature
+}
+
+// Signs the transaction with a derived key. Transaction ExtraData contains the derived
+// public key, so that _verifySignature() knows transaction wasn't signed by the owner.
+func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
+	require := require.New(t)
+
+	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+	require.NoError(err)
+	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	if txn.ExtraData == nil {
+		txn.ExtraData = make(map[string][]byte)
+	}
+	txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
+	txnSignature, err := txn.Sign(privateKey)
+	require.NoError(err)
+
 	txn.Signature = txnSignature
 }
 
 func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,
 	amountNanos uint64, feeRateNanosPerKB uint64, senderPkStrArg string,
 	recipientPkStrArg string, privKeyStrArg string,
-	mempool *BitCloutMempool) *MsgBitCloutTxn {
+	mempool *DeSoMempool) *MsgDeSoTxn {
 
 	require := require.New(t)
 
@@ -733,14 +778,14 @@ func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,
 
 	// Assemble the transaction so that inputs can be found and fees can
 	// be computed.
-	txnOutputs := []*BitCloutOutput{}
-	txnOutputs = append(txnOutputs, &BitCloutOutput{
+	txnOutputs := []*DeSoOutput{}
+	txnOutputs = append(txnOutputs, &DeSoOutput{
 		PublicKey:   recipientPkBytes,
 		AmountNanos: amountNanos,
 	})
-	txn := &MsgBitCloutTxn{
+	txn := &MsgDeSoTxn{
 		// The inputs will be set below.
-		TxInputs:  []*BitCloutInput{},
+		TxInputs:  []*DeSoInput{},
 		TxOutputs: txnOutputs,
 		PublicKey: senderPkBytes,
 		TxnMeta:   &BasicTransferMetadata{},
@@ -809,7 +854,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 	// Save the block reward in the first block to use it for testing.
 	firstBlockReward := CalcBlockRewardNanos(1)
 
-	// Connect a block. The sender address should have mined some BitClout but
+	// Connect a block. The sender address should have mined some DeSo but
 	// it should be unspendable until the block after this one. See
 	// BlockRewardMaturity.
 	_shouldConnectBlock(blockB1, t, chain)
@@ -888,7 +933,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 	// Save the block reward in the first block to use it for testing.
 	firstBlockReward := CalcBlockRewardNanos(1)
 
-	// Connect a block. The sender address should have mined some BitClout but
+	// Connect a block. The sender address should have mined some DeSo but
 	// it should be unspendable until the block after this one. See
 	// BlockRewardMaturity.
 	_shouldConnectBlock(blockB1, t, chain)
@@ -902,8 +947,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 		txn := _assembleBasicTransferTxnFullySigned(t, chain, spendAmount, feeRateNanosPerKB,
 			senderPkString, recipientPkString, senderPrivString, nil)
 		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1,
-			true /*verifySignatures*/, false, /*checkMerkleProof*/
-			0, nil)
+			true /*verifySignatures*/, nil)
 		require.NoError(err)
 	}
 
@@ -916,7 +960,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 		{
 			senderPkBytes, _, err := Base58CheckDecode(senderPkString)
 			require.NoError(err)
-			txn.TxOutputs = append(txn.TxOutputs, &BitCloutOutput{
+			txn.TxOutputs = append(txn.TxOutputs, &DeSoOutput{
 				PublicKey: senderPkBytes,
 				// Guaranteed to be more than we're allowed to spend.
 				AmountNanos: firstBlockReward,
@@ -925,10 +969,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 			_signTxn(t, txn, senderPrivString)
 		}
 
-		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1,
-			true,  /*verifySignatures*/
-			false, /*checkMerkleProof*/
-			0, nil)
+		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnOutputExceedsInput)
 	}
@@ -943,16 +984,13 @@ func TestValidateBasicTransfer(t *testing.T) {
 		// yet.
 		b2RewardHash := blockB2.Txns[0].Hash()
 		require.NotNil(b2RewardHash)
-		txn.TxInputs = append(txn.TxInputs, &BitCloutInput{
+		txn.TxInputs = append(txn.TxInputs, &DeSoInput{
 			TxID:  *b2RewardHash,
 			Index: 0,
 		})
 		// Re-sign the transaction.
 		_signTxn(t, txn, senderPrivString)
-		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1,
-			true,  /*verifySignatures*/
-			false, /*checkMerkleProof*/
-			0, nil)
+		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInputSpendsImmatureBlockReward)
 	}
@@ -991,7 +1029,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &BitCloutParams{
+	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
@@ -1013,7 +1051,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgBitCloutHeader{
+			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampSecs: uint64(ii),
 			},
@@ -1050,7 +1088,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgBitCloutHeader{
+			&MsgDeSoHeader{
 				// Blocks generating every 4 second, which is 2x too slow.
 				TstampSecs: uint64(ii * 4),
 			},
@@ -1087,7 +1125,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &BitCloutParams{
+	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
@@ -1109,7 +1147,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgBitCloutHeader{
+			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampSecs: uint64(ii),
 			},
@@ -1146,7 +1184,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgBitCloutHeader{
+			&MsgDeSoHeader{
 				// Blocks generating every 8 second, which is >2x too slow.
 				TstampSecs: uint64(ii * 4),
 			},
@@ -1183,7 +1221,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &BitCloutParams{
+	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
@@ -1205,7 +1243,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgBitCloutHeader{
+			&MsgDeSoHeader{
 				// Blocks generating all at once.
 				TstampSecs: uint64(0),
 			},
@@ -1238,7 +1276,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &BitCloutParams{
+	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
@@ -1260,7 +1298,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgBitCloutHeader{
+			&MsgDeSoHeader{
 				// Blocks generating every 2 second, which is under the limit.
 				TstampSecs: uint64(ii * 2),
 			},
@@ -1293,7 +1331,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	_ = assert
 	_ = require
 
-	fakeParams := &BitCloutParams{
+	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
@@ -1315,7 +1353,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgBitCloutHeader{
+			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampSecs: uint64(ii),
 			},
@@ -1352,7 +1390,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			uint32(ii),
 			nextDiff,
 			nil,
-			&MsgBitCloutHeader{
+			&MsgDeSoHeader{
 				// Blocks generating every 3 seconds, which is slow but under the limit.
 				TstampSecs: uint64(float32(ii) * 3),
 			},
@@ -1387,7 +1425,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	}, diffsAsInts)
 }
 
-func _testMerkleRoot(t *testing.T, shouldFail bool, blk *MsgBitCloutBlock) {
+func _testMerkleRoot(t *testing.T, shouldFail bool, blk *MsgDeSoBlock) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
@@ -1419,7 +1457,7 @@ func TestBadBlockSignature(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&BitCloutTestnetParams)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
 
 	// Change the trusted public keys expected by the blockchain.
 	chain.trustedBlockProducerPublicKeys = make(map[PkMapKey]bool)
@@ -1474,7 +1512,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, _ := NewLowDifficultyBlockchainWithParams(&BitCloutTestnetParams)
+	chain, params, _ := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Make the senderPk a paramUpdater for this test
@@ -1495,7 +1533,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
 	require.NoError(err)
 	txn, _, _, _, err := chain.CreateUpdateGlobalParamsTxn(
-		senderPkBytes, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil)
+		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, 100 /*feeRateNanosPerKB*/, nil, []*DeSoOutput{})
 	require.NoError(err)
 
 	// Mine a few blocks to give the senderPkString some money.
@@ -1511,6 +1549,10 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 		true /*verifySignatures*/)
 	require.NoError(err)
 	require.Equal(1, len(txDescsAdded))
+
+	// Make sure that the forbidden pub key made it into the mempool properly.
+	_, entryExists := mempool.universalUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(blockSignerPkBytes)]
+	require.True(entryExists)
 
 	// Mine the transaction.
 	forbiddenPubKeyBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

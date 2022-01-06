@@ -3,15 +3,16 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/btcsuite/btcd/btcec"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/bxcodec/faker"
-	merkletree "github.com/laser/go-merkle-tree"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +27,7 @@ var postHashForTesting1 = BlockHash{
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
 
-var expectedVer = &MsgBitCloutVersion{
+var expectedVer = &MsgDeSoVersion{
 	Version:              1,
 	Services:             SFFullNode,
 	TstampSecs:           2,
@@ -69,16 +70,16 @@ func TestVerack(t *testing.T) {
 	var buf bytes.Buffer
 
 	nonce := uint64(12345678910)
-	_, err := WriteMessage(&buf, &MsgBitCloutVerack{Nonce: nonce}, networkType)
+	_, err := WriteMessage(&buf, &MsgDeSoVerack{Nonce: nonce}, networkType)
 	require.NoError(err)
 	verBytes := buf.Bytes()
 	testMsg, _, err := ReadMessage(bytes.NewReader(verBytes),
 		networkType)
 	require.NoError(err)
-	require.Equal(&MsgBitCloutVerack{Nonce: nonce}, testMsg)
+	require.Equal(&MsgDeSoVerack{Nonce: nonce}, testMsg)
 }
 
-var expectedBlockHeader = &MsgBitCloutHeader{
+var expectedBlockHeader = &MsgDeSoHeader{
 	Version: 1,
 	PrevBlockHash: &BlockHash{
 		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
@@ -96,7 +97,7 @@ var expectedBlockHeader = &MsgBitCloutHeader{
 	TstampSecs: uint64(1678943210),
 	Height:     uint64(1321012345),
 	Nonce:      uint64(12345678901234),
-	ExtraNonce:      uint64(101234123456789),
+	ExtraNonce: uint64(101234123456789),
 }
 
 func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
@@ -121,7 +122,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		payload, err := WriteMessage(&buf, expectedBlockHeader, networkType)
 		assert.NoError(err)
 		// Form the header from the payload and make sure it matches.
-		hdrFromPayload := NewMessage(MsgTypeHeader).(*MsgBitCloutHeader)
+		hdrFromPayload := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
 		assert.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
 		assert.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice.")
 		err = hdrFromPayload.FromBytes(payload)
@@ -155,14 +156,14 @@ func TestGetHeadersSerialization(t *testing.T) {
 	hash1 := expectedBlockHeader.PrevBlockHash
 	hash2 := expectedBlockHeader.TransactionMerkleRoot
 
-	getHeaders := &MsgBitCloutGetHeaders{
+	getHeaders := &MsgDeSoGetHeaders{
 		StopHash:     hash1,
 		BlockLocator: []*BlockHash{hash1, hash2, hash1},
 	}
 
 	messageBytes, err := getHeaders.ToBytes(false)
 	require.NoError(err)
-	newMessage := &MsgBitCloutGetHeaders{}
+	newMessage := &MsgDeSoGetHeaders{}
 	err = newMessage.FromBytes(messageBytes)
 	require.NoError(err)
 	require.Equal(getHeaders, newMessage)
@@ -176,15 +177,15 @@ func TestHeaderBundleSerialization(t *testing.T) {
 
 	hash1 := expectedBlockHeader.PrevBlockHash
 
-	headerBundle := &MsgBitCloutHeaderBundle{
-		Headers:   []*MsgBitCloutHeader{expectedBlockHeader, expectedBlockHeader},
+	headerBundle := &MsgDeSoHeaderBundle{
+		Headers:   []*MsgDeSoHeader{expectedBlockHeader, expectedBlockHeader},
 		TipHash:   hash1,
 		TipHeight: 12345,
 	}
 
 	messageBytes, err := headerBundle.ToBytes(false)
 	require.NoError(err)
-	newMessage := &MsgBitCloutHeaderBundle{}
+	newMessage := &MsgDeSoHeaderBundle{}
 	err = newMessage.FromBytes(messageBytes)
 	require.NoError(err)
 	require.Equal(headerBundle, newMessage)
@@ -250,11 +251,11 @@ func TestReadWrite(t *testing.T) {
 	assert.Error(err, "Payload too large should fail.")
 }
 
-var expectedBlock = &MsgBitCloutBlock{
+var expectedBlock = &MsgDeSoBlock{
 	Header: expectedBlockHeader,
-	Txns: []*MsgBitCloutTxn{
+	Txns: []*MsgDeSoTxn{
 		{
-			TxInputs: []*BitCloutInput{
+			TxInputs: []*DeSoInput{
 				{
 					TxID: *CopyBytesIntoBlockHash([]byte{
 						// random bytes
@@ -276,7 +277,7 @@ var expectedBlock = &MsgBitCloutBlock{
 					Index: 222,
 				},
 			},
-			TxOutputs: []*BitCloutOutput{
+			TxOutputs: []*DeSoOutput{
 				{
 					PublicKey: []byte{
 						// random bytes
@@ -311,7 +312,7 @@ var expectedBlock = &MsgBitCloutBlock{
 			//Signature: []byte{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90},
 		},
 		{
-			TxInputs: []*BitCloutInput{
+			TxInputs: []*DeSoInput{
 				{
 					TxID: *CopyBytesIntoBlockHash([]byte{
 						// random bytes
@@ -333,7 +334,7 @@ var expectedBlock = &MsgBitCloutBlock{
 					Index: 222,
 				},
 			},
-			TxOutputs: []*BitCloutOutput{
+			TxOutputs: []*DeSoOutput{
 				{
 					PublicKey: []byte{
 						// random bytes
@@ -369,7 +370,7 @@ var expectedBlock = &MsgBitCloutBlock{
 	},
 
 	BlockProducerInfo: &BlockProducerInfo{
-		PublicKey:  []byte{
+		PublicKey: []byte{
 			// random bytes
 			0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x30,
 			0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x10,
@@ -379,7 +380,7 @@ var expectedBlock = &MsgBitCloutBlock{
 	},
 }
 
-var expectedV0Header = &MsgBitCloutHeader{
+var expectedV0Header = &MsgDeSoHeader{
 	Version: 0,
 	PrevBlockHash: &BlockHash{
 		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
@@ -413,7 +414,7 @@ func TestBlockSerialize(t *testing.T) {
 	data, err := expectedBlock.ToBytes(false)
 	require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgBitCloutBlock)
+	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 	err = testBlock.FromBytes(data)
 	require.NoError(err)
 
@@ -433,7 +434,7 @@ func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
 	data, err := blockWithoutProducerInfo.ToBytes(false)
 	require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgBitCloutBlock)
+	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 	err = testBlock.FromBytes(data)
 	require.NoError(err)
 
@@ -455,7 +456,7 @@ func TestBlockRewardTransactionSerialize(t *testing.T) {
 	data, err := expectedBlock.Txns[0].ToBytes(false)
 	require.NoError(err)
 
-	testTxn := NewMessage(MsgTypeTxn).(*MsgBitCloutTxn)
+	testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 	err = testTxn.FromBytes(data)
 	require.NoError(err)
 	require.Equal(expectedBlock.Txns[0], testTxn)
@@ -467,7 +468,7 @@ func TestSerializeInv(t *testing.T) {
 	_ = assert
 	_ = require
 
-	invMsg := &MsgBitCloutInv{
+	invMsg := &MsgDeSoInv{
 		InvList: []*InvVect{
 			{
 				Type: InvTypeBlock,
@@ -483,7 +484,7 @@ func TestSerializeInv(t *testing.T) {
 
 	bb, err := invMsg.ToBytes(false)
 	require.NoError(err)
-	invMsgFromBuf := &MsgBitCloutInv{}
+	invMsgFromBuf := &MsgDeSoInv{}
 	invMsgFromBuf.FromBytes(bb)
 	require.Equal(*invMsg, *invMsgFromBuf)
 }
@@ -491,7 +492,7 @@ func TestSerializeInv(t *testing.T) {
 func TestSerializeAddresses(t *testing.T) {
 	require := require.New(t)
 
-	addrs := &MsgBitCloutAddr{
+	addrs := &MsgDeSoAddr{
 		AddrList: []*SingleAddr{
 			{
 				Timestamp: time.Unix(1000, 0),
@@ -510,7 +511,7 @@ func TestSerializeAddresses(t *testing.T) {
 
 	bb, err := addrs.ToBytes(false)
 	require.NoError(err)
-	parsedAddrs := &MsgBitCloutAddr{}
+	parsedAddrs := &MsgDeSoAddr{}
 	err = parsedAddrs.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(addrs, parsedAddrs)
@@ -519,7 +520,7 @@ func TestSerializeAddresses(t *testing.T) {
 func TestSerializeGetBlocks(t *testing.T) {
 	require := require.New(t)
 
-	msg := &MsgBitCloutGetBlocks{
+	msg := &MsgDeSoGetBlocks{
 		HashList: []*BlockHash{
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 			{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
@@ -529,7 +530,7 @@ func TestSerializeGetBlocks(t *testing.T) {
 
 	bb, err := msg.ToBytes(false)
 	require.NoError(err)
-	parsedMsg := &MsgBitCloutGetBlocks{}
+	parsedMsg := &MsgDeSoGetBlocks{}
 	err = parsedMsg.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(msg, parsedMsg)
@@ -539,25 +540,25 @@ func TestSerializePingPong(t *testing.T) {
 	require := require.New(t)
 
 	{
-		msg := &MsgBitCloutPing{
+		msg := &MsgDeSoPing{
 			Nonce: uint64(1234567891011),
 		}
 
 		bb, err := msg.ToBytes(false)
 		require.NoError(err)
-		parsedMsg := &MsgBitCloutPing{}
+		parsedMsg := &MsgDeSoPing{}
 		err = parsedMsg.FromBytes(bb)
 		require.NoError(err)
 		require.Equal(msg, parsedMsg)
 	}
 	{
-		msg := &MsgBitCloutPong{
+		msg := &MsgDeSoPong{
 			Nonce: uint64(1234567891011),
 		}
 
 		bb, err := msg.ToBytes(false)
 		require.NoError(err)
-		parsedMsg := &MsgBitCloutPong{}
+		parsedMsg := &MsgDeSoPong{}
 		err = parsedMsg.FromBytes(bb)
 		require.NoError(err)
 		require.Equal(msg, parsedMsg)
@@ -567,7 +568,7 @@ func TestSerializePingPong(t *testing.T) {
 func TestSerializeGetTransactions(t *testing.T) {
 	require := require.New(t)
 
-	msg := &MsgBitCloutGetTransactions{
+	msg := &MsgDeSoGetTransactions{
 		HashList: []*BlockHash{
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
 			{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0},
@@ -577,7 +578,7 @@ func TestSerializeGetTransactions(t *testing.T) {
 
 	bb, err := msg.ToBytes(false)
 	require.NoError(err)
-	parsedMsg := &MsgBitCloutGetTransactions{}
+	parsedMsg := &MsgDeSoGetTransactions{}
 	err = parsedMsg.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(msg, parsedMsg)
@@ -586,13 +587,13 @@ func TestSerializeGetTransactions(t *testing.T) {
 func TestSerializeTransactionBundle(t *testing.T) {
 	require := require.New(t)
 
-	msg := &MsgBitCloutTransactionBundle{
+	msg := &MsgDeSoTransactionBundle{
 		Transactions: expectedBlock.Txns,
 	}
 
 	bb, err := msg.ToBytes(false)
 	require.NoError(err)
-	parsedMsg := &MsgBitCloutTransactionBundle{}
+	parsedMsg := &MsgDeSoTransactionBundle{}
 	err = parsedMsg.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(msg, parsedMsg)
@@ -602,7 +603,7 @@ func TestSerializeMempool(t *testing.T) {
 	require := require.New(t)
 
 	{
-		msg := &MsgBitCloutMempool{}
+		msg := &MsgDeSoMempool{}
 		networkType := NetworkType_MAINNET
 		var buf bytes.Buffer
 		_, err := WriteMessage(&buf, msg, networkType)
@@ -619,7 +620,7 @@ func TestSerializeGetAddr(t *testing.T) {
 	require := require.New(t)
 
 	{
-		msg := &MsgBitCloutGetAddr{}
+		msg := &MsgDeSoGetAddr{}
 		networkType := NetworkType_MAINNET
 		var buf bytes.Buffer
 		_, err := WriteMessage(&buf, msg, networkType)
@@ -855,13 +856,217 @@ func TestSerializeCreatorCoinTransfer(t *testing.T) {
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-		0x00, 0x01}
+		0x00, 0x01, 0x02}
 	faker.FakeData(&txMeta)
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
 	testMeta, err := NewTxnMetadata(TxnTypeCreatorCoinTransfer)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeCreateNFT(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &CreateNFTMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.NumCopies = uint64(100)
+	txMeta.HasUnlockable = true
+	txMeta.IsForSale = true
+	txMeta.MinBidAmountNanos = 9876
+	txMeta.NFTRoyaltyToCreatorBasisPoints = 1234
+	txMeta.NFTRoyaltyToCoinBasisPoints = 4321
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeCreateNFT)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeUpdateNFT(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &UpdateNFTMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+	txMeta.IsForSale = true
+	txMeta.MinBidAmountNanos = 9876
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeUpdateNFT)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeAcceptNFTBid(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &AcceptNFTBidMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+	txMeta.BidderPKID = PublicKeyToPKID([]byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02})
+	txMeta.BidAmountNanos = 999
+	txMeta.BidderInputs = []*DeSoInput{
+		{
+			TxID: *CopyBytesIntoBlockHash([]byte{
+				// random bytes
+				0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10,
+				0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20,
+				0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30,
+				0x31, 0x32,
+			}),
+			Index: 111,
+		},
+		{
+			TxID: *CopyBytesIntoBlockHash([]byte{
+				// random bytes
+				0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50,
+				0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x70,
+				0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x90,
+				0x91, 0x92,
+			}),
+			Index: 222,
+		},
+	}
+	txMeta.UnlockableText = []byte("accept nft bid")
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeAcceptNFTBid)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeNFTBid(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &NFTBidMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+	txMeta.BidAmountNanos = uint64(123456789)
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeNFTBid)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeNFTTransfer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &NFTTransferMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+	txMeta.ReceiverPublicKey = []byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02}
+	txMeta.UnlockableText = []byte("accept nft bid")
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeNFTTransfer)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestAcceptNFTTransfer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &AcceptNFTTransferMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeAcceptNFTTransfer)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestBurnNFT(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &BurnNFTMetadata{}
+	txMeta.NFTPostHash = &BlockHash{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1}
+	txMeta.SerialNumber = uint64(99)
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeBurnNFT)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
@@ -877,7 +1082,7 @@ func TestDecodeHeaderVersion0(t *testing.T) {
 	headerHex := "0000000002030405060708091011121314151617181920212223242526272829303132333435363738394041424344454647484950515253545556575859606162636465737271709f86010040e20100"
 	headerBytes, err := hex.DecodeString(headerHex)
 	require.NoError(err)
-	v0Header := &MsgBitCloutHeader{}
+	v0Header := &MsgDeSoHeader{}
 	v0Header.FromBytes(headerBytes)
 
 	require.Equal(expectedV0Header, v0Header)
@@ -897,7 +1102,7 @@ func TestDecodeBlockVersion0(t *testing.T) {
 	blockHex := "500000000002030405060708091011121314151617181920212223242526272829303132333435363738394041424344454647484950515253545556575859606162636465737271709f86010040e2010002bd010201020304050607080910111213141516171819202122232425262728293031326f4142434445464748495061626364656667686970818283848586878889909192de0102010203040506070809102122232425262728293021222324252627282930212223cd02313233343536373839104142434445464748493021222324252627282930212223cd02011514919293949596979899107172737475767778799009112233445566778899010864756d6d796b657905010203040500ae010221222324252627282930111213141516171819200102030405060708091031326f6162636465666768697041424344454647484950818283848586878889909192de0102212223242526272829300102030405060708091021222324252627282930212223cd02414243444546474849303132333435363738391021222324252627282930212223cd020115147172737475767778799091929394959697989910095566778811223344990000"
 	blockBytes, err := hex.DecodeString(blockHex)
 	require.NoError(err)
-	v0Block := &MsgBitCloutBlock{}
+	v0Block := &MsgDeSoBlock{}
 	v0Block.FromBytes(blockBytes)
 
 	expectedV0Block := *expectedBlock

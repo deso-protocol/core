@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"bytes"
 	"container/heap"
 	"container/list"
 	"encoding/hex"
@@ -22,14 +21,12 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
 )
 
-// mempool.go contains all of the mempool logic for the BitClout node.
+// mempool.go contains all of the mempool logic for the DeSo node.
 
 const (
 	// MaxTotalTransactionSizeBytes is the maximum number of bytes the pool can store
@@ -67,7 +64,7 @@ var (
 // MempoolTx contains a transaction along with additional metadata like the
 // fee and time added.
 type MempoolTx struct {
-	Tx *MsgBitCloutTxn
+	Tx *MsgDeSoTxn
 
 	// TxMeta is the transaction metadata
 	TxMeta *TransactionMetadata
@@ -144,16 +141,16 @@ func (pq *MempoolTxFeeMinHeap) Pop() interface{} {
 
 // UnconnectedTx is a transaction that has dependencies that we haven't added yet.
 type UnconnectedTx struct {
-	tx *MsgBitCloutTxn
+	tx *MsgDeSoTxn
 	// The ID of the Peer who initially sent the unconnected txn. Useful for
 	// removing unconnected transactions when a Peer disconnects.
 	peerID     uint64
 	expiration time.Time
 }
 
-// BitCloutMempool is the core mempool object. It's what any outside service should use
+// DeSoMempool is the core mempool object. It's what any outside service should use
 // to aggregate transactions and mine them into blocks.
-type BitCloutMempool struct {
+type DeSoMempool struct {
 	// Stops the mempool's services.
 	quit chan struct{}
 
@@ -186,13 +183,13 @@ type BitCloutMempool struct {
 	totalTxSizeBytes uint64
 	// Stores the inputs for every transaction stored in poolMap. Used to quickly check
 	// if a transaction is double-spending.
-	outpoints map[UtxoKey]*MsgBitCloutTxn
+	outpoints map[UtxoKey]*MsgDeSoTxn
 	// Unconnected contains transactions whose inputs reference UTXOs that are not yet
 	// present in either our UTXO database or the transactions stored in pool.
 	unconnectedTxns map[BlockHash]*UnconnectedTx
 	// Organizes unconnectedTxns by their UTXOs. Used when adding a transaction to determine
 	// which unconnectedTxns are no longer missing parents.
-	unconnectedTxnsByPrev map[UtxoKey]map[BlockHash]*MsgBitCloutTxn
+	unconnectedTxnsByPrev map[UtxoKey]map[BlockHash]*MsgDeSoTxn
 	// An exponentially-decayed accumulator of "low-fee" transactions we've relayed.
 	// This is used to prevent someone from flooding the network with low-fee
 	// transactions.
@@ -202,20 +199,15 @@ type BitCloutMempool struct {
 
 	// pubKeyToTxnMap stores a mapping from the public key of outputs added
 	// to the mempool to the corresponding transaction that resulted in their
-	// addition. It is useful for figuring out how much BitClout a particular public
+	// addition. It is useful for figuring out how much DeSo a particular public
 	// key has available to spend.
 	pubKeyToTxnMap map[PkMapKey]map[BlockHash]*MempoolTx
-
-	// BitcoinExchange transactions that contain Bitcoin transactions that have not
-	// yet been mined into a block, and therefore would fail a merkle root check.
-	unminedBitcoinTxns map[BlockHash]*MempoolTx
 
 	// The next time the unconnectTxn pool will be scanned for expired unconnectedTxns.
 	nextExpireScan time.Time
 
 	// Optional. When set, we use the BlockCypher API to detect double-spends.
-	blockCypherAPIKey               string
-	blockCypherCheckDoubleSpendChan chan *MsgBitCloutTxn
+	blockCypherAPIKey string
 
 	// These two views are used to check whether a transaction is valid before
 	// adding it to the mempool. This is done by applying the transaction to the
@@ -244,7 +236,7 @@ type BitCloutMempool struct {
 	// to the database periodically.
 	readOnlyUniversalTransactionList []*MempoolTx
 	readOnlyUniversalTransactionMap  map[BlockHash]*MempoolTx
-	readOnlyOutpoints                map[UtxoKey]*MsgBitCloutTxn
+	readOnlyOutpoints                map[UtxoKey]*MsgDeSoTxn
 	// Every time the readOnlyUtxoView is updated, this is incremented. It can
 	// be used by obtainers of the readOnlyUtxoView to wait until a particular
 	// transaction has been run.
@@ -266,7 +258,7 @@ type BitCloutMempool struct {
 
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
 // when calling this function.
-func (mp *BitCloutMempool) removeUnconnectedTxn(tx *MsgBitCloutTxn, removeRedeemers bool) {
+func (mp *DeSoMempool) removeUnconnectedTxn(tx *MsgDeSoTxn, removeRedeemers bool) {
 	txHash := tx.Hash()
 	if txHash == nil {
 		// If an error occurs hashing the transaction then there's nothing to do. Just
@@ -295,7 +287,7 @@ func (mp *BitCloutMempool) removeUnconnectedTxn(tx *MsgBitCloutTxn, removeRedeem
 
 	// Remove any unconnectedTxns that spend this txn
 	if removeRedeemers {
-		prevOut := BitCloutInput{TxID: *txHash}
+		prevOut := DeSoInput{TxID: *txHash}
 		for txOutIdx := range tx.TxOutputs {
 			prevOut.Index = uint32(txOutIdx)
 			for _, unconnectedTx := range mp.unconnectedTxnsByPrev[UtxoKey(prevOut)] {
@@ -314,7 +306,7 @@ func (mp *BitCloutMempool) removeUnconnectedTxn(tx *MsgBitCloutTxn, removeRedeem
 // first.
 //
 // Note the write lock must be held before calling this function.
-func (mp *BitCloutMempool) resetPool(newPool *BitCloutMempool) {
+func (mp *DeSoMempool) resetPool(newPool *DeSoMempool) {
 	// Replace the internal mappings of the original pool with the mappings of the new
 	// pool.
 	mp.poolMap = newPool.poolMap
@@ -324,7 +316,6 @@ func (mp *BitCloutMempool) resetPool(newPool *BitCloutMempool) {
 	mp.pubKeyToTxnMap = newPool.pubKeyToTxnMap
 	mp.unconnectedTxns = newPool.unconnectedTxns
 	mp.unconnectedTxnsByPrev = newPool.unconnectedTxnsByPrev
-	mp.unminedBitcoinTxns = newPool.unminedBitcoinTxns
 	mp.nextExpireScan = newPool.nextExpireScan
 	mp.backupUniversalUtxoView = newPool.backupUniversalUtxoView
 	mp.universalUtxoView = newPool.universalUtxoView
@@ -341,7 +332,7 @@ func (mp *BitCloutMempool) resetPool(newPool *BitCloutMempool) {
 	// - totalProcessTransactionCalls int64
 	// - readOnlyUniversalTransactionList    []*MempoolTx
 	// - readOnlyUniversalTransactionMap map[BlockHash]*MempoolTx
-	// - readOnlyOutpoints map[UtxoKey]*MsgBitCloutTxn
+	// - readOnlyOutpoints map[UtxoKey]*MsgDeSoTxn
 	//
 	// Regenerate the view if needed.
 	if mp.generateReadOnlyUtxoView {
@@ -368,7 +359,7 @@ func (mp *BitCloutMempool) resetPool(newPool *BitCloutMempool) {
 //
 // TODO: This is fairly inefficient but the story is the same as for
 // UpdateAfterDisconnectBlock.
-func (mp *BitCloutMempool) UpdateAfterConnectBlock(blk *MsgBitCloutBlock) (_txnsAddedToMempool []*MempoolTx) {
+func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToMempool []*MempoolTx) {
 	// Protect concurrent access.
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
@@ -384,7 +375,7 @@ func (mp *BitCloutMempool) UpdateAfterConnectBlock(blk *MsgBitCloutBlock) (_txns
 	// as a temporary data structure for validation.
 	//
 	// Don't make the new pool object deal with the BlockCypher API.
-	newPool := NewBitCloutMempool(
+	newPool := NewDeSoMempool(
 		mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
@@ -480,16 +471,16 @@ func (mp *BitCloutMempool) UpdateAfterConnectBlock(blk *MsgBitCloutBlock) (_txns
 // we're not effectively reprocessing the entire mempool every time we have a new block.
 // But until then doing it this way significantly reduces complexity and should hold up
 // for a while.
-func (mp *BitCloutMempool) UpdateAfterDisconnectBlock(blk *MsgBitCloutBlock) {
+func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 	// Protect concurrent access.
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
 
-	// Create a new BitCloutMempool. No need to set the min fees since we're just using
+	// Create a new DeSoMempool. No need to set the min fees since we're just using
 	// this as a temporary data structure for validation.
 	//
 	// Don't make the new pool object deal with the BlockCypher API.
-	newPool := NewBitCloutMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
+	newPool := NewDeSoMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, "")
@@ -555,7 +546,7 @@ func (mp *BitCloutMempool) UpdateAfterDisconnectBlock(blk *MsgBitCloutBlock) {
 }
 
 // Acquires a read lock before returning the transactions.
-func (mp *BitCloutMempool) GetTransactionsOrderedByTimeAdded() (_poolTxns []*MempoolTx, _unconnectedTxns []*UnconnectedTx, _err error) {
+func (mp *DeSoMempool) GetTransactionsOrderedByTimeAdded() (_poolTxns []*MempoolTx, _unconnectedTxns []*UnconnectedTx, _err error) {
 	poolTxns := []*MempoolTx{}
 	poolTxns = append(poolTxns, mp.readOnlyUniversalTransactionList...)
 
@@ -575,13 +566,13 @@ func (mp *BitCloutMempool) GetTransactionsOrderedByTimeAdded() (_poolTxns []*Mem
 	return poolTxns, nil, nil
 }
 
-func (mp *BitCloutMempool) GetTransaction(txId *BlockHash) (txn *MempoolTx) {
+func (mp *DeSoMempool) GetTransaction(txId *BlockHash) (txn *MempoolTx) {
 	return mp.readOnlyUniversalTransactionMap[*txId]
 }
 
 // GetTransactionsOrderedByTimeAdded returns all transactions in the mempool ordered
 // by when they were added to the mempool.
-func (mp *BitCloutMempool) _getTransactionsOrderedByTimeAdded() (_poolTxns []*MempoolTx, _unconnectedTxns []*UnconnectedTx, _err error) {
+func (mp *DeSoMempool) _getTransactionsOrderedByTimeAdded() (_poolTxns []*MempoolTx, _unconnectedTxns []*UnconnectedTx, _err error) {
 	poolTxns := []*MempoolTx{}
 	for _, mempoolTx := range mp.poolMap {
 		poolTxns = append(poolTxns, mempoolTx)
@@ -601,7 +592,7 @@ func (mp *BitCloutMempool) _getTransactionsOrderedByTimeAdded() (_poolTxns []*Me
 
 // Evicts unconnectedTxns if we're over the maximum number of unconnectedTxns allowed, or if
 // unconnectedTxns have exired. Must be called with the write lock held.
-func (mp *BitCloutMempool) limitNumUnconnectedTxns() error {
+func (mp *DeSoMempool) limitNumUnconnectedTxns() error {
 	if now := time.Now(); now.After(mp.nextExpireScan) {
 		prevNumUnconnectedTxns := len(mp.unconnectedTxns)
 		for _, unconnectedTxn := range mp.unconnectedTxns {
@@ -612,7 +603,7 @@ func (mp *BitCloutMempool) limitNumUnconnectedTxns() error {
 
 		numUnconnectedTxns := len(mp.unconnectedTxns)
 		if numExpired := prevNumUnconnectedTxns - numUnconnectedTxns; numExpired > 0 {
-			glog.Debugf("Expired %d unconnectedTxns (remaining: %d)", numExpired, numUnconnectedTxns)
+			glog.V(1).Infof("Expired %d unconnectedTxns (remaining: %d)", numExpired, numUnconnectedTxns)
 		}
 	}
 
@@ -629,7 +620,7 @@ func (mp *BitCloutMempool) limitNumUnconnectedTxns() error {
 }
 
 // Adds an unconnected txn to the pool. Must be called with the write lock held.
-func (mp *BitCloutMempool) addUnconnectedTxn(tx *MsgBitCloutTxn, peerID uint64) {
+func (mp *DeSoMempool) addUnconnectedTxn(tx *MsgDeSoTxn, peerID uint64) {
 	if MaxUnconnectedTransactions <= 0 {
 		return
 	}
@@ -649,16 +640,16 @@ func (mp *BitCloutMempool) addUnconnectedTxn(tx *MsgBitCloutTxn, peerID uint64) 
 	for _, txIn := range tx.TxInputs {
 		if _, exists := mp.unconnectedTxnsByPrev[UtxoKey(*txIn)]; !exists {
 			mp.unconnectedTxnsByPrev[UtxoKey(*txIn)] =
-				make(map[BlockHash]*MsgBitCloutTxn)
+				make(map[BlockHash]*MsgDeSoTxn)
 		}
 		mp.unconnectedTxnsByPrev[UtxoKey(*txIn)][*txHash] = tx
 	}
 
-	glog.Debugf("Added unconnected transaction %v with total txns: %d)", txHash, len(mp.unconnectedTxns))
+	glog.V(1).Infof("Added unconnected transaction %v with total txns: %d)", txHash, len(mp.unconnectedTxns))
 }
 
 // Consider adding an unconnected txn to the pool. Must be called with the write lock held.
-func (mp *BitCloutMempool) tryAddUnconnectedTxn(tx *MsgBitCloutTxn, peerID uint64) error {
+func (mp *DeSoMempool) tryAddUnconnectedTxn(tx *MsgDeSoTxn, peerID uint64) error {
 	txBytes, err := tx.ToBytes(false)
 	if err != nil {
 		return errors.Wrapf(err, "tryAddUnconnectedTxn: Problem serializing txn: ")
@@ -674,7 +665,7 @@ func (mp *BitCloutMempool) tryAddUnconnectedTxn(tx *MsgBitCloutTxn, peerID uint6
 }
 
 // Remove unconnectedTxns that are no longer valid after applying the passed-in txn.
-func (mp *BitCloutMempool) removeUnconnectedTxnDoubleSpends(tx *MsgBitCloutTxn) {
+func (mp *DeSoMempool) removeUnconnectedTxnDoubleSpends(tx *MsgDeSoTxn) {
 	for _, txIn := range tx.TxInputs {
 		for _, unconnectedTx := range mp.unconnectedTxnsByPrev[UtxoKey(*txIn)] {
 			mp.removeUnconnectedTxn(unconnectedTx, true)
@@ -683,7 +674,7 @@ func (mp *BitCloutMempool) removeUnconnectedTxnDoubleSpends(tx *MsgBitCloutTxn) 
 }
 
 // Must be called with the write lock held.
-func (mp *BitCloutMempool) isTransactionInPool(hash *BlockHash) bool {
+func (mp *DeSoMempool) isTransactionInPool(hash *BlockHash) bool {
 	if _, exists := mp.poolMap[*hash]; exists {
 		return true
 	}
@@ -692,14 +683,14 @@ func (mp *BitCloutMempool) isTransactionInPool(hash *BlockHash) bool {
 }
 
 // Whether or not a txn is in the pool. Safe for concurrent access.
-func (mp *BitCloutMempool) IsTransactionInPool(hash *BlockHash) bool {
+func (mp *DeSoMempool) IsTransactionInPool(hash *BlockHash) bool {
 	_, exists := mp.readOnlyUniversalTransactionMap[*hash]
 	return exists
 }
 
 // Whether or not an unconnected txn is in the unconnected pool. Must be called with the write
 // lock held.
-func (mp *BitCloutMempool) isUnconnectedTxnInPool(hash *BlockHash) bool {
+func (mp *DeSoMempool) isUnconnectedTxnInPool(hash *BlockHash) bool {
 	if _, exists := mp.unconnectedTxns[*hash]; exists {
 		return true
 	}
@@ -707,7 +698,7 @@ func (mp *BitCloutMempool) isUnconnectedTxnInPool(hash *BlockHash) bool {
 	return false
 }
 
-func (mp *BitCloutMempool) DumpTxnsToDB() {
+func (mp *DeSoMempool) DumpTxnsToDB() {
 	// Dump all mempool txns into data_dir_path/temp_mempool_dump.
 	err := mp.OpenTempDBAndDumpTxns()
 	if err != nil {
@@ -763,7 +754,7 @@ func MakeDirIfNonExistent(filePath string) error {
 	return nil
 }
 
-func (mp *BitCloutMempool) OpenTempDBAndDumpTxns() error {
+func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	allTxns := mp.readOnlyUniversalTransactionList
 
 	tempMempoolDBDir := filepath.Join(mp.mempoolDir, "temp_mempool_dump")
@@ -812,8 +803,8 @@ func (mp *BitCloutMempool) OpenTempDBAndDumpTxns() error {
 // Adds a txn to the pool. This function does not do any validation, and so it should
 // only be called when one is sure that a transaction is valid. Otherwise, it could
 // mess up the UtxoViews that we store internally.
-func (mp *BitCloutMempool) addTransaction(
-	tx *MsgBitCloutTxn, height uint32, fee uint64, updateBackupView bool) (*MempoolTx, error) {
+func (mp *DeSoMempool) addTransaction(
+	tx *MsgDeSoTxn, height uint32, fee uint64, updateBackupView bool) (*MempoolTx, error) {
 
 	// Add the transaction to the pool and mark the referenced outpoints
 	// as spent by the pool.
@@ -868,27 +859,10 @@ func (mp *BitCloutMempool) addTransaction(
 	// to know her balance while factoring in mempool transactions.
 	mp._addMempoolTxToPubKeyOutputMap(mempoolTx)
 
-	if mp.blockCypherAPIKey != "" && tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange &&
-		IsUnminedBitcoinExchange(tx.TxnMeta.(*BitcoinExchangeMetadata)) &&
-		!IsForgivenBitcoinTransaction(tx) {
-
-		go func(txnToCheck *MsgBitCloutTxn) {
-			// Ten seconds is roughly how long it takes a Bitcoin transaction to fully
-			// propagate through the network. See post from Satoshi in this thread:
-			// https://bitcointalk.org/index.php?topic=423.20
-			time.Sleep(30 * time.Second)
-
-			// Adding the txn to this channel will trigger a double spend check.
-			mp.blockCypherCheckDoubleSpendChan <- txnToCheck
-		}(tx)
-	}
-
 	// Add it to the universal view. We assume the txn was already added to the
 	// backup view.
 	_, _, _, _, err = mp.universalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
-		false /*verifySignatures*/, false, /*checkMerkleProof*/
-		0,
-		false /*ignoreUtxos*/)
+		false /*verifySignatures*/, false /*ignoreUtxos*/)
 	if err != nil {
 		return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
 			"failed on universalUtxoView; this is a HUGE problem and should never happen")
@@ -897,9 +871,7 @@ func (mp *BitCloutMempool) addTransaction(
 	mp.universalTransactionList = append(mp.universalTransactionList, mempoolTx)
 	if updateBackupView {
 		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
-			false /*verifySignatures*/, false, /*checkMerkleProof*/
-			0,
-			false /*ignoreUtxos*/)
+			false /*verifySignatures*/, false /*ignoreUtxos*/)
 		if err != nil {
 			return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
 				"failed on backupUniversalUtxoView; this is a HUGE problem and should never happen")
@@ -909,7 +881,7 @@ func (mp *BitCloutMempool) addTransaction(
 	return mempoolTx, nil
 }
 
-func (mp *BitCloutMempool) CheckSpend(op UtxoKey) *MsgBitCloutTxn {
+func (mp *DeSoMempool) CheckSpend(op UtxoKey) *MsgDeSoTxn {
 	txR := mp.readOnlyOutpoints[op]
 
 	return txR
@@ -922,7 +894,7 @@ func (mp *BitCloutMempool) CheckSpend(op UtxoKey) *MsgBitCloutTxn {
 // not yet been mined into a block. It is also useful for when we want to fetch all
 // the unspent UtxoEntrys factoring in what's been spent by transactions in
 // the mempool.
-func (mp *BitCloutMempool) GetAugmentedUtxoViewForPublicKey(pkBytes []byte, optionalTxn *MsgBitCloutTxn) (*UtxoView, error) {
+func (mp *DeSoMempool) GetAugmentedUtxoViewForPublicKey(pkBytes []byte, optionalTxn *MsgDeSoTxn) (*UtxoView, error) {
 	return mp.GetAugmentedUniversalView()
 }
 
@@ -930,7 +902,7 @@ func (mp *BitCloutMempool) GetAugmentedUtxoViewForPublicKey(pkBytes []byte, opti
 // in the mempool...
 // TODO(performance): We should make a read-only version of the universal view that
 // you can get from the mempool.
-func (mp *BitCloutMempool) GetAugmentedUniversalView() (*UtxoView, error) {
+func (mp *DeSoMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 	newView, err := mp.readOnlyUtxoView.CopyUtxoView()
 	if err != nil {
 		return nil, err
@@ -938,7 +910,7 @@ func (mp *BitCloutMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 	return newView, nil
 }
 
-func (mp *BitCloutMempool) FetchTransaction(txHash *BlockHash) *MempoolTx {
+func (mp *DeSoMempool) FetchTransaction(txHash *BlockHash) *MempoolTx {
 	if mempoolTx, exists := mp.readOnlyUniversalTransactionMap[*txHash]; exists {
 		return mempoolTx
 	}
@@ -950,8 +922,8 @@ func (mp *BitCloutMempool) FetchTransaction(txHash *BlockHash) *MempoolTx {
 // proofs and *after* they have valid merkle proofs. In the latter case we can't use
 // the universal view because the transaction is in the "middle" of the sorted list of
 // transactions ordered by time added.
-func (mp *BitCloutMempool) _quickCheckBitcoinExchangeTxn(
-	tx *MsgBitCloutTxn, txHash *BlockHash, checkMerkleProof bool) (
+func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
+	tx *MsgDeSoTxn, txHash *BlockHash, checkMerkleProof bool) (
 	_fees uint64, _err error) {
 
 	// Create a view that we'll use to validate this txn.
@@ -959,7 +931,7 @@ func (mp *BitCloutMempool) _quickCheckBitcoinExchangeTxn(
 	// Note that it is safe to use this because we expect that the blockchain
 	// lock is held for the duration of this function call so there shouldn't
 	// be any shifting of the db happening beneath our fee.
-	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.bitcoinManager)
+	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres)
 	if err != nil {
 		return 0, errors.Wrapf(err,
 			"_helpConnectDepsAndFinalTxn: Problem initializing UtxoView")
@@ -977,9 +949,7 @@ func (mp *BitCloutMempool) _quickCheckBitcoinExchangeTxn(
 	// has the block corresponding to the transaction.
 	// We skip verifying txn size for bitcoin exchange transactions.
 	_, _, _, txFee, err := utxoView._connectTransaction(
-		tx, txHash, 0, bestHeight, false,
-		checkMerkleProof, /*checkMerkleProof*/
-		0, false /*ignoreUtxos*/)
+		tx, txHash, 0, bestHeight, false, false)
 	if err != nil {
 		// Note this can happen in odd cases where a transaction's dependency was removed
 		// but the transaction depending on it was not. See the comment on
@@ -992,193 +962,7 @@ func (mp *BitCloutMempool) _quickCheckBitcoinExchangeTxn(
 	return txFee, nil
 }
 
-func IsUnminedBitcoinExchange(txnMeta *BitcoinExchangeMetadata) bool {
-	zeroBlockHash := BlockHash{}
-	return *txnMeta.BitcoinMerkleRoot == zeroBlockHash
-}
-
-func (mp *BitCloutMempool) tryAcceptBitcoinExchangeTxn(tx *MsgBitCloutTxn) (
-	_missingParents []*BlockHash, _mempoolTx *MempoolTx, _err error) {
-
-	if IsNukedBitcoinTransaction(tx) {
-		nukeErr := fmt.Errorf("tryAcceptBitcoinExchangeTxn: BitcoinExchange txn %v is "+
-			"being rejected because it is in the nuked list", tx.Hash())
-		glog.Error(nukeErr)
-		return nil, nil, nukeErr
-	}
-
-	if tx.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange {
-		return nil, nil, fmt.Errorf(
-			"tryAcceptBitcoinExchangeTxn: Wrong txn type: %v", tx.TxnMeta.GetTxnType())
-	}
-
-	txMeta := tx.TxnMeta.(*BitcoinExchangeMetadata)
-
-	// Verify that the txn does not have any duplicate inputs.
-	//
-	// TODO: This is a monkey-patch to fix a case where a clearly flawed txn made it
-	// through our initial validation somehow.
-	type txHashAndIndex struct {
-		Hash  chainhash.Hash
-		Index uint32
-	}
-	txInputHashes := make(map[txHashAndIndex]bool)
-	for _, txIn := range txMeta.BitcoinTransaction.TxIn {
-		key := txHashAndIndex{
-			Hash:  txIn.PreviousOutPoint.Hash,
-			Index: txIn.PreviousOutPoint.Index,
-		}
-		if _, exists := txInputHashes[key]; exists {
-			txnBytes := bytes.Buffer{}
-			txMeta.BitcoinTransaction.SerializeNoWitness(&txnBytes)
-
-			// Return a detailed error so we can debug when this happends
-			return nil, nil, fmt.Errorf(
-				"tryAcceptBitcoinExchangeTxn: Error: BitcoinExchange txn "+
-					"has duplicate inputs PrevHash: %v PrevIndex: %v. BitClout "+
-					"hash: %v, Bitcoin hash: %v, Bitcoin txn hex: %v",
-				txIn.PreviousOutPoint.Hash,
-				txIn.PreviousOutPoint.Index,
-				tx.Hash(), txMeta.BitcoinTransaction.TxHash(),
-				hex.EncodeToString(txnBytes.Bytes()))
-		}
-
-		txInputHashes[key] = true
-	}
-
-	// Verify that the BitcoinExchange txn is not a dust transaction.
-	// TODO: Is 1,000 enough for the dust threshold?
-	dustOutputSatoshis := int64(1000)
-	for _, txOut := range txMeta.BitcoinTransaction.TxOut {
-		if txOut.Value < dustOutputSatoshis {
-			// Get the Bitcoin txn bytes
-			txnBytes := bytes.Buffer{}
-			txMeta.BitcoinTransaction.SerializeNoWitness(&txnBytes)
-
-			// Return a detailed error so we can debug when this happends
-			return nil, nil, fmt.Errorf(
-				"tryAcceptBitcoinExchangeTxn: Error: BitcoinExchange txn "+
-					"output value %v is below the dust threshold %v. BitClout "+
-					"hash: %v, Bitcoin hash: %v, Bitcoin txn hex: %v", txOut.Value,
-				dustOutputSatoshis, tx.Hash(), txMeta.BitcoinTransaction.TxHash(),
-				hex.EncodeToString(txnBytes.Bytes()))
-		}
-	}
-
-	txnBytes, err := tx.ToBytes(false)
-	if err != nil {
-		return nil, nil, fmt.Errorf(
-			"tryAcceptBitcoinExchangeTxn: Error serializing txn: %v", err)
-	}
-	txnSize := int64(len(txnBytes))
-	// If the transaction does not have a merkle proof then we are dealing with
-	// a BitcoinExchange transaction whose corresponding Bitcoin transaction
-	// has not yet been mined into a block.
-	bestHeight := uint32(mp.bc.blockTip().Height + 1)
-	if IsUnminedBitcoinExchange(txMeta) {
-		// Just do a vanilla check and a vanilla add using the backup view.
-		// Don't check merkle proofs yet.
-		bestHeight = uint32(mp.bc.blockTip().Height + 1)
-		_, _, _, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
-			tx, tx.Hash(), txnSize, bestHeight, false, /*verifySignatures*/
-			false, /*checkMerkleProof*/
-			0, false /*ignoreUtxos*/)
-		if err != nil {
-			// We need to rebuild the backup view since the _connectTransaction broke it.
-			mp.rebuildBackupView()
-			return nil, nil, errors.Wrapf(err, "tryAcceptBitcoinTransaction: Problem "+
-				"connecting transaction after connecting dependencies: ")
-		}
-
-		// At this point we have validated that the BitcoinExchange txn can be
-		// added to the mempool.
-
-		// Add to transaction pool. We don't need to update the backup view since the call
-		// above will have done this.
-		mempoolTx, err := mp.addTransaction(
-			tx, bestHeight, txFee, false /*updateBackupView*/)
-		if err != nil {
-			// We need to rebuild the backup view since the _connectTransaction broke it.
-			mp.rebuildBackupView()
-			return nil, nil, errors.Wrapf(err, "tryAcceptBitcoinExchangeTxn: ")
-		}
-
-		glog.Tracef("tryAcceptBitcoinExchangeTxn: Accepted unmined "+
-			"transaction %v bitcoin hash: %v (pool size: %v)",
-			tx.Hash(), txMeta.BitcoinTransaction.TxHash(), len(mp.poolMap))
-
-		return nil, mempoolTx, nil
-	}
-
-	// If we get here then we are processing a BitcoinExchange transaction that
-	// actually has a merkle proof on it.
-
-	// Check to see if any of the other BitcoinExchange transactions have the
-	// same hash as this transaction.
-	txHash := tx.Hash()
-	existingMempoolTx, hasTransaction := mp.poolMap[*txHash]
-
-	// In this case we have a previous transaction that we need to potentially
-	// replace with this one.
-	if hasTransaction {
-		// If the preexisting txn is a mined BitcoinExchange then don't replace it.
-		if !IsUnminedBitcoinExchange(existingMempoolTx.Tx.TxnMeta.(*BitcoinExchangeMetadata)) {
-			return nil, nil, TxErrorDuplicateBitcoinExchangeTxn
-		}
-
-		// Check the validity of the txn
-		_, err := mp._quickCheckBitcoinExchangeTxn(
-			tx, txHash, true /*checkFinalMerkleProof*/)
-		if err != nil {
-			return nil, nil, errors.Wrapf(
-				err, "tryAcceptBitcoinExchangeTxn: "+
-					"Problem connecting deps and txn: ")
-		}
-
-		// At this point we are confident that this new transaction is valid and
-		// can replace the pre-existing transaction. Replace the pre-existing
-		// transaction with it. This will cause it to be mined once its time has
-		// come.
-		existingMempoolTx.Tx = tx
-
-		glog.Tracef("tryAcceptBitcoinExchangeTxn: Accepted REPLACEMENT "+
-			"*mined* transaction %v bitcoin txhash: %v (pool size: %v)",
-			tx.Hash(), txMeta.BitcoinTransaction.TxHash(), len(mp.poolMap))
-
-		return nil, existingMempoolTx, nil
-	}
-
-	// If we get here then we don't have a pre-existing transaction so just
-	// process this normally but with checkMerkleProof=true.
-	// Just do a vanilla check and a vanilla add using the backup view.
-	_, _, _, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
-		tx, tx.Hash(), txnSize, bestHeight, false, /*verifySignatures*/
-		true, /*checkMerkleProof*/
-		0, false /*ignoreUtxos*/)
-	if err != nil {
-		// We need to rebuild the backup view since the _connectTransaction broke it.
-		mp.rebuildBackupView()
-		return nil, nil, errors.Wrapf(err, "tryAcceptBitcoinTransaction: Problem "+
-			"connecting transaction after connecting dependencies: ")
-	}
-
-	// Add to transaction pool. Don't update the backup view, since the call above
-	// will have done this.
-	mempoolTx, err := mp.addTransaction(tx, bestHeight, txFee, false /*updateBackupView*/)
-	if err != nil {
-		// We need to rebuild the backup view since the _connectTransaction broke it.
-		mp.rebuildBackupView()
-		return nil, nil, errors.Wrapf(err, "tryAcceptBitcoinExchangeTxn: ")
-	}
-
-	glog.Tracef("tryAcceptBitcoinExchangeTxn: Accepted *mined* "+
-		"transaction %v bitcoin txhash: %v(pool size: %v)",
-		tx.Hash(), txMeta.BitcoinTransaction.TxHash(), len(mp.poolMap))
-
-	return nil, mempoolTx, nil
-}
-
-func (mp *BitCloutMempool) rebuildBackupView() {
+func (mp *DeSoMempool) rebuildBackupView() {
 	// We need to rebuild the backup view since the _connectTransaction broke it.
 	var copyErr error
 	mp.backupUniversalUtxoView, copyErr = mp.universalUtxoView.CopyUtxoView()
@@ -1191,20 +975,13 @@ func (mp *BitCloutMempool) rebuildBackupView() {
 // See TryAcceptTransaction. The write lock must be held when calling this function.
 //
 // TODO: Allow replacing a transaction with a higher fee.
-func (mp *BitCloutMempool) tryAcceptTransaction(
-	tx *MsgBitCloutTxn, rateLimit bool, rejectDupUnconnected bool, verifySignatures bool) (
+func (mp *DeSoMempool) tryAcceptTransaction(
+	tx *MsgDeSoTxn, rateLimit bool, rejectDupUnconnected bool, verifySignatures bool) (
 	_missingParents []*BlockHash, _mempoolTx *MempoolTx, _err error) {
 
 	// Block reward transactions shouldn't appear individually
 	if tx.TxnMeta != nil && tx.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil, nil, TxErrorIndividualBlockReward
-	}
-
-	// The BitcoinExchange logic is so customized that we break it out into its
-	// own function. We do this in order to support "fast" BitClout purchases
-	// in the UI that feel virtually instant without compromising on security.
-	if tx.TxnMeta != nil && tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
-		return mp.tryAcceptBitcoinExchangeTxn(tx)
 	}
 
 	// Compute the hash of the transaction.
@@ -1250,10 +1027,8 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 	usdCentsPerBitcoinBefore := mp.backupUniversalUtxoView.GetCurrentUSDCentsPerBitcoin()
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
 	// We can skip verifying the transaction size as related to the minimum fee here.
-	_, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
-		tx, txHash, 0, bestHeight, verifySignatures,
-		false, /*checkMerkleProof*/
-		0, false /*ignoreUtxos*/)
+	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
+		tx, txHash, 0, bestHeight, verifySignatures, false)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: Problem "+
@@ -1283,6 +1058,15 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 		return nil, nil, errors.Wrapf(TxErrorInsufficientFeeMinFee, errRet.Error())
 	}
 
+	// If the transaction is bigger than half the maximum allowable size,
+	// then reject it.
+	maxTxnSize := mp.bc.params.MinerMaxBlockSizeBytes / 2
+	if serializedLen > maxTxnSize {
+		mp.rebuildBackupView()
+		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: "+
+			"Txn size %v exceeds maximum allowable txn size %v", serializedLen, maxTxnSize)
+	}
+
 	// If the feerate is below the minimum we've configured for the node, then apply
 	// some rate-limiting logic to avoid stalling in situations in which someone is trying
 	// to flood the network with low-value transacitons. This avoids a form of amplification
@@ -1305,7 +1089,7 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 		// Update the accumulator and potentially log the state.
 		oldTotal := mp.lowFeeTxSizeAccumulator
 		mp.lowFeeTxSizeAccumulator += float64(serializedLen)
-		glog.Tracef("tryAcceptTransaction: Rate limit current total ~(%v) bytes/10m, nextTotal: ~(%v) bytes/10m, "+
+		glog.V(2).Infof("tryAcceptTransaction: Rate limit current total ~(%v) bytes/10m, nextTotal: ~(%v) bytes/10m, "+
 			"limit ~(%v) bytes/10m", oldTotal, mp.lowFeeTxSizeAccumulator, LowFeeTxLimitBytesPerTenMinutes)
 	}
 
@@ -1318,25 +1102,24 @@ func (mp *BitCloutMempool) tryAcceptTransaction(
 	}
 
 	// Calculate metadata
-	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, tx.Hash(), totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0))
+	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps)
 	if err == nil {
 		mempoolTx.TxMeta = txnMeta
 	}
 
-	glog.Tracef("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
+	glog.V(2).Infof("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
 		len(mp.poolMap))
 
 	return nil, mempoolTx, nil
 }
 
-func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHash *BlockHash,
+func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
 	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64) (*TransactionMetadata, error) {
+	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation) (*TransactionMetadata, error) {
 
 	var err error
 	txnMeta := &TransactionMetadata{
-		BlockHashHex:    hex.EncodeToString(blockHash[:]),
 		TxnIndexInBlock: txnIndexInBlock,
 		TxnType:         txn.TxnMeta.GetTxnType().String(),
 
@@ -1351,10 +1134,18 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			FeeNanos:         fees,
 			// TODO: This doesn't add much value, and it makes output hard to read because
 			// it's so long so I'm commenting it out for now.
-			// UtxoOpsDump:      spew.Sdump(utxoOps),
+			//UtxoOpsDump:      spew.Sdump(utxoOps),
+
+			// We need to include the utxoOps because it allows us to compute implicit
+			// outputs.
+			UtxoOps: utxoOps,
 		},
 
 		TxnOutputs: txn.TxOutputs,
+	}
+
+	if blockHash != nil {
+		txnMeta.BlockHashHex = hex.EncodeToString(blockHash[:])
 	}
 
 	extraData := txn.ExtraData
@@ -1391,11 +1182,31 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 		// Get the txn metadata
 		realTxMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 
+		// Rosetta needs to know the change in DESOLockedNanos so it can model the change in
+		// total deso locked in the creator coin. Calculate this by comparing the current CoinEntry
+		// to the previous CoinEntry
+		profileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
+		var prevCoinEntry *CoinEntry
+		for _, op := range utxoOps {
+			if op.Type == OperationTypeCreatorCoin {
+				prevCoinEntry = op.PrevCoinEntry
+				break
+			}
+		}
+
+		desoLockedNanosDiff := int64(0)
+		if profileEntry == nil || prevCoinEntry == nil {
+			glog.Errorf("Update TxIndex: missing DESOLockedNanosDiff error: %v", txn.Hash().String())
+		} else {
+			desoLockedNanosDiff = int64(profileEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos)
+		}
+
 		// Set the amount of the buy/sell/add
 		txnMeta.CreatorCoinTxindexMetadata = &CreatorCoinTxindexMetadata{
-			BitCloutToSellNanos:    realTxMeta.BitCloutToSellNanos,
+			DeSoToSellNanos:        realTxMeta.DeSoToSellNanos,
 			CreatorCoinToSellNanos: realTxMeta.CreatorCoinToSellNanos,
-			BitCloutToAddNanos:     realTxMeta.BitCloutToAddNanos,
+			DeSoToAddNanos:         realTxMeta.DeSoToAddNanos,
+			DESOLockedNanosDiff:    desoLockedNanosDiff,
 		}
 
 		// Set the type of the operation.
@@ -1423,13 +1234,15 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 		}
 
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
-		if hasDiamondLevel {
+		diamondPostHash, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
+		if hasDiamondLevel && hasDiamondPostHash {
 			diamondLevel, bytesRead := Varint(diamondLevelBytes)
-			if bytesRead < 0 {
-				return nil, fmt.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
+			if bytesRead <= 0 {
+				glog.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
+			} else {
+				txnMeta.CreatorCoinTransferTxindexMetadata.DiamondLevel = diamondLevel
+				txnMeta.CreatorCoinTransferTxindexMetadata.PostHashHex = hex.EncodeToString(diamondPostHash)
 			}
-			txnMeta.CreatorCoinTransferTxindexMetadata.DiamondLevel = diamondLevel
-			txnMeta.CreatorCoinTransferTxindexMetadata.PostHashHex = hex.EncodeToString(txn.ExtraData[DiamondPostHashKey])
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
@@ -1504,10 +1317,10 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 		// parse them out of the post and then look up their public keys.
 		//
 		// Start by trying to parse the body JSON
-		bodyObj := &BitCloutBodySchema{}
+		bodyObj := &DeSoBodySchema{}
 		if err := json.Unmarshal(realTxMeta.Body, &bodyObj); err != nil {
 			// Don't worry about bad posts unless we're debugging with high verbosity.
-			glog.Tracef("UpdateTxindex: Error parsing post body for @ mentions: "+
+			glog.V(2).Infof("UpdateTxindex: Error parsing post body for @ mentions: "+
 				"%v %v", string(realTxMeta.Body), err)
 		} else {
 			terminators := []rune(" ,.\n&*()-+~'\"[]{}")
@@ -1533,16 +1346,16 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 					Metadata:             "MentionedPublicKeyBase58Check",
 				})
 			}
-			// Additionally, we need to check if this post is a reclout and
+			// Additionally, we need to check if this post is a repost and
 			// fetch the original poster
-			if recloutedPostHash, isReclout := extraData[RecloutedPostHash]; isReclout {
-				recloutedBlockHash := &BlockHash{}
-				copy(recloutedBlockHash[:], recloutedPostHash)
-				recloutPost := utxoView.GetPostEntryForPostHash(recloutedBlockHash)
-				if recloutPost != nil {
+			if repostedPostHash, isRepost := extraData[RepostedPostHash]; isRepost {
+				repostedBlockHash := &BlockHash{}
+				copy(repostedBlockHash[:], repostedPostHash)
+				repostPost := utxoView.GetPostEntryForPostHash(repostedBlockHash)
+				if repostPost != nil {
 					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-						PublicKeyBase58Check: PkToString(recloutPost.PosterPublicKey, utxoView.Params),
-						Metadata:             "RecloutedPublicKeyBase58Check",
+						PublicKeyBase58Check: PkToString(repostPost.PosterPublicKey, utxoView.Params),
+						Metadata:             "RepostedPublicKeyBase58Check",
 					})
 				}
 			}
@@ -1613,9 +1426,26 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 		realTxMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 		_ = realTxMeta
 
+		// Rosetta needs to know the current locked deso in each profile so it can model the swap of
+		// the creator coins. Rosetta models a swap identity as two INPUTs and two OUTPUTs effectively
+		// swapping the balances of total deso locked. If no profile exists, from/to is zero.
+		fromNanos := uint64(0)
+		fromProfile := utxoView.GetProfileEntryForPublicKey(realTxMeta.FromPublicKey)
+		if fromProfile != nil {
+			fromNanos = fromProfile.CoinEntry.DeSoLockedNanos
+		}
+
+		toNanos := uint64(0)
+		toProfile := utxoView.GetProfileEntryForPublicKey(realTxMeta.ToPublicKey)
+		if toProfile != nil {
+			toNanos = toProfile.CoinEntry.DeSoLockedNanos
+		}
+
 		txnMeta.SwapIdentityTxindexMetadata = &SwapIdentityTxindexMetadata{
 			FromPublicKeyBase58Check: PkToString(realTxMeta.FromPublicKey, utxoView.Params),
 			ToPublicKeyBase58Check:   PkToString(realTxMeta.ToPublicKey, utxoView.Params),
+			FromDeSoLockedNanos:      fromNanos,
+			ToDeSoLockedNanos:        toNanos,
 		}
 
 		// The to and from public keys are affected by this.
@@ -1629,27 +1459,118 @@ func ComputeTransactionMetadata(txn *MsgBitCloutTxn, utxoView *UtxoView, blockHa
 			Metadata:             "ToPublicKeyBase58Check",
 		})
 	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+		realTxMeta := txn.TxnMeta.(*NFTBidMetadata)
+		_ = realTxMeta
+
+		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:   realTxMeta.SerialNumber,
+			BidAmountNanos: realTxMeta.BidAmountNanos,
+		}
+
+		// We don't send notifications for standing offers.
+		if realTxMeta.SerialNumber != 0 {
+			nftKey := MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
+			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(nftEntry.OwnerPKID), utxoView.Params),
+				Metadata:             "NFTOwnerPublicKeyBase58Check",
+			})
+		}
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
+		_ = realTxMeta
+
+		// Rosetta needs to know the royalty paid to the creator coin so it can model the change in
+		// total deso locked in the creator coin correctly.
+		var prevCoinEntry *CoinEntry
+		var creatorPublicKey []byte
+		for _, utxoOp := range utxoOps {
+			if utxoOp.Type == OperationTypeAcceptNFTBid {
+				prevCoinEntry = utxoOp.PrevCoinEntry
+				if utxoOp.PrevPostEntry != nil {
+					creatorPublicKey = utxoOp.PrevPostEntry.PosterPublicKey
+				}
+				break
+			}
+		}
+
+		creatorCoinRoyaltyNanos := uint64(0)
+		profileEntry := utxoView.GetProfileEntryForPublicKey(creatorPublicKey)
+		if profileEntry == nil {
+			glog.Errorf("Update TxIndex: Missing profile entry: %v", txn.Hash().String())
+		} else if prevCoinEntry == nil {
+			glog.Errorf("Update TxIndex: Missing previous coin entry: %v", txn.Hash().String())
+		} else if profileEntry.CoinEntry.DeSoLockedNanos < prevCoinEntry.DeSoLockedNanos {
+			glog.Errorf("Update TxIndex: CreatorCoinRoyaltyNanos overflow error: %v", txn.Hash().String())
+		} else {
+			creatorCoinRoyaltyNanos = profileEntry.CoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
+		}
+
+		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
+			NFTPostHashHex:              hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:                realTxMeta.SerialNumber,
+			BidAmountNanos:              realTxMeta.BidAmountNanos,
+			CreatorCoinRoyaltyNanos:     creatorCoinRoyaltyNanos,
+			CreatorPublicKeyBase58Check: PkToString(creatorPublicKey, utxoView.Params),
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(realTxMeta.BidderPKID), utxoView.Params),
+			Metadata:             "NFTBidderPublicKeyBase58Check",
+		})
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+		realTxMeta := txn.TxnMeta.(*NFTTransferMetadata)
+		_ = realTxMeta
+
+		txnMeta.NFTTransferTxindexMetadata = &NFTTransferTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber: realTxMeta.SerialNumber,
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
+			Metadata:             "NFTTransferRecipientPublicKeyBase58Check",
+		})
+
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
+		diamondPostHash, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
+		if hasDiamondLevel && hasDiamondPostHash {
+			diamondLevel, bytesRead := Varint(diamondLevelBytes)
+			if bytesRead <= 0 {
+				glog.Errorf("Update TxIndex: Error reading diamond level for txn: %v", txn.Hash().String())
+			} else {
+				txnMeta.BasicTransferTxindexMetadata.DiamondLevel = diamondLevel
+				txnMeta.BasicTransferTxindexMetadata.PostHashHex = hex.EncodeToString(diamondPostHash)
+			}
+		}
+	}
 
 	return txnMeta, nil
 }
 
-func _computeBitcoinExchangeFields(params *BitCloutParams,
+func _computeBitcoinExchangeFields(params *DeSoParams,
 	txMetaa *BitcoinExchangeMetadata, totalNanosPurchasedBefore uint64, usdCentsPerBitcoin uint64) (
 	_btcMeta *BitcoinExchangeTxindexMetadata, _spendPkBase58Check string, _err error) {
 
 	// Extract a public key from the BitcoinTransaction's inputs. Note that we only
 	// consider P2PKH inputs to be valid. If no P2PKH inputs are found then we consider
 	// the transaction as a whole to be invalid since we don't know who to credit the
-	// new BitClout to. If we find more than one P2PKH input, we consider the public key
+	// new DeSo to. If we find more than one P2PKH input, we consider the public key
 	// corresponding to the first of these inputs to be the one that will receive the
-	// BitClout that will be created.
+	// DeSo that will be created.
 	publicKey, err := ExtractBitcoinPublicKeyFromBitcoinTransactionInputs(
 		txMetaa.BitcoinTransaction, params.BitcoinBtcdParams)
 	if err != nil {
 		return nil, "", RuleErrorBitcoinExchangeValidPublicKeyNotFoundInInputs
 	}
 	// At this point, we should have extracted a public key from the Bitcoin transaction
-	// that we expect to credit the newly-created BitClout to.
+	// that we expect to credit the newly-created DeSo to.
 
 	// The burn address cannot create this type of transaction.
 	addrFromPubKey, err := btcutil.NewAddressPubKey(
@@ -1678,9 +1599,9 @@ func _computeBitcoinExchangeFields(params *BitCloutParams,
 	}
 
 	// At this point we know how many satoshis were burned and we know the public key
-	// that should receive the BitClout we are going to create.
+	// that should receive the DeSo we are going to create.
 
-	// Compute the amount of BitClout that we should create as a result of this transaction.
+	// Compute the amount of DeSo that we should create as a result of this transaction.
 	nanosToCreate := CalcNanosToCreate(
 		totalNanosPurchasedBefore, uint64(totalBurnOutput), usdCentsPerBitcoin)
 
@@ -1694,24 +1615,20 @@ func _computeBitcoinExchangeFields(params *BitCloutParams,
 }
 
 func ConnectTxnAndComputeTransactionMetadata(
-	txn *MsgBitCloutTxn, utxoView *UtxoView, blockHash *BlockHash,
+	txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
 	blockHeight uint32, txnIndexInBlock uint64) (*TransactionMetadata, error) {
 
 	totalNanosPurchasedBefore := utxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
 	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(
-		txn, txn.Hash(), 0, blockHeight, false, /*verifySignatures*/
-		false, /*checkMerkleProof*/
-		0,
-		false /*ignoreUtxos*/)
-	_ = utxoOps
+		txn, txn.Hash(), 0, blockHeight, false, false)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
 	}
 
 	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock)
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps)
 }
 
 // This is the main function used for adding a new txn to the pool. It will
@@ -1719,7 +1636,7 @@ func ConnectTxnAndComputeTransactionMetadata(
 // accept the txn if these validations pass.
 //
 // The ChainLock must be held for reading calling this function.
-func (mp *BitCloutMempool) TryAcceptTransaction(tx *MsgBitCloutTxn, rateLimit bool, verifySignatures bool) ([]*BlockHash, *MempoolTx, error) {
+func (mp *DeSoMempool) TryAcceptTransaction(tx *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*BlockHash, *MempoolTx, error) {
 	// Protect concurrent access.
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
@@ -1730,21 +1647,21 @@ func (mp *BitCloutMempool) TryAcceptTransaction(tx *MsgBitCloutTxn, rateLimit bo
 }
 
 // See comment on ProcessUnconnectedTransactions
-func (mp *BitCloutMempool) processUnconnectedTransactions(acceptedTx *MsgBitCloutTxn, rateLimit bool, verifySignatures bool) []*MempoolTx {
+func (mp *DeSoMempool) processUnconnectedTransactions(acceptedTx *MsgDeSoTxn, rateLimit bool, verifySignatures bool) []*MempoolTx {
 	var acceptedTxns []*MempoolTx
 
 	processList := list.New()
 	processList.PushBack(acceptedTx)
 	for processList.Len() > 0 {
 		firstElement := processList.Remove(processList.Front())
-		processItem := firstElement.(*MsgBitCloutTxn)
+		processItem := firstElement.(*MsgDeSoTxn)
 
 		processHash := processItem.Hash()
 		if processHash == nil {
 			glog.Error(fmt.Errorf("processUnconnectedTransactions: Problem hashing tx: "))
 			return nil
 		}
-		prevOut := BitCloutInput{TxID: *processHash}
+		prevOut := DeSoInput{TxID: *processHash}
 		for txOutIdx := range processItem.TxOutputs {
 			prevOut.Index = uint32(txOutIdx)
 			unconnectedTxns, exists := mp.unconnectedTxnsByPrev[UtxoKey(prevOut)]
@@ -1782,7 +1699,7 @@ func (mp *BitCloutMempool) processUnconnectedTransactions(acceptedTx *MsgBitClou
 }
 
 // ProcessUnconnectedTransactions tries to see if any unconnectedTxns can now be added to the pool.
-func (mp *BitCloutMempool) ProcessUnconnectedTransactions(acceptedTx *MsgBitCloutTxn, rateLimit bool, verifySignatures bool) []*MempoolTx {
+func (mp *DeSoMempool) ProcessUnconnectedTransactions(acceptedTx *MsgDeSoTxn, rateLimit bool, verifySignatures bool) []*MempoolTx {
 	mp.mtx.Lock()
 	acceptedTxns := mp.processUnconnectedTransactions(acceptedTx, rateLimit, verifySignatures)
 	mp.mtx.Unlock()
@@ -1790,7 +1707,7 @@ func (mp *BitCloutMempool) ProcessUnconnectedTransactions(acceptedTx *MsgBitClou
 	return acceptedTxns
 }
 
-func (mp *BitCloutMempool) _addTxnToPublicKeyMap(mempoolTx *MempoolTx, publicKey []byte) {
+func (mp *DeSoMempool) _addTxnToPublicKeyMap(mempoolTx *MempoolTx, publicKey []byte) {
 	pkMapKey := MakePkMapKey(publicKey)
 	mapForPk, exists := mp.pubKeyToTxnMap[pkMapKey]
 	if !exists {
@@ -1800,14 +1717,14 @@ func (mp *BitCloutMempool) _addTxnToPublicKeyMap(mempoolTx *MempoolTx, publicKey
 	mapForPk[*mempoolTx.Hash] = mempoolTx
 }
 
-func (mp *BitCloutMempool) PublicKeyTxnMap(publicKey []byte) (txnMap map[BlockHash]*MempoolTx) {
+func (mp *DeSoMempool) PublicKeyTxnMap(publicKey []byte) (txnMap map[BlockHash]*MempoolTx) {
 	pkMapKey := MakePkMapKey(publicKey)
 	return mp.pubKeyToTxnMap[pkMapKey]
 }
 
 // TODO: This needs to consolidate with ConnectTxnAndComputeTransactionMetadata which
 // does a similar thing.
-func _getPublicKeysToIndexForTxn(txn *MsgBitCloutTxn, params *BitCloutParams) [][]byte {
+func _getPublicKeysToIndexForTxn(txn *MsgDeSoTxn, params *DeSoParams) [][]byte {
 	pubKeysToIndex := [][]byte{}
 
 	// For each output in the transaction, add the public key.
@@ -1882,7 +1799,7 @@ func _getPublicKeysToIndexForTxn(txn *MsgBitCloutTxn, params *BitCloutParams) []
 	return pubKeysToIndex
 }
 
-func (mp *BitCloutMempool) _addMempoolTxToPubKeyOutputMap(mempoolTx *MempoolTx) {
+func (mp *DeSoMempool) _addMempoolTxToPubKeyOutputMap(mempoolTx *MempoolTx) {
 	// Index the transaction by any associated public keys.
 	publicKeysToIndex := _getPublicKeysToIndexForTxn(mempoolTx.Tx, mp.bc.params)
 	for _, pkToIndex := range publicKeysToIndex {
@@ -1890,15 +1807,15 @@ func (mp *BitCloutMempool) _addMempoolTxToPubKeyOutputMap(mempoolTx *MempoolTx) 
 	}
 }
 
-func (mp *BitCloutMempool) processTransaction(
-	tx *MsgBitCloutTxn, allowUnconnectedTxn, rateLimit bool,
+func (mp *DeSoMempool) processTransaction(
+	tx *MsgDeSoTxn, allowUnconnectedTxn, rateLimit bool,
 	peerID uint64, verifySignatures bool) ([]*MempoolTx, error) {
 
 	txHash := tx.Hash()
 	if txHash == nil {
 		return nil, fmt.Errorf("ProcessTransaction: Problem hashing tx")
 	}
-	glog.Tracef("Processing transaction %v", txHash)
+	glog.V(2).Infof("Processing transaction %v", txHash)
 
 	// Run validation and try to add this txn to the pool.
 	missingParents, mempoolTx, err := mp.tryAcceptTransaction(
@@ -1930,7 +1847,7 @@ func (mp *BitCloutMempool) processTransaction(
 
 	// Reject the txn if it's an unconnected txn and we're set up to reject unconnectedTxns.
 	if !allowUnconnectedTxn {
-		glog.Tracef("BitCloutMempool.processTransaction: TxErrorUnconnectedTxnNotAllowed: %v %v",
+		glog.V(2).Infof("DeSoMempool.processTransaction: TxErrorUnconnectedTxnNotAllowed: %v %v",
 			tx.Hash(), tx.TxnMeta.GetTxnType())
 		return nil, TxErrorUnconnectedTxnNotAllowed
 	}
@@ -1938,7 +1855,7 @@ func (mp *BitCloutMempool) processTransaction(
 	// Try to add the the transaction to the pool as an unconnected txn.
 	err = mp.tryAddUnconnectedTxn(tx, peerID)
 	if err != nil {
-		glog.Tracef("BitCloutMempool.processTransaction: Error adding transaction as unconnected txn: %v", err)
+		glog.V(2).Infof("DeSoMempool.processTransaction: Error adding transaction as unconnected txn: %v", err)
 	}
 	return nil, err
 }
@@ -1946,7 +1863,7 @@ func (mp *BitCloutMempool) processTransaction(
 // ProcessTransaction is the main function called by outside services to potentially
 // add a transaction to the mempool. It will try to add the txn to the main pool, and
 // then try to add it as an unconnected txn if that fails.
-func (mp *BitCloutMempool) ProcessTransaction(tx *MsgBitCloutTxn, allowUnconnectedTxn bool, rateLimit bool, peerID uint64, verifySignatures bool) ([]*MempoolTx, error) {
+func (mp *DeSoMempool) ProcessTransaction(tx *MsgDeSoTxn, allowUnconnectedTxn bool, rateLimit bool, peerID uint64, verifySignatures bool) ([]*MempoolTx, error) {
 	// Protect concurrent access.
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
@@ -1957,13 +1874,13 @@ func (mp *BitCloutMempool) ProcessTransaction(tx *MsgBitCloutTxn, allowUnconnect
 // Returns an estimate of the number of txns in the mempool. This is an estimate because
 // it looks up the number from a readOnly view, which updates at regular intervals and
 // *not* every time a txn is added to the pool.
-func (mp *BitCloutMempool) Count() int {
+func (mp *DeSoMempool) Count() int {
 	return len(mp.readOnlyUniversalTransactionList)
 }
 
 // Returns the hashes of all the txns in the pool using the readOnly view, which could be
 // slightly out of date.
-func (mp *BitCloutMempool) TxHashes() []*BlockHash {
+func (mp *DeSoMempool) TxHashes() []*BlockHash {
 	poolMap := mp.readOnlyUniversalTransactionMap
 	hashes := make([]*BlockHash, len(poolMap))
 	ii := 0
@@ -1977,7 +1894,7 @@ func (mp *BitCloutMempool) TxHashes() []*BlockHash {
 }
 
 // Returns all MempoolTxs from the readOnly view.
-func (mp *BitCloutMempool) MempoolTxs() []*MempoolTx {
+func (mp *DeSoMempool) MempoolTxs() []*MempoolTx {
 	poolMap := mp.readOnlyUniversalTransactionMap
 	descs := make([]*MempoolTx, len(poolMap))
 	i := 0
@@ -1989,7 +1906,7 @@ func (mp *BitCloutMempool) MempoolTxs() []*MempoolTx {
 	return descs
 }
 
-func (mp *BitCloutMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*SummaryStats) {
+func (mp *DeSoMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*SummaryStats) {
 	allTxns := mp.readOnlyUniversalTransactionList
 
 	transactionSummaryStats := make(map[string]*SummaryStats)
@@ -2014,16 +1931,16 @@ func (mp *BitCloutMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string
 	return transactionSummaryStats
 }
 
-func (mp *BitCloutMempool) inefficientRemoveTransaction(tx *MsgBitCloutTxn) {
+func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 	// In this case we remove the transaction by re-adding all the txns we can
 	// to the mempool except this one.
 	// TODO(performance): This could be a bit slow.
 	//
-	// Create a new BitCloutMempool. No need to set the min fees since we're just using
+	// Create a new DeSoMempool. No need to set the min fees since we're just using
 	// this as a temporary data structure for validation.
 	//
 	// Don't make the new pool object deal with the BlockCypher API.
-	newPool := NewBitCloutMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
+	newPool := NewDeSoMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, "")
@@ -2071,77 +1988,14 @@ func (mp *BitCloutMempool) inefficientRemoveTransaction(tx *MsgBitCloutTxn) {
 	mp.resetPool(newPool)
 }
 
-func (mp *BitCloutMempool) InefficientRemoveTransaction(tx *MsgBitCloutTxn) {
+func (mp *DeSoMempool) InefficientRemoveTransaction(tx *MsgDeSoTxn) {
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
 
 	mp.inefficientRemoveTransaction(tx)
 }
 
-func (mp *BitCloutMempool) EvictUnminedBitcoinTransactions(bitcoinTxnHashes []string, dryRun bool) (int64, map[string]int64, []string, []string) {
-	var mempoolTxns []*MempoolTx
-
-	if !dryRun {
-		mp.mtx.Lock()
-		defer mp.mtx.Unlock()
-
-		mempoolTxns = mp.universalTransactionList
-	} else {
-		mempoolTxns = mp.readOnlyUniversalTransactionList
-	}
-
-	// Create a new pool to apply them to.
-	newPool := NewBitCloutMempool(mp.bc, 0, 0, "", false, "", "")
-
-	isHashToEvict := func(evictHash string) bool {
-		for _, txnHash := range bitcoinTxnHashes {
-			if txnHash == evictHash {
-				return true
-			}
-		}
-		return false
-	}
-
-	evictedTxnsMap := make(map[string]int64)
-	evictedTxnsList := []string{}
-	unminedBitcoinExchangeTxns := []string{}
-	for ii, mempoolTx := range mempoolTxns {
-		if mempoolTx.Tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange && IsUnminedBitcoinExchange(mempoolTx.Tx.TxnMeta.(*BitcoinExchangeMetadata)) {
-			evictHash := mempoolTx.Tx.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction.TxHash().String()
-			unminedBitcoinExchangeTxns = append(unminedBitcoinExchangeTxns, fmt.Sprintf("%s:%d", evictHash, ii))
-
-			// Don't add transactions if they're in our list of txns to evict
-			if isHashToEvict(evictHash) {
-				evictedTxnsMap[mempoolTx.Tx.TxnMeta.GetTxnType().String()] += 1
-				evictedTxnsList = append(evictedTxnsList, mempoolTx.Tx.Hash().String()+":"+PkToStringMainnet(mempoolTx.Tx.Hash()[:]))
-				continue
-			}
-		}
-
-		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
-		txnsAccepted, err := newPool.ProcessTransaction(
-			mempoolTx.Tx, true /*allowUnconnectedTxn*/, false, /*rateLimit*/
-			0 /*peerID*/, false /*verifySignatures*/)
-		if err != nil {
-			glog.Warning(errors.Wrapf(err, "EvictUnminedBitcoinTxns: "))
-		}
-		if len(txnsAccepted) == 0 {
-			evictedTxnsMap[mempoolTx.Tx.TxnMeta.GetTxnType().String()] += 1
-			evictedTxnsList = append(evictedTxnsList, mempoolTx.Tx.Hash().String()+":"+PkToStringMainnet(mempoolTx.Tx.Hash()[:]))
-		}
-	}
-
-	newPoolTxnCount := int64(len(newPool.poolMap))
-
-	if !dryRun {
-		// Replace the existing mempool with the new pool.
-		mp.resetPool(newPool)
-	}
-
-	return newPoolTxnCount, evictedTxnsMap, evictedTxnsList, unminedBitcoinExchangeTxns
-}
-
-func (mp *BitCloutMempool) StartReadOnlyUtxoViewRegenerator() {
+func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
 	glog.Info("Calling StartReadOnlyUtxoViewRegenerator...")
 
 	go func() {
@@ -2150,19 +2004,19 @@ func (mp *BitCloutMempool) StartReadOnlyUtxoViewRegenerator() {
 		for {
 			select {
 			case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
-				glog.Tracef("StartReadOnlyUtxoViewRegenerator: Woke up!")
+				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Woke up!")
 
 				// When we wake up, only do an update if one didn't occur since before
 				// we slept. Note that the number of transactions being processed can
 				// also trigger an update, which is why this check is necessary.
 				newSeqNum := atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
 				if oldSeqNum == newSeqNum {
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: Updating view at prescribed interval")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Updating view at prescribed interval")
 					// Acquire a read lock when we do this.
 					mp.RegenerateReadOnlyView()
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: Finished view update at prescribed interval")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Finished view update at prescribed interval")
 				} else {
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: View updated while sleeping; nothing to do")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: View updated while sleeping; nothing to do")
 				}
 
 				// Get the sequence number before our timer hits.
@@ -2175,7 +2029,7 @@ func (mp *BitCloutMempool) StartReadOnlyUtxoViewRegenerator() {
 	}()
 }
 
-func (mp *BitCloutMempool) regenerateReadOnlyView() error {
+func (mp *DeSoMempool) regenerateReadOnlyView() error {
 	newView, err := mp.universalUtxoView.CopyUtxoView()
 	if err != nil {
 		return fmt.Errorf("Error generating readOnlyUtxoView: %v", err)
@@ -2199,14 +2053,14 @@ func (mp *BitCloutMempool) regenerateReadOnlyView() error {
 	return nil
 }
 
-func (mp *BitCloutMempool) RegenerateReadOnlyView() error {
+func (mp *DeSoMempool) RegenerateReadOnlyView() error {
 	mp.mtx.RLock()
 	defer mp.mtx.RUnlock()
 
 	return mp.regenerateReadOnlyView()
 }
 
-func (mp *BitCloutMempool) BlockUntilReadOnlyViewRegenerated() {
+func (mp *DeSoMempool) BlockUntilReadOnlyViewRegenerated() {
 	oldSeqNum := atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
 	newSeqNum := oldSeqNum
 	for newSeqNum == oldSeqNum {
@@ -2217,7 +2071,7 @@ func (mp *BitCloutMempool) BlockUntilReadOnlyViewRegenerated() {
 	}
 }
 
-func (mp *BitCloutMempool) StartMempoolDBDumper() {
+func (mp *DeSoMempool) StartMempoolDBDumper() {
 	// If we were instructed to dump txns to the db, then do so periodically
 	// Note this acquired a very minimal lock on the universalTransactionList
 	go func() {
@@ -2237,7 +2091,7 @@ func (mp *BitCloutMempool) StartMempoolDBDumper() {
 	}()
 }
 
-func (mp *BitCloutMempool) LoadTxnsFromDB() {
+func (mp *DeSoMempool) LoadTxnsFromDB() {
 	glog.Infof("LoadTxnsFromDB: Loading mempool txns from db because --load_mempool_txns_from_db was set")
 	startTime := time.Now()
 
@@ -2274,7 +2128,7 @@ func (mp *BitCloutMempool) LoadTxnsFromDB() {
 	// Get all saved mempool transactions from the DB.
 	dbMempoolTxnsOrderedByTime, err := DbGetAllMempoolTxnsSortedByTimeAdded(tempMempoolDB)
 	if err != nil {
-		log.Fatalf("NewBitCloutMempool: Failed to get mempoolTxs from the DB: %v", err)
+		log.Fatalf("NewDeSoMempool: Failed to get mempoolTxs from the DB: %v", err)
 	}
 
 	for _, mempoolTxn := range dbMempoolTxnsOrderedByTime {
@@ -2283,7 +2137,7 @@ func (mp *BitCloutMempool) LoadTxnsFromDB() {
 			// Log errors but don't stop adding transactions. We do this because we'd prefer
 			// to drop a transaction here or there rather than lose the whole block because
 			// of one bad apple.
-			glog.Warning(errors.Wrapf(err, "NewBitCloutMempool: Not adding txn from DB "+
+			glog.Warning(errors.Wrapf(err, "NewDeSoMempool: Not adding txn from DB "+
 				"because it had an error: "))
 		}
 	}
@@ -2291,49 +2145,38 @@ func (mp *BitCloutMempool) LoadTxnsFromDB() {
 	glog.Infof("LoadTxnsFromDB: Loaded %v txns in %v seconds", len(dbMempoolTxnsOrderedByTime), endTime.Sub(startTime).Seconds())
 }
 
-func (mp *BitCloutMempool) Stop() {
+func (mp *DeSoMempool) Stop() {
 	close(mp.quit)
 }
 
 // Create a new pool with no transactions in it.
-func NewBitCloutMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
+func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
-	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *BitCloutMempool {
+	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *DeSoMempool {
 
-	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
-	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
-	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.bitcoinManager)
-	newPool := &BitCloutMempool{
+	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	newPool := &DeSoMempool{
 		quit:                            make(chan struct{}),
 		bc:                              _bc,
 		rateLimitFeeRateNanosPerKB:      _rateLimitFeerateNanosPerKB,
 		minFeeRateNanosPerKB:            _minFeerateNanosPerKB,
 		poolMap:                         make(map[BlockHash]*MempoolTx),
 		unconnectedTxns:                 make(map[BlockHash]*UnconnectedTx),
-		unconnectedTxnsByPrev:           make(map[UtxoKey]map[BlockHash]*MsgBitCloutTxn),
-		outpoints:                       make(map[UtxoKey]*MsgBitCloutTxn),
+		unconnectedTxnsByPrev:           make(map[UtxoKey]map[BlockHash]*MsgDeSoTxn),
+		outpoints:                       make(map[UtxoKey]*MsgDeSoTxn),
 		pubKeyToTxnMap:                  make(map[PkMapKey]map[BlockHash]*MempoolTx),
-		unminedBitcoinTxns:              make(map[BlockHash]*MempoolTx),
 		blockCypherAPIKey:               _blockCypherAPIKey,
-		blockCypherCheckDoubleSpendChan: make(chan *MsgBitCloutTxn),
 		backupUniversalUtxoView:         backupUtxoView,
 		universalUtxoView:               utxoView,
 		mempoolDir:                      _mempoolDumpDir,
 		generateReadOnlyUtxoView:        _runReadOnlyViewUpdater,
 		readOnlyUtxoView:                readOnlyUtxoView,
 		readOnlyUniversalTransactionMap: make(map[BlockHash]*MempoolTx),
-		readOnlyOutpoints:               make(map[UtxoKey]*MsgBitCloutTxn),
+		readOnlyOutpoints:               make(map[UtxoKey]*MsgDeSoTxn),
 		dataDir:                         _dataDir,
 	}
-
-	// TODO: DELETEME: This code is no longer needed because we check for double-spends up-front.
-	// It also causes sync issues between read nodes.
-	//
-	// If we were passed an API key, start a process to check for BitcoinExchange
-	// double-spends and evict them from the mempool.
-	//if newPool.blockCypherAPIKey != "" {
-	//	newPool.StartBitcoinExchangeDoubleSpendChecker()
-	//}
 
 	if newPool.mempoolDir != "" {
 		newPool.LoadTxnsFromDB()
