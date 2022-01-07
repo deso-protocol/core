@@ -209,9 +209,9 @@ const (
 	TxnTypeAcceptNFTTransfer            TxnType = 20
 	TxnTypeBurnNFT                      TxnType = 21
 	TxnTypeAuthorizeDerivedKey          TxnType = 22
-	TxnTypeDAOCoin                      TxnType = 23
-	TxnTypeDAOCoinTransfer              TxnType = 24
-	// NEXT_ID = 25
+	TxnTypeDAOCoin                      TxnType = 25
+	TxnTypeDAOCoinTransfer              TxnType = 26
+	// NEXT_ID = 27
 )
 
 type TxnString string

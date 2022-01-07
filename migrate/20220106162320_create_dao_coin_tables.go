@@ -50,8 +50,8 @@ func init() {
 			ALTER TABLE pg_profiles
 				ADD COLUMN minting_disabled                    BOOL,
 				ADD COLUMN dao_coin_number_of_holders          BIGINT,
-                ADD COLUMN dao_coin_coins_in_circulation_nanos BIGINT,
-                ADD COLUMN dao_coin_minting_disabled           BOOL;
+				ADD COLUMN dao_coin_coins_in_circulation_nanos BIGINT,
+				ADD COLUMN dao_coin_minting_disabled           BOOL;
 			`)
 
 		return nil
@@ -59,7 +59,14 @@ func init() {
 
 	down := func(db orm.DB) error {
 		_, err := db.Exec(`
+			DROP TABLE pg_metadata_dao_coins;
+			DROP TABLE pg_metadata_dao_coin_transfer;
 			DROP TABLE pg_dao_coin_balances;
+			ALTER TABLE pg_profiles
+				DROP COLUMN minting_disabled,
+				DROP COLUMN dao_coin_number_of_holders,
+				DROP COLUMN dao_coin_coins_in_circulation_nanos,
+				DROP COLUMN dao_coin_minting_disabled; 
 		`)
 		return err
 	}

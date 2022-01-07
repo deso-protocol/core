@@ -98,10 +98,10 @@ const (
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
-	OperationTypeDAOCoin                      OperationType = 24
-	OperationTypeDAOCoinTransfer              OperationType = 25
+	OperationTypeDAOCoin                      OperationType = 26
+	OperationTypeDAOCoinTransfer              OperationType = 27
 
-	// NEXT_TAG = 26
+	// NEXT_TAG = 28
 )
 
 func (op OperationType) String() string {

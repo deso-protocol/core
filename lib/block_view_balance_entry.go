@@ -45,12 +45,12 @@ func (bav *UtxoView) _setBalanceEntryMappingsWithPKIDs(
 
 	// This function shouldn't be called with nil.
 	if balanceEntry == nil {
-		glog.Errorf("_setBalanceEntryMappings: Called with nil BalanceEntry; " +
+		glog.Errorf("_setBalanceEntryMappingsWithPKIDs: Called with nil BalanceEntry; " +
 			"this should never happen.")
 		return
 	}
 
-	// Add a mapping for the BalancEntry.
+	// Add a mapping for the BalanceEntry.
 	balanceEntryKey := MakeBalanceEntryKey(hodlerPKID, creatorPKID)
 	if isDAOCoin {
 		bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry[balanceEntryKey] = balanceEntry
