@@ -204,7 +204,7 @@ func (op OperationType) String() string {
 		}
 	case OperationTypeDAOCoinTransfer:
 		{
-		return "OperationTypeDAOCoinTransfer"
+			return "OperationTypeDAOCoinTransfer"
 		}
 	}
 	return "OperationTypeUNKNOWN"
