@@ -311,6 +311,17 @@ func TestDAOCoinBasic(t *testing.T) {
 		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
 	}
 
+	// M1 can't burn coins
+	{
+		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
+			ProfilePublicKey: m0PkBytes,
+			OperationType:    DAOCoinOperationTypeBurn,
+			CoinsToBurnNanos: 100,
+		})
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist)
+	}
+
 	// M0 transfers 10K DAO coins to m1
 	{
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
@@ -377,7 +388,6 @@ func TestDAOCoinBasic(t *testing.T) {
 	}
 
 	// M0 can't disable minting again
-	// Can't mint 0 DAO coins
 	{
 		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
@@ -475,7 +485,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDAOCoinBurnInsufficientCoins)
 	}
 
-	// Let's have m1 burn all their coins. See number of holders go down.
+	// Let's have m1 transfer all their coins. See number of holders go down.
 	{
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,

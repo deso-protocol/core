@@ -219,9 +219,12 @@ const (
 	RuleErrorDAOCoinTransferInsufficientCoins           RuleError = "RuleErrorDAOCoinTransferInsufficientCoins"
 	RuleErrorDAOCoinTransferCannotTransferToSelf        RuleError = "RuleErrorDAOCoinTransferCannotTransferToSelf"
 	RuleErrorDAOCOinTransferMustTransferNonZeroDAOCoins RuleError = "RuleErrorDAOCOinTransferMustTransferNonZeroDAOCoins"
+	RuleErrorDAOCoinTransferInvalidReceiverPubKey       RuleError = "RuleErrorDAOCoinTransferInvalidReceiverPubKey"
+	RuleErrorDAOCoinTransferInvalidProfilePubKey        RuleError = "RuleErrorDAOCoinTransferInvalidProfilePubKey"
 
 	RuleErrorDAOCoinRequiresNonZeroInput                  RuleError = "RuleErrorDAOCoinRequiresNonZeroInput"
 	RuleErrorDAOCoinInvalidPubKeySize                     RuleError = "RuleErrorDAOCoinInvalidPubKeySize"
+	RuleErrorDAOCoinInvalidPubKey                         RuleError = "RuleErrorDAOCoinInvalidPubKey"
 	RuleErrorDAOCoinOperationOnNonexistentProfile         RuleError = "RuleErrorDAOCoinOperationOnNonexistentProfile"
 	RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin            RuleError = "RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin"
 	RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist        RuleError = "RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist"

@@ -106,7 +106,7 @@ func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool, isDAOCoin bool)
 	for _, balanceEntry := range bav.GetHODLerPKIDCreatorPKIDToBalanceEntryMap(isDAOCoin) {
 		if reflect.DeepEqual(balanceEntry.HODLerPKID, pkid) {
 			if _, ok := holdingsMap[*balanceEntry.CreatorPKID]; ok {
-				// We found both a mempool and a db balanceEntry. Update the BalanceEntry using mempool data.
+				// We found both an utxoView and a db balanceEntry. Update the BalanceEntry using utxoView data.
 				holdingsMap[*balanceEntry.CreatorPKID].BalanceNanos = balanceEntry.BalanceNanos
 			} else {
 				// Add new entries to the list
@@ -149,7 +149,7 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) 
 	for _, balanceEntry := range bav.GetHODLerPKIDCreatorPKIDToBalanceEntryMap(isDAOCoin) {
 		if reflect.DeepEqual(balanceEntry.HODLerPKID, pkid) {
 			if _, ok := holdersMap[*balanceEntry.HODLerPKID]; ok {
-				// We found both a mempool and a db balanceEntry. Update the BalanceEntry using mempool data.
+				// We found both an utxoView and a db balanceEntry. Update the BalanceEntry using utxoView data.
 				holdersMap[*balanceEntry.HODLerPKID].BalanceNanos = balanceEntry.BalanceNanos
 			} else {
 				// Add new entries to the list

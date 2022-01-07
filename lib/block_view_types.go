@@ -199,9 +199,13 @@ func (op OperationType) String() string {
 			return "OperationTypeAuthorizeDerivedKey"
 		}
 	case OperationTypeDAOCoin:
-		return "OperationTypeDAOCoin"
+		{
+			return "OperationTypeDAOCoin"
+		}
 	case OperationTypeDAOCoinTransfer:
+		{
 		return "OperationTypeDAOCoinTransfer"
+		}
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -857,7 +861,7 @@ type ProfileEntry struct {
 	// don't need to initialize it explicitly.
 	CoinEntry
 
-	// DAOCoinEntry trakcs the information around the DAO coins issued on a user's profile.
+	// DAOCoinEntry tracks the information around the DAO coins issued on a user's profile.
 	// Note: the following fields are basically ignored for the DAOCoinEntry
 	// 1. CreatorBasisPoints
 	// 2. DeSoLockedNanos

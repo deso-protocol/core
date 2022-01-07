@@ -279,13 +279,12 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 
 	// Get the BalanceEntry of the creator. It could be nil if this is a sell
 	// transaction or if the balance entry was deleted by a creator coin transfer.
-	creatorBalanceEntry, _, _ := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+	creatorBalanceEntry, _, creatorPKID := bav.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 		txMeta.ProfilePublicKey, txMeta.ProfilePublicKey)
 	if creatorBalanceEntry == nil || creatorBalanceEntry.isDeleted {
-		creatorPKID := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey)
 		creatorBalanceEntry = &BalanceEntry{
-			HODLerPKID:   creatorPKID.PKID,
-			CreatorPKID:  creatorPKID.PKID,
+			HODLerPKID:   creatorPKID,
+			CreatorPKID:  creatorPKID,
 			BalanceNanos: uint64(0),
 		}
 	}
