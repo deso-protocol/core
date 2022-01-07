@@ -108,6 +108,7 @@ func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool, isDAOCoin bool)
 			if _, ok := holdingsMap[*balanceEntry.CreatorPKID]; ok {
 				// We found both an utxoView and a db balanceEntry. Update the BalanceEntry using utxoView data.
 				holdingsMap[*balanceEntry.CreatorPKID].BalanceNanos = balanceEntry.BalanceNanos
+				holdingsMap[*balanceEntry.CreatorPKID].HasPurchased = balanceEntry.HasPurchased
 			} else {
 				// Add new entries to the list
 				entriesYouHold = append(entriesYouHold, balanceEntry)
@@ -151,6 +152,7 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) 
 			if _, ok := holdersMap[*balanceEntry.HODLerPKID]; ok {
 				// We found both an utxoView and a db balanceEntry. Update the BalanceEntry using utxoView data.
 				holdersMap[*balanceEntry.HODLerPKID].BalanceNanos = balanceEntry.BalanceNanos
+				holdersMap[*balanceEntry.HODLerPKID].HasPurchased = balanceEntry.HasPurchased
 			} else {
 				// Add new entries to the list
 				holderEntries = append(holderEntries, balanceEntry)
