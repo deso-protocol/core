@@ -456,9 +456,10 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 				MintingDisabled:         profile.MintingDisabled,
 			},
 			DAOCoinEntry: CoinEntry{
-				NumberOfHolders:         profile.DAOCoinNumberOfHolders,
-				CoinsInCirculationNanos: profile.DAOCoinCoinsInCirculationNanos,
-				MintingDisabled:         profile.DAOCoinMintingDisabled,
+				NumberOfHolders:           profile.DAOCoinNumberOfHolders,
+				CoinsInCirculationNanos:   profile.DAOCoinCoinsInCirculationNanos,
+				MintingDisabled:           profile.DAOCoinMintingDisabled,
+				TransferRestrictionStatus: profile.DAOCoinTransferRestrictionStatus,
 			},
 		}
 
