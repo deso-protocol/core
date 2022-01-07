@@ -267,6 +267,7 @@ type PGMetadataDAOCoin struct {
 	OperationType    DAOCoinOperationType `pg:",use_zero"`
 	CoinsToMintNanos uint64               `pg:",use_zero"`
 	CoinsToBurnNanos uint64               `pg:",use_zero"`
+	TransferRestrictionStatus             `pg:",use_zero"`
 }
 
 // PGMetadataDAOCoinTransfer represents DAOCoinTransferMetadata
@@ -275,7 +276,7 @@ type PGMetadataDAOCoinTransfer struct {
 
 	TransactionHash        *BlockHash `pg:",pk,type:bytea"`
 	ProfilePublicKey       []byte     `pg:",type:bytea"`
-	DAOCoinToTransferNanos uint64     `pg:",use_zero"`
+	DAOCoinToTransferNanos uint64     `pg:"dao_coin_to_transfer_nanos,use_zero"`
 	ReceiverPublicKey      []byte     `pg:",type:bytea"`
 }
 
@@ -417,20 +418,21 @@ const (
 type PGProfile struct {
 	tableName struct{} `pg:"pg_profiles"`
 
-	PKID                           *PKID      `pg:",pk,type:bytea"`
-	PublicKey                      *PublicKey `pg:",type:bytea"`
-	Username                       string
-	Description                    string
-	ProfilePic                     []byte
-	CreatorBasisPoints             uint64
-	DeSoLockedNanos                uint64
-	NumberOfHolders                uint64
-	CoinsInCirculationNanos        uint64
-	CoinWatermarkNanos             uint64
-	MintingDisabled                bool
-	DAOCoinNumberOfHolders         uint64
-	DAOCoinCoinsInCirculationNanos uint64
-	DAOCoinMintingDisabled         bool
+	PKID                             *PKID      `pg:",pk,type:bytea"`
+	PublicKey                        *PublicKey `pg:",type:bytea"`
+	Username                         string
+	Description                      string
+	ProfilePic                       []byte
+	CreatorBasisPoints               uint64
+	DeSoLockedNanos                  uint64
+	NumberOfHolders                  uint64
+	CoinsInCirculationNanos          uint64
+	CoinWatermarkNanos               uint64
+	MintingDisabled                  bool
+	DAOCoinNumberOfHolders           uint64                    `pg:"dao_coin_number_of_holders"`
+	DAOCoinCoinsInCirculationNanos   uint64                    `pg:"dao_coin_coins_in_circulation"`
+	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
+	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
 }
 
 func (profile *PGProfile) Empty() bool {
@@ -1319,6 +1321,10 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 			profile.NumberOfHolders = profileEntry.NumberOfHolders
 			profile.CoinsInCirculationNanos = profileEntry.CoinsInCirculationNanos
 			profile.CoinWatermarkNanos = profileEntry.CoinWatermarkNanos
+			profile.DAOCoinCoinsInCirculationNanos = profileEntry.DAOCoinEntry.CoinsInCirculationNanos
+			profile.DAOCoinMintingDisabled = profileEntry.DAOCoinEntry.MintingDisabled
+			profile.DAOCoinNumberOfHolders = profileEntry.DAOCoinEntry.NumberOfHolders
+			profile.DAOCoinTransferRestrictionStatus = profileEntry.DAOCoinEntry.TransferRestrictionStatus
 		}
 
 		if pkidEntry.isDeleted {
