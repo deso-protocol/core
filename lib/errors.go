@@ -219,7 +219,7 @@ const (
 	RuleErrorDAOCoinTransferBalanceEntryDoesNotExist    RuleError = "RuleErrorDAOCoinTransferBalanceEntryDoesNotExist"
 	RuleErrorDAOCoinTransferInsufficientCoins           RuleError = "RuleErrorDAOCoinTransferInsufficientCoins"
 	RuleErrorDAOCoinTransferCannotTransferToSelf        RuleError = "RuleErrorDAOCoinTransferCannotTransferToSelf"
-	RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins RuleError = "RuleErrorDAOCOinTransferMustTransferNonZeroDAOCoins"
+	RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins RuleError = "RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins"
 	RuleErrorDAOCoinTransferInvalidReceiverPubKey       RuleError = "RuleErrorDAOCoinTransferInvalidReceiverPubKey"
 	RuleErrorDAOCoinTransferInvalidProfilePubKey        RuleError = "RuleErrorDAOCoinTransferInvalidProfilePubKey"
 	RuleErrorDAOCoinTransferProfileOwnerOnlyViolation   RuleError = "RuleErrorDAOCoinTransferProfileOwnerOnlyViolation"
