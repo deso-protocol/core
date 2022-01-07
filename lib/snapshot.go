@@ -5,12 +5,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/decred/dcrd/lru"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/sha3"
+	"io"
 	"math/big"
-	"reflect"
 	"sort"
 	"sync/atomic"
 )
@@ -118,6 +119,11 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) {
 	sc.Checksum = z
 }
 
+func (sc *StateChecksum) ToHashString() string {
+	hash := merkletree.Sha256DoubleHash(sc.Checksum.Bytes())
+	return string(hash)
+}
+
 type Snapshot struct {
 	// Cache is used to store most recent DB records that we've read/wrote.
 	// This is particularly useful for maintaining ancestral records, because
@@ -200,9 +206,6 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 	snap.MapKeyList = append(snap.MapKeyList, key)
 	if existed {
 		snap.AncestralMap[key] = value
-		// We also have to remove the previous value from the state checksum.
-		// Because checksum is commutative, we can safely remove the past value here.
-		snap.Checksum.RemoveBytes(value)
 	} else {
 		snap.NotExistsMap[key] = true
 	}
@@ -311,32 +314,96 @@ type DBEntry struct {
 	Entry string
 }
 
-func (snap *Snapshot) GetMostRecentSnapshot(handle *badger.DB) []*DBEntry {
-	DBEntries := []*DBEntry{}
-	for ii := 0; ii < len(statePrefixes); ii++ {
-		prefix := statePrefixes[ii]
-		lastPrefix := prefix
-		for {
-			k1, v1, full, _ := DBIteratePrefixKeys(handle, lastPrefix, uint32(8<<8))
-			for i := 0; i < len(*k1); i++ {
-				fmt.Printf("Keys:%v\n Values:%v\n", (*k1)[i], (*v1)[i])
-			}
-			for jj, key := range *k1 {
-				if len(DBEntries) > 0 &&
-					!reflect.DeepEqual(DBEntries[len(DBEntries)-1].Key, key) {
+func (entry *DBEntry) Encode() []byte {
+	data := []byte{}
 
-					DBEntries = append(DBEntries, &DBEntry{
-						Key:   key,
-						Entry: (*v1)[jj],
-					})
-				}
-			}
-			lastPrefix, _ = hex.DecodeString((*k1)[len(*k1)-1])
-			if !full || !bytes.HasPrefix(lastPrefix, _PrefixUtxoKeyToUtxoEntry) {
-				break
-			}
-		}
+	data = append(data, UintToBuf(uint64(len(entry.Key)))...)
+	data = append(data, []byte(entry.Key)...)
+	data = append(data, UintToBuf(uint64(len(entry.Entry)))...)
+	data = append(data, []byte(entry.Entry)...)
+	return data
+}
+
+func (entry *DBEntry) Decode(rr io.Reader) error {
+	var keyLen, entryLen uint64
+	var err error
+
+	keyLen, err = ReadUvarint(rr)
+	if err != nil {
+		return err
 	}
 
-	return DBEntries
+	keyBytes := make([]byte, keyLen)
+	_, err = io.ReadFull(rr, keyBytes)
+	if err != nil {
+		return err
+	}
+	entry.Key = string(keyBytes)
+
+	entryLen, err = ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+
+	entryBytes := make([]byte, entryLen)
+	_, err = io.ReadFull(rr, entryBytes)
+	if err!= nil {
+		return err
+	}
+	entry.Entry = string(entryBytes)
+
+	return nil
+}
+
+func PrefixDBEntry(prefix []byte) DBEntry {
+	return DBEntry{
+		Key: hex.EncodeToString(prefix),
+		Entry: "",
+	}
+}
+
+func EmptyDBEntry() DBEntry {
+	return DBEntry{
+		Key: "-1",
+		Entry: "",
+	}
+}
+
+func (entry *DBEntry) IsEmpty() bool {
+	return entry.Key == "-1"
+}
+
+func (snap *Snapshot) GetMostRecentSnapshot(handle *badger.DB, prefix []byte, lastKey []byte) (
+	[]DBEntry, bool) {
+	DBEntries := []DBEntry{}
+	//for ii := 0; ii < len(StatePrefixes); ii++ {
+	//	prefix := StatePrefixes[ii]
+	//for {
+	k1, v1, full, _ := DBIteratePrefixKeys(handle, prefix, lastKey, uint32(8<<8))
+	if len(*k1) == 0 {
+		return nil, false
+	}
+	//for i := 0; i < len(*k1); i++ {
+	//	fmt.Printf("Keys:%v\n Values:%v\n", (*k1)[i], (*v1)[i])
+	//}
+	//fmt.Println("iterated", *k1, *v1)
+	for jj, key := range *k1 {
+		keyBytes, _ := hex.DecodeString(key)
+		//fmt.Println("comparing", keyBytes, key, prefix, bytes.HasPrefix(keyBytes, prefix))
+		if bytes.HasPrefix(keyBytes, prefix){
+			DBEntries = append(DBEntries, DBEntry{
+				Key:   key,
+				Entry: (*v1)[jj],
+			})
+		}
+	}
+	lastKey, _ = hex.DecodeString((*k1)[len(*k1)-1])
+	//fmt.Println("prefixes", full, prefix, lastKey)
+	//if !full || !bytes.HasPrefix(lastKey, prefix) {
+	//	break
+	//}
+	//}
+	//}
+
+	return DBEntries, full
 }

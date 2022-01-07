@@ -399,6 +399,7 @@ type Blockchain struct {
 	timeSource                      chainlib.MedianTimeSource
 	trustedBlockProducerPublicKeys  map[PkMapKey]bool
 	trustedBlockProducerStartHeight uint64
+	maxSyncBlockHeight              uint32
 	params                          *DeSoParams
 	eventManager                    *EventManager
 	// Returns true once all of the housekeeping in creating the
@@ -432,8 +433,8 @@ type Blockchain struct {
 
 	// State checksum is used to verify integrity of state data and when
 	// syncing from snapshot in the hyper sync protocol.
-	stateChecksum StateChecksum
-	stateSynced   bool
+	syncingState      bool
+	finishedSyncing   bool
 }
 
 func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
@@ -565,9 +566,6 @@ func (bc *Blockchain) _initChain() error {
 		}
 	}
 
-	// Initialize the state checksum.
-	bc.stateChecksum.Initialize()
-
 	bc.isInitialized = true
 
 	return nil
@@ -581,6 +579,7 @@ func (bc *Blockchain) _initChain() error {
 func NewBlockchain(
 	trustedBlockProducerPublicKeyStrs []string,
 	trustedBlockProducerStartHeight uint64,
+	maxSyncBlockHeight uint32,
 	params *DeSoParams,
 	timeSource chainlib.MedianTimeSource,
 	db *badger.DB,
@@ -605,6 +604,7 @@ func NewBlockchain(
 		timeSource:                      timeSource,
 		trustedBlockProducerPublicKeys:  trustedBlockProducerPublicKeys,
 		trustedBlockProducerStartHeight: trustedBlockProducerStartHeight,
+		maxSyncBlockHeight:              maxSyncBlockHeight,
 		params:                          params,
 		eventManager:                    eventManager,
 
@@ -979,14 +979,30 @@ func (bc *Blockchain) GetBlockAtHeight(height uint32) *MsgDeSoBlock {
 	return bc.GetBlock(bc.bestChain[height].Hash)
 }
 
+func (bc *Blockchain) isTipMaxed(tip *BlockNode) bool {
+	if bc.maxSyncBlockHeight > 0 {
+		glog.V(2).Infof("Blockchain.isTipCurrent got into the check and will return %v",
+			tip.Height >= bc.maxSyncBlockHeight)
+		return tip.Height >= bc.maxSyncBlockHeight
+	}
+	return false
+}
+
 func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
+	glog.V(2).Infof("Blockchain.isTipCurrent got to the check")
+	if bc.maxSyncBlockHeight > 0 {
+		glog.V(2).Infof("Blockchain.isTipCurrent got into the check and will return %v",
+			tip.Height >= bc.maxSyncBlockHeight)
+		return tip.Height >= bc.maxSyncBlockHeight
+	}
+
 	minChainWorkBytes, _ := hex.DecodeString(bc.params.MinChainWorkHex)
 
 	// Not current if the cumulative work is below the threshold.
 	if tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
-		//glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
-		//"CumWork (%v) is less than minChainWorkBytes (%v)",
-		//tip.CumWork, BytesToBigint(minChainWorkBytes))
+		glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
+		"CumWork (%v) is less than minChainWorkBytes (%v)",
+		tip.CumWork, BytesToBigint(minChainWorkBytes))
 		return false
 	}
 
@@ -1056,26 +1072,27 @@ func (bc *Blockchain) chainState() SyncState {
 		return SyncStateSyncingHeaders
 	}
 
+	// Add a condition here that verifies if the state has been synced.
+	if !bc.finishedSyncing && bc.syncingState {
+		return SyncStateSyncingSnapshot
+	}
+
 	// If the header tip is current but the block tip isn't then we're in
 	// the SyncStateSyncingBlocks state.
 	blockTip := bc.blockTip()
-	if !bc.isTipCurrent(blockTip) {
-		// TODO: Probably not the ideal condition we want but good for now
-		if !bc.stateSynced {
-			return SyncStateSyncingSnapshot
-		}
+	if !bc.isTipCurrent(blockTip) && !bc.finishedSyncing {
 		return SyncStateSyncingBlocks
 	}
 
 	// If the header tip is current and the block tip is current but the block
 	// tip is not equal to the header tip then we're in SyncStateNeedBlocks.
-	if *blockTip.Hash != *headerTip.Hash {
-		if !bc.stateSynced {
-			return SyncStateSyncingSnapshot
-		}
+	glog.Infof("WILL STATE BE SyncStateNeedBlocksss? %v", *blockTip.Hash != *headerTip.Hash)
+	//glog.Infof("Weird, they should be the same headerTip %v", *headerTip)
+	//glog.Infof("Weird, they should be the same blockTip %v", *blockTip)
+	if *blockTip.Hash != *headerTip.Hash && !bc.finishedSyncing {
 		return SyncStateNeedBlocksss
 	}
-
+	glog.Infof("STATE IS SyncStateFullyCurrent")
 	// If none of the checks above returned it means we're current.
 	return SyncStateFullyCurrent
 }
@@ -1086,7 +1103,8 @@ func (bc *Blockchain) ChainState() SyncState {
 
 func (bc *Blockchain) isSyncing() bool {
 	syncState := bc.chainState()
-	return syncState == SyncStateSyncingHeaders || syncState == SyncStateSyncingBlocks
+	return syncState == SyncStateSyncingHeaders || syncState == SyncStateSyncingBlocks ||
+		syncState == SyncStateSyncingSnapshot
 }
 
 // headerTip returns the tip of the header chain. Because we fetch headers
@@ -1623,6 +1641,7 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// If all went well with storing the header, set it in our in-memory
 	// index. If we're still syncing then it's safe to just set it. Otherwise, we
 	// need to make a copy first since there could be some concurrency issues.
+	glog.V(2).Infof("blockchain.processHeader isSyncing.chainState()")
 	if bc.isSyncing() {
 		bc.blockIndex[*newNode.Hash] = newNode
 	} else {

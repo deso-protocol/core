@@ -144,7 +144,7 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 	// these values should be updated to reflect the latest testnet values.
 	paramsCopy := DeSoTestnetParams
 
-	chain, err := NewBlockchain([]string{blockSignerPk}, 0, &paramsCopy,
+	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0, &paramsCopy,
 		timesource, db, nil, nil, nil)
 	if err != nil {
 		log.Fatal(err)
@@ -215,7 +215,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Temporarily modify the seed balances to make a specific public
 	// key have some DeSo
 	snap, err := NewSnapshot(100000)
-	chain, err := NewBlockchain([]string{blockSignerPk}, 0,
+	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
 		&paramsCopy, timesource, db, nil, nil, snap)
 	if err != nil {
 		log.Fatal(err)

@@ -529,6 +529,12 @@ func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) 
 }
 
 func (desoBlockProducer *DeSoBlockProducer) Start() {
+	if desoBlockProducer.chain.maxSyncBlockHeight > 0 {
+		glog.V(2).Infof("DeSoBlockProducer.Start() exiting because " +
+			"maxSyncBlockHeight: %v is greater than 0", desoBlockProducer.chain.maxSyncBlockHeight)
+		return
+	}
+
 	// Set the time to a nil value so we run on the first iteration of the loop.
 	var lastBlockUpdate time.Time
 	desoBlockProducer.producerWaitGroup.Add(1)

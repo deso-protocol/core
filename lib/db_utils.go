@@ -31,9 +31,9 @@ import (
 // This file contains all of the functions that interact with the database.
 
 const (
-	// badgerDbFolder is the subfolder in the config dir where we
+	// BadgerDbFolder is the subfolder in the config dir where we
 	// store the badgerdb database by default.
-	badgerDbFolder = "badgerdb"
+	BadgerDbFolder = "badgerdb"
 )
 
 var (
@@ -243,7 +243,7 @@ var (
 	_PrefixAncestralRecords = []byte{57}
 )
 
-var statePrefixes = [][]byte{
+var StatePrefixes = [][]byte{
 	_PrefixUtxoKeyToUtxoEntry,
 	_PrefixPubKeyUtxoKey,
 	_KeyUtxoNumEntries,
@@ -314,6 +314,21 @@ func isStateKey(key []byte) bool {
 	return isStatePrefix
 }
 
+func EncodeKeyValue(key []byte, value []byte) []byte {
+	data := []byte{}
+
+	// Encode key and value similarly to how DER signatures are encoded
+	// len(key + value) || len(key) || key || len(value) || value
+	// This ensures integrity of the (key, value) pairs
+	data = append(data, UintToBuf(uint64(len(key)+len(value)))...)
+	data = append(data, UintToBuf(uint64(len(key)))...)
+	data = append(data, key...)
+	data = append(data, UintToBuf(uint64(len(value)))...)
+	data = append(data, value...)
+
+	return data
+}
+
 // DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add
 // computation prior to DB writes. In particular, we use it to maintain a dynamic
 // LRU cache, and to build DB snapshots with ancestral records.
@@ -351,8 +366,12 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
 		// Now save the newest record to cache.
 		snap.Cache.Add(keyString, value)
+
+		// We have to remove the previous value from the state checksum.
+		// Because checksum is commutative, we can safely remove the past value here.
+		snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue))
 		// We also add the new record to the checksum.
-		snap.Checksum.AddBytes(value)
+		snap.Checksum.AddBytes(EncodeKeyValue(key, value))
 	}
 	return nil
 }
@@ -421,11 +440,14 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
 		// Now delete the past record from the cache.
 		snap.Cache.Delete(keyString)
+		// We have to remove the previous value from the state checksum.
+		// Because checksum is commutative, we can safely remove the past value here.
+		snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue))
 	}
 	return nil
 }
 
-func DBIteratePrefixKeys(db *badger.DB, prefix []byte, maxBytes uint32) (
+func DBIteratePrefixKeys(db *badger.DB, prefix []byte, lastKey []byte, maxBytes uint32) (
 	*[]string, *[]string, bool, error) {
 	var keys, values []string
 	currentBytes := 0
@@ -437,15 +459,14 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, maxBytes uint32) (
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		for it.Seek(prefix); it.Valid() && !full; it.Next() {
+		for it.Seek(lastKey); it.ValidForPrefix(prefix) && !full; it.Next() {
 			item := it.Item()
 			k := item.Key()
 			err := item.Value(func(v []byte) error {
+				keys = append(keys, hex.EncodeToString(k))
+				values = append(values, hex.EncodeToString(v))
 				currentBytes += len(k) + len(v)
-				if currentBytes <= int(maxBytes) {
-					keys = append(keys, hex.EncodeToString(k))
-					values = append(values, hex.EncodeToString(v))
-				} else {
+				if currentBytes > int(maxBytes) {
 					full = true
 				}
 				return nil
@@ -1977,7 +1998,7 @@ func _getBlockHashForPrefix(handle *badger.DB, snap *Snapshot, prefix []byte) *B
 
 // GetBadgerDbPath returns the path where we store the badgerdb data.
 func GetBadgerDbPath(dataDir string) string {
-	return filepath.Join(dataDir, badgerDbFolder)
+	return filepath.Join(dataDir, BadgerDbFolder)
 }
 
 func _EncodeUint32(num uint32) []byte {

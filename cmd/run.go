@@ -64,6 +64,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"Postgres instance on the same machine as your node for optimal performance.")
 	cmd.PersistentFlags().Uint32("cache-size", 100000,
 		"Determines the size of the in-memory cache used to offload calls to the BadgerDB.")
+	cmd.PersistentFlags().Uint32("max-sync-block-height", 0,
+		"Max sync block height")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},

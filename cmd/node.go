@@ -161,6 +161,7 @@ func (node *Node) Start() {
 		node.Config.NumMiningThreads,
 		node.Config.OneInboundPerIp,
 		node.Config.HyperSync,
+		node.Config.MaxSyncBlockHeight,
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,
 		node.Config.StallTimeoutSeconds,
