@@ -783,6 +783,23 @@ type BalanceEntry struct {
 	isDeleted bool
 }
 
+type TransferRestrictionStatus uint8
+
+const (
+	TransferRestrictionStatusUnrestricted            TransferRestrictionStatus = 0
+	TransferRestrictionStatusProfileOwnerOnly        TransferRestrictionStatus = 1
+	TransferRestrictionStatusDAOMembersOnly          TransferRestrictionStatus = 2
+	TransferRestrictionStatusPermanentlyUnrestricted TransferRestrictionStatus = 3
+)
+
+func (transferRestrictionStatus TransferRestrictionStatus) IsUnrestricted() bool {
+	if transferRestrictionStatus == TransferRestrictionStatusUnrestricted ||
+		transferRestrictionStatus == TransferRestrictionStatusPermanentlyUnrestricted {
+		return true
+	}
+	return false
+}
+
 // This struct contains all the information required to support coin
 // buy/sell transactions on profiles.
 type CoinEntry struct {
@@ -819,6 +836,8 @@ type CoinEntry struct {
 
 	// If true, DAO coins can no longer be minted.
 	MintingDisabled bool
+
+	TransferRestrictionStatus TransferRestrictionStatus
 }
 
 type PKIDEntry struct {

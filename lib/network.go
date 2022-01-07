@@ -4643,9 +4643,10 @@ func (txnData *AuthorizeDerivedKeyMetadata) New() DeSoTxnMetadata {
 type DAOCoinOperationType uint8
 
 const (
-	DAOCoinOperationTypeMint           DAOCoinOperationType = 0
-	DAOCoinOperationTypeBurn           DAOCoinOperationType = 1
-	DAOCoinOperationTypeDisableMinting DAOCoinOperationType = 2
+	DAOCoinOperationTypeMint                            DAOCoinOperationType = 0
+	DAOCoinOperationTypeBurn                            DAOCoinOperationType = 1
+	DAOCoinOperationTypeDisableMinting                  DAOCoinOperationType = 2
+	DAOCoinOperationTypeUpdateTransferRestrictionStatus DAOCoinOperationType = 3
 )
 
 type DAOCoinMetadata struct {
@@ -4664,6 +4665,9 @@ type DAOCoinMetadata struct {
 
 	// Burn Fields
 	CoinsToBurnNanos uint64
+
+	// TransferRestrictionStatus to set if OperationType == DAOCoinOperatoinTypeUpdateTransferRestrictionStatus
+	TransferRestrictionStatus
 }
 
 func (txnData *DAOCoinMetadata) GetTxnType() TxnType {
@@ -4687,6 +4691,8 @@ func (txnData *DAOCoinMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// TODO: is it too clever to save some space by only writing CoinstoBurnNanos if OperationType = 1
 	// CoinsToBurnNanos
 	data = append(data, UintToBuf(txnData.CoinsToBurnNanos)...)
+
+	data = append(data, byte(txnData.TransferRestrictionStatus))
 
 	return data, nil
 }
@@ -4724,6 +4730,12 @@ func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
 		return fmt.Errorf(
 			"DAOCoinMetadata.FromBytes: Error reading CoinsToBurnNanos: %v", err)
 	}
+
+	transferRestrictionStatus, err := rr.ReadByte()
+	if err != nil {
+		return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading TransferRestrictionStatus: %v", err)
+	}
+	ret.TransferRestrictionStatus = TransferRestrictionStatus(transferRestrictionStatus)
 
 	*txnData = ret
 	return nil

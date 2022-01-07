@@ -147,6 +147,25 @@ func (bav *UtxoView) _disconnectDAOCoin(
 			return fmt.Errorf("_disconnectDAOCoin: Disabling minting on a CoinEntry that already has minting " +
 				"disabled; this should never happen")
 		}
+	} else if txMeta.OperationType == DAOCoinOperationTypeUpdateTransferRestrictionStatus {
+		// Sanity checks
+		// transactor and profile match
+		if !reflect.DeepEqual(txMeta.ProfilePublicKey, currentTxn.PublicKey) {
+			return fmt.Errorf("_disconnectDAOCoin: Updating Transfer Restriction status by transactor public key " +
+				"that does not match ProfilePublicKey: %v, %v; this should never happen",
+				currentTxn.PublicKey, txMeta.ProfilePublicKey)
+		}
+		// Transfer Restriction update is a valid one
+		if existingProfileEntry.DAOCoinEntry.TransferRestrictionStatus == operationData.PrevCoinEntry.TransferRestrictionStatus {
+			return fmt.Errorf("_disconnectDAOCoin: Previous TransferRestrictionStatus %v is the same as " +
+				"current TransferRestrictionStatus %v; this should never happen",
+				operationData.PrevCoinEntry.TransferRestrictionStatus,
+				existingProfileEntry.DAOCoinEntry.TransferRestrictionStatus)
+		}
+		if operationData.PrevCoinEntry.TransferRestrictionStatus == TransferRestrictionStatusPermanentlyUnrestricted {
+			return fmt.Errorf("_disconnectDAOCoin: Previous TransferRestrictionStatus is permananetly " +
+				"unrestricted; this should never happen")
+		}
 	}
 	// Revert the coin entry
 	existingProfileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
@@ -331,7 +350,7 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 
 	txMeta := txn.TxnMeta.(*DAOCoinMetadata)
 
-	// First, only the profile associated with the DAO coin can mint or disable minting
+	// First, only the profile associated with the DAO coin can mint
 	if !reflect.DeepEqual(txMeta.ProfilePublicKey, txn.PublicKey) {
 		return 0, 0, nil, RuleErrorOnlyProfileOwnerCanMintDAOCoin
 	}
@@ -488,7 +507,7 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 
 	txMeta := txn.TxnMeta.(*DAOCoinMetadata)
 
-	// First, only the profile associated with the DAO coin can mint or disable minting
+	// First, only the profile associated with the DAO coin can disable minting
 	if !reflect.DeepEqual(txMeta.ProfilePublicKey, txn.PublicKey) {
 		return 0, 0, nil, RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin
 	}
@@ -512,6 +531,49 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
+func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	totalInput, totalOutput, utxoOpsForTxn, creatorProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
+		txn, txHash, blockHeight, verifySignatures)
+
+	if err != nil {
+		return 0, 0, nil, err
+	}
+
+	txMeta := txn.TxnMeta.(*DAOCoinMetadata)
+
+	// First, only the profile associated with the DAO coin can Update Transfer Restriction Status
+	if !reflect.DeepEqual(txMeta.ProfilePublicKey, txn.PublicKey) {
+		return 0, 0, nil, RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus
+	}
+
+	// Verify that we're setting TransferRestrictionStatus to a valid value
+	currentRestrictionStatus := creatorProfileEntry.DAOCoinEntry.TransferRestrictionStatus
+
+	if currentRestrictionStatus == TransferRestrictionStatusPermanentlyUnrestricted {
+		return 0, 0, nil, RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted
+	}
+
+	// We can't update to the same restriction status.
+	if currentRestrictionStatus == txMeta.TransferRestrictionStatus {
+		return 0, 0, nil, RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus
+	}
+
+	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
+	creatorProfileEntry.DAOCoinEntry.TransferRestrictionStatus = txMeta.TransferRestrictionStatus
+
+	bav._setProfileEntryMappings(creatorProfileEntry)
+
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:          OperationTypeDAOCoin,
+		PrevCoinEntry: &prevCoinEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, err
+}
+
 func (bav *UtxoView) _connectDAOCoin(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -532,6 +594,8 @@ func (bav *UtxoView) _connectDAOCoin(
 
 	case DAOCoinOperationTypeDisableMinting:
 		return bav.HelpConnectDAOCoinDisableMinting(txn, txHash, blockHeight, verifySignatures)
+	case DAOCoinOperationTypeUpdateTransferRestrictionStatus:
+		return bav.HelpConnectUpdateTransferRestrictionStatus(txn, txHash, blockHeight, verifySignatures)
 	}
 
 	return 0, 0, nil, fmt.Errorf("_connectDAOCoin: Unrecognized DAOCoin "+
@@ -554,7 +618,7 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	txMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
 
 	if txMeta.DAOCoinToTransferNanos == 0 {
-		return 0, 0, nil, RuleErrorDAOCOinTransferMustTransferNonZeroDAOCoins
+		return 0, 0, nil, RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins
 	}
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -599,8 +663,8 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	}
 
 	// Dig up the profile. It must exist for the user to be able to transfer its coin.
-	existingProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
-	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
+	creatorProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
+	if creatorProfileEntry == nil || creatorProfileEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorDAOCoinTransferOnNonexistentProfile,
 			"_connectDAOCoinTransfer: Profile pub key: %v %v",
@@ -613,7 +677,7 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	// Look up a BalanceEntry for the sender. If it doesn't exist then the sender implicitly
 	// has a balance of zero coins, and so the transfer shouldn't be allowed.
 	senderBalanceEntry, _, _ := bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
-		txn.PublicKey, existingProfileEntry.PublicKey)
+		txn.PublicKey, creatorProfileEntry.PublicKey)
 	if senderBalanceEntry == nil || senderBalanceEntry.isDeleted {
 		return 0, 0, nil, RuleErrorDAOCoinTransferBalanceEntryDoesNotExist
 	}
@@ -626,6 +690,10 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 			"_connectDAOCoinTransfer: DAOCoin nanos being transferred %v exceeds "+
 				"user's DAO coin balance %v",
 			txMeta.DAOCoinToTransferNanos, senderBalanceEntry.BalanceNanos)
+	}
+
+	if err = bav.IsValidDAOCoinTransfer(creatorProfileEntry, txn.PublicKey, txMeta.ReceiverPublicKey); err != nil {
+		return 0, 0, nil, err
 	}
 
 	// Now that we have validated this transaction, let's build the new BalanceEntry state.
@@ -644,14 +712,14 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	// If the receiver's balance entry is nil, we need to make one.
 	if receiverBalanceEntry == nil || receiverBalanceEntry.isDeleted {
 		receiverPKID := bav.GetPKIDForPublicKey(txMeta.ReceiverPublicKey)
-		creatorPKID := bav.GetPKIDForPublicKey(existingProfileEntry.PublicKey)
+		creatorPKID := bav.GetPKIDForPublicKey(creatorProfileEntry.PublicKey)
 		// Sanity check that we found a PKID entry for these pub keys (should never fail).
 		if receiverPKID == nil || receiverPKID.isDeleted || creatorPKID == nil || creatorPKID.isDeleted {
 			return 0, 0, nil, fmt.Errorf(
 				"_connectDAOCoinTransfer: Found nil or deleted PKID for receiver or creator, this should never "+
 					"happen. Receiver pubkey: %v, creator pubkey: %v",
 				PkToStringMainnet(txMeta.ReceiverPublicKey),
-				PkToStringMainnet(existingProfileEntry.PublicKey))
+				PkToStringMainnet(creatorProfileEntry.PublicKey))
 		}
 		receiverBalanceEntry = &BalanceEntry{
 			HODLerPKID:   receiverPKID.PKID,
@@ -681,21 +749,21 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 
 	// Save all the old values from the CoinEntry before we potentially update them. Note
 	// that DAOCoinEntry doesn't contain any pointers and so a direct copy is OK.
-	prevCoinEntry := existingProfileEntry.DAOCoinEntry
+	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
 
 	if prevReceiverBalanceEntry == nil || prevReceiverBalanceEntry.BalanceNanos == 0 ||
 		prevReceiverBalanceEntry.isDeleted {
 		// The receiver did not have a BalanceEntry before. Increment num holders.
-		existingProfileEntry.DAOCoinEntry.NumberOfHolders++
+		creatorProfileEntry.DAOCoinEntry.NumberOfHolders++
 	}
 
 	if senderBalanceEntry.BalanceNanos == 0 {
 		// The sender no longer holds any of this creator's coin, so we decrement num holders.
-		existingProfileEntry.DAOCoinEntry.NumberOfHolders--
+		creatorProfileEntry.DAOCoinEntry.NumberOfHolders--
 	}
 
 	// Update and set the new profile entry.
-	bav._setProfileEntryMappings(existingProfileEntry)
+	bav._setProfileEntryMappings(creatorProfileEntry)
 
 	// Add an operation to the list at the end indicating we've executed a
 	// DAOCoinTransfer txn. Save the previous state of the CoinEntry for easy
@@ -708,4 +776,37 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) IsValidDAOCoinTransfer(
+	creatorProfileEntry *ProfileEntry, senderPublicKey []byte, receiverPublicKey []byte) error {
+	// If there TransferRestrictionStatus is unrestricted, there are no further checks required.
+	if creatorProfileEntry.DAOCoinEntry.TransferRestrictionStatus.IsUnrestricted() {
+		return nil
+	}
+
+	// If the sender or receiver is the creator, we allow the DAO coin transfer.
+	if reflect.DeepEqual(creatorProfileEntry.PublicKey, senderPublicKey) ||
+		reflect.DeepEqual(creatorProfileEntry.PublicKey, receiverPublicKey) {
+		return nil
+	}
+
+	// We've just proven above that neither the sender nor receiver are the profile owner, so we can safely return
+	// false as either the sender or receiver must be the profile owner if the status is ProfileOwnerOnly.
+	if creatorProfileEntry.DAOCoinEntry.TransferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly {
+		return RuleErrorDAOCoinTransferProfileOwnerOnlyViolation
+	}
+
+	// For TransferRestrictionStatusDAOMembersOnly, we need to check that the receiver already has a balance for this
+	// DAO coin. We do not need to check the sender since a sender with no balance of DAO coins will not be able to
+	// perform a transfer.
+	if creatorProfileEntry.DAOCoinEntry.TransferRestrictionStatus == TransferRestrictionStatusDAOMembersOnly {
+		receiverBalanceEntry, _, _ := bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			receiverPublicKey, creatorProfileEntry.PublicKey)
+		if receiverBalanceEntry == nil || receiverBalanceEntry.isDeleted || receiverBalanceEntry.BalanceNanos == 0 {
+			return RuleErrorDAOCoinTransferDAOMemberOnlyViolation
+		}
+	}
+
+	return nil
 }

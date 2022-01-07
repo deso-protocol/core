@@ -211,9 +211,10 @@ func TestDAOCoinBasic(t *testing.T) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
 	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
 	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+	m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
 	// M0 can't mint without a profile
 	{
-		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
 			CoinsToMintNanos: 100,
@@ -242,10 +243,11 @@ func TestDAOCoinBasic(t *testing.T) {
 	hundredKCoins := 100000 * NanosPerUnit
 	tenKCoins := 10000 * NanosPerUnit
 	oneKCoins := 1000 * NanosPerUnit
+	hundredCoins := 100 * NanosPerUnit
 
 	// M1 can't mint for M0
 	{
-		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
 			CoinsToMintNanos: 100,
@@ -256,7 +258,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// M1 can't disable minting for M0
 	{
-		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeDisableMinting,
 		})
@@ -266,7 +268,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// Can't mint 0 DAO coins
 	{
-		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
 			CoinsToMintNanos: 0,
@@ -276,6 +278,10 @@ func TestDAOCoinBasic(t *testing.T) {
 	}
 
 	// Mint 1M DAO coins
+	// M0 DAO cap table before:
+	//		M0: 0
+	// M0 DAO cap table after:
+	//		M0: 1M
 	{
 		_daoCoinTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
@@ -294,6 +300,10 @@ func TestDAOCoinBasic(t *testing.T) {
 	}
 
 	// Burn 100K DAO coins
+	// M0 DAO cap table before:
+	//		M0: 1M
+	// M0 DAO cap table after:
+	//		M0: 1M - 100K
 	{
 		_daoCoinTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
@@ -313,7 +323,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// M1 can't burn coins
 	{
-		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
 			CoinsToBurnNanos: 100,
@@ -323,6 +333,11 @@ func TestDAOCoinBasic(t *testing.T) {
 	}
 
 	// M0 transfers 10K DAO coins to m1
+	// M0 DAO cap table before:
+	//		M0: 1M - 100K
+	// M0 DAO cap table after:
+	//		M0: 1M - 100K - 10K
+	//		M1: 10K
 	{
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
@@ -345,7 +360,52 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	}
 
+	// M0 burns 10K coin and immediately mints 10K more. M0 runs a weird DAO
+	// M0 DAO cap table before:
+	//		M0: 1M - 100K - 10K
+	//		M1: 10K
+	// M0 DAO cap table after:
+	//		M0: 1M - 100K - 10K
+	//		M1: 10K
+	{
+		_daoCoinTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinMetadata{
+			ProfilePublicKey: m0PkBytes,
+			OperationType:    DAOCoinOperationTypeBurn,
+			CoinsToBurnNanos: tenKCoins,
+		})
+
+		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m0PKID.PKID, m0PKID.PKID, true)
+		require.Equal(daoBalanceEntry.BalanceNanos, oneMCoins-hundredKCoins-tenKCoins-tenKCoins)
+
+		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins-tenKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
+		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
+
+		_daoCoinTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinMetadata{
+			ProfilePublicKey: m0PkBytes,
+			OperationType:    DAOCoinOperationTypeMint,
+			CoinsToMintNanos: tenKCoins,
+		})
+		daoBalanceEntry = DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m0PKID.PKID, m0PKID.PKID, true)
+		require.Equal(daoBalanceEntry.BalanceNanos, oneMCoins-hundredKCoins-tenKCoins)
+
+		profileEntry = DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
+		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
+
+	}
+
 	// m1 burns 1k DAO coins
+	// M0 DAO cap table before:
+	//		M0: 1M - 100K - 10K
+	//		M1: 10K
+	// M0 DAO cap table after:
+	//		M0: 1M - 100K - 10K
+	//		M1: 10K - 1K
 	{
 		_daoCoinTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
@@ -378,7 +438,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// M0 can't mint any new coins
 	{
-		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
 			CoinsToMintNanos: 100,
@@ -389,7 +449,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// M0 can't disable minting again
 	{
-		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeDisableMinting,
 		})
@@ -399,7 +459,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// Can't transfer more coins than you have.
 	{
-		_, _, _, err := _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
 			DAOCoinToTransferNanos: oneMCoins,
 			ReceiverPublicKey:      m2PkBytes,
@@ -410,18 +470,18 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// Can't transfer zero coins
 	{
-		_, _, _, err := _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
 			DAOCoinToTransferNanos: 0,
 			ReceiverPublicKey:      m2PkBytes,
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCOinTransferMustTransferNonZeroDAOCoins)
+		require.Contains(err.Error(), RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins)
 	}
 
 	// Can't transfer to yourself
 	{
-		_, _, _, err := _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
 			DAOCoinToTransferNanos: oneKCoins,
 			ReceiverPublicKey:      m0PkBytes,
@@ -432,7 +492,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// Can't transfer if there is no balance entry
 	{
-		_, _, _, err := _daoCoinTransferTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
 			DAOCoinToTransferNanos: 1,
 			ReceiverPublicKey:      m0PkBytes,
@@ -443,7 +503,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// Can't transfer DAO coins of non-existent profile
 	{
-		_, _, _, err := _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m2PkBytes,
 			DAOCoinToTransferNanos: oneMCoins,
 			ReceiverPublicKey:      m2PkBytes,
@@ -454,7 +514,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// Can't transfer if receiver pub key is not of correct length
 	{
-		_, _, _, err := _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
 			DAOCoinToTransferNanos: oneMCoins,
 			ReceiverPublicKey:      m2PkBytes[:10],
@@ -465,7 +525,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// Can't transfer if profile pub key is not of correct length
 	{
-		_, _, _, err := _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes[:10],
 			DAOCoinToTransferNanos: oneMCoins,
 			ReceiverPublicKey:      m2PkBytes,
@@ -476,7 +536,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 	// Can't burn more than you own
 	{
-		_, _, _, err := _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
 			CoinsToBurnNanos: oneMCoins,
@@ -486,6 +546,12 @@ func TestDAOCoinBasic(t *testing.T) {
 	}
 
 	// Let's have m1 transfer all their coins. See number of holders go down.
+	// M0 DAO cap table before:
+	//		M0: 1M - 100K - 10K
+	//		M1: 10K - 1K
+	// M0 DAO cap table after:
+	//		M0: 1M - 100K - 10K + (10K - 1K) = 1M - 100K - 1K
+	//		M1: 0
 	{
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
@@ -509,6 +575,11 @@ func TestDAOCoinBasic(t *testing.T) {
 	}
 
 	// Have m0 transfer some coins to m2
+	// M0 DAO cap table before:
+	//		M0: 1M - 100K - 1K
+	// M0 DAO cap table after:
+	//		M0: 1M - 100K - 10K - 1K
+	//		M2: 10K
 	{
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
@@ -534,6 +605,12 @@ func TestDAOCoinBasic(t *testing.T) {
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Swap m0 and m3 identities
+	// M0 DAO cap table before:
+	//		M0: 1M - 100K - 10K - 1K
+	//		M2: 10K
+	// M3 DAO cap table after:
+	//		M3: 1M - 100K - 10K - 1K
+	//		M2: 10K
 	{
 		_swapIdentityWithTestMeta(testMeta, 10, paramUpdaterPub, paramUpdaterPriv, m0PkBytes, m3PkBytes)
 
@@ -563,14 +640,307 @@ func TestDAOCoinBasic(t *testing.T) {
 		m3DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(db, m3PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m3DAOBalanceEntry.BalanceNanos, oneMCoins-hundredKCoins-tenKCoins-oneKCoins)
 	}
-
 	m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+	m0PKID = DBGetPKIDEntryForPublicKey(db, m0PkBytes)
+
+	// So now let's have M3 update the restriction status to be Profile owner only. Now either the recipient or sender
+	// must be the profile owner.
+	{
+		_daoCoinTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinMetadata{
+			ProfilePublicKey:          m3PkBytes,
+			OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
+		})
+
+		m3ProfileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(m3ProfileEntry.DAOCoinEntry.TransferRestrictionStatus, TransferRestrictionStatusProfileOwnerOnly)
+	}
+
+	// M1 can't update the TransferRestrictionStatus
+	{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
+			ProfilePublicKey:          m3PkBytes,
+			OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			TransferRestrictionStatus: TransferRestrictionStatusPermanentlyUnrestricted,
+		})
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus)
+	}
+
+	// m2 tries to transfer their coins to m1, but can't because must transfer to/from the profile owner.
+	{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			DAOCoinToTransferNanos: 1,
+			ReceiverPublicKey:      m1PkBytes,
+		})
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinTransferProfileOwnerOnlyViolation)
+	}
+
+	// M2 can transfer 1K to M3!
+	// M3 DAO cap table before:
+	//		M3: 1M - 100K - 10K - 1K
+	//		M2: 10K
+	// M3 DAO cap table after:
+	//		M3: 1M - 100K - 10K - 1K + 1K = 1M - 100K - 10K
+	//		M2: 10K - 1K
+	{
+		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			ReceiverPublicKey:      m3PkBytes,
+			DAOCoinToTransferNanos: oneKCoins,
+		})
+
+		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m3PKID.PKID, m3PKID.PKID, true)
+		require.Equal(daoBalanceEntry.BalanceNanos, oneMCoins-hundredKCoins-tenKCoins)
+
+		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m2PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m2DAOBalanceEntry.BalanceNanos, tenKCoins-oneKCoins)
+
+		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins-oneKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
+		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
+	}
+
+	// M3 transfers 1K to M1
+	// M3 DAO cap table before:
+	//		M3: 1M - 100K - 10K
+	//		M2: 10K - 1K
+	// M3 DAO cap table after:
+	//		M3: 1M - 100K - 10K - 1K
+	//		M2: 10K - 1K
+	//		M1: 1K
+	{
+		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			ReceiverPublicKey:      m1PkBytes,
+			DAOCoinToTransferNanos: oneKCoins,
+		})
+
+		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m3PKID.PKID, m3PKID.PKID, true)
+		require.Equal(daoBalanceEntry.BalanceNanos, oneMCoins-hundredKCoins-tenKCoins-oneKCoins)
+
+		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m1PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m1DAOBalanceEntry.BalanceNanos, oneKCoins)
+
+		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins-oneKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(3))
+		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
+	}
+
+	// Okay so now M3 wants to allow anybody who holds their DAO coin to transfer amongst themselves
+	{
+		_daoCoinTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinMetadata{
+			ProfilePublicKey:          m3PkBytes,
+			OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			TransferRestrictionStatus: TransferRestrictionStatusDAOMembersOnly,
+		})
+
+		m3ProfileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(m3ProfileEntry.DAOCoinEntry.TransferRestrictionStatus, TransferRestrictionStatusDAOMembersOnly)
+	}
+
+	// M1 can't transfer to M4 because they're not a DAO member yet.
+	{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			ReceiverPublicKey:      m4PkBytes,
+			DAOCoinToTransferNanos: 100,
+		})
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinTransferDAOMemberOnlyViolation)
+	}
+
+	// M1 can 100 transfer to M2 tho, no problem - because M2 is already a DAO HODLer
+	// M3 DAO cap table before:
+	//		M3: 1M - 100K - 10K - 1K
+	//		M2: 10K - 1K
+	//		M1: 1K
+	// M3 DAO cap table after:
+	//		M3: 1M - 100K - 10K - 1K
+	//		M2: 10K - 1K + 100
+	//		M1: 1K - 100
+	{
+		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			ReceiverPublicKey:      m2PkBytes,
+			DAOCoinToTransferNanos: hundredCoins,
+		})
+
+		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m1PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m1DAOBalanceEntry.BalanceNanos, oneKCoins-hundredCoins)
+
+		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m2PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m2DAOBalanceEntry.BalanceNanos, tenKCoins-oneKCoins+hundredCoins)
+
+		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins-oneKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(3))
+		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
+	}
+
+	// M3 can transfer to whomever they want, even if they're not a DAO member yet. M3 transfers 100 to M4, so M1 can
+	// transfer some later.
+	// M3 DAO cap table before:
+	//		M3: 1M - 100K - 10K - 1K
+	//		M2: 10K - 1K + 100
+	//		M1: 1K - 100
+	// M3 DAO cap table after:
+	//		M3: 1M - 100K - 10K - 1K - 100
+	//		M2: 10K - 1K + 100
+	//		M1: 1K - 100
+	//		M4: 100
+	{
+		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			ReceiverPublicKey:      m4PkBytes,
+			DAOCoinToTransferNanos: hundredCoins,
+		})
+
+		m3DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m3PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m3DAOBalanceEntry.BalanceNanos, oneMCoins-hundredKCoins-tenKCoins-oneKCoins-hundredCoins)
+
+		m4DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m4PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m4DAOBalanceEntry.BalanceNanos, hundredCoins)
+
+		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins-oneKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(4))
+		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
+	}
+
+	// M1 can now 100 transfer to M4
+	// M3 DAO cap table before:
+	//		M3: 1M - 100K - 10K - 1K - 100
+	//		M2: 10K - 1K + 100
+	//		M1: 1K - 100
+	//		M4: 100
+	// M3 DAO cap table after:
+	//		M3: 1M - 100K - 10K - 1K - 100
+	//		M2: 10K - 1K + 100
+	//		M1: 1K - 100 - 100
+	//		M4: 100 + 100
+	{
+		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			ReceiverPublicKey:      m4PkBytes,
+			DAOCoinToTransferNanos: hundredCoins,
+		})
+
+		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m1PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m1DAOBalanceEntry.BalanceNanos, oneKCoins-hundredCoins-hundredCoins)
+
+		m4DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m4PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m4DAOBalanceEntry.BalanceNanos, hundredCoins+hundredCoins)
+
+		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins-oneKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(4))
+		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
+	}
+
+	// M1 can't send anything to M0 right now, because M0 owns 0 M3 DAO coin.
+	{
+		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			ReceiverPublicKey:      m0PkBytes,
+			DAOCoinToTransferNanos: 100,
+		})
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinTransferDAOMemberOnlyViolation)
+	}
+
+	// M3 permanently unrestricts transfers so all DAO holders can transfer willy-nilly
+	{
+		_daoCoinTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinMetadata{
+			ProfilePublicKey: m3PkBytes,
+			OperationType: DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			TransferRestrictionStatus: TransferRestrictionStatusPermanentlyUnrestricted,
+		})
+
+		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.TransferRestrictionStatus,
+			TransferRestrictionStatusPermanentlyUnrestricted)
+	}
+	// M3 can't restrict the transfers at all anymore
+	{
+		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m3Pub, m3Priv, DAOCoinMetadata{
+			ProfilePublicKey: m3PkBytes,
+			OperationType: DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
+		})
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted)
+	}
+
+	// M1 can send M0 now to get them back in the game. M1 sends them 100 coins
+	// M1 can now 100 transfer to M4
+	// M3 DAO cap table before:
+	//		M3: 1M - 100K - 10K - 1K - 100
+	//		M2: 10K - 1K + 100
+	//		M1: 1K - 100
+	//		M4: 100
+	// M3 DAO cap table after:
+	//		M3: 1M - 100K - 10K - 1K - 100
+	//		M2: 10K - 1K + 100
+	//		M1: 1K - 100 - 100 - 100
+	//		M4: 100 + 100
+	//		M0: 100
+	{
+		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m3PkBytes,
+			ReceiverPublicKey:      m0PkBytes,
+			DAOCoinToTransferNanos: hundredCoins,
+		})
+
+		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m1PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m1DAOBalanceEntry.BalanceNanos, oneKCoins-hundredCoins-hundredCoins-hundredCoins)
+
+		m0DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+			db, m0PKID.PKID, m3PKID.PKID, true)
+		require.Equal(m0DAOBalanceEntry.BalanceNanos, hundredCoins)
+
+		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins-oneKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(5))
+		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
+	}
+
 	// Have m3 transfer the rest of their coins to m2
+	// M3 DAO cap table before:
+	//		M3: 1M - 100K - 10K - 1K - 100
+	//		M2: 10K - 1K + 100
+	//		M1: 1K - 100 - 100 - 100
+	//		M4: 100 + 100
+	//		M0: 100
+	// M3 DAO cap table after:
+	//		M2: 10K - 1K + 100 + (1M - 100K - 10K - 1K - 100) = 1M - 100K - 1K - 1K
+	//		M1: 1K - 100 - 100 - 100
+	//		M4: 100 + 100
+	//		M0: 100
 	{
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m2PkBytes,
-			DAOCoinToTransferNanos: oneMCoins - hundredKCoins - tenKCoins - oneKCoins,
+			DAOCoinToTransferNanos: oneMCoins - hundredKCoins - tenKCoins - oneKCoins - hundredCoins,
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -579,20 +949,30 @@ func TestDAOCoinBasic(t *testing.T) {
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, m2PKID.PKID, m3PKID.PKID, true)
-		require.Equal(m2DAOBalanceEntry.BalanceNanos, oneMCoins-hundredKCoins-oneKCoins)
+		require.Equal(m2DAOBalanceEntry.BalanceNanos, oneMCoins-hundredKCoins-oneKCoins-oneKCoins)
 
 		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneMCoins-hundredKCoins-oneKCoins)
-		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(1))
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(4))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
 	}
 
 	// Have m2 burn all their M3 DAO coin
+	// M3 DAO cap table before:
+	//		M2: 1M - 100K - 1K - 1K
+	//		M1: 1K - 100 - 100 - 100
+	//		M4: 100 + 100
+	//		M0: 100
+	// M3 DAO cap table after:
+	//		M2: 0
+	//		M1: 1K - 100 - 100 - 100
+	//		M4: 100 + 100
+	//		M0: 100
 	{
 		_daoCoinTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinMetadata{
 			ProfilePublicKey: m3PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
-			CoinsToBurnNanos: oneMCoins - hundredKCoins - oneKCoins,
+			CoinsToBurnNanos: oneMCoins - hundredKCoins - oneKCoins - oneKCoins,
 		})
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -600,8 +980,8 @@ func TestDAOCoinBasic(t *testing.T) {
 		require.Nil(m2DAOBalanceEntry)
 
 		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
-		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, uint64(0))
-		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(0))
+		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos, oneKCoins)
+		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(3))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
 	}
 
