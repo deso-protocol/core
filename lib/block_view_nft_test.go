@@ -259,14 +259,23 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	require.Equal(totalInput, totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one SPEND
-	// operation for each BidderInpout, one ADD operation
+	// operation for each BidderInput, one ADD operation
 	// for each output, and one OperationTypeAcceptNFTBid operation at the end.
-	numInputs := len(txn.TxInputs) + len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
+	numTxnInputs := len(txn.TxInputs)
+	numTxnOutputs := len(txn.TxOutputs)
+	numBidderInputs := len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
 	numOps := len(utxoOps)
-	for ii := 0; ii < numInputs; ii++ {
+	ii := 0
+	for ; ii < numTxnInputs; ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
-	for ii := numInputs; ii < numOps-1; ii++ {
+	for ; ii < numTxnInputs+numTxnOutputs; ii++ {
+		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+	}
+	for ; ii < numTxnInputs+numTxnOutputs+numBidderInputs; ii++ {
+		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	}
+	for ; ii < numOps-1; ii++ {
 		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 	}
 	require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
@@ -5402,7 +5411,8 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(m0DeSoLockedBefore+expectedCoinRoyalty, desoLocked)
 	}
 
-	// Have m2 put the NFT up for auction - making sure an NFT that was buy-now can be auctioned off in the future.
+	// Have m2 put the NFT up for auction - making sure an NFT that was
+	// buy-now can be auctioned off in the future.
 	{
 		_updateNFTWithTestMeta(
 			testMeta,
@@ -5539,7 +5549,8 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(m0DeSoLockedBefore+expectedCoinRoyalty, desoLocked)
 	}
 
-	// Case: User puts NFT on sale as Buy Now NFT. Others bid. User accepts a bid greater than min bid amount nanos
+	// Case: User puts NFT on sale as Buy Now NFT. Others bid. User
+	// accepts a bid greater than min bid amount nanos
 	{
 		// M3 puts the NFT on sale a buy now NFT
 		_updateNFTWithTestMeta(
@@ -5660,7 +5671,8 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(m0DeSoLockedBefore+expectedCoinRoyalty, desoLocked)
 	}
 
-	// Case: User puts NFT on sale as Buy Now NFT and with min bid amount nanos being 0. Users bid but one Bidder "buys now"
+	// Case: User puts NFT on sale as Buy Now NFT and with min bid amount
+	// nanos being 0. Users bid but one Bidder "buys now"
 	{
 		// M2 puts the NFT on sale a buy now NFT
 		_updateNFTWithTestMeta(
@@ -5770,7 +5782,8 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(m0DeSoLockedBefore+expectedCoinRoyalty, desoLocked)
 	}
 
-	// Case User puts NFT on sale as Buy Now NFT. Bidder wins with amount greater than Buy Now NFT price.
+	// Case User puts NFT on sale as Buy Now NFT. Bidder wins with amount greater than
+	// Buy Now NFT price.
 	{
 		// M0 puts the NFT on sale a buy now NFT
 		_updateNFTWithTestMeta(
@@ -5946,7 +5959,8 @@ func TestNFTBuyNow(t *testing.T) {
 	}
 
 
-	// Case: NFT is transferred. Before being accepted, it can't be put on sale as a buy now NFT. Once accepted, all is good.
+	// Case: NFT is transferred. Before being accepted, it can't be put on sale as a
+	// buy now NFT. Once accepted, all is good.
 	{
 		NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 		_transferNFTWithTestMeta(
