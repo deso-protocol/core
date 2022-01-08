@@ -308,6 +308,13 @@ type UtxoOperation struct {
 	AcceptNFTBidCreatorPublicKey    []byte
 	AcceptNFTBidBidderPublicKey     []byte
 	AcceptNFTBidCreatorRoyaltyNanos uint64
+
+	// These values are used by Rosetta in order to create input and output
+	// operations. They make it so that we don't have to reconnect all txns
+	// in order to get these values for NFT bid transactions on Buy Now NFTs.
+	NFTBidCreatorPublicKey    []byte
+	NFTBidBidderPublicKey     []byte
+	NFTBidCreatorRoyaltyNanos uint64
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -447,6 +454,12 @@ type NFTEntry struct {
 
 	// If this NFT was transferred to the current owner, it will be pending until accepted.
 	IsPending bool
+
+	// If an NFT does not have unlockable content, it can be sold instantly at BuyNowPriceNanos.
+	IsBuyNow bool
+
+	// If an NFT is a Buy Now NFT, it can be purchased for this price.
+	BuyNowPriceNanos uint64
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool

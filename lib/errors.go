@@ -223,29 +223,36 @@ const (
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
 
 	// NFTs
-	RuleErrorTooManyNFTCopies                     RuleError = "RuleErrorTooManyNFTCopies"
-	RuleErrorCreateNFTRequiresNonZeroInput        RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
-	RuleErrorUpdateNFTRequiresNonZeroInput        RuleError = "RuleErrorUpdateNFTRequiresNonZeroInput"
-	RuleErrorCreateNFTOnNonexistentPost           RuleError = "RuleErrorCreateNFTOnNonexistentPost"
-	RuleErrorCreateNFTOnVanillaRepost             RuleError = "RuleErrorCreateNFTOnVanillaRepost"
-	RuleErrorCreateNFTWithInsufficientFunds       RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
-	RuleErrorCreateNFTOnPostThatAlreadyIsNFT      RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
-	RuleErrorCreateNFTMustBeCalledByPoster        RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
-	RuleErrorNFTMustHaveNonZeroCopies             RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
-	RuleErrorCannotUpdateNonExistentNFT           RuleError = "RuleErrorCannotUpdateNonExistentNFT"
-	RuleErrorCannotUpdatePendingNFTTransfer       RuleError = "RuleErrorCannotUpdatePendingNFTTransfer"
-	RuleErrorCannotAcceptBidForPendingNFTTransfer RuleError = "RuleErrorCannotAcceptBidForPendingNFTTransfer"
-	RuleErrorCannotBidForPendingNFTTransfer       RuleError = "RuleErrorCannotBidForPendingNFTTransfer"
-	RuleErrorUpdateNFTByNonOwner                  RuleError = "RuleErrorUpdateNFTByNonOwner"
-	RuleErrorAcceptNFTBidByNonOwner               RuleError = "RuleErrorAcceptNFTBidByNonOwner"
-	RuleErrorCantCreateNFTWithoutProfileEntry     RuleError = "RuleErrorCantCreateNFTWithoutProfileEntry"
-	RuleErrorNFTRoyaltyHasTooManyBasisPoints      RuleError = "RuleErrorNFTRoyaltyHasTooManyBasisPoints"
-	RuleErrorNFTRoyaltyOverflow                   RuleError = "RuleErrorNFTRoyaltyOverflow"
-	RuleErrorNFTUpdateMustUpdateIsForSaleStatus   RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
+	RuleErrorTooManyNFTCopies                            RuleError = "RuleErrorTooManyNFTCopies"
+	RuleErrorCreateNFTRequiresNonZeroInput               RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
+	RuleErrorUpdateNFTRequiresNonZeroInput               RuleError = "RuleErrorUpdateNFTRequiresNonZeroInput"
+	RuleErrorCreateNFTOnNonexistentPost                  RuleError = "RuleErrorCreateNFTOnNonexistentPost"
+	RuleErrorCreateNFTOnVanillaRepost                    RuleError = "RuleErrorCreateNFTOnVanillaRepost"
+	RuleErrorCreateNFTWithInsufficientFunds              RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
+	RuleErrorCreateNFTOnPostThatAlreadyIsNFT             RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
+	RuleErrorCannotHaveUnlockableAndBuyNowNFT            RuleError = "RuleErrorCannotHaveUnlockableAndBuyNowNFT"
+	RuleErrorCannotHaveBuyNowPriceBelowMinBidAmountNanos RuleError = "RuleErrorCannotHaveBuyNowPriceBelowMinBidAmountNanos"
+	RuleErrorCreateNFTMustBeCalledByPoster               RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
+	RuleErrorNFTMustHaveNonZeroCopies                    RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
+	RuleErrorCannotUpdateNonExistentNFT                  RuleError = "RuleErrorCannotUpdateNonExistentNFT"
+	RuleErrorCannotUpdatePendingNFTTransfer              RuleError = "RuleErrorCannotUpdatePendingNFTTransfer"
+	RuleErrorCannotAcceptBidForPendingNFTTransfer        RuleError = "RuleErrorCannotAcceptBidForPendingNFTTransfer"
+	RuleErrorCannotBidForPendingNFTTransfer              RuleError = "RuleErrorCannotBidForPendingNFTTransfer"
+	RuleErrorUpdateNFTByNonOwner                         RuleError = "RuleErrorUpdateNFTByNonOwner"
+	RuleErrorAcceptNFTBidByNonOwner                      RuleError = "RuleErrorAcceptNFTBidByNonOwner"
+	RuleErrorCantCreateNFTWithoutProfileEntry            RuleError = "RuleErrorCantCreateNFTWithoutProfileEntry"
+	RuleErrorNFTRoyaltyHasTooManyBasisPoints             RuleError = "RuleErrorNFTRoyaltyHasTooManyBasisPoints"
+	RuleErrorNFTRoyaltyOverflow                          RuleError = "RuleErrorNFTRoyaltyOverflow"
+	RuleErrorNFTUpdateMustUpdateIsForSaleStatus          RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
+	RuleErrorBuyNowNFTBeforeBlockHeight                  RuleError = "RuleErrorBuyNowNFTBeforeBlockHeight"
 
 	// NFT Bids
 	RuleErrorNFTBidRequiresNonZeroInput                    RuleError = "RuleErrorNFTBidRequiresNonZeroInput"
 	RuleErrorAcceptNFTBidRequiresNonZeroInput              RuleError = "RuleErrorAcceptNFTBidRequiresNonZeroInput"
+	RuleErrorNFTBidTxnOutputWithInvalidBidAmount           RuleError = "RuleErrorNFTBidTxnOutputWithInvalidBidAmount"
+	RuleErrorBuyNowNFTBidTxnOutputExceedsInput             RuleError = "RuleErrorBuyNowNFTBidTxnOutputExceedsInput"
+	RuleErrorBuyNowNFTBidMustBidNonZeroDeSo                RuleError = "RuleErrorBuyNowNFTBidMustBidNonZeroDeSo"
+	RuleErrorBuyNowNFTBidMustHaveMinBidAmountNanos         RuleError = "RuleErrorBuyNowNFTBidMustHaveMinBidAmountNanos"
 	RuleErrorNFTBidOnNonExistentPost                       RuleError = "RuleErrorNFTBidOnNonExistentPost"
 	RuleErrorNFTBidOnPostThatIsNotAnNFT                    RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
 	RuleErrorNFTBidOnInvalidSerialNumber                   RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"
@@ -262,6 +269,7 @@ const (
 	RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount RuleError = "RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount"
 	RuleErrorInsufficientFundsForNFTBid                    RuleError = "RuleErrorInsufficientFundsForNFTBid"
 	RuleErrorNFTBidLessThanMinBidAmountNanos               RuleError = "RuleErrorNFTBidLessThanMinBidAmountNanos"
+	RuleErrorZeroBidOnBuyNowNFT                            RuleError = "RuleErrorZeroBidOnBuyNowNFT"
 
 	// NFT Transfers
 	RuleErrorNFTTransferBeforeBlockHeight                 RuleError = "RuleErrorNFTTranserBeforeBlockHeight"
@@ -326,6 +334,6 @@ func IsRuleError(err error) bool {
 	// eventually we should clean this up and get rid of the string comparison both
 	// for the code's sake but also for the sake of our tests.
 	return strings.Contains(err.Error(), "RuleError") ||
-			strings.Contains(err.Error(), "HeaderError") ||
-			strings.Contains(err.Error(), "TxError")
+		strings.Contains(err.Error(), "HeaderError") ||
+		strings.Contains(err.Error(), "TxError")
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -123,6 +124,10 @@ var (
 	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+
+	// BuyNowNFTBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an auction style.
+	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
+	BuyNowNFTBlockHeight = uint32(math.MaxUint32 - 1)
 )
 
 func (nt NetworkType) String() string {
@@ -788,6 +793,9 @@ const (
 
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
+
+	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
+	BuyNowPriceKey = "BuyNowPriceNanos"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
