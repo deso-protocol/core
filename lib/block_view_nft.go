@@ -1134,56 +1134,51 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	//glog.Infof("Bid amount: %d, coin basis points: %d, coin royalty: %d",
 	//	txMeta.BidAmountNanos, nftPostEntry.NFTRoyaltyToCoinBasisPoints, creatorCoinRoyaltyNanos)
 
-	additionalDESORoyaltiesNanos := uint64(0)
-	var additionalDESORoyalties []*PublicKeyRoyaltyPair
-	for pkid, bps := range nftPostEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
-		desoRoyaltyNanos := IntDiv(
-			IntMul(
-				big.NewInt(int64(args.BidAmountNanos)),
-				big.NewInt(int64(bps))),
-			big.NewInt(100*100)).Uint64()
-		if math.MaxUint64-desoRoyaltyNanos < additionalDESORoyaltiesNanos {
-			return 0, 0, nil, fmt.Errorf(
-				"_helpConnectNFTSold: additional DESO royalty overflow")
+	constructRoyalties := func(royaltyMap map[PKID]uint64) (
+		_additionalRoyaltiesNanos uint64, _additionalRoyalties []*PublicKeyRoyaltyPair, _err error) {
+		additionalRoyaltiesNanos := uint64(0)
+		var additionalRoyalties []*PublicKeyRoyaltyPair
+		for pkid, bps := range royaltyMap {
+			royaltyNanos := IntDiv(
+				IntMul(
+					big.NewInt(int64(args.BidAmountNanos)),
+					big.NewInt(int64(bps))),
+				big.NewInt(100*100)).Uint64()
+			if math.MaxUint64-royaltyNanos < additionalRoyaltiesNanos {
+				return 0, nil, fmt.Errorf("royalty overflow")
+			}
+			pkBytes := bav.GetPublicKeyForPKID(&pkid)
+			if len(pkBytes) != btcec.PubKeyBytesLenCompressed {
+				return 0, nil, fmt.Errorf(
+					"_helpConnectNFTSold: invalid public key found for pkid in additional DESO royalty map")
+			}
+			if _, err = btcec.ParsePubKey(pkBytes, btcec.S256()); err != nil {
+				return 0, nil, errors.Wrapf(err, "Unable to parse public key")
+			}
+
+			if royaltyNanos > 0 {
+				additionalRoyaltiesNanos += royaltyNanos
+				additionalRoyalties = append(additionalRoyalties, &PublicKeyRoyaltyPair{
+					PublicKey:          pkBytes,
+					RoyaltyAmountNanos: royaltyNanos,
+				})
+			}
 		}
-		pkBytes := bav.GetPublicKeyForPKID(&pkid)
-		if len(pkBytes) != btcec.PubKeyBytesLenCompressed {
-			return 0, 0, nil, fmt.Errorf(
-				"_helpConnectNFTSold: invalid public key found for pkid in additional DESO royalty map")
-		}
-		if desoRoyaltyNanos > 0 {
-			additionalDESORoyaltiesNanos += desoRoyaltyNanos
-			additionalDESORoyalties = append(additionalDESORoyalties, &PublicKeyRoyaltyPair{
-				PublicKey:          pkBytes,
-				RoyaltyAmountNanos: desoRoyaltyNanos,
-			})
-		}
+		return additionalRoyaltiesNanos, additionalRoyalties, nil
 	}
 
-	additionalCoinRoyaltyNanos := uint64(0)
-	var additionalCoinRoyalties []*PublicKeyRoyaltyPair
-	for pkid, bps := range nftPostEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-		coinRoyaltyNanos := IntDiv(
-			IntMul(
-				big.NewInt(int64(args.BidAmountNanos)),
-				big.NewInt(int64(bps))),
-			big.NewInt(100*100)).Uint64()
-		if math.MaxUint64-coinRoyaltyNanos < additionalCoinRoyaltyNanos {
-			return 0, 0, nil, fmt.Errorf(
-				"_helpConnectNFTSold: additional coin royalty overflow")
-		}
-		pkBytes := bav.GetPublicKeyForPKID(&pkid)
-		if len(pkBytes) != btcec.PubKeyBytesLenCompressed {
-			return 0, 0, nil, fmt.Errorf(
-				"_helpConnectNFTSold: invalid public key found for pkid in additional coin royalty map")
-		}
-		if coinRoyaltyNanos > 0 {
-			additionalCoinRoyaltyNanos += coinRoyaltyNanos
-			additionalCoinRoyalties = append(additionalCoinRoyalties, &PublicKeyRoyaltyPair{
-				PublicKey:          pkBytes,
-				RoyaltyAmountNanos: coinRoyaltyNanos,
-			})
-		}
+	additionalDESORoyaltiesNanos, additionalDESORoyalties, err := constructRoyalties(
+		nftPostEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err,
+			"_helpConnectNFTSold: Error constructing royalties for additional creator royalties: ")
+	}
+
+	additionalCoinRoyaltyNanos, additionalCoinRoyalties, err := constructRoyalties(
+		nftPostEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err,
+			"_helpConnectNFTSold: Error constructing royalties for additional coin royalties: ")
 	}
 
 	// Sanity check that the royalties are reasonable and won't cause underflow.
