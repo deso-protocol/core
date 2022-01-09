@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -338,6 +339,10 @@ type DeSoParams struct {
 	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight uint32
+
+	// BuyNowNFTBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an auction style.
+	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
+	BuyNowNFTBlockHeight uint32
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
@@ -596,6 +601,7 @@ var DeSoMainnetParams = DeSoParams{
 	BrokenNFTBidsFixBlockHeight: uint32(46917),
 	DeSoDiamondsBlockHeight: uint32(52112),
 	NFTTransferOrBurnAndDerivedKeysBlockHeight: uint32(60743),
+	BuyNowNFTBlockHeight: uint32(math.MaxUint32 - 1),  // FIXME: Set real mainnet height
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -772,6 +778,7 @@ var DeSoTestnetParams = DeSoParams{
 	// value as mainnet.
 	DeSoDiamondsBlockHeight: uint32(52112),
 	NFTTransferOrBurnAndDerivedKeysBlockHeight: uint32(0),
+	BuyNowNFTBlockHeight: uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
 }
 
 // GetDataDir gets the user data directory where we store files
@@ -807,6 +814,9 @@ const (
 
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
+
+	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
+	BuyNowPriceKey = "BuyNowPriceNanos"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
