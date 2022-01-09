@@ -218,7 +218,7 @@ var (
 	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
 	//     not core to consensus and should not be relied upon as it could get inefficient.
 	//   - Schema: <prefix>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
-	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{54}
+	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{55}
 
 	// <prefix, PublicKey [33]byte> -> uint64
 	_PrefixPublicKeyToDeSoBalanceNanos = []byte{52}
@@ -230,13 +230,15 @@ var (
 	_PrefixPublicKeyBlockHashToBlockReward = []byte{53}
 
 	// Prefix for Authorize Derived Key transactions:
-	// 		<prefix, OwnerPublicKey [33]byte> -> <>
-	_PrefixAuthorizeDerivedKey = []byte{54}
+	// 		<prefix, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <>
+	_PrefixAuthorizeDerivedKey = []byte{56}
 
-	// TODO: This process is a bit error-prone. We should come up with a test or
-	// something to at least catch cases where people have two prefixes with the
-	// same ID.
-	// NEXT_TAG: 55
+	// NOTE: Prefix 54 is skipped as there was a point in time at which both
+	// _PrefixPostHashSerialNumberToAcceptedBidEntries and _PrefixAuthorizeDerivedKey occupied the 54 prefix.
+
+	// Make sure to add your prefix at the end of the prefixList in TestCheckForPrefixOverlap().
+	// If we skipped some prefix, make sure to add it to prefixExceptions.
+	NEXT_PREFIX = uint32(57)
 )
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
