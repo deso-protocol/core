@@ -211,6 +211,41 @@ const (
 	RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked               RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked"
 	RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller                  RuleError = "RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller"
 
+	// DAO Coin Transfers
+	RuleErrorDAOCoinTransferRequiresNonZeroInput        RuleError = "RuleErrorDAOCoinTransferRequiresNonZeroInput"
+	RuleErrorDAOCoinTransferInvalidProfilePubKeySize    RuleError = "RuleErrorDAOCoinTransferInvalidProfilePubKeySize"
+	RuleErrorDAOCoinTransferInvalidReceiverPubKeySize   RuleError = "RuleErrorDAOCoinTransferInvalidReceiverPubKeySize"
+	RuleErrorDAOCoinTransferOnNonexistentProfile        RuleError = "RuleErrorDAOCoinTransferOnNonexistentProfile"
+	RuleErrorDAOCoinTransferBalanceEntryDoesNotExist    RuleError = "RuleErrorDAOCoinTransferBalanceEntryDoesNotExist"
+	RuleErrorDAOCoinTransferInsufficientCoins           RuleError = "RuleErrorDAOCoinTransferInsufficientCoins"
+	RuleErrorDAOCoinTransferCannotTransferToSelf        RuleError = "RuleErrorDAOCoinTransferCannotTransferToSelf"
+	RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins RuleError = "RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins"
+	RuleErrorDAOCoinTransferInvalidReceiverPubKey       RuleError = "RuleErrorDAOCoinTransferInvalidReceiverPubKey"
+	RuleErrorDAOCoinTransferInvalidProfilePubKey        RuleError = "RuleErrorDAOCoinTransferInvalidProfilePubKey"
+	RuleErrorDAOCoinTransferProfileOwnerOnlyViolation   RuleError = "RuleErrorDAOCoinTransferProfileOwnerOnlyViolation"
+	RuleErrorDAOCoinTransferDAOMemberOnlyViolation      RuleError = "RuleErrorDAOCoinTransferDAOMemberOnlyViolation"
+
+	// DAO Coins
+	RuleErrorDAOCoinRequiresNonZeroInput                  RuleError = "RuleErrorDAOCoinRequiresNonZeroInput"
+	RuleErrorDAOCoinInvalidPubKeySize                     RuleError = "RuleErrorDAOCoinInvalidPubKeySize"
+	RuleErrorDAOCoinInvalidPubKey                         RuleError = "RuleErrorDAOCoinInvalidPubKey"
+	RuleErrorDAOCoinOperationOnNonexistentProfile         RuleError = "RuleErrorDAOCoinOperationOnNonexistentProfile"
+	RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin            RuleError = "RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin"
+	RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist        RuleError = "RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist"
+	RuleErrorDAOCoinBurnInsufficientCoins                 RuleError = "RuleErrorDAOCoinBurnInsufficientCoins"
+	RuleErrorOnlyProfileOwnerCanMintDAOCoin               RuleError = "RuleErrorOnlyProfileOwnerCanMintDAOCoin"
+	RuleErrorDAOCoinMustMintNonZeroDAOCoin                RuleError = "RuleErrorDAOCoinMustMintNonZeroDAOCoin"
+	RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation   RuleError = "RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation"
+	RuleErrorDAOCoinBeforeDAOCoinBlockHeight              RuleError = "RuleErrorDAOCoinBeforeDAOCoinBlockHeight"
+	RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled RuleError = "RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled"
+	RuleErrorDAOCoinCannotMintIfMintingIsDisabled         RuleError = "RuleErrorDAOCoinCannotMintIfMintingIsDisabled"
+	RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin     RuleError = "RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin"
+
+	// DAO Coin Transfer Restrictions
+	RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus                    RuleError = "RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus"
+	RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted RuleError = "RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted"
+	RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus           RuleError = "RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus"
+
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
 	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput    RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"

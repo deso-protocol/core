@@ -18,7 +18,7 @@ type PurchaseSupplyIntervalStart struct {
 const (
 	NanosPerUnit  = uint64(1000000000)
 	BlocksPerYear = uint32(12 * 24 * 365)
-	BlocksPerDay = uint32(12 * 24)
+	BlocksPerDay  = uint32(12 * 24)
 	// Every 1M DeSo we sell causes the price to increase by a factor of 2.
 	TrancheSizeNanos = uint64(1000000000000000)
 	// When exchanging Bitcoin for DeSo, we don't allow transactions to create
@@ -28,7 +28,7 @@ const (
 
 	// The price of DeSo at the beginning.
 	StartDeSoPriceUSDCents = 50
-	SatoshisPerBitcoin         = 100000000
+	SatoshisPerBitcoin     = 100000000
 
 	// The minimum and maximum Bitcoin prices, used as a sanity-check.
 	MinUSDCentsPerBitcoin = 100 * 100
@@ -61,15 +61,15 @@ var (
 			BlockRewardNanos: NanosPerUnit / 2,
 		},
 		{
-			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 2 * BlocksPerDay,
+			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 2*BlocksPerDay,
 			BlockRewardNanos: NanosPerUnit / 4,
 		},
 		{
-			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 3 * BlocksPerDay,
+			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 3*BlocksPerDay,
 			BlockRewardNanos: NanosPerUnit / 8,
 		},
 		{
-			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 4 * BlocksPerDay,
+			StartBlockHeight: DeflationBombBlockRewardAdjustmentBlockHeight + 4*BlocksPerDay,
 			BlockRewardNanos: NanosPerUnit / 10,
 		},
 		// Leave the block reward at .1 for the medium-term then tamp it down to zero.

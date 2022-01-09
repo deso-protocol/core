@@ -5030,8 +5030,8 @@ func TestBidAmountZero(t *testing.T) {
 				post1Hash,
 				1, /*SerialNumber*/
 				m1Pub,
-				1, /*BidAmountNanos*/
-				"",  /*UnlockableText*/
+				1,  /*BidAmountNanos*/
+				"", /*UnlockableText*/
 			)
 			require.Error(err)
 			require.Contains(err.Error(), RuleErrorCantAcceptNonExistentBid)
@@ -5076,7 +5076,6 @@ func TestBidAmountZero(t *testing.T) {
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
-
 
 }
 

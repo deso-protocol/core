@@ -98,8 +98,10 @@ const (
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
+	OperationTypeDAOCoin                      OperationType = 26
+	OperationTypeDAOCoinTransfer              OperationType = 27
 
-	// NEXT_TAG = 24
+	// NEXT_TAG = 28
 )
 
 func (op OperationType) String() string {
@@ -195,6 +197,14 @@ func (op OperationType) String() string {
 	case OperationTypeAuthorizeDerivedKey:
 		{
 			return "OperationTypeAuthorizeDerivedKey"
+		}
+	case OperationTypeDAOCoin:
+		{
+			return "OperationTypeDAOCoin"
+		}
+	case OperationTypeDAOCoinTransfer:
+		{
+			return "OperationTypeDAOCoinTransfer"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -754,12 +764,13 @@ type BalanceEntryMapKey struct {
 	CreatorPKID PKID
 }
 
-func MakeCreatorCoinBalanceKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntryMapKey {
+func MakeBalanceEntryKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntryMapKey {
 	return BalanceEntryMapKey{
 		HODLerPKID:  *hodlerPKID,
 		CreatorPKID: *creatorPKID,
 	}
 }
+
 func (mm BalanceEntryMapKey) String() string {
 	return fmt.Sprintf("BalanceEntryMapKey: <HODLer Pub Key: %v, Creator Pub Key: %v>",
 		PkToStringBoth(mm.HODLerPKID[:]), PkToStringBoth(mm.CreatorPKID[:]))
@@ -783,6 +794,23 @@ type BalanceEntry struct {
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+type TransferRestrictionStatus uint8
+
+const (
+	TransferRestrictionStatusUnrestricted            TransferRestrictionStatus = 0
+	TransferRestrictionStatusProfileOwnerOnly        TransferRestrictionStatus = 1
+	TransferRestrictionStatusDAOMembersOnly          TransferRestrictionStatus = 2
+	TransferRestrictionStatusPermanentlyUnrestricted TransferRestrictionStatus = 3
+)
+
+func (transferRestrictionStatus TransferRestrictionStatus) IsUnrestricted() bool {
+	if transferRestrictionStatus == TransferRestrictionStatusUnrestricted ||
+		transferRestrictionStatus == TransferRestrictionStatusPermanentlyUnrestricted {
+		return true
+	}
+	return false
 }
 
 // This struct contains all the information required to support coin
@@ -818,6 +846,11 @@ type CoinEntry struct {
 	// beyond the watermark, we allocate a percentage of the coins being
 	// minted to the creator as a "founder reward."
 	CoinWatermarkNanos uint64
+
+	// If true, DAO coins can no longer be minted.
+	MintingDisabled bool
+
+	TransferRestrictionStatus TransferRestrictionStatus
 }
 
 type PKIDEntry struct {
@@ -854,11 +887,18 @@ type ProfileEntry struct {
 	// profiles in certain situations.
 	IsHidden bool
 
-	// CoinEntry tracks the information required to buy/sell coins on a user's
+	// CoinEntry tracks the information required to buy/sell creator coins on a user's
 	// profile. We "embed" it here for convenience so we can access the fields
 	// directly on the ProfileEntry object. Embedding also makes it so that we
 	// don't need to initialize it explicitly.
 	CoinEntry
+
+	// DAOCoinEntry tracks the information around the DAO coins issued on a user's profile.
+	// Note: the following fields are basically ignored for the DAOCoinEntry
+	// 1. CreatorBasisPoints
+	// 2. DeSoLockedNanos
+	// 3. CoinWaterMarkNanos
+	DAOCoinEntry CoinEntry
 
 	// Whether or not this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if for
