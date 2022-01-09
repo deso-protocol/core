@@ -3331,6 +3331,10 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	bidderPublicKey := utxoView.GetPublicKeyForPKID(BidderPKID)
 	bidderInputs, err := bc.GetInputsToCoverAmount(bidderPublicKey, utxoView, BidAmountNanos)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateAcceptNFTBidTxn: Error getting inputs for spend amount: ")
+	}
 
 	// Create a transaction containing the accept nft bid fields.
 	txn := &MsgDeSoTxn{
@@ -3823,7 +3827,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			spendAmount += txMeta.DeSoToSellNanos
 		}
 	}
-	// If this is a NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
+
+	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
 	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
 		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
 		// Create a new UtxoView. If we have access to a mempool object, use it to

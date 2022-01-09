@@ -738,7 +738,7 @@ type PostEntry struct {
 	// AdditionalNFTRoyaltiesToCoinsBasisPoints is a map where keys are PKIDs and values are uint64s representing
 	// basis points. The user with the PKID specified should have the basis points specified as by the value added to
 	// the DESO locked in their profile anytime this NFT is sold. This map must not contain the post creator.
-	AdditionalNFTRoyaltiesToCoinsBasisPoints    map[PKID]uint64
+	AdditionalNFTRoyaltiesToCoinsBasisPoints map[PKID]uint64
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte
@@ -840,7 +840,7 @@ type CoinEntry struct {
 }
 
 type PublicKeyRoyaltyPair struct {
-	PublicKey              []byte
+	PublicKey          []byte
 	RoyaltyAmountNanos uint64
 }
 
