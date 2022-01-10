@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
