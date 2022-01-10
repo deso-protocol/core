@@ -1197,7 +1197,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	}
 
 	// We don't do a royalty if the number of coins in circulation is too low.
-	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+	//
+	// Note that it's OK to cast to uint64 for creator coins because we check to make
+	// sure they never exceed this value.
+	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
 		creatorCoinRoyaltyNanos = 0
 	}
 

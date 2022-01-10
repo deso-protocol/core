@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
 	"strings"
 )
 
@@ -787,7 +788,7 @@ type BalanceEntry struct {
 	CreatorPKID *PKID
 
 	// How much this HODLer owns of a particular creator coin.
-	BalanceNanos uint64
+	BalanceNanos uint256.Int
 
 	// Has the hodler purchased any amount of this user's coin
 	HasPurchased bool
@@ -837,7 +838,15 @@ type CoinEntry struct {
 	// The number of coins currently in circulation. Whenever a user buys a
 	// coin from the protocol this increases, and whenever a user sells a
 	// coin to the protocol this decreases.
-	CoinsInCirculationNanos uint64
+	//
+	// It's OK to have a pointer here as long as we *NEVER* manipulate the
+	// bigint in place. Instead, we must always do computations of the form:
+	//
+	// CoinsInCirculationNanos = uint256.NewInt(0).Add(CoinsInCirculationNanos, <other uint256>)
+	//
+	// This will guarantee that modifying a copy of this struct will not break
+	// the original, which is needed for disconnects to work.
+	CoinsInCirculationNanos uint256.Int
 
 	// This field keeps track of the highest number of coins that has ever
 	// been in circulation. It is used to determine when a creator should

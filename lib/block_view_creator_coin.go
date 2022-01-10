@@ -3,6 +3,7 @@ package lib
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"math"
 	"math/big"
@@ -198,11 +199,14 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumCreatorCoinNanos(
 	}
 
 	// Calculate the number of creator coin nanos needed vs. already added for previous diamonds.
+	//
+	// For CreatorCoins it's OK to cast to Uint64() because we check for their
+	// exceeding this everywhere.
 	currCreatorCoinNanos := GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
-		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos, existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos,
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(), existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos,
 		currDiamondLevel, int64(blockHeight), bav.Params)
 	neededCreatorCoinNanos := GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
-		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos, existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos,
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(), existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos,
 		diamondLevel, int64(blockHeight), bav.Params)
 
 	// There is an edge case where, if the person's creator coin value goes down
@@ -275,15 +279,20 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		creatorBalanceEntry = &BalanceEntry{
 			HODLerPKID:   creatorPKID,
 			CreatorPKID:  creatorPKID,
-			BalanceNanos: uint64(0),
+			BalanceNanos: *uint256.NewInt(),
 		}
 	}
 
 	if txMeta.OperationType == CreatorCoinOperationTypeBuy {
 		// Set up some variables so that we can run some sanity-checks
-		deltaBuyerNanos := transactorBalanceEntry.BalanceNanos - operationData.PrevTransactorBalanceEntry.BalanceNanos
-		deltaCreatorNanos := creatorBalanceEntry.BalanceNanos - operationData.PrevCreatorBalanceEntry.BalanceNanos
-		deltaCoinsInCirculation := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
+		//
+		// CreeatorCoin balances can never exceed uint64
+		deltaBuyerNanos := transactorBalanceEntry.BalanceNanos.Uint64() - operationData.PrevTransactorBalanceEntry.BalanceNanos.Uint64()
+		deltaCreatorNanos := creatorBalanceEntry.BalanceNanos.Uint64() - operationData.PrevCreatorBalanceEntry.BalanceNanos.Uint64()
+		// For CreatorCoins it's OK to cast to Uint64() because we check for their
+		// exceeding this everywhere.
+		deltaCoinsInCirculation := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() -
+			operationData.PrevCoinEntry.CoinsInCirculationNanos.Uint64()
 
 		// If the creator is distinct from the buyer, then reset their balance.
 		// This check avoids double-updating in situations where a creator bought
@@ -307,7 +316,11 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			} else if blockHeight > SalomonFixBlockHeight {
 				// Following the SalomonFixBlockHeight block, we calculate a founders reward
 				// on every buy, not just the ones that push a creator to a new all time high.
-				deltaNanos = existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
+				//
+				// For CreatorCoins it's OK to cast to Uint64() because we check for their
+				// exceeding this everywhere.
+				deltaNanos = existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() -
+					operationData.PrevCoinEntry.CoinsInCirculationNanos.Uint64()
 			} else {
 				// Prior to the SalomonFixBlockHeight block, we calculate the founders reward
 				// only for new all time highs.
@@ -331,8 +344,14 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		} else {
 			// We do a simliar sanity-check as above, but in this case we don't need to
 			// reset the creator mappings.
-			deltaBuyerNanos := transactorBalanceEntry.BalanceNanos - operationData.PrevTransactorBalanceEntry.BalanceNanos
-			deltaCoinsInCirculation := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
+			//
+			// CreeatorCoin balances can never exceed uint64
+			deltaBuyerNanos := transactorBalanceEntry.BalanceNanos.Uint64() - operationData.PrevTransactorBalanceEntry.BalanceNanos.Uint64()
+			//
+			// For CreatorCoins it's OK to cast to Uint64() because we check for their
+			// exceeding this everywhere.
+			deltaCoinsInCirculation := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() -
+				operationData.PrevCoinEntry.CoinsInCirculationNanos.Uint64()
 			if deltaBuyerNanos != deltaCoinsInCirculation {
 				return fmt.Errorf("_disconnectCreatorCoin: The creator coin nanos "+
 					"the buyer/creator received (%v) does not equal the "+
@@ -362,8 +381,13 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		// the transactor has and the coins in circulation should both have gone
 		// down as a result of the transaction, so both of these values should be
 		// positive.
-		deltaCoinNanos := operationData.PrevTransactorBalanceEntry.BalanceNanos - transactorBalanceEntry.BalanceNanos
-		deltaCoinsInCirculation := operationData.PrevCoinEntry.CoinsInCirculationNanos - existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos
+		//
+		// CreeatorCoin balances can never exceed uint64
+		deltaCoinNanos := operationData.PrevTransactorBalanceEntry.BalanceNanos.Uint64() - transactorBalanceEntry.BalanceNanos.Uint64()
+		// For CreatorCoins it's OK to cast to Uint64() because we check for their
+		// exceeding this everywhere.
+		deltaCoinsInCirculation := operationData.PrevCoinEntry.CoinsInCirculationNanos.Uint64() -
+			existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()
 
 		// Sanity-check that the amount we decreased CoinsInCirculation by
 		// equals the total amount put in by the seller.
@@ -451,7 +475,8 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	var senderCurrBalanceNanos uint64
 	// Since the sender may have given away their whole balance, their BalanceEntry can be nil.
 	if senderBalanceEntry != nil && !senderBalanceEntry.isDeleted {
-		senderCurrBalanceNanos = senderBalanceEntry.BalanceNanos
+		// CreatorCoin balances can never exceed uint64
+		senderCurrBalanceNanos = senderBalanceEntry.BalanceNanos.Uint64()
 	}
 
 	// Get the current / previous balance for the receiver for sanity checking.
@@ -467,26 +492,33 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 	receiverCurrBalanceNanos := receiverBalanceEntry.BalanceNanos
 	var receiverPrevBalanceNanos uint64
 	if operationData.PrevReceiverBalanceEntry != nil {
-		receiverPrevBalanceNanos = operationData.PrevReceiverBalanceEntry.BalanceNanos
+		// CreatorCoin balances can never exceed uint64
+		receiverPrevBalanceNanos = operationData.PrevReceiverBalanceEntry.BalanceNanos.Uint64()
 	}
 
 	// Sanity check that the sender's current balance is less than their previous balance.
-	if senderCurrBalanceNanos > senderPrevBalanceNanos {
+	//
+	// CreatorCoin balances can never exceed uint64
+	if senderCurrBalanceNanos > senderPrevBalanceNanos.Uint64() {
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: Sender's current balance %d is "+
 			"greater than their previous balance %d.",
 			senderCurrBalanceNanos, senderPrevBalanceNanos)
 	}
 
 	// Sanity check that the receiver's previous balance is less than their current balance.
-	if receiverPrevBalanceNanos > receiverCurrBalanceNanos {
+	//
+	// CreatorCoin balances can never exceed uint64
+	if receiverPrevBalanceNanos > receiverCurrBalanceNanos.Uint64() {
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: Receiver's previous balance %d is "+
 			"greater than their current balance %d.",
 			receiverPrevBalanceNanos, receiverCurrBalanceNanos)
 	}
 
 	// Sanity check the sender's increase equals the receiver's decrease after disconnect.
-	senderBalanceIncrease := senderPrevBalanceNanos - senderCurrBalanceNanos
-	receiverBalanceDecrease := receiverCurrBalanceNanos - receiverPrevBalanceNanos
+	//
+	// CreatorCoin balances can never exceed uint64
+	senderBalanceIncrease := senderPrevBalanceNanos.Uint64() - senderCurrBalanceNanos
+	receiverBalanceDecrease := receiverCurrBalanceNanos.Uint64() - receiverPrevBalanceNanos
 	if senderBalanceIncrease != receiverBalanceDecrease {
 		return fmt.Errorf("_disconnectCreatorCoinTransfer: Sender's balance increase "+
 			"of %d will not equal the receiver's balance decrease of  %v after disconnect.",
@@ -506,7 +538,8 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 
 	// Set the balance entries appropriately.
 	bav._setCreatorCoinBalanceEntryMappings(operationData.PrevSenderBalanceEntry)
-	if operationData.PrevReceiverBalanceEntry != nil && operationData.PrevReceiverBalanceEntry.BalanceNanos != 0 {
+	// CreatorCoin balances can't exceed uint64
+	if operationData.PrevReceiverBalanceEntry != nil && operationData.PrevReceiverBalanceEntry.BalanceNanos.Uint64() != 0 {
 		bav._setCreatorCoinBalanceEntryMappings(operationData.PrevReceiverBalanceEntry)
 	}
 
@@ -692,8 +725,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// architecture they're running on. If we didn't do this, then some nodes
 	// could round floats or use different levels of precision for intermediate
 	// results and get different answers which would break consensus.
+	//
+	// For CreatorCoins it's OK to cast to Uint64() because we check for their
+	// exceeding this everywhere.
 	creatorCoinToMintNanos := CalculateCreatorCoinToMint(
-		desoRemainingNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos,
+		desoRemainingNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(),
 		existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
 
 	// Check if the total amount minted satisfies CreatorCoinAutoSellThresholdNanos.
@@ -726,12 +762,17 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Increment CoinsInCirculation. Sanity-check that we're not going to
 	// overflow.
-	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos > math.MaxUint64-creatorCoinToMintNanos {
+	//
+	// For CreatorCoins it's OK to cast to Uint64() because we check for their
+	// exceeding this everywhere.
+	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() > math.MaxUint64-creatorCoinToMintNanos {
 		return 0, 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Overflow while summing"+
 			"CoinsInCirculationNanos and creatorCoinToMintNanos: %v %v",
 			existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos, creatorCoinToMintNanos)
 	}
-	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos += creatorCoinToMintNanos
+	// Setting the value in this way is guaranteed to not mess up the prevCoinEntry
+	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().SetUint64(
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()+creatorCoinToMintNanos)
 
 	// Calculate the *Creator Coin nanos* to give as a founder reward.
 	creatorCoinFounderRewardNanos := uint64(0)
@@ -752,9 +793,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		// Up to and including the SalomonFixBlockHeight block, creator coin buys only minted
 		// a founders reward if the creator reached a new all time high.
 
-		if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos > existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos {
+		// For CreatorCoins it's OK to cast to Uint64() because we check for their
+		// exceeding this everywhere.
+		if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() > existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos {
 			// This value must be positive if we made it past the if condition above.
-			watermarkDiff := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos - existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos
+			watermarkDiff := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() -
+				existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos
 			// The founder reward is computed as a percentage of the "net coins created,"
 			// which is equal to the watermarkDiff
 			creatorCoinFounderRewardNanos = IntDiv(
@@ -767,8 +811,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// CoinWatermarkNanos is no longer used, however it may be helpful for
 	// future analytics or updates so we continue to update it here.
-	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos > existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos {
-		existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos = existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos
+	//
+	// For CreatorCoins it's OK to cast to Uint64() because we check for their
+	// exceeding this everywhere.
+	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() > existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos {
+		existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos = existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()
 	}
 
 	// At this point, founderRewardNanos will be non-zero if and only if we increased
@@ -812,7 +859,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			HODLerPKID: hodlerPKID,
 			// The creator is the owner of the profile that corresponds to the coin.
 			CreatorPKID:  creatorPKID,
-			BalanceNanos: uint64(0),
+			BalanceNanos: *uint256.NewInt(),
 		}
 	}
 
@@ -842,7 +889,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			creatorBalanceEntry = &BalanceEntry{
 				HODLerPKID:   hodlerPKID,
 				CreatorPKID:  creatorPKID,
-				BalanceNanos: uint64(0),
+				BalanceNanos: *uint256.NewInt(),
 			}
 		}
 	}
@@ -857,7 +904,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Increase the buyer and the creator's balances by the amounts computed
 	// previously. Always check for overflow.
-	if buyerBalanceEntry.BalanceNanos > math.MaxUint64-coinsBuyerGetsNanos {
+	//
+	// CreatorCoin balances can't exceed uint64
+	if buyerBalanceEntry.BalanceNanos.Uint64() > math.MaxUint64-coinsBuyerGetsNanos {
 		return 0, 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Overflow while summing"+
 			"buyerBalanceEntry.BalanceNanos and coinsBuyerGetsNanos %v %v",
 			buyerBalanceEntry.BalanceNanos, coinsBuyerGetsNanos)
@@ -866,7 +915,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// to push them above the CreatorCoinAutoSellThresholdNanos threshold. This helps
 	// prevent tiny amounts of nanos from drifting the ratio of creator coins to DeSo locked.
 	if blockHeight > SalomonFixBlockHeight {
-		if buyerBalanceEntry.BalanceNanos == 0 && coinsBuyerGetsNanos != 0 &&
+		// CreatorCoin balances can't exceed uint64
+		if buyerBalanceEntry.BalanceNanos.Uint64() == 0 && coinsBuyerGetsNanos != 0 &&
 			coinsBuyerGetsNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
 			return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForBuyer
 		}
@@ -874,7 +924,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Check if this is the buyers first buy or first buy after a complete sell.
 	// If it is, we increment the NumberOfHolders to reflect this value.
-	if buyerBalanceEntry.BalanceNanos == 0 && coinsBuyerGetsNanos != 0 {
+	//
+	// CreatorCoin balances can't exceed uint64
+	if buyerBalanceEntry.BalanceNanos.Uint64() == 0 && coinsBuyerGetsNanos != 0 {
 		// Increment number of holders by one to reflect the buyer
 		existingProfileEntry.CreatorCoinEntry.NumberOfHolders += 1
 
@@ -883,12 +935,15 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	}
 	// Finally increment the buyerBalanceEntry.BalanceNanos to reflect
 	// the purchased coinsBuyerGetsNanos. If coinsBuyerGetsNanos is greater than 0, we set HasPurchased to true.
-	buyerBalanceEntry.BalanceNanos += coinsBuyerGetsNanos
+	buyerBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+		&buyerBalanceEntry.BalanceNanos, uint256.NewInt().SetUint64(coinsBuyerGetsNanos))
 	buyerBalanceEntry.HasPurchased = true
 
 	// If the creator is buying their own coin, this will just be modifying
 	// the same pointer as the buyerBalanceEntry, which is what we want.
-	if creatorBalanceEntry.BalanceNanos > math.MaxUint64-creatorCoinFounderRewardNanos {
+	//
+	// CreatorCoin balances can't exceed uint64
+	if creatorBalanceEntry.BalanceNanos.Uint64() > math.MaxUint64-creatorCoinFounderRewardNanos {
 		return 0, 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Overflow while summing"+
 			"creatorBalanceEntry.BalanceNanos and creatorCoinFounderRewardNanos %v %v",
 			creatorBalanceEntry.BalanceNanos, creatorCoinFounderRewardNanos)
@@ -896,7 +951,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Check that if the creator is receiving nanos for the first time, it's enough
 	// to push them above the CreatorCoinAutoSellThresholdNanos threshold. This helps
 	// prevent tiny amounts of nanos from drifting the effective creator coin reserve ratio drift.
-	if creatorBalanceEntry.BalanceNanos == 0 &&
+	//
+	// CreatorCoin balances can't exceed uint64
+	if creatorBalanceEntry.BalanceNanos.Uint64() == 0 &&
 		creatorCoinFounderRewardNanos != 0 &&
 		creatorCoinFounderRewardNanos < bav.Params.CreatorCoinAutoSellThresholdNanos &&
 		blockHeight > SalomonFixBlockHeight {
@@ -904,14 +961,19 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinBuyMustSatisfyAutoSellThresholdNanosForCreator
 	}
 	// Check if the creator's balance is going from zero to non-zero and increment the NumberOfHolders if so.
-	if creatorBalanceEntry.BalanceNanos == 0 && creatorCoinFounderRewardNanos != 0 {
+	//
+	// CreatorCoin balances can't exceed uint64
+	if creatorBalanceEntry.BalanceNanos.Uint64() == 0 && creatorCoinFounderRewardNanos != 0 {
 		// Increment number of holders by one to reflect the creator
 		existingProfileEntry.CreatorCoinEntry.NumberOfHolders += 1
 
 		// Update the profile to reflect the new number of holders
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
-	creatorBalanceEntry.BalanceNanos += creatorCoinFounderRewardNanos
+	// CreatorCoin balances can't exceed uint64
+	creatorBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+		&creatorBalanceEntry.BalanceNanos,
+		uint256.NewInt().SetUint64(creatorCoinFounderRewardNanos))
 
 	// At this point the balances for the buyer and the creator should be correct
 	// so set the mappings in the view.
@@ -1048,7 +1110,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	// Check that the amount of creator coin being sold does not exceed the user's
 	// balance of this particular creator coin.
-	if creatorCoinToSellNanos > sellerBalanceEntry.BalanceNanos {
+	//
+	// CreatorCoin balances can't exceed uint64
+	if creatorCoinToSellNanos > sellerBalanceEntry.BalanceNanos.Uint64() {
 		return 0, 0, 0, nil, errors.Wrapf(
 			RuleErrorCreatorCoinSellInsufficientCoins,
 			"_connectCreatorCoin: CreatorCoin nanos being sold %v exceeds "+
@@ -1071,13 +1135,20 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		// This also gives a method for cleanly and accurately reducing the numberOfHolders.
 
 		// Note that we check that sellerBalanceEntry.BalanceNanos >= creatorCoinToSellNanos above.
-		if sellerBalanceEntry.BalanceNanos-creatorCoinToSellNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+		//
+		// CreatorCoin balances can't exceed uint64
+		if sellerBalanceEntry.BalanceNanos.Uint64()-creatorCoinToSellNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
 			// Setup to sell all the creator coins the seller has.
-			creatorCoinToSellNanos = sellerBalanceEntry.BalanceNanos
+			//
+			// CreatorCoin balances can't exceed uint64
+			creatorCoinToSellNanos = sellerBalanceEntry.BalanceNanos.Uint64()
 
 			// Compute the amount of DeSo to return with the new creatorCoinToSellNanos.
+			//
+			// For CreatorCoins it's OK to cast to Uint64() because we check for their
+			// exceeding this everywhere.
 			desoBeforeFeesNanos = CalculateDeSoToReturn(
-				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos,
+				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(),
 				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
@@ -1089,8 +1160,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		} else {
 			// If we're above the CreatorCoinAutoSellThresholdNanos, we can safely compute
 			// the amount to return based on the Bancor curve.
+			//
+			// For CreatorCoins it's OK to cast to Uint64() because we check for their
+			// exceeding this everywhere.
 			desoBeforeFeesNanos = CalculateDeSoToReturn(
-				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos,
+				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(),
 				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
@@ -1106,12 +1180,14 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		// a rare issue where a creator would be left with 1 creator coin nano in circulation
 		// and 1 nano DeSo locked after completely selling. This in turn made the Bancor Curve unstable.
 
-		if creatorCoinToSellNanos == existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos {
+		// For CreatorCoins it's OK to cast to Uint64() because we check for their
+		// exceeding this everywhere.
+		if creatorCoinToSellNanos == existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() {
 			desoBeforeFeesNanos = existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 		} else {
 			// Calculate the amount to return based on the Bancor Curve.
 			desoBeforeFeesNanos = CalculateDeSoToReturn(
-				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos,
+				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(),
 				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
@@ -1141,15 +1217,21 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// Subtract the number of coins the seller is selling from the number of coins
 	// in circulation. Sanity-check that it does not exceed the number of coins
 	// currently in circulation.
-	if creatorCoinToSellNanos > existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos {
+	//
+	// For CreatorCoins it's OK to cast to Uint64() because we check for their
+	// exceeding this everywhere.
+	if creatorCoinToSellNanos > existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() {
 		return 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: CreatorCoin nanos seller "+
 			"is selling %v exceeds CreatorCoin nanos in circulation %v",
 			creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos)
 	}
-	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos -= creatorCoinToSellNanos
+	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().SetUint64(
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() - creatorCoinToSellNanos)
 
 	// Check if this is a complete sell of the seller's remaining creator coins
-	if sellerBalanceEntry.BalanceNanos == creatorCoinToSellNanos {
+	//
+	// CreatorCoin balances can't exceed uint64
+	if sellerBalanceEntry.BalanceNanos.Uint64() == creatorCoinToSellNanos {
 		existingProfileEntry.CreatorCoinEntry.NumberOfHolders -= 1
 	}
 
@@ -1158,7 +1240,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// It's okay to modify these values because they are saved in the PrevCoinEntry.
 	if existingProfileEntry.CreatorCoinEntry.NumberOfHolders == 0 {
 		existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos = 0
-		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = 0
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt()
 	}
 
 	// Save the seller's balance before we modify it. We don't need to save the
@@ -1171,10 +1253,16 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// seller's balance above. Note that this amount equals sellerBalanceEntry.BalanceNanos
 	// in the event where the requested remaining creator coin balance dips
 	// below CreatorCoinAutoSellThresholdNanos.
-	sellerBalanceEntry.BalanceNanos -= creatorCoinToSellNanos
+	//
+	// CreatorCoin balances can't exceed uint64
+	sellerBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(
+		&sellerBalanceEntry.BalanceNanos,
+		uint256.NewInt().SetUint64(creatorCoinToSellNanos))
 
 	// If the seller's balance will be zero after this transaction, set HasPurchased to false
-	if sellerBalanceEntry.BalanceNanos == 0 {
+	//
+	// CreatorCoin balances can't exceed uint64
+	if sellerBalanceEntry.BalanceNanos.Uint64() == 0 {
 		sellerBalanceEntry.HasPurchased = false
 	}
 

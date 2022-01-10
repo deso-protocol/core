@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/holiman/uint256"
 	"io"
 	"math"
 	"net"
@@ -4661,10 +4662,10 @@ type DAOCoinMetadata struct {
 	// TODO: Should we only have one field that tracks number of coins in operation to keep this struct small?
 	// We will only ever need 1 of these fields.
 	// Mint field
-	CoinsToMintNanos uint64
+	CoinsToMintNanos uint256.Int
 
 	// Burn Fields
-	CoinsToBurnNanos uint64
+	CoinsToBurnNanos uint256.Int
 
 	// TransferRestrictionStatus to set if OperationType == DAOCoinOperatoinTypeUpdateTransferRestrictionStatus
 	TransferRestrictionStatus
@@ -4684,13 +4685,19 @@ func (txnData *DAOCoinMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// OperationType byte
 	data = append(data, byte(txnData.OperationType))
 
-	// TODO: is it too clever to save some space by only writing CoinsToMintNanos if OperationType = 0
 	// CoinsToMintNanos
-	data = append(data, UintToBuf(txnData.CoinsToMintNanos)...)
+	{
+		coinsToMintBytes := txnData.CoinsToMintNanos.Bytes()
+		data = append(data, UintToBuf(uint64(len(coinsToMintBytes)))...)
+		data = append(data, coinsToMintBytes...)
+	}
 
-	// TODO: is it too clever to save some space by only writing CoinstoBurnNanos if OperationType = 1
 	// CoinsToBurnNanos
-	data = append(data, UintToBuf(txnData.CoinsToBurnNanos)...)
+	{
+		coinsToBurnBytes := txnData.CoinsToBurnNanos.Bytes()
+		data = append(data, UintToBuf(uint64(len(coinsToBurnBytes)))...)
+		data = append(data, coinsToBurnBytes...)
+	}
 
 	data = append(data, byte(txnData.TransferRestrictionStatus))
 
@@ -4717,18 +4724,42 @@ func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
 	}
 	ret.OperationType = DAOCoinOperationType(operationType)
 
-	// TODO: is it too clever to to save some space by only reading CoinsToMint if OperationType = 0
-	ret.CoinsToMintNanos, err = ReadUvarint(rr)
-	if err != nil {
-		return fmt.Errorf(
-			"DAOCoinMetadata.FromBytes: Error reading CoinsToMintNanos: %v", err)
+	// Set CoinsToMintNanos from the bytes
+	maxUint256BytesLen := len(MaxUint256.Bytes())
+	{
+		intLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "DAOCoinMetadata.FromBytes: Problem "+
+				"coinsToMint length")
+		}
+		if intLen > uint64(maxUint256BytesLen) {
+			return fmt.Errorf("DAOCoinMetadata.FromBytes: coinsToMintLen %d "+
+				"exceeds max %d", intLen, MaxMessagePayload)
+		}
+		coinsToMintBytes := make([]byte, intLen)
+		_, err = io.ReadFull(rr, coinsToMintBytes)
+		if err != nil {
+			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToMintBytes: %v", err)
+		}
+		ret.CoinsToMintNanos = *uint256.NewInt().SetBytes(coinsToMintBytes)
 	}
 
-	// TODO: is it too clever to save some space by only reading CoinsToBurn if OperationType = 1
-	ret.CoinsToBurnNanos, err = ReadUvarint(rr)
-	if err != nil {
-		return fmt.Errorf(
-			"DAOCoinMetadata.FromBytes: Error reading CoinsToBurnNanos: %v", err)
+	{
+		intLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "DAOCoinMetadata.FromBytes: Problem "+
+				"coinsToBurn length")
+		}
+		if intLen > uint64(maxUint256BytesLen) {
+			return fmt.Errorf("DAOCoinMetadata.FromBytes: coinsToBurnLen %d "+
+				"exceeds max %d", intLen, MaxMessagePayload)
+		}
+		coinsToBurnBytes := make([]byte, intLen)
+		_, err = io.ReadFull(rr, coinsToBurnBytes)
+		if err != nil {
+			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToBurnBytes: %v", err)
+		}
+		ret.CoinsToBurnNanos = *uint256.NewInt().SetBytes(coinsToBurnBytes)
 	}
 
 	transferRestrictionStatus, err := rr.ReadByte()
@@ -4755,7 +4786,7 @@ type DAOCoinTransferMetadata struct {
 	// transferred if a valid profile exists.
 	ProfilePublicKey []byte
 
-	DAOCoinToTransferNanos uint64
+	DAOCoinToTransferNanos uint256.Int
 	ReceiverPublicKey      []byte
 }
 
@@ -4771,7 +4802,11 @@ func (txnData *DAOCoinTransferMetadata) ToBytes(preSignature bool) ([]byte, erro
 	data = append(data, txnData.ProfilePublicKey...)
 
 	// DAOCoinToTransferNanos uint64
-	data = append(data, UintToBuf(uint64(txnData.DAOCoinToTransferNanos))...)
+	{
+		coinsToTransferBytes := txnData.DAOCoinToTransferNanos.Bytes()
+		data = append(data, UintToBuf(uint64(len(coinsToTransferBytes)))...)
+		data = append(data, coinsToTransferBytes...)
+	}
 
 	// ReceiverPublicKey
 	data = append(data, UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
@@ -4792,10 +4827,24 @@ func (txnData *DAOCoinTransferMetadata) FromBytes(data []byte) error {
 			"DAOCoinTransferMetadata.FromBytes: Error reading ProfilePublicKey: %v", err)
 	}
 
-	// DAOCoinToTransferNanos uint64
-	ret.DAOCoinToTransferNanos, err = ReadUvarint(rr)
-	if err != nil {
-		return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: Error reading DAOCoinToSellNanos: %v", err)
+	// DAOCoinToTransferNanos uint256
+	maxUint256BytesLen := len(MaxUint256.Bytes())
+	{
+		intLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "DAOCoinTransferMetadata.FromBytes: Problem "+
+				"coinsToTransfer length")
+		}
+		if intLen > uint64(maxUint256BytesLen) {
+			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: coinsToTransferLen %d "+
+				"exceeds max %d", intLen, MaxMessagePayload)
+		}
+		coinsToTransferBytes := make([]byte, intLen)
+		_, err = io.ReadFull(rr, coinsToTransferBytes)
+		if err != nil {
+			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: Error reading coinsToTransferBytes: %v", err)
+		}
+		ret.DAOCoinToTransferNanos = *uint256.NewInt().SetBytes(coinsToTransferBytes)
 	}
 
 	// ReceiverPublicKey

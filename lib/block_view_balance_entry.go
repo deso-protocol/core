@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"reflect"
 )
@@ -255,19 +256,19 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	// we wouldn't have to repeat all of the assignments twice.
 	var receiverPublicKey []byte
 	var profilePublicKey []byte
-	var coinToTransferNanos uint64
+	var coinToTransferNanos *uint256.Int
 	if isDAOCoin {
 		// In this case, we're dealing with a DAOCoin transfer
 		txMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
 		receiverPublicKey = txMeta.ReceiverPublicKey
 		profilePublicKey = txMeta.ProfilePublicKey
-		coinToTransferNanos = txMeta.DAOCoinToTransferNanos
+		coinToTransferNanos = &txMeta.DAOCoinToTransferNanos
 	} else {
 		// In this case, we're dealing with a CreatorCoin transfer
 		txMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
 		receiverPublicKey = txMeta.ReceiverPublicKey
 		profilePublicKey = txMeta.ProfilePublicKey
-		coinToTransferNanos = txMeta.CreatorCoinToTransferNanos
+		coinToTransferNanos = uint256.NewInt().SetUint64(txMeta.CreatorCoinToTransferNanos)
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -334,14 +335,15 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	// transferred is not less than the min threshold. For DAO coins, this constraint
 	// doesn't matter because there is no bonding curve.
 	if !isDAOCoin {
-		if coinToTransferNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+		// CreatorCoins can't exceed a uint64
+		if coinToTransferNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
 			return 0, 0, nil, RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold
 		}
 	}
 
 	// Check that the amount of coin being transferred does not exceed the user's
 	// balance of this particular coin.
-	if coinToTransferNanos > senderBalanceEntry.BalanceNanos {
+	if coinToTransferNanos.Gt(&senderBalanceEntry.BalanceNanos) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorCoinTransferInsufficientCoins,
 			"_helpConnectCoinTransfer: Coin nanos being transferred %v exceeds "+
@@ -385,7 +387,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		receiverBalanceEntry = &BalanceEntry{
 			HODLerPKID:   receiverPKID.PKID,
 			CreatorPKID:  creatorPKID.PKID,
-			BalanceNanos: uint64(0),
+			BalanceNanos: *uint256.NewInt(),
 		}
 	}
 
@@ -393,8 +395,12 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	prevSenderBalanceEntry := *senderBalanceEntry
 
 	// Subtract the number of coins being given from the sender and add them to the receiver.
-	senderBalanceEntry.BalanceNanos -= coinToTransferNanos
-	receiverBalanceEntry.BalanceNanos += coinToTransferNanos
+	senderBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(
+		&senderBalanceEntry.BalanceNanos,
+		coinToTransferNanos)
+	receiverBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+		&receiverBalanceEntry.BalanceNanos,
+		coinToTransferNanos)
 
 	// If we're dealing with a CreatorCoin transfer, we need to ensure that the balance
 	// gets zeroed out if it gets too small. This is not needed for DAO coins.
@@ -403,9 +409,13 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		// Bancor curve price anomalies as famously demonstrated by @salomon.  Thus, if the
 		// sender tries to make a transfer that will leave them below the threshold we give
 		// their remaining balance to the receiver in order to zero them out.
-		if senderBalanceEntry.BalanceNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
-			receiverBalanceEntry.BalanceNanos += senderBalanceEntry.BalanceNanos
-			senderBalanceEntry.BalanceNanos = 0
+		//
+		// CreatorCoins can't exceed a uint64
+		if senderBalanceEntry.BalanceNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
+			receiverBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+				&receiverBalanceEntry.BalanceNanos,
+				&senderBalanceEntry.BalanceNanos)
+			senderBalanceEntry.BalanceNanos = *uint256.NewInt()
 			senderBalanceEntry.HasPurchased = false
 		}
 	}
@@ -417,7 +427,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	bav._deleteBalanceEntryMappings(receiverBalanceEntry,receiverPublicKey, profilePublicKey, isDAOCoin)
 
 	bav._setBalanceEntryMappings(receiverBalanceEntry, isDAOCoin)
-	if senderBalanceEntry.BalanceNanos > 0 {
+	if senderBalanceEntry.BalanceNanos.Gt(uint256.NewInt()) {
 		bav._setBalanceEntryMappings(senderBalanceEntry, isDAOCoin)
 	}
 
@@ -432,7 +442,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		prevCoinEntry = creatorProfileEntry.CreatorCoinEntry
 	}
 
-	if prevReceiverBalanceEntry == nil || prevReceiverBalanceEntry.BalanceNanos == 0 ||
+	if prevReceiverBalanceEntry == nil || prevReceiverBalanceEntry.BalanceNanos.IsZero() ||
 		prevReceiverBalanceEntry.isDeleted {
 		// The receiver did not have a BalanceEntry before. Increment num holders.
 		if isDAOCoin {
@@ -442,7 +452,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		}
 	}
 
-	if senderBalanceEntry.BalanceNanos == 0 {
+	if senderBalanceEntry.BalanceNanos.IsZero() {
 		// The sender no longer holds any of this creator's coin, so we decrement num holders.
 		if isDAOCoin {
 			creatorProfileEntry.DAOCoinEntry.NumberOfHolders--
@@ -504,7 +514,8 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 				return 0, 0, nil, errors.Wrapf(err, "_helpConnectCoinTransfer: ")
 			}
 
-			if coinToTransferNanos < expectedCreatorCoinNanosToTransfer {
+			// CreatorCoins can't exceed a uint64
+			if coinToTransferNanos.Uint64() < expectedCreatorCoinNanosToTransfer {
 				return 0, 0, nil, RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel
 			}
 

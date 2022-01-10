@@ -7,6 +7,7 @@ import (
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
+	"github.com/holiman/uint256"
 	"strings"
 )
 
@@ -426,11 +427,17 @@ type PGProfile struct {
 	CreatorBasisPoints               uint64
 	DeSoLockedNanos                  uint64
 	NumberOfHolders                  uint64
-	CoinsInCirculationNanos          uint64
+	// FIXME: Postgres will break when values exceed uint64
+	// We don't use Postgres right now so going to plow ahead and set this as-is
+	// to fix compile errors.
+	CoinsInCirculationNanos          uint256.Int
 	CoinWatermarkNanos               uint64
 	MintingDisabled                  bool
 	DAOCoinNumberOfHolders           uint64                    `pg:"dao_coin_number_of_holders"`
-	DAOCoinCoinsInCirculationNanos   uint64                    `pg:"dao_coin_coins_in_circulation"`
+	// FIXME: Postgres will break when values exceed uint64
+	// We don't use Postgres right now so going to plow ahead and set this as-is
+	// to fix compile errors.
+	DAOCoinCoinsInCirculationNanos   uint256.Int                  `pg:"dao_coin_coins_in_circulation"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
 }
@@ -572,7 +579,8 @@ func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 	return &BalanceEntry{
 		HODLerPKID:   balance.HolderPKID,
 		CreatorPKID:  balance.CreatorPKID,
-		BalanceNanos: balance.BalanceNanos,
+		// FIXME: This will break if the value exceeds uint256
+		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -590,7 +598,8 @@ func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
 	return &BalanceEntry{
 		HODLerPKID:   balance.HolderPKID,
 		CreatorPKID:  balance.CreatorPKID,
-		BalanceNanos: balance.BalanceNanos,
+		// FIXME: This will break if the value exceeds uint256
+		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -1560,7 +1569,8 @@ func (postgres *Postgres) flushCreatorCoinBalances(tx *pg.Tx, view *UtxoView) er
 		balance := &PGCreatorCoinBalance{
 			HolderPKID:   balanceEntry.HODLerPKID,
 			CreatorPKID:  balanceEntry.CreatorPKID,
-			BalanceNanos: balanceEntry.BalanceNanos,
+			// FIXME: This will break if the value exceeds uint256
+			BalanceNanos: balanceEntry.BalanceNanos.Uint64(),
 			HasPurchased: balanceEntry.HasPurchased,
 		}
 
@@ -1599,7 +1609,8 @@ func (postgres *Postgres) flushDAOCoinBalances(tx *pg.Tx, view *UtxoView) error 
 		balance := &PGDAOCoinBalance{
 			HolderPKID:   balanceEntry.HODLerPKID,
 			CreatorPKID:  balanceEntry.CreatorPKID,
-			BalanceNanos: balanceEntry.BalanceNanos,
+			// FIXME: This will break if the value exceeds uint256
+			BalanceNanos: balanceEntry.BalanceNanos.Uint64(),
 			HasPurchased: balanceEntry.HasPurchased,
 		}
 

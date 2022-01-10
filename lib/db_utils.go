@@ -5123,7 +5123,7 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances
 			if err := gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry); err != nil {
 				return nil, err
 			}
-			if filterOutZeroBalances && currentEntry.BalanceNanos == 0 {
+			if filterOutZeroBalances && currentEntry.BalanceNanos.IsZero() {
 				continue
 			}
 			balanceEntriesYouHodl = append(balanceEntriesYouHodl, currentEntry)
@@ -5146,7 +5146,7 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalan
 			if err := gob.NewDecoder(bytes.NewReader(byteString)).Decode(currentEntry); err != nil {
 				return nil, err
 			}
-			if filterOutZeroBalances && currentEntry.BalanceNanos == 0 {
+			if filterOutZeroBalances && currentEntry.BalanceNanos.IsZero() {
 				continue
 			}
 			balanceEntriesThatHodlYou = append(balanceEntriesThatHodlYou, currentEntry)

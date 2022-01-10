@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/holiman/uint256"
 	"log"
 	"math"
 	"math/big"
@@ -65,6 +66,10 @@ const (
 	// fashion, with the eventual goal of phasing out blocks with the previous version.
 	HeaderVersion1       = uint32(1)
 	CurrentHeaderVersion = HeaderVersion1
+)
+
+var (
+	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 )
 
 var (

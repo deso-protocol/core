@@ -3,8 +3,8 @@ package lib
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"math"
 	"reflect"
 )
 
@@ -68,7 +68,7 @@ func (bav *UtxoView) _disconnectDAOCoin(
 		transactorBalanceEntry = &BalanceEntry{
 			CreatorPKID:  creatorPKID,
 			HODLerPKID:   hodlerPKID,
-			BalanceNanos: uint64(0),
+			BalanceNanos: *uint256.NewInt(),
 		}
 	}
 
@@ -80,12 +80,15 @@ func (bav *UtxoView) _disconnectDAOCoin(
 				"ProfilePublicKey: %v, %v; this should never happen", currentTxn.PublicKey, txMeta.ProfilePublicKey)
 		}
 		// coins to mint is non-zero
-		if txMeta.CoinsToMintNanos == 0 {
+		if txMeta.CoinsToMintNanos.IsZero() {
 			return fmt.Errorf("_disconnectDAOCoin: Must mint more than zero coins; this should never happen")
 		}
 		// Coins minted + prev coin entry's coins in circulation matches new coin entry's coins in circulation
-		if existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos !=
-			operationData.PrevCoinEntry.CoinsInCirculationNanos+txMeta.CoinsToMintNanos {
+		CoinsInCirculationPlusCoinsToMintNanos := uint256.NewInt().Add(
+			&operationData.PrevCoinEntry.CoinsInCirculationNanos,
+			&txMeta.CoinsToMintNanos)
+		if !existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos.Eq(
+			CoinsInCirculationPlusCoinsToMintNanos) {
 			return fmt.Errorf("_disconnectDAOCoin: existingProfileEntry's Coins in circulation does not "+
 				"equal previous coins in circulation + txMeta.CoinsToMintNanos: %v, %v, %v",
 				existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos,
@@ -94,8 +97,10 @@ func (bav *UtxoView) _disconnectDAOCoin(
 		}
 		// Check that creator's current balance is equal to previous balance plus coins to mint. Note: the creator is
 		// the transactor in this case
-		if transactorBalanceEntry.BalanceNanos !=
-			operationData.PrevCreatorBalanceEntry.BalanceNanos+txMeta.CoinsToMintNanos {
+		PrevBalanceNanosPlusCoinsToMintNanos := uint256.NewInt().Add(
+			&operationData.PrevCreatorBalanceEntry.BalanceNanos,
+			&txMeta.CoinsToMintNanos)
+		if !transactorBalanceEntry.BalanceNanos.Eq(PrevBalanceNanosPlusCoinsToMintNanos) {
 			return fmt.Errorf("_disconnectDAOCoin: creator DAO coin balance is not equal to previous balance "+
 				"plus txMeta.CoinsToMintNanos: %v, %v, %v",
 				transactorBalanceEntry.BalanceNanos,
@@ -109,12 +114,16 @@ func (bav *UtxoView) _disconnectDAOCoin(
 	} else if txMeta.OperationType == DAOCoinOperationTypeBurn {
 		// Sanity checks
 		// coins to burn is non-zero
-		if txMeta.CoinsToBurnNanos == 0 {
+		if txMeta.CoinsToBurnNanos.IsZero() {
 			return fmt.Errorf("_disconnctDAOCoin: Must burn more than zero coins; this should never happen")
 		}
 		// prev coin entry's coins in circulation minus coins burned matches new coin entry's coins in circulation
-		if existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos !=
-			operationData.PrevCoinEntry.CoinsInCirculationNanos-txMeta.CoinsToBurnNanos {
+		PrevCoinsInCirculationMinusCoinsToBurnNanos := uint256.NewInt().Sub(
+			&operationData.PrevCoinEntry.CoinsInCirculationNanos,
+			&txMeta.CoinsToBurnNanos)
+		if !existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos.Eq(
+			PrevCoinsInCirculationMinusCoinsToBurnNanos) {
+
 			return fmt.Errorf("_disconnectDAOCoin: existingProfileEntry's Coins in circulation does not "+
 				"equal previous coins in circulation + txMeta.CoinsToBurnNanos: %v, %v, %v",
 				existingProfileEntry.DAOCoinEntry.CoinsInCirculationNanos,
@@ -124,8 +133,10 @@ func (bav *UtxoView) _disconnectDAOCoin(
 		// prev balance entry - coins burned matches the new balance entry's balance
 		// Check that transactor's current balance is equal to previous balance minus coins to mint. Note: the creator is
 		// the transactor in this case
-		if transactorBalanceEntry.BalanceNanos !=
-			operationData.PrevTransactorBalanceEntry.BalanceNanos-txMeta.CoinsToBurnNanos {
+		PrevBalanceNanosMinusCoinsToBurnNanos := uint256.NewInt().Sub(
+			&operationData.PrevTransactorBalanceEntry.BalanceNanos,
+			&txMeta.CoinsToBurnNanos)
+		if !transactorBalanceEntry.BalanceNanos.Eq(PrevBalanceNanosMinusCoinsToBurnNanos) {
 			return fmt.Errorf("_disconnectDAOCoin: creator DAO coin balance is not equal to previous balance "+
 				"plus txMeta.CoinsToBurnNanos: %v, %v, %v",
 				transactorBalanceEntry.BalanceNanos,
@@ -216,9 +227,10 @@ func (bav *UtxoView) _disconnectDAOCoinTransfer(
 			PkToStringBoth(currentTxn.PublicKey), PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	senderPrevBalanceNanos := operationData.PrevSenderBalanceEntry.BalanceNanos
-	var senderCurrBalanceNanos uint64
+	senderCurrBalanceNanos := *uint256.NewInt()
 	// Since the sender may have given away their whole balance, their BalanceEntry can be nil.
 	if senderBalanceEntry != nil && !senderBalanceEntry.isDeleted {
+		// This assignment is OK because we never modify values in-place
 		senderCurrBalanceNanos = senderBalanceEntry.BalanceNanos
 	}
 
@@ -233,29 +245,30 @@ func (bav *UtxoView) _disconnectDAOCoinTransfer(
 			PkToStringBoth(currentTxn.PublicKey), PkToStringBoth(txMeta.ProfilePublicKey))
 	}
 	receiverCurrBalanceNanos := receiverBalanceEntry.BalanceNanos
-	var receiverPrevBalanceNanos uint64
+	receiverPrevBalanceNanos := *uint256.NewInt()
 	if operationData.PrevReceiverBalanceEntry != nil {
+		// This assignment is OK because we never modify values in-place
 		receiverPrevBalanceNanos = operationData.PrevReceiverBalanceEntry.BalanceNanos
 	}
 
 	// Sanity check that the sender's current balance is less than their previous balance.
-	if senderCurrBalanceNanos > senderPrevBalanceNanos {
+	if senderCurrBalanceNanos.Gt(&senderPrevBalanceNanos) {
 		return fmt.Errorf("_disconnectDAOCoinTransfer: Sender's current balance %d is "+
 			"greater than their previous balance %d",
 			senderCurrBalanceNanos, senderPrevBalanceNanos)
 	}
 
 	// Sanity check that the receiver's previous balance is less than their current balance.
-	if receiverPrevBalanceNanos > receiverCurrBalanceNanos {
+	if receiverPrevBalanceNanos.Gt(&receiverCurrBalanceNanos) {
 		return fmt.Errorf("_disconnectDAOCoinTransfer: Receiver's previous balance %d is "+
 			"greater than their current balance %d",
 			receiverPrevBalanceNanos, receiverCurrBalanceNanos)
 	}
 
 	// Sanity check the sender's increase equals the receiver's decrease after disconnect.
-	senderBalanceIncrease := senderPrevBalanceNanos - senderCurrBalanceNanos
-	receiverBalanceDecrease := receiverCurrBalanceNanos - receiverPrevBalanceNanos
-	if senderBalanceIncrease != receiverBalanceDecrease {
+	senderBalanceIncrease := uint256.NewInt().Sub(&senderPrevBalanceNanos, &senderCurrBalanceNanos)
+	receiverBalanceDecrease := uint256.NewInt().Sub(&receiverCurrBalanceNanos, &receiverPrevBalanceNanos)
+	if !senderBalanceIncrease.Eq(receiverBalanceDecrease) {
 		return fmt.Errorf("_disconnectDAOCoinTransfer: Sender's balance increase "+
 			"of %d will not equal the receiver's balance decrease of  %v after disconnect.",
 			senderBalanceIncrease, receiverBalanceDecrease)
@@ -274,7 +287,7 @@ func (bav *UtxoView) _disconnectDAOCoinTransfer(
 
 	// Set the balance entries appropriately.
 	bav._setDAOCoinBalanceEntryMappings(operationData.PrevSenderBalanceEntry)
-	if operationData.PrevReceiverBalanceEntry != nil && operationData.PrevReceiverBalanceEntry.BalanceNanos != 0 {
+	if operationData.PrevReceiverBalanceEntry != nil && !operationData.PrevReceiverBalanceEntry.BalanceNanos.IsZero() {
 		bav._setDAOCoinBalanceEntryMappings(operationData.PrevReceiverBalanceEntry)
 	}
 
@@ -358,20 +371,25 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 	}
 
 	// Must mint non-zero amount of DAO coins
-	if txMeta.CoinsToMintNanos == 0 {
+	if txMeta.CoinsToMintNanos.IsZero() {
 		return 0, 0, nil, RuleErrorDAOCoinMustMintNonZeroDAOCoin
 	}
 
 	// At this point we are confident that we have the profile owner minting DAO coins for themselves.
 	prevDAOCoinEntry := creatorProfileEntry.DAOCoinEntry
 
-	// Increase coins in circulation
-	if creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos > math.MaxUint64-txMeta.CoinsToMintNanos {
+	// Increase coins in circulation. Do not exceed the value of a uint256...
+	//
+	// if CoinsInCirculationNanos > MaxUint256 - CoinsToMintNanos
+	if creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos.Gt(
+		uint256.NewInt().Sub(MaxUint256, &txMeta.CoinsToMintNanos)) {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoin: Overflow while summing CoinsInCirculationNanos and CoinsToMinNanos: %v, %v",
 			creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, txMeta.CoinsToMintNanos)
 	}
-	creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos += txMeta.CoinsToMintNanos
+	// CoinsInCirculationNanos = CoinsInCirculationNanos + CoinsToMintNanos
+	creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Add(
+		&creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, &txMeta.CoinsToMintNanos)
 
 	// Increase Balance entry for owner
 	profileOwnerBalanceEntry, hodlerPKID, creatorPKID := bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
@@ -380,24 +398,29 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		profileOwnerBalanceEntry = &BalanceEntry{
 			HODLerPKID:   hodlerPKID,
 			CreatorPKID:  creatorPKID,
-			BalanceNanos: uint64(0),
+			BalanceNanos: *uint256.NewInt(),
 		}
 	}
 
 	// Save a copy of the balance entry
 	prevProfileOwnerBalanceEntry := *profileOwnerBalanceEntry
 
-	if profileOwnerBalanceEntry.BalanceNanos > math.MaxUint64-txMeta.CoinsToMintNanos {
+	// Check for overflow of the uint256
+	// if profileOwnerBalanceEntry.BalanceNanos > MaxUint256-txMeta.CoinsToMintNanos
+	if profileOwnerBalanceEntry.BalanceNanos.Gt(uint256.NewInt().Sub(
+		MaxUint256, &txMeta.CoinsToMintNanos)) {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoin: Overflow while summing profileOwnerBalanceEntry.BalanceNanos and CoinsToMintNanos: %v, %v",
 			profileOwnerBalanceEntry.BalanceNanos, txMeta.CoinsToMintNanos)
 	}
 
-	profileOwnerBalanceEntry.BalanceNanos += txMeta.CoinsToMintNanos
+	profileOwnerBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+		&profileOwnerBalanceEntry.BalanceNanos,
+		&txMeta.CoinsToMintNanos)
 	bav._setDAOCoinBalanceEntryMappings(profileOwnerBalanceEntry)
 
 	// Increment the number of holders if necessary
-	if prevProfileOwnerBalanceEntry.BalanceNanos == 0 {
+	if prevProfileOwnerBalanceEntry.BalanceNanos.IsZero() {
 		creatorProfileEntry.DAOCoinEntry.NumberOfHolders++
 
 		bav._setProfileEntryMappings(creatorProfileEntry)
@@ -441,12 +464,13 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 
 	daoCoinToBurn := txMeta.CoinsToBurnNanos
 	// Check that the burner is burning a non-zero amount of DAO coin
-	if daoCoinToBurn == 0 {
+	if daoCoinToBurn.IsZero() {
 		return 0, 0, nil, RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin
 	}
 
 	// Check that the amount of DAO coin being burned does not exceed the user's balance
-	if daoCoinToBurn > burnerBalanceEntry.BalanceNanos {
+	// if daoCoinToBurn > burnerBalanceEntry.BalanceNanos {
+	if daoCoinToBurn.Gt(&burnerBalanceEntry.BalanceNanos) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorDAOCoinBurnInsufficientCoins,
 			"_connectDAOCoin: DAO Coin nanos being burned %v exceeds user's DAO coin balance %v",
@@ -455,7 +479,8 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 	}
 
 	// Sanity check that the amount being burned is less than the total circulation
-	if daoCoinToBurn > creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos {
+	// if daoCoinToBurn > creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos {
+	if daoCoinToBurn.Gt(&creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation,
 			"_connectDAOCoin: DAO Coin nanos being burned %v exceeds coins in circulation %v; this should never happen.",
@@ -465,14 +490,18 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 	// Now we're safe to burn the coins
 	// Reduce the total number of coins in circulation
 	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
-	creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos -= daoCoinToBurn
+	creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Sub(
+		&creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos,
+		&daoCoinToBurn)
 
 	// Burn them from the burner's balance entry
 	prevTransactorBalanceEntry := *burnerBalanceEntry
-	burnerBalanceEntry.BalanceNanos -= daoCoinToBurn
+	burnerBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(
+		&burnerBalanceEntry.BalanceNanos,
+		&daoCoinToBurn)
 
 	// Reduce number of holders if necessary
-	if burnerBalanceEntry.BalanceNanos == 0 {
+	if burnerBalanceEntry.BalanceNanos.IsZero() {
 		creatorProfileEntry.DAOCoinEntry.NumberOfHolders--
 	}
 
@@ -482,7 +511,7 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 
 	// Set the new BalanceEntry in our mappings for the burner and set the
 	// ProfileEntry mappings as well since everything is up to date.
-	if burnerBalanceEntry.BalanceNanos > 0 {
+	if burnerBalanceEntry.BalanceNanos.Gt(uint256.NewInt()) {
 		bav._setDAOCoinBalanceEntryMappings(burnerBalanceEntry)
 	}
 	bav._setProfileEntryMappings(creatorProfileEntry)
@@ -647,7 +676,7 @@ func (bav *UtxoView) IsValidDAOCoinTransfer(
 	if creatorProfileEntry.DAOCoinEntry.TransferRestrictionStatus == TransferRestrictionStatusDAOMembersOnly {
 		receiverBalanceEntry, _, _ := bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			receiverPublicKey, creatorProfileEntry.PublicKey)
-		if receiverBalanceEntry == nil || receiverBalanceEntry.isDeleted || receiverBalanceEntry.BalanceNanos == 0 {
+		if receiverBalanceEntry == nil || receiverBalanceEntry.isDeleted || receiverBalanceEntry.BalanceNanos.IsZero() {
 			return RuleErrorDAOCoinTransferDAOMemberOnlyViolation
 		}
 	}
