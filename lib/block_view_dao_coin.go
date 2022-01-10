@@ -383,9 +383,10 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 	// if CoinsInCirculationNanos > MaxUint256 - CoinsToMintNanos
 	if creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos.Gt(
 		uint256.NewInt().Sub(MaxUint256, &txMeta.CoinsToMintNanos)) {
-		return 0, 0, nil, fmt.Errorf(
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorOverflowWhileMintingDAOCoins, fmt.Sprintf(
 			"_connectDAOCoin: Overflow while summing CoinsInCirculationNanos and CoinsToMinNanos: %v, %v",
-			creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, txMeta.CoinsToMintNanos)
+			creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, txMeta.CoinsToMintNanos))
 	}
 	// CoinsInCirculationNanos = CoinsInCirculationNanos + CoinsToMintNanos
 	creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Add(
@@ -427,7 +428,7 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 	}
 
 	// Add an operation to the list at the end indicating we've executed a
-	// CreatorCoin txn. Save the previous state of the CreatorCoinEntry for easy
+	// DAOCoin txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                    OperationTypeDAOCoin,
@@ -531,7 +532,6 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 
 	totalInput, totalOutput, utxoOpsForTxn, creatorProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
 		txn, txHash, blockHeight, verifySignatures)
-
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -568,7 +568,6 @@ func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
 
 	totalInput, totalOutput, utxoOpsForTxn, creatorProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
 		txn, txHash, blockHeight, verifySignatures)
-
 	if err != nil {
 		return 0, 0, nil, err
 	}

@@ -223,6 +223,7 @@ const (
 	RuleErrorDAOCoinBurnInsufficientCoins                 RuleError = "RuleErrorDAOCoinBurnInsufficientCoins"
 	RuleErrorOnlyProfileOwnerCanMintDAOCoin               RuleError = "RuleErrorOnlyProfileOwnerCanMintDAOCoin"
 	RuleErrorDAOCoinMustMintNonZeroDAOCoin                RuleError = "RuleErrorDAOCoinMustMintNonZeroDAOCoin"
+	RuleErrorOverflowWhileMintingDAOCoins                 RuleError = "RuleErrorOverflowWhileMintingDAOCoins"
 	RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation   RuleError = "RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation"
 	RuleErrorDAOCoinBeforeDAOCoinBlockHeight              RuleError = "RuleErrorDAOCoinBeforeDAOCoinBlockHeight"
 	RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled RuleError = "RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled"

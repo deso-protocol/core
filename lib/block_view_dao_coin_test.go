@@ -975,6 +975,219 @@ func TestDAOCoinBasic(t *testing.T) {
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
 	}
 
+	// Create a profile for m2
+	{
+		_updateProfileWithTestMeta(
+			testMeta,
+			10,            /*feeRateNanosPerKB*/
+			m2Pub,         /*updaterPkBase58Check*/
+			m2Priv,        /*updaterPrivBase58Check*/
+			[]byte{},      /*profilePubKey*/
+			"m2",          /*newUsername*/
+			"i am the m2", /*newDescription*/
+			shortPic,      /*newProfilePic*/
+			10*100,        /*newCreatorBasisPoints*/
+			1.25*100*100,  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+	}
+
+	// Have m2 try to mint an amount that would exceed the maximum allowed.
+	// This should fail.
+	{
+		// Mint the max - 1k
+		// M2 DAO cap table before:
+		// - nobody has any
+		// M2 DAO cap table after:
+		// - M2: max-1k
+		maxMinus1k := uint256.NewInt().Sub(MaxUint256, uint256.NewInt().SetUint64(1000))
+		{
+			_daoCoinTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinMetadata{
+				ProfilePublicKey: m2PkBytes,
+				OperationType:    DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *maxMinus1k,
+			})
+			daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+				db, m2PKID.PKID, m2PKID.PKID, true)
+			require.Equal(&daoBalanceEntry.BalanceNanos, maxMinus1k)
+
+			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			require.Equal(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos, maxMinus1k)
+			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(1))
+			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
+		}
+
+		// Minting 1,001 coins should fail
+		{
+			_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinMetadata{
+				ProfilePublicKey: m2PkBytes,
+				OperationType:    DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *uint256.NewInt().SetUint64(1001),
+			})
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorOverflowWhileMintingDAOCoins)
+		}
+
+		// Have M2 send half of the coins to M1
+		// M2 DAO cap table before:
+		// - M2: max-1k
+		// M2 DAO cap table after:
+		// - M1: (max-1k) / 2
+		// - M2: (max-1k) / 2 + 1
+		maxMinus1kDiv2 := uint256.NewInt().Div(maxMinus1k, uint256.NewInt().SetUint64(2))
+		maxMinus1kDiv2PlusOne := uint256.NewInt().Add(
+			maxMinus1kDiv2,
+			uint256.NewInt().SetUint64(1))
+		{
+			_daoCoinTransferTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
+				ProfilePublicKey:       m2PkBytes,
+				ReceiverPublicKey:      m1PkBytes,
+				DAOCoinToTransferNanos: *maxMinus1kDiv2,
+			})
+
+			{
+				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+					db, m1PKID.PKID, m2PKID.PKID, true)
+				require.Equal(maxMinus1kDiv2, &daoBalanceEntry.BalanceNanos)
+			}
+			{
+				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+					db, m2PKID.PKID, m2PKID.PKID, true)
+				require.Equal(maxMinus1kDiv2PlusOne, &daoBalanceEntry.BalanceNanos)
+			}
+
+			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			require.Equal(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos, maxMinus1k)
+			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
+			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
+		}
+
+		// Minting 1,001 coins should STILL fail
+		{
+			_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinMetadata{
+				ProfilePublicKey: m2PkBytes,
+				OperationType:    DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *uint256.NewInt().SetUint64(1001),
+			})
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorOverflowWhileMintingDAOCoins)
+		}
+
+		// Mintng 1k coins should pass, and take us to the max supply
+		// M2 DAO cap table before:
+		// - M1: (max-1k)/2
+		// - M2: (max-1k)/2 + 1
+		// M2 DAO cap table after:
+		// - M1: (max-1k)/2
+		// - M2: (max-1k)/2 + 1k + 1
+		maxMinus1kDiv2Plus1kPlusOne := uint256.NewInt().Add(
+			maxMinus1kDiv2, uint256.NewInt().SetUint64(1001))
+		{
+			_daoCoinTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinMetadata{
+				ProfilePublicKey: m2PkBytes,
+				OperationType:    DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *uint256.NewInt().SetUint64(1000),
+			})
+
+			{
+				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+					db, m1PKID.PKID, m2PKID.PKID, true)
+				require.Equal(maxMinus1kDiv2, &daoBalanceEntry.BalanceNanos)
+			}
+			{
+				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+					db, m2PKID.PKID, m2PKID.PKID, true)
+				require.Equal(maxMinus1kDiv2Plus1kPlusOne, &daoBalanceEntry.BalanceNanos)
+			}
+
+			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			require.Equal(MaxUint256, &profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
+			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
+			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
+		}
+
+		// Burning 2k should work
+		// M2 DAO cap table before:
+		// - M1: (max-1k)/2
+		// - M2: (max-1k)/2 + 1k + 1
+		// M2 DAO cap table after:
+		// - M1: (max-1k)/2 - 2k
+		// - M2: (max-1k)/2 + 1k + 1
+		maxMinus1kDiv2Minus2k := uint256.NewInt().Sub(
+			maxMinus1kDiv2, uint256.NewInt().SetUint64(2000))
+		maxMinus1kDiv2Minus1kPlus1 := uint256.NewInt().Add(
+			maxMinus1kDiv2Minus2k,
+			maxMinus1kDiv2Plus1kPlusOne)
+		{
+			_daoCoinTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinMetadata{
+				ProfilePublicKey: m2PkBytes,
+				OperationType:    DAOCoinOperationTypeBurn,
+				CoinsToBurnNanos: *uint256.NewInt().SetUint64(2000),
+			})
+
+			{
+				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+					db, m1PKID.PKID, m2PKID.PKID, true)
+				require.Equal(maxMinus1kDiv2Minus2k, &daoBalanceEntry.BalanceNanos)
+			}
+			{
+				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+					db, m2PKID.PKID, m2PKID.PKID, true)
+				require.Equal(maxMinus1kDiv2Plus1kPlusOne, &daoBalanceEntry.BalanceNanos)
+			}
+
+			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			require.Equal(maxMinus1kDiv2Minus1kPlus1, &profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
+			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
+			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
+		}
+
+		// Minting 1k should work
+		// M2 DAO cap table before:
+		// - M1: (max-1k)/2 - 2k
+		// - M2: (max-1k)/2 + 1k + 1
+		// M2 DAO cap table after:
+		// - M1: (max-1k)/2 - 2k
+		// - M2: (max-1k)/2 + 2k + 1
+		maxMinus1kDiv2Plus2k := uint256.NewInt().Add(
+			maxMinus1kDiv2, uint256.NewInt().SetUint64(2000))
+		maxMinus1kDiv2Plus2kPlus1 := uint256.NewInt().Add(
+			maxMinus1kDiv2Plus2k, uint256.NewInt().SetUint64(1))
+		{
+			_daoCoinTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinMetadata{
+				ProfilePublicKey: m2PkBytes,
+				OperationType:    DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *uint256.NewInt().SetUint64(1000),
+			})
+
+			{
+				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+					db, m1PKID.PKID, m2PKID.PKID, true)
+				require.Equal(maxMinus1kDiv2Minus2k, &daoBalanceEntry.BalanceNanos)
+			}
+			{
+				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
+					db, m2PKID.PKID, m2PKID.PKID, true)
+				require.Equal(maxMinus1kDiv2Plus2kPlus1, &daoBalanceEntry.BalanceNanos)
+			}
+
+			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			require.Equal(maxMinus1k, &profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
+			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
+			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
+		}
+
+		// Minting 1,001 coins should STILL fail
+		{
+			_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinMetadata{
+				ProfilePublicKey: m2PkBytes,
+				OperationType:    DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *uint256.NewInt().SetUint64(1001),
+			})
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorOverflowWhileMintingDAOCoins)
+		}
+	}
+
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)

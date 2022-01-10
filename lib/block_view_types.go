@@ -854,6 +854,10 @@ type CoinEntry struct {
 	// coins being minted would push the number of coins in circulation
 	// beyond the watermark, we allocate a percentage of the coins being
 	// minted to the creator as a "founder reward."
+	//
+	// Note that this field doesn't need to be uint256 because it's only
+	// relevant for CreatorCoins, which can't exceed math.MaxUint64 in total
+	// supply.
 	CoinWatermarkNanos uint64
 
 	// If true, DAO coins can no longer be minted.
