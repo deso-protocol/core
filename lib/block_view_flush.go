@@ -785,6 +785,9 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
+// TODO: All of these functions should be renamed "CreatorCoinBalanceEntry" to
+// distinguish them from DAOCoinBalanceEntry, which is a different but similar index
+// that got introduced later.
 func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 
@@ -842,6 +845,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
+// TODO: This could theoretically be consolidated with the other BalanceEntry flusher.
 func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 	glog.V(1).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry))
 

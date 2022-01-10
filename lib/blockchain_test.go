@@ -295,7 +295,7 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr 
 		return 0, 0
 	}
 
-	return creatorProfile.DeSoLockedNanos, creatorProfile.CoinsInCirculationNanos
+	return creatorProfile.CreatorCoinEntry.DeSoLockedNanos, creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos
 }
 
 func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {

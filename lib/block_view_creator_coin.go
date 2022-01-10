@@ -199,10 +199,10 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumCreatorCoinNanos(
 
 	// Calculate the number of creator coin nanos needed vs. already added for previous diamonds.
 	currCreatorCoinNanos := GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
-		existingProfileEntry.CoinsInCirculationNanos, existingProfileEntry.DeSoLockedNanos,
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos, existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos,
 		currDiamondLevel, int64(blockHeight), bav.Params)
 	neededCreatorCoinNanos := GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
-		existingProfileEntry.CoinsInCirculationNanos, existingProfileEntry.DeSoLockedNanos,
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos, existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos,
 		diamondLevel, int64(blockHeight), bav.Params)
 
 	// There is an edge case where, if the person's creator coin value goes down
@@ -283,7 +283,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		// Set up some variables so that we can run some sanity-checks
 		deltaBuyerNanos := transactorBalanceEntry.BalanceNanos - operationData.PrevTransactorBalanceEntry.BalanceNanos
 		deltaCreatorNanos := creatorBalanceEntry.BalanceNanos - operationData.PrevCreatorBalanceEntry.BalanceNanos
-		deltaCoinsInCirculation := existingProfileEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
+		deltaCoinsInCirculation := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
 
 		// If the creator is distinct from the buyer, then reset their balance.
 		// This check avoids double-updating in situations where a creator bought
@@ -307,16 +307,16 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			} else if blockHeight > SalomonFixBlockHeight {
 				// Following the SalomonFixBlockHeight block, we calculate a founders reward
 				// on every buy, not just the ones that push a creator to a new all time high.
-				deltaNanos = existingProfileEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
+				deltaNanos = existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
 			} else {
 				// Prior to the SalomonFixBlockHeight block, we calculate the founders reward
 				// only for new all time highs.
-				deltaNanos = existingProfileEntry.CoinWatermarkNanos - operationData.PrevCoinEntry.CoinWatermarkNanos
+				deltaNanos = existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos - operationData.PrevCoinEntry.CoinWatermarkNanos
 			}
 			founderRewardNanos := IntDiv(
 				IntMul(
 					big.NewInt(int64(deltaNanos)),
-					big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
+					big.NewInt(int64(existingProfileEntry.CreatorCoinEntry.CreatorBasisPoints))),
 				big.NewInt(100*100)).Uint64()
 			if founderRewardNanos != deltaCreatorNanos {
 				return fmt.Errorf("_disconnectCreatorCoin: The creator coin nanos "+
@@ -332,7 +332,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			// We do a simliar sanity-check as above, but in this case we don't need to
 			// reset the creator mappings.
 			deltaBuyerNanos := transactorBalanceEntry.BalanceNanos - operationData.PrevTransactorBalanceEntry.BalanceNanos
-			deltaCoinsInCirculation := existingProfileEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
+			deltaCoinsInCirculation := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos - operationData.PrevCoinEntry.CoinsInCirculationNanos
 			if deltaBuyerNanos != deltaCoinsInCirculation {
 				return fmt.Errorf("_disconnectCreatorCoin: The creator coin nanos "+
 					"the buyer/creator received (%v) does not equal the "+
@@ -353,7 +353,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		}
 
 		// The buyer will get the DeSo they locked up back when we revert the
-		// basic transfer. This is OK because resetting the CoinEntry to the previous
+		// basic transfer. This is OK because resetting the CreatorCoinEntry to the previous
 		// value lowers the amount of DeSo locked in the profile by the same
 		// amount the buyer will receive. Thus no DeSo is created in this
 		// transaction.
@@ -363,7 +363,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		// down as a result of the transaction, so both of these values should be
 		// positive.
 		deltaCoinNanos := operationData.PrevTransactorBalanceEntry.BalanceNanos - transactorBalanceEntry.BalanceNanos
-		deltaCoinsInCirculation := operationData.PrevCoinEntry.CoinsInCirculationNanos - existingProfileEntry.CoinsInCirculationNanos
+		deltaCoinsInCirculation := operationData.PrevCoinEntry.CoinsInCirculationNanos - existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos
 
 		// Sanity-check that the amount we decreased CoinsInCirculation by
 		// equals the total amount put in by the seller.
@@ -399,9 +399,9 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		return fmt.Errorf("_disconnectCreatorCoin: Add DeSo operation txn not implemented")
 	}
 
-	// Reset the CoinEntry on the profile to what it was previously now that we
+	// Reset the CreatorCoinEntry on the profile to what it was previously now that we
 	// have reverted the individual users' balances.
-	existingProfileEntry.CoinEntry = *operationData.PrevCoinEntry
+	existingProfileEntry.CreatorCoinEntry = *operationData.PrevCoinEntry
 	bav._setProfileEntryMappings(existingProfileEntry)
 
 	// Now revert the basic transfer with the remaining operations. Cut off
@@ -510,9 +510,9 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 		bav._setCreatorCoinBalanceEntryMappings(operationData.PrevReceiverBalanceEntry)
 	}
 
-	// Reset the CoinEntry on the profile to what it was previously now that we
+	// Reset the CreatorCoinEntry on the profile to what it was previously now that we
 	// have reverted the individual users' balances.
-	existingProfileEntry.CoinEntry = *operationData.PrevCoinEntry
+	existingProfileEntry.CreatorCoinEntry = *operationData.PrevCoinEntry
 	bav._setProfileEntryMappings(existingProfileEntry)
 
 	// If the transaction had diamonds, let's revert those too.
@@ -661,7 +661,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		desoFounderRewardNanos = IntDiv(
 			IntMul(
 				big.NewInt(int64(desoAfterFeesNanos)),
-				big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
+				big.NewInt(int64(existingProfileEntry.CreatorCoinEntry.CreatorBasisPoints))),
 			big.NewInt(100*100)).Uint64()
 
 		// Sanity check, just to be extra safe.
@@ -693,8 +693,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// could round floats or use different levels of precision for intermediate
 	// results and get different answers which would break consensus.
 	creatorCoinToMintNanos := CalculateCreatorCoinToMint(
-		desoRemainingNanos, existingProfileEntry.CoinsInCirculationNanos,
-		existingProfileEntry.DeSoLockedNanos, bav.Params)
+		desoRemainingNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos,
+		existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
 
 	// Check if the total amount minted satisfies CreatorCoinAutoSellThresholdNanos.
 	// This makes it prohibitively expensive for a user to buy themself above the
@@ -710,28 +710,28 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Now it's just a matter of adjusting our bookkeeping and potentially
 	// giving the creator a founder reward.
 
-	// Save all the old values from the CoinEntry before we potentially
-	// update them. Note that CoinEntry doesn't contain any pointers and so
+	// Save all the old values from the CreatorCoinEntry before we potentially
+	// update them. Note that CreatorCoinEntry doesn't contain any pointers and so
 	// a direct copy is OK.
-	prevCoinEntry := existingProfileEntry.CoinEntry
+	prevCoinEntry := existingProfileEntry.CreatorCoinEntry
 
 	// Increment DeSoLockedNanos. Sanity-check that we're not going to
 	// overflow.
-	if existingProfileEntry.DeSoLockedNanos > math.MaxUint64-desoRemainingNanos {
+	if existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos > math.MaxUint64-desoRemainingNanos {
 		return 0, 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Overflow while summing"+
 			"DeSoLockedNanos and desoAfterFounderRewardNanos: %v %v",
-			existingProfileEntry.DeSoLockedNanos, desoRemainingNanos)
+			existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, desoRemainingNanos)
 	}
-	existingProfileEntry.DeSoLockedNanos += desoRemainingNanos
+	existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos += desoRemainingNanos
 
 	// Increment CoinsInCirculation. Sanity-check that we're not going to
 	// overflow.
-	if existingProfileEntry.CoinsInCirculationNanos > math.MaxUint64-creatorCoinToMintNanos {
+	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos > math.MaxUint64-creatorCoinToMintNanos {
 		return 0, 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: Overflow while summing"+
 			"CoinsInCirculationNanos and creatorCoinToMintNanos: %v %v",
-			existingProfileEntry.CoinsInCirculationNanos, creatorCoinToMintNanos)
+			existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos, creatorCoinToMintNanos)
 	}
-	existingProfileEntry.CoinsInCirculationNanos += creatorCoinToMintNanos
+	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos += creatorCoinToMintNanos
 
 	// Calculate the *Creator Coin nanos* to give as a founder reward.
 	creatorCoinFounderRewardNanos := uint64(0)
@@ -746,33 +746,33 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		creatorCoinFounderRewardNanos = IntDiv(
 			IntMul(
 				big.NewInt(int64(creatorCoinToMintNanos)),
-				big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
+				big.NewInt(int64(existingProfileEntry.CreatorCoinEntry.CreatorBasisPoints))),
 			big.NewInt(100*100)).Uint64()
 	} else {
 		// Up to and including the SalomonFixBlockHeight block, creator coin buys only minted
 		// a founders reward if the creator reached a new all time high.
 
-		if existingProfileEntry.CoinsInCirculationNanos > existingProfileEntry.CoinWatermarkNanos {
+		if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos > existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos {
 			// This value must be positive if we made it past the if condition above.
-			watermarkDiff := existingProfileEntry.CoinsInCirculationNanos - existingProfileEntry.CoinWatermarkNanos
+			watermarkDiff := existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos - existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos
 			// The founder reward is computed as a percentage of the "net coins created,"
 			// which is equal to the watermarkDiff
 			creatorCoinFounderRewardNanos = IntDiv(
 				IntMul(
 					big.NewInt(int64(watermarkDiff)),
-					big.NewInt(int64(existingProfileEntry.CreatorBasisPoints))),
+					big.NewInt(int64(existingProfileEntry.CreatorCoinEntry.CreatorBasisPoints))),
 				big.NewInt(100*100)).Uint64()
 		}
 	}
 
 	// CoinWatermarkNanos is no longer used, however it may be helpful for
 	// future analytics or updates so we continue to update it here.
-	if existingProfileEntry.CoinsInCirculationNanos > existingProfileEntry.CoinWatermarkNanos {
-		existingProfileEntry.CoinWatermarkNanos = existingProfileEntry.CoinsInCirculationNanos
+	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos > existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos {
+		existingProfileEntry.CreatorCoinEntry.CoinWatermarkNanos = existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos
 	}
 
 	// At this point, founderRewardNanos will be non-zero if and only if we increased
-	// the watermark *and* there was a non-zero CreatorBasisPoints set on the CoinEntry
+	// the watermark *and* there was a non-zero CreatorBasisPoints set on the CreatorCoinEntry
 	// *and* the blockHeight is less than DeSoFounderRewardBlockHeight.
 
 	// The user gets whatever's left after we pay the founder their reward.
@@ -876,7 +876,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// If it is, we increment the NumberOfHolders to reflect this value.
 	if buyerBalanceEntry.BalanceNanos == 0 && coinsBuyerGetsNanos != 0 {
 		// Increment number of holders by one to reflect the buyer
-		existingProfileEntry.NumberOfHolders += 1
+		existingProfileEntry.CreatorCoinEntry.NumberOfHolders += 1
 
 		// Update the profile to reflect the new number of holders
 		bav._setProfileEntryMappings(existingProfileEntry)
@@ -906,7 +906,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Check if the creator's balance is going from zero to non-zero and increment the NumberOfHolders if so.
 	if creatorBalanceEntry.BalanceNanos == 0 && creatorCoinFounderRewardNanos != 0 {
 		// Increment number of holders by one to reflect the creator
-		existingProfileEntry.NumberOfHolders += 1
+		existingProfileEntry.CreatorCoinEntry.NumberOfHolders += 1
 
 		// Update the profile to reflect the new number of holders
 		bav._setProfileEntryMappings(existingProfileEntry)
@@ -960,10 +960,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Error computing "+
 			"desoLockedNanosDiff: Missing profile")
 	}
-	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
+	desoLockedNanosDiff := int64(existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
 	// Add an operation to the list at the end indicating we've executed a
-	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
+	// CreatorCoin txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                           OperationTypeCreatorCoin,
@@ -1058,7 +1058,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	// If the amount of DeSo locked in the profile is zero then selling is
 	// not allowed.
-	if existingProfileEntry.DeSoLockedNanos == 0 {
+	if existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos == 0 {
 		return 0, 0, 0, nil, RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked
 	}
 
@@ -1077,27 +1077,27 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 			// Compute the amount of DeSo to return with the new creatorCoinToSellNanos.
 			desoBeforeFeesNanos = CalculateDeSoToReturn(
-				creatorCoinToSellNanos, existingProfileEntry.CoinsInCirculationNanos,
-				existingProfileEntry.DeSoLockedNanos, bav.Params)
+				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos,
+				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
 			// equations may return *too much* DeSo due to rounding errors.
-			if desoBeforeFeesNanos > existingProfileEntry.DeSoLockedNanos {
-				desoBeforeFeesNanos = existingProfileEntry.DeSoLockedNanos
+			if desoBeforeFeesNanos > existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos {
+				desoBeforeFeesNanos = existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 			}
 		} else {
 			// If we're above the CreatorCoinAutoSellThresholdNanos, we can safely compute
 			// the amount to return based on the Bancor curve.
 			desoBeforeFeesNanos = CalculateDeSoToReturn(
-				creatorCoinToSellNanos, existingProfileEntry.CoinsInCirculationNanos,
-				existingProfileEntry.DeSoLockedNanos, bav.Params)
+				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos,
+				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
 			// equations may return *too much* DeSo due to rounding errors.
-			if desoBeforeFeesNanos > existingProfileEntry.DeSoLockedNanos {
-				desoBeforeFeesNanos = existingProfileEntry.DeSoLockedNanos
+			if desoBeforeFeesNanos > existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos {
+				desoBeforeFeesNanos = existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 			}
 		}
 	} else {
@@ -1106,59 +1106,59 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		// a rare issue where a creator would be left with 1 creator coin nano in circulation
 		// and 1 nano DeSo locked after completely selling. This in turn made the Bancor Curve unstable.
 
-		if creatorCoinToSellNanos == existingProfileEntry.CoinsInCirculationNanos {
-			desoBeforeFeesNanos = existingProfileEntry.DeSoLockedNanos
+		if creatorCoinToSellNanos == existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos {
+			desoBeforeFeesNanos = existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 		} else {
 			// Calculate the amount to return based on the Bancor Curve.
 			desoBeforeFeesNanos = CalculateDeSoToReturn(
-				creatorCoinToSellNanos, existingProfileEntry.CoinsInCirculationNanos,
-				existingProfileEntry.DeSoLockedNanos, bav.Params)
+				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos,
+				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
 
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
 			// equations may return *too much* DeSo due to rounding errors.
-			if desoBeforeFeesNanos > existingProfileEntry.DeSoLockedNanos {
-				desoBeforeFeesNanos = existingProfileEntry.DeSoLockedNanos
+			if desoBeforeFeesNanos > existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos {
+				desoBeforeFeesNanos = existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 			}
 		}
 	}
 
-	// Save all the old values from the CoinEntry before we potentially
-	// update them. Note that CoinEntry doesn't contain any pointers and so
+	// Save all the old values from the CreatorCoinEntry before we potentially
+	// update them. Note that CreatorCoinEntry doesn't contain any pointers and so
 	// a direct copy is OK.
-	prevCoinEntry := existingProfileEntry.CoinEntry
+	prevCoinEntry := existingProfileEntry.CreatorCoinEntry
 
 	// Subtract the amount of DeSo the seller is getting from the amount of
 	// DeSo locked in the profile. Sanity-check that it does not exceed the
 	// total amount of DeSo locked.
-	if desoBeforeFeesNanos > existingProfileEntry.DeSoLockedNanos {
+	if desoBeforeFeesNanos > existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos {
 		return 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: DeSo nanos seller "+
 			"would get %v exceeds DeSo nanos locked in profile %v",
-			desoBeforeFeesNanos, existingProfileEntry.DeSoLockedNanos)
+			desoBeforeFeesNanos, existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos)
 	}
-	existingProfileEntry.DeSoLockedNanos -= desoBeforeFeesNanos
+	existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos -= desoBeforeFeesNanos
 
 	// Subtract the number of coins the seller is selling from the number of coins
 	// in circulation. Sanity-check that it does not exceed the number of coins
 	// currently in circulation.
-	if creatorCoinToSellNanos > existingProfileEntry.CoinsInCirculationNanos {
+	if creatorCoinToSellNanos > existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos {
 		return 0, 0, 0, nil, fmt.Errorf("_connectCreatorCoin: CreatorCoin nanos seller "+
 			"is selling %v exceeds CreatorCoin nanos in circulation %v",
-			creatorCoinToSellNanos, existingProfileEntry.CoinsInCirculationNanos)
+			creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos)
 	}
-	existingProfileEntry.CoinsInCirculationNanos -= creatorCoinToSellNanos
+	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos -= creatorCoinToSellNanos
 
 	// Check if this is a complete sell of the seller's remaining creator coins
 	if sellerBalanceEntry.BalanceNanos == creatorCoinToSellNanos {
-		existingProfileEntry.NumberOfHolders -= 1
+		existingProfileEntry.CreatorCoinEntry.NumberOfHolders -= 1
 	}
 
 	// If the number of holders has reached zero, we clear all the DeSoLockedNanos and
 	// creatorCoinToSellNanos to ensure that the profile is reset to its normal initial state.
 	// It's okay to modify these values because they are saved in the PrevCoinEntry.
-	if existingProfileEntry.NumberOfHolders == 0 {
-		existingProfileEntry.DeSoLockedNanos = 0
-		existingProfileEntry.CoinsInCirculationNanos = 0
+	if existingProfileEntry.CreatorCoinEntry.NumberOfHolders == 0 {
+		existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos = 0
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = 0
 	}
 
 	// Save the seller's balance before we modify it. We don't need to save the
@@ -1240,10 +1240,10 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 			err, "HelpConnectCreatorCoinSell: Error computing "+
 				"desoLockedNanosDiff: Missing profile")
 	}
-	desoLockedNanosDiff := int64(existingProfileEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
+	desoLockedNanosDiff := int64(existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
 	// Add an operation to the list at the end indicating we've executed a
-	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
+	// CreatorCoin txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                           OperationTypeCreatorCoin,
@@ -1271,7 +1271,7 @@ func (bav *UtxoView) _connectCreatorCoin(
 	}
 	txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 
-	// We save the previous CoinEntry so that we can revert things easily during a
+	// We save the previous CreatorCoinEntry so that we can revert things easily during a
 	// disconnect. If we didn't do this, it would be annoying to reset the coin
 	// state when reverting a transaction.
 	switch txMeta.OperationType {

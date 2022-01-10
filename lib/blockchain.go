@@ -3544,7 +3544,7 @@ func GetCreatorCoinNanosForDiamondLevelAtBlockHeight(
 	desoNanosForLevel := GetDeSoNanosForDiamondLevelAtBlockHeight(
 		diamondLevel, blockHeight)
 
-	// Figure out the amount of creator coins to print based on the user's CoinEntry.
+	// Figure out the amount of creator coins to print based on the user's CreatorCoinEntry.
 	return CalculateCreatorCoinToMint(
 		desoNanosForLevel, coinsInCirculationNanos,
 		desoLockedNanos, params)

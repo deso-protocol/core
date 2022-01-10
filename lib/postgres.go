@@ -1316,11 +1316,11 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 			profile.Username = string(profileEntry.Username)
 			profile.Description = string(profileEntry.Description)
 			profile.ProfilePic = profileEntry.ProfilePic
-			profile.CreatorBasisPoints = profileEntry.CreatorBasisPoints
-			profile.DeSoLockedNanos = profileEntry.DeSoLockedNanos
-			profile.NumberOfHolders = profileEntry.NumberOfHolders
-			profile.CoinsInCirculationNanos = profileEntry.CoinsInCirculationNanos
-			profile.CoinWatermarkNanos = profileEntry.CoinWatermarkNanos
+			profile.CreatorBasisPoints = profileEntry.CreatorCoinEntry.CreatorBasisPoints
+			profile.DeSoLockedNanos = profileEntry.CreatorCoinEntry.DeSoLockedNanos
+			profile.NumberOfHolders = profileEntry.CreatorCoinEntry.NumberOfHolders
+			profile.CoinsInCirculationNanos = profileEntry.CreatorCoinEntry.CoinsInCirculationNanos
+			profile.CoinWatermarkNanos = profileEntry.CreatorCoinEntry.CoinWatermarkNanos
 			profile.DAOCoinCoinsInCirculationNanos = profileEntry.DAOCoinEntry.CoinsInCirculationNanos
 			profile.DAOCoinMintingDisabled = profileEntry.DAOCoinEntry.MintingDisabled
 			profile.DAOCoinNumberOfHolders = profileEntry.DAOCoinEntry.NumberOfHolders

@@ -4755,7 +4755,7 @@ func DBDeleteProfileEntryMappingsWithTxn(
 	// The coin deso mapping
 	if err := txn.Delete(
 		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
-			profileEntry.DeSoLockedNanos, pkid)); err != nil {
+			profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid)); err != nil {
 
 		return errors.Wrapf(err, "DbDeleteProfileEntryMappingsWithTxn: Deleting "+
 			"coin mapping for profile username %v", string(profileEntry.Username))
@@ -4797,7 +4797,7 @@ func DBPutProfileEntryMappingsWithTxn(
 	// The coin deso mapping
 	if err := txn.Set(
 		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
-			profileEntry.DeSoLockedNanos, pkid), []byte{}); err != nil {
+			profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid), []byte{}); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile coin: ")
@@ -5377,7 +5377,7 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(
 	// If there is no error, sort and return numToFetch. Username searches are always
 	// sorted by coin value.
 	sort.Slice(profilesFound, func(ii, jj int) bool {
-		return profilesFound[ii].CoinEntry.DeSoLockedNanos > profilesFound[jj].CoinEntry.DeSoLockedNanos
+		return profilesFound[ii].CreatorCoinEntry.DeSoLockedNanos > profilesFound[jj].CreatorCoinEntry.DeSoLockedNanos
 	})
 
 	return profilesFound, nil

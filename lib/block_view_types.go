@@ -887,11 +887,11 @@ type ProfileEntry struct {
 	// profiles in certain situations.
 	IsHidden bool
 
-	// CoinEntry tracks the information required to buy/sell creator coins on a user's
+	// CreatorCoinEntry tracks the information required to buy/sell creator coins on a user's
 	// profile. We "embed" it here for convenience so we can access the fields
 	// directly on the ProfileEntry object. Embedding also makes it so that we
 	// don't need to initialize it explicitly.
-	CoinEntry
+	CreatorCoinEntry CoinEntry
 
 	// DAOCoinEntry tracks the information around the DAO coins issued on a user's profile.
 	// Note: the following fields are basically ignored for the DAOCoinEntry

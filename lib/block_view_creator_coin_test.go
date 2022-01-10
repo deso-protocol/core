@@ -221,11 +221,11 @@ func _helpTestCreatorCoinBuySell(
 		require.NotNil(creatorProfile)
 
 		assert.Equalf(int64(testData.CoinsInCirculationNanos),
-			int64(creatorProfile.CoinsInCirculationNanos), "CoinsInCirculationNanos: %v", message)
+			int64(creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos), "CoinsInCirculationNanos: %v", message)
 		assert.Equalf(int64(testData.DeSoLockedNanos),
-			int64(creatorProfile.DeSoLockedNanos), "DeSoLockedNanos: %v", message)
+			int64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos), "DeSoLockedNanos: %v", message)
 		assert.Equalf(int64(testData.CoinWatermarkNanos),
-			int64(creatorProfile.CoinWatermarkNanos), "CoinWatermarkNanos: %v", message)
+			int64(creatorProfile.CreatorCoinEntry.CoinWatermarkNanos), "CoinWatermarkNanos: %v", message)
 
 		// Coin balances, also used for figuring out how many holders hold a creator.
 		// m0
@@ -329,14 +329,14 @@ func _helpTestCreatorCoinBuySell(
 		}
 
 		// creatorNumberOfHolders must equal creatorProfile.NumberOfHolders
-		assert.Equalf(actualNumberOfHolders, creatorProfile.NumberOfHolders,
+		assert.Equalf(actualNumberOfHolders, creatorProfile.CreatorCoinEntry.NumberOfHolders,
 			"Actual number of creators != creatorProfile.NumberOfHolders: %v", message)
 
 		// Coins in m0+m1+m2+m3+m4+m5+m6 must equal the circulating supply
 		assert.Equalf(
 			int64(testData.m0CCBalance+testData.m1CCBalance+testData.m2CCBalance+testData.m3CCBalance+
 				testData.m4CCBalance+testData.m5CCBalance+testData.m6CCBalance),
-			int64(creatorProfile.CoinsInCirculationNanos),
+			int64(creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos),
 			"m0+m1+m2+m3+m4+m5+m6 != CoinsInCirculationNanos: %v", message)
 
 		// DeSo balances

@@ -2206,6 +2206,8 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	return balanceNanos - immatureBlockRewards, nil
 }
 
+// This function is the workhorse for both _connectCreatorCoinTransfer and
+// _connectDAOCoinTransfer. We consolidated the code because they're very similar.
 func (bav *UtxoView) HelpConnectCoinTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, isDAOCoin bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -2380,15 +2382,15 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		bav._setBalanceEntryMappings(senderBalanceEntry, isDAOCoin)
 	}
 
-	// Save all the old values from the CoinEntry before we potentially update them. Note
-	// that CoinEntry doesn't contain any pointers and so a direct copy is OK.
+	// Save all the old values from the CreatorCoinEntry before we potentially update them. Note
+	// that CreatorCoinEntry doesn't contain any pointers and so a direct copy is OK.
 	// We copy a different entry depending on whether we're dealing with a CreatorCoin or
 	// a coin
 	var prevCoinEntry CoinEntry
 	if isDAOCoin {
 		prevCoinEntry = creatorProfileEntry.DAOCoinEntry
 	} else {
-		prevCoinEntry = creatorProfileEntry.CoinEntry
+		prevCoinEntry = creatorProfileEntry.CreatorCoinEntry
 	}
 
 	if prevReceiverBalanceEntry == nil || prevReceiverBalanceEntry.BalanceNanos == 0 ||
@@ -2397,7 +2399,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		if isDAOCoin {
 			creatorProfileEntry.DAOCoinEntry.NumberOfHolders++
 		} else {
-			creatorProfileEntry.CoinEntry.NumberOfHolders++
+			creatorProfileEntry.CreatorCoinEntry.NumberOfHolders++
 		}
 	}
 
@@ -2406,7 +2408,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		if isDAOCoin {
 			creatorProfileEntry.DAOCoinEntry.NumberOfHolders--
 		} else {
-			creatorProfileEntry.CoinEntry.NumberOfHolders--
+			creatorProfileEntry.CreatorCoinEntry.NumberOfHolders--
 		}
 	}
 
@@ -2502,7 +2504,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	}
 
 	// Add an operation to the list at the end indicating we've executed a
-	// coin transfer txn. Save the previous state of the CoinEntry for easy
+	// coin transfer txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
 	var opType OperationType
 	if isDAOCoin {

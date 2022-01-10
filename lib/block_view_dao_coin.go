@@ -144,7 +144,7 @@ func (bav *UtxoView) _disconnectDAOCoin(
 		}
 		// Previous coin entry should not have minting disabled.
 		if operationData.PrevCoinEntry.MintingDisabled {
-			return fmt.Errorf("_disconnectDAOCoin: Disabling minting on a CoinEntry that already has minting " +
+			return fmt.Errorf("_disconnectDAOCoin: Disabling minting on a CreatorCoinEntry that already has minting " +
 				"disabled; this should never happen")
 		}
 	} else if txMeta.OperationType == DAOCoinOperationTypeUpdateTransferRestrictionStatus {
@@ -278,7 +278,7 @@ func (bav *UtxoView) _disconnectDAOCoinTransfer(
 		bav._setDAOCoinBalanceEntryMappings(operationData.PrevReceiverBalanceEntry)
 	}
 
-	// Reset the CoinEntry on the profile to what it was previously now that we
+	// Reset the CreatorCoinEntry on the profile to what it was previously now that we
 	// have reverted the individual users' balances.
 	existingProfileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
 	bav._setProfileEntryMappings(existingProfileEntry)
@@ -404,7 +404,7 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 	}
 
 	// Add an operation to the list at the end indicating we've executed a
-	// CreatorCoin txn. Save the previous state of the CoinEntry for easy
+	// CreatorCoin txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                    OperationTypeDAOCoin,
