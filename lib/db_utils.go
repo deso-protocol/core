@@ -4935,8 +4935,8 @@ func DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
 	})
 	if err != nil {
 		glog.Errorf("DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn: Problem reading "+
-			"BalanceEntry for PKIDs %v %v",
-			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
+			"BalanceEntry for PKIDs %v %v %v",
+			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]), err)
 		return nil
 	}
 	return balanceEntryObj
