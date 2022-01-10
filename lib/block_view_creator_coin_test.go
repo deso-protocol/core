@@ -1223,7 +1223,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferCannotTransferToSelf)
+		require.Contains(err.Error(), RuleErrorCoinTransferCannotTransferToSelf)
 	}
 	// You can't Diamond off a post that doesn't exist
 	{

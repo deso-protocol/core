@@ -465,18 +465,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			ReceiverPublicKey:      m2PkBytes,
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinTransferInsufficientCoins)
-	}
-
-	// Can't transfer zero coins
-	{
-		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
-			ProfilePublicKey:       m0PkBytes,
-			DAOCoinToTransferNanos: 0,
-			ReceiverPublicKey:      m2PkBytes,
-		})
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins)
+		require.Contains(err.Error(), RuleErrorCoinTransferInsufficientCoins)
 	}
 
 	// Can't transfer to yourself
@@ -487,7 +476,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinTransferCannotTransferToSelf)
+		require.Contains(err.Error(), RuleErrorCoinTransferCannotTransferToSelf)
 	}
 
 	// Can't transfer if there is no balance entry
@@ -498,7 +487,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinTransferBalanceEntryDoesNotExist)
+		require.Contains(err.Error(), RuleErrorCoinTransferBalanceEntryDoesNotExist)
 	}
 
 	// Can't transfer DAO coins of non-existent profile
@@ -509,7 +498,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			ReceiverPublicKey:      m2PkBytes,
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinTransferOnNonexistentProfile)
+		require.Contains(err.Error(), RuleErrorCoinTransferOnNonexistentProfile)
 	}
 
 	// Can't transfer if receiver pub key is not of correct length
@@ -520,7 +509,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			ReceiverPublicKey:      m2PkBytes[:10],
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinTransferInvalidReceiverPubKeySize)
+		require.Contains(err.Error(), RuleErrorCoinTransferInvalidReceiverPubKeySize)
 	}
 
 	// Can't transfer if profile pub key is not of correct length
@@ -531,7 +520,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			ReceiverPublicKey:      m2PkBytes,
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinTransferInvalidProfilePubKeySize)
+		require.Contains(err.Error(), RuleErrorCoinTransferInvalidProfilePubKeySize)
 	}
 
 	// Can't burn more than you own

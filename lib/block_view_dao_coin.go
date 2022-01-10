@@ -177,6 +177,8 @@ func (bav *UtxoView) _disconnectDAOCoin(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }
 
+// TODO: Not going to bother merging this function with _disconnectCreatorCoinTransfer
+// because we're going to delete all disconnect logic when we move to PoS anyway.
 func (bav *UtxoView) _disconnectDAOCoinTransfer(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
@@ -594,6 +596,7 @@ func (bav *UtxoView) _connectDAOCoin(
 
 	case DAOCoinOperationTypeDisableMinting:
 		return bav.HelpConnectDAOCoinDisableMinting(txn, txHash, blockHeight, verifySignatures)
+
 	case DAOCoinOperationTypeUpdateTransferRestrictionStatus:
 		return bav.HelpConnectUpdateTransferRestrictionStatus(txn, txHash, blockHeight, verifySignatures)
 	}
@@ -615,167 +618,8 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 		return 0, 0, nil, fmt.Errorf("_connectDAOCoinTransfer: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
 
-	if txMeta.DAOCoinToTransferNanos == 0 {
-		return 0, 0, nil, RuleErrorDAOCoinTransferMustTransferNonZeroDAOCoins
-	}
-	// Connect basic txn to get the total input and the total output without
-	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinTransfer: ")
-	}
-
-	// Force the input to be non-zero so that we can prevent replay attacks.
-	if totalInput == 0 {
-		return 0, 0, nil, RuleErrorDAOCoinTransferRequiresNonZeroInput
-	}
-
-	// At this point the inputs and outputs have been processed. Now we
-	// need to handle the metadata.
-
-	// Check that the specified receiver public key is valid.
-	if len(txMeta.ReceiverPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorDAOCoinTransferInvalidReceiverPubKeySize
-	}
-
-	if _, err = btcec.ParsePubKey(txMeta.ReceiverPublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(
-			RuleErrorDAOCoinTransferInvalidReceiverPubKey, err.Error())
-	}
-
-	// Check that the sender and receiver public keys are different.
-	if reflect.DeepEqual(txn.PublicKey, txMeta.ReceiverPublicKey) {
-		return 0, 0, nil, RuleErrorDAOCoinTransferCannotTransferToSelf
-	}
-
-	// Check that the specified profile public key is valid and that a profile
-	// corresponding to that public key exists.
-	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorDAOCoinTransferInvalidProfilePubKeySize
-	}
-
-	if _, err = btcec.ParsePubKey(txMeta.ProfilePublicKey, btcec.S256()); err != nil {
-		return 0, 0, nil, errors.Wrap(
-			RuleErrorDAOCoinTransferInvalidProfilePubKey, err.Error())
-	}
-
-	// Dig up the profile. It must exist for the user to be able to transfer its coin.
-	creatorProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
-	if creatorProfileEntry == nil || creatorProfileEntry.isDeleted {
-		return 0, 0, nil, errors.Wrapf(
-			RuleErrorDAOCoinTransferOnNonexistentProfile,
-			"_connectDAOCoinTransfer: Profile pub key: %v %v",
-			PkToStringMainnet(txMeta.ProfilePublicKey), PkToStringTestnet(txMeta.ProfilePublicKey))
-	}
-
-	// At this point we are confident that we have a profile that
-	// exists that corresponds to the profile public key the user provided.
-
-	// Look up a BalanceEntry for the sender. If it doesn't exist then the sender implicitly
-	// has a balance of zero coins, and so the transfer shouldn't be allowed.
-	senderBalanceEntry, _, _ := bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
-		txn.PublicKey, creatorProfileEntry.PublicKey)
-	if senderBalanceEntry == nil || senderBalanceEntry.isDeleted {
-		return 0, 0, nil, RuleErrorDAOCoinTransferBalanceEntryDoesNotExist
-	}
-
-	// Check that the amount of DAO coin being transferred does not exceed the user's
-	// balance of this particular DAO coin.
-	if txMeta.DAOCoinToTransferNanos > senderBalanceEntry.BalanceNanos {
-		return 0, 0, nil, errors.Wrapf(
-			RuleErrorDAOCoinTransferInsufficientCoins,
-			"_connectDAOCoinTransfer: DAOCoin nanos being transferred %v exceeds "+
-				"user's DAO coin balance %v",
-			txMeta.DAOCoinToTransferNanos, senderBalanceEntry.BalanceNanos)
-	}
-
-	if err = bav.IsValidDAOCoinTransfer(creatorProfileEntry, txn.PublicKey, txMeta.ReceiverPublicKey); err != nil {
-		return 0, 0, nil, err
-	}
-
-	// Now that we have validated this transaction, let's build the new BalanceEntry state.
-
-	// Look up a BalanceEntry for the receiver.
-	receiverBalanceEntry, _, _ := bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
-		txMeta.ReceiverPublicKey, txMeta.ProfilePublicKey)
-
-	// Save the receiver's balance if it is non-nil.
-	var prevReceiverBalanceEntry *BalanceEntry
-	if receiverBalanceEntry != nil && !receiverBalanceEntry.isDeleted {
-		prevReceiverBalanceEntry = &BalanceEntry{}
-		*prevReceiverBalanceEntry = *receiverBalanceEntry
-	}
-
-	// If the receiver's balance entry is nil, we need to make one.
-	if receiverBalanceEntry == nil || receiverBalanceEntry.isDeleted {
-		receiverPKID := bav.GetPKIDForPublicKey(txMeta.ReceiverPublicKey)
-		creatorPKID := bav.GetPKIDForPublicKey(creatorProfileEntry.PublicKey)
-		// Sanity check that we found a PKID entry for these pub keys (should never fail).
-		if receiverPKID == nil || receiverPKID.isDeleted || creatorPKID == nil || creatorPKID.isDeleted {
-			return 0, 0, nil, fmt.Errorf(
-				"_connectDAOCoinTransfer: Found nil or deleted PKID for receiver or creator, this should never "+
-					"happen. Receiver pubkey: %v, creator pubkey: %v",
-				PkToStringMainnet(txMeta.ReceiverPublicKey),
-				PkToStringMainnet(creatorProfileEntry.PublicKey))
-		}
-		receiverBalanceEntry = &BalanceEntry{
-			HODLerPKID:   receiverPKID.PKID,
-			CreatorPKID:  creatorPKID.PKID,
-			BalanceNanos: uint64(0),
-		}
-	}
-
-	// Save the sender's balance before we modify it.
-	prevSenderBalanceEntry := *senderBalanceEntry
-
-	// Subtract the number of coins being given from the sender and add them to the receiver.
-	senderBalanceEntry.BalanceNanos -= txMeta.DAOCoinToTransferNanos
-	receiverBalanceEntry.BalanceNanos += txMeta.DAOCoinToTransferNanos
-
-	// Delete the sender's balance entry under the assumption that the sender gave away all
-	// of their coins. We add it back later, if this is not the case.
-	bav._deleteDAOCoinBalanceEntryMappings(senderBalanceEntry, txn.PublicKey, txMeta.ProfilePublicKey)
-	// Delete the receiver's balance entry just to be safe. Added back immediately after.
-	bav._deleteDAOCoinBalanceEntryMappings(
-		receiverBalanceEntry, txMeta.ReceiverPublicKey, txMeta.ProfilePublicKey)
-
-	bav._setDAOCoinBalanceEntryMappings(receiverBalanceEntry)
-	if senderBalanceEntry.BalanceNanos > 0 {
-		bav._setDAOCoinBalanceEntryMappings(senderBalanceEntry)
-	}
-
-	// Save all the old values from the CoinEntry before we potentially update them. Note
-	// that DAOCoinEntry doesn't contain any pointers and so a direct copy is OK.
-	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
-
-	if prevReceiverBalanceEntry == nil || prevReceiverBalanceEntry.BalanceNanos == 0 ||
-		prevReceiverBalanceEntry.isDeleted {
-		// The receiver did not have a BalanceEntry before. Increment num holders.
-		creatorProfileEntry.DAOCoinEntry.NumberOfHolders++
-	}
-
-	if senderBalanceEntry.BalanceNanos == 0 {
-		// The sender no longer holds any of this creator's coin, so we decrement num holders.
-		creatorProfileEntry.DAOCoinEntry.NumberOfHolders--
-	}
-
-	// Update and set the new profile entry.
-	bav._setProfileEntryMappings(creatorProfileEntry)
-
-	// Add an operation to the list at the end indicating we've executed a
-	// DAOCoinTransfer txn. Save the previous state of the CoinEntry for easy
-	// reversion during disconnect.
-	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                     OperationTypeDAOCoinTransfer,
-		PrevSenderBalanceEntry:   &prevSenderBalanceEntry,
-		PrevReceiverBalanceEntry: prevReceiverBalanceEntry,
-		PrevCoinEntry:            &prevCoinEntry,
-	})
-
-	return totalInput, totalOutput, utxoOpsForTxn, nil
+	return bav.HelpConnectCoinTransfer(txn , txHash, blockHeight, verifySignatures, true)
 }
 
 func (bav *UtxoView) IsValidDAOCoinTransfer(

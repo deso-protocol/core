@@ -2205,3 +2205,322 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	}
 	return balanceNanos - immatureBlockRewards, nil
 }
+
+func (bav *UtxoView) HelpConnectCoinTransfer(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, isDAOCoin bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// This code block is a bit ugly because Go doesn't support generics. In an ideal world,
+	// we wouldn't have to repeat all of the assignments twice.
+	var receiverPublicKey []byte
+	var profilePublicKey []byte
+	var coinToTransferNanos uint64
+	if isDAOCoin {
+		// In this case, we're dealing with a DAOCoin transfer
+		txMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
+		receiverPublicKey = txMeta.ReceiverPublicKey
+		profilePublicKey = txMeta.ProfilePublicKey
+		coinToTransferNanos = txMeta.DAOCoinToTransferNanos
+	} else {
+		// In this case, we're dealing with a CreatorCoin transfer
+		txMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
+		receiverPublicKey = txMeta.ReceiverPublicKey
+		profilePublicKey = txMeta.ProfilePublicKey
+		coinToTransferNanos = txMeta.CreatorCoinToTransferNanos
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_helpConnectCoinTransfer: ")
+	}
+
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorCoinTransferRequiresNonZeroInput
+	}
+
+	// At this point the inputs and outputs have been processed. Now we
+	// need to handle the metadata.
+
+	// Check that the specified receiver public key is valid.
+	if len(receiverPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return 0, 0, nil, RuleErrorCoinTransferInvalidReceiverPubKeySize
+	}
+	if _, err = btcec.ParsePubKey(receiverPublicKey, btcec.S256()); err != nil {
+		return 0, 0, nil, errors.Wrap(
+			RuleErrorCoinTransferInvalidReceiverPubKey, err.Error())
+	}
+
+	// Check that the sender and receiver public keys are different.
+	if reflect.DeepEqual(txn.PublicKey, receiverPublicKey) {
+		return 0, 0, nil, RuleErrorCoinTransferCannotTransferToSelf
+	}
+
+	// Check that the specified profile public key is valid and that a profile
+	// corresponding to that public key exists.
+	if len(profilePublicKey) != btcec.PubKeyBytesLenCompressed {
+		return 0, 0, nil, RuleErrorCoinTransferInvalidProfilePubKeySize
+	}
+	if _, err = btcec.ParsePubKey(profilePublicKey, btcec.S256()); err != nil {
+		return 0, 0, nil, errors.Wrap(
+			RuleErrorCoinTransferInvalidProfilePubKey, err.Error())
+	}
+
+	// Dig up the profile. It must exist for the user to be able to transfer its coin.
+	creatorProfileEntry := bav.GetProfileEntryForPublicKey(profilePublicKey)
+	if creatorProfileEntry == nil || creatorProfileEntry.isDeleted {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorCoinTransferOnNonexistentProfile,
+			"_helpConnectCoinTransfer: Profile pub key: %v %v",
+			PkToStringMainnet(profilePublicKey), PkToStringTestnet(profilePublicKey))
+	}
+
+	// At this point we are confident that we have a profile that
+	// exists that corresponds to the profile public key the user provided.
+
+	// Look up a BalanceEntry for the sender. If it doesn't exist then the sender implicitly
+	// has a balance of zero coins, and so the transfer shouldn't be allowed.
+	senderBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+		txn.PublicKey, creatorProfileEntry.PublicKey, isDAOCoin)
+	if senderBalanceEntry == nil || senderBalanceEntry.isDeleted {
+		return 0, 0, nil, RuleErrorCoinTransferBalanceEntryDoesNotExist
+	}
+
+	// For CreatorCoins, we must check that the amount of creator coin being
+	// transferred is not less than the min threshold. For DAO coins, this constraint
+	// doesn't matter because there is no bonding curve.
+	if !isDAOCoin {
+		if coinToTransferNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+			return 0, 0, nil, RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold
+		}
+	}
+
+	// Check that the amount of coin being transferred does not exceed the user's
+	// balance of this particular coin.
+	if coinToTransferNanos > senderBalanceEntry.BalanceNanos {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorCoinTransferInsufficientCoins,
+			"_helpConnectCoinTransfer: Coin nanos being transferred %v exceeds "+
+				"user's coin balance %v",
+			coinToTransferNanos, senderBalanceEntry.BalanceNanos)
+	}
+
+	// If this is a coin, we need to make sure we're not violating any
+	// transfer restrictions.
+	if isDAOCoin {
+		if err := bav.IsValidDAOCoinTransfer(creatorProfileEntry, txn.PublicKey, receiverPublicKey); err != nil {
+			return 0, 0, nil, err
+		}
+	}
+
+	// Now that we have validated this transaction, let's build the new BalanceEntry state.
+
+	// Look up a BalanceEntry for the receiver.
+	receiverBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+		receiverPublicKey, profilePublicKey, isDAOCoin)
+
+	// Save the receiver's balance if it is non-nil.
+	var prevReceiverBalanceEntry *BalanceEntry
+	if receiverBalanceEntry != nil && !receiverBalanceEntry.isDeleted {
+		prevReceiverBalanceEntry = &BalanceEntry{}
+		*prevReceiverBalanceEntry = *receiverBalanceEntry
+	}
+
+	// If the receiver's balance entry is nil, we need to make one.
+	if receiverBalanceEntry == nil || receiverBalanceEntry.isDeleted {
+		receiverPKID := bav.GetPKIDForPublicKey(receiverPublicKey)
+		creatorPKID := bav.GetPKIDForPublicKey(creatorProfileEntry.PublicKey)
+		// Sanity check that we found a PKID entry for these pub keys (should never fail).
+		if receiverPKID == nil || receiverPKID.isDeleted || creatorPKID == nil || creatorPKID.isDeleted {
+			return 0, 0, nil, fmt.Errorf(
+				"_helpConnectCoinTransfer: Found nil or deleted PKID for receiver or creator, this should never "+
+					"happen. Receiver pubkey: %v, creator pubkey: %v",
+				PkToStringMainnet(receiverPublicKey),
+				PkToStringMainnet(creatorProfileEntry.PublicKey))
+		}
+		receiverBalanceEntry = &BalanceEntry{
+			HODLerPKID:   receiverPKID.PKID,
+			CreatorPKID:  creatorPKID.PKID,
+			BalanceNanos: uint64(0),
+		}
+	}
+
+	// Save the sender's balance before we modify it.
+	prevSenderBalanceEntry := *senderBalanceEntry
+
+	// Subtract the number of coins being given from the sender and add them to the receiver.
+	senderBalanceEntry.BalanceNanos -= coinToTransferNanos
+	receiverBalanceEntry.BalanceNanos += coinToTransferNanos
+
+	// If we're dealing with a CreatorCoin transfer, we need to ensure that the balance
+	// gets zeroed out if it gets too small. This is not needed for DAO coins.
+	if !isDAOCoin {
+		// We do not allow accounts to maintain tiny creator coin balances in order to avoid
+		// Bancor curve price anomalies as famously demonstrated by @salomon.  Thus, if the
+		// sender tries to make a transfer that will leave them below the threshold we give
+		// their remaining balance to the receiver in order to zero them out.
+		if senderBalanceEntry.BalanceNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+			receiverBalanceEntry.BalanceNanos += senderBalanceEntry.BalanceNanos
+			senderBalanceEntry.BalanceNanos = 0
+			senderBalanceEntry.HasPurchased = false
+		}
+	}
+
+	// Delete the sender's balance entry under the assumption that the sender gave away all
+	// of their coins. We add it back later, if this is not the case.
+	bav._deleteBalanceEntryMappings(senderBalanceEntry, txn.PublicKey, profilePublicKey, isDAOCoin)
+	// Delete the receiver's balance entry just to be safe. Added back immediately after.
+	bav._deleteBalanceEntryMappings(receiverBalanceEntry,receiverPublicKey, profilePublicKey, isDAOCoin)
+
+	bav._setBalanceEntryMappings(receiverBalanceEntry, isDAOCoin)
+	if senderBalanceEntry.BalanceNanos > 0 {
+		bav._setBalanceEntryMappings(senderBalanceEntry, isDAOCoin)
+	}
+
+	// Save all the old values from the CoinEntry before we potentially update them. Note
+	// that CoinEntry doesn't contain any pointers and so a direct copy is OK.
+	// We copy a different entry depending on whether we're dealing with a CreatorCoin or
+	// a coin
+	var prevCoinEntry CoinEntry
+	if isDAOCoin {
+		prevCoinEntry = creatorProfileEntry.DAOCoinEntry
+	} else {
+		prevCoinEntry = creatorProfileEntry.CoinEntry
+	}
+
+	if prevReceiverBalanceEntry == nil || prevReceiverBalanceEntry.BalanceNanos == 0 ||
+		prevReceiverBalanceEntry.isDeleted {
+		// The receiver did not have a BalanceEntry before. Increment num holders.
+		if isDAOCoin {
+			creatorProfileEntry.DAOCoinEntry.NumberOfHolders++
+		} else {
+			creatorProfileEntry.CoinEntry.NumberOfHolders++
+		}
+	}
+
+	if senderBalanceEntry.BalanceNanos == 0 {
+		// The sender no longer holds any of this creator's coin, so we decrement num holders.
+		if isDAOCoin {
+			creatorProfileEntry.DAOCoinEntry.NumberOfHolders--
+		} else {
+			creatorProfileEntry.CoinEntry.NumberOfHolders--
+		}
+	}
+
+	// Update and set the new profile entry.
+	bav._setProfileEntryMappings(creatorProfileEntry)
+
+	// Diamonds used to be associated with CreatorCoin transfers. We maintain that logic
+	// for legacy blocks here.
+	//
+	// TODO(DELETEME): Get rid of this once HyperSync is here.
+	var previousDiamondPostEntry *PostEntry
+	var previousDiamondEntry *DiamondEntry
+	if !isDAOCoin {
+		// If this creator coin transfer has diamonds, validate them and do the connection.
+		diamondPostHashBytes, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
+		diamondPostHash := &BlockHash{}
+		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
+		// After the DeSoDiamondsBlockHeight, we no longer accept creator coin diamonds.
+		if hasDiamondPostHash && blockHeight > DeSoDiamondsBlockHeight {
+			return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight
+		} else if hasDiamondPostHash {
+			if !hasDiamondLevel {
+				return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel
+			}
+			diamondLevel, bytesRead := Varint(diamondLevelBytes)
+			// NOTE: Despite being an int, diamondLevel is required to be non-negative. This
+			// is useful for sorting our dbkeys by diamondLevel.
+			if bytesRead < 0 || diamondLevel < 0 {
+				return 0, 0, nil, RuleErrorCreatorCoinTransferHasInvalidDiamondLevel
+			}
+
+			if !reflect.DeepEqual(txn.PublicKey, creatorProfileEntry.PublicKey) {
+				return 0, 0, nil, RuleErrorCreatorCoinTransferCantSendDiamondsForOtherProfiles
+			}
+			if reflect.DeepEqual(receiverPublicKey, creatorProfileEntry.PublicKey) {
+				return 0, 0, nil, RuleErrorCreatorCoinTransferCantDiamondYourself
+			}
+
+			if len(diamondPostHashBytes) != HashSizeBytes {
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorCreatorCoinTransferInvalidLengthForPostHashBytes,
+					"_helpConnectCoinTransfer: DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
+			}
+			copy(diamondPostHash[:], diamondPostHashBytes[:])
+
+			previousDiamondPostEntry = bav.GetPostEntryForPostHash(diamondPostHash)
+			if previousDiamondPostEntry == nil || previousDiamondPostEntry.isDeleted {
+				return 0, 0, nil, RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist
+			}
+
+			expectedCreatorCoinNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumCreatorCoinNanos(
+				txn.PublicKey, receiverPublicKey, diamondPostHash, diamondLevel, blockHeight)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_helpConnectCoinTransfer: ")
+			}
+
+			if coinToTransferNanos < expectedCreatorCoinNanosToTransfer {
+				return 0, 0, nil, RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel
+			}
+
+			// The diamondPostEntry needs to be updated with the number of new diamonds.
+			// We make a copy to avoid issues with disconnecting.
+			newDiamondPostEntry := &PostEntry{}
+			*newDiamondPostEntry = *previousDiamondPostEntry
+			newDiamondPostEntry.DiamondCount += uint64(netNewDiamonds)
+			bav._setPostEntryMappings(newDiamondPostEntry)
+
+			// Convert pub keys into PKIDs so we can make the DiamondEntry.
+			senderPKID := bav.GetPKIDForPublicKey(txn.PublicKey)
+			receiverPKID := bav.GetPKIDForPublicKey(receiverPublicKey)
+
+			// Create a new DiamondEntry
+			newDiamondEntry := &DiamondEntry{
+				SenderPKID:      senderPKID.PKID,
+				ReceiverPKID:    receiverPKID.PKID,
+				DiamondPostHash: diamondPostHash,
+				DiamondLevel:    diamondLevel,
+			}
+
+			// Save the old DiamondEntry
+			diamondKey := MakeDiamondKey(senderPKID.PKID, receiverPKID.PKID, diamondPostHash)
+			existingDiamondEntry := bav.GetDiamondEntryForDiamondKey(&diamondKey)
+			// Save the existing DiamondEntry, if it exists, so we can disconnect
+			if existingDiamondEntry != nil {
+				dd := &DiamondEntry{}
+				*dd = *existingDiamondEntry
+				previousDiamondEntry = dd
+			}
+
+			// Now set the diamond entry mappings on the view so they are flushed to the DB.
+			bav._setDiamondEntryMappings(newDiamondEntry)
+		}
+	}
+
+	// Add an operation to the list at the end indicating we've executed a
+	// coin transfer txn. Save the previous state of the CoinEntry for easy
+	// reversion during disconnect.
+	var opType OperationType
+	if isDAOCoin {
+		opType = OperationTypeDAOCoinTransfer
+	} else {
+		opType = OperationTypeCreatorCoinTransfer
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type: 					  opType,
+		PrevSenderBalanceEntry:   &prevSenderBalanceEntry,
+		PrevReceiverBalanceEntry: prevReceiverBalanceEntry,
+		PrevCoinEntry:            &prevCoinEntry,
+
+		// Legacy CreatorCoin fields from when diamonds were associated with
+		// CreatorCoin transfers.
+		PrevPostEntry:            previousDiamondPostEntry,
+		PrevDiamondEntry:         previousDiamondEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
