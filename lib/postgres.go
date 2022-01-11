@@ -263,12 +263,12 @@ type PGMetadataCreatorCoinTransfer struct {
 type PGMetadataDAOCoin struct {
 	tableName struct{} `pg:"pg_metadata_dao_coins"`
 
-	TransactionHash  *BlockHash           `pg:",pk,type:bytea"`
-	ProfilePublicKey []byte               `pg:",type:bytea"`
-	OperationType    DAOCoinOperationType `pg:",use_zero"`
-	CoinsToMintNanos uint64               `pg:",use_zero"`
-	CoinsToBurnNanos uint64               `pg:",use_zero"`
-	TransferRestrictionStatus             `pg:",use_zero"`
+	TransactionHash           *BlockHash           `pg:",pk,type:bytea"`
+	ProfilePublicKey          []byte               `pg:",type:bytea"`
+	OperationType             DAOCoinOperationType `pg:",use_zero"`
+	CoinsToMintNanos          uint64               `pg:",use_zero"`
+	CoinsToBurnNanos          uint64               `pg:",use_zero"`
+	TransferRestrictionStatus `pg:",use_zero"`
 }
 
 // PGMetadataDAOCoinTransfer represents DAOCoinTransferMetadata
@@ -419,25 +419,25 @@ const (
 type PGProfile struct {
 	tableName struct{} `pg:"pg_profiles"`
 
-	PKID                             *PKID      `pg:",pk,type:bytea"`
-	PublicKey                        *PublicKey `pg:",type:bytea"`
-	Username                         string
-	Description                      string
-	ProfilePic                       []byte
-	CreatorBasisPoints               uint64
-	DeSoLockedNanos                  uint64
-	NumberOfHolders                  uint64
+	PKID               *PKID      `pg:",pk,type:bytea"`
+	PublicKey          *PublicKey `pg:",type:bytea"`
+	Username           string
+	Description        string
+	ProfilePic         []byte
+	CreatorBasisPoints uint64
+	DeSoLockedNanos    uint64
+	NumberOfHolders    uint64
 	// FIXME: Postgres will break when values exceed uint64
 	// We don't use Postgres right now so going to plow ahead and set this as-is
 	// to fix compile errors.
-	CoinsInCirculationNanos          uint256.Int
-	CoinWatermarkNanos               uint64
-	MintingDisabled                  bool
-	DAOCoinNumberOfHolders           uint64                    `pg:"dao_coin_number_of_holders"`
+	CoinsInCirculationNanos uint256.Int
+	CoinWatermarkNanos      uint64
+	MintingDisabled         bool
+	DAOCoinNumberOfHolders  uint64 `pg:"dao_coin_number_of_holders"`
 	// FIXME: Postgres will break when values exceed uint64
 	// We don't use Postgres right now so going to plow ahead and set this as-is
 	// to fix compile errors.
-	DAOCoinCoinsInCirculationNanos   uint256.Int                  `pg:"dao_coin_coins_in_circulation"`
+	DAOCoinCoinsInCirculationNanos   uint256.Int               `pg:"dao_coin_coins_in_circulation"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
 }
@@ -577,8 +577,8 @@ type PGCreatorCoinBalance struct {
 
 func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 	return &BalanceEntry{
-		HODLerPKID:   balance.HolderPKID,
-		CreatorPKID:  balance.CreatorPKID,
+		HODLerPKID:  balance.HolderPKID,
+		CreatorPKID: balance.CreatorPKID,
 		// FIXME: This will break if the value exceeds uint256
 		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
@@ -596,8 +596,8 @@ type PGDAOCoinBalance struct {
 
 func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
 	return &BalanceEntry{
-		HODLerPKID:   balance.HolderPKID,
-		CreatorPKID:  balance.CreatorPKID,
+		HODLerPKID:  balance.HolderPKID,
+		CreatorPKID: balance.CreatorPKID,
 		// FIXME: This will break if the value exceeds uint256
 		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
@@ -1567,8 +1567,8 @@ func (postgres *Postgres) flushCreatorCoinBalances(tx *pg.Tx, view *UtxoView) er
 		}
 
 		balance := &PGCreatorCoinBalance{
-			HolderPKID:   balanceEntry.HODLerPKID,
-			CreatorPKID:  balanceEntry.CreatorPKID,
+			HolderPKID:  balanceEntry.HODLerPKID,
+			CreatorPKID: balanceEntry.CreatorPKID,
 			// FIXME: This will break if the value exceeds uint256
 			BalanceNanos: balanceEntry.BalanceNanos.Uint64(),
 			HasPurchased: balanceEntry.HasPurchased,
@@ -1607,8 +1607,8 @@ func (postgres *Postgres) flushDAOCoinBalances(tx *pg.Tx, view *UtxoView) error 
 		}
 
 		balance := &PGDAOCoinBalance{
-			HolderPKID:   balanceEntry.HODLerPKID,
-			CreatorPKID:  balanceEntry.CreatorPKID,
+			HolderPKID:  balanceEntry.HODLerPKID,
+			CreatorPKID: balanceEntry.CreatorPKID,
 			// FIXME: This will break if the value exceeds uint256
 			BalanceNanos: balanceEntry.BalanceNanos.Uint64(),
 			HasPurchased: balanceEntry.HasPurchased,

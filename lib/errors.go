@@ -230,7 +230,7 @@ const (
 	RuleErrorDAOCoinCannotMintIfMintingIsDisabled         RuleError = "RuleErrorDAOCoinCannotMintIfMintingIsDisabled"
 	RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin     RuleError = "RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin"
 	RuleErrorDAOCoinTransferProfileOwnerOnlyViolation     RuleError = "RuleErrorDAOCoinTransferProfileOwnerOnlyViolation"
-	RuleErrorDAOCoinTransferDAOMemberOnlyViolation    	  RuleError = "RuleErrorDAOCoinTransferDAOMemberOnlyViolation"
+	RuleErrorDAOCoinTransferDAOMemberOnlyViolation        RuleError = "RuleErrorDAOCoinTransferDAOMemberOnlyViolation"
 
 	// DAO Coin Transfer Restrictions
 	RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus                    RuleError = "RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus"
