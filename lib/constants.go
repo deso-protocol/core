@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/holiman/uint256"
 	"log"
 	"math"
 	"math/big"
@@ -68,6 +69,10 @@ const (
 )
 
 var (
+	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+)
+
+var (
 	// The block height at which various forks occurred including an
 	// explanation as to why they're necessary.
 
@@ -128,6 +133,11 @@ var (
 	// BuyNowNFTBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an auction style.
 	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
 	BuyNowNFTBlockHeight = uint32(math.MaxUint32 - 1)
+
+	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
+	// transactions will be accepted.
+	// TODO: Update this to a real value when we decide on timing for the fork.
+	DAOCoinBlockHeight = uint32(math.MaxUint32 - 1)
 )
 
 func (nt NetworkType) String() string {

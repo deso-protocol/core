@@ -866,10 +866,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			"_helpConnectNFTSold: Profile missing for NFT pub key: %v %v",
 			PkToStringMainnet(nftPostEntry.PosterPublicKey), PkToStringTestnet(nftPostEntry.PosterPublicKey))
 	}
-	// Save all the old values from the CoinEntry before we potentially
-	// update them. Note that CoinEntry doesn't contain any pointers and so
+	// Save all the old values from the CreatorCoinEntry before we potentially
+	// update them. Note that CreatorCoinEntry doesn't contain any pointers and so
 	// a direct copy is OK.
-	prevCoinEntry := existingProfileEntry.CoinEntry
+	prevCoinEntry := existingProfileEntry.CreatorCoinEntry
 
 	// Verify the NFT bid entry being accepted exists and has a bid consistent with the metadata.
 	// If we did not require an AcceptNFTBid txn to have a bid amount, it would leave the door
@@ -1197,7 +1197,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	}
 
 	// We don't do a royalty if the number of coins in circulation is too low.
-	if existingProfileEntry.CoinsInCirculationNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+	//
+	// Note that it's OK to cast to uint64 for creator coins because we check to make
+	// sure they never exceed this value.
+	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
 		creatorCoinRoyaltyNanos = 0
 	}
 
@@ -1207,7 +1210,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	if creatorCoinRoyaltyNanos > 0 {
 		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
 		newCoinEntry.DeSoLockedNanos += creatorCoinRoyaltyNanos
-		existingProfileEntry.CoinEntry = newCoinEntry
+		existingProfileEntry.CreatorCoinEntry = newCoinEntry
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
 
@@ -2011,7 +2014,7 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 		return fmt.Errorf("_helpDisconnectNFTSold: Invalid Operation type: %s", operationData.Type.String())
 	}
 
-	// (5) Revert the creator's CoinEntry if a previous one exists.
+	// (5) Revert the creator's CreatorCoinEntry if a previous one exists.
 	if operationData.PrevCoinEntry != nil {
 		nftPostEntry := bav.GetPostEntryForPostHash(operationData.PrevNFTEntry.NFTPostHash)
 		// We have to get the post entry first so that we have the poster's pub key.
@@ -2024,7 +2027,7 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 			return fmt.Errorf("_helpDisconnectNFTSold: existingProfileEntry was nil; " +
 				"this should never happen")
 		}
-		existingProfileEntry.CoinEntry = *operationData.PrevCoinEntry
+		existingProfileEntry.CreatorCoinEntry = *operationData.PrevCoinEntry
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
 
