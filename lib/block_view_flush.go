@@ -68,6 +68,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		if err := bav._flushBalanceEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
+		if err := bav._flushDAOCoinBalanceEntriesToDbWithTxn(txn); err != nil {
+			return err
+		}
 		if err := bav._flushDeSoBalancesToDbWithTxn(txn); err != nil {
 			return err
 		}
@@ -782,6 +785,9 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
+// TODO: All of these functions should be renamed "CreatorCoinBalanceEntry" to
+// distinguish them from DAOCoinBalanceEntry, which is a different but similar index
+// that got introduced later.
 func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 
@@ -792,7 +798,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Sanity-check that the balance key in the map is the same
 		// as the public key in the entry.
-		computedBalanceKey := MakeCreatorCoinBalanceKey(
+		computedBalanceKey := MakeBalanceEntryKey(
 			balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
 		if !reflect.DeepEqual(balanceKey, computedBalanceKey) {
 			return fmt.Errorf("_flushBalanceEntriesToDbWithTxn: BalanceEntry has "+
@@ -803,8 +809,8 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
-			txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), bav.Params); err != nil {
+		if err := DBDeleteBalanceEntryMappingsWithTxn(
+			txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), false); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushBalanceEntriesToDbWithTxn: Problem deleting mappings "+
@@ -824,8 +830,8 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutCreatorCoinBalanceEntryMappingsWithTxn(
-				txn, balanceEntry, bav.Params); err != nil {
+			if err := DBPutBalanceEntryMappingsWithTxn(
+				txn, balanceEntry, false); err != nil {
 
 				return err
 			}
@@ -834,7 +840,65 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 
 	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
-	// At this point all of the PostEntry mappings in the db should be up-to-date.
+	// At this point all of the creator coin mappings in the db should be up-to-date.
+
+	return nil
+}
+
+// TODO: This could theoretically be consolidated with the other BalanceEntry flusher.
+func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
+	glog.V(1).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry))
+
+	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
+	for balanceKeyIter, balanceEntry := range bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry {
+		// Make a copy of the iterator since we take references to it below.
+		balanceKey := balanceKeyIter
+
+		// Sanity-check that the balance key in the map is the same
+		// as the public key in the entry.
+		computedBalanceKey := MakeBalanceEntryKey(
+			balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
+		if !reflect.DeepEqual(balanceKey, computedBalanceKey) {
+			return fmt.Errorf("_flushDAOCoinBalanceEntriesToDbWithTxn: BalanceEntry has "+
+				"map key: %v which does not match match "+
+				"the HODLerPubKeyCreatorPubKeyToBalanceEntry map key %v",
+				balanceKey, computedBalanceKey)
+		}
+
+		// Delete the existing mappings in the db for this balance key. They will be re-added
+		// if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteBalanceEntryMappingsWithTxn(
+			txn, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), true); err != nil {
+
+			return errors.Wrapf(
+				err, "_flushDAOCoinBalanceEntriesToDbWithTxn: Problem deleting mappings "+
+					"for public key: %v: ", balanceKey)
+		}
+	}
+	numDeleted := 0
+	numPut := 0
+	// Go through all the entries in the HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry map.
+	for _, balanceEntry := range bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry {
+		// Make a copy of the iterator since we take references to it below.
+		if balanceEntry.isDeleted {
+			numDeleted++
+			// If the ProfileEntry has isDeleted=true then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			numPut++
+			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
+			// mappings for it into the db.
+			if err := DBPutBalanceEntryMappingsWithTxn(
+				txn, balanceEntry, true); err != nil {
+
+				return err
+			}
+		}
+	}
+
+	glog.V(1).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+
+	// At this point all of the DAO coin mappings in the db should be up-to-date.
 
 	return nil
 }
