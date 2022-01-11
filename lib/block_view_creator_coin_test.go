@@ -1290,7 +1290,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferInsufficientCoins)
+		require.Contains(err.Error(), RuleErrorCoinTransferInsufficientCoins)
 	}
 	// You can't apply the same number of Diamonds to a post twice
 	{
