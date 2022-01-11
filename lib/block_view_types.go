@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
 	"strings"
 )
 
@@ -101,8 +102,10 @@ const (
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
+	OperationTypeDAOCoin                      OperationType = 26
+	OperationTypeDAOCoinTransfer              OperationType = 27
 
-	// NEXT_TAG = 24
+	// NEXT_TAG = 28
 )
 
 func (op OperationType) String() string {
@@ -198,6 +201,14 @@ func (op OperationType) String() string {
 	case OperationTypeAuthorizeDerivedKey:
 		{
 			return "OperationTypeAuthorizeDerivedKey"
+		}
+	case OperationTypeDAOCoin:
+		{
+			return "OperationTypeDAOCoin"
+		}
+	case OperationTypeDAOCoinTransfer:
+		{
+			return "OperationTypeDAOCoinTransfer"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -773,12 +784,13 @@ type BalanceEntryMapKey struct {
 	CreatorPKID PKID
 }
 
-func MakeCreatorCoinBalanceKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntryMapKey {
+func MakeBalanceEntryKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntryMapKey {
 	return BalanceEntryMapKey{
 		HODLerPKID:  *hodlerPKID,
 		CreatorPKID: *creatorPKID,
 	}
 }
+
 func (mm BalanceEntryMapKey) String() string {
 	return fmt.Sprintf("BalanceEntryMapKey: <HODLer Pub Key: %v, Creator Pub Key: %v>",
 		PkToStringBoth(mm.HODLerPKID[:]), PkToStringBoth(mm.CreatorPKID[:]))
@@ -795,13 +807,30 @@ type BalanceEntry struct {
 	CreatorPKID *PKID
 
 	// How much this HODLer owns of a particular creator coin.
-	BalanceNanos uint64
+	BalanceNanos uint256.Int
 
 	// Has the hodler purchased any amount of this user's coin
 	HasPurchased bool
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+type TransferRestrictionStatus uint8
+
+const (
+	TransferRestrictionStatusUnrestricted            TransferRestrictionStatus = 0
+	TransferRestrictionStatusProfileOwnerOnly        TransferRestrictionStatus = 1
+	TransferRestrictionStatusDAOMembersOnly          TransferRestrictionStatus = 2
+	TransferRestrictionStatusPermanentlyUnrestricted TransferRestrictionStatus = 3
+)
+
+func (transferRestrictionStatus TransferRestrictionStatus) IsUnrestricted() bool {
+	if transferRestrictionStatus == TransferRestrictionStatusUnrestricted ||
+		transferRestrictionStatus == TransferRestrictionStatusPermanentlyUnrestricted {
+		return true
+	}
+	return false
 }
 
 // This struct contains all the information required to support coin
@@ -828,7 +857,15 @@ type CoinEntry struct {
 	// The number of coins currently in circulation. Whenever a user buys a
 	// coin from the protocol this increases, and whenever a user sells a
 	// coin to the protocol this decreases.
-	CoinsInCirculationNanos uint64
+	//
+	// It's OK to have a pointer here as long as we *NEVER* manipulate the
+	// bigint in place. Instead, we must always do computations of the form:
+	//
+	// CoinsInCirculationNanos = uint256.NewInt(0).Add(CoinsInCirculationNanos, <other uint256>)
+	//
+	// This will guarantee that modifying a copy of this struct will not break
+	// the original, which is needed for disconnects to work.
+	CoinsInCirculationNanos uint256.Int
 
 	// This field keeps track of the highest number of coins that has ever
 	// been in circulation. It is used to determine when a creator should
@@ -836,7 +873,16 @@ type CoinEntry struct {
 	// coins being minted would push the number of coins in circulation
 	// beyond the watermark, we allocate a percentage of the coins being
 	// minted to the creator as a "founder reward."
+	//
+	// Note that this field doesn't need to be uint256 because it's only
+	// relevant for CreatorCoins, which can't exceed math.MaxUint64 in total
+	// supply.
 	CoinWatermarkNanos uint64
+
+	// If true, DAO coins can no longer be minted.
+	MintingDisabled bool
+
+	TransferRestrictionStatus TransferRestrictionStatus
 }
 
 type PublicKeyRoyaltyPair struct {
@@ -882,11 +928,18 @@ type ProfileEntry struct {
 	// profiles in certain situations.
 	IsHidden bool
 
-	// CoinEntry tracks the information required to buy/sell coins on a user's
+	// CreatorCoinEntry tracks the information required to buy/sell creator coins on a user's
 	// profile. We "embed" it here for convenience so we can access the fields
 	// directly on the ProfileEntry object. Embedding also makes it so that we
 	// don't need to initialize it explicitly.
-	CoinEntry
+	CreatorCoinEntry CoinEntry
+
+	// DAOCoinEntry tracks the information around the DAO coins issued on a user's profile.
+	// Note: the following fields are basically ignored for the DAOCoinEntry
+	// 1. CreatorBasisPoints
+	// 2. DeSoLockedNanos
+	// 3. CoinWaterMarkNanos
+	DAOCoinEntry CoinEntry
 
 	// Whether or not this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if for

@@ -931,10 +931,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			"_helpConnectNFTSold: Profile missing for NFT pub key: %v %v",
 			PkToStringMainnet(nftPostEntry.PosterPublicKey), PkToStringTestnet(nftPostEntry.PosterPublicKey))
 	}
-	// Save all the old values from the CoinEntry before we potentially
-	// update them. Note that CoinEntry doesn't contain any pointers and so
+	// Save all the old values from the CreatorCoinEntry before we potentially
+	// update them. Note that CreatorCoinEntry doesn't contain any pointers and so
 	// a direct copy is OK.
-	prevCoinEntry := existingProfileEntry.CoinEntry
+	prevCoinEntry := existingProfileEntry.CreatorCoinEntry
 
 	// Additionally save all the other previous coin entries
 	prevAdditionalCoinEntries := make(map[PKID]CoinEntry)
@@ -947,7 +947,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 				"_helpConnectNFTSold: Profile missing for additional coin royalty for pub key: %v %v",
 				PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes))
 		}
-		prevAdditionalCoinEntries[pkid] = existingAdditionalProfileEntry.CoinEntry
+		prevAdditionalCoinEntries[pkid] = existingAdditionalProfileEntry.CreatorCoinEntry
 		profileEntriesMap[pkid] = *existingAdditionalProfileEntry
 	}
 
@@ -1313,7 +1313,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	}
 
 	// We don't do a royalty if the number of coins in circulation is too low.
-	if existingProfileEntry.CoinsInCirculationNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+	//
+	// Note that it's OK to cast to uint64 for creator coins because we check to make
+	// sure they never exceed this value.
+	if existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
 		creatorCoinRoyaltyNanos = 0
 	}
 
@@ -1323,7 +1326,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	if creatorCoinRoyaltyNanos > 0 {
 		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
 		newCoinEntry.DeSoLockedNanos += creatorCoinRoyaltyNanos
-		existingProfileEntry.CoinEntry = newCoinEntry
+		existingProfileEntry.CreatorCoinEntry = newCoinEntry
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
 
@@ -1335,15 +1338,15 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		// Get coin entry
 		profileEntry := profileEntriesMap[*bav.GetPKIDForPublicKey(publicKeyRoyaltyPair.PublicKey).PKID]
 		// We don't do a royalty if the number of coins in circulation is too low.
-		if profileEntry.CoinEntry.CoinsInCirculationNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {
+		if profileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
 			additionalCoinRoyalties[ii].RoyaltyAmountNanos = 0
 			publicKeyRoyaltyPair.RoyaltyAmountNanos = 0
 		}
-		newCoinRoyaltyCoinEntry := profileEntry.CoinEntry
+		newCoinRoyaltyCoinEntry := profileEntry.CreatorCoinEntry
 		if publicKeyRoyaltyPair.RoyaltyAmountNanos > 0 {
 			// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
 			newCoinRoyaltyCoinEntry.DeSoLockedNanos += publicKeyRoyaltyPair.RoyaltyAmountNanos
-			profileEntry.CoinEntry = newCoinRoyaltyCoinEntry
+			profileEntry.CreatorCoinEntry = newCoinRoyaltyCoinEntry
 			bav._setProfileEntryMappings(&profileEntry)
 		}
 		newCoinRoyaltyCoinEntries = append(newCoinRoyaltyCoinEntries, newCoinRoyaltyCoinEntry)
@@ -2200,7 +2203,7 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 		return fmt.Errorf("_helpDisconnectNFTSold: Invalid Operation type: %s", operationData.Type.String())
 	}
 
-	// (5) Revert the creator's CoinEntry if a previous one exists.
+	// (5) Revert the creator's CreatorCoinEntry if a previous one exists.
 	if operationData.PrevCoinEntry != nil {
 		nftPostEntry := bav.GetPostEntryForPostHash(operationData.PrevNFTEntry.NFTPostHash)
 		// We have to get the post entry first so that we have the poster's pub key.
@@ -2213,7 +2216,7 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 			return fmt.Errorf("_helpDisconnectNFTSold: existingProfileEntry was nil; " +
 				"this should never happen")
 		}
-		existingProfileEntry.CoinEntry = *operationData.PrevCoinEntry
+		existingProfileEntry.CreatorCoinEntry = *operationData.PrevCoinEntry
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
 
@@ -2225,7 +2228,7 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 				return errors.New("_helpDisconnectNFTSold: profile entry was nil or deleted for additional" +
 					" coin royalty; this should never happen.")
 			}
-			profileEntry.CoinEntry = coinEntry
+			profileEntry.CreatorCoinEntry = coinEntry
 			bav._setProfileEntryMappings(profileEntry)
 		}
 	}

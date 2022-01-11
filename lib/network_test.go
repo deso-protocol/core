@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"github.com/holiman/uint256"
 	"reflect"
 	"strings"
 	"testing"
@@ -1067,6 +1068,121 @@ func TestBurnNFT(t *testing.T) {
 	require.NoError(err)
 
 	testMeta, err := NewTxnMetadata(TxnTypeBurnNFT)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestDAOCoin(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	{
+		txMeta := &DAOCoinMetadata{}
+		txMeta.ProfilePublicKey = []byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01}
+		txMeta.OperationType = DAOCoinOperationTypeMint
+		txMeta.CoinsToMintNanos = *uint256.NewInt().SetUint64(100)
+
+		data, err := txMeta.ToBytes(false)
+		require.NoError(err)
+
+		testMeta, err := NewTxnMetadata(TxnTypeDAOCoin)
+		require.NoError(err)
+		err = testMeta.FromBytes(data)
+		require.NoError(err)
+		require.Equal(txMeta, testMeta)
+	}
+
+	{
+		txMeta := &DAOCoinMetadata{}
+		txMeta.ProfilePublicKey = []byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01}
+		txMeta.OperationType = DAOCoinOperationTypeBurn
+		txMeta.CoinsToBurnNanos = *uint256.NewInt().SetUint64(100)
+
+		data, err := txMeta.ToBytes(false)
+		require.NoError(err)
+
+		testMeta, err := NewTxnMetadata(TxnTypeDAOCoin)
+		require.NoError(err)
+		err = testMeta.FromBytes(data)
+		require.NoError(err)
+		require.Equal(txMeta, testMeta)
+	}
+
+	{
+		txMeta := &DAOCoinMetadata{}
+		txMeta.ProfilePublicKey = []byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01}
+		txMeta.OperationType = DAOCoinOperationTypeDisableMinting
+
+		data, err := txMeta.ToBytes(false)
+		require.NoError(err)
+
+		testMeta, err := NewTxnMetadata(TxnTypeDAOCoin)
+		require.NoError(err)
+		err = testMeta.FromBytes(data)
+		require.NoError(err)
+		require.Equal(txMeta, testMeta)
+	}
+
+	{
+		txMeta := &DAOCoinMetadata{}
+		txMeta.ProfilePublicKey = []byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01}
+		txMeta.OperationType = DAOCoinOperationTypeUpdateTransferRestrictionStatus
+		txMeta.TransferRestrictionStatus = TransferRestrictionStatusProfileOwnerOnly
+
+		data, err := txMeta.ToBytes(false)
+		require.NoError(err)
+
+		testMeta, err := NewTxnMetadata(TxnTypeDAOCoin)
+		require.NoError(err)
+		err = testMeta.FromBytes(data)
+		require.NoError(err)
+		require.Equal(txMeta, testMeta)
+	}
+}
+
+func TestDAOCoinTransfer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &DAOCoinTransferMetadata{}
+	txMeta.ProfilePublicKey = []byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01}
+	txMeta.ReceiverPublicKey = []byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x02}
+	txMeta.DAOCoinToTransferNanos = *uint256.NewInt().SetUint64(100)
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeDAOCoinTransfer)
 	require.NoError(err)
 	err = testMeta.FromBytes(data)
 	require.NoError(err)

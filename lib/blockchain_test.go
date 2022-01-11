@@ -295,7 +295,9 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr 
 		return 0, 0
 	}
 
-	return creatorProfile.DeSoLockedNanos, creatorProfile.CoinsInCirculationNanos
+	// Note that it's OK to cast creator coin to uint64 because we check for
+	// overflow everywhere.
+	return creatorProfile.CreatorCoinEntry.DeSoLockedNanos, creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()
 }
 
 func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {

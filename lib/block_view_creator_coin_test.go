@@ -221,20 +221,20 @@ func _helpTestCreatorCoinBuySell(
 		require.NotNil(creatorProfile)
 
 		assert.Equalf(int64(testData.CoinsInCirculationNanos),
-			int64(creatorProfile.CoinsInCirculationNanos), "CoinsInCirculationNanos: %v", message)
+			int64(creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()), "CoinsInCirculationNanos: %v", message)
 		assert.Equalf(int64(testData.DeSoLockedNanos),
-			int64(creatorProfile.DeSoLockedNanos), "DeSoLockedNanos: %v", message)
+			int64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos), "DeSoLockedNanos: %v", message)
 		assert.Equalf(int64(testData.CoinWatermarkNanos),
-			int64(creatorProfile.CoinWatermarkNanos), "CoinWatermarkNanos: %v", message)
+			int64(creatorProfile.CreatorCoinEntry.CoinWatermarkNanos), "CoinWatermarkNanos: %v", message)
 
 		// Coin balances, also used for figuring out how many holders hold a creator.
 		// m0
 		actualNumberOfHolders := uint64(0)
-		m0BalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, creatorPkBytes)
+		m0BalanceEntry, _, _ := utxoView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, creatorPkBytes)
 		if m0BalanceEntry != nil && !m0BalanceEntry.isDeleted {
 			assert.Equalf(int64(testData.m0CCBalance),
-				int64(m0BalanceEntry.BalanceNanos), "m0CCBalance: %v", message)
-			if m0BalanceEntry.BalanceNanos > 0 {
+				int64(m0BalanceEntry.BalanceNanos.Uint64()), "m0CCBalance: %v", message)
+			if m0BalanceEntry.BalanceNanos.Uint64() > 0 {
 				actualNumberOfHolders += 1
 			}
 			assert.Equal(testData.m0HasPurchased, m0BalanceEntry.HasPurchased)
@@ -244,11 +244,11 @@ func _helpTestCreatorCoinBuySell(
 			assert.Equal(testData.m0HasPurchased, false)
 		}
 		// m1
-		m1BalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m1PkBytes, creatorPkBytes)
+		m1BalanceEntry, _, _ := utxoView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m1PkBytes, creatorPkBytes)
 		if m1BalanceEntry != nil && !m1BalanceEntry.isDeleted {
 			assert.Equalf(int64(testData.m1CCBalance),
-				int64(m1BalanceEntry.BalanceNanos), "m1CCBalance: %v", message)
-			if m1BalanceEntry.BalanceNanos > 0 {
+				int64(m1BalanceEntry.BalanceNanos.Uint64()), "m1CCBalance: %v", message)
+			if m1BalanceEntry.BalanceNanos.Uint64() > 0 {
 				actualNumberOfHolders += 1
 			}
 			assert.Equal(testData.m1HasPurchased, m1BalanceEntry.HasPurchased)
@@ -258,11 +258,11 @@ func _helpTestCreatorCoinBuySell(
 			assert.Equal(testData.m1HasPurchased, false)
 		}
 		// m2
-		m2BalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m2PkBytes, creatorPkBytes)
+		m2BalanceEntry, _, _ := utxoView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m2PkBytes, creatorPkBytes)
 		if m2BalanceEntry != nil && !m2BalanceEntry.isDeleted {
 			assert.Equalf(int64(testData.m2CCBalance),
-				int64(m2BalanceEntry.BalanceNanos), "%v", message)
-			if m2BalanceEntry.BalanceNanos > 0 {
+				int64(m2BalanceEntry.BalanceNanos.Uint64()), "%v", message)
+			if m2BalanceEntry.BalanceNanos.Uint64() > 0 {
 				actualNumberOfHolders += 1
 			}
 			assert.Equal(testData.m2HasPurchased, m2BalanceEntry.HasPurchased)
@@ -272,11 +272,11 @@ func _helpTestCreatorCoinBuySell(
 			assert.Equal(testData.m2HasPurchased, false)
 		}
 		// m3
-		m3BalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, creatorPkBytes)
+		m3BalanceEntry, _, _ := utxoView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, creatorPkBytes)
 		if m3BalanceEntry != nil && !m3BalanceEntry.isDeleted {
 			assert.Equalf(int64(testData.m3CCBalance),
-				int64(m3BalanceEntry.BalanceNanos), "%v", message)
-			if m3BalanceEntry.BalanceNanos > 0 {
+				int64(m3BalanceEntry.BalanceNanos.Uint64()), "%v", message)
+			if m3BalanceEntry.BalanceNanos.Uint64() > 0 {
 				actualNumberOfHolders += 1
 			}
 			assert.Equal(testData.m3HasPurchased, m3BalanceEntry.HasPurchased)
@@ -286,11 +286,11 @@ func _helpTestCreatorCoinBuySell(
 			assert.Equal(testData.m3HasPurchased, false)
 		}
 		// m4
-		m4BalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, creatorPkBytes)
+		m4BalanceEntry, _, _ := utxoView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, creatorPkBytes)
 		if m4BalanceEntry != nil && !m4BalanceEntry.isDeleted {
 			assert.Equalf(int64(testData.m4CCBalance),
-				int64(m4BalanceEntry.BalanceNanos), "%v", message)
-			if m4BalanceEntry.BalanceNanos > 0 {
+				int64(m4BalanceEntry.BalanceNanos.Uint64()), "%v", message)
+			if m4BalanceEntry.BalanceNanos.Uint64() > 0 {
 				actualNumberOfHolders += 1
 			}
 			assert.Equal(testData.m4HasPurchased, m4BalanceEntry.HasPurchased)
@@ -300,11 +300,11 @@ func _helpTestCreatorCoinBuySell(
 			assert.Equal(testData.m4HasPurchased, false)
 		}
 		// m5
-		m5BalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m5PkBytes, creatorPkBytes)
+		m5BalanceEntry, _, _ := utxoView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m5PkBytes, creatorPkBytes)
 		if m5BalanceEntry != nil && !m5BalanceEntry.isDeleted {
 			assert.Equalf(int64(testData.m5CCBalance),
-				int64(m5BalanceEntry.BalanceNanos), "%v", message)
-			if m5BalanceEntry.BalanceNanos > 0 {
+				int64(m5BalanceEntry.BalanceNanos.Uint64()), "%v", message)
+			if m5BalanceEntry.BalanceNanos.Uint64() > 0 {
 				actualNumberOfHolders += 1
 			}
 			assert.Equal(testData.m5HasPurchased, m5BalanceEntry.HasPurchased)
@@ -314,11 +314,11 @@ func _helpTestCreatorCoinBuySell(
 			assert.Equal(testData.m5HasPurchased, false)
 		}
 		// m6
-		m6BalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m6PkBytes, creatorPkBytes)
+		m6BalanceEntry, _, _ := utxoView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m6PkBytes, creatorPkBytes)
 		if m6BalanceEntry != nil && !m6BalanceEntry.isDeleted {
 			assert.Equalf(int64(testData.m6CCBalance),
-				int64(m6BalanceEntry.BalanceNanos), "%v", message)
-			if m6BalanceEntry.BalanceNanos > 0 {
+				int64(m6BalanceEntry.BalanceNanos.Uint64()), "%v", message)
+			if m6BalanceEntry.BalanceNanos.Uint64() > 0 {
 				actualNumberOfHolders += 1
 			}
 			assert.Equal(testData.m6HasPurchased, m6BalanceEntry.HasPurchased)
@@ -329,14 +329,14 @@ func _helpTestCreatorCoinBuySell(
 		}
 
 		// creatorNumberOfHolders must equal creatorProfile.NumberOfHolders
-		assert.Equalf(actualNumberOfHolders, creatorProfile.NumberOfHolders,
+		assert.Equalf(actualNumberOfHolders, creatorProfile.CreatorCoinEntry.NumberOfHolders,
 			"Actual number of creators != creatorProfile.NumberOfHolders: %v", message)
 
 		// Coins in m0+m1+m2+m3+m4+m5+m6 must equal the circulating supply
 		assert.Equalf(
 			int64(testData.m0CCBalance+testData.m1CCBalance+testData.m2CCBalance+testData.m3CCBalance+
 				testData.m4CCBalance+testData.m5CCBalance+testData.m6CCBalance),
-			int64(creatorProfile.CoinsInCirculationNanos),
+			int64(creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()),
 			"m0+m1+m2+m3+m4+m5+m6 != CoinsInCirculationNanos: %v", message)
 
 		// DeSo balances
@@ -1223,7 +1223,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreatorCoinTransferCannotTransferToSelf)
+		require.Contains(err.Error(), RuleErrorCoinTransferCannotTransferToSelf)
 	}
 	// You can't Diamond off a post that doesn't exist
 	{

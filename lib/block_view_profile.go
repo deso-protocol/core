@@ -447,12 +447,19 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 			Username:    []byte(profile.Username),
 			Description: []byte(profile.Description),
 			ProfilePic:  profile.ProfilePic,
-			CoinEntry: CoinEntry{
+			CreatorCoinEntry: CoinEntry{
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
 				DeSoLockedNanos:         profile.DeSoLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
 				CoinsInCirculationNanos: profile.CoinsInCirculationNanos,
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
+				MintingDisabled:         profile.MintingDisabled,
+			},
+			DAOCoinEntry: CoinEntry{
+				NumberOfHolders:           profile.DAOCoinNumberOfHolders,
+				CoinsInCirculationNanos:   profile.DAOCoinCoinsInCirculationNanos,
+				MintingDisabled:           profile.DAOCoinMintingDisabled,
+				TransferRestrictionStatus: profile.DAOCoinTransferRestrictionStatus,
 			},
 		}
 
@@ -496,7 +503,7 @@ func (bav *UtxoView) GetProfilesForUsernamePrefixByCoinValue(usernamePrefix stri
 
 	// Username searches are always sorted by coin value.
 	sort.Slice(profileEntrys, func(ii, jj int) bool {
-		return profileEntrys[ii].CoinEntry.DeSoLockedNanos > profileEntrys[jj].CoinEntry.DeSoLockedNanos
+		return profileEntrys[ii].CreatorCoinEntry.DeSoLockedNanos > profileEntrys[jj].CreatorCoinEntry.DeSoLockedNanos
 	})
 
 	return profileEntrys
@@ -622,7 +629,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 	// Save a copy of the profile entry so so that we can safely modify it.
 	var prevProfileEntry *ProfileEntry
 	if existingProfileEntry != nil {
-		// NOTE: The only pointer in here is the StakeEntry and CoinEntry pointer, but since
+		// NOTE: The only pointer in here is the StakeEntry and CreatorCoinEntry pointer, but since
 		// this is not modified below we don't need to make a copy of it.
 		prevProfileEntry = &ProfileEntry{}
 		*prevProfileEntry = *existingProfileEntry
@@ -669,7 +676,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		newProfileEntry.IsHidden = txMeta.IsHidden
 
 		// Just always set the creator basis points and stake multiple.
-		newProfileEntry.CreatorBasisPoints = txMeta.NewCreatorBasisPoints
+		newProfileEntry.CreatorCoinEntry.CreatorBasisPoints = txMeta.NewCreatorBasisPoints
 
 		// The StakeEntry is always left unmodified here.
 
@@ -704,7 +711,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 			// Save the amount of DESO locked in the profile since this is going to
 			// be clobbered.
 			if clobberedProfileEntry != nil && !clobberedProfileEntry.isDeleted {
-				clobberedProfileBugDeSoAdjustment = clobberedProfileEntry.CoinEntry.DeSoLockedNanos
+				clobberedProfileBugDeSoAdjustment = clobberedProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 			}
 		}
 
@@ -714,7 +721,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 			Description: txMeta.NewDescription,
 			ProfilePic:  txMeta.NewProfilePic,
 
-			CoinEntry: CoinEntry{
+			CreatorCoinEntry: CoinEntry{
 				CreatorBasisPoints: txMeta.NewCreatorBasisPoints,
 
 				// The other coin fields are automatically set to zero, which is an
@@ -875,11 +882,11 @@ func (bav *UtxoView) _connectSwapIdentity(
 	// swapping the balances of total deso locked. If no profile exists, from/to is zero.
 	fromNanos := uint64(0)
 	if fromProfileEntry != nil {
-		fromNanos = fromProfileEntry.CoinEntry.DeSoLockedNanos
+		fromNanos = fromProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 	}
 	toNanos := uint64(0)
 	if toProfileEntry != nil {
-		toNanos = toProfileEntry.CoinEntry.DeSoLockedNanos
+		toNanos = toProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 	}
 
 	// Add an operation to the list at the end indicating we've swapped identities.
