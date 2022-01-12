@@ -6454,6 +6454,28 @@ func TestNFTSplits(t *testing.T) {
 			require.Error(err)
 			require.Contains(err.Error(), RuleErrorNFTRoyaltyOverflow)
 		}
+		{
+			_, _, _, err = _createNFTWithAdditionalRoyalties(
+				t, chain, db, params, 10,
+				m0Pub,
+				m0Priv,
+				post1Hash,
+				100,
+				false,
+				false,
+				0,
+				0,
+				math.MaxUint64-10,
+				11,
+				false,
+				0,
+				nil,
+				nil,
+			)
+
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorNFTRoyaltyOverflow)
+		}
 	}
 	// Cannot specify the creator as an additional coin royalty
 	{
