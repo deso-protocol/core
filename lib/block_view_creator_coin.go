@@ -772,7 +772,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	}
 	// Setting the value in this way is guaranteed to not mess up the prevCoinEntry
 	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().SetUint64(
-		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()+creatorCoinToMintNanos)
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() + creatorCoinToMintNanos)
 
 	// Calculate the *Creator Coin nanos* to give as a founder reward.
 	creatorCoinFounderRewardNanos := uint64(0)
@@ -1394,5 +1394,5 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 			txn.TxnMeta.GetTxnType().String())
 	}
 
-	return bav.HelpConnectCoinTransfer(txn , txHash, blockHeight, verifySignatures, false)
+	return bav.HelpConnectCoinTransfer(txn, txHash, blockHeight, verifySignatures, false)
 }

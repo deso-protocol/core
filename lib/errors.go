@@ -230,7 +230,7 @@ const (
 	RuleErrorDAOCoinCannotMintIfMintingIsDisabled         RuleError = "RuleErrorDAOCoinCannotMintIfMintingIsDisabled"
 	RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin     RuleError = "RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin"
 	RuleErrorDAOCoinTransferProfileOwnerOnlyViolation     RuleError = "RuleErrorDAOCoinTransferProfileOwnerOnlyViolation"
-	RuleErrorDAOCoinTransferDAOMemberOnlyViolation    	  RuleError = "RuleErrorDAOCoinTransferDAOMemberOnlyViolation"
+	RuleErrorDAOCoinTransferDAOMemberOnlyViolation        RuleError = "RuleErrorDAOCoinTransferDAOMemberOnlyViolation"
 
 	// DAO Coin Transfer Restrictions
 	RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus                    RuleError = "RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus"
@@ -271,6 +271,10 @@ const (
 	RuleErrorNFTRoyaltyOverflow                          RuleError = "RuleErrorNFTRoyaltyOverflow"
 	RuleErrorNFTUpdateMustUpdateIsForSaleStatus          RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
 	RuleErrorBuyNowNFTBeforeBlockHeight                  RuleError = "RuleErrorBuyNowNFTBeforeBlockHeight"
+	RuleErrorAdditionalCoinRoyaltyMustHaveProfile        RuleError = "RuleErrorAdditionalCoinRoyaltyMustHaveProfile"
+	RuleErrorAdditionalCoinRoyaltyOverflow        		 RuleError = "RuleErrorAdditionalCoinRoyaltyOverflow"
+	RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty     RuleError = "RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty"
+	RuleErrorAdditionalRoyaltyPubKeyMustBeValid          RuleError = "RuleErrorAdditionalRoyaltyPubKeyMustBeValid"
 
 	// NFT Bids
 	RuleErrorNFTBidRequiresNonZeroInput                    RuleError = "RuleErrorNFTBidRequiresNonZeroInput"

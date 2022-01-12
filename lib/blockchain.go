@@ -1332,25 +1332,6 @@ func CheckTransactionSanity(txn *MsgDeSoTxn) error {
 		glog.V(2).Infof("CheckTransactionSanity: Txn needs at least one input: %v", spew.Sdump(txn))
 		return RuleErrorTxnMustHaveAtLeastOneInput
 	}
-	// Every txn must have at least one output unless it is one of the following transaction
-	// types.
-	// - BitcoinExchange transactions are deduped using the hash of the Bitcoin transaction
-	//   embedded in them and having an output adds no value because the output is implied
-	//   by the Bitcoin transaction embedded in it. In particular, the output is automatically
-	//   assumed to be the public key of the the first input in the Bitcoin transaction and
-	//   the fee is automatically assumed to be some percentage of the DeSo being created
-	//   (10bps at the time of this writing).
-	//
-	// - TxnTypeCreatorCoin are also ok to have no outputs (e.g. if you spend your whole deso
-	//   balance on a creator coin)
-	canHaveZeroOutputs := (txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange ||
-		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage ||
-		txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin) // TODO: add a test for this case
-
-	if len(txn.TxOutputs) == 0 && !canHaveZeroOutputs {
-		glog.V(2).Infof("CheckTransactionSanity: Txn needs at least one output: %v", spew.Sdump(txn))
-		return RuleErrorTxnMustHaveAtLeastOneOutput
-	}
 
 	// Loop through the outputs and do a few sanity checks.
 	var totalOutNanos uint64
@@ -3126,6 +3107,8 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTRoyaltyToCoinBasisPoints uint64,
 	IsBuyNow bool,
 	BuyNowPriceNanos uint64,
+	AdditionalDESORoyalties map[PublicKey]uint64,
+	AdditionalCoinRoyalties map[PublicKey]uint64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3147,10 +3130,33 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 		// inputs and change.
 	}
 
+	extraData := make(map[string][]byte)
 	// If this transactions creates a Buy Now NFT, set the extra data appropriately.
 	if IsBuyNow {
-		extraData := make(map[string][]byte)
 		extraData[BuyNowPriceKey] = UintToBuf(BuyNowPriceNanos)
+	}
+
+	// If this NFT has royalties that go to other users coins, set the extra data appropriately
+	if len(AdditionalDESORoyalties) > 0 {
+		additionalDESORoyaltiesBuf, err := SerializePubKeyToUint64Map(AdditionalDESORoyalties)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"CreateCreateNFTTxn: Problem encoding additional DESO Royalties map: ")
+		}
+		extraData[DESORoyaltiesMapKey] = additionalDESORoyaltiesBuf
+	}
+
+	// If this NFT has royalties that go to other users coins, set the extra data appropriately
+	if len(AdditionalCoinRoyalties) > 0 {
+		additionalCoinRoyaltiesBuf, err := SerializePubKeyToUint64Map(AdditionalCoinRoyalties)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"CreateCreateNFTTxn: Problem encoding additional Coin Royalties map: ")
+		}
+		extraData[CoinRoyaltiesMapKey] = additionalCoinRoyaltiesBuf
+	}
+
+	if len(extraData) > 0 {
 		txn.ExtraData = extraData
 	}
 
@@ -3222,7 +3228,6 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
-
 	// Create a transaction containing the NFT bid fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,
@@ -3895,6 +3900,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			spendAmount += txMeta.DeSoToSellNanos
 		}
 	}
+
 	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
 	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
 		txMeta := txArg.TxnMeta.(*NFTBidMetadata)

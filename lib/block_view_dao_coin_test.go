@@ -859,8 +859,8 @@ func TestDAOCoinBasic(t *testing.T) {
 	// M3 permanently unrestricts transfers so all DAO holders can transfer willy-nilly
 	{
 		_daoCoinTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinMetadata{
-			ProfilePublicKey: m3PkBytes,
-			OperationType: DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			ProfilePublicKey:          m3PkBytes,
+			OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
 			TransferRestrictionStatus: TransferRestrictionStatusPermanentlyUnrestricted,
 		})
 
@@ -871,8 +871,8 @@ func TestDAOCoinBasic(t *testing.T) {
 	// M3 can't restrict the transfers at all anymore
 	{
 		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m3Pub, m3Priv, DAOCoinMetadata{
-			ProfilePublicKey: m3PkBytes,
-			OperationType: DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			ProfilePublicKey:          m3PkBytes,
+			OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
 			TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
 		})
 

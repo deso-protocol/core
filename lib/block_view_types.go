@@ -24,8 +24,9 @@ const (
 	UtxoTypeNFTSeller                UtxoType = 6
 	UtxoTypeNFTBidderChange          UtxoType = 7
 	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
+	UtxoTypeNFTAdditionalDESORoyalty UtxoType = 9
 
-	// NEXT_TAG = 9
+	// NEXT_TAG = 10
 )
 
 func (mm UtxoType) String() string {
@@ -281,6 +282,11 @@ type UtxoOperation struct {
 	// Save the state of a creator coin prior to updating it due to a
 	// buy/sell/add transaction.
 	PrevCoinEntry *CoinEntry
+
+	// Save the state of coin entries associated with a PKID prior to updating
+	// it due to an additional coin royalty when an NFT is sold.
+	PrevCoinRoyaltyCoinEntries map[PKID]CoinEntry
+
 	// Save the creator coin balance of both the transactor and the creator.
 	// We modify the transactor's balances when they buys/sell a creator coin
 	// and we modify the creator's balance when we pay them a founder reward.
@@ -316,16 +322,18 @@ type UtxoOperation struct {
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values.
-	AcceptNFTBidCreatorPublicKey    []byte
-	AcceptNFTBidBidderPublicKey     []byte
-	AcceptNFTBidCreatorRoyaltyNanos uint64
+	AcceptNFTBidCreatorPublicKey        []byte
+	AcceptNFTBidBidderPublicKey         []byte
+	AcceptNFTBidCreatorRoyaltyNanos     uint64
+	AcceptNFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values for NFT bid transactions on Buy Now NFTs.
-	NFTBidCreatorPublicKey    []byte
-	NFTBidBidderPublicKey     []byte
-	NFTBidCreatorRoyaltyNanos uint64
+	NFTBidCreatorPublicKey        []byte
+	NFTBidBidderPublicKey         []byte
+	NFTBidCreatorRoyaltyNanos     uint64
+	NFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -732,6 +740,15 @@ type PostEntry struct {
 	NFTRoyaltyToCreatorBasisPoints uint64
 	NFTRoyaltyToCoinBasisPoints    uint64
 
+	// AdditionalNFTRoyaltiesToCreatorsBasisPoints is a map where keys are PKIDs and values are uint64s representing
+	// basis points. The user with the PKID specified should receive the basis points specified by the value as a
+	// royalty anytime this NFT is sold. This map must not contain the post creator.
+	AdditionalNFTRoyaltiesToCreatorsBasisPoints map[PKID]uint64
+	// AdditionalNFTRoyaltiesToCoinsBasisPoints is a map where keys are PKIDs and values are uint64s representing
+	// basis points. The user with the PKID specified should have the basis points specified as by the value added to
+	// the DESO locked in their profile anytime this NFT is sold. This map must not contain the post creator.
+	AdditionalNFTRoyaltiesToCoinsBasisPoints map[PKID]uint64
+
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte
 }
@@ -864,6 +881,11 @@ type CoinEntry struct {
 	MintingDisabled bool
 
 	TransferRestrictionStatus TransferRestrictionStatus
+}
+
+type PublicKeyRoyaltyPair struct {
+	PublicKey          []byte
+	RoyaltyAmountNanos uint64
 }
 
 type PKIDEntry struct {
