@@ -556,7 +556,25 @@ func (bav *UtxoView) _connectCreateNFT(
 		return 0, 0, nil, RuleErrorNFTMustHaveNonZeroCopies
 	}
 	// Make sure we won't oveflow when we add the royalty basis points.
-	if math.MaxUint64-txMeta.NFTRoyaltyToCreatorBasisPoints < txMeta.NFTRoyaltyToCoinBasisPoints {
+	if math.MaxUint64-txMeta.NFTRoyaltyToCoinBasisPoints-additionalDESONFTRoyaltiesBasisPoints-
+		additionalCoinNFTRoyaltiesBasisPoints < txMeta.NFTRoyaltyToCreatorBasisPoints {
+		return 0, 0, nil, RuleErrorNFTRoyaltyOverflow
+	}
+	// Make sure we won't oveflow when we add the royalty basis points.
+	if math.MaxUint64-txMeta.NFTRoyaltyToCreatorBasisPoints-additionalDESONFTRoyaltiesBasisPoints-
+		additionalCoinNFTRoyaltiesBasisPoints < txMeta.NFTRoyaltyToCoinBasisPoints {
+		return 0, 0, nil, RuleErrorNFTRoyaltyOverflow
+	}
+
+	// Make sure we won't oveflow when we add the royalty basis points.
+	if math.MaxUint64-txMeta.NFTRoyaltyToCreatorBasisPoints-txMeta.NFTRoyaltyToCoinBasisPoints-
+		additionalCoinNFTRoyaltiesBasisPoints < additionalDESONFTRoyaltiesBasisPoints {
+		return 0, 0, nil, RuleErrorNFTRoyaltyOverflow
+	}
+
+	// Make sure we won't oveflow when we add the royalty basis points.
+	if math.MaxUint64-txMeta.NFTRoyaltyToCreatorBasisPoints-txMeta.NFTRoyaltyToCoinBasisPoints-
+		additionalDESONFTRoyaltiesBasisPoints < additionalCoinNFTRoyaltiesBasisPoints {
 		return 0, 0, nil, RuleErrorNFTRoyaltyOverflow
 	}
 

@@ -6348,6 +6348,113 @@ func TestNFTSplits(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorAdditionalCoinRoyaltyMustHaveProfile)
 	}
 
+	// Cannot overflow basis points
+	{
+		additionalCoinRoyaltyMap := make(map[PublicKey]uint64)
+		additionalCoinRoyaltyMap[*NewPublicKey(m1PkBytes)] = math.MaxUint64
+		additionalCoinRoyaltyMap[*NewPublicKey(m2PkBytes)] = 10
+		_, _, _, err = _createNFTWithAdditionalRoyalties(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			100,
+			false,
+			false,
+			0,
+			0,
+			10*100,
+			20*100,
+			false,
+			0,
+			nil,
+			additionalCoinRoyaltyMap,
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAdditionalCoinRoyaltyOverflow)
+	}
+	{
+
+		additionalDESORoyaltyMap := make(map[PublicKey]uint64)
+		additionalDESORoyaltyMap[*NewPublicKey(m2PkBytes)] = math.MaxUint64 - 1
+		additionalDESORoyaltyMap[*NewPublicKey(m3PkBytes)] = 10
+		_, _, _, err = _createNFTWithAdditionalRoyalties(
+			t, chain, db, params, 10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			100,
+			false,
+			false,
+			0,
+			0,
+			10*100,
+			20*100,
+			false,
+			0,
+			additionalDESORoyaltyMap,
+			nil,
+		)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorAdditionalCoinRoyaltyOverflow)
+	}
+	// Cannot overflow basis points across poster's royalties and additional royalties
+	{
+		{
+			additionalCoinRoyaltyMap := make(map[PublicKey]uint64)
+			additionalCoinRoyaltyMap[*NewPublicKey(m2PkBytes)] = 10
+			additionalDESORoyaltyMap := make(map[PublicKey]uint64)
+			additionalDESORoyaltyMap[*NewPublicKey(m2PkBytes)] = math.MaxUint64 - 1
+			_, _, _, err = _createNFTWithAdditionalRoyalties(
+				t, chain, db, params, 10,
+				m0Pub,
+				m0Priv,
+				post1Hash,
+				100,
+				false,
+				false,
+				0,
+				0,
+				0*100,
+				0*100,
+				false,
+				0,
+				additionalDESORoyaltyMap,
+				additionalCoinRoyaltyMap,
+			)
+
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorNFTRoyaltyOverflow)
+		}
+		{
+			additionalCoinRoyaltyMap := make(map[PublicKey]uint64)
+			additionalCoinRoyaltyMap[*NewPublicKey(m2PkBytes)] = 10
+			additionalDESORoyaltyMap := make(map[PublicKey]uint64)
+			additionalDESORoyaltyMap[*NewPublicKey(m2PkBytes)] = 10
+			_, _, _, err = _createNFTWithAdditionalRoyalties(
+				t, chain, db, params, 10,
+				m0Pub,
+				m0Priv,
+				post1Hash,
+				100,
+				false,
+				false,
+				0,
+				0,
+				math.MaxUint64-10,
+				0*100,
+				false,
+				0,
+				additionalDESORoyaltyMap,
+				additionalCoinRoyaltyMap,
+			)
+
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorNFTRoyaltyOverflow)
+		}
+	}
 	// Cannot specify the creator as an additional coin royalty
 	{
 		additionalCoinRoyaltyMap := make(map[PublicKey]uint64)
