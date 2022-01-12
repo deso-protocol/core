@@ -424,7 +424,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	// of their coins. We add it back later, if this is not the case.
 	bav._deleteBalanceEntryMappings(senderBalanceEntry, txn.PublicKey, profilePublicKey, isDAOCoin)
 	// Delete the receiver's balance entry just to be safe. Added back immediately after.
-	bav._deleteBalanceEntryMappings(receiverBalanceEntry,receiverPublicKey, profilePublicKey, isDAOCoin)
+	bav._deleteBalanceEntryMappings(receiverBalanceEntry, receiverPublicKey, profilePublicKey, isDAOCoin)
 
 	bav._setBalanceEntryMappings(receiverBalanceEntry, isDAOCoin)
 	if senderBalanceEntry.BalanceNanos.Gt(uint256.NewInt()) {
@@ -563,15 +563,15 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		opType = OperationTypeCreatorCoinTransfer
 	}
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: 					  opType,
+		Type:                     opType,
 		PrevSenderBalanceEntry:   &prevSenderBalanceEntry,
 		PrevReceiverBalanceEntry: prevReceiverBalanceEntry,
 		PrevCoinEntry:            &prevCoinEntry,
 
 		// Legacy CreatorCoin fields from when diamonds were associated with
 		// CreatorCoin transfers.
-		PrevPostEntry:            previousDiamondPostEntry,
-		PrevDiamondEntry:         previousDiamondEntry,
+		PrevPostEntry:    previousDiamondPostEntry,
+		PrevDiamondEntry: previousDiamondEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil

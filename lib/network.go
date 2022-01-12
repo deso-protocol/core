@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/holiman/uint256"
 	"io"
 	"math"
@@ -4860,4 +4861,76 @@ func (txnData *DAOCoinTransferMetadata) FromBytes(data []byte) error {
 
 func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 	return &DAOCoinTransferMetadata{}
+}
+
+func SerializePubKeyToUint64Map (mm map[PublicKey]uint64) ([]byte, error) {
+	data := []byte{}
+	// Encode the number of key/value pairs
+	numKeys := uint64(len(mm))
+	data = append(data, UintToBuf(numKeys)...)
+
+	// For each kv pair, encode the public key and the length
+	if numKeys > 0 {
+		// Sort the keys of the map based on the mainnet public key encoding.
+		// This ensures a deterministic sorting.
+		keys := make([]string, 0, numKeys)
+		for key := range mm {
+			keys = append(keys, PkToStringMainnet(key[:]))
+		}
+		sort.Strings(keys)
+		// Encode each (public key, uint64) pair
+		for _, key := range keys {
+			// Serialize the raw public key
+			pkBytes, _, err := Base58CheckDecode(key)
+			if err != nil {
+				// This should never happen since we just enoded it above,
+				// so panic if it does
+				return nil, err
+			}
+			data = append(data, pkBytes...)
+
+			// The value needs to be looked up using the raw public key
+			val, exists := mm[*NewPublicKey(pkBytes)]
+			if !exists {
+				return nil, fmt.Errorf("Missing pubkey %v in SerializePubKeyToUint64Map %v",
+					key, spew.Sdump(mm))
+			}
+
+			// Add the uint64 to the end of the map
+			data = append(data, UintToBuf(val)...)
+		}
+	}
+
+	return data, nil
+}
+
+func DeserializePubKeyToUint64Map (data []byte) (map[PublicKey]uint64, error) {
+	rr := bytes.NewReader(data)
+
+	numKeys, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem "+
+			"reading num keys")
+	}
+	mm := make(map[PublicKey]uint64, numKeys)
+	for ii := uint64(0); ii < numKeys; ii++ {
+		// Read in the public key bytes
+		pkBytes := make([]byte, btcec.PubKeyBytesLenCompressed)
+		_, err = io.ReadFull(rr, pkBytes)
+		if err != nil {
+			return nil, err
+		}
+		pk := *NewPublicKey(pkBytes)
+
+		// Read in the uint
+		val, err := ReadUvarint(rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem "+
+				"reading value for key %v", PkToStringMainnet(pkBytes))
+		}
+
+		mm[pk] = val
+	}
+
+	return mm, nil
 }

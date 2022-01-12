@@ -130,9 +130,10 @@ var (
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
 
-	// BuyNowNFTBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an auction style.
+	// BuyNowAndNFTSplitsBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an
+	// auction style and allows splitting of NFT royalties to user's other than the post's creator.
 	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
-	BuyNowNFTBlockHeight = uint32(math.MaxUint32 - 1)
+	BuyNowAndNFTSplitsBlockHeight = uint32(math.MaxUint32 - 1)
 
 	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
 	// transactions will be accepted.
@@ -806,6 +807,14 @@ const (
 
 	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
 	BuyNowPriceKey = "BuyNowPriceNanos"
+
+	// Key in transaction's extra data map. If present, the value represents a map of pkid to basis points representing
+	// the amount of royalties the pkid should receive upon sale of this NFT.
+	DESORoyaltiesMapKey = "DESORoyaltiesMap"
+
+	// Key in transaction's extra data map. If present, the value represents a map of pkid to basis points representing
+	// the amount of royalties that should be added to pkid's creator coin upon sale of this NFT.
+	CoinRoyaltiesMapKey = "CoinRoyaltiesMap"
 )
 
 // Defines values that may exist in a transaction's ExtraData map

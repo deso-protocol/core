@@ -162,13 +162,13 @@ func (bav *UtxoView) _disconnectDAOCoin(
 		// Sanity checks
 		// transactor and profile match
 		if !reflect.DeepEqual(txMeta.ProfilePublicKey, currentTxn.PublicKey) {
-			return fmt.Errorf("_disconnectDAOCoin: Updating Transfer Restriction status by transactor public key " +
+			return fmt.Errorf("_disconnectDAOCoin: Updating Transfer Restriction status by transactor public key "+
 				"that does not match ProfilePublicKey: %v, %v; this should never happen",
 				currentTxn.PublicKey, txMeta.ProfilePublicKey)
 		}
 		// Transfer Restriction update is a valid one
 		if existingProfileEntry.DAOCoinEntry.TransferRestrictionStatus == operationData.PrevCoinEntry.TransferRestrictionStatus {
-			return fmt.Errorf("_disconnectDAOCoin: Previous TransferRestrictionStatus %v is the same as " +
+			return fmt.Errorf("_disconnectDAOCoin: Previous TransferRestrictionStatus %v is the same as "+
 				"current TransferRestrictionStatus %v; this should never happen",
 				operationData.PrevCoinEntry.TransferRestrictionStatus,
 				existingProfileEntry.DAOCoinEntry.TransferRestrictionStatus)
@@ -385,8 +385,8 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		uint256.NewInt().Sub(MaxUint256, &txMeta.CoinsToMintNanos)) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorOverflowWhileMintingDAOCoins, fmt.Sprintf(
-			"_connectDAOCoin: Overflow while summing CoinsInCirculationNanos and CoinsToMinNanos: %v, %v",
-			creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, txMeta.CoinsToMintNanos))
+				"_connectDAOCoin: Overflow while summing CoinsInCirculationNanos and CoinsToMinNanos: %v, %v",
+				creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, txMeta.CoinsToMintNanos))
 	}
 	// CoinsInCirculationNanos = CoinsInCirculationNanos + CoinsToMintNanos
 	creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Add(
@@ -647,7 +647,7 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 			txn.TxnMeta.GetTxnType().String())
 	}
 
-	return bav.HelpConnectCoinTransfer(txn , txHash, blockHeight, verifySignatures, true)
+	return bav.HelpConnectCoinTransfer(txn, txHash, blockHeight, verifySignatures, true)
 }
 
 func (bav *UtxoView) IsValidDAOCoinTransfer(
