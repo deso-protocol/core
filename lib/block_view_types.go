@@ -24,8 +24,6 @@ const (
 	UtxoTypeNFTSeller                UtxoType = 6
 	UtxoTypeNFTBidderChange          UtxoType = 7
 	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
-
-	// Do we want a new kind of UTXO for the additional NFT splits?
 	UtxoTypeNFTAdditionalDESORoyalty UtxoType = 9
 
 	// NEXT_TAG = 10
@@ -901,10 +899,6 @@ type PKIDEntry struct {
 
 func (pkid *PKIDEntry) String() string {
 	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
-}
-
-func (pkid *PKIDEntry) IsDeleted() bool {
-	return pkid.isDeleted
 }
 
 type ProfileEntry struct {

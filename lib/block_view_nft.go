@@ -1,8 +1,6 @@
 package lib
 
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
@@ -465,6 +463,56 @@ func _getBuyNowExtraData(txn *MsgDeSoTxn, blockHeight uint32) (
 	return isBuyNow, buyNowPrice, nil
 }
 
+// Pull out a function that converts extraData to the map that we need
+// for royalties.
+func (bav *UtxoView) extractAdditionalRoyaltyMap(
+	key string, extraData map[string][]byte, blockHeight uint32) (
+	_additionalRoyaltiesMap map[PKID]uint64, _additionalRoyaltyBasisPoints uint64, _err error) {
+
+	additionalRoyalties := make(map[PKID]uint64)
+	additionalRoyaltiesBasisPoints := uint64(0)
+	if mapBytes, exists := extraData[key]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
+		var err error
+		additionalRoyaltiesByPubKey, err := DeserializePubKeyToUint64Map(mapBytes)
+		if err != nil {
+			return nil, 0, errors.Wrap(err,
+				"Problem reading bytes for additional royalties: ")
+		}
+		// Check that public keys are valid and sum basis points
+		for pkBytess, bps := range additionalRoyaltiesByPubKey {
+			// Validate the public key
+			if _, err = btcec.ParsePubKey(pkBytess[:], btcec.S256()); err != nil {
+				return nil, 0, errors.Wrapf(
+					RuleErrorAdditionalRoyaltyPubKeyMustBeValid,
+					"Error parsing public key: %v, %v", PkToStringBoth(pkBytess[:]), err)
+			}
+			// Set the PKID on the map
+			pkid := bav.GetPKIDForPublicKey(pkBytess[:])
+			additionalRoyalties[*pkid.PKID] = bps
+
+			// Check for overflow when summing the bps
+			if additionalRoyaltiesBasisPoints > math.MaxUint64 - bps {
+				return nil, 0, errors.Wrapf(
+					RuleErrorAdditionalCoinRoyaltyOverflow,
+					"additionalRoyaltiesBasisPoints: %v, bps: %v", additionalRoyaltiesBasisPoints, bps)
+			}
+			// Add the bps to our total
+			additionalRoyaltiesBasisPoints += bps
+
+			if key == CoinRoyaltiesMapKey {
+				existingProfileEntry := bav.GetProfileEntryForPublicKey(pkBytess[:])
+				if existingProfileEntry == nil || existingProfileEntry.isDeleted {
+					return nil, 0, errors.Wrapf(
+						RuleErrorAdditionalCoinRoyaltyMustHaveProfile,
+						"Profile missing for additional Coin NFT royalty pub key: %v",
+						PkToStringBoth(pkBytess[:]))
+				}
+			}
+		}
+	}
+	return additionalRoyalties, additionalRoyaltiesBasisPoints, nil
+}
+
 func (bav *UtxoView) _connectCreateNFT(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -484,48 +532,17 @@ func (bav *UtxoView) _connectCreateNFT(
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: ")
 	}
 
-	extractAdditionalRoyaltyMap := func(key string) (
-		_additionalRoyaltiesMap map[PKID]uint64, _additionalRoyaltyBasisPoints uint64, _err error) {
-		additionalRoyalties := make(map[PKID]uint64)
-		additionalRoyaltiesBasisPoints := uint64(0)
-		if val, exists := txn.ExtraData[key]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
-			if err = gob.NewDecoder(bytes.NewReader(val)).Decode(&additionalRoyalties); err != nil {
-				return nil, 0, errors.Wrap(err,
-					"Problem reading bytes for additional royalties: ")
-			}
-			// Check that PKIDs are valid and sum basis points
-			for pkid, bps := range additionalRoyalties {
-				pkBytes := bav.GetPublicKeyForPKID(&pkid)
-				if len(pkBytes) != btcec.PubKeyBytesLenCompressed {
-					return nil, 0, errors.Wrapf(RuleErrorAdditionalRoyaltyPKIDMustBeValid,
-						"PKID does not map to known public key")
-				}
-				additionalRoyaltiesBasisPoints += bps
-				if key == CoinRoyaltiesMapKey {
-					existingProfileEntry := bav.GetProfileEntryForPKID(&pkid)
-					if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-						return nil, 0, errors.Wrapf(
-							RuleErrorAdditionalCoinRoyaltyMustHaveProfile,
-							"Profile missing for additional Coin NFT royalty pub key: %v %v",
-							PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes))
-					}
-				}
-			}
-		}
-		return additionalRoyalties, additionalRoyaltiesBasisPoints, nil
-	}
-
 	// Extract additional DESO royalties
-	additionalDESONFTRoyalties, additionalDESONFTRoyaltiesBasisPoints, err := extractAdditionalRoyaltyMap(
-		DESORoyaltiesMapKey)
+	additionalDESONFTRoyalties, additionalDESONFTRoyaltiesBasisPoints, err := bav.extractAdditionalRoyaltyMap(
+		DESORoyaltiesMapKey, txn.ExtraData, blockHeight)
 	if err != nil {
 		return 0, 0, nil, errors.Wrap(err,
 			"_connectCreateNFT: Problem extract additional DESO Royalties: ")
 	}
 
 	// Extract additional coin royalties
-	additionalCoinNFTRoyalties, additionalCoinNFTRoyaltiesBasisPoints, err := extractAdditionalRoyaltyMap(
-		CoinRoyaltiesMapKey)
+	additionalCoinNFTRoyalties, additionalCoinNFTRoyaltiesBasisPoints, err := bav.extractAdditionalRoyaltyMap(
+		CoinRoyaltiesMapKey, txn.ExtraData, blockHeight)
 	if err != nil {
 		return 0, 0, nil, errors.Wrap(err,
 			"_connectCreateNFT: Problem extract additional Coin Royalties: ")
@@ -1145,7 +1162,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 					big.NewInt(int64(bps))),
 				big.NewInt(100*100)).Uint64()
 			if math.MaxUint64-royaltyNanos < additionalRoyaltiesNanos {
-				return 0, nil, fmt.Errorf("royalty overflow")
+				return 0, nil, RuleErrorNFTRoyaltyOverflow
 			}
 			pkBytes := bav.GetPublicKeyForPKID(&pkid)
 			if len(pkBytes) != btcec.PubKeyBytesLenCompressed {
@@ -1333,18 +1350,18 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// (6-a) Add additional coin royalties to deso locked. If the number of coins in circulation is less than
 	// the "auto sell threshold" we burn the deso.
 	var newCoinRoyaltyCoinEntries []CoinEntry
-	for ii := range additionalCoinRoyalties {
-		publicKeyRoyaltyPair := additionalCoinRoyalties[ii]
+	for kk := range additionalCoinRoyalties {
+		publicKeyRoyaltyPair := additionalCoinRoyalties[kk]
 		// Get coin entry
 		profileEntry := profileEntriesMap[*bav.GetPKIDForPublicKey(publicKeyRoyaltyPair.PublicKey).PKID]
 		// We don't do a royalty if the number of coins in circulation is too low.
 		if profileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
-			additionalCoinRoyalties[ii].RoyaltyAmountNanos = 0
+			additionalCoinRoyalties[kk].RoyaltyAmountNanos = 0
 			publicKeyRoyaltyPair.RoyaltyAmountNanos = 0
 		}
+		// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
 		newCoinRoyaltyCoinEntry := profileEntry.CreatorCoinEntry
 		if publicKeyRoyaltyPair.RoyaltyAmountNanos > 0 {
-			// Make a copy of the previous coin entry. It has no pointers, so a direct copy is ok.
 			newCoinRoyaltyCoinEntry.DeSoLockedNanos += publicKeyRoyaltyPair.RoyaltyAmountNanos
 			profileEntry.CreatorCoinEntry = newCoinRoyaltyCoinEntry
 			bav._setProfileEntryMappings(&profileEntry)
@@ -1441,7 +1458,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	additionalDESORoyaltiesDiff := big.NewInt(0)
 	for pkid, balanceBefore := range desoRoyaltiesBalancesBefore {
 		// Only relevant if additional royalty recipient != seller && != bidder (note: creator cannot be specified in
-		// additional DEOS (or coin) royalties maps, so we do not need to check against that public key)
+		// additional DESO (or coin) royalties maps, so we do not need to check against that public key)
 		pkBytes := bav.GetPublicKeyForPKID(&pkid)
 		if reflect.DeepEqual(pkBytes, bidderPublicKey) || reflect.DeepEqual(pkBytes, sellerPublicKey) {
 			continue

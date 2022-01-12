@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"container/list"
-	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -3108,8 +3107,8 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	NFTRoyaltyToCoinBasisPoints uint64,
 	IsBuyNow bool,
 	BuyNowPriceNanos uint64,
-	AdditionalDESORoyalties map[PKID]uint64,
-	AdditionalCoinRoyalties map[PKID]uint64,
+	AdditionalDESORoyalties map[PublicKey]uint64,
+	AdditionalCoinRoyalties map[PublicKey]uint64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3139,22 +3138,22 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 
 	// If this NFT has royalties that go to other users coins, set the extra data appropriately
 	if len(AdditionalDESORoyalties) > 0 {
-		additionalDESORoyaltiesBuf := bytes.NewBuffer([]byte{})
-		if err := gob.NewEncoder(additionalDESORoyaltiesBuf).Encode(AdditionalDESORoyalties); err != nil {
+		additionalDESORoyaltiesBuf, err := SerializePubKeyToUint64Map(AdditionalDESORoyalties)
+		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"CreateCreateNFTTxn: Problem encoding additional DESO Royalties map: ")
 		}
-		extraData[DESORoyaltiesMapKey] = additionalDESORoyaltiesBuf.Bytes()
+		extraData[DESORoyaltiesMapKey] = additionalDESORoyaltiesBuf
 	}
 
 	// If this NFT has royalties that go to other users coins, set the extra data appropriately
 	if len(AdditionalCoinRoyalties) > 0 {
-		additionalCoinRoyaltiesBuf := bytes.NewBuffer([]byte{})
-		if err := gob.NewEncoder(additionalCoinRoyaltiesBuf).Encode(AdditionalCoinRoyalties); err != nil {
+		additionalCoinRoyaltiesBuf, err := SerializePubKeyToUint64Map(AdditionalCoinRoyalties)
+		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"CreateCreateNFTTxn: Problem encoding additional Coin Royalties map: ")
 		}
-		extraData[CoinRoyaltiesMapKey] = additionalCoinRoyaltiesBuf.Bytes()
+		extraData[CoinRoyaltiesMapKey] = additionalCoinRoyaltiesBuf
 	}
 
 	if len(extraData) > 0 {
