@@ -349,8 +349,8 @@ type DeSoParams struct {
 	// auction style and allows splitting of NFT royalties to user's other than the post's creator.
 	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
 	BuyNowAndNFTSplitsBlockHeight uint32
-  
-  // DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
+
+	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
 	// transactions will be accepted.
 	// TODO: Update this to a real value when we decide on timing for the fork.
 	DAOCoinBlockHeight uint32
@@ -603,17 +603,17 @@ var DeSoMainnetParams = DeSoParams{
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
 	// Triggers approximately Saturday June 12th at 8pm PT
-	DeflationBombBlockHeight: 33783,
-	SalomonFixBlockHeight: uint32(15270),
-	DeSoFounderRewardBlockHeight: uint32(21869),
+	DeflationBombBlockHeight:                             33783,
+	SalomonFixBlockHeight:                                uint32(15270),
+	DeSoFounderRewardBlockHeight:                         uint32(21869),
 	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
-	ParamUpdaterProfileUpdateFixBlockHeight: uint32(39713),
-	UpdateProfileFixBlockHeight: uint32(46165),
-	BrokenNFTBidsFixBlockHeight: uint32(46917),
-	DeSoDiamondsBlockHeight: uint32(52112),
-	NFTTransferOrBurnAndDerivedKeysBlockHeight: uint32(60743),
-	BuyNowAndNFTSplitsBlockHeight: uint32(math.MaxUint32 - 1),  // FIXME: Set real mainnet height
-    DAOCoinBlockHeight: uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
+	ParamUpdaterProfileUpdateFixBlockHeight:              uint32(39713),
+	UpdateProfileFixBlockHeight:                          uint32(46165),
+	BrokenNFTBidsFixBlockHeight:                          uint32(46917),
+	DeSoDiamondsBlockHeight:                              uint32(52112),
+	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
+	BuyNowAndNFTSplitsBlockHeight:                        uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
+	DAOCoinBlockHeight:                                   uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -779,19 +779,19 @@ var DeSoTestnetParams = DeSoParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
-	DeflationBombBlockHeight: 0,
-	SalomonFixBlockHeight: uint32(0),
-	DeSoFounderRewardBlockHeight: uint32(0),
+	DeflationBombBlockHeight:                             0,
+	SalomonFixBlockHeight:                                uint32(0),
+	DeSoFounderRewardBlockHeight:                         uint32(0),
 	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
-	ParamUpdaterProfileUpdateFixBlockHeight: uint32(0),
-	UpdateProfileFixBlockHeight: uint32(0),
-	BrokenNFTBidsFixBlockHeight: uint32(0),
+	ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
+	UpdateProfileFixBlockHeight:                          uint32(0),
+	BrokenNFTBidsFixBlockHeight:                          uint32(0),
 	// In Testnet, there are diamonds given in creator coins after block 0, so we just set this to the same
 	// value as mainnet.
-	DeSoDiamondsBlockHeight: uint32(52112),
+	DeSoDiamondsBlockHeight:                    uint32(52112),
 	NFTTransferOrBurnAndDerivedKeysBlockHeight: uint32(0),
-	BuyNowAndNFTSplitsBlockHeight: uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
-    DAOCoinBlockHeight: uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
+	BuyNowAndNFTSplitsBlockHeight:              uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
+	DAOCoinBlockHeight:                         uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
 }
 
 // GetDataDir gets the user data directory where we store files
