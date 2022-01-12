@@ -3661,6 +3661,63 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) CreateMessagingKeyTxn(
+	senderPublicKey []byte,
+	messagingPublicKey []byte,
+	messagingKeyName []byte,
+	messagingKeySignature []byte,
+	encryptedKey []byte,
+	recipients []MessageRecipient,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+    	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Validate messaging public key and key name.
+	if err := ValidateKeyAndName(messagingPublicKey, messagingKeyName); err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: Problem "+
+			"validating messaging public key and name")
+	}
+
+	// If we get here, it means we have valid messaging public key, key name, and signature.
+	// Now we want to verify that the signature is correct for the owner public key.
+	if EqualKeyName(NewKeyName(messagingKeyName), DefaultKeyName()) {
+		msgBytes := append(messagingPublicKey, messagingKeyName...)
+		if err := _verifyBytesSignature(senderPublicKey, msgBytes, messagingKeySignature); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: "+
+				"Problem verifying signature bytes")
+		}
+	}
+
+	// If we got here, we have valid public key, key name, and matching signature.
+	// We add the records to ExtraData.
+	txn := &MsgDeSoTxn{
+		PublicKey: senderPublicKey,
+		TxnMeta: &MessagingKeyMetadata{
+			MessagingPublicKey: messagingPublicKey,
+			MessagingKeyName: messagingKeyName,
+			KeySignature: messagingKeySignature,
+			Recipients: recipients,
+			EncryptedKey: encryptedKey,
+		},
+		TxOutputs: additionalOutputs,
+	}
+
+	// We don't need to make any tweaks to the amount because it's basically
+	// a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateMessagingKeyTxn: Spend amount "+
+			"should be zero but was %d instead: ", spendAmount)
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
 func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	SenderPublicKey []byte,
 	DiamondPostHash *BlockHash,

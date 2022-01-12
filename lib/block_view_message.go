@@ -1,9 +1,11 @@
 package lib
 
 import (
-	"encoding/hex"
+	"bytes"
+"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -26,6 +28,7 @@ func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *Mess
 	return dbMessageEntry
 }
 
+// This function has to be called twice for both sender and recipient!
 func (bav *UtxoView) _setMessageEntryMappings(messageEntry *MessageEntry) {
 	// This function shouldn't be called with nil.
 	if messageEntry == nil {
@@ -35,13 +38,17 @@ func (bav *UtxoView) _setMessageEntryMappings(messageEntry *MessageEntry) {
 	}
 
 	// Add a mapping for the sender and the recipient.
-	senderKey := MakeMessageKey(messageEntry.SenderPublicKey, messageEntry.TstampNanos)
-	bav.MessageKeyToMessageEntry[senderKey] = messageEntry
 
-	recipientKey := MakeMessageKey(messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
-	bav.MessageKeyToMessageEntry[recipientKey] = messageEntry
+	senderKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
+	bav.MessageKeyToMessageEntry[senderKey] = &(*messageEntry)
+
+	recipientKey := MakeMessageKey(messageEntry.RecipientMessagingPublicKey[:], messageEntry.TstampNanos)
+	bav.MessageKeyToMessageEntry[recipientKey] = &(*messageEntry)
+	//recipientKey := MakeMessageKey(messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
+	//bav.MessageKeyToMessageEntry[recipientKey] = messageEntry
 }
 
+// This function has to be called twice for both sender and recipient!
 func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 
 	// Create a tombstone entry.
@@ -53,6 +60,14 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 }
 
 func (bav *UtxoView) GetMessagingKeyToMessagingKeyEntryMapping(messagingKey *MessagingKey) *MessagingKeyEntry {
+	if EqualKeyName(&messagingKey.KeyName, BaseKeyName()) {
+		return &MessagingKeyEntry{
+			publicKey: NewPublicKey(messagingKey.PublicKey[:]),
+			MessagingPublicKey: NewPublicKey(messagingKey.PublicKey[:]),
+			MessagingKeyName: BaseKeyName(),
+		}
+	}
+
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	if mapValue, exists := bav.MessagingKeyToMessagingKeyEntry[*messagingKey]; exists {
 		return mapValue
@@ -78,7 +93,7 @@ func (bav *UtxoView) _setMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntr
 
 	// Create a key for the UtxoView mapping. We always put user's main public key as part of the map key.
 	messagingKey := MessagingKey{
-		PublicKey: *messagingKeyEntry.PublicKey,
+		PublicKey: *messagingKeyEntry.publicKey,
 		KeyName:   *messagingKeyEntry.MessagingKeyName,
 	}
 	bav.MessagingKeyToMessagingKeyEntry[messagingKey] = messagingKeyEntry
@@ -120,8 +135,8 @@ func (bav *UtxoView) _setMessageKeyToMessageParty(party *MessageParty) {
 	}
 
 	// We set the mapping both for the sender and the recipient.
-	bav.MessageKeyToMessageParty[MakeMessageKey(party.SenderPublicKey.ToBytes(), party.TstampNanos)] = party
-	bav.MessageKeyToMessageParty[MakeMessageKey(party.RecipientPublicKey.ToBytes(), party.TstampNanos)] = party
+	bav.MessageKeyToMessageParty[MakeMessageKey(party.SenderMessagingPublicKey.ToBytes(), party.TstampNanos)] = party
+	bav.MessageKeyToMessageParty[MakeMessageKey(party.RecipientMessagingPublicKey.ToBytes(), party.TstampNanos)] = party
 }
 
 func (bav *UtxoView) _deleteMessagePartyMappings(party *MessageParty) {
@@ -165,6 +180,7 @@ func (bav *UtxoView) deleteMessageMappings(message *PGMessage) {
 func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
 	_messageEntries []*MessageEntry, _err error) {
 
+	//TODO: this won't work.
 	// Start by fetching all the messages we have in the db.
 	dbMessageEntries, err := DbGetMessageEntriesForPublicKey(bav.Handle, publicKey)
 	if err != nil {
@@ -207,9 +223,24 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
 	_messageEntries []*MessageEntry, _messageParties []*MessageParty, _err error) {
 
 	// Start by fetching all the messages we have in the db.
-	dbMessageEntries, dbMessageParties, err := DbGetLimitedMessageAndPartyEntriesForPublicKey(bav.Handle, publicKey)
+	dbMessageEntries, dbMessageParties, dbMessageKeys, err := DbGetLimitedMessageAndPartyEntriesForPublicKey(bav.Handle, publicKey)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
+	}
+
+	messageKeysMap := make(map[PublicKey]*MessagingKeyEntry)
+	err = bav.Handle.View(func(txn *badger.Txn) error {
+		userKeys, err := DbGetAllUserMessagingKeys(txn, publicKey)
+		if err != nil {
+			return err
+		}
+		for _, key := range userKeys {
+			messageKeysMap[*key.MessagingPublicKey] = key
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: problem getting user messaging keys")
 	}
 
 	// Welp this seems very, very inefficient.
@@ -230,32 +261,30 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
 	// We have to expand our DB entries list with the UtxoView entries but also trim the deleted entries.
 	messagesMap := make(map[MessageKey]*MessageEntry)
 	partiesMap := make(map[MessageKey]*MessageParty)
-	for _, entry := range dbMessageEntries {
+	keyMap := make(map[MessageKey]*MessagingKeyEntry)
+	for ii, entry := range dbMessageEntries {
 		if entry == nil {
 			continue
 		}
-		messagesMap[MakeMessageKey(publicKey, entry.TstampNanos)] = entry
-	}
-	for _, entryy := range dbMessageParties {
-		if entryy == nil {
-			continue
-		}
-		partiesMap[MakeMessageKey(publicKey, entryy.TstampNanos)] = entryy
+		messagesMap[MakeMessageKey(dbMessageKeys[ii].MessagingPublicKey[:], entry.TstampNanos)] = entry
+		partiesMap[MakeMessageKey(dbMessageKeys[ii].MessagingPublicKey[:], entry.TstampNanos)] = dbMessageParties[ii]
+		keyMap[MakeMessageKey(dbMessageKeys[ii].MessagingPublicKey[:], entry.TstampNanos)] = dbMessageKeys[ii]
 	}
 
 	// We will look through entries in UtxoView to make sure we didn't record deleted messages,
 	// and so that we get most recent user messages.
 	for viewMessageKey, viewMessageEntry := range bav.MessageKeyToMessageEntry {
 		// First make sure we're only considering entries that are relevant to provided public key.
-		messageKey := MakeMessageKey(publicKey, viewMessageEntry.TstampNanos)
-		if viewMessageKey != messageKey {
+		if _, exists := messageKeysMap[*NewPublicKey(viewMessageKey.PublicKey[:])]; !exists {
 			continue
 		}
+		messageKey := MakeMessageKey(viewMessageKey.PublicKey[:], viewMessageEntry.TstampNanos)
 
 		// If the entry is deleted, then we have to make sure we remove it from messagesMap.
 		if viewMessageEntry.isDeleted {
 			delete(messagesMap, messageKey)
 			delete(partiesMap, messageKey)
+			delete(keyMap, messageKey)
 			continue
 		}
 
@@ -334,7 +363,7 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
 	}
 
-	if !reflect.DeepEqual(*messagingKeyEntry.MessagingKeyName, *NewKeyName(keyName)) {
+	if !EqualKeyName(messagingKeyEntry.MessagingKeyName, NewKeyName(keyName)) {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: key name don't match for "+
 			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
 	}
@@ -402,15 +431,124 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// an error. In general, messages must have unique (pubkey, tstamp) tuples.
 	//
 	// Postgres does not enforce these rule errors
+
+	//Check if message is encrypted with shared secret
+	var version uint64
+	if extraV, hasExtraV := txn.ExtraData["V"]; hasExtraV {
+		rr := bytes.NewReader(extraV)
+		version, err = ReadUvarint(rr)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: Problem reading " +
+				"version from ExtraData")
+		}
+		if version > 3 {
+			return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: Problem reading " +
+				"version from ExtraData")
+		}
+	}
+
+	// Create a MessageEntry
+	messageEntry := &MessageEntry{
+		SenderPublicKey:    NewPublicKey(txn.PublicKey),
+		RecipientPublicKey: NewPublicKey(txMeta.RecipientPublicKey),
+		EncryptedText:      txMeta.EncryptedText,
+		TstampNanos:        txMeta.TimestampNanos,
+		Version:            uint8(version),
+	}
+
+	// If message was encrypted using DeSo V3 Messages, we will look for messaging keys in
+	// ExtraData. V3 allows users to register messaging keys on-chain, and encrypt messages
+	// to these messaging keys, as opposed to always encrypting to user main keys.
+	var senderPkBytes, recipientPkBytes []byte
+	if version == 3 {
+		// Make sure DeSo V3 messages are live.
+		if blockHeight < DeSoV3MessagesBlockHeight {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight,
+				"_connectPrivateMessage: messaging party used before block height")
+		}
+		// Look for messaging keys in transaction ExtraData
+		// TODO: Do we want to make the ExtraData keys shorter to save space and transaction cost?
+		if txn.ExtraData == nil {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight,
+				"_connectPrivateMessage: ExtraData cannot be nil")
+		}
+		senderMessagingPublicKey, existsSender := txn.ExtraData[SenderMessagingPublicKey]
+		recipientMessagingPublicKey, existsRecipient := txn.ExtraData[RecipientMessagingPublicKey]
+		// At least one of these fields must exist.
+		if !existsSender && !existsRecipient {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorPrivateMessageSentWithoutMessagingParty,
+				"_connectPrivateMessage: at least one messaging party must be present")
+		}
+
+		// We will now proceed to add sender's or recipient's messaging keys to the messageParty.
+		// We make sure that both sender public key and key name is present in transaction's ExtraData.
+		senderMessagingKeyName, existsSenderName := txn.ExtraData[SenderMessagingKeyName]
+		// In a slightly nasty way, we check if a non-empty sender-related messaging key is present in ExtraData.
+		if existsSender && existsSenderName {
+			// We validate the key and the name using this helper function to make sure messaging key has been previously authorized.
+			if err = bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName); err != nil {
+				return 0, 0, nil, errors.Wrapf(err,
+					"_connectPrivateMessage: failed to validate public key and key name")
+			}
+			// If everything went well, update the messaging key information in the messageParty.
+			messageEntry.SenderMessagingPublicKey = NewPublicKey(senderMessagingPublicKey)
+			messageEntry.SenderMessagingKeyName = NewKeyName(senderMessagingKeyName)
+		} else {
+			// If the key doesn't exist, we will set the messaging key as the sender's main key, along with a byte identifier of 0s.
+			messageEntry.SenderMessagingPublicKey = NewPublicKey(txn.PublicKey)
+			messageEntry.SenderMessagingKeyName = BaseKeyName()
+		}
+		// We do an analogous validation for the recipient's messaging key.
+		recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingKeyName]
+		if existsRecipient && existsRecipientName {
+			if reflect.DeepEqual(txMeta.RecipientPublicKey, recipientMessagingPublicKey) {
+				if err := bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectPrivateMessage: failed to validate public key and key name")
+				}
+			} else {
+				if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectPrivateMessage: failed to validate public key and key name")
+				}
+			}
+
+			messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
+			messageEntry.RecipientMessagingKeyName = NewKeyName(recipientMessagingKeyName)
+		} else {
+			messageEntry.RecipientMessagingPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
+			messageEntry.RecipientMessagingKeyName = BaseKeyName()
+		}
+
+		senderPkBytes = messageEntry.SenderMessagingPublicKey[:]
+		recipientPkBytes = messageEntry.RecipientMessagingPublicKey[:]
+		if reflect.DeepEqual(senderPkBytes, recipientPkBytes) {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey,
+				"_connectPrivateMessage: Parse error: %v", err)
+		}
+	} else {
+		messageEntry.SenderMessagingPublicKey = NewPublicKey(txn.PublicKey)
+		messageEntry.SenderMessagingKeyName = BaseKeyName()
+		messageEntry.RecipientMessagingPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
+		messageEntry.RecipientMessagingKeyName = BaseKeyName()
+
+		senderPkBytes = messageEntry.SenderPublicKey[:]
+		recipientPkBytes = messageEntry.RecipientPublicKey[:]
+	}
+
 	if bav.Postgres == nil {
-		senderMessageKey := MakeMessageKey(txn.PublicKey, txMeta.TimestampNanos)
+		senderMessageKey := MakeMessageKey(senderPkBytes, txMeta.TimestampNanos)
 		senderMessage := bav._getMessageEntryForMessageKey(&senderMessageKey)
 		if senderMessage != nil && !senderMessage.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple,
 				"_connectPrivateMessage: Message key: %v", &senderMessageKey)
 		}
-		recipientMessageKey := MakeMessageKey(txMeta.RecipientPublicKey, txMeta.TimestampNanos)
+		recipientMessageKey := MakeMessageKey(recipientPkBytes, txMeta.TimestampNanos)
 		recipientMessage := bav._getMessageEntryForMessageKey(&recipientMessageKey)
 		if recipientMessage != nil && !recipientMessage.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
@@ -429,94 +567,9 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// <PublicKey, TstampNanos> tuple. We also know that the sender and recipient
 	// have different public keys.
 
-	// Create a MessageEntry
-	messageEntry := &MessageEntry{
-		SenderPublicKey:    txn.PublicKey,
-		RecipientPublicKey: txMeta.RecipientPublicKey,
-		EncryptedText:      txMeta.EncryptedText,
-		TstampNanos:        txMeta.TimestampNanos,
-		Version:            1,
-	}
-
-	//Check if message is encrypted with shared secret
-	if extraV, hasExtraV := txn.ExtraData["V"]; hasExtraV {
-		Version, _ := Uvarint(extraV)
-		messageEntry.Version = uint8(Version)
-	}
-
-	// If message was encrypted using DeSo V3 Messages, we will look for messaging keys in
-	// ExtraData. V3 allows users to register messaging keys on-chain, and encrypt messages
-	// to these messaging keys, as opposed to always encrypting to user main keys.
-	if messageEntry.Version == 3 {
-		// We work in a fake function context so that we can quickly abort validating messaging
-		// keys if we encounter some error. DeSo V3 Messages are non-forking, and so we don't
-		// return on errors, instead we would just print an error.
-		func() {
-			// Make sure DeSo V3 messages are live.
-			if blockHeight < DeSoV3MessagesBlockHeight {
-				return
-			}
-			// Look for messaging keys in transaction ExtraData
-			senderMessagingPublicKey, existsSender := txn.ExtraData[SenderMessagingPublicKey]
-			recipientMessagingPublicKey, existsRecipient := txn.ExtraData[RecipientMessagingPublicKey]
-			if !existsSender && !existsRecipient {
-				return
-			}
-
-			// MessageParty is an enhancement to the MessageEntry record. It allows us to store
-			// information about the messaging keys that were used in encrypting this message.
-			// As we're non-forking, we need this new MessageParty data structure, which we
-			// will store in a new prefix altogether.
-			messageParty := &MessageParty{
-				SenderPublicKey:    NewPublicKey(txn.PublicKey),
-				RecipientPublicKey: NewPublicKey(txMeta.RecipientPublicKey),
-				TstampNanos:        txMeta.TimestampNanos,
-				isDeleted:          false,
-			}
-
-			// We will now proceed to add sender's or recipient's messaging keys to the messageParty.
-			// We make sure that both sender public key and key name is present in transaction's ExtraData.
-			senderMessagingKeyName, existsSenderName := txn.ExtraData[SenderMessagingKeyName]
-			// In a slightly nasty way, we check if a non-empty sender-related messaging key is present in ExtraData.
-			if existsSender && existsSenderName && len(senderMessagingPublicKey) > 0 && len(senderMessagingKeyName) > 0 {
-				// We validate the key and the name using this helper function to make sure messaging key has been previously authorized.
-				if err := bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName); err != nil {
-					glog.Errorf(fmt.Sprintf("_connectPrivateMessage: failed to validate public key and key name, error %v", err))
-					return
-				}
-				// If everything went well, update the messaging key information in the messageParty.
-				messageParty.SenderMessagingPublicKey = NewPublicKey(senderMessagingPublicKey)
-				messageParty.SenderMessagingKeyName = NewKeyName(senderMessagingKeyName)
-			} else {
-				// If the key doesn't exist, we will set the messaging key as the sender's main key, along with a byte identifier of 0s.
-				messageParty.SenderMessagingPublicKey = NewPublicKey(txn.PublicKey)
-				messageParty.SenderMessagingKeyName = NewKeyName([]byte{})
-			}
-			// We do an analogous validation for the recipient's messaging key.
-			recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingKeyName]
-			if existsRecipient && existsRecipientName && len(recipientMessagingPublicKey) > 0 && len(recipientMessagingKeyName) > 0 {
-				if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
-					glog.Errorf(fmt.Sprintf("_connectPrivateMessage: failed to validate public key and key name, error %v", err))
-					return
-				}
-				messageParty.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
-				messageParty.RecipientMessagingKeyName = NewKeyName(recipientMessagingKeyName)
-			} else {
-				messageParty.RecipientMessagingPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
-				messageParty.RecipientMessagingKeyName = NewKeyName([]byte{})
-			}
-
-			// Now that we've confirmed that the messaging keys are correct, we set them in UtxoView.
-			bav._setMessageKeyToMessageParty(messageParty)
-			// We add an UtxoOps for the messaging party so that we can revert in case of a disconnect.
-			// This UtxoOps will be previous to last, where the last utxoOps is the PrivateMessage.
-			utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-				Type: OperationTypeMessageParty,
-			})
-		}()
-	}
 
 	if bav.Postgres != nil {
+		//TODO: Fix Postgres
 		message := &PGMessage{
 			MessageHash:        txn.Hash(),
 			SenderPublicKey:    txn.PublicKey,
@@ -545,7 +598,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	// Verify that the last operation is a PrivateMessage opration
+	// Verify that the last operation is a PrivateMessage operation
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectPrivateMessage: utxoOperations are missing")
 	}
@@ -561,76 +614,131 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 
 	// Get the MessageEntry for the sender in the transaction. If we don't find
 	// it or if it has isDeleted=true that's an error.
-	senderMessageKey := MakeMessageKey(currentTxn.PublicKey, txMeta.TimestampNanos)
-	messageEntry := bav._getMessageEntryForMessageKey(&senderMessageKey)
-	if messageEntry == nil || messageEntry.isDeleted {
+	var version uint64
+	var err error
+	if extraV, hasExtraV := currentTxn.ExtraData["V"]; hasExtraV {
+		rr := bytes.NewReader(extraV)
+		version, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "_connectPrivateMessage: Problem reading " +
+				"version from ExtraData")
+		}
+		if version > 3 {
+			return errors.Wrapf(err, "_connectPrivateMessage: Problem reading " +
+				"version from ExtraData")
+		}
+	}
+
+	var senderPkBytes, recipientPkBytes []byte
+	if version == 3 {
+		if currentTxn.ExtraData == nil {
+			return errors.Wrapf(RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight,
+				"_connectPrivateMessage: ExtraData cannot be nil")
+		}
+		senderMessagingPublicKey, existsSender := currentTxn.ExtraData[SenderMessagingPublicKey]
+		recipientMessagingPublicKey, existsRecipient := currentTxn.ExtraData[RecipientMessagingPublicKey]
+		// At least one of these fields must exist.
+		if !existsSender && !existsRecipient {
+			return errors.Wrapf(RuleErrorPrivateMessageSentWithoutMessagingParty,
+				"_connectPrivateMessage: at least one messaging party must be present")
+		}
+		if existsSender {
+			if err = IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
+				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutMessagingParty,
+			"_connectPrivateMessage: at least one messaging party must be present")
+			}
+			senderPkBytes = senderMessagingPublicKey
+		} else {
+			senderPkBytes = currentTxn.PublicKey
+		}
+		if existsRecipient {
+			if err = IsByteArrayValidPublicKey(recipientMessagingPublicKey); err == nil {
+				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutMessagingParty,
+				"_connectPrivateMessage: at least one messaging party must be present")
+			}
+			recipientPkBytes = recipientMessagingPublicKey
+		} else {
+			recipientPkBytes = txMeta.RecipientPublicKey
+		}
+	} else {
+		senderPkBytes = currentTxn.PublicKey
+		recipientPkBytes = txMeta.RecipientPublicKey
+	}
+
+	senderMessageKey := MakeMessageKey(senderPkBytes, txMeta.TimestampNanos)
+	senderMessageEntry := bav._getMessageEntryForMessageKey(&senderMessageKey)
+	if senderMessageEntry == nil || senderMessageEntry.isDeleted {
 		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
 			"SenderMessageKey %v was found to be nil or deleted: %v",
-			&senderMessageKey, messageEntry)
+			&senderMessageKey, senderMessageEntry)
 	}
 
 	// Verify that the sender and recipient in the entry match the TxnMeta as
 	// a sanity check.
-	if !reflect.DeepEqual(messageEntry.SenderPublicKey, currentTxn.PublicKey) {
+	if !reflect.DeepEqual(senderMessageEntry.SenderPublicKey[:], currentTxn.PublicKey) {
 		return fmt.Errorf("_disconnectPrivateMessage: Sender public key on "+
 			"MessageEntry was %s but the PublicKey on the txn was %s",
-			PkToString(messageEntry.SenderPublicKey, bav.Params),
+			PkToString(senderMessageEntry.SenderPublicKey[:], bav.Params),
 			PkToString(currentTxn.PublicKey, bav.Params))
 	}
-	if !reflect.DeepEqual(messageEntry.RecipientPublicKey, txMeta.RecipientPublicKey) {
+	if !reflect.DeepEqual(senderMessageEntry.RecipientPublicKey, txMeta.RecipientPublicKey) {
 		return fmt.Errorf("_disconnectPrivateMessage: Recipient public key on "+
 			"MessageEntry was %s but the PublicKey on the TxnMeta was %s",
-			PkToString(messageEntry.RecipientPublicKey, bav.Params),
+			PkToString(senderMessageEntry.RecipientPublicKey[:], bav.Params),
 			PkToString(txMeta.RecipientPublicKey, bav.Params))
 	}
 	// Sanity-check that the MessageEntry TstampNanos matches the transaction.
-	if messageEntry.TstampNanos != txMeta.TimestampNanos {
+	if senderMessageEntry.TstampNanos != txMeta.TimestampNanos {
 		return fmt.Errorf("_disconnectPrivateMessage: TimestampNanos in "+
 			"MessageEntry was %d but in transaction it was %d",
-			messageEntry.TstampNanos,
+			senderMessageEntry.TstampNanos,
 			txMeta.TimestampNanos)
 	}
 	// Sanity-check that the EncryptedText on the MessageEntry matches the transaction
 	// just for good measure.
-	if !reflect.DeepEqual(messageEntry.EncryptedText, txMeta.EncryptedText) {
+	if !reflect.DeepEqual(senderMessageEntry.EncryptedText, txMeta.EncryptedText) {
 		return fmt.Errorf("_disconnectPrivateMessage: EncryptedText in MessageEntry "+
 			"did not match EncryptedText in transaction: (%s) != (%s)",
-			hex.EncodeToString(messageEntry.EncryptedText),
+			hex.EncodeToString(senderMessageEntry.EncryptedText),
 			hex.EncodeToString(txMeta.EncryptedText))
 	}
 
+	if !reflect.DeepEqual(senderMessageEntry.SenderMessagingPublicKey[:], senderPkBytes) {
+		return fmt.Errorf("_disconnectPrivateMessage: EncryptedText in MessageEntry "+
+			"did not match EncryptedText in transaction: (%s) != (%s)",
+			hex.EncodeToString(senderMessageEntry.EncryptedText),
+			hex.EncodeToString(txMeta.EncryptedText))
+	}
+
+	if !reflect.DeepEqual(senderMessageEntry.RecipientMessagingPublicKey[:], recipientPkBytes) {
+		return fmt.Errorf("_disconnectPrivateMessage: EncryptedText in MessageEntry "+
+			"did not match EncryptedText in transaction: (%s) != (%s)",
+			hex.EncodeToString(senderMessageEntry.EncryptedText),
+			hex.EncodeToString(txMeta.EncryptedText))
+	}
+
+	// We passed all sanity checks now fetch the recipient entry
+	recipientMessageKey := MakeMessageKey(recipientPkBytes, txMeta.TimestampNanos)
+	recipientMessageEntry := bav._getMessageEntryForMessageKey(&senderMessageKey)
+	if recipientMessageEntry == nil || recipientMessageEntry.isDeleted {
+		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
+			"SenderMessageKey %v was found to be nil or deleted: %v",
+			&recipientMessageKey, recipientMessageEntry)
+	}
+
+	// Make sure the sender and recipient entries are identical
+	if !reflect.DeepEqual(recipientMessageEntry.Encode(), senderMessageEntry.Encode()) {
+		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
+			"SenderMessageKey %v was found to be nil or deleted: %v",
+			&recipientMessageKey, recipientMessageEntry)
+	}
+
+	// If we got here then we passed all sanity checks and we're ready to delete the private message entries.
+
 	// Now that we are confident the MessageEntry lines up with the transaction we're
 	// rolling back, use the entry to delete the mappings for this message.
-	bav._deleteMessageEntryMappings(messageEntry)
-
-	// We look for the MessagingParty UtxoOps, in the previous to last position in the list. This is part of
-	// DeSo V3 Messages. Because it's a non-forking change, we use a fake function context to avoid returning,
-	// but if there was an error here, it would be bad because it would lead to stale DB records.
-	if len(utxoOpsForTxn) > 1 && utxoOpsForTxn[operationIndex-1].Type == OperationTypeMessageParty {
-		func() {
-			// If we have indeed previously connected a messaging party operation, we will now disconnect it.
-			// Because we connected mappings both for the sender and the recipient, we will have to disconnect both.
-			// First let's make sure that the UtxoView mapping exists for the sender and isn't already deleted.
-			senderMessageKey = MakeMessageKey(currentTxn.PublicKey, txMeta.TimestampNanos)
-			messagePartySender := bav._getMessageKeyToMessageParty(&senderMessageKey)
-			if messagePartySender == nil || messagePartySender.isDeleted {
-				glog.Errorf(fmt.Sprintf("_disconnectPrivateMessage: messagePartySender for "+
-					"SenderMessageKey %v was found to be nil or deleted: %v",
-					&senderMessageKey, messagePartySender))
-				return
-			}
-
-			// If all went well, we will delete the mappings. It is worth noting that while there are really two
-			// records in the DB, for the sender and recipient, it's sufficient to only call delete on one of them
-			// as the _setMessagePartyMappings modifies both entries so in particular it will also delete both.
-			if messagePartySender != nil {
-				bav._deleteMessagePartyMappings(messagePartySender)
-			}
-
-			operationIndex--
-			return
-		}()
-	}
+	bav._deleteMessageEntryMappings(senderMessageEntry)
+	bav._deleteMessageEntryMappings(recipientMessageEntry)
 
 	// Now revert the basic transfer with the remaining operations. Cut off
 	// the PrivateMessage operation at the end since we just reverted it.
@@ -638,92 +746,215 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }
 
-func (bav *UtxoView) _connectMessagingKeys(txn *MsgDeSoTxn, blockHeight uint32) (*UtxoOperation, error) {
+func (bav *UtxoView) _connectMessagingKey(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
 	// Make sure DeSo V3 messages are live.
 	if blockHeight < DeSoV3MessagesBlockHeight {
-		return nil, nil
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingKey: " +
+				"Problem connecting messaging key, too early block height")
 	}
-
-	// If ExtraData is nil, there's nothing for us to do.
-	if txn.ExtraData == nil {
-		return nil, nil
-	}
-
-	var messagingPublicKey, messagingKeyName, messagingKeySignature []byte
-	var exists bool
-
-	// Check for existence of the MessagingPublicKey in ExtraData
-	if messagingPublicKey, exists = txn.ExtraData[MessagingPublicKey]; !exists {
-		return nil, nil
-	}
-
-	// Check for existence of the MessagingKeyName in ExtraData
-	if messagingKeyName, exists = txn.ExtraData[MessagingKeyName]; !exists {
-		return nil, errors.Wrapf(
-			RuleErrorMessagingKeyNameNotProvided, "_connectMessagingKeys: "+
-				"Did you forget to add key name?")
-	}
+	txMeta := txn.TxnMeta.(*MessagingKeyMetadata)
 
 	// If the key name is just a list of 0s, then return because this name is reserved for the main key.
-	if reflect.DeepEqual(*NewKeyName(messagingKeyName), *NewKeyName([]byte{})) {
-		return nil, errors.Wrapf(
-			RuleErrorMessagingKeyNameCannotBeZeros, "_connectMessagingKeys: "+
+	if EqualKeyName(NewKeyName(txMeta.MessagingKeyName), BaseKeyName()) {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorMessagingKeyNameCannotBeZeros, "_connectMessagingKey: "+
 				"Cannot set a zeros-only key name?")
-	}
-
-	// Check for existence of the MessagingKeySignature in ExtraData. We need the signature in case a derived key
-	// wants to authorize a messaging key, and we want to verify that the account owner is aware of this.
-	if messagingKeySignature, exists = txn.ExtraData[MessagingKeySignature]; !exists {
-		return nil, errors.Wrapf(
-			RuleErrorMessagingKeySignatureNotProvided, "_connectMessagingKeys: "+
-				"Did you forget to add key signature?")
 	}
 
 	// If we get here it means that this transaction is trying to update the messaging
 	// key. So sanity-check that the public key and key name provided in ExtraData are valid.
-	if err := ValidateKeyAndName(messagingPublicKey, messagingKeyName); err != nil {
-		return nil, errors.Wrapf(
-			RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKeys: "+
-				"Problem parsing public key: %v", messagingPublicKey)
+	if err := ValidateKeyAndName(txMeta.MessagingPublicKey, txMeta.MessagingKeyName); err != nil {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKey: "+
+				"Problem parsing public key: %v", txMeta.MessagingPublicKey)
 	}
 
 	// Sanity-check that transaction public key is valid.
 	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
-		return nil, errors.Wrapf(err, "_connectMessagingKeys: error %v",
-			RuleErrorMessagingOwnerPublicKeyInvalid)
+		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingKey: " +
+			"error %v", RuleErrorMessagingOwnerPublicKeyInvalid)
 	}
 
 	// We now have a valid messaging public key, key name, and owner public key.
 	// Verify the messagingKeySignature. it should be signature( messagingPublicKey || messagingKeyName )
-	bytes := append(messagingPublicKey, messagingKeyName...)
-	if err := _verifyBytesSignature(txn.PublicKey, bytes, messagingKeySignature); err != nil {
-		return nil, errors.Wrapf(err, "_connectMessagingKeys: Problem verifying signature bytes")
+	// We need to make sure the default messaging key was authorized by the master public key
+	// all other keys can be managed by derived keys.
+	if EqualKeyName(NewKeyName(txMeta.MessagingKeyName), DefaultKeyName()) {
+		bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingKeyName...)
+		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.KeySignature); err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingKey: " +
+				"Problem verifying signature bytes")
+		}
 	}
 
-	// We have validated all information. So we will proceed to add the key to UtxoView,
-	// and generate UtxoOps in case we will revert.
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: ")
+	}
+
+	// We have validated all information. At this point the inputs and outputs have been processed.
+	// Now we need to handle the metadata. We will proceed to add the key to UtxoView, and generate UtxoOps.
 
 	// First, let's check that this key doesn't already exist in UtxoView or in the DB.
 	// If a key already exists in the DB then it's non-nil and it wasn't deleted.
-	messagingKey := NewMessagingKey(NewPublicKey(txn.PublicKey), messagingKeyName)
-	if entry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey); entry != nil && !entry.isDeleted {
-		return nil, fmt.Errorf("_connectMessagingKeys: Error, this key already exists; "+
-			"messagingKey %v, messagingPublicKey %v", messagingKey, messagingPublicKey)
+	messagingKey := NewMessagingKey(NewPublicKey(txn.PublicKey), txMeta.MessagingKeyName)
+	entry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+
+	// Make sure that the utxoView entry and the transaction entries have the same messaging public keys.
+	if entry != nil && !entry.isDeleted {
+		if !reflect.DeepEqual(entry.MessagingPublicKey[:], txMeta.MessagingPublicKey) {
+			return 0, 0, nil, fmt.Errorf("_connectMessagingKey: " +
+			"Problem verifying signature bytes")
+		}
+	}
+
+	// A messaging key transaction can initialize or manage a group chat, in the latter case we can add more
+	// recipients to the group thread. We need to make sure that the transaction isn't trying to modify existing recipients.
+	// We only allow adding message recipients, since they already have access to the messaging private key. For
+	// removing recipients, a new chat has to be created.
+	var messageRecipients []MessageRecipient
+	existingRecipients := make(map[PublicKey]bool)
+	// A group messaging key recipients can't contain the main user's public key, nor the messaging public key.
+	// For adding the encrypted messaging key the messaging key entry, one needs to put the encrytped bytes in EncryptedKey field
+	existingRecipients[*NewPublicKey(txn.PublicKey)] = true
+	existingRecipients[*NewPublicKey(txMeta.MessagingPublicKey)] = true
+	// If entry exists in UtxoView, we will only process this transaction if it adds new recipients
+	for _, recipient := range txMeta.Recipients {
+		// Encrypted public key cannot be empty
+		if len(recipient.EncryptedPublicKey) == 0 {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKey: "+
+					"Problem parsing public key: %v", txMeta.MessagingPublicKey)
+		}
+		// Make sure the recipient public key and messaging key name are valid.
+		// The message recipients have an encrypted main messaging key for each of them, encrypted to their messaging keys.
+		if err := ValidateKeyAndName(recipient.RecipientPublicKey[:], recipient.RecipientMessagingKeyName[:]); err != nil {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKey: "+
+					"Problem parsing public key: %v", txMeta.MessagingPublicKey)
+		}
+		// Now make sure the messaging key has already been added to the UtxoView.
+		recipientMessagingKey := NewMessagingKey(recipient.RecipientPublicKey, recipient.RecipientMessagingKeyName[:])
+		recipientEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(recipientMessagingKey)
+		// The messaging key has to exist and cannot be deleted.
+		if recipientEntry == nil || recipientEntry.isDeleted {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKey: "+
+					"Problem parsing public key: %v", txMeta.MessagingPublicKey)
+		}
+		// The recipient can't be already added to the list of existing recipients.
+		if _, exists := existingRecipients[*recipient.RecipientPublicKey]; exists {
+			return 0, 0, nil, fmt.Errorf("_connectMessagingKey: Error, this key already exists; "+
+				"messagingKey %v, messagingPublicKey %v", messagingKey, txMeta.MessagingPublicKey)
+		}
+		// Add the recipient to our helper structs
+		existingRecipients[*recipient.RecipientPublicKey] = true
+		messageRecipients = append(messageRecipients, recipient)
+	}
+	// If we're adding more group recipients, then the messaging key entry was already in utxoView
+	// we now make sure there are no overlapping recipients between the entry from the transaction, and the
+	// existing entry.
+	if entry != nil && !entry.isDeleted {
+		if len(messageRecipients) == 0 && reflect.DeepEqual(txMeta.EncryptedKey, entry.EncryptedKey) {
+			return 0, 0, nil, fmt.Errorf("_connectMessagingKey: Can't update a messaging key without " +
+				"any new recipients, nor without updating the encrypted key")
+		}
+		for _, recipient := range entry.Recipients {
+			if _, exists := existingRecipients[*recipient.RecipientPublicKey]; exists {
+				return 0, 0, nil, fmt.Errorf("_connectMessagingKey: Error, this key already exists; "+
+					"messagingKey %v, messagingPublicKey %v", messagingKey, txMeta.MessagingPublicKey)
+			}
+			existingRecipients[*recipient.RecipientPublicKey] = true
+			messageRecipients = append(messageRecipients, recipient)
+		}
 	}
 
 	// Create a MessagingKeyEntry and add the entry to UtxoView.
+	// We add a new messaging key entry with all the updated information such as the
 	messagingKeyEntry := MessagingKeyEntry{
-		PublicKey:          NewPublicKey(txn.PublicKey),
-		MessagingPublicKey: NewPublicKey(messagingPublicKey),
-		MessagingKeyName:   NewKeyName(messagingKeyName),
+		publicKey:          NewPublicKey(txn.PublicKey),
+		MessagingPublicKey: NewPublicKey(txMeta.MessagingPublicKey),
+		MessagingKeyName:   NewKeyName(txMeta.MessagingKeyName),
+		Recipients:         messageRecipients,
+		EncryptedKey:       txMeta.EncryptedKey,
 		isDeleted:          false,
+	}
+	// Create an utxoOps entry, we make a copy of the existing entry.
+	var prevMessagingKeyEntry *MessagingKeyEntry
+	prevMessagingKeyEntry = nil
+	if entry != nil {
+		prevMessagingKeyEntry = &(*entry)
 	}
 	bav._setMessagingKeyToMessagingKeyEntryMapping(&messagingKeyEntry)
 
 	// Construct UtxoOperation.
-	messagingKeyOps := UtxoOperation{
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypeMessagingKey,
+		PrevMessagingKeyEntry: prevMessagingKeyEntry,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectMessagingKey(
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last operation is a MessagingKey operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectMessagingKey: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeMessagingKey {
+		return fmt.Errorf("_disconnectMessagingKey: Trying to revert "+
+			"OperationTypeMessagingKey but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
 	}
 
-	return &messagingKeyOps, nil
+	// Now we know the txMeta is MessagingKey
+	txMeta := currentTxn.TxnMeta.(*MessagingKeyMetadata)
+
+	// Sanity check that the messaging public key and key name are valid
+	err := ValidateKeyAndName(txMeta.MessagingPublicKey, txMeta.MessagingKeyName)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectMessagingKey: failed validating the messaging "+
+			"public key and key name")
+	}
+
+	// Get the messaging key that the messaging key name from ExtraData points to.
+	messagingKey := NewMessagingKey(NewPublicKey(currentTxn.PublicKey), txMeta.MessagingKeyName)
+	messagingKeyEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+	if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
+		return fmt.Errorf("_disconnectBasicTransfer: Error, this key was already deleted "+
+			"messagingKey: %v", messagingKey)
+	}
+	prevMessagingKeyEntry := utxoOpsForTxn[operationIndex].PrevMessagingKeyEntry
+	// sanity check that the prev entry and current entry match
+	if prevMessagingKeyEntry != nil {
+		if !reflect.DeepEqual(messagingKeyEntry.MessagingPublicKey[:], prevMessagingKeyEntry.MessagingPublicKey[:]) ||
+			!EqualKeyName(messagingKeyEntry.MessagingKeyName, prevMessagingKeyEntry.MessagingKeyName) {
+
+			return fmt.Errorf("_disconnectBasicTransfer: Error, this key was already deleted "+
+				"messagingKey: %v", messagingKey)
+		}
+	}
+
+
+	// Delete this item from UtxoView to indicate we should remove this entry from DB.
+	bav._deleteMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntry)
+	// If the previous entry exists, we should set it in the utxoview
+	if prevMessagingKeyEntry != nil {
+		bav._setMessagingKeyToMessagingKeyEntryMapping(prevMessagingKeyEntry)
+	}
+
+	// Now disconnect the basic transfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
 }

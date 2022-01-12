@@ -92,6 +92,8 @@ const (
 	RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple RuleError = "RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple"
 	RuleErrorPrivateMessageParsePubKeyError                        RuleError = "RuleErrorPrivateMessageParsePubKeyError"
 	RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey RuleError = "RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey"
+	RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight         RuleError = "RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight"
+	RuleErrorPrivateMessageSentWithoutMessagingParty              RuleError = "RuleErrorPrivateMessageSentWithoutMessagingParty"
 	RuleErrorBurnAddressCannotBurnBitcoin                          RuleError = "RuleErrorBurnAddressCannotBurnBitcoin"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
@@ -234,6 +236,7 @@ const (
 	RuleErrorMessagingOwnerPublicKeyInvalid   RuleError = "RuleErrorMessagingOwnerPublicKeyInvalid"
 	RuleErrorMessagingKeyConnect              RuleError = "RuleErrorMessagingKeyConnect"
 	RuleErrorMessagingKeySignatureNotProvided RuleError = "RuleErrorMessagingKeySignatureNotProvided"
+	RuleErrorMessagingKeyBeforeBlockHeight    RuleError = "RuleErrorMessagingKeyBeforeBlockHeight"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                     RuleError = "RuleErrorTooManyNFTCopies"

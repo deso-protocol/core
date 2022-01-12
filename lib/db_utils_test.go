@@ -234,75 +234,140 @@ func TestPrivateMessages(t *testing.T) {
 
 	// pk1 -> pk2: message1Str, tstamp1
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk1,
+		db, MessageKey{
+			PublicKey: MakePkMapKey(pk1),
+			TstampNanos: tstamp1,
+		}, &MessageEntry{
+			SenderPublicKey:    NewPublicKey(pk1),
 			TstampNanos:        tstamp1,
-			RecipientPublicKey: pk2,
+			RecipientPublicKey: NewPublicKey(pk2),
 			EncryptedText:      message1Str,
+			Version: 1,
+			SenderMessagingPublicKey: NewPublicKey(pk1),
+			SenderMessagingKeyName: BaseKeyName(),
+			RecipientMessagingPublicKey: NewPublicKey(pk2),
+			RecipientMessagingKeyName: BaseKeyName(),
 		}))
 	// pk2 -> pk1: message2Str, tstamp2
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk2,
+		db, MessageKey{
+			PublicKey: MakePkMapKey(pk2),
+			TstampNanos: tstamp2,
+		}, &MessageEntry{
+			SenderPublicKey:    NewPublicKey(pk2),
 			TstampNanos:        tstamp2,
-			RecipientPublicKey: pk1,
+			RecipientPublicKey: NewPublicKey(pk1),
 			EncryptedText:      message2Str,
+			Version: 1,
+			SenderMessagingPublicKey: NewPublicKey(pk2),
+			SenderMessagingKeyName: BaseKeyName(),
+			RecipientMessagingPublicKey: NewPublicKey(pk1),
+			RecipientMessagingKeyName: BaseKeyName(),
 		}))
 	// pk3 -> pk1: message3Str, tstamp3
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk3,
+		db, MessageKey{
+			PublicKey: MakePkMapKey(pk3),
+			TstampNanos: tstamp3,
+		}, &MessageEntry{
+			SenderPublicKey:    NewPublicKey(pk3),
 			TstampNanos:        tstamp3,
-			RecipientPublicKey: pk1,
+			RecipientPublicKey: NewPublicKey(pk1),
 			EncryptedText:      message3Str,
+			Version: 1,
+			SenderMessagingPublicKey: NewPublicKey(pk3),
+			SenderMessagingKeyName: BaseKeyName(),
+			RecipientMessagingPublicKey: NewPublicKey(pk1),
+			RecipientMessagingKeyName: BaseKeyName(),
 		}))
 	// pk2 -> pk1: message4Str, tstamp4
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk2,
+		db, MessageKey{
+			PublicKey: MakePkMapKey(pk2),
+			TstampNanos: tstamp4,
+		}, &MessageEntry{
+			SenderPublicKey:    NewPublicKey(pk2),
 			TstampNanos:        tstamp4,
-			RecipientPublicKey: pk1,
+			RecipientPublicKey: NewPublicKey(pk1),
 			EncryptedText:      message4Str,
+			Version: 1,
+			SenderMessagingPublicKey: NewPublicKey(pk2),
+			SenderMessagingKeyName: BaseKeyName(),
+			RecipientMessagingPublicKey: NewPublicKey(pk1),
+			RecipientMessagingKeyName: BaseKeyName(),
 		}))
 	// pk1 -> pk3: message5Str, tstamp5
 	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk1,
+		db, MessageKey{
+			PublicKey: MakePkMapKey(pk1),
+			TstampNanos: tstamp5,
+		}, &MessageEntry{
+			SenderPublicKey:    NewPublicKey(pk1),
 			TstampNanos:        tstamp5,
-			RecipientPublicKey: pk3,
+			RecipientPublicKey: NewPublicKey(pk3),
 			EncryptedText:      message5Str,
+			Version: 1,
+			SenderMessagingPublicKey: NewPublicKey(pk1),
+			SenderMessagingKeyName: BaseKeyName(),
+			RecipientMessagingPublicKey: NewPublicKey(pk3),
+			RecipientMessagingKeyName: BaseKeyName(),
 		}))
 
 	// Define all the messages as they appear in the db.
 	message1 := &MessageEntry{
-		SenderPublicKey:    pk1,
-		RecipientPublicKey: pk2,
+		SenderPublicKey:    NewPublicKey(pk1),
+		RecipientPublicKey: NewPublicKey(pk2),
 		EncryptedText:      message1Str,
 		TstampNanos:        tstamp1,
+		Version: 1,
+		SenderMessagingPublicKey: NewPublicKey(pk1),
+		SenderMessagingKeyName: BaseKeyName(),
+		RecipientMessagingPublicKey: NewPublicKey(pk2),
+		RecipientMessagingKeyName: BaseKeyName(),
 	}
 	message2 := &MessageEntry{
-		SenderPublicKey:    pk2,
-		RecipientPublicKey: pk1,
+		SenderPublicKey:    NewPublicKey(pk2),
+		RecipientPublicKey: NewPublicKey(pk1),
 		EncryptedText:      message2Str,
 		TstampNanos:        tstamp2,
+		Version: 1,
+		SenderMessagingPublicKey: NewPublicKey(pk2),
+		SenderMessagingKeyName: BaseKeyName(),
+		RecipientMessagingPublicKey: NewPublicKey(pk1),
+		RecipientMessagingKeyName: BaseKeyName(),
 	}
 	message3 := &MessageEntry{
-		SenderPublicKey:    pk3,
-		RecipientPublicKey: pk1,
+		SenderPublicKey:    NewPublicKey(pk3),
+		RecipientPublicKey: NewPublicKey(pk1),
 		EncryptedText:      message3Str,
 		TstampNanos:        tstamp3,
+		Version: 1,
+		SenderMessagingPublicKey: NewPublicKey(pk3),
+		SenderMessagingKeyName: BaseKeyName(),
+		RecipientMessagingPublicKey: NewPublicKey(pk1),
+		RecipientMessagingKeyName: BaseKeyName(),
 	}
 	message4 := &MessageEntry{
-		SenderPublicKey:    pk2,
-		RecipientPublicKey: pk1,
+		SenderPublicKey:    NewPublicKey(pk2),
+		RecipientPublicKey: NewPublicKey(pk1),
 		EncryptedText:      message4Str,
 		TstampNanos:        tstamp4,
+		Version: 1,
+		SenderMessagingPublicKey: NewPublicKey(pk2),
+		SenderMessagingKeyName: BaseKeyName(),
+		RecipientMessagingPublicKey: NewPublicKey(pk1),
+		RecipientMessagingKeyName: BaseKeyName(),
 	}
 	message5 := &MessageEntry{
-		SenderPublicKey:    pk1,
-		RecipientPublicKey: pk3,
+		SenderPublicKey:    NewPublicKey(pk1),
+		RecipientPublicKey: NewPublicKey(pk3),
 		EncryptedText:      message5Str,
 		TstampNanos:        tstamp5,
+		Version: 1,
+		SenderMessagingPublicKey: NewPublicKey(pk1),
+		SenderMessagingKeyName: BaseKeyName(),
+		RecipientMessagingPublicKey: NewPublicKey(pk3),
+		RecipientMessagingKeyName: BaseKeyName(),
 	}
 
 	// Fetch message3 directly using both public keys.

@@ -1,6 +1,10 @@
 package lib
 
-import "fmt"
+import (
+
+"fmt"
+"github.com/btcsuite/btcd/btcec"
+)
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
 // indexed using the PKID rather than the user's public key directly in order to
@@ -29,7 +33,7 @@ func (pkid *PKID) NewPKID() *PKID {
 }
 
 func NewPublicKey(publicKeyBytes []byte) *PublicKey {
-	if len(publicKeyBytes) == 0 {
+	if len(publicKeyBytes) != btcec.PubKeyBytesLenCompressed {
 		return nil
 	}
 	publicKey := &PublicKey{}

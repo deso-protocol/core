@@ -276,18 +276,18 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 		// Make a copy of the iterator since we take references to it below.
 		messageKey := messageKeyIter
 
-		// Sanity-check that one of the MessageKey computed from the MEssageEntry is
+		// Sanity-check that one of the MessageKey computed from the MessageEntry is
 		// equal to the MessageKey that maps to that entry.
-		senderMessageKeyInEntry := MakeMessageKey(
-			messageEntry.SenderPublicKey, messageEntry.TstampNanos)
-		recipientMessageKeyInEntry := MakeMessageKey(
-			messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
-		if senderMessageKeyInEntry != messageKey && recipientMessageKeyInEntry != messageKey {
-			return fmt.Errorf("_flushMessageEntriesToDbWithTxn: MessageEntry has "+
-				"SenderMessageKey: %v and RecipientMessageKey %v, neither of which match "+
-				"the MessageKeyToMessageEntry map key %v",
-				&senderMessageKeyInEntry, &recipientMessageKeyInEntry, &messageKey)
-		}
+		//senderMessageKeyInEntry := MakeMessageKey(
+		//	messageEntry.SenderPublicKey, messageEntry.TstampNanos)
+		//recipientMessageKeyInEntry := MakeMessageKey(
+		//	messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
+		//if senderMessageKeyInEntry != messageKey && recipientMessageKeyInEntry != messageKey {
+		//	return fmt.Errorf("_flushMessageEntriesToDbWithTxn: MessageEntry has "+
+		//		"SenderMessageKey: %v and RecipientMessageKey %v, neither of which match "+
+		//		"the MessageKeyToMessageEntry map key %v",
+		//		&senderMessageKeyInEntry, &recipientMessageKeyInEntry, &messageKey)
+		//}
 
 		// Delete the existing mappings in the db for this MessageKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
@@ -298,22 +298,19 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 				err, "_flushMessageEntriesToDbWithTxn: Problem deleting mappings "+
 					"for MessageKey: %v: ", &messageKey)
 		}
-	}
-	// Go through all the entries in the MessageKeyToMessageEntry map.
-	for _, messageEntry := range bav.MessageKeyToMessageEntry {
+
 		if messageEntry.isDeleted {
 			// If the MessageEntry has isDeleted=true then there's nothing to do because
 			// we already deleted the entry above.
 		} else {
 			// If the MessageEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutMessageEntryWithTxn(txn, messageEntry); err != nil {
+			if err := DbPutMessageEntryWithTxn(txn, messageKey, messageEntry); err != nil {
 
 				return err
 			}
 		}
 	}
-
 	// At this point all of the MessageEntry mappings in the db should be up-to-date.
 
 	return nil
@@ -894,6 +891,12 @@ func (bav *UtxoView) _flushMessagingKeyEntriesToDbWithTxn(txn *badger.Txn) error
 			return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
 				"Problem deleting MessagingKeyEntry %v from db", *messagingKeyEntry)
 		}
+		for _, recipient := range messagingKeyEntry.Recipients {
+			if err := DBDeleteMessageRecipientMappingWithTxn(txn, &recipient, messagingKeyEntry); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
+					"Problem deleting MessagingKeyEntry recipients from db")
+			}
+		}
 
 		if messagingKeyEntry.isDeleted {
 			// Since entry is deleted, there's nothing to do.
@@ -903,6 +906,12 @@ func (bav *UtxoView) _flushMessagingKeyEntriesToDbWithTxn(txn *badger.Txn) error
 			if err := DBPutMessagingKeyEntryWithTxn(txn, messagingKeyEntry); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
 					"Problem putting MessagingKeyEntry %v to db", *messagingKeyEntry)
+			}
+			for _, recipient := range messagingKeyEntry.Recipients {
+				if err := DBPutMessageRecipientWithTxn(txn, &recipient, messagingKeyEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
+						"Problem putting MessagingKeyEntry %v to db", *messagingKeyEntry)
+				}
 			}
 			numPut++
 		}

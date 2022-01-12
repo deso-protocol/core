@@ -209,8 +209,9 @@ const (
 	TxnTypeAcceptNFTTransfer            TxnType = 20
 	TxnTypeBurnNFT                      TxnType = 21
 	TxnTypeAuthorizeDerivedKey          TxnType = 22
+	TxnTypeMessagingKey                 TxnType = 23
 
-	// NEXT_ID = 23
+	// NEXT_ID = 24
 )
 
 type TxnString string
@@ -238,6 +239,7 @@ const (
 	TxnStringAcceptNFTTransfer            TxnString = "ACCEPT_NFT_TRANSFER"
 	TxnStringBurnNFT                      TxnString = "BURN_NFT"
 	TxnStringAuthorizeDerivedKey          TxnString = "AUTHORIZE_DERIVED_KEY"
+	TxnStringMessagingKey                 TxnString = "MESSAGING_KEY"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -247,14 +249,14 @@ var (
 		TxnTypeSubmitPost, TxnTypeUpdateProfile, TxnTypeUpdateBitcoinUSDExchangeRate, TxnTypeFollow, TxnTypeLike,
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
-		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey,
+		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingKey,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
 		TxnStringSubmitPost, TxnStringUpdateProfile, TxnStringUpdateBitcoinUSDExchangeRate, TxnStringFollow, TxnStringLike,
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
-		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey,
+		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingKey,
 	}
 )
 
@@ -312,7 +314,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringBurnNFT
 	case TxnTypeAuthorizeDerivedKey:
 		return TxnStringAuthorizeDerivedKey
-
+	case TxnTypeMessagingKey:
+		return TxnStringMessagingKey
 	default:
 		return TxnStringUndefined
 	}
@@ -364,7 +367,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeBurnNFT
 	case TxnStringAuthorizeDerivedKey:
 		return TxnTypeAuthorizeDerivedKey
-
+	case TxnStringMessagingKey:
+		return TxnTypeMessagingKey
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -424,7 +428,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&BurnNFTMetadata{}).New(), nil
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
-
+	case TxnTypeMessagingKey:
+		return (&MessagingKeyMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -4621,4 +4626,90 @@ func (txnData *AuthorizeDerivedKeyMetadata) FromBytes(data []byte) error {
 
 func (txnData *AuthorizeDerivedKeyMetadata) New() DeSoTxnMetadata {
 	return &AuthorizeDerivedKeyMetadata{}
+}
+
+// ==================================================================
+// MessagingKeyMetadata
+// ==================================================================
+
+type MessagingKeyMetadata struct {
+	MessagingPublicKey []byte
+	MessagingKeyName []byte
+	KeySignature []byte
+
+	Recipients []MessageRecipient
+	EncryptedKey []byte
+}
+
+func (txnData *MessagingKeyMetadata) GetTxnType() TxnType {
+	return TxnTypeMessagingKey
+}
+
+func (txnData *MessagingKeyMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingPublicKey)))...)
+	data = append(data, txnData.MessagingPublicKey...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingKeyName)))...)
+	data = append(data, txnData.MessagingKeyName...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.KeySignature)))...)
+	data = append(data, txnData.KeySignature...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.Recipients)))...)
+	for _, recipient := range txnData.Recipients {
+		data = append(data, recipient.Encode()...)
+	}
+
+	data = append(data, UintToBuf(uint64(len(txnData.EncryptedKey)))...)
+	data = append(data, txnData.EncryptedKey...)
+	return data, nil
+}
+
+func (txnData *MessagingKeyMetadata) FromBytes(data []byte) error {
+	ret := MessagingKeyMetadata{}
+	rr := bytes.NewReader(data)
+
+	var err error
+	ret.MessagingPublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
+			"Problem reading MessagingPublicKey")
+	}
+
+	ret.MessagingKeyName, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
+			"Problem reading MessagingKeyName")
+	}
+
+	ret.KeySignature, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err,"MessagingKeyMetadata.FromBytes: " +
+			"Problem reading KeySignature")
+	}
+
+	numRecipients, err := ReadUvarint(rr)
+	for ;numRecipients > 0; numRecipients-- {
+		recipient := MessageRecipient{}
+		err = recipient.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
+				"error reading recipient")
+		}
+	}
+
+	ret.EncryptedKey, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err,"MessagingKeyMetadata.FromBytes: " +
+			"Problem reading EncryptedKey")
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *MessagingKeyMetadata) New() DeSoTxnMetadata {
+	return &MessagingKeyMetadata{}
 }
