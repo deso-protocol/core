@@ -492,7 +492,7 @@ func (message *MessageEntry) Decode(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding recipient messaging key name")
 	}
-	message.SenderMessagingKeyName = NewKeyName(recipientMessagingKeyName)
+	message.RecipientMessagingKeyName = NewKeyName(recipientMessagingKeyName)
 	return nil
 }
 

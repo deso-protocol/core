@@ -93,8 +93,13 @@ const (
 	RuleErrorPrivateMessageParsePubKeyError                        RuleError = "RuleErrorPrivateMessageParsePubKeyError"
 	RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey RuleError = "RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey"
 	RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight         RuleError = "RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight"
-	RuleErrorPrivateMessageSentWithoutMessagingParty              RuleError = "RuleErrorPrivateMessageSentWithoutMessagingParty"
+	RuleErrorPrivateMessageSentWithoutProperMessagingParty         RuleError = "RuleErrorPrivateMessageSentWithoutProperMessagingParty"
+	RuleErrorPrivateMessageFailedToValidateMessagingKey            RuleError = "RuleErrorPrivateMessageFailedToValidateMessagingKey"
 	RuleErrorBurnAddressCannotBurnBitcoin                          RuleError = "RuleErrorBurnAddressCannotBurnBitcoin"
+	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
+	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
+
+
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"

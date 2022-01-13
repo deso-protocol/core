@@ -250,7 +250,7 @@ func TestPrivateMessage(t *testing.T) {
 	// 4: m1 m2
 	// 5: m2 m3
 	// => m0: 1
-	// 		m1: 4
+	// 	  m1: 4
 	//    m2: 3
 	//    m3: 2
 	{
@@ -258,8 +258,8 @@ func TestPrivateMessage(t *testing.T) {
 		require.NoError(err)
 		require.Equal(1, len(messages))
 		messageEntry := messages[0]
-		require.Equal(messageEntry.SenderPublicKey, _strToPk(t, m0Pub))
-		require.Equal(messageEntry.RecipientPublicKey, _strToPk(t, m1Pub))
+		require.Equal(messageEntry.SenderPublicKey[:], _strToPk(t, m0Pub))
+		require.Equal(messageEntry.RecipientPublicKey[:], _strToPk(t, m1Pub))
 		require.Equal(messageEntry.TstampNanos, tstamp1)
 		require.Equal(messageEntry.isDeleted, false)
 		priv, _ := btcec.PrivKeyFromBytes(btcec.S256(), _strToPk(t, m1Priv))
