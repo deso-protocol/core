@@ -574,8 +574,8 @@ func (key *MessagingKey) String() string {
 // MessagingKeyEntry is used to update messaging keys for a user, this was added in
 // the DeSo V3 Messages protocol.
 type MessagingKeyEntry struct {
-	// publicKey of the main user.
-	publicKey *PublicKey
+	// PublicKey of the main user.
+	PublicKey *PublicKey
 
 	// MessagingPublicKey is the messaging key added. This will be the new
 	// messaging key that other users should encrypt messages to.
@@ -586,7 +586,7 @@ type MessagingKeyEntry struct {
 	// The standard Messages V3 key is named "default-key"
 	MessagingKeyName *KeyName
 
-	Recipients []MessageRecipient
+	Recipients []MessagingRecipient
 
 	EncryptedKey []byte
 
@@ -597,15 +597,16 @@ type MessagingKeyEntry struct {
 }
 
 func (entry *MessagingKeyEntry) String() string {
-	return fmt.Sprintf("<MessagingKeyEntry | publicKey : %v | MessagingPublicKey : %v | MessagingKeyName : %v | isDeleted : %v >",
-		entry.publicKey, entry.MessagingPublicKey, entry.MessagingKeyName, entry.isDeleted)
+	return fmt.Sprintf("<MessagingKeyEntry | PublicKey : %v | MessagingPublicKey : %v | MessagingKeyName : %v | isDeleted : %v >",
+		entry.PublicKey, entry.MessagingPublicKey, entry.MessagingKeyName, entry.isDeleted)
 }
 
 func (entry *MessagingKeyEntry) Encode() []byte {
 	var entryBytes []byte
 
-	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingPublicKey.ToBytes())...)
-	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingKeyName.ToBytes())...)
+	entryBytes = append(entryBytes, EncodeByteArray(entry.PublicKey[:])...)
+	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingPublicKey[:])...)
+	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingKeyName[:])...)
 	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.Recipients)))...)
 	for ii := 0; ii < len(entry.Recipients); ii++ {
 		entryBytes = append(entryBytes, entry.Recipients[ii].Encode()...)
@@ -616,6 +617,12 @@ func (entry *MessagingKeyEntry) Encode() []byte {
 
 func (entry *MessagingKeyEntry) Decode(data []byte) error {
 	rr := bytes.NewReader(data)
+
+	publicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingKeyEntry.Decode: Problem decoding public key")
+	}
+	entry.PublicKey = NewPublicKey(publicKeyBytes)
 
 	messagingPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
@@ -634,7 +641,7 @@ func (entry *MessagingKeyEntry) Decode(data []byte) error {
 		return errors.Wrapf(err, "MessagingKeyEntry.Decode: Problem decoding recipients length")
 	}
 	for ;recipientsLen > 0; recipientsLen-- {
-		recipient := MessageRecipient{}
+		recipient := MessagingRecipient{}
 		err = recipient.Decode(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MessagingKeyEntry.Decode: Problem decoding recipient")
@@ -724,13 +731,13 @@ func (party *MessageParty) Decode(data []byte) error {
 	return nil
 }
 
-type MessageRecipient struct {
+type MessagingRecipient struct {
 	RecipientPublicKey *PublicKey
 	RecipientMessagingKeyName *KeyName
-	EncryptedPublicKey []byte
+	EncryptedKey              []byte
 }
 
-func (rec *MessageRecipient) Encode() []byte {
+func (rec *MessagingRecipient) Encode() []byte {
 	data := []byte{}
 
 	data = append(data, UintToBuf(uint64(len(rec.RecipientPublicKey)))...)
@@ -739,36 +746,36 @@ func (rec *MessageRecipient) Encode() []byte {
 	data = append(data, UintToBuf(uint64(len(rec.RecipientMessagingKeyName)))...)
 	data = append(data, rec.RecipientMessagingKeyName[:]...)
 
-	data = append(data, UintToBuf(uint64(len(rec.EncryptedPublicKey)))...)
-	data = append(data, rec.EncryptedPublicKey...)
+	data = append(data, UintToBuf(uint64(len(rec.EncryptedKey)))...)
+	data = append(data, rec.EncryptedKey...)
 
 	return data
 }
 
-func (rec *MessageRecipient) Decode(rr io.Reader) error {
+func (rec *MessagingRecipient) Decode(rr io.Reader) error {
 
 	recipientPublicKeyBytes, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessageRecipient.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingRecipient.Decode: Problem reading " +
 			"RecipientPublicKey")
 	}
 	recipientKeyName, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessageRecipient.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingRecipient.Decode: Problem reading " +
 			"RecipientMessagingKeyName")
 	}
 	err = ValidateKeyAndName(recipientPublicKeyBytes, recipientKeyName)
 	if err != nil {
-		return errors.Wrapf(err, "MessageRecipient.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingRecipient.Decode: Problem reading " +
 			"RecipientPublicKey and RecipientMessagingKeyName")
 	}
 
 	rec.RecipientPublicKey = NewPublicKey(recipientPublicKeyBytes)
 	rec.RecipientMessagingKeyName = NewKeyName(recipientKeyName)
-	rec.EncryptedPublicKey, err = ReadVarString(rr)
+	rec.EncryptedKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessageRecipient.Decode: Problem reading " +
-			"EncryptedPublicKey")
+		return errors.Wrapf(err, "MessagingRecipient.Decode: Problem reading " +
+			"EncryptedKey")
 	}
 	return nil
 }
@@ -1265,6 +1272,6 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 
 		return result, nil
 	} else {
-		return nil, nil
+		return []byte{}, nil
 	}
 }

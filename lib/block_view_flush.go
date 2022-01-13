@@ -887,14 +887,17 @@ func (bav *UtxoView) _flushMessagingKeyEntriesToDbWithTxn(txn *badger.Txn) error
 	for messagingKey, messagingKeyEntry := range bav.MessagingKeyToMessagingKeyEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false.
-		if err := DBDeleteMessagingKeyEntryWithTxn(txn, &messagingKey); err != nil {
-			return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
-				"Problem deleting MessagingKeyEntry %v from db", *messagingKeyEntry)
-		}
-		for _, recipient := range messagingKeyEntry.Recipients {
-			if err := DBDeleteMessageRecipientMappingWithTxn(txn, &recipient, messagingKeyEntry); err != nil {
+		existingMessagingKeyEntry := DBGetMessagingKeyEntryWithTxn(txn, &messagingKey)
+		if existingMessagingKeyEntry != nil {
+			if err := DBDeleteMessagingKeyEntryWithTxn(txn, &messagingKey); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
-					"Problem deleting MessagingKeyEntry recipients from db")
+					"Problem deleting MessagingKeyEntry %v from db", *messagingKeyEntry)
+			}
+			for _, recipient := range existingMessagingKeyEntry.Recipients {
+				if err := DBDeleteMessageRecipientMappingWithTxn(txn, &recipient, existingMessagingKeyEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
+						"Problem deleting MessagingKeyEntry recipients from db")
+				}
 			}
 		}
 

@@ -735,19 +735,26 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 func DbGetAllUserMessagingKeys(txn *badger.Txn, publicKey []byte) ([]*MessagingKeyEntry, error) {
 	var userKeys []*MessagingKeyEntry
 	userKeys = append(userKeys, &MessagingKeyEntry{
+		PublicKey:          NewPublicKey(publicKey),
 		MessagingPublicKey: NewPublicKey(publicKey),
-		MessagingKeyName: NewKeyName([]byte{}),
+		MessagingKeyName:   NewKeyName([]byte{}),
 	})
 
 	recipientEntries, err := DBGetAllMessageRecipientEntriesWithTxn(txn, NewPublicKey(publicKey))
 	if err != nil {
 		return nil, errors.Wrapf(err, "DbGetAllUserMessagingKeys: problem getting recipient entries")
 	}
+	for ii := 0; ii < len(recipientEntries); ii++ {
+		recipientEntries[ii].PublicKey = NewPublicKey(publicKey)
+	}
 	userKeys = append(userKeys, recipientEntries...)
 
 	messagingEntries, err := DBGetAllMessagingKeyEntriesWithTxn(txn, NewPublicKey(publicKey))
 	if err != nil {
 		return nil, errors.Wrapf(err, "DbGetAllUserMessagingKeys: problem getting messaging entries")
+	}
+	for ii := 0; ii < len(messagingEntries); ii++ {
+		messagingEntries[ii].PublicKey = NewPublicKey(publicKey)
 	}
 	userKeys = append(userKeys, messagingEntries...)
 	return userKeys, nil
@@ -915,13 +922,13 @@ func DBPutMessagingKeyEntryWithTxn(
 	txn *badger.Txn, messagingKeyEntry *MessagingKeyEntry) error {
 
 	// Sanity-check that the public key has the correct length.
-	if len(messagingKeyEntry.publicKey) != btcec.PubKeyBytesLenCompressed {
+	if len(messagingKeyEntry.PublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DBPutMessagingKeyEntryWithTxn: Public Key "+
-			"length %d != %d", len(messagingKeyEntry.publicKey), btcec.PubKeyBytesLenCompressed)
+			"length %d != %d", len(messagingKeyEntry.PublicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
 	messagingKey := &MessagingKey{
-		PublicKey: *messagingKeyEntry.publicKey,
+		PublicKey: *messagingKeyEntry.PublicKey,
 		KeyName:   *messagingKeyEntry.MessagingKeyName,
 	}
 	if err := txn.Set(_dbKeyForMessagingKeyEntry(messagingKey), messagingKeyEntry.Encode()); err != nil {
@@ -956,7 +963,6 @@ func DBGetMessagingKeyEntryWithTxn(
 			"MessagingKeyEntry for Messaging Key: %v", messagingKey)
 		return nil
 	}
-	messagingKeyEntry.publicKey = NewPublicKey(messagingKey.PublicKey[:])
 	return messagingKeyEntry
 }
 
@@ -1038,26 +1044,36 @@ func _dbSeekPrefixForMessageRecipient(recipientPublicKey *PublicKey) []byte {
 	return append(prefixCopy, recipientPublicKey[:]...)
 }
 
-func DBPutMessageRecipientWithTxn(txn *badger.Txn, messageRecipient *MessageRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+func DBPutMessageRecipientWithTxn(txn *badger.Txn, messageRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
 	// Sanity-check that public keys have the correct length.
 
-	if len(messageRecipient.EncryptedPublicKey) == 0 {
+	if len(messageRecipient.EncryptedKey) < btcec.PrivKeyBytesLen {
 		return fmt.Errorf("DBPutMessageRecipientWithTxn: Problem getting recipient " +
 			"entry for public key (%v)", messageRecipient.RecipientPublicKey)
 	}
 
+	// We overload the MessagingKeyEntry struct for messaging recipients. We store the group chat's messaging public key
+	// as opposed to recipient's messaging public key corresponding to recipient's messaging key name, because we need to
+	// keep track of the group chat's public key. Recipient's messaging key can always be fetched at a later point.
+	recipientKeyEntry := MessagingKeyEntry{
+		PublicKey: messageRecipient.RecipientPublicKey,
+		MessagingPublicKey: messagingKeyEntry.MessagingPublicKey,
+		MessagingKeyName: messageRecipient.RecipientMessagingKeyName,
+		EncryptedKey: messageRecipient.EncryptedKey,
+	}
+
 	if err := txn.Set(_dbKeyForMessageRecipient(
-		messageRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey), messageRecipient.Encode()); err != nil {
+		messageRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey), recipientKeyEntry.Encode()); err != nil {
 
 		return errors.Wrapf(err, "DBPutMessageRecipientWithTxn: Problem setting messaging recipient with key (%v) " +
 			"and entry (%v) in the db", _dbKeyForMessageRecipient(
-			messageRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey), messageRecipient.Encode())
+			messageRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey), recipientKeyEntry.Encode())
 	}
 
 	return nil
 }
 
-func DbPutMessageRecipient(handle *badger.DB, messageRecipient *MessageRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+func DbPutMessageRecipient(handle *badger.DB, messageRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutMessageRecipientWithTxn(txn, messageRecipient, messagingKeyEntry)
@@ -1065,7 +1081,7 @@ func DbPutMessageRecipient(handle *badger.DB, messageRecipient *MessageRecipient
 }
 
 func DbGetMessageRecipientWithTxn(
-	txn *badger.Txn, messageRecipient *MessageRecipient, messagingKeyEntry *MessagingKeyEntry) *MessagingKeyEntry {
+	txn *badger.Txn, messageRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) *MessagingKeyEntry {
 
 	key := _dbKeyForMessageRecipient(messageRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey)
 	messageRecipientEntry := &MessagingKeyEntry{}
@@ -1090,7 +1106,7 @@ func DbGetMessageRecipientWithTxn(
 }
 
 func DbGetMessageRecipient(
-	db *badger.DB, messageRecipient *MessageRecipient, messagingKeyEntry *MessagingKeyEntry) *MessagingKeyEntry {
+	db *badger.DB, messageRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) *MessagingKeyEntry {
 
 	var ret *MessagingKeyEntry
 	db.View(func(txn *badger.Txn) error {
@@ -1154,7 +1170,7 @@ func DBGetAllMessageRecipientEntriesWithTxn(txn *badger.Txn, publicKey *PublicKe
 // Note this deletes the message for the sender *and* receiver since a mapping
 // should exist for each.
 func DBDeleteMessageRecipientMappingWithTxn(
-	txn *badger.Txn, messageRecipient *MessageRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+	txn *badger.Txn, messageRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -1173,7 +1189,7 @@ func DBDeleteMessageRecipientMappingWithTxn(
 }
 
 func DbDeleteMessageRecipientMappings(
-	handle *badger.DB, messageRecipient *MessageRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+	handle *badger.DB, messageRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBDeleteMessageRecipientMappingWithTxn(txn, messageRecipient, messagingKeyEntry)
@@ -1181,7 +1197,7 @@ func DbDeleteMessageRecipientMappings(
 }
 
 //func DbDeleteMessageRecipientWithTxn(
-//	txn *badger.Txn, recipient *MessageRecipient) error {
+//	txn *badger.Txn, recipient *MessagingRecipient) error {
 //
 //	prefix := _dbSeekPrefixForMessageRecipient(recipient.RecipientPublicKey)
 //	keysFound, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)

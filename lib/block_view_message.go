@@ -62,9 +62,9 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 func (bav *UtxoView) GetMessagingKeyToMessagingKeyEntryMapping(messagingKey *MessagingKey) *MessagingKeyEntry {
 	if EqualKeyName(&messagingKey.KeyName, BaseKeyName()) {
 		return &MessagingKeyEntry{
-			publicKey: NewPublicKey(messagingKey.PublicKey[:]),
+			PublicKey:          NewPublicKey(messagingKey.PublicKey[:]),
 			MessagingPublicKey: NewPublicKey(messagingKey.PublicKey[:]),
-			MessagingKeyName: BaseKeyName(),
+			MessagingKeyName:   BaseKeyName(),
 		}
 	}
 
@@ -93,7 +93,7 @@ func (bav *UtxoView) _setMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntr
 
 	// Create a key for the UtxoView mapping. We always put user's main public key as part of the map key.
 	messagingKey := MessagingKey{
-		PublicKey: *messagingKeyEntry.publicKey,
+		PublicKey: *messagingKeyEntry.PublicKey,
 		KeyName:   *messagingKeyEntry.MessagingKeyName,
 	}
 	bav.MessagingKeyToMessagingKeyEntry[messagingKey] = messagingKeyEntry
@@ -750,6 +750,24 @@ func (bav *UtxoView) _connectMessagingKey(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
+	// Messaging keys are a part of DeSo V3 Messages.
+	// In short, a messaging key is a pair of a public key and a key name. Messaging keys are registered on-chain
+	// and are intended to be used as senders/recipients of privateMessage transactions, as opposed to users main keys.
+	// Messaging keys solve the problem with messages for holders of derived keys, who previously had no way to
+	// properly encrypt/decrypt messages, as they don't have access to user's main private key.
+	//
+	// A key name is a byte array between 8-32 bytes that labels the messaging public key. Applications have the
+	// choice to label users' messaging keys as they desire. For instance, a key name could represent the name of
+	// an on-chain group chat. On the db level, key names are always filled to 32 bytes with []byte(0) suffix.
+	//
+	// We hard-code two messaging keys:
+	// 	The base key: user's main public key, labeled with a key name of 32 zero-bytes
+	//	The default key: a public key, labeled with a key name of byte("default-key")
+	//
+	// The proposed flow is to register a default key whenever first authorizing a derived key for a user, this
+	// way, the derived key can be used for handling messages. DeSo V3 Messages also enable group chats, which
+	// we will explain later.
+
 	// Make sure DeSo V3 messages are live.
 	if blockHeight < DeSoV3MessagesBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
@@ -765,11 +783,9 @@ func (bav *UtxoView) _connectMessagingKey(
 				"Cannot set a zeros-only key name?")
 	}
 
-	// If we get here it means that this transaction is trying to update the messaging
-	// key. So sanity-check that the public key and key name provided in ExtraData are valid.
+	// Make sure that the messaging public key and the key name have the correct format.
 	if err := ValidateKeyAndName(txMeta.MessagingPublicKey, txMeta.MessagingKeyName); err != nil {
-		return 0, 0, nil, errors.Wrapf(
-			RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKey: "+
+		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingKey: "+
 				"Problem parsing public key: %v", txMeta.MessagingPublicKey)
 	}
 
@@ -779,15 +795,22 @@ func (bav *UtxoView) _connectMessagingKey(
 			"error %v", RuleErrorMessagingOwnerPublicKeyInvalid)
 	}
 
+	// Sanity-check that we're not trying to add a messaging public key identical to the main public key.
+	if reflect.DeepEqual(txMeta.MessagingPublicKey, txn.PublicKey) {
+		return 0, 0, nil, errors.Wrapf(RuleErrorMessagingPublicKeyCannotBeOwnerKey,
+			"_connectMessagingKey: messaging public key and txn public key can't be the same")
+	}
+
 	// We now have a valid messaging public key, key name, and owner public key.
-	// Verify the messagingKeySignature. it should be signature( messagingPublicKey || messagingKeyName )
-	// We need to make sure the default messaging key was authorized by the master public key
-	// all other keys can be managed by derived keys.
+	// The hard-coded default key is only intended to be registered by the owner, so we will require a signature.
 	if EqualKeyName(NewKeyName(txMeta.MessagingKeyName), DefaultKeyName()) {
+		// Verify the messagingKeySignature. it should be signature( messagingPublicKey || messagingKeyName )
+		// We need to make sure the default messaging key was authorized by the master public key.
+		// All other keys can be registered by derived keys.
 		bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingKeyName...)
 		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.KeySignature); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingKey: " +
-				"Problem verifying signature bytes")
+				"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
 		}
 	}
 
@@ -796,101 +819,132 @@ func (bav *UtxoView) _connectMessagingKey(
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingKey: ")
 	}
 
 	// We have validated all information. At this point the inputs and outputs have been processed.
 	// Now we need to handle the metadata. We will proceed to add the key to UtxoView, and generate UtxoOps.
 
-	// First, let's check that this key doesn't already exist in UtxoView or in the DB.
-	// If a key already exists in the DB then it's non-nil and it wasn't deleted.
+	// First, let's check if this key doesn't already exist in UtxoView or in the DB.
+	// It's worth noting that we index messaging keys by the main public key and messaging key name.
 	messagingKey := NewMessagingKey(NewPublicKey(txn.PublicKey), txMeta.MessagingKeyName)
-	entry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
+	existingEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
 
-	// Make sure that the utxoView entry and the transaction entries have the same messaging public keys.
-	if entry != nil && !entry.isDeleted {
-		if !reflect.DeepEqual(entry.MessagingPublicKey[:], txMeta.MessagingPublicKey) {
-			return 0, 0, nil, fmt.Errorf("_connectMessagingKey: " +
-			"Problem verifying signature bytes")
+	// Make sure that the utxoView entry and the transaction entries have the same messaging public keys and encrypted key.
+	// The encrypted key is an auxiliary field that can be used to share the private key of the messaging public keys with
+	// user's main key when registering a messaging key via a derived key. This field will also be used in group chats, as
+	// we will later overload the MessagingKeyEntry struct for storing messaging keys for group participants.
+	if existingEntry != nil && !existingEntry.isDeleted {
+		if !reflect.DeepEqual(existingEntry.MessagingPublicKey[:], txMeta.MessagingPublicKey) {
+			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingPublicKeyCannotBeDifferent,
+				"_connectMessagingKey: Messaging public key cannot differ from the existing entry")
+		}
+
+		// We don't enforce any validation on the encrypted key, but we want to make sure it's the same as in the previous entry.
+		if !reflect.DeepEqual(txMeta.EncryptedKey, existingEntry.EncryptedKey) {
+			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingEncryptedKeyCannotBeDifferent,
+				"_connectMessagingKey: Problem verifying encrypted key bytes")
 		}
 	}
 
-	// A messaging key transaction can initialize or manage a group chat, in the latter case we can add more
-	// recipients to the group thread. We need to make sure that the transaction isn't trying to modify existing recipients.
-	// We only allow adding message recipients, since they already have access to the messaging private key. For
-	// removing recipients, a new chat has to be created.
-	var messageRecipients []MessageRecipient
+	// In DeSo V3 Messages, a messaging key can initialize a group chat with more than two parties. In group chats, all
+	// messages are encrypted to the group messaging public key. The group participants are provided with an encrypted
+	// private key of the group key so that each of them can read the messages. We refer to these group participants as
+	// messaging recipients, and for each recipient we will store a MessagingKeyEntry with the respective encrypted key.
+	// The encrypted key must be addressed to a registered messaging key for each recipient, e.g. the base or the default
+	// keys. In particular, this design choice allows derived keys to read group messages.
+	//
+	// A messaging key transaction can either initialize a group messaging key or add more recipients. In the former case,
+	// there will be no existing messaging key entry; however, in the latter case there will be an entry present in DB or
+	// UtxoView. When adding recipients, we need to make sure that the transaction isn't trying to change data about existing
+	// recipients. An important limitation is that the current design doesn't support removing recipients. This would be
+	// tricky to impose in consensus, considering that removed users can't *forget* the messaging private key. Removing users
+	// can be facilitated in the application-layer, where we can issue a new group key and share it with all valid recipients.
+
+	// We will keep track of all group messaging recipients.
+	var messagingRecipients []MessagingRecipient
+	// Map all recipients so that it's easier to check for overlapping recipients.
 	existingRecipients := make(map[PublicKey]bool)
-	// A group messaging key recipients can't contain the main user's public key, nor the messaging public key.
-	// For adding the encrypted messaging key the messaging key entry, one needs to put the encrytped bytes in EncryptedKey field
+
+	// Sanity-check a group messaging key recipients can't contain the main user's public key, nor the messaging public key.
+	// For adding the encrypted messaging key to the messaging key entry, one needs to put the encrypted key bytes in EncryptedKey.
 	existingRecipients[*NewPublicKey(txn.PublicKey)] = true
 	existingRecipients[*NewPublicKey(txMeta.MessagingPublicKey)] = true
-	// If entry exists in UtxoView, we will only process this transaction if it adds new recipients
+
+	// If we're adding more group recipients, then we need to make sure there are no overlapping recipients
+	// between the transaction's entry, and the existing entry.
+	if existingEntry != nil && !existingEntry.isDeleted {
+		// We make sure we'll add at least one messaging recipient in the the transaction.
+		if len(txMeta.Recipients) == 0 {
+			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingKeyDoesntAddRecipients,
+				"_connectMessagingKey: Can't update a messaging key without any new recipients")
+		}
+
+		// Now iterate through all existing recipients and make sure there are no overlaps.
+		for _, recipient := range existingEntry.Recipients {
+			if _, exists := existingRecipients[*recipient.RecipientPublicKey]; exists {
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorMessagingRecipientAlreadyExists, "_connectMessagingKey: " +
+						"Error, recipient already exists (%v)", recipient.RecipientPublicKey[:])
+			}
+
+			// Add the recipient to our helper structs.
+			existingRecipients[*recipient.RecipientPublicKey] = true
+			messagingRecipients = append(messagingRecipients, recipient)
+		}
+	}
+
+	// Validate all recipients.
 	for _, recipient := range txMeta.Recipients {
-		// Encrypted public key cannot be empty
-		if len(recipient.EncryptedPublicKey) == 0 {
+		// Encrypted public key cannot be empty, and has to have at least as many bytes as a generic private key.
+		if len(recipient.EncryptedKey) < btcec.PrivKeyBytesLen {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKey: "+
-					"Problem parsing public key: %v", txMeta.MessagingPublicKey)
+				RuleErrorMessagingRecipientEncryptedKeyTooShort, "_connectMessagingKey: "+
+					"Problem validating recipient encrypted key for recipient (%v)", recipient.RecipientPublicKey[:])
 		}
+
 		// Make sure the recipient public key and messaging key name are valid.
-		// The message recipients have an encrypted main messaging key for each of them, encrypted to their messaging keys.
 		if err := ValidateKeyAndName(recipient.RecipientPublicKey[:], recipient.RecipientMessagingKeyName[:]); err != nil {
-			return 0, 0, nil, errors.Wrapf(
-				RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKey: "+
-					"Problem parsing public key: %v", txMeta.MessagingPublicKey)
+			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingKey: " +
+				"Problem validating public key or messaging key for recipient (%v)", recipient.RecipientPublicKey[:])
 		}
-		// Now make sure the messaging key has already been added to the UtxoView.
+
+		// Now make sure recipient's messaging key has already been added to UtxoView or DB.
+		// We encrypt the group messaging key to recipients' messaging keys.
 		recipientMessagingKey := NewMessagingKey(recipient.RecipientPublicKey, recipient.RecipientMessagingKeyName[:])
 		recipientEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(recipientMessagingKey)
 		// The messaging key has to exist and cannot be deleted.
 		if recipientEntry == nil || recipientEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorMessagingPublicKeyInvalid, "_connectMessagingKey: "+
-					"Problem parsing public key: %v", txMeta.MessagingPublicKey)
+				RuleErrorMessagingRecipientKeyDoesntExist, "_connectMessagingKey: "+
+					"Problem verifying messaing key for recipient (%v)", recipient.RecipientPublicKey[:])
 		}
 		// The recipient can't be already added to the list of existing recipients.
 		if _, exists := existingRecipients[*recipient.RecipientPublicKey]; exists {
-			return 0, 0, nil, fmt.Errorf("_connectMessagingKey: Error, this key already exists; "+
-				"messagingKey %v, messagingPublicKey %v", messagingKey, txMeta.MessagingPublicKey)
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorMessagingRecipientAlreadyExists, "_connectMessagingKey: " +
+					"Error, recipient already exists (%v)", recipient.RecipientPublicKey[:])
 		}
-		// Add the recipient to our helper structs
+		// Add the recipient to our helper structs.
 		existingRecipients[*recipient.RecipientPublicKey] = true
-		messageRecipients = append(messageRecipients, recipient)
-	}
-	// If we're adding more group recipients, then the messaging key entry was already in utxoView
-	// we now make sure there are no overlapping recipients between the entry from the transaction, and the
-	// existing entry.
-	if entry != nil && !entry.isDeleted {
-		if len(messageRecipients) == 0 && reflect.DeepEqual(txMeta.EncryptedKey, entry.EncryptedKey) {
-			return 0, 0, nil, fmt.Errorf("_connectMessagingKey: Can't update a messaging key without " +
-				"any new recipients, nor without updating the encrypted key")
-		}
-		for _, recipient := range entry.Recipients {
-			if _, exists := existingRecipients[*recipient.RecipientPublicKey]; exists {
-				return 0, 0, nil, fmt.Errorf("_connectMessagingKey: Error, this key already exists; "+
-					"messagingKey %v, messagingPublicKey %v", messagingKey, txMeta.MessagingPublicKey)
-			}
-			existingRecipients[*recipient.RecipientPublicKey] = true
-			messageRecipients = append(messageRecipients, recipient)
-		}
+		messagingRecipients = append(messagingRecipients, recipient)
 	}
 
-	// Create a MessagingKeyEntry and add the entry to UtxoView.
-	// We add a new messaging key entry with all the updated information such as the
+	// Create a MessagingKeyEntry so we can add the entry to UtxoView.
 	messagingKeyEntry := MessagingKeyEntry{
-		publicKey:          NewPublicKey(txn.PublicKey),
+		PublicKey:          NewPublicKey(txn.PublicKey),
 		MessagingPublicKey: NewPublicKey(txMeta.MessagingPublicKey),
 		MessagingKeyName:   NewKeyName(txMeta.MessagingKeyName),
-		Recipients:         messageRecipients,
+		Recipients:         messagingRecipients,
 		EncryptedKey:       txMeta.EncryptedKey,
 		isDeleted:          false,
 	}
 	// Create an utxoOps entry, we make a copy of the existing entry.
 	var prevMessagingKeyEntry *MessagingKeyEntry
-	prevMessagingKeyEntry = nil
-	if entry != nil {
-		prevMessagingKeyEntry = &(*entry)
+	if existingEntry != nil && !existingEntry.isDeleted {
+		prevMessagingKeyEntry = &MessagingKeyEntry{}
+		prevMessagingKeyEntry.Decode(existingEntry.Encode())
+		prevMessagingKeyEntry.PublicKey = NewPublicKey(existingEntry.PublicKey[:])
 	}
 	bav._setMessagingKeyToMessagingKeyEntryMapping(&messagingKeyEntry)
 
