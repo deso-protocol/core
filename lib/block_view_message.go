@@ -317,25 +317,23 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
 }
 
 func ValidateKeyAndName(messagingPublicKey, keyName []byte) error {
-	if len(messagingPublicKey) > 0 {
-		// First validate the messagingPublicKey.
-		if err := IsByteArrayValidPublicKey(messagingPublicKey); err != nil {
-			return errors.Wrapf(err, "ValidateKeyAndNameWithUtxo: "+
-				"Problem validating sender's messaging key: %v", messagingPublicKey)
-		}
+	// First validate the messagingPublicKey.
+	if err := IsByteArrayValidPublicKey(messagingPublicKey); err != nil {
+		return errors.Wrapf(err, "ValidateKeyAndNameWithUtxo: "+
+			"Problem validating sender's messaging key: %v", messagingPublicKey)
+	}
 
-		// If we get here, it means that we have a valid messaging public key.
-		// Sanity-check messaging key name.
-		if len(keyName) < MinMessagingKeyNameCharacters {
-			return errors.Wrapf(RuleErrorMessagingKeyNameTooShort, "ValidateKeyAndNameWithUtxo: "+
-				"Too few characters in key name: min = %v, provided = %v",
-				MinMessagingKeyNameCharacters, len(keyName))
-		}
-		if len(keyName) > MaxMessagingKeyNameCharacters {
-			return errors.Wrapf(RuleErrorMessagingKeyNameTooLong, "ValidateKeyAndNameWithUtxo: "+
-				"Too many characters in key name: max = %v; provided = %v",
-				MaxMessagingKeyNameCharacters, len(keyName))
-		}
+	// If we get here, it means that we have a valid messaging public key.
+	// Sanity-check messaging key name.
+	if len(keyName) < MinMessagingKeyNameCharacters {
+		return errors.Wrapf(RuleErrorMessagingKeyNameTooShort, "ValidateKeyAndNameWithUtxo: "+
+			"Too few characters in key name: min = %v, provided = %v",
+			MinMessagingKeyNameCharacters, len(keyName))
+	}
+	if len(keyName) > MaxMessagingKeyNameCharacters {
+		return errors.Wrapf(RuleErrorMessagingKeyNameTooLong, "ValidateKeyAndNameWithUtxo: "+
+			"Too many characters in key name: max = %v; provided = %v",
+			MaxMessagingKeyNameCharacters, len(keyName))
 	}
 	return nil
 }
