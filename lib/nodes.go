@@ -135,4 +135,19 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://tunel.app",
 		Owner: "hazrodriguez",
 	},
+	23: {
+		Name:  "Entre",
+		URL:   "https://joinentre.com",
+		Owner: "entre",
+	},
+	24: {
+		Name:  "DiscoverNode",
+		URL:   "https://discoverdeso.com",
+		Owner: "discovernode",
+	},
+	25: {
+		Name:  "CloutCast",
+		URL:   "https://bitclout.cloutcast.io",
+		Owner: "cloutcast",
+	},
 }
