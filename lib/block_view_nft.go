@@ -472,7 +472,7 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 
 	additionalRoyalties := make(map[PKID]uint64)
 	additionalRoyaltiesBasisPoints := uint64(0)
-	if mapBytes, exists := extraData[key]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
+	if mapBytes, exists := extraData[key]; exists && blockHeight >= bav.Params.BuyNowAndNFTSplitsBlockHeight {
 		var err error
 		additionalRoyaltiesByPubKey, err := DeserializePubKeyToUint64Map(mapBytes)
 		if err != nil {
