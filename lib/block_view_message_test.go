@@ -504,7 +504,7 @@ func TestPrivateMessage(t *testing.T) {
 	}
 }
 
-// This helper function is used to generate a random messaging key and the signed hash(publicKey || keyName).
+// _generateMessagingKey is used to generate a random messaging key and the signed hash(publicKey || keyName).
 func _generateMessagingKey(senderPub, senderPriv, keyName []byte) (
 	priv *btcec.PrivateKey, sign []byte, messagingKeyEntry *MessagingKeyEntry) {
 
@@ -519,7 +519,7 @@ func _generateMessagingKey(senderPub, senderPriv, keyName []byte) (
 	return priv, signature.Serialize(), _initMessagingKey(senderPub, pub, keyName)
 }
 
-// Adds a messaging key to provided utxoView
+// _messagingKey adds a messaging key entry to a new utxo and flushes to DB.
 func _messagingKey(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
 	senderPk []byte, signerPriv string, messagingPublicKey, messagingKeyName,
 	keySignature []byte, recipients []MessagingRecipient) ([]*UtxoOperation, *MsgDeSoTxn, error) {
@@ -554,6 +554,7 @@ func _messagingKey(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	return utxoOps, txn, err
 }
 
+// _messagingKeyWithTestMeta is used to connect and flush a messaging key to the DB.
 func _messagingKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv string,
 	messagingPublicKey, messagingKeyName, keySignature []byte, recipients []MessagingRecipient,
 	expectedError error) {
@@ -579,7 +580,7 @@ func _messagingKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv s
 	testMeta.txns = append(testMeta.txns, txn)
 }
 
-// This helper function allows us to verify that a messaging key was properly connected to utxoView and
+// _verifyMessagingKey allows us to verify that a messaging key was properly connected to utxoView and
 // that it matches the expected entry that's provided.
 func _verifyMessagingKey(testMeta *TestMeta, entry *MessagingKeyEntry) bool {
 	var utxoMessagingEntry *MessagingKeyEntry
@@ -595,20 +596,21 @@ func _verifyMessagingKey(testMeta *TestMeta, entry *MessagingKeyEntry) bool {
 	}
 
 	return reflect.DeepEqual(utxoMessagingEntry.Encode(), entry.Encode())
-	//return reflect.DeepEqual(*entry.MessagingPublicKey, *utxoMessagingEntry.MessagingPublicKey) &&
-	//	reflect.DeepEqual(*entry.MessagingKeyName, *utxoMessagingEntry.MessagingKeyName) &&
-	//	reflect.DeepEqual(*entry.publicKey, *utxoMessagingEntry.publicKey)
 }
 
+// _verifyAddedMessagingKeys is used to verify that messaging key entries in db match the expected entries.
 func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEntries []*MessagingKeyEntry) error {
 	return testMeta.chain.db.View(func(txn *badger.Txn) error {
+		// Get the DB record.
 		entries, err := DbGetAllUserMessagingKeys(txn, publicKey)
 		if err != nil {
 			return err
 		}
+		// Make sure the number of entries between the DB and expectation match.
 		if len(entries) != len(expectedEntries) {
 			return fmt.Errorf("")
 		}
+		// Verify entries one by one.
 		for _, expectedEntry := range expectedEntries {
 			ok := false
 			for _, entry := range entries {
@@ -625,6 +627,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 	})
 }
 
+// _initMessagingKey is a helper function that instantiates a MessagingKeyEntry.
 func _initMessagingKey(senderPublicKey, messagingPublicKey, messagingKeyName []byte) *MessagingKeyEntry {
 	return &MessagingKeyEntry{
 		PublicKey:          NewPublicKey(senderPublicKey),
@@ -666,6 +669,7 @@ func TestMessagingKeys(t *testing.T) {
 	require.NoError(err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(err)
+	senderPublicKey := *NewPublicKey(senderPkBytes)
 
 	registerOrTransfer := func(username string,
 		senderPk string, recipientPk string, senderPriv string) {
@@ -693,33 +697,66 @@ func TestMessagingKeys(t *testing.T) {
 	require.NoError(err)
 	m0PrivKey, _, err := Base58CheckDecode(m0Priv)
 	require.NoError(err)
+	m0PublicKey := *NewPublicKey(m0PubKey)
 
 	m1PubKey, _, err := Base58CheckDecode(m1Pub)
 	require.NoError(err)
 	m1PrivKey, _, err := Base58CheckDecode(m1Priv)
 	require.NoError(err)
+	m1PublicKey := *NewPublicKey(m1PubKey)
 
 	m2PubKey, _, err := Base58CheckDecode(m2Pub)
 	require.NoError(err)
 	m2PrivKey, _, err := Base58CheckDecode(m2Priv)
 	require.NoError(err)
+	m2PublicKey := *NewPublicKey(m2PubKey)
 
 	m3PubKey, _, err := Base58CheckDecode(m3Pub)
 	require.NoError(err)
 	m3PrivKey, _, err := Base58CheckDecode(m3Priv)
 	require.NoError(err)
+	m3PublicKey := *NewPublicKey(m3PubKey)
 
 	// -------------------------------------------------------------------------------------
-	//	Test #1: Check that entry is correctly set in UtxoView and flushed to DB
+	//	Test #1: Check that non-group-chat messaging keys are correctly set in UtxoView and flushed to DB
 	// -------------------------------------------------------------------------------------
-	entriesAdded := make(map[PublicKey][]*MessagingKeyEntry)
+
+	// Entries is a map keeping track of messaging keys added for each public key. We will use it
+	// to validate the DB state after the flushes.
+	keyEntriesAdded := make(map[PublicKey][]*MessagingKeyEntry)
+
+	// Add base keys for all users. These keys are present by default because they're just the main user keys.
+	{
+		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, BaseKeyName()[:])
+		entry.MessagingPublicKey = NewPublicKey(senderPkBytes)
+		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], entry)
+
+		_, _, entry = _generateMessagingKey(m0PubKey, m0PrivKey, BaseKeyName()[:])
+		entry.MessagingPublicKey = NewPublicKey(m0PubKey)
+		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], entry)
+
+		_, _, entry = _generateMessagingKey(m1PubKey, m1PrivKey, BaseKeyName()[:])
+		entry.MessagingPublicKey = NewPublicKey(m1PubKey)
+		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], entry)
+
+		_, _, entry = _generateMessagingKey(m2PubKey, m2PrivKey, BaseKeyName()[:])
+		entry.MessagingPublicKey = NewPublicKey(m2PubKey)
+		keyEntriesAdded[m2PublicKey] = append(keyEntriesAdded[m2PublicKey], entry)
+
+		_, _, entry = _generateMessagingKey(m3PubKey, m3PrivKey, BaseKeyName()[:])
+		entry.MessagingPublicKey = NewPublicKey(m3PubKey)
+		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
+	}
+
+	// First some failing tests.
+	// Sender tries to add base messaging key, must fail.
 	{
 		// Try adding base messaging key, should fail
 		baseKeyName := BaseKeyName()
 		_, sign, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, baseKeyName[:])
-		// The base entry has the same messaging public key as the owner's main key
+		// The base key has the same messaging public key as the owner's main key
 		entry.MessagingPublicKey = entry.PublicKey
-		// The base key should always be present in UtxoView.
+		// The base key should always be present in UtxoView. So we expect true.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 		_messagingKeyWithTestMeta(
 			testMeta,
@@ -731,13 +768,12 @@ func TestMessagingKeys(t *testing.T) {
 			[]MessagingRecipient{},
 			RuleErrorMessagingKeyNameCannotBeZeros)
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
-		// Append the base key to the entries added
-		entriesAdded[*NewPublicKey(senderPkBytes)] = append(entriesAdded[*NewPublicKey(senderPkBytes)], entry)
 	}
+	// Sender tries to add default messaging key without proper signature, must fail.
 	{
-		// Try adding default messaging key without signature
 		defaultKeyName := []byte("default-key")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, defaultKeyName)
+		// The default key was not added so verification is false.
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 		_messagingKeyWithTestMeta(
 			testMeta,
@@ -748,12 +784,14 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			[]MessagingRecipient{},
 			RuleErrorMessagingSignatureInvalid)
+		// Verification still fails because the txn wasn't successful.
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
+	// Sender tries adding default messaging key with malformed messaging public key, must fail.
 	{
-		// Try adding default messaging key with malformed messaging public key
 		defaultKeyName := []byte("default-key")
 		_, sign, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, defaultKeyName)
+		// The default key was not added so verification is false.
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 		_messagingKeyWithTestMeta(
 			testMeta,
@@ -764,10 +802,11 @@ func TestMessagingKeys(t *testing.T) {
 			sign,
 			[]MessagingRecipient{},
 			RuleErrorPubKeyLen)
+		// Verification still fails because the txn wasn't successful.
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
+	// Sender tries adding default messaging key with malformed messaging key name, must fail.
 	{
-		// Try adding messaging key with malformed messaging key name
 		defaultKeyName := []byte("default-key")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, defaultKeyName)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
@@ -783,7 +822,6 @@ func TestMessagingKeys(t *testing.T) {
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
 	{
-		// Try adding messaging key with malformed messaging key name
 		defaultKeyName := []byte("default-key")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, defaultKeyName)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
@@ -798,8 +836,9 @@ func TestMessagingKeys(t *testing.T) {
 			RuleErrorMessagingKeyNameTooLong)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
+	// Now let's make a valid transaction.
+	// Sender tries adding correct default messaging key, this time it passes.
 	{
-		// Try adding correct default messaging key
 		defaultKeyName := []byte("default-key")
 		_, sign, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, defaultKeyName)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
@@ -812,10 +851,12 @@ func TestMessagingKeys(t *testing.T) {
 			sign,
 			[]MessagingRecipient{},
 			nil)
+		// Verification is now successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
-		// Append the default key to the entries added
-		entriesAdded[*NewPublicKey(senderPkBytes)] = append(entriesAdded[*NewPublicKey(senderPkBytes)], entry)
+		// Append the default key to the entries added for sender.
+		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], entry)
 	}
+	// Sender tries adding some random messaging key, must pass.
 	{
 		// Try adding a non-default key without signature
 		randomKeyName := []byte("test-key-1")
@@ -830,13 +871,14 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			[]MessagingRecipient{},
 			nil)
+		// Verification is successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
-		// Append the non-default key to the entries added
-		entriesAdded[*NewPublicKey(senderPkBytes)] = append(entriesAdded[*NewPublicKey(senderPkBytes)], entry)
+		// Append the default key to the entries added for sender.
+		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], entry)
 	}
+	// Sender tries adding another random messaging key, must pass.
+	// We add the signature just for the lols, as it shouldn't affect anything.
 	{
-		// Try adding another non-default key but with signature.
-		// Shouldn't affect anything
 		randomKeyName := []byte("test-key-2")
 		_, sign, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomKeyName)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
@@ -849,16 +891,19 @@ func TestMessagingKeys(t *testing.T) {
 			sign,
 			[]MessagingRecipient{},
 			nil)
+		// Verification is successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 		// Append the non-default key to the entries added
-		entriesAdded[*NewPublicKey(senderPkBytes)] = append(entriesAdded[*NewPublicKey(senderPkBytes)], entry)
+		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], entry)
 	}
+	// Sender tries adding the same key again without changing anything, this should fail.
+	// We would accept an update to a messaging key only if we add group recipients.
 	{
-		// Try adding the random key again without changing anything, this should fail.
-		// We would accept an update to a messaging key only if we add group recipients.
 		randomKeyName := []byte("test-key-2")
-		entry := entriesAdded[*NewPublicKey(senderPkBytes)][len(entriesAdded[*NewPublicKey(senderPkBytes)])-1]
+		entry := keyEntriesAdded[senderPublicKey][len(keyEntriesAdded[senderPublicKey])-1]
+		// Verification is successful because the key was already added.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
+		// However, the transaction must fail.
 		_messagingKeyWithTestMeta(
 			testMeta,
 			senderPkBytes,
@@ -868,12 +913,13 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			[]MessagingRecipient{},
 			RuleErrorMessagingKeyDoesntAddRecipients)
+		// Verification is still successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 	}
+	// Sender tries adding the random key again but with a different messaging public key, this should fail.
 	{
-		// Try adding the random key again but with a different messaging public key, this should fail.
 		randomKeyName := []byte("test-key-2")
-		entry := entriesAdded[*NewPublicKey(senderPkBytes)][len(entriesAdded[*NewPublicKey(senderPkBytes)])-1]
+		entry := keyEntriesAdded[senderPublicKey][len(keyEntriesAdded[senderPublicKey])-1]
 		_, _, newEntry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomKeyName)
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 		_messagingKeyWithTestMeta(
@@ -885,13 +931,15 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			[]MessagingRecipient{},
 			RuleErrorMessagingPublicKeyCannotBeDifferent)
+		// The existing entry will pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
+		// The newly-generated entry will fail verification.
 		require.Equal(false, _verifyMessagingKey(testMeta, newEntry))
 	}
+	// Sender tries adding the random key again but with a "filled" key name, this should fail.
 	{
-		// Try adding the random key again but with a "filled" key name, this should fail.
 		randomKeyName := []byte("test-key-2")
-		entry := entriesAdded[*NewPublicKey(senderPkBytes)][len(entriesAdded[*NewPublicKey(senderPkBytes)])-1]
+		entry := keyEntriesAdded[senderPublicKey][len(keyEntriesAdded[senderPublicKey])-1]
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 		_messagingKeyWithTestMeta(
 			testMeta,
@@ -904,13 +952,74 @@ func TestMessagingKeys(t *testing.T) {
 			RuleErrorMessagingKeyDoesntAddRecipients)
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 	}
-	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, entriesAdded[*NewPublicKey(senderPkBytes)]))
+	// m1Pub adds some random key, should pass.
+	{
+		randomKeyName := []byte("totally-random-key")
+		_, _, entry := _generateMessagingKey(m1PubKey, m1PrivKey, randomKeyName)
+		require.Equal(false, _verifyMessagingKey(testMeta, entry))
+		_messagingKeyWithTestMeta(
+			testMeta,
+			m1PubKey,
+			m1Priv,
+			entry.MessagingPublicKey[:],
+			randomKeyName,
+			[]byte{},
+			[]MessagingRecipient{},
+			nil)
+		require.Equal(true, _verifyMessagingKey(testMeta, entry))
+		// Append the key to the entries added.
+		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], entry)
+	}
+	// m0pub add some random key, should pass.
+	{
+		randomKeyName := []byte("totally-random-key2")
+		_, _, entry := _generateMessagingKey(m0PubKey, m0PrivKey, randomKeyName)
+		require.Equal(false, _verifyMessagingKey(testMeta, entry))
+		_messagingKeyWithTestMeta(
+			testMeta,
+			m0PubKey,
+			m0Priv,
+			entry.MessagingPublicKey[:],
+			randomKeyName,
+			[]byte{},
+			[]MessagingRecipient{},
+			nil)
+		require.Equal(true, _verifyMessagingKey(testMeta, entry))
+		// Append the key to the entries added.
+		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], entry)
+	}
+	// Add a default key for m3Pub, should pass.
+	{
+		randomKeyName := DefaultKeyName()
+		_, sign, entry := _generateMessagingKey(m3PubKey, m3PrivKey, randomKeyName[:])
+		require.Equal(false, _verifyMessagingKey(testMeta, entry))
+		_messagingKeyWithTestMeta(
+			testMeta,
+			m3PubKey,
+			m3Priv,
+			entry.MessagingPublicKey[:],
+			randomKeyName[:],
+			sign,
+			[]MessagingRecipient{},
+			nil)
+		require.Equal(true, _verifyMessagingKey(testMeta, entry))
+		// Append the key to the entries added.
+		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
+	}
+	// A bit of an overkill, but verify that all key entries are present in the DB.
+	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey]))
 
 	// -------------------------------------------------------------------------------------
-	//	Test #2: We will add messaging keys with message recipients
+	//	Test #2: We will add messaging keys with message recipients, aka, group chats.
 	// -------------------------------------------------------------------------------------
+
+	// Let's fail a bit first.
+	// Sender tries adding himself as a recipient, this is forbidden and so we should fail.
 	{
-		// SenderPk: Try adding a non-default key with an incorrect recipient of senderPk
 		// Can't add yourself as a recipient.
 		randomGroupKeyName := []byte("test-key-3")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
@@ -931,11 +1040,11 @@ func TestMessagingKeys(t *testing.T) {
 			RuleErrorMessagingRecipientAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
+	// Sender tries adding a messaging public key as one of the recipients, this is also forbidden so we fail.
 	{
-		// SenderPk: Try adding a non-default key with an incorrect recipient of senderPk
-		// Can't add messaging public key as a recipient.
 		randomGroupKeyName := []byte("test-key-3")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
+		// Can't add messaging public key as a recipient.
 		entry.Recipients = append(entry.Recipients, MessagingRecipient{
 			NewPublicKey(entry.MessagingPublicKey[:]),
 			BaseKeyName(),
@@ -953,8 +1062,8 @@ func TestMessagingKeys(t *testing.T) {
 			RuleErrorMessagingRecipientAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
+	// Sender tries adding a messaging recipient for m0PubKey with a non-existent key, this should fail.
 	{
-		// SenderPk: Try adding a messaging recipient for m0PubKey with a non-existent key.
 		randomGroupKeyName := []byte("test-key-3")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
 		entry.Recipients = append(entry.Recipients, MessagingRecipient{
@@ -974,10 +1083,11 @@ func TestMessagingKeys(t *testing.T) {
 			RuleErrorMessagingRecipientKeyDoesntExist)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
+	// Sender tries adding a messaging recipient for m0PubKey with a malformed encrypted key, so we fail.
 	{
-		// SenderPk: Try adding a messaging recipient for m0PubKey with a malformed encrypted key.
 		randomGroupKeyName := []byte("test-key-3")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
+		// Encrypted key must have at least 32 bytes.
 		entry.Recipients = append(entry.Recipients, MessagingRecipient{
 			NewPublicKey(m0PubKey),
 			BaseKeyName(),
@@ -995,8 +1105,8 @@ func TestMessagingKeys(t *testing.T) {
 			RuleErrorMessagingRecipientEncryptedKeyTooShort)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
+	// Sender tries adding m0PubKey as a recipient twice, this should also fail.
 	{
-		// SenderPk: Try adding same messaging recipient for m0PubKey twice.
 		randomGroupKeyName := []byte("test-key-3")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
 		entry.Recipients = append(entry.Recipients, MessagingRecipient{
@@ -1020,46 +1130,10 @@ func TestMessagingKeys(t *testing.T) {
 			RuleErrorMessagingRecipientAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 	}
-	// Now we will actually try to add recipients
+	// Now we get to passing tests.
+	// We will do a bunch of tests in the same context so that we preserve the entry messaging key.
 	{
-		_, _, entry := _generateMessagingKey(m0PubKey, m0PrivKey, BaseKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m0PubKey)
-		entriesAdded[*NewPublicKey(m0PubKey)] = append(entriesAdded[*NewPublicKey(m0PubKey)], entry)
-
-		_, _, entry = _generateMessagingKey(m1PubKey, m1PrivKey, BaseKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m1PubKey)
-		entriesAdded[*NewPublicKey(m1PubKey)] = append(entriesAdded[*NewPublicKey(m1PubKey)], entry)
-
-		_, _, entry = _generateMessagingKey(m2PubKey, m2PrivKey, BaseKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m2PubKey)
-		entriesAdded[*NewPublicKey(m2PubKey)] = append(entriesAdded[*NewPublicKey(m2PubKey)], entry)
-
-		_, _, entry = _generateMessagingKey(m3PubKey, m3PrivKey, BaseKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m3PubKey)
-		entriesAdded[*NewPublicKey(m3PubKey)] = append(entriesAdded[*NewPublicKey(m3PubKey)], entry)
-	}
-	// Add some random key for m1Pub
-	{
-		// Try adding another non-default key but with signature.
-		// Shouldn't affect anything
-		randomKeyName := []byte("totally-random-key")
-		_, _, entry := _generateMessagingKey(m1PubKey, m1PrivKey, randomKeyName)
-		require.Equal(false, _verifyMessagingKey(testMeta, entry))
-		_messagingKeyWithTestMeta(
-			testMeta,
-			m1PubKey,
-			m1Priv,
-			entry.MessagingPublicKey[:],
-			randomKeyName,
-			[]byte{},
-			[]MessagingRecipient{},
-			nil)
-		require.Equal(true, _verifyMessagingKey(testMeta, entry))
-		// Append the non-default key to the entries added
-		entriesAdded[*NewPublicKey(m1PubKey)] = append(entriesAdded[*NewPublicKey(m1PubKey)], entry)
-	}
-	{
-		// SenderPk: Try adding a correct recipient for m0PubKey.
+		// Sender tries adding a correct recipient for m0PubKey.
 		randomGroupKeyName := []byte("test-key-3")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
 		entry.Recipients = append(entry.Recipients, MessagingRecipient{
@@ -1077,9 +1151,11 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			entry.Recipients,
 			nil)
+		// The entry should now pass verification, since it was added successfully.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 
-		// SenderPk: Try re-adding the same recipient for m0PubKey, should fail
+		// We will do some failing tests on this added entry.
+		// Try re-adding the same recipient for m0PubKey, should fail.
 		_messagingKeyWithTestMeta(
 			testMeta,
 			senderPkBytes,
@@ -1089,9 +1165,11 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			entry.Recipients,
 			RuleErrorMessagingRecipientAlreadyExists)
+		// The entry still passes verification, because transaction was rejected.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 
-		// m1: Try to add himself to the group
+		// m1PubKey tries to add himself to the group, this will fail because only sender can add
+		// new members.
 		var entryCopy MessagingKeyEntry
 		require.NoError(entryCopy.Decode(entry.Encode()))
 		entryCopy.Recipients[0] = MessagingRecipient{
@@ -1099,6 +1177,7 @@ func TestMessagingKeys(t *testing.T) {
 			NewKeyName([]byte("totally-random-key")),
 			senderPrivBytes,
 		}
+		// Transaction fails.
 		_messagingKeyWithTestMeta(
 			testMeta,
 			senderPkBytes,
@@ -1109,6 +1188,7 @@ func TestMessagingKeys(t *testing.T) {
 			entryCopy.Recipients,
 			RuleErrorInvalidTransactionSignature)
 
+		// Sender adds m1PubKey to the group chat, this time we will succeed.
 		var workingCopy MessagingKeyEntry
 		require.NoError(workingCopy.Decode(entry.Encode()))
 		workingCopy.Recipients[0] = MessagingRecipient{
@@ -1126,68 +1206,31 @@ func TestMessagingKeys(t *testing.T) {
 			workingCopy.Recipients,
 			nil)
 
+		// Reflect the newly added recipient in the entry.
 		entry.Recipients = append(entry.Recipients, MessagingRecipient{
 			NewPublicKey(m1PubKey),
 			NewKeyName([]byte("totally-random-key")),
 			senderPrivBytes,
 		})
-		// Append the base key to the entries added
-		entriesAdded[*NewPublicKey(senderPkBytes)] = append(entriesAdded[*NewPublicKey(senderPkBytes)], entry)
-		entriesAdded[*NewPublicKey(m0PubKey)] = append(entriesAdded[*NewPublicKey(m0PubKey)], &MessagingKeyEntry{
+
+		// Append all the new keys to our keyEntriesAdded.
+		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], entry)
+		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &MessagingKeyEntry{
 			PublicKey:          NewPublicKey(m0PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName:   BaseKeyName(),
 			EncryptedKey:       senderPrivBytes,
 		})
-		entriesAdded[*NewPublicKey(m1PubKey)] = append(entriesAdded[*NewPublicKey(m1PubKey)], &MessagingKeyEntry{
+		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], &MessagingKeyEntry{
 			PublicKey: NewPublicKey(m1PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName: NewKeyName([]byte("totally-random-key")),
 			EncryptedKey: senderPrivBytes,
 		})
 	}
-	// Add some random key for m0Pub
+	// Now we will go all-in on the group chats and create a 5-party group chat with everyone.
 	{
-		// Try adding another non-default key but with signature.
-		// Shouldn't affect anything
-		randomKeyName := []byte("totally-random-key2")
-		_, _, entry := _generateMessagingKey(m0PubKey, m0PrivKey, randomKeyName)
-		require.Equal(false, _verifyMessagingKey(testMeta, entry))
-		_messagingKeyWithTestMeta(
-			testMeta,
-			m0PubKey,
-			m0Priv,
-			entry.MessagingPublicKey[:],
-			randomKeyName,
-			[]byte{},
-			[]MessagingRecipient{},
-			nil)
-		require.Equal(true, _verifyMessagingKey(testMeta, entry))
-		// Append the non-default key to the entries added
-		entriesAdded[*NewPublicKey(m0PubKey)] = append(entriesAdded[*NewPublicKey(m0PubKey)], entry)
-	}
-	// Add a default key for m3Pub
-	{
-		// Try adding another non-default key but with signature.
-		// Shouldn't affect anything
-		randomKeyName := DefaultKeyName()
-		_, sign, entry := _generateMessagingKey(m3PubKey, m3PrivKey, randomKeyName[:])
-		require.Equal(false, _verifyMessagingKey(testMeta, entry))
-		_messagingKeyWithTestMeta(
-			testMeta,
-			m3PubKey,
-			m3Priv,
-			entry.MessagingPublicKey[:],
-			randomKeyName[:],
-			sign,
-			[]MessagingRecipient{},
-			nil)
-		require.Equal(true, _verifyMessagingKey(testMeta, entry))
-		// Append the non-default key to the entries added
-		entriesAdded[*NewPublicKey(m3PubKey)] = append(entriesAdded[*NewPublicKey(m3PubKey)], entry)
-	}
-	{
-		// SenderPk: Try adding a correct recipient for m0PubKey.
+		// Sender generates the group chat messaging key.
 		randomGroupKeyName := []byte("final-group-key")
 		_, _, entry := _generateMessagingKey(m1PubKey, m1PrivKey, randomGroupKeyName)
 		// Now add a lot of people
@@ -1211,6 +1254,7 @@ func TestMessagingKeys(t *testing.T) {
 			DefaultKeyName(),
 			senderPrivBytes,
 		})
+		// And finally create the group chat.
 		require.Equal(false, _verifyMessagingKey(testMeta, entry))
 		_messagingKeyWithTestMeta(
 			testMeta,
@@ -1221,73 +1265,76 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			entry.Recipients,
 			nil)
+		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
-		entriesAdded[*NewPublicKey(m1PubKey)] = append(entriesAdded[*NewPublicKey(m1PubKey)], entry)
-		entriesAdded[*NewPublicKey(senderPkBytes)] = append(entriesAdded[*NewPublicKey(senderPkBytes)], &MessagingKeyEntry{
+		// So now reflect the key entries added with the new keys.
+		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], entry)
+		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], &MessagingKeyEntry{
 			PublicKey:          NewPublicKey(senderPkBytes),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName:   DefaultKeyName(),
 			EncryptedKey:       senderPrivBytes,
 		})
-		entriesAdded[*NewPublicKey(m0PubKey)] = append(entriesAdded[*NewPublicKey(m0PubKey)], &MessagingKeyEntry{
+		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &MessagingKeyEntry{
 			PublicKey: NewPublicKey(m0PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName: NewKeyName([]byte("totally-random-key2")),
 			EncryptedKey: senderPrivBytes,
 		})
-		entriesAdded[*NewPublicKey(m2PubKey)] = append(entriesAdded[*NewPublicKey(m2PubKey)], &MessagingKeyEntry{
+		keyEntriesAdded[m2PublicKey] = append(keyEntriesAdded[m2PublicKey], &MessagingKeyEntry{
 			PublicKey: NewPublicKey(m2PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName: BaseKeyName(),
 			EncryptedKey: senderPrivBytes,
 		})
-		entriesAdded[*NewPublicKey(m3PubKey)] = append(entriesAdded[*NewPublicKey(m3PubKey)], &MessagingKeyEntry{
+		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], &MessagingKeyEntry{
 			PublicKey: NewPublicKey(m3PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName: DefaultKeyName(),
 			EncryptedKey: senderPrivBytes,
 		})
 	}
-	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, entriesAdded[*NewPublicKey(senderPkBytes)]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m0PubKey, entriesAdded[*NewPublicKey(m0PubKey)]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m1PubKey, entriesAdded[*NewPublicKey(m1PubKey)]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m2PubKey, entriesAdded[*NewPublicKey(m2PubKey)]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m3PubKey, entriesAdded[*NewPublicKey(m3PubKey)]))
+	// Now we verify that all keys were properly added.
+	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey]))
 
+	// Do some block connecting/disconnecting, mempooling, etc to verify everything works.
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 
+	// Finally, verify that there are no more keys, besides the base keys, in the db.
 	{
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, BaseKeyName()[:])
 		entry.MessagingPublicKey = NewPublicKey(senderPkBytes)
-		entriesAdded[*NewPublicKey(senderPkBytes)] = append([]*MessagingKeyEntry{}, entry)
+		keyEntriesAdded[senderPublicKey] = append([]*MessagingKeyEntry{}, entry)
 
 		_, _, entry = _generateMessagingKey(m0PubKey, m0PrivKey, BaseKeyName()[:])
 		entry.MessagingPublicKey = NewPublicKey(m0PubKey)
-		entriesAdded[*NewPublicKey(m0PubKey)] = append([]*MessagingKeyEntry{}, entry)
+		keyEntriesAdded[m0PublicKey] = append([]*MessagingKeyEntry{}, entry)
 
 		_, _, entry = _generateMessagingKey(m1PubKey, m1PrivKey, BaseKeyName()[:])
 		entry.MessagingPublicKey = NewPublicKey(m1PubKey)
-		entriesAdded[*NewPublicKey(m1PubKey)] = append([]*MessagingKeyEntry{}, entry)
+		keyEntriesAdded[m1PublicKey] = append([]*MessagingKeyEntry{}, entry)
 
 		_, _, entry = _generateMessagingKey(m2PubKey, m2PrivKey, BaseKeyName()[:])
 		entry.MessagingPublicKey = NewPublicKey(m2PubKey)
-		entriesAdded[*NewPublicKey(m2PubKey)] = append([]*MessagingKeyEntry{}, entry)
+		keyEntriesAdded[m2PublicKey] = append([]*MessagingKeyEntry{}, entry)
 
 		_, _, entry = _generateMessagingKey(m3PubKey, m3PrivKey, BaseKeyName()[:])
 		entry.MessagingPublicKey = NewPublicKey(m3PubKey)
-		entriesAdded[*NewPublicKey(m3PubKey)] = append([]*MessagingKeyEntry{}, entry)
+		keyEntriesAdded[m3PublicKey] = append([]*MessagingKeyEntry{}, entry)
 	}
-
-	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, entriesAdded[*NewPublicKey(senderPkBytes)]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m0PubKey, entriesAdded[*NewPublicKey(m0PubKey)]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m1PubKey, entriesAdded[*NewPublicKey(m1PubKey)]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m2PubKey, entriesAdded[*NewPublicKey(m2PubKey)]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m3PubKey, entriesAdded[*NewPublicKey(m3PubKey)]))
-
+	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey]))
+	require.NoError(_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey]))
 }
 
 // In these tests we basically want to verify that MessageParty records are correctly added to UtxoView and DB
