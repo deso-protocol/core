@@ -6163,7 +6163,6 @@ func TestNFTBuyNow(t *testing.T) {
 }
 
 func TestNFTSplits(t *testing.T) {
-	BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -6174,6 +6173,7 @@ func TestNFTSplits(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
