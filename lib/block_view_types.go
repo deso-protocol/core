@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-		"github.com/pkg/errors"
-"io"
+	"github.com/holiman/uint256"
+	"github.com/pkg/errors"
+	"io"
 	"reflect"
 	"strings"
 )
@@ -27,8 +28,9 @@ const (
 	UtxoTypeNFTSeller                UtxoType = 6
 	UtxoTypeNFTBidderChange          UtxoType = 7
 	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
+	UtxoTypeNFTAdditionalDESORoyalty UtxoType = 9
 
-	// NEXT_TAG = 9
+	// NEXT_TAG = 10
 )
 
 func (mm UtxoType) String() string {
@@ -104,8 +106,10 @@ const (
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
 	OperationTypeMessagingKey                 OperationType = 24
 	OperationTypeMessageParty                 OperationType = 25
+	OperationTypeDAOCoin                      OperationType = 26
+	OperationTypeDAOCoinTransfer              OperationType = 27
 
-	// NEXT_TAG = 26
+	// NEXT_TAG = 28
 )
 
 func (op OperationType) String() string {
@@ -210,6 +214,14 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeMessageParty"
 		}
+	case OperationTypeDAOCoin:
+		{
+			return "OperationTypeDAOCoin"
+		}
+	case OperationTypeDAOCoinTransfer:
+		{
+			return "OperationTypeDAOCoinTransfer"
+		}
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -286,6 +298,11 @@ type UtxoOperation struct {
 	// Save the state of a creator coin prior to updating it due to a
 	// buy/sell/add transaction.
 	PrevCoinEntry *CoinEntry
+
+	// Save the state of coin entries associated with a PKID prior to updating
+	// it due to an additional coin royalty when an NFT is sold.
+	PrevCoinRoyaltyCoinEntries map[PKID]CoinEntry
+
 	// Save the creator coin balance of both the transactor and the creator.
 	// We modify the transactor's balances when they buys/sell a creator coin
 	// and we modify the creator's balance when we pay them a founder reward.
@@ -321,9 +338,18 @@ type UtxoOperation struct {
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
 	// in order to get these values.
-	AcceptNFTBidCreatorPublicKey    []byte
-	AcceptNFTBidBidderPublicKey     []byte
-	AcceptNFTBidCreatorRoyaltyNanos uint64
+	AcceptNFTBidCreatorPublicKey        []byte
+	AcceptNFTBidBidderPublicKey         []byte
+	AcceptNFTBidCreatorRoyaltyNanos     uint64
+	AcceptNFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
+
+	// These values are used by Rosetta in order to create input and output
+	// operations. They make it so that we don't have to reconnect all txns
+	// in order to get these values for NFT bid transactions on Buy Now NFTs.
+	NFTBidCreatorPublicKey        []byte
+	NFTBidBidderPublicKey         []byte
+	NFTBidCreatorRoyaltyNanos     uint64
+	NFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -839,6 +865,12 @@ type NFTEntry struct {
 	// If this NFT was transferred to the current owner, it will be pending until accepted.
 	IsPending bool
 
+	// If an NFT does not have unlockable content, it can be sold instantly at BuyNowPriceNanos.
+	IsBuyNow bool
+
+	// If an NFT is a Buy Now NFT, it can be purchased for this price.
+	BuyNowPriceNanos uint64
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
@@ -1099,6 +1131,15 @@ type PostEntry struct {
 	NFTRoyaltyToCreatorBasisPoints uint64
 	NFTRoyaltyToCoinBasisPoints    uint64
 
+	// AdditionalNFTRoyaltiesToCreatorsBasisPoints is a map where keys are PKIDs and values are uint64s representing
+	// basis points. The user with the PKID specified should receive the basis points specified by the value as a
+	// royalty anytime this NFT is sold. This map must not contain the post creator.
+	AdditionalNFTRoyaltiesToCreatorsBasisPoints map[PKID]uint64
+	// AdditionalNFTRoyaltiesToCoinsBasisPoints is a map where keys are PKIDs and values are uint64s representing
+	// basis points. The user with the PKID specified should have the basis points specified as by the value added to
+	// the DESO locked in their profile anytime this NFT is sold. This map must not contain the post creator.
+	AdditionalNFTRoyaltiesToCoinsBasisPoints map[PKID]uint64
+
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
 	PostExtraData map[string][]byte
 }
@@ -1132,12 +1173,13 @@ type BalanceEntryMapKey struct {
 	CreatorPKID PKID
 }
 
-func MakeCreatorCoinBalanceKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntryMapKey {
+func MakeBalanceEntryKey(hodlerPKID *PKID, creatorPKID *PKID) BalanceEntryMapKey {
 	return BalanceEntryMapKey{
 		HODLerPKID:  *hodlerPKID,
 		CreatorPKID: *creatorPKID,
 	}
 }
+
 func (mm BalanceEntryMapKey) String() string {
 	return fmt.Sprintf("BalanceEntryMapKey: <HODLer Pub Key: %v, Creator Pub Key: %v>",
 		PkToStringBoth(mm.HODLerPKID[:]), PkToStringBoth(mm.CreatorPKID[:]))
@@ -1154,13 +1196,30 @@ type BalanceEntry struct {
 	CreatorPKID *PKID
 
 	// How much this HODLer owns of a particular creator coin.
-	BalanceNanos uint64
+	BalanceNanos uint256.Int
 
 	// Has the hodler purchased any amount of this user's coin
 	HasPurchased bool
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+type TransferRestrictionStatus uint8
+
+const (
+	TransferRestrictionStatusUnrestricted            TransferRestrictionStatus = 0
+	TransferRestrictionStatusProfileOwnerOnly        TransferRestrictionStatus = 1
+	TransferRestrictionStatusDAOMembersOnly          TransferRestrictionStatus = 2
+	TransferRestrictionStatusPermanentlyUnrestricted TransferRestrictionStatus = 3
+)
+
+func (transferRestrictionStatus TransferRestrictionStatus) IsUnrestricted() bool {
+	if transferRestrictionStatus == TransferRestrictionStatusUnrestricted ||
+		transferRestrictionStatus == TransferRestrictionStatusPermanentlyUnrestricted {
+		return true
+	}
+	return false
 }
 
 // This struct contains all the information required to support coin
@@ -1187,7 +1246,15 @@ type CoinEntry struct {
 	// The number of coins currently in circulation. Whenever a user buys a
 	// coin from the protocol this increases, and whenever a user sells a
 	// coin to the protocol this decreases.
-	CoinsInCirculationNanos uint64
+	//
+	// It's OK to have a pointer here as long as we *NEVER* manipulate the
+	// bigint in place. Instead, we must always do computations of the form:
+	//
+	// CoinsInCirculationNanos = uint256.NewInt(0).Add(CoinsInCirculationNanos, <other uint256>)
+	//
+	// This will guarantee that modifying a copy of this struct will not break
+	// the original, which is needed for disconnects to work.
+	CoinsInCirculationNanos uint256.Int
 
 	// This field keeps track of the highest number of coins that has ever
 	// been in circulation. It is used to determine when a creator should
@@ -1195,7 +1262,21 @@ type CoinEntry struct {
 	// coins being minted would push the number of coins in circulation
 	// beyond the watermark, we allocate a percentage of the coins being
 	// minted to the creator as a "founder reward."
+	//
+	// Note that this field doesn't need to be uint256 because it's only
+	// relevant for CreatorCoins, which can't exceed math.MaxUint64 in total
+	// supply.
 	CoinWatermarkNanos uint64
+
+	// If true, DAO coins can no longer be minted.
+	MintingDisabled bool
+
+	TransferRestrictionStatus TransferRestrictionStatus
+}
+
+type PublicKeyRoyaltyPair struct {
+	PublicKey          []byte
+	RoyaltyAmountNanos uint64
 }
 
 type PKIDEntry struct {
@@ -1232,11 +1313,18 @@ type ProfileEntry struct {
 	// profiles in certain situations.
 	IsHidden bool
 
-	// CoinEntry tracks the information required to buy/sell coins on a user's
+	// CreatorCoinEntry tracks the information required to buy/sell creator coins on a user's
 	// profile. We "embed" it here for convenience so we can access the fields
 	// directly on the ProfileEntry object. Embedding also makes it so that we
 	// don't need to initialize it explicitly.
-	CoinEntry
+	CreatorCoinEntry CoinEntry
+
+	// DAOCoinEntry tracks the information around the DAO coins issued on a user's profile.
+	// Note: the following fields are basically ignored for the DAOCoinEntry
+	// 1. CreatorBasisPoints
+	// 2. DeSoLockedNanos
+	// 3. CoinWaterMarkNanos
+	DAOCoinEntry CoinEntry
 
 	// Whether or not this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if for

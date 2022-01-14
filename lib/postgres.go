@@ -7,6 +7,7 @@ import (
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
+	"github.com/holiman/uint256"
 	"strings"
 )
 
@@ -258,6 +259,28 @@ type PGMetadataCreatorCoinTransfer struct {
 	ReceiverPublicKey          []byte     `pg:",type:bytea"`
 }
 
+// PGMetadataDAOCoin represents DAOCoinMetadata
+type PGMetadataDAOCoin struct {
+	tableName struct{} `pg:"pg_metadata_dao_coins"`
+
+	TransactionHash           *BlockHash           `pg:",pk,type:bytea"`
+	ProfilePublicKey          []byte               `pg:",type:bytea"`
+	OperationType             DAOCoinOperationType `pg:",use_zero"`
+	CoinsToMintNanos          uint64               `pg:",use_zero"`
+	CoinsToBurnNanos          uint64               `pg:",use_zero"`
+	TransferRestrictionStatus `pg:",use_zero"`
+}
+
+// PGMetadataDAOCoinTransfer represents DAOCoinTransferMetadata
+type PGMetadataDAOCoinTransfer struct {
+	tableName struct{} `pg:"pg_metadata_dao_coin_transfers"`
+
+	TransactionHash        *BlockHash `pg:",pk,type:bytea"`
+	ProfilePublicKey       []byte     `pg:",type:bytea"`
+	DAOCoinToTransferNanos uint64     `pg:"dao_coin_to_transfer_nanos,use_zero"`
+	ReceiverPublicKey      []byte     `pg:",type:bytea"`
+}
+
 // PGMetadataSwapIdentity represents SwapIdentityMetadataa
 type PGMetadataSwapIdentity struct {
 	tableName struct{} `pg:"pg_metadata_swap_identities"`
@@ -396,16 +419,27 @@ const (
 type PGProfile struct {
 	tableName struct{} `pg:"pg_profiles"`
 
-	PKID                    *PKID      `pg:",pk,type:bytea"`
-	PublicKey               *PublicKey `pg:",type:bytea"`
-	Username                string
-	Description             string
-	ProfilePic              []byte
-	CreatorBasisPoints      uint64
-	DeSoLockedNanos         uint64
-	NumberOfHolders         uint64
-	CoinsInCirculationNanos uint64
+	PKID               *PKID      `pg:",pk,type:bytea"`
+	PublicKey          *PublicKey `pg:",type:bytea"`
+	Username           string
+	Description        string
+	ProfilePic         []byte
+	CreatorBasisPoints uint64
+	DeSoLockedNanos    uint64
+	NumberOfHolders    uint64
+	// FIXME: Postgres will break when values exceed uint64
+	// We don't use Postgres right now so going to plow ahead and set this as-is
+	// to fix compile errors.
+	CoinsInCirculationNanos uint256.Int
 	CoinWatermarkNanos      uint64
+	MintingDisabled         bool
+	DAOCoinNumberOfHolders  uint64 `pg:"dao_coin_number_of_holders"`
+	// FIXME: Postgres will break when values exceed uint64
+	// We don't use Postgres right now so going to plow ahead and set this as-is
+	// to fix compile errors.
+	DAOCoinCoinsInCirculationNanos   uint256.Int               `pg:"dao_coin_coins_in_circulation"`
+	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
+	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
 }
 
 func (profile *PGProfile) Empty() bool {
@@ -543,9 +577,29 @@ type PGCreatorCoinBalance struct {
 
 func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 	return &BalanceEntry{
-		HODLerPKID:   balance.HolderPKID,
-		CreatorPKID:  balance.CreatorPKID,
-		BalanceNanos: balance.BalanceNanos,
+		HODLerPKID:  balance.HolderPKID,
+		CreatorPKID: balance.CreatorPKID,
+		// FIXME: This will break if the value exceeds uint256
+		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
+		HasPurchased: balance.HasPurchased,
+	}
+}
+
+type PGDAOCoinBalance struct {
+	tableName struct{} `pg:"pg_dao_coin_balances"`
+
+	HolderPKID   *PKID `pg:",pk,type:bytea"`
+	CreatorPKID  *PKID `pg:",pk,type:bytea"`
+	BalanceNanos uint64
+	HasPurchased bool
+}
+
+func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
+	return &BalanceEntry{
+		HODLerPKID:  balance.HolderPKID,
+		CreatorPKID: balance.CreatorPKID,
+		// FIXME: This will break if the value exceeds uint256
+		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -1209,6 +1263,9 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 		if err := postgres.flushCreatorCoinBalances(tx, view); err != nil {
 			return err
 		}
+		if err := postgres.flushDAOCoinBalances(tx, view); err != nil {
+			return err
+		}
 		if err := postgres.flushBalances(tx, view); err != nil {
 			return err
 		}
@@ -1268,11 +1325,15 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 			profile.Username = string(profileEntry.Username)
 			profile.Description = string(profileEntry.Description)
 			profile.ProfilePic = profileEntry.ProfilePic
-			profile.CreatorBasisPoints = profileEntry.CreatorBasisPoints
-			profile.DeSoLockedNanos = profileEntry.DeSoLockedNanos
-			profile.NumberOfHolders = profileEntry.NumberOfHolders
-			profile.CoinsInCirculationNanos = profileEntry.CoinsInCirculationNanos
-			profile.CoinWatermarkNanos = profileEntry.CoinWatermarkNanos
+			profile.CreatorBasisPoints = profileEntry.CreatorCoinEntry.CreatorBasisPoints
+			profile.DeSoLockedNanos = profileEntry.CreatorCoinEntry.DeSoLockedNanos
+			profile.NumberOfHolders = profileEntry.CreatorCoinEntry.NumberOfHolders
+			profile.CoinsInCirculationNanos = profileEntry.CreatorCoinEntry.CoinsInCirculationNanos
+			profile.CoinWatermarkNanos = profileEntry.CreatorCoinEntry.CoinWatermarkNanos
+			profile.DAOCoinCoinsInCirculationNanos = profileEntry.DAOCoinEntry.CoinsInCirculationNanos
+			profile.DAOCoinMintingDisabled = profileEntry.DAOCoinEntry.MintingDisabled
+			profile.DAOCoinNumberOfHolders = profileEntry.DAOCoinEntry.NumberOfHolders
+			profile.DAOCoinTransferRestrictionStatus = profileEntry.DAOCoinEntry.TransferRestrictionStatus
 		}
 
 		if pkidEntry.isDeleted {
@@ -1506,9 +1567,50 @@ func (postgres *Postgres) flushCreatorCoinBalances(tx *pg.Tx, view *UtxoView) er
 		}
 
 		balance := &PGCreatorCoinBalance{
-			HolderPKID:   balanceEntry.HODLerPKID,
-			CreatorPKID:  balanceEntry.CreatorPKID,
-			BalanceNanos: balanceEntry.BalanceNanos,
+			HolderPKID:  balanceEntry.HODLerPKID,
+			CreatorPKID: balanceEntry.CreatorPKID,
+			// FIXME: This will break if the value exceeds uint256
+			BalanceNanos: balanceEntry.BalanceNanos.Uint64(),
+			HasPurchased: balanceEntry.HasPurchased,
+		}
+
+		if balanceEntry.isDeleted {
+			deleteBalances = append(deleteBalances, balance)
+		} else {
+			insertBalances = append(insertBalances, balance)
+		}
+	}
+
+	if len(insertBalances) > 0 {
+		_, err := tx.Model(&insertBalances).WherePK().OnConflict("(holder_pkid, creator_pkid) DO UPDATE").Returning("NULL").Insert()
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(deleteBalances) > 0 {
+		_, err := tx.Model(&deleteBalances).Returning("NULL").Delete()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (postgres *Postgres) flushDAOCoinBalances(tx *pg.Tx, view *UtxoView) error {
+	var insertBalances []*PGDAOCoinBalance
+	var deleteBalances []*PGDAOCoinBalance
+	for _, balanceEntry := range view.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry {
+		if balanceEntry == nil {
+			continue
+		}
+
+		balance := &PGDAOCoinBalance{
+			HolderPKID:  balanceEntry.HODLerPKID,
+			CreatorPKID: balanceEntry.CreatorPKID,
+			// FIXME: This will break if the value exceeds uint256
+			BalanceNanos: balanceEntry.BalanceNanos.Uint64(),
 			HasPurchased: balanceEntry.HasPurchased,
 		}
 
@@ -1993,7 +2095,7 @@ func (postgres *Postgres) GetCreatorCoinBalance(holderPkid *PKID, creatorPkid *P
 	return &balance
 }
 
-func (postgres *Postgres) GetHoldings(pkid *PKID) []*PGCreatorCoinBalance {
+func (postgres *Postgres) GetCreatorCoinHoldings(pkid *PKID) []*PGCreatorCoinBalance {
 	var holdings []*PGCreatorCoinBalance
 	err := postgres.db.Model(&holdings).Where("holder_pkid = ?", pkid).Select()
 	if err != nil {
@@ -2002,8 +2104,50 @@ func (postgres *Postgres) GetHoldings(pkid *PKID) []*PGCreatorCoinBalance {
 	return holdings
 }
 
-func (postgres *Postgres) GetHolders(pkid *PKID) []*PGCreatorCoinBalance {
+func (postgres *Postgres) GetCreatorCoinHolders(pkid *PKID) []*PGCreatorCoinBalance {
 	var holdings []*PGCreatorCoinBalance
+	err := postgres.db.Model(&holdings).Where("creator_pkid = ?", pkid).Select()
+	if err != nil {
+		return nil
+	}
+	return holdings
+}
+
+//
+// DAO Coins
+//
+
+func (postgres *Postgres) GetDAOCoinBalances(balances []*PGDAOCoinBalance) []*PGDAOCoinBalance {
+	err := postgres.db.Model(&balances).WherePK().Select()
+	if err != nil {
+		return nil
+	}
+	return balances
+}
+
+func (postgres *Postgres) GetDAOCoinBalance(holderPkid *PKID, creatorPkid *PKID) *PGDAOCoinBalance {
+	balance := PGDAOCoinBalance{
+		HolderPKID:  holderPkid,
+		CreatorPKID: creatorPkid,
+	}
+	err := postgres.db.Model(&balance).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return &balance
+}
+
+func (postgres *Postgres) GetDAOCoinHoldings(pkid *PKID) []*PGDAOCoinBalance {
+	var holdings []*PGDAOCoinBalance
+	err := postgres.db.Model(&holdings).Where("holder_pkid = ?", pkid).Select()
+	if err != nil {
+		return nil
+	}
+	return holdings
+}
+
+func (postgres *Postgres) GetDAOCoinHolders(pkid *PKID) []*PGDAOCoinBalance {
+	var holdings []*PGDAOCoinBalance
 	err := postgres.db.Model(&holdings).Where("creator_pkid = ?", pkid).Select()
 	if err != nil {
 		return nil

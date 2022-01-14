@@ -3,7 +3,9 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/holiman/uint256"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -67,6 +69,10 @@ const (
 )
 
 var (
+	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+)
+
+var (
 	// The block height at which various forks occurred including an
 	// explanation as to why they're necessary.
 
@@ -127,6 +133,16 @@ var (
 	// DeSoV3MessagesBlockHeight defines the height at which messaging key and messsage party
 	// entries will be accepted by consensus.
 	DeSoV3MessagesBlockHeight = uint32(91100)
+
+	// BuyNowAndNFTSplitsBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an
+	// auction style and allows splitting of NFT royalties to user's other than the post's creator.
+	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
+	BuyNowAndNFTSplitsBlockHeight = uint32(math.MaxUint32 - 1)
+
+	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
+	// transactions will be accepted.
+	// TODO: Update this to a real value when we decide on timing for the fork.
+	DAOCoinBlockHeight = uint32(math.MaxUint32 - 1)
 )
 
 func (nt NetworkType) String() string {
@@ -803,6 +819,17 @@ const (
 	SenderMessagingKeyName      = "SenderMessagingKeyName"
 	RecipientMessagingPublicKey = "RecipientMessagingPublicKey"
 	RecipientMessagingKeyName   = "RecipientMessagingKeyName"
+
+	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
+	BuyNowPriceKey = "BuyNowPriceNanos"
+
+	// Key in transaction's extra data map. If present, the value represents a map of pkid to basis points representing
+	// the amount of royalties the pkid should receive upon sale of this NFT.
+	DESORoyaltiesMapKey = "DESORoyaltiesMap"
+
+	// Key in transaction's extra data map. If present, the value represents a map of pkid to basis points representing
+	// the amount of royalties that should be added to pkid's creator coin upon sale of this NFT.
+	CoinRoyaltiesMapKey = "CoinRoyaltiesMap"
 )
 
 // Defines values that may exist in a transaction's ExtraData map

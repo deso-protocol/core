@@ -2,11 +2,11 @@ package lib
 
 type DeSoNode struct {
 	// Name of the node, displayed to users
-	Name  string
-	
+	Name string
+
 	// HTTPs URL to the node or app
-	URL   string
-	
+	URL string
+
 	// DeSo username of the node owner
 	Owner string
 }
@@ -116,8 +116,8 @@ var NODES = map[uint64]DeSoNode{
 		Owner: "chriscelaya",
 	},
 	19: {
-		Name: "Beyond",
-		URL: "https://beyond.restartu.org",
+		Name:  "Beyond",
+		URL:   "https://beyond.restartu.org",
 		Owner: "RestartU",
 	},
 	20: {
@@ -129,5 +129,10 @@ var NODES = map[uint64]DeSoNode{
 		Name:  "NinjaNode",
 		URL:   "https://node.bitcloutapps.ninja",
 		Owner: "mattpitts",
+	},
+	22: {
+		Name:  "Tunel",
+		URL:   "https://tunel.app",
+		Owner: "hazrodriguez",
 	},
 }

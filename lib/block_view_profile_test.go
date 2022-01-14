@@ -14,6 +14,24 @@ import (
 	"time"
 )
 
+func _swapIdentityWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	UpdaterPublicKeyBase58Check string,
+	UpdaterPrivKeyBase58Check string,
+	fromPublicKey []byte,
+	toPublicKey []byte) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, UpdaterPublicKeyBase58Check))
+
+	currentOps, currentTxn, _, err := _swapIdentity(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		feeRateNanosPerKB, UpdaterPublicKeyBase58Check, UpdaterPrivKeyBase58Check, fromPublicKey, toPublicKey)
+
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
 func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, fromPublicKey []byte, toPublicKey []byte) (
@@ -955,7 +973,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.Equal(string(m0Entry.Username), "m0_paramUpdater")
 			require.Equal(string(m0Entry.Description), "m0 updated by paramUpdater")
 			require.Equal(string(m0Entry.ProfilePic), otherShortPic)
-			require.Equal(int64(m0Entry.CreatorBasisPoints), int64(11*100))
+			require.Equal(int64(m0Entry.CreatorCoinEntry.CreatorBasisPoints), int64(11*100))
 			require.True(m0Entry.IsHidden)
 		}
 		{
@@ -964,7 +982,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.Equal(string(m1Entry.Username), "m1_updated_by_m1")
 			require.Equal(string(m1Entry.Description), "m1 updated by m1")
 			require.Equal(string(m1Entry.ProfilePic), otherShortPic)
-			require.Equal(int64(m1Entry.CreatorBasisPoints), int64(12*100))
+			require.Equal(int64(m1Entry.CreatorCoinEntry.CreatorBasisPoints), int64(12*100))
 			require.True(m1Entry.IsHidden)
 		}
 		{
@@ -973,7 +991,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.Equal(string(m2Entry.Username), "m2")
 			require.Equal(string(m2Entry.Description), "i am the m2")
 			require.Equal(string(m2Entry.ProfilePic), shortPic)
-			require.Equal(int64(m2Entry.CreatorBasisPoints), int64(10*100))
+			require.Equal(int64(m2Entry.CreatorCoinEntry.CreatorBasisPoints), int64(10*100))
 			require.False(m2Entry.IsHidden)
 		}
 		{
@@ -982,7 +1000,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.Equal(string(m4Entry.Username), "m4")
 			require.Equal(string(m4Entry.Description), "m4 description")
 			require.Equal(string(m4Entry.ProfilePic), otherShortPic)
-			require.Equal(int64(m4Entry.CreatorBasisPoints), int64(11*100))
+			require.Equal(int64(m4Entry.CreatorCoinEntry.CreatorBasisPoints), int64(11*100))
 			require.False(m4Entry.IsHidden)
 		}
 		{
@@ -991,7 +1009,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.Equal(string(m5Entry.Username), "m5_paramUpdater")
 			require.Equal(string(m5Entry.Description), "m5 created by paramUpdater")
 			require.Equal(string(m5Entry.ProfilePic), otherShortPic)
-			require.Equal(int64(m5Entry.CreatorBasisPoints), int64(11*100))
+			require.Equal(int64(m5Entry.CreatorCoinEntry.CreatorBasisPoints), int64(11*100))
 			require.False(m5Entry.IsHidden)
 		}
 	}

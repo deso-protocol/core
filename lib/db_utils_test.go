@@ -60,6 +60,7 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	opts := badger.DefaultOptions(dir)
 	opts.Dir = dir
 	opts.ValueDir = dir
+	opts.MemTableSize = 1024 << 20
 	db, err := badger.Open(opts)
 	if err != nil {
 		log.Fatal(err)
