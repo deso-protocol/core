@@ -2,12 +2,12 @@ package lib
 
 import (
 	"bytes"
-"encoding/hex"
+	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"math"
 	"reflect"
 )
 
@@ -178,142 +178,118 @@ func (bav *UtxoView) deleteMessageMappings(message *PGMessage) {
 	bav.setMessageMappings(&deletedMessage)
 }
 
-// TODO: Update for Postgres
-func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
-	_messageEntries []*MessageEntry, _err error) {
+func (bav *UtxoView) GetUserMessagingKeys(publicKey []byte) (
+	_messagingKeyEntries []*MessagingKeyEntry, _err error) {
 
-	//TODO: this won't work.
-	// Start by fetching all the messages we have in the db.
-	dbMessageEntries, err := DbGetMessageEntriesForPublicKey(bav.Handle, publicKey)
+	// This is our helper map to keep track of all user messaging keys.
+	messagingKeysMap := make(map[PublicKey]*MessagingKeyEntry)
+
+	// Start by fetching all the messages we have in the UtxoView.
+	for _, messagingKeyEntry := range bav.MessagingKeyToMessagingKeyEntry {
+		// We don't check for deleted entries now, we will do that later once we add
+		// messaging keys from the DB.
+		if reflect.DeepEqual(messagingKeyEntry.PublicKey[:], publicKey) {
+			messagingKeysMap[*messagingKeyEntry.MessagingPublicKey] = messagingKeyEntry
+			continue
+		}
+		for _, recipient := range messagingKeyEntry.Recipients {
+			if reflect.DeepEqual(recipient.RecipientPublicKey[:], publicKey) {
+				// If user is a recipient of a group chat, we need to add a modified messaging entry.
+				recipientKeyEntry := &MessagingKeyEntry {
+					PublicKey: recipient.RecipientPublicKey,
+					MessagingPublicKey: messagingKeyEntry.MessagingPublicKey,
+					MessagingKeyName: recipient.RecipientMessagingKeyName,
+					EncryptedKey: recipient.EncryptedKey,
+					isDeleted: messagingKeyEntry.isDeleted,
+					isRecipient: true,
+				}
+				messagingKeysMap[*messagingKeyEntry.MessagingPublicKey] = recipientKeyEntry
+				break
+			}
+		}
+	}
+
+	// Also get all messaging keys from the DB.
+	dbMessagingKeys, err := DBGetAllUserMessagingKeys(bav.Handle, publicKey)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
+		return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting " +
+			"messaging keys from the DB")
 	}
-
-	// Iterate through the entries found in the db and force the view to load them.
-	// This fills in any gaps in the view so that, after this, the view should contain
-	// the union of what it had before plus what was in the db.
-	for _, dbMessageEntry := range dbMessageEntries {
-		messageKey := MakeMessageKey(publicKey, dbMessageEntry.TstampNanos)
-		bav._getMessageEntryForMessageKey(&messageKey)
-	}
-
-	// Now that the view mappings are a complete picture, iterate through them
-	// and set them on the map we're returning. Skip entries that don't match
-	// our public key or that are deleted. Note that only considering mappings
-	// where our public key is part of the key should ensure there are no
-	// duplicates in the resulting list.
-	messageEntriesToReturn := []*MessageEntry{}
-	for viewMessageKey, viewMessageEntry := range bav.MessageKeyToMessageEntry {
-		if viewMessageEntry.isDeleted {
-			continue
+	// Now go through the messaging keys in the DB and add keys we haven't seen before.
+	for _, messagingKeyEntry := range dbMessagingKeys {
+		key := *messagingKeyEntry.MessagingPublicKey
+		// Check if we have seen the messaging key before.
+		if _, exists := messagingKeysMap[key]; !exists {
+			messagingKeysMap[key] = messagingKeyEntry
+		} else {
+			// If the messaging key was deleted in the UtxoView, we can now delete it from our map.
+			if messagingKeysMap[key].isDeleted {
+				delete(messagingKeysMap, key)
+			}
 		}
-		messageKey := MakeMessageKey(publicKey, viewMessageEntry.TstampNanos)
-		if viewMessageKey != messageKey {
-			continue
-		}
-
-		// At this point we are confident the map key is equal to the message
-		// key containing the passed-in public key so add it to the mapping.
-		messageEntriesToReturn = append(messageEntriesToReturn, viewMessageEntry)
 	}
 
-	return messageEntriesToReturn, nil
+	for _, messagingKeyEntry := range messagingKeysMap {
+		_messagingKeyEntries = append(_messagingKeyEntries, messagingKeyEntry)
+	}
+	return _messagingKeyEntries, nil
 }
 
 // TODO: Update for Postgres
-func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte) (
-	_messageEntries []*MessageEntry, _messageParties []*MessageParty, _err error) {
+func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
+	_messageEntries []*MessageEntry, _messagingKeyEntries []*MessagingKeyEntry, _err error) {
 
-	// Start by fetching all the messages we have in the db.
-	dbMessageEntries, dbMessageParties, dbMessageKeys, err := DbGetLimitedMessageAndPartyEntriesForPublicKey(bav.Handle, publicKey)
+	return bav.GetLimitedMessagesForUser(publicKey, math.MaxUint64)
+}
+
+// TODO: Update for Postgres
+func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte, limit uint64) (
+	_messageEntries []*MessageEntry, _messagingKeyEntries []*MessagingKeyEntry, _err error) {
+
+	// First get all messaging keys for a user.
+	var err error
+	_messagingKeyEntries, err = bav.GetUserMessagingKeys(publicKey)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntrys from db: ")
+		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: " +
+			"problem getting user messaging keys")
 	}
 
-	messageKeysMap := make(map[PublicKey]*MessagingKeyEntry)
-	err = bav.Handle.View(func(txn *badger.Txn) error {
-		userKeys, err := DbGetAllUserMessagingKeys(txn, publicKey)
-		if err != nil {
-			return err
-		}
-		for _, key := range userKeys {
-			messageKeysMap[*key.MessagingPublicKey] = key
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: problem getting user messaging keys")
-	}
-
-	// Welp this seems very, very inefficient.
-	// Iterate through the entries found in the db and force the view to load them.
-	// This fills in any gaps in the view so that, after this, the view should contain
-	// the union of what it had before plus what was in the db.
-	//for _, dbMessageEntry := range dbMessageEntries {
-	//	messageKey := MakeMessageKey(publicKey, dbMessageEntry.TstampNanos)
-	//	bav._getMessageEntryForMessageKey(&messageKey)
-	//}
-	// Now that the view mappings are a complete picture, iterate through them
-	// and set them on the map we're returning. Skip entries that don't match
-	// our public key or that are deleted. Note that only considering mappings
-	// where our public key is part of the key should ensure there are no
-	// duplicates in the resulting list.
-
-	// We will add the DB entries to a map so we can easily compare them with the UtxoView entries.
-	// We have to expand our DB entries list with the UtxoView entries but also trim the deleted entries.
+	// We define an auxiliary map to keep track of messages in UtxoView and DB.
 	messagesMap := make(map[MessageKey]*MessageEntry)
-	partiesMap := make(map[MessageKey]*MessageParty)
-	keyMap := make(map[MessageKey]*MessagingKeyEntry)
-	for ii, entry := range dbMessageEntries {
-		if entry == nil {
-			continue
-		}
-		messagesMap[MakeMessageKey(dbMessageKeys[ii].MessagingPublicKey[:], entry.TstampNanos)] = entry
-		partiesMap[MakeMessageKey(dbMessageKeys[ii].MessagingPublicKey[:], entry.TstampNanos)] = dbMessageParties[ii]
-		keyMap[MakeMessageKey(dbMessageKeys[ii].MessagingPublicKey[:], entry.TstampNanos)] = dbMessageKeys[ii]
-	}
 
-	// We will look through entries in UtxoView to make sure we didn't record deleted messages,
-	// and so that we get most recent user messages.
-	for viewMessageKey, viewMessageEntry := range bav.MessageKeyToMessageEntry {
-		// First make sure we're only considering entries that are relevant to provided public key.
-		if _, exists := messageKeysMap[*NewPublicKey(viewMessageKey.PublicKey[:])]; !exists {
-			continue
-		}
-		messageKey := MakeMessageKey(viewMessageKey.PublicKey[:], viewMessageEntry.TstampNanos)
-
-		// If the entry is deleted, then we have to make sure we remove it from messagesMap.
-		if viewMessageEntry.isDeleted {
-			delete(messagesMap, messageKey)
-			delete(partiesMap, messageKey)
-			delete(keyMap, messageKey)
-			continue
-		}
-
-		// At this point we are confident the map key is equal to the message key containing
-		// the passed-in public key so add it to the mapping.
-		messagesMap[messageKey] = viewMessageEntry
-		// Now we lookup corresponding party in UtxoView and if it exists, we add it to our partiesMap.
-		// We don't need to check if the entry is deleted or not, because we know messages and parties
-		// can't have mismatching isDeleted.
-		if party, exists := bav.MessageKeyToMessageParty[messageKey]; exists {
-			partiesMap[messageKey] = party
+	// First look for messages in the UtxoView. We don't skip deleted entries for now as we will do it later.
+	for messageKey, messageEntry := range bav.MessageKeyToMessageEntry {
+		for _, messagingKeyEntry := range _messagingKeyEntries {
+			if reflect.DeepEqual(messageKey.PublicKey[:], messagingKeyEntry.MessagingPublicKey[:]) {
+				// We will add the messages by sender so that we have no overlaps in the DB in some weird edge cases.
+				mapKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
+				messagesMap[mapKey] = messageEntry
+				break
+			}
 		}
 	}
 
-	// Now we will construct the message entry and party lists, which we will then return.
-	_messageEntries = []*MessageEntry{}
-	_messageParties = []*MessageParty{}
-	for _, entry := range messagesMap {
-		_messageEntries = append(_messageEntries, entry)
-		if party, exists := partiesMap[MakeMessageKey(publicKey, entry.TstampNanos)]; exists {
-			_messageParties = append(_messageParties, party)
+	// Now look for messages in the DB.
+	dbMessageEntries, err := DbGetLimitedMessageForMessagingKeys(bav.Handle, _messagingKeyEntries, limit)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntries from db: ")
+	}
+	for _, messageEntry := range dbMessageEntries {
+		mapKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
+		if _, exists := messagesMap[mapKey]; !exists {
+			messagesMap[mapKey] = messageEntry
 		} else {
-			_messageParties = append(_messageParties, nil)
+			// If the message was deleted in the UtxoView, then we remove it from our map struct.
+			if messagesMap[mapKey].isDeleted {
+				delete(messagesMap, mapKey)
+			}
 		}
 	}
 
-	return _messageEntries, _messageParties, nil
+	for _, messageEntry := range messagesMap {
+		_messageEntries = append(_messageEntries, messageEntry)
+	}
+	return _messageEntries, _messagingKeyEntries, nil
 }
 
 func ValidateKeyAndName(messagingPublicKey, keyName []byte) error {
@@ -494,7 +470,10 @@ func (bav *UtxoView) _connectPrivateMessage(
 			// to the group. In this scenario, the recipient public key is the same as the user's public key,
 			// which would make us fail one of the previous checks. To circumvent this, the transaction
 			// metadata in this case would have recipient public key set to messaging public key.
-			if reflect.DeepEqual(txMeta.RecipientPublicKey, recipientMessagingPublicKey) {
+			// There is also an edge case where recipient public key can equal messaging public key if it's
+			// a base key, so we make an exception for that.
+			if !EqualKeyName(NewKeyName(recipientMessagingKeyName), BaseKeyName()) &&
+				reflect.DeepEqual(txMeta.RecipientPublicKey, recipientMessagingPublicKey) {
 				// We know we entered this edge-case so we verify that the owner previously registered this key.
 				if err := bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
 					return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
@@ -636,7 +615,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 			senderPkBytes = senderMessagingPublicKey
 		}
 		if existsRecipient {
-			if err := IsByteArrayValidPublicKey(recipientMessagingPublicKey); err == nil {
+			if err := IsByteArrayValidPublicKey(recipientMessagingPublicKey); err != nil {
 				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperMessagingParty,
 				"_disconnectPrivateMessage: at least one messaging party must be present")
 			}

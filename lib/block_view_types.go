@@ -361,13 +361,13 @@ func MakePkMapKey(pk []byte) PkMapKey {
 
 func MakeMessageKey(pk []byte, tstampNanos uint64) MessageKey {
 	return MessageKey{
-		PublicKey:   MakePkMapKey(pk),
+		PublicKey:   *NewPublicKey(pk),
 		TstampNanos: tstampNanos,
 	}
 }
 
 type MessageKey struct {
-	PublicKey   PkMapKey
+	PublicKey   PublicKey
 	BlockHeight uint32
 	TstampNanos uint64
 }
@@ -594,6 +594,8 @@ type MessagingKeyEntry struct {
 	// to the db. This is initially set to false, but can become true if
 	// we disconnect the messaging key from UtxoView
 	isDeleted bool
+
+	isRecipient bool
 }
 
 func (entry *MessagingKeyEntry) String() string {

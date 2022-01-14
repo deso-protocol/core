@@ -602,7 +602,7 @@ func _verifyMessagingKey(testMeta *TestMeta, entry *MessagingKeyEntry) bool {
 func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEntries []*MessagingKeyEntry) error {
 	return testMeta.chain.db.View(func(txn *badger.Txn) error {
 		// Get the DB record.
-		entries, err := DbGetAllUserMessagingKeys(txn, publicKey)
+		entries, err := DBGetAllUserMessagingKeysWithTxn(txn, publicKey)
 		if err != nil {
 			return err
 		}
@@ -1339,7 +1339,7 @@ func TestMessagingKeys(t *testing.T) {
 
 
 // This helper function connects a private message transaction with the message party in ExtraData.
-func _helpConnectPrivateMessageWithParty (testMeta *TestMeta, senderPkBytes []byte, senderPrivBase58 string,
+func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, senderPrivBase58 string,
 	recipientPkBytes, senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
 	recipientMessagingKeyName []byte, encryptedMessageText string, tstampNanos uint64, expectedError error) {
 
@@ -1391,23 +1391,47 @@ func _helpConnectPrivateMessageWithParty (testMeta *TestMeta, senderPkBytes []by
 	testMeta.txns = append(testMeta.txns, txn)
 }
 
+func _helpConnectPrivateMessageWithParty(testMeta *TestMeta, senderPrivBase58 string,
+	entry MessageEntry, expectedError error) {
+
+	_connectPrivateMessageWithParty(testMeta, entry.SenderPublicKey[:], senderPrivBase58, entry.RecipientPublicKey[:],
+		entry.SenderMessagingPublicKey[:], entry.SenderMessagingKeyName[:], entry.RecipientMessagingPublicKey[:],
+		entry.RecipientMessagingKeyName[:], hex.EncodeToString(entry.EncryptedText), entry.TstampNanos, expectedError)
+}
+
 // Verify the message party entry in UtxoView or DB matches the expected entry.
-func _verifyMessageParty(testMeta *TestMeta, senderPk []byte, tstampNanos uint64,
-	senderMsgPk []byte, senderMsgKeyName *KeyName, recipientMsgPk []byte, recipientMsgKeyName *KeyName) bool {
+func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]MessageEntry, expectedEntry MessageEntry) bool {
 
 	require := require.New(testMeta.t)
 
 	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
 	require.NoError(err)
-	messageKey := MakeMessageKey(senderPk, tstampNanos)
-	messageEntry := utxoView._getMessageEntryForMessageKey(&messageKey)
-	if messageEntry == nil || messageEntry.isDeleted {
+	messageKey := MakeMessageKey(expectedEntry.SenderMessagingPublicKey[:], expectedEntry.TstampNanos)
+	messageEntrySender := utxoView._getMessageEntryForMessageKey(&messageKey)
+	if messageEntrySender == nil || messageEntrySender.isDeleted {
 		return false
 	}
-	return reflect.DeepEqual(senderMsgPk, (*messageEntry.SenderMessagingPublicKey)[:]) &&
-		reflect.DeepEqual(recipientMsgPk, (*messageEntry.RecipientMessagingPublicKey)[:]) &&
-		reflect.DeepEqual(senderMsgKeyName[:], (*messageEntry.SenderMessagingKeyName)[:]) &&
-		reflect.DeepEqual(recipientMsgKeyName[:], (*messageEntry.RecipientMessagingKeyName)[:])
+	messageKey = MakeMessageKey(expectedEntry.RecipientMessagingPublicKey[:], expectedEntry.TstampNanos)
+	messageEntryRecipient := utxoView._getMessageEntryForMessageKey(&messageKey)
+	if messageEntryRecipient == nil || messageEntryRecipient.isDeleted {
+		return false
+	}
+	if !reflect.DeepEqual(messageEntrySender.Encode(), messageEntryRecipient.Encode()) {
+		return false
+	}
+	if !reflect.DeepEqual(messageEntrySender.Encode(), expectedEntry.Encode()) {
+		return false
+	}
+	expectedMessageEntries[*expectedEntry.SenderPublicKey] = append(expectedMessageEntries[*expectedEntry.SenderPublicKey], expectedEntry)
+	expectedMessageEntries[*expectedEntry.RecipientPublicKey] = append(expectedMessageEntries[*expectedEntry.RecipientPublicKey], expectedEntry)
+	messagingKey := utxoView.GetMessagingKeyToMessagingKeyEntryMapping(&MessagingKey{
+		*expectedEntry.SenderPublicKey,
+		*expectedEntry.SenderMessagingKeyName,
+	})
+	for _, recipient := range messagingKey.Recipients {
+		expectedMessageEntries[*recipient.RecipientPublicKey] = append(expectedMessageEntries[*recipient.RecipientPublicKey], expectedEntry)
+	}
+	return true
 }
 
 // In these tests we basically want to verify that MessageParty records are correctly added to UtxoView and DB
@@ -1446,10 +1470,22 @@ func TestMessageParty(t *testing.T) {
 
 		_, _, _ = _doBasicTransferWithViewFlush(
 			t, chain, db, params, senderPk, recipientPk,
-			senderPriv, 7 /*amount to send*/, 11 /*feerate*/)
+			senderPriv, 1000 /*amount to send*/, 11 /*feerate*/)
 	}
 
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(err)
+	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	require.NoError(err)
+
+	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
+	require.NoError(err)
+	recipientPrivBytes, _, err := Base58CheckDecode(recipientPrivString)
+	_ = recipientPrivBytes
+	require.NoError(err)
+
 	// Fund all the keys.
+	registerOrTransfer("", senderPkString, recipientPkString, senderPrivString)
 	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
 	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
 	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
@@ -1463,17 +1499,7 @@ func TestMessageParty(t *testing.T) {
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
 
-	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
-	require.NoError(err)
-	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
-	require.NoError(err)
-
-	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
-	require.NoError(err)
-	recipientPrivBytes, _, err := Base58CheckDecode(recipientPrivString)
-	_ = recipientPrivBytes
-	require.NoError(err)
-
+	expectedMessageEntries := make(map[PublicKey][]MessageEntry)
 	// -------------------------------------------------------------------------------------
 	//	Test #1: Attempt sending a V3 private message without a previously authorized messaging key.
 	// -------------------------------------------------------------------------------------
@@ -1484,52 +1510,42 @@ func TestMessageParty(t *testing.T) {
 
 		// Connect a V3 private message to the UtxoView, which should fail.
 		tstampNanos := uint64(time.Now().UnixNano())
-		testMessage1 := hex.EncodeToString([]byte{1, 2, 3, 4, 5, 6})
-		_helpConnectPrivateMessageWithParty(testMeta,
-			senderPkBytes /* senderPkBytes */,
-			senderPrivString /* senderPrivBase58 */,
-			recipientPkBytes /* recipientPkBytes */,
-			entry.MessagingPublicKey[:] /* senderMessagingPublicKey */,
-			keyName /* senderMessagingKeyName */,
-			[]byte{} /* recipientMessagingPublicKey */,
-			[]byte{} /* recipientMessagingKeyName */,
-			testMessage1 /* encryptedMessageText */,
-			tstampNanos /* tstampNanos */,
-			RuleErrorPrivateMessageFailedToValidateMessagingKey)
+		testMessage1 := []byte{1, 2, 3, 4, 5, 6}
+		messageEntry := MessageEntry{
+			NewPublicKey(senderPkBytes),
+			NewPublicKey(recipientPkBytes),
+			testMessage1,
+			tstampNanos,
+			false,
+			1,
+			NewPublicKey(entry.MessagingPublicKey[:]),
+			NewKeyName(keyName),
+			NewPublicKey(recipientPkBytes),
+			BaseKeyName(),
+		}
+		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, RuleErrorPrivateMessageFailedToValidateMessagingKey)
 		// Verification should fail because the <pub, keyName> was never added to UtxoView.
 		// This will return true because neither message nor message party was added.
-		require.Equal(false, _verifyMessageParty(testMeta, senderPkBytes, tstampNanos,
-			entry.MessagingPublicKey[:], BaseKeyName(), recipientPkBytes, BaseKeyName()))
+		require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry))
 
-		// Try the same for recipient
-		_helpConnectPrivateMessageWithParty(testMeta,
-			senderPkBytes /* senderPkBytes */,
-			senderPrivString /* senderPrivBase58 */,
-			recipientPkBytes /* recipientPkBytes */,
-			[]byte{} /* senderMessagingPublicKey */,
-			[]byte{} /* senderMessagingKeyName */,
-			entry.MessagingPublicKey[:] /* recipientMessagingPublicKey */,
-			keyName /* recipientMessagingKeyName */,
-			testMessage1 /* encryptedMessageText */,
-			tstampNanos /* tstampNanos */,
-			RuleErrorPrivateMessageFailedToValidateMessagingKey)
-		require.Equal(false, _verifyMessageParty(testMeta, senderPkBytes, tstampNanos,
-			entry.MessagingPublicKey[:], BaseKeyName(), recipientPkBytes, BaseKeyName()))
+		messageEntry.SenderMessagingPublicKey = NewPublicKey(senderPkBytes)
+		messageEntry.SenderMessagingKeyName = BaseKeyName()
+		messageEntry.RecipientMessagingPublicKey = entry.MessagingPublicKey
+		messageEntry.RecipientMessagingKeyName = NewKeyName(keyName)
+		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, RuleErrorPrivateMessageFailedToValidateMessagingKey)
+		require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry))
+		//require.Equal(false, _verifyMessageParty(testMeta, senderPkBytes, tstampNanos,
+		//	entry.MessagingPublicKey[:], BaseKeyName(), recipientPkBytes, BaseKeyName()))
 
-		// Try sending a v2 message just to make sure everything is gucci.
-		_helpConnectPrivateMessageWithParty(testMeta,
-			senderPkBytes /* senderPkBytes */,
-			senderPrivString /* senderPrivBase58 */,
-			recipientPkBytes /* recipientPkBytes */,
-			[]byte{} /* senderMessagingPublicKey */,
-			[]byte{} /* senderMessagingKeyName */,
-			[]byte{} /* recipientMessagingPublicKey */,
-			[]byte{} /* recipientMessagingKeyName */,
-			testMessage1 /* encryptedMessageText */,
-			tstampNanos /* tstampNanos */,
-			nil)
-		require.Equal(true, _verifyMessageParty(testMeta, senderPkBytes, tstampNanos,
-			senderPkBytes, BaseKeyName(), recipientPkBytes, BaseKeyName()))
+		// We will send a v2-like message just to make sure everything is gucci.
+		// We will set version as 3 because we're adding messaging keys.
+		messageEntry.SenderMessagingPublicKey = NewPublicKey(senderPkBytes)
+		messageEntry.SenderMessagingKeyName = BaseKeyName()
+		messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientPkBytes)
+		messageEntry.RecipientMessagingKeyName = BaseKeyName()
+		messageEntry.Version = 3
+		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
+		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry))
 		fmt.Println("PASSED Test #1: Attempt sending a V3 private message without a previously authorized messaging key.")
 	}
 
@@ -1553,24 +1569,72 @@ func TestMessageParty(t *testing.T) {
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 
-		tstampNanos := uint64(time.Now().UnixNano())
-		testMessage1 := hex.EncodeToString([]byte{1, 2, 3, 4, 5, 6})
-		_helpConnectPrivateMessageWithParty(testMeta,
-			senderPkBytes /* senderPkBytes */,
-			senderPrivString /* senderPrivBase58 */,
-			recipientPkBytes /* recipientPkBytes */,
-			entry.MessagingPublicKey[:] /* senderMessagingPublicKey */,
-			defaultKey /* senderMessagingKeyName */,
-			[]byte{} /* recipientMessagingPublicKey */,
-			[]byte{} /* recipientMessagingKeyName */,
-			testMessage1 /* encryptedMessageText */,
-			tstampNanos /* tstampNanos */,
-			nil)
-		// Messages are indexed by the messaging public key.
-		require.Equal(true, _verifyMessageParty(testMeta, entry.MessagingPublicKey[:], tstampNanos,
-			entry.MessagingPublicKey[:], DefaultKeyName(), recipientPkBytes, BaseKeyName()))
+		tstampNanos1 := uint64(time.Now().UnixNano())
+		testMessage1 := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+		messageEntry := MessageEntry{
+			NewPublicKey(senderPkBytes),
+			NewPublicKey(recipientPkBytes),
+			testMessage1,
+			tstampNanos1,
+			false,
+			3,
+			NewPublicKey(entry.MessagingPublicKey[:]),
+			NewKeyName(defaultKey),
+			NewPublicKey(recipientPkBytes),
+			BaseKeyName(),
+		}
+		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
+		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry))
 
+		// Add another message cause why not.
+		tstampNanos2 := uint64(time.Now().UnixNano())
+		testMessage2 := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}
+		messageEntry.TstampNanos = tstampNanos2
+		messageEntry.EncryptedText = testMessage2
+		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
+		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry))
+
+		defaultKey = []byte("default-key")
+		_, sign, entryRecipient := _generateMessagingKey(recipientPkBytes, recipientPrivBytes, defaultKey)
+		require.Equal(false, _verifyMessagingKey(testMeta, entryRecipient))
+		_messagingKeyWithTestMeta(
+			testMeta,
+			recipientPkBytes,
+			recipientPrivString,
+			entryRecipient.MessagingPublicKey[:],
+			defaultKey,
+			sign,
+			[]MessagingRecipient{},
+			nil)
+		require.Equal(true, _verifyMessagingKey(testMeta, entryRecipient))
+
+		// Add yet another message cause why nooot.
+		tstampNanos3 := uint64(time.Now().UnixNano())
+		testMessage3 := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
+		messageEntry.TstampNanos = tstampNanos3
+		messageEntry.EncryptedText = testMessage3
+		messageEntry.RecipientMessagingPublicKey = entryRecipient.MessagingPublicKey
+		messageEntry.RecipientMessagingKeyName = NewKeyName(defaultKey)
+		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
+		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry))
+
+		// Now send a message from recipient -> sender
+		tstampNanos4 := uint64(time.Now().UnixNano())
+		testMessage4 := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
+		messageEntry.TstampNanos = tstampNanos4
+		messageEntry.EncryptedText = testMessage4
+		messageEntry.SenderPublicKey = NewPublicKey(recipientPkBytes)
+		messageEntry.SenderMessagingPublicKey = entryRecipient.MessagingPublicKey
+		messageEntry.RecipientPublicKey = NewPublicKey(senderPkBytes)
+		messageEntry.RecipientMessagingPublicKey = entry.MessagingPublicKey
+		_helpConnectPrivateMessageWithParty(testMeta, recipientPrivString, messageEntry, nil)
+		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry))
 	}
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
+	require.NoError(err)
+	messages, keys, err := utxoView.GetLimitedMessagesForUser(senderPkBytes, 100)
+	fmt.Println(messages)
+	fmt.Println(len(keys))
 
 	//	// Connect a V3 message in a fresh new UtxoView with the <pub, keyName>
 	//	utxoView, err = NewUtxoView(db, params, nil)

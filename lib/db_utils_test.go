@@ -235,7 +235,7 @@ func TestPrivateMessages(t *testing.T) {
 	// pk1 -> pk2: message1Str, tstamp1
 	require.NoError(DbPutMessageEntry(
 		db, MessageKey{
-			PublicKey: MakePkMapKey(pk1),
+			PublicKey: *NewPublicKey(pk1),
 			TstampNanos: tstamp1,
 		}, &MessageEntry{
 			SenderPublicKey:    NewPublicKey(pk1),
@@ -251,7 +251,7 @@ func TestPrivateMessages(t *testing.T) {
 	// pk2 -> pk1: message2Str, tstamp2
 	require.NoError(DbPutMessageEntry(
 		db, MessageKey{
-			PublicKey: MakePkMapKey(pk2),
+			PublicKey: *NewPublicKey(pk2),
 			TstampNanos: tstamp2,
 		}, &MessageEntry{
 			SenderPublicKey:    NewPublicKey(pk2),
@@ -267,7 +267,7 @@ func TestPrivateMessages(t *testing.T) {
 	// pk3 -> pk1: message3Str, tstamp3
 	require.NoError(DbPutMessageEntry(
 		db, MessageKey{
-			PublicKey: MakePkMapKey(pk3),
+			PublicKey: *NewPublicKey(pk3),
 			TstampNanos: tstamp3,
 		}, &MessageEntry{
 			SenderPublicKey:    NewPublicKey(pk3),
@@ -283,7 +283,7 @@ func TestPrivateMessages(t *testing.T) {
 	// pk2 -> pk1: message4Str, tstamp4
 	require.NoError(DbPutMessageEntry(
 		db, MessageKey{
-			PublicKey: MakePkMapKey(pk2),
+			PublicKey: *NewPublicKey(pk2),
 			TstampNanos: tstamp4,
 		}, &MessageEntry{
 			SenderPublicKey:    NewPublicKey(pk2),
@@ -299,7 +299,7 @@ func TestPrivateMessages(t *testing.T) {
 	// pk1 -> pk3: message5Str, tstamp5
 	require.NoError(DbPutMessageEntry(
 		db, MessageKey{
-			PublicKey: MakePkMapKey(pk1),
+			PublicKey: *NewPublicKey(pk1),
 			TstampNanos: tstamp5,
 		}, &MessageEntry{
 			SenderPublicKey:    NewPublicKey(pk1),
