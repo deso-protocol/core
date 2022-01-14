@@ -45,9 +45,6 @@ type UtxoView struct {
 	// Messaging key entries.
 	MessagingKeyToMessagingKeyEntry map[MessagingKey]*MessagingKeyEntry
 
-	// Messages data to MessageParty
-	MessageKeyToMessageParty map[MessageKey]*MessageParty
-
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -127,9 +124,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Messaging key entries
 	bav.MessagingKeyToMessagingKeyEntry = make(map[MessagingKey]*MessagingKeyEntry)
-
-	// Messaging key to message party
-	bav.MessageKeyToMessageParty = make(map[MessageKey]*MessageParty)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -249,16 +243,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageMap[txnHash] = &newMessage
 	}
 
+	// Copy messaging key data
 	newView.MessagingKeyToMessagingKeyEntry = make(map[MessagingKey]*MessagingKeyEntry, len(bav.MessagingKeyToMessagingKeyEntry))
 	for pkid, entry := range bav.MessagingKeyToMessagingKeyEntry {
 		newEntry := *entry
 		newView.MessagingKeyToMessagingKeyEntry[pkid] = &newEntry
-	}
-
-	newView.MessageKeyToMessageParty = make(map[MessageKey]*MessageParty, len(bav.MessageKeyToMessageParty))
-	for msgKey, party := range bav.MessageKeyToMessageParty {
-		newEntry := *party
-		newView.MessageKeyToMessageParty[msgKey] = &newEntry
 	}
 
 	// Copy the follow data
@@ -651,7 +640,7 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 }
 
 func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
-	// We check to see if the latest utxoOp was a diamond operation. If it was, we disconnect
+	// First we check to see if the last utxoOp was a diamond operation. If it was, we disconnect
 	// the diamond-related changes and decrement the operation index to move past it.
 	operationIndex := len(utxoOpsForTxn) - 1
 	if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeDeSoDiamond {
@@ -1359,19 +1348,6 @@ func (bav *UtxoView) _connectBasicTransfer(
 			PrevDiamondEntry: previousDiamondEntry,
 		})
 	}
-
-	// We allow rotating messaging keys, which can be passed in transaction ExtraData.
-	// This is part of our Messaging V3 protocol where we encrypt/decrypt messages based
-	// on rotating messaging keys, instead of the main user's key. We lookup transaction
-	// ExtraData records for messaging keys, and if they're found, we will proceed to
-	// connect them to UtxoView. Messaging keys are added similarly to a transaction;
-	// however, they're intended as a non-forking change and so we won't return on error.
-	//utxoOp, err := bav._connectMessagingKey(txn, blockHeight)
-	//if utxoOp != nil && err == nil {
-	//	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
-	//} else if err != nil {
-	//	glog.Errorf("_connectBasicTransfer: Rule %v, Error %v", RuleErrorMessagingKeyConnect, err)
-	//}
 
 	// If signature verification is requested then do that as well.
 	if verifySignatures {

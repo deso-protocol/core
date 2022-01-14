@@ -215,7 +215,7 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 
-	// NEXT_ID = 27
+	// NEXT_ID = 26
 )
 
 type TxnString string
@@ -4950,6 +4950,7 @@ func DeserializePubKeyToUint64Map (data []byte) (map[PublicKey]uint64, error) {
 // ==================================================================
 
 type MessagingKeyMetadata struct {
+	// This struct is very similar to the MessagingKeyEntry type.
 	MessagingPublicKey []byte
 	MessagingKeyName []byte
 	KeySignature []byte

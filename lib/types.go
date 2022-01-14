@@ -1,9 +1,8 @@
 package lib
 
 import (
-
-"fmt"
-"github.com/btcsuite/btcd/btcec"
+	"fmt"
+	"github.com/btcsuite/btcd/btcec"
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are

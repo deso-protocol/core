@@ -1911,7 +1911,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 		utxoOpsForBlock, err := utxoView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
 		if err != nil {
-			fmt.Println("error?", err)
 			if IsRuleError(err) {
 				// If we have a RuleError, mark the block as invalid before
 				// returning.
@@ -3778,24 +3777,7 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
     	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	//// Validate messaging public key and key name.
-	//if err := ValidateKeyAndName(messagingPublicKey, messagingKeyName); err != nil {
-	//	return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: Problem "+
-	//		"validating messaging public key and name")
-	//}
-	//
-	//// If we get here, it means we have valid messaging public key, key name, and signature.
-	//// Now we want to verify that the signature is correct for the owner public key.
-	//if EqualKeyName(NewKeyName(messagingKeyName), DefaultKeyName()) {
-	//	msgBytes := append(messagingPublicKey, messagingKeyName...)
-	//	if err := _verifyBytesSignature(senderPublicKey, msgBytes, messagingKeySignature); err != nil {
-	//		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: "+
-	//			"Problem verifying signature bytes")
-	//	}
-	//}
-
-	// If we got here, we have valid public key, key name, and matching signature.
-	// We add the records to ExtraData.
+	// We don't need to validate info here, so just construct the transaction instead.
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
 		TxnMeta: &MessagingKeyMetadata{

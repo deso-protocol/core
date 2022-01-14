@@ -254,7 +254,7 @@ func TestPrivateMessage(t *testing.T) {
 	//    m2: 3
 	//    m3: 2
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(1, len(messages))
 		messageEntry := messages[0]
@@ -268,17 +268,17 @@ func TestPrivateMessage(t *testing.T) {
 		require.Equal(message1, string(decryptedBytes))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(4, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(3, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(2, len(messages))
 	}
@@ -336,22 +336,22 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Verify that all the messages have been deleted.
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
@@ -407,22 +407,22 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Verify that all the messages have been deleted.
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
@@ -483,22 +483,22 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Verify that all the messages have been deleted.
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
@@ -599,17 +599,16 @@ func _verifyMessagingKey(testMeta *TestMeta, entry *MessagingKeyEntry) bool {
 }
 
 // _verifyAddedMessagingKeys is used to verify that messaging key entries in db match the expected entries.
-func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEntries []*MessagingKeyEntry) error {
-	return testMeta.chain.db.View(func(txn *badger.Txn) error {
+func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEntries []*MessagingKeyEntry) {
+	require := require.New(testMeta.t)
+	assert := assert.New(testMeta.t)
+
+	require.NoError(testMeta.chain.db.View(func(txn *badger.Txn) error {
 		// Get the DB record.
 		entries, err := DBGetAllUserMessagingKeysWithTxn(txn, publicKey)
-		if err != nil {
-			return err
-		}
+		require.NoError(err)
 		// Make sure the number of entries between the DB and expectation match.
-		if len(entries) != len(expectedEntries) {
-			return fmt.Errorf("")
-		}
+		assert.Equal(len(entries), len(expectedEntries))
 		// Verify entries one by one.
 		for _, expectedEntry := range expectedEntries {
 			ok := false
@@ -619,12 +618,10 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 					break
 				}
 			}
-			if !ok {
-				return fmt.Errorf("")
-			}
+			assert.Equal(true, ok)
 		}
 		return nil
-	})
+	}))
 }
 
 // _initMessagingKey is a helper function that instantiates a MessagingKeyEntry.
@@ -1007,11 +1004,11 @@ func TestMessagingKeys(t *testing.T) {
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
 	}
 	// A bit of an overkill, but verify that all key entries are present in the DB.
-	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey]))
+	_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey])
+	_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey])
 
 	// -------------------------------------------------------------------------------------
 	//	Test #2: We will add messaging keys with message recipients, aka, group chats.
@@ -1295,11 +1292,11 @@ func TestMessagingKeys(t *testing.T) {
 		})
 	}
 	// Now we verify that all keys were properly added.
-	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey]))
+	_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey])
+	_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey])
 
 	// Do some block connecting/disconnecting, mempooling, etc to verify everything works.
 	_rollBackTestMetaTxnsAndFlush(testMeta)
@@ -1330,11 +1327,11 @@ func TestMessagingKeys(t *testing.T) {
 		entry.MessagingPublicKey = NewPublicKey(m3PubKey)
 		keyEntriesAdded[m3PublicKey] = append([]*MessagingKeyEntry{}, entry)
 	}
-	require.NoError(_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey]))
-	require.NoError(_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey]))
+	_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey])
+	_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m1PubKey, keyEntriesAdded[m1PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m2PubKey, keyEntriesAdded[m2PublicKey])
+	_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey])
 }
 
 
@@ -1391,6 +1388,7 @@ func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, s
 	testMeta.txns = append(testMeta.txns, txn)
 }
 
+// _helpConnectPrivateMessageWithParty is a simplified version of _connectPrivateMessageWithParty
 func _helpConnectPrivateMessageWithParty(testMeta *TestMeta, senderPrivBase58 string,
 	entry MessageEntry, expectedError error) {
 
@@ -1399,12 +1397,14 @@ func _helpConnectPrivateMessageWithParty(testMeta *TestMeta, senderPrivBase58 st
 		entry.RecipientMessagingKeyName[:], hex.EncodeToString(entry.EncryptedText), entry.TstampNanos, expectedError)
 }
 
-// Verify the message party entry in UtxoView or DB matches the expected entry.
+// Verify the message party entry in UtxoView or DB matches the expected entry. Also add the message entries
+// to the expected entries map, which we use for verifying that DB entries match added messages.
 func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]MessageEntry,
 	expectedEntry MessageEntry, groupOwner bool) bool {
 
 	require := require.New(testMeta.t)
 
+	// First validate that the expected entry was properly added to the UtxoView.
 	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
 	require.NoError(err)
 	messageKey := MakeMessageKey(expectedEntry.SenderMessagingPublicKey[:], expectedEntry.TstampNanos)
@@ -1427,6 +1427,8 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	expectedMessageEntries[*expectedEntry.SenderPublicKey] = append(expectedMessageEntries[*expectedEntry.SenderPublicKey], expectedEntry)
 	addedEntries[*expectedEntry.SenderPublicKey] = true
 
+	// There is an edge-case where group owner sends a message to their group which complicates the logic for adding
+	// messages to our expected entries map.
 	if !groupOwner {
 		expectedMessageEntries[*expectedEntry.RecipientPublicKey] = append(expectedMessageEntries[*expectedEntry.RecipientPublicKey], expectedEntry)
 		addedEntries[*expectedEntry.RecipientPublicKey] = true
@@ -1450,6 +1452,7 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	return true
 }
 
+// _verifyMessages verifies that the expected messages map is identical to the DB entries.
 func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]MessageEntry) {
 
 	require := require.New(testMeta.t)
@@ -1461,10 +1464,6 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 	for key, messageEntries := range expectedMessageEntries {
 		dbMessageEntries, _, err := utxoView.GetLimitedMessagesForUser(key[:], 100)
 		require.NoError(err)
-		if len(messageEntries) != len(dbMessageEntries) {
-			fmt.Println("NO ENTRY FOR KEY", key)
-			fmt.Println("here")
-		}
 		assert.Equal(len(messageEntries), len(dbMessageEntries))
 
 		for _, messageEntry := range messageEntries {
@@ -1480,9 +1479,9 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 	}
 }
 
-// In these tests we basically want to verify that MessageParty records are correctly added to UtxoView and DB
-// after we send V3 messages.
-func TestMessageParty(t *testing.T) {
+// In these tests we basically want to verify that messages are correctly added to UtxoView and DB
+// after we send V3 group messages.
+func TestGroupMessages(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	_ = require
@@ -1511,14 +1510,7 @@ func TestMessageParty(t *testing.T) {
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
-	registerOrTransfer := func(username string,
-		senderPk string, recipientPk string, senderPriv string) {
-
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, senderPk, recipientPk,
-			senderPriv, 1000 /*amount to send*/, 11 /*feerate*/)
-	}
-
+	// Decode the test key so they're easier to use throughout the tests.
 	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
 	require.NoError(err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
@@ -1554,15 +1546,15 @@ func TestMessageParty(t *testing.T) {
 	require.NoError(err)
 	_, _ = m3PubKey, m3PrivKey
 
-	fmt.Println("senderPubKey", senderPkBytes)
-	fmt.Println("recipientPubKey", recipientPkBytes)
-	fmt.Println("m0PubKey", m0PubKey)
-	fmt.Println("m1PubKey", m1PubKey)
-	fmt.Println("m2PubKey", m2PubKey)
-	fmt.Println("m3PubKey", m3PubKey)
-
-
 	// Fund all the keys.
+	registerOrTransfer := func(username string,
+		senderPk string, recipientPk string, senderPriv string) {
+
+		_, _, _ = _doBasicTransferWithViewFlush(
+			t, chain, db, params, senderPk, recipientPk,
+			senderPriv, 1000 /*amount to send*/, 11 /*feerate*/)
+	}
+
 	registerOrTransfer("", senderPkString, recipientPkString, senderPrivString)
 	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
 	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
@@ -1578,6 +1570,7 @@ func TestMessageParty(t *testing.T) {
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
 
 	expectedMessageEntries := make(map[PublicKey][]MessageEntry)
+
 	// -------------------------------------------------------------------------------------
 	//	Test #1: Attempt sending a V3 private message without a previously authorized messaging key.
 	// -------------------------------------------------------------------------------------
@@ -1586,7 +1579,7 @@ func TestMessageParty(t *testing.T) {
 		keyName := []byte("default-key")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, keyName)
 
-		// Connect a V3 private message to the UtxoView, which should fail.
+		// SenderPk tries to submit a V3 private message with a non-existent key, which should fail.
 		tstampNanos := uint64(time.Now().UnixNano())
 		testMessage1 := []byte{1, 2, 3, 4, 5, 6}
 		messageEntry := MessageEntry{
@@ -1602,18 +1595,17 @@ func TestMessageParty(t *testing.T) {
 			BaseKeyName(),
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, RuleErrorPrivateMessageFailedToValidateMessagingKey)
-		// Verification should fail because the <pub, keyName> was never added to UtxoView.
-		// This will return true because neither message nor message party was added.
+		// Verification should fail because the messaging key was never added to UtxoView.
 		require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
+		// SenderPk tries to submit another malformed V3 message, but this time the recipient is malformed, should fail.
 		messageEntry.SenderMessagingPublicKey = NewPublicKey(senderPkBytes)
 		messageEntry.SenderMessagingKeyName = BaseKeyName()
 		messageEntry.RecipientMessagingPublicKey = entry.MessagingPublicKey
 		messageEntry.RecipientMessagingKeyName = NewKeyName(keyName)
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, RuleErrorPrivateMessageFailedToValidateMessagingKey)
+		// Should fail.
 		require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
-		//require.Equal(false, _verifyMessageParty(testMeta, senderPkBytes, tstampNanos,
-		//	entry.MessagingPublicKey[:], BaseKeyName(), recipientPkBytes, BaseKeyName()))
 
 		// We will send a v2-like message just to make sure everything is gucci.
 		// We will set version as 3 because we're adding messaging keys.
@@ -1623,6 +1615,10 @@ func TestMessageParty(t *testing.T) {
 		messageEntry.RecipientMessagingKeyName = BaseKeyName()
 		messageEntry.Version = 3
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
+		// Should pass, so we have:
+		// sender -> recipient
+		//	sender: 1
+		//	recipient: 1
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		_verifyMessages(testMeta, expectedMessageEntries)
@@ -1656,6 +1652,7 @@ func TestMessageParty(t *testing.T) {
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 
+		// SenderPk sends a message from their default key to recipient's base key, should pass.
 		tstampNanos1 := uint64(time.Now().UnixNano())
 		testMessage1 := []byte{1, 2, 3, 4, 5, 6, 7, 8}
 		messageEntry := MessageEntry{
@@ -1671,16 +1668,25 @@ func TestMessageParty(t *testing.T) {
 			BaseKeyName(),
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
+		// Should pass, so we have:
+		// sender -> recipient
+		// 	sender: 2
+		//	recipient: 2
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
-		// Add another message cause why not.
+		// Add another message cause why not:
 		tstampNanos2 := uint64(time.Now().UnixNano())
 		testMessage2 := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}
 		messageEntry.TstampNanos = tstampNanos2
 		messageEntry.EncryptedText = testMessage2
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
+		// Should pass, so we have:
+		// sender -> recipient
+		// 	sender: 3
+		//	recipient: 3
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
+		// Register a default key for the recipient, so we can try sending messages between two messaging keys.
 		defaultKey = []byte("default-key")
 		_, sign, entryRecipient := _generateMessagingKey(recipientPkBytes, recipientPrivBytes, defaultKey)
 		require.Equal(false, _verifyMessagingKey(testMeta, entryRecipient))
@@ -1695,7 +1701,7 @@ func TestMessageParty(t *testing.T) {
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, entryRecipient))
 
-		// Add yet another message cause why nooot.
+		// SenderPk makes a message from their default key to recipient's default key.
 		tstampNanos3 := uint64(time.Now().UnixNano())
 		testMessage3 := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
 		messageEntry.TstampNanos = tstampNanos3
@@ -1703,6 +1709,10 @@ func TestMessageParty(t *testing.T) {
 		messageEntry.RecipientMessagingPublicKey = entryRecipient.MessagingPublicKey
 		messageEntry.RecipientMessagingKeyName = NewKeyName(defaultKey)
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
+		// Should pass, so we have:
+		// sender -> recipient
+		// 	sender: 4
+		//	recipient: 4
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		// Now send a message from recipient -> sender
@@ -1715,8 +1725,13 @@ func TestMessageParty(t *testing.T) {
 		messageEntry.RecipientPublicKey = NewPublicKey(senderPkBytes)
 		messageEntry.RecipientMessagingPublicKey = entry.MessagingPublicKey
 		_helpConnectPrivateMessageWithParty(testMeta, recipientPrivString, messageEntry, nil)
+		// Should pass, so we have:
+		// recipient -> sender
+		// 	sender: 5
+		//	recipient: 5
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
+		// Verify that all the messages are correct.
 		_verifyMessages(testMeta, expectedMessageEntries)
 		// Just to sanity-check, verify that the number of messages is as intended.
 		utxoView, err := NewUtxoView(db, params, nil)
@@ -1749,7 +1764,7 @@ func TestMessageParty(t *testing.T) {
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 
-		// M1 sends a message to the empty group
+		// m1 sends a message to the empty group
 		tstampNanos1 := uint64(time.Now().UnixNano())
 		testMessage1 := []byte{1, 2, 5, 4, 5, 6, 7, 8}
 		messageEntry1 := MessageEntry{
@@ -1766,6 +1781,11 @@ func TestMessageParty(t *testing.T) {
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m1Priv, messageEntry1, nil)
 		// We set groupOwner=true because of the edge-case where the user who made the group sends the message.
+		// Should pass, so we have:
+		// m1 -> group(m1)
+		// 	sender: 5
+		//	recipient: 5
+		//  m1: 1
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry1, true))
 
 		_verifyMessages(testMeta, expectedMessageEntries)
@@ -1793,7 +1813,7 @@ func TestMessageParty(t *testing.T) {
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 
-		// M1 sends a message to the empty group
+		// m1 sends a message to the empty group.
 		tstampNanos1 := uint64(time.Now().UnixNano())
 		testMessage1 := []byte{1, 2, 5, 4, 5, 6, 7, 8, 15}
 		messageEntry1 := MessageEntry{
@@ -1809,7 +1829,14 @@ func TestMessageParty(t *testing.T) {
 			NewKeyName(addingMembersKey),
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m1Priv, messageEntry1, nil)
+		// Should pass, we don't verify the messaging entry yet because we want to make
+		// sure that our expected entries map includes entries for all recipients.
+		// m1 -> group(m1)
+		// 	sender: 5
+		//	recipient: 5
+		//  m1: 2
 
+		// Now add m0 to the group.
 		entry.Recipients = append(entry.Recipients, MessagingRecipient{
 			NewPublicKey(m0PubKey),
 			BaseKeyName(),
@@ -1827,6 +1854,7 @@ func TestMessageParty(t *testing.T) {
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 
+		// m0 sends another message to the group.
 		tstampNanos2 := uint64(time.Now().UnixNano())
 		testMessage2 := []byte{1, 2, 5, 4, 5, 6, 7, 8, 15, 22}
 		// We have the edge-case where we need to
@@ -1843,11 +1871,19 @@ func TestMessageParty(t *testing.T) {
 			NewKeyName(addingMembersKey),
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, messageEntry2, nil)
+		// Should pass, so we have:
+		// m1 -> group(m1, m0)
+		// 	sender: 5
+		//	recipient: 5
+		//  m1: 3
+		// 	m0: 2 (note that m0 now sees both messages in the group chat)
 
+		// We will send a message from a key that's not a member of the group chat. This is expected,
+		// for instance if we want to facilitate a functionality where more than one user can respond
+		// to messages. Non-members can always be filtered out in the application layer.
+		// To add some entropy, the message will be sent by recipient and through default key.
 		tstampNanos3 := uint64(time.Now().UnixNano())
 		testMessage3 := []byte{1, 2, 5, 4, 5, 6, 7, 8, 15, 22, 27}
-		// We will send a message from a key that's not a member of the group chat.
-		// To add some entropy, the message will be sent by recipient and through default key.
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		messagingKey := utxoView.GetMessagingKeyToMessagingKeyEntryMapping(&MessagingKey{
@@ -1867,34 +1903,43 @@ func TestMessageParty(t *testing.T) {
 			NewKeyName(addingMembersKey),
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, recipientPrivString, messageEntry3, nil)
+		// Should pass, so we have:
+		// m1 -> group(m1, m0)
+		// 	sender: 5
+		//	recipient: 6
+		//  m1: 4
+		// 	m0: 3
 
+		// Verify that all messages are present in the DB.
 		// We set groupOwner=true because of the edge-case where the user who made the group sends the message.
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry1, true))
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry2, false))
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry3, false))
 
-		// Verify the messages.
+		// Verify all messages.
 		_verifyMessages(testMeta, expectedMessageEntries)
 		// Just to sanity-check, verify that the number of messages is as intended.
 		utxoView, err = NewUtxoView(db, params, nil)
 		require.NoError(err)
-		messages, _, err := utxoView.GetMessagesForUser(m0PubKey)
+		messages, _, err := utxoView.GetMessagesForUser(recipientPkBytes)
 		require.NoError(err)
-		assert.Equal(3, len(messages))
+		assert.Equal(6, len(messages))
 		messages, _, err = utxoView.GetMessagesForUser(m1PubKey)
 		require.NoError(err)
 		assert.Equal(4, len(messages))
-		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
+		messages, _, err = utxoView.GetMessagesForUser(m0PubKey)
 		require.NoError(err)
-		assert.Equal(6, len(messages))
+		assert.Equal(3, len(messages))
 	}
-	// Same test but add another key to the group later and verify they see all messages.
+	// Now we will get to the real test where we construct a 4-party group chat, aka, the gang,
+	// and create the *first* legit on-chain DeSo group chat!
 	{
-		// Start with a big group and verify encryption/decryption
+		// Create the group messaging key.
 		gangKey := []byte("gang-gang")
 		priv, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, gangKey)
 		privBytes := priv.Serialize()
 
+		// Define helper functions for encryption/decryption so that we can do some real crypto.
 		encrypt := func(plain, recipient []byte) []byte {
 			recipientPk, err := btcec.ParsePubKey(recipient, btcec.S256())
 			if err != nil {
@@ -1919,6 +1964,7 @@ func TestMessageParty(t *testing.T) {
 
 		// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
 		// since it's not what we're testing here.
+		// We're making a group chat with: (sender, recipient, m0, m2).
 		entry.Recipients = append(entry.Recipients, MessagingRecipient{
 			NewPublicKey(recipientPkBytes),
 			BaseKeyName(),
@@ -1947,7 +1993,8 @@ func TestMessageParty(t *testing.T) {
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, entry))
 
-		// M0 sends a message to the empty group
+		// Now let's have m0 send the first message to the group chat.
+		// We will fetch the encrypted messaging key from m0, decrypt it, and use it to make the message.
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
 		messagingKeys, err := utxoView.GetUserMessagingKeys(m0PubKey)
@@ -1960,11 +2007,14 @@ func TestMessageParty(t *testing.T) {
 				break
 			}
 		}
+		// The decrypted key should match the original private key.
 		require.Equal(privBytes, m0PrivBytes)
+
+		// Now it's time to encrypt the message.
 		tstampNanos := uint64(time.Now().UnixNano())
 		testMessage := []byte("DeSo V3 Messages work!")
 		encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
-
+		// Create the corresponding message entry and connect it.
 		messageEntry := MessageEntry{
 			NewPublicKey(m0PubKey),
 			NewPublicKey(senderPkBytes),
@@ -1978,6 +2028,14 @@ func TestMessageParty(t *testing.T) {
 			NewKeyName(gangKey),
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, messageEntry, nil)
+		// The message should be successfully added, so we have:
+		// m0 -> group(sender, recipient, m0, m2)
+		// 	sender: 6
+		//	recipient: 7
+		//  m1: 4
+		// 	m0: 4
+		// 	m2: 1
+
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		// Verify the messages.
@@ -1985,31 +2043,36 @@ func TestMessageParty(t *testing.T) {
 		// Just to sanity-check, verify that the number of messages is as intended.
 		utxoView, err = NewUtxoView(db, params, nil)
 		require.NoError(err)
-		messages, _, err := utxoView.GetMessagesForUser(m0PubKey)
+		messages, _, err := utxoView.GetMessagesForUser(senderPkBytes)
+		require.NoError(err)
+		assert.Equal(6, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
+		require.NoError(err)
+		assert.Equal(7, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m0PubKey)
 		require.NoError(err)
 		assert.Equal(4, len(messages))
 		messages, _, err = utxoView.GetMessagesForUser(m2PubKey)
 		require.NoError(err)
 		assert.Equal(1, len(messages))
-		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
-		require.NoError(err)
-		assert.Equal(7, len(messages))
-		messages, _, err = utxoView.GetMessagesForUser(senderPkBytes)
-		require.NoError(err)
-		assert.Equal(6, len(messages))
 
+		// And also sanity-check that the message exists in the group chat.
 		gangMessage, _, err := utxoView.GetMessagesForUser(entry.MessagingPublicKey[:])
 		require.NoError(err)
 		assert.Equal(1, len(gangMessage))
 
+		// Okay but now let's see if group members can actually decrypt the message.
+		// Define a helper function that does just that.
 		verifyGangMessage := func(msg, pk, priv []byte) {
+			// Get all user messages from the DB.
 			var msgKeys []*MessagingKeyEntry
 			require.NoError(db.View(func(txn *badger.Txn) error {
-				msgKeys, err = DBGetAllMessageRecipientsEntriesWithTxn(txn, NewPublicKey(pk))
+				msgKeys, err = DBGetAllMessagingRecipientsEntriesWithTxn(txn, NewPublicKey(pk))
 				return err
 			}))
 			assert.NotNil(msgKeys)
 
+			// Now single out the gang message, so we can try decrypting it
 			var encryptedKey []byte
 			for _, key := range msgKeys {
 				if reflect.DeepEqual(key.MessagingPublicKey[:], entry.MessagingPublicKey[:]) {
@@ -2019,21 +2082,27 @@ func TestMessageParty(t *testing.T) {
 			}
 			require.NotEqual(0, len(encryptedKey))
 
+			// If the group chat was constructed correctly, then we can decrypt the key present in
+			// the recipient messaging key with user's private key, and use it to decrypt the message.
 			decryptedKey := decrypt(encryptedKey, priv)
 			plaintext := decrypt(msg, decryptedKey)
+			// If the message was successfuly decrypted, it should match our original message.
 			require.Equal(plaintext, testMessage)
 		}
+		// Verify that all group members can decrypt the message (skip the group owner)
 		verifyGangMessage(gangMessage[0].EncryptedText, recipientPkBytes, recipientPrivBytes)
 		verifyGangMessage(gangMessage[0].EncryptedText, m0PubKey, m0PrivKey)
 		verifyGangMessage(gangMessage[0].EncryptedText, m2PubKey, m2PrivKey)
 	}
 
+	// Now disconnect all entries.
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 
+	// Sanity-check that all entries were reverted from the DB.
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 	messages, _, err := utxoView.GetMessagesForUser(senderPkBytes)

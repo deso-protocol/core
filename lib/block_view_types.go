@@ -105,11 +105,10 @@ const (
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
 	OperationTypeMessagingKey                 OperationType = 24
-	OperationTypeMessageParty                 OperationType = 25
-	OperationTypeDAOCoin                      OperationType = 26
-	OperationTypeDAOCoinTransfer              OperationType = 27
+	OperationTypeDAOCoin                      OperationType = 25
+	OperationTypeDAOCoinTransfer              OperationType = 26
 
-	// NEXT_TAG = 28
+	// NEXT_TAG = 27
 )
 
 func (op OperationType) String() string {
@@ -210,10 +209,6 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeMessagingKey"
 		}
-	case OperationTypeMessageParty:
-		{
-			return "OperationTypeMessageParty"
-		}
 	case OperationTypeDAOCoin:
 		{
 			return "OperationTypeDAOCoin"
@@ -289,6 +284,7 @@ type UtxoOperation struct {
 	// For disconnecting AuthorizeDerivedKey transactions.
 	PrevDerivedKeyEntry *DerivedKeyEntry
 
+	// For disconnecting MessagingKey transactions.
 	PrevMessagingKeyEntry *MessagingKeyEntry
 
 	// Save the previous repost entry and repost count when making an update.
@@ -428,7 +424,7 @@ type MessageEntry struct {
 	isDeleted bool
 
 	// Indicates message encryption method
-	// Version = 3 : message encrypted using shared secrets with rotating keys
+	// Version = 3 : message encrypted using rotating keys and group chats.
 	// Version = 2 : message encrypted using shared secrets
 	// Version = 1 : message encrypted using public key
 	Version uint8
@@ -612,8 +608,14 @@ type MessagingKeyEntry struct {
 	// The standard Messages V3 key is named "default-key"
 	MessagingKeyName *KeyName
 
+	// Recipients is a list of recipients in a group chat. Messaging keys can have
+	// multiple recipients, where the encrypted private key of the messaging public key
+	// is given to all group members.
 	Recipients []MessagingRecipient
 
+	// EncryptedKey is used to store the encrypted private key addressed to the
+	// messaging key owner. In case the messaging key entry was posted by derived key,
+	// the encrypted key can be used to share the private key with the owner.
 	EncryptedKey []byte
 
 	// Whether this entry should be deleted when the view is flushed
@@ -621,6 +623,8 @@ type MessagingKeyEntry struct {
 	// we disconnect the messaging key from UtxoView
 	isDeleted bool
 
+	// We allow overloading of the MessagingKeyEntry for message recipients, and
+	// this field is used to indicate that the struct is used to store recipient keys.
 	isRecipient bool
 }
 
@@ -685,83 +689,21 @@ func (entry *MessagingKeyEntry) Decode(data []byte) error {
 	return nil
 }
 
-// MessageParty is used to augment MessageEntry field with information about
-// the messaging parties of this message. This was introduced in the DeSo V3
-// Messages, and the data is stored under separate DB prefixes as this is a
-// non-forking change.
-type MessageParty struct {
-	// senderPublicKey is the public key of the message sender.
-	senderPublicKey *PublicKey
-
-	// recipientPublicKey is the public key of the message recipient.
-	recipientPublicKey *PublicKey
-
-	// TstampNanos is the timestamp corresponding to the message.
-	TstampNanos uint64
-
-	// SenderMessagingPublicKey is the sender's messaging public key that was used
-	// to encrypt the corresponding message.
-	SenderMessagingPublicKey *PublicKey
-
-	// SenderMessagingKeyName is the sender's key name of SenderMessagingPublicKey
-	SenderMessagingKeyName *KeyName
-
-	// RecipientMessagingPublicKey is the recipient's messaging public key that was
-	// used to encrypt the corresponding message.
-	RecipientMessagingPublicKey *PublicKey
-
-	// RecipientMessagingKeyName is the recipient's key name of RecipientMessagingPublicKey
-	RecipientMessagingKeyName *KeyName
-
-	// Whether this entry is deleted.
-	isDeleted bool
-}
-
-func (party *MessageParty) Encode() []byte {
-	var partyBytes []byte
-
-	partyBytes = append(partyBytes, UintToBuf(party.TstampNanos)...)
-	partyBytes = append(partyBytes, EncodeByteArray(party.SenderMessagingPublicKey.ToBytes())...)
-	partyBytes = append(partyBytes, EncodeByteArray(party.SenderMessagingKeyName.ToBytes())...)
-	partyBytes = append(partyBytes, EncodeByteArray(party.RecipientMessagingPublicKey.ToBytes())...)
-	partyBytes = append(partyBytes, EncodeByteArray(party.RecipientMessagingKeyName.ToBytes())...)
-	return partyBytes
-}
-
-func (party *MessageParty) Decode(data []byte) error {
-	rr := bytes.NewReader(data)
-
-	party.TstampNanos, _ = ReadUvarint(rr)
-	senderMessagingPublicKey, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MessageParty.Decode: problem decoding sender messaging public key")
-	}
-	party.SenderMessagingPublicKey = NewPublicKey(senderMessagingPublicKey)
-
-	senderMessagingKeyName, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MessageParty.Decode: problem decoding sender messaging key name")
-	}
-	party.SenderMessagingKeyName = NewKeyName(senderMessagingKeyName)
-
-	recipientMessagingPublicKey, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MessageParty.Decode: problem decoding recipient messaging public key")
-	}
-	party.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
-
-	recipientMessagingKeyName, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MessageParty.Decode: problem decoding recipient messaging key name")
-	}
-	party.RecipientMessagingKeyName = NewKeyName(recipientMessagingKeyName)
-
-	return nil
-}
-
+// MessagingRecipient is used to store information about a group chat member.
 type MessagingRecipient struct {
+	// RecipientPublicKey is the main public key of the group chat member.
+	// Importantly, it isn't a messaging public key.
 	RecipientPublicKey *PublicKey
+
+	// RecipientMessagingKeyName determines the key of the recipient that the
+	// encrypted key is addressed to. We allow adding recipients by their
+	// messaging keys. It suffices to specify the recipient's main public key
+	// and recipient's messaging key name for the consensus to know how to
+	// index the recipient. That's why we don't actually store the messaging
+	// public key in the MessagingRecipient entry.
 	RecipientMessagingKeyName *KeyName
+
+	// EncryptedKey is the encrypted messaging public key, addressed to the recipient.
 	EncryptedKey              []byte
 }
 

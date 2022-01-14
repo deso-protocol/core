@@ -12,6 +12,9 @@ import (
 )
 
 func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *MessageEntry {
+	// It is important to note that this function has to be called with a MessageKey
+	// that's set with *messaging keys* rather than user keys.
+
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	mapValue, existsMapValue := bav.MessageKeyToMessageEntry[*messageKey]
 	if existsMapValue {
@@ -21,14 +24,13 @@ func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *Mess
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	dbMessageEntry := DbGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
+	dbMessageEntry := DBGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
 	if dbMessageEntry != nil {
 		bav._setMessageEntryMappings(dbMessageEntry)
 	}
 	return dbMessageEntry
 }
 
-// This function has to be called twice for both sender and recipient!
 func (bav *UtxoView) _setMessageEntryMappings(messageEntry *MessageEntry) {
 	// This function shouldn't be called with nil.
 	if messageEntry == nil {
@@ -38,11 +40,9 @@ func (bav *UtxoView) _setMessageEntryMappings(messageEntry *MessageEntry) {
 	}
 
 	// Add a mapping for the sender and the recipient.
-	// We index messages by sender and recipient messaging public keys. Group chats add new messaging
-	// keys for each recipient. In order for these recipients to read group chat messages, they need
-	// to iterate through some group chat private message prefix. If the prefix was indexed with the
-	// group chat owner's main key, each recipient would have had to scan through all of owner's
-	// messages which is inefficient. Instead, if we index by messaging public key, this issue is solved.
+	// We index messages by sender and recipient messaging public keys. Group chats add messaging keys for
+	// each recipient. As a result, when fetching user messages, we will need to fetch messages for each
+	// messaging key. Indexing by messaging keys instead of user main keys transpired to be more efficient.
 	senderKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
 	bav.MessageKeyToMessageEntry[senderKey] = messageEntry
 
@@ -50,7 +50,6 @@ func (bav *UtxoView) _setMessageEntryMappings(messageEntry *MessageEntry) {
 	bav.MessageKeyToMessageEntry[recipientKey] = messageEntry
 }
 
-// This function has to be called twice for both sender and recipient!
 func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 
 	// Create a tombstone entry.
@@ -58,10 +57,15 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 	tombstoneMessageEntry.isDeleted = true
 
 	// Set the mappings to point to the tombstone entry.
+	// As opposed to the _setMessageEntryMappings, we only need to do *the delete* once.
+	// This is because set will delete both entries at once.
 	bav._setMessageEntryMappings(&tombstoneMessageEntry)
 }
 
 func (bav *UtxoView) GetMessagingKeyToMessagingKeyEntryMapping(messagingKey *MessagingKey) *MessagingKeyEntry {
+	// This function is used to get a MessagingKeyEntry given a MessagingKey. The V3 messages are
+	// backwards-compatible, and in particular each user has a built-in messaging key, called the
+	// "base key," which is simply a messaging key corresponding to user's main key.
 	if EqualKeyName(&messagingKey.KeyName, BaseKeyName()) {
 		return &MessagingKeyEntry{
 			PublicKey:          NewPublicKey(messagingKey.PublicKey[:]),
@@ -86,7 +90,7 @@ func (bav *UtxoView) GetMessagingKeyToMessagingKeyEntryMapping(messagingKey *Mes
 }
 
 func (bav *UtxoView) _setMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntry *MessagingKeyEntry) {
-	// This function shouldn't be called with nil
+	// This function shouldn't be called with a nil entry.
 	if messagingKeyEntry == nil {
 		glog.Errorf("_setMessagingKeyToMessagingKeyEntryMapping: Called with nil MessagingKeyEntry; " +
 			"this should never happen.")
@@ -94,6 +98,7 @@ func (bav *UtxoView) _setMessagingKeyToMessagingKeyEntryMapping(messagingKeyEntr
 	}
 
 	// Create a key for the UtxoView mapping. We always put user's main public key as part of the map key.
+	// Note that this is different from message entries, which are indexed by messaging public keys.
 	messagingKey := MessagingKey{
 		PublicKey: *messagingKeyEntry.PublicKey,
 		KeyName:   *messagingKeyEntry.MessagingKeyName,
@@ -109,46 +114,6 @@ func (bav *UtxoView) _deleteMessagingKeyToMessagingKeyEntryMapping(messagingKeyE
 
 	// Set the mappings to point to the tombstone entry.
 	bav._setMessagingKeyToMessagingKeyEntryMapping(&tombstoneMessageKeyEntry)
-}
-
-func (bav *UtxoView) _getMessageKeyToMessageParty(key *MessageKey) *MessageParty {
-	// If an entry exists in the in-memory map, return the value of that mapping.
-	mapValue, existsMapValue := bav.MessageKeyToMessageParty[*key]
-	if existsMapValue {
-		return mapValue
-	}
-
-	// If we get here it means no value exists in our in-memory map. In this case,
-	// defer to the db. If a mapping exists in the db, return it. If not, return
-	// nil. Either way, save the value to the in-memory view mapping got later.
-	dbMessageParty := DbGetMessageParty(bav.Handle, NewPublicKey(key.PublicKey[:]), key.TstampNanos)
-	if dbMessageParty != nil {
-		bav._setMessageKeyToMessageParty(dbMessageParty)
-	}
-	return dbMessageParty
-}
-
-func (bav *UtxoView) _setMessageKeyToMessageParty(party *MessageParty) {
-	// This function shouldn't be called with nil
-	if party == nil {
-		glog.Errorf("_setMessageKeyToMessageParty: Called with nil party; " +
-			"this should never happen.")
-		return
-	}
-
-	// We set the mapping both for the sender and the recipient.
-	bav.MessageKeyToMessageParty[MakeMessageKey(party.SenderMessagingPublicKey.ToBytes(), party.TstampNanos)] = party
-	bav.MessageKeyToMessageParty[MakeMessageKey(party.RecipientMessagingPublicKey.ToBytes(), party.TstampNanos)] = party
-}
-
-func (bav *UtxoView) _deleteMessagePartyMappings(party *MessageParty) {
-
-	// Create a tombstone entry.
-	tombstoneMessageParty := *party
-	tombstoneMessageParty.isDeleted = true
-
-	// Set the mappings to point to the tombstone entry.
-	bav._setMessageKeyToMessageParty(&tombstoneMessageParty)
 }
 
 //
@@ -180,18 +145,23 @@ func (bav *UtxoView) deleteMessageMappings(message *PGMessage) {
 
 func (bav *UtxoView) GetUserMessagingKeys(publicKey []byte) (
 	_messagingKeyEntries []*MessagingKeyEntry, _err error) {
+	// This function will return all messaging keys of a user, including the base key,
+	// messaging keys, and all recipient keys.
 
 	// This is our helper map to keep track of all user messaging keys.
 	messagingKeysMap := make(map[PublicKey]*MessagingKeyEntry)
 
-	// Start by fetching all the messages we have in the UtxoView.
+	// Start by fetching all the messaging keys that we have in the UtxoView.
 	for _, messagingKeyEntry := range bav.MessagingKeyToMessagingKeyEntry {
-		// We don't check for deleted entries now, we will do that later once we add
-		// messaging keys from the DB.
+		// We don't check for deleted entries now, we will do that later once we add messaging keys
+		// from the DB. For now we also omit the base key, we will add it later when querying the DB.
+
+		// Check if the messaging key corresponds to our public key.
 		if reflect.DeepEqual(messagingKeyEntry.PublicKey[:], publicKey) {
 			messagingKeysMap[*messagingKeyEntry.MessagingPublicKey] = messagingKeyEntry
 			continue
 		}
+		// Now we will look for messaging keys where the public key is a recipient of a group chat.
 		for _, recipient := range messagingKeyEntry.Recipients {
 			if reflect.DeepEqual(recipient.RecipientPublicKey[:], publicKey) {
 				// If user is a recipient of a group chat, we need to add a modified messaging entry.
@@ -209,7 +179,7 @@ func (bav *UtxoView) GetUserMessagingKeys(publicKey []byte) (
 		}
 	}
 
-	// Also get all messaging keys from the DB.
+	// We fetched all the entries from the UtxoView, so we move to the DB.
 	dbMessagingKeys, err := DBGetAllUserMessagingKeys(bav.Handle, publicKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting " +
@@ -229,6 +199,7 @@ func (bav *UtxoView) GetUserMessagingKeys(publicKey []byte) (
 		}
 	}
 
+	// We have all the user's messaging keys in our map, so we now turn them into a list.
 	for _, messagingKeyEntry := range messagingKeysMap {
 		_messagingKeyEntries = append(_messagingKeyEntries, messagingKeyEntry)
 	}
@@ -246,6 +217,9 @@ func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
 func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte, limit uint64) (
 	_messageEntries []*MessageEntry, _messagingKeyEntries []*MessagingKeyEntry, _err error) {
 
+	// This function will fetch up to limit number of messages for a public key. To accomplish
+	// this, we will have to fetch messages for each messaging key that the user has registered.
+
 	// First get all messaging keys for a user.
 	var err error
 	_messagingKeyEntries, err = bav.GetUserMessagingKeys(publicKey)
@@ -261,7 +235,8 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte, limit uint64) (
 	for messageKey, messageEntry := range bav.MessageKeyToMessageEntry {
 		for _, messagingKeyEntry := range _messagingKeyEntries {
 			if reflect.DeepEqual(messageKey.PublicKey[:], messagingKeyEntry.MessagingPublicKey[:]) {
-				// We will add the messages by sender so that we have no overlaps in the DB in some weird edge cases.
+				// We will add the messages with the sender messaging public key as the MessageKey
+				// so that we have no overlaps in the DB in some weird edge cases.
 				mapKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
 				messagesMap[mapKey] = messageEntry
 				break
@@ -269,12 +244,14 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte, limit uint64) (
 		}
 	}
 
-	// Now look for messages in the DB.
-	dbMessageEntries, err := DbGetLimitedMessageForMessagingKeys(bav.Handle, _messagingKeyEntries, limit)
+	// We fetched all UtxoView entries, so now look for messages in the DB.
+	dbMessageEntries, err := DBGetLimitedMessageForMessagingKeys(bav.Handle, _messagingKeyEntries, limit)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntries from db: ")
 	}
+	// Now iterate through all the db message entries and add them to our auxiliary map.
 	for _, messageEntry := range dbMessageEntries {
+		// Use the sender messaging public key for the MessageKey to make sure they match the UtxoView entries.
 		mapKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
 		if _, exists := messagesMap[mapKey]; !exists {
 			messagesMap[mapKey] = messageEntry
@@ -286,6 +263,7 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte, limit uint64) (
 		}
 	}
 
+	// We have added all message entries to our auxiliary map so now we transform them into a map.
 	for _, messageEntry := range messagesMap {
 		_messageEntries = append(_messageEntries, messageEntry)
 	}
@@ -293,21 +271,23 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte, limit uint64) (
 }
 
 func ValidateKeyAndName(messagingPublicKey, keyName []byte) error {
+	// This is a helper function that allows us to verify messaging public key and key name.
+
 	// First validate the messagingPublicKey.
 	if err := IsByteArrayValidPublicKey(messagingPublicKey); err != nil {
-		return errors.Wrapf(err, "ValidateKeyAndNameWithUtxo: "+
+		return errors.Wrapf(err, "ValidateKeyAndName: "+
 			"Problem validating sender's messaging key: %v", messagingPublicKey)
 	}
 
 	// If we get here, it means that we have a valid messaging public key.
 	// Sanity-check messaging key name.
 	if len(keyName) < MinMessagingKeyNameCharacters {
-		return errors.Wrapf(RuleErrorMessagingKeyNameTooShort, "ValidateKeyAndNameWithUtxo: "+
+		return errors.Wrapf(RuleErrorMessagingKeyNameTooShort, "ValidateKeyAndName: "+
 			"Too few characters in key name: min = %v, provided = %v",
 			MinMessagingKeyNameCharacters, len(keyName))
 	}
 	if len(keyName) > MaxMessagingKeyNameCharacters {
-		return errors.Wrapf(RuleErrorMessagingKeyNameTooLong, "ValidateKeyAndNameWithUtxo: "+
+		return errors.Wrapf(RuleErrorMessagingKeyNameTooLong, "ValidateKeyAndName: "+
 			"Too many characters in key name: max = %v; provided = %v",
 			MaxMessagingKeyNameCharacters, len(keyName))
 	}
@@ -396,7 +376,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// At this point the inputs and outputs have been processed. Now we
 	// need to handle the metadata.
 
-	//Check if message is encrypted with shared secret
+	// Check the version of the message by looking at the "V" field in ExtraData.
 	version := uint64(1)
 	if extraV, hasExtraV := txn.ExtraData["V"]; hasExtraV {
 		rr := bytes.NewReader(extraV)
@@ -411,7 +391,8 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 	}
 
-	// Create a MessageEntry
+	// Create a MessageEntry, we do this now because we might modify some of the fields
+	// based on the version of the message.
 	messageEntry := &MessageEntry{
 		SenderPublicKey:             NewPublicKey(txn.PublicKey),
 		RecipientPublicKey:          NewPublicKey(txMeta.RecipientPublicKey),
@@ -426,7 +407,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 
 	// If message was encrypted using DeSo V3 Messages, we will look for messaging keys in
 	// ExtraData. V3 allows users to register messaging keys on-chain, and encrypt messages
-	// to these messaging keys, as opposed to encrypting to user's main keys.
+	// to these messaging keys, as opposed to encrypting messages to user's main keys.
 	if version == 3 {
 		// Make sure DeSo V3 messages are live.
 		if blockHeight < DeSoV3MessagesBlockHeight {
@@ -443,7 +424,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 		senderMessagingPublicKey, existsSender := txn.ExtraData[SenderMessagingPublicKey]
 		recipientMessagingPublicKey, existsRecipient := txn.ExtraData[RecipientMessagingPublicKey]
-		// At least one of these fields must exist.
+		// At least one of these fields must exist if this is a V3 message.
 		if !existsSender && !existsRecipient {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorPrivateMessageSentWithoutProperMessagingParty,
@@ -466,12 +447,12 @@ func (bav *UtxoView) _connectPrivateMessage(
 		// We do an analogous validation for the recipient's messaging key.
 		recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingKeyName]
 		if existsRecipient && existsRecipientName {
-			// This check exists because of an annoying edge-case where group owner wanted to send a message
-			// to the group. In this scenario, the recipient public key is the same as the user's public key,
-			// which would make us fail one of the previous checks. To circumvent this, the transaction
-			// metadata in this case would have recipient public key set to messaging public key.
-			// There is also an edge case where recipient public key can equal messaging public key if it's
-			// a base key, so we make an exception for that.
+			// The below check exists because of an annoying edge-case where group owner wanted to send a message
+			// to the group. In this scenario, the sender and recipient public keys would be the same which would
+			// make us fail one of the previous checks. To circumvent this, we will enforce that group owners put
+			// group's messaging key as the recipient instead of his own public key. This is the "worst" edge-case
+			// with the messaging key architecture. Because of this check, we also have to make an exception for
+			// when recipient public key can equal messaging public key if it's a base key.
 			if !EqualKeyName(NewKeyName(recipientMessagingKeyName), BaseKeyName()) &&
 				reflect.DeepEqual(txMeta.RecipientPublicKey, recipientMessagingPublicKey) {
 				// We know we entered this edge-case so we verify that the owner previously registered this key.
@@ -480,6 +461,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 						"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
 				}
 			} else {
+				// Proceed normally in all other cases.
 				if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
 					return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
 						"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
@@ -491,6 +473,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 	}
 
+	// Make sure we don't try to send messages between identical public keys.
 	if reflect.DeepEqual(messageEntry.SenderPublicKey[:], messageEntry.RecipientPublicKey[:]) ||
 		reflect.DeepEqual(messageEntry.SenderMessagingPublicKey[:], messageEntry.RecipientMessagingPublicKey[:]) {
 		return 0, 0, nil, errors.Wrapf(
@@ -593,8 +576,11 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 		}
 	}
 
+	// We keep track of sender and recipient messaging public keys. We will update them in V3 messages.
 	senderPkBytes := currentTxn.PublicKey
 	recipientPkBytes := txMeta.RecipientPublicKey
+
+	// Do some sanity-checks when message is V3.
 	if version == 3 {
 		if currentTxn.ExtraData == nil {
 			return errors.Wrapf(RuleErrorPrivateMessageMissingExtraData,
@@ -623,6 +609,9 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 		}
 	}
 
+	// Get the entry from the UtxoView and verify it wasn't already deleted. There are two
+	// entries, one for the sender and one for the recipient, but for now let's only validate
+	// the sender's entry.
 	senderMessageKey := MakeMessageKey(senderPkBytes, txMeta.TimestampNanos)
 	senderMessageEntry := bav._getMessageEntryForMessageKey(&senderMessageKey)
 	if senderMessageEntry == nil || senderMessageEntry.isDeleted {
@@ -631,8 +620,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 			&senderMessageKey, senderMessageEntry)
 	}
 
-	// Verify that the sender and recipient in the entry match the TxnMeta as
-	// a sanity check.
+	// Verify that the sender and recipient in the entry match the TxnMeta as a sanity-check.
 	if !reflect.DeepEqual(senderMessageEntry.SenderPublicKey[:], currentTxn.PublicKey) {
 		return fmt.Errorf("_disconnectPrivateMessage: Sender public key on "+
 			"MessageEntry was %s but the PublicKey on the txn was %s",
@@ -661,6 +649,8 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 			hex.EncodeToString(txMeta.EncryptedText))
 	}
 
+	// Sanity-check V3 data such as sender and recipient messaging public keys.
+	// In DeSo V3 Messages, all message entries have these fields.
 	if !reflect.DeepEqual(senderMessageEntry.SenderMessagingPublicKey[:], senderPkBytes) {
 		return fmt.Errorf("_disconnectPrivateMessage: sender messaging public key in MessageEntry "+
 			"did not match the public key in transaction: (%s) != (%s)",
@@ -675,23 +665,23 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 			hex.EncodeToString(recipientPkBytes))
 	}
 
-	// We passed all sanity checks now fetch the recipient entry
+	// We passed all sanity checks so now fetch the recipient entry and make sure it wasn't deleted.
 	recipientMessageKey := MakeMessageKey(recipientPkBytes, txMeta.TimestampNanos)
 	recipientMessageEntry := bav._getMessageEntryForMessageKey(&senderMessageKey)
 	if recipientMessageEntry == nil || recipientMessageEntry.isDeleted {
-		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
-			"SenderMessageKey %v was found to be nil or deleted: %v",
-			&recipientMessageKey, recipientMessageEntry)
+		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry (%v) for "+
+			"RecipientMessageKey (%v) was found to be nil or deleted",
+			recipientMessageEntry, &recipientMessageKey)
 	}
 
-	// Make sure the sender and recipient entries are identical
+	// Make sure the sender and recipient entries are identical by comparing their byte encodings.
 	if !reflect.DeepEqual(recipientMessageEntry.Encode(), senderMessageEntry.Encode()) {
-		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
-			"SenderMessageKey %v was found to be nil or deleted: %v",
-			&recipientMessageKey, recipientMessageEntry)
+		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for " +
+			"sender (%v) doesn't matche the entry for the recipient (%v)",
+			senderMessageEntry, recipientMessageEntry)
 	}
 
-	// If we got here then we passed all sanity checks and we're ready to delete the private message entries.
+	// If we got here then we passed all sanity checks, and we're ready to delete the private message entries.
 
 	// Now that we are confident the MessageEntry lines up with the transaction we're
 	// rolling back, use the entry to delete the mappings for this message.
@@ -709,8 +699,8 @@ func (bav *UtxoView) _connectMessagingKey(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Messaging keys are a part of DeSo V3 Messages.
-	// In short, a messaging key is a pair of a public key and a key name. Messaging keys are registered on-chain
-	// and are intended to be used as senders/recipients of privateMessage transactions, as opposed to users main keys.
+	// A messaging key is a pair of a public key and a key name. Messaging keys are registered on-chain and are
+	// intended to be used as senders/recipients of privateMessage transactions, as opposed to users main keys.
 	// Messaging keys solve the problem with messages for holders of derived keys, who previously had no way to
 	// properly encrypt/decrypt messages, as they don't have access to user's main private key.
 	//
@@ -719,8 +709,8 @@ func (bav *UtxoView) _connectMessagingKey(
 	// an on-chain group chat. On the db level, key names are always filled to 32 bytes with []byte(0) suffix.
 	//
 	// We hard-code two messaging keys:
-	// 	The base key: user's main public key, labeled with a key name of 32 zero-bytes
-	//	The default key: a public key, labeled with a key name of byte("default-key")
+	// 	[]byte{}              : user's main public key. This key is registered for all users natively.
+	//	[]byte("default-key") : intended to be registered when authorizing a derived key for the first time.
 	//
 	// The proposed flow is to register a default key whenever first authorizing a derived key for a user, this
 	// way, the derived key can be used for handling messages. DeSo V3 Messages also enable group chats, which
@@ -734,7 +724,7 @@ func (bav *UtxoView) _connectMessagingKey(
 	}
 	txMeta := txn.TxnMeta.(*MessagingKeyMetadata)
 
-	// If the key name is just a list of 0s, then return because this name is reserved for the main key.
+	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
 	if EqualKeyName(NewKeyName(txMeta.MessagingKeyName), BaseKeyName()) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorMessagingKeyNameCannotBeZeros, "_connectMessagingKey: "+

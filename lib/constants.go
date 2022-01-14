@@ -813,8 +813,6 @@ const (
 	MessagingPublicKey    = "MessagingPublicKey"
 	MessagingKeyName      = "MessagingKeyName"
 	MessagingKeySignature = "MessagingKeySignature"
-
-	// Message party fields
 	SenderMessagingPublicKey    = "SenderMessagingPublicKey"
 	SenderMessagingKeyName      = "SenderMessagingKeyName"
 	RecipientMessagingPublicKey = "RecipientMessagingPublicKey"

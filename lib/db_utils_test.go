@@ -291,65 +291,65 @@ func TestPrivateMessages(t *testing.T) {
 	}
 
 	// pk1 -> pk2: message1Str, tstamp1
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk1),
 			TstampNanos: tstamp1,
 		}, message1))
 	// same message but also store for pk2
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk2),
 			TstampNanos: tstamp1,
 		}, message1))
 
 	// pk2 -> pk1: message2Str, tstamp2
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk2),
 			TstampNanos: tstamp2,
 		}, message2))
 	// same message but also store for pk1
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk1),
 			TstampNanos: tstamp2,
 		}, message2))
 
 	// pk3 -> pk1: message3Str, tstamp3
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk3),
 			TstampNanos: tstamp3,
 		}, message3))
 	// same message but also store for pk1
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk1),
 			TstampNanos: tstamp3,
 		}, message3))
 
 	// pk2 -> pk1: message4Str, tstamp4
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk2),
 			TstampNanos: tstamp4,
 		}, message4))
 	// same message but also store for pk1
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk1),
 			TstampNanos: tstamp4,
 		}, message4))
 
 	// pk1 -> pk3: message5Str, tstamp5
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk1),
 			TstampNanos: tstamp5,
 		}, message5))
 	// same message but also store for pk3
-	require.NoError(DbPutMessageEntry(
+	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
 			PublicKey: *NewPublicKey(pk3),
 			TstampNanos: tstamp5,
@@ -357,17 +357,17 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Fetch message3 directly using both public keys.
 	{
-		msg := DbGetMessageEntry(db, pk3, tstamp3)
+		msg := DBGetMessageEntry(db, pk3, tstamp3)
 		require.Equal(message3, msg)
 	}
 	{
-		msg := DbGetMessageEntry(db, pk1, tstamp3)
+		msg := DBGetMessageEntry(db, pk1, tstamp3)
 		require.Equal(message3, msg)
 	}
 
 	// Fetch all messages for pk1
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk1)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk1)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -381,7 +381,7 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Fetch all messages for pk2
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk2)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk2)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -393,7 +393,7 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Fetch all messages for pk3
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk3)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk3)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -403,12 +403,12 @@ func TestPrivateMessages(t *testing.T) {
 	}
 
 	// Delete message3
-	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp3))
-	require.NoError(DbDeleteMessageEntryMappings(db, pk3, tstamp3))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp3))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk3, tstamp3))
 
 	// Now all the messages returned should exclude message3
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk1)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk1)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -419,7 +419,7 @@ func TestPrivateMessages(t *testing.T) {
 		}, messages)
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk2)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk2)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -429,7 +429,7 @@ func TestPrivateMessages(t *testing.T) {
 		}, messages)
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk3)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk3)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -439,31 +439,31 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Delete all remaining messages
 	// message1
-	require.NoError(DbDeleteMessageEntryMappings(db, pk2, tstamp1))
-	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp1))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp1))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp1))
 	// message2
-	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp2))
-	require.NoError(DbDeleteMessageEntryMappings(db, pk2, tstamp2))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp2))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp2))
 	// message4
-	require.NoError(DbDeleteMessageEntryMappings(db, pk2, tstamp4))
-	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp4))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp4))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp4))
 	// message5
-	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp5))
-	require.NoError(DbDeleteMessageEntryMappings(db, pk3, tstamp5))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp5))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk3, tstamp5))
 
 	// Now all public keys should have zero messages.
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk1)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk1)
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk2)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk2)
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk3)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk3)
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
