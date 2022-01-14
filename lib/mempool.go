@@ -1273,7 +1273,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		realTxMeta := txn.TxnMeta.(*SubmitPostMetadata)
-		_ = realTxMeta
 
 		txnMeta.SubmitPostTxindexMetadata = &SubmitPostTxindexMetadata{}
 		if len(realTxMeta.PostHashToModify) == HashSizeBytes {
@@ -1363,7 +1362,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeLike {
 		realTxMeta := txn.TxnMeta.(*LikeMetadata)
-		_ = realTxMeta
 
 		// LikerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 
@@ -1392,7 +1390,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
 		realTxMeta := txn.TxnMeta.(*FollowMetadata)
-		_ = realTxMeta
 
 		txnMeta.FollowTxindexMetadata = &FollowTxindexMetadata{
 			IsUnfollow: realTxMeta.IsUnfollow,
@@ -1408,7 +1405,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
 		realTxMeta := txn.TxnMeta.(*PrivateMessageMetadata)
-		_ = realTxMeta
 
 		txnMeta.PrivateMessageTxindexMetadata = &PrivateMessageTxindexMetadata{
 			TimestampNanos: realTxMeta.TimestampNanos,
@@ -1424,7 +1420,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
 		realTxMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
-		_ = realTxMeta
 
 		// Rosetta needs to know the current locked deso in each profile so it can model the swap of
 		// the creator coins. Rosetta models a swap identity as two INPUTs and two OUTPUTs effectively
@@ -1461,83 +1456,167 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
 		realTxMeta := txn.TxnMeta.(*NFTBidMetadata)
-		_ = realTxMeta
 
 		isBuyNow := false
 
+		utxoOp := utxoOps[len(utxoOps)-1]
+		var nftRoyaltiesMetadata NFTRoyaltiesMetadata
 		// We don't send notifications for standing offers.
 		if realTxMeta.SerialNumber != 0 {
 			nftKey := MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
 			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
+			postEntry := utxoView.GetPostEntryForPostHash(nftEntry.NFTPostHash)
 
 			ownerAtTimeOfBid := nftEntry.OwnerPKID
-
-			utxoOp := utxoOps[len(utxoOps)-1]
 
 			if utxoOp.PrevNFTEntry != nil && utxoOp.PrevNFTEntry.IsBuyNow {
 				isBuyNow = true
 				ownerAtTimeOfBid = utxoOp.PrevNFTEntry.OwnerPKID
 			}
 
+			ownerPublicKeyBase58Check := PkToString(utxoView.GetPublicKeyForPKID(ownerAtTimeOfBid), utxoView.Params)
+
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(ownerAtTimeOfBid), utxoView.Params),
+				PublicKeyBase58Check: ownerPublicKeyBase58Check,
 				Metadata:             "NFTOwnerPublicKeyBase58Check",
 			})
+			// Add notifications if buy now and additional royalties
+			if isBuyNow && len(postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
+				for pkid, _ := range postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
+					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+						PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&pkid), utxoView.Params),
+						Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
+					})
+				}
+			}
+
+			if isBuyNow && len(postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
+				for pkid, _ := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+						PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&pkid), utxoView.Params),
+						Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
+					})
+				}
+			}
+
+			if isBuyNow {
+				nftRoyaltiesMetadata = NFTRoyaltiesMetadata{
+					CreatorCoinRoyaltyNanos:     utxoOp.NFTBidCreatorRoyaltyNanos,
+					CreatorRoyaltyNanos:         utxoOp.NFTBidCreatorDESORoyaltyNanos,
+					CreatorPublicKeyBase58Check: ownerPublicKeyBase58Check,
+					AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+						utxoOp.NFTBidAdditionalCoinRoyalties, utxoView.Params),
+					AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+						utxoOp.NFTBidAdditionalDESORoyalties, utxoView.Params),
+				}
+			}
 		}
 
 		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
-			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber:   realTxMeta.SerialNumber,
-			BidAmountNanos: realTxMeta.BidAmountNanos,
-			IsBuyNowBid:    isBuyNow,
+			NFTPostHashHex:       hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:         realTxMeta.SerialNumber,
+			BidAmountNanos:       realTxMeta.BidAmountNanos,
+			IsBuyNowBid:          isBuyNow,
+			NFTRoyaltiesMetadata: nftRoyaltiesMetadata,
 		}
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
-		_ = realTxMeta
 
-		// Rosetta needs to know the royalty paid to the creator coin so it can model the change in
-		// total deso locked in the creator coin correctly.
-		var prevCoinEntry *CoinEntry
-		var creatorPublicKey []byte
-		for _, utxoOp := range utxoOps {
-			if utxoOp.Type == OperationTypeAcceptNFTBid {
-				prevCoinEntry = utxoOp.PrevCoinEntry
-				if utxoOp.PrevPostEntry != nil {
-					creatorPublicKey = utxoOp.PrevPostEntry.PosterPublicKey
-				}
-				break
-			}
-		}
-
-		creatorCoinRoyaltyNanos := uint64(0)
-		profileEntry := utxoView.GetProfileEntryForPublicKey(creatorPublicKey)
-		if profileEntry == nil {
-			glog.Errorf("Update TxIndex: Missing profile entry: %v", txn.Hash().String())
-		} else if prevCoinEntry == nil {
-			glog.Errorf("Update TxIndex: Missing previous coin entry: %v", txn.Hash().String())
-		} else if profileEntry.CreatorCoinEntry.DeSoLockedNanos < prevCoinEntry.DeSoLockedNanos {
-			glog.Errorf("Update TxIndex: CreatorCoinRoyaltyNanos overflow error: %v", txn.Hash().String())
-		} else {
-			creatorCoinRoyaltyNanos = profileEntry.CreatorCoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
-		}
+		utxoOp := utxoOps[len(utxoOps)-1]
 
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
-			NFTPostHashHex:              hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber:                realTxMeta.SerialNumber,
-			BidAmountNanos:              realTxMeta.BidAmountNanos,
-			CreatorCoinRoyaltyNanos:     creatorCoinRoyaltyNanos,
-			CreatorPublicKeyBase58Check: PkToString(creatorPublicKey, utxoView.Params),
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:   realTxMeta.SerialNumber,
+			BidAmountNanos: realTxMeta.BidAmountNanos,
+			NFTRoyaltiesMetadata: NFTRoyaltiesMetadata{
+				CreatorCoinRoyaltyNanos:     utxoOp.AcceptNFTBidCreatorRoyaltyNanos,
+				CreatorRoyaltyNanos:         utxoOp.AcceptNFTBidCreatorDESORoyaltyNanos,
+				CreatorPublicKeyBase58Check: PkToString(txn.PublicKey, utxoView.Params),
+				AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+					utxoOp.AcceptNFTBidAdditionalCoinRoyalties, utxoView.Params),
+				AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+					utxoOp.AcceptNFTBidAdditionalDESORoyalties, utxoView.Params),
+			},
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 			PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(realTxMeta.BidderPKID), utxoView.Params),
 			Metadata:             "NFTBidderPublicKeyBase58Check",
 		})
+
+		for pubKey, _ := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: pubKey,
+				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
+			})
+		}
+
+		for pubKey, _ := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalDESORoyaltiesMap {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: pubKey,
+				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
+			})
+		}
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+		realTxMeta := txn.TxnMeta.(*CreateNFTMetadata)
+
+		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
+
+		additionalDESORoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints, utxoView)
+		additionalCoinRoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, utxoView)
+		txnMeta.CreateNFTTxindexMetadata = &CreateNFTTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			AdditionalDESORoyaltiesMap: additionalDESORoyaltiesMap,
+			AdditionalCoinRoyaltiesMap: additionalCoinRoyaltiesMap,
+		}
+		for pubKey, _ := range additionalDESORoyaltiesMap {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: pubKey,
+				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
+			})
+		}
+		for pubKey, _ := range additionalCoinRoyaltiesMap {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: pubKey,
+				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
+			})
+		}
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+		realTxMeta := txn.TxnMeta.(*UpdateNFTMetadata)
+
+		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
+
+		additionalDESORoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints, utxoView)
+		additionalCoinRoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, utxoView)
+		txnMeta.UpdateNFTTxindexMetadata = &UpdateNFTTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+		}
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+			Metadata:             "NFTCreatorPublicKeyBase58Check",
+		})
+		for pubKey, _ := range additionalDESORoyaltiesMap {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: pubKey,
+				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
+			})
+		}
+		for pubKey, _ := range additionalCoinRoyaltiesMap {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: pubKey,
+				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
+			})
+		}
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
 		realTxMeta := txn.TxnMeta.(*NFTTransferMetadata)
-		_ = realTxMeta
 
 		txnMeta.NFTTransferTxindexMetadata = &NFTTransferTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
@@ -1563,8 +1642,79 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			}
 		}
 	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+		realTxMeta := txn.TxnMeta.(*DAOCoinMetadata)
+		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
+
+		var metadata string
+		var operationString string
+		switch realTxMeta.OperationType {
+		case DAOCoinOperationTypeMint:
+			metadata = "DAOCoinMintPublicKeyBase58Check"
+			operationString = "mint"
+		case DAOCoinOperationTypeBurn:
+			metadata = "DAOCoinBurnPublicKeyBase58Check"
+			operationString = "burn"
+		case DAOCoinOperationTypeDisableMinting:
+			metadata = "DAOCoinDisableMintingPublicKeyBase58Check"
+			operationString = "disable_minting"
+		case DAOCoinOperationTypeUpdateTransferRestrictionStatus:
+			metadata = "DAOCoinUpdateTransferRestrictionStatus"
+			operationString = "update_transfer_restriction_status"
+		}
+
+		txnMeta.DAOCoinTxindexMetadata = &DAOCoinTxindexMetadata{
+			CreatorUsername: string(creatorProfileEntry.Username),
+			OperationType: operationString,
+			CoinsToMintNanos: realTxMeta.CoinsToMintNanos,
+			CoinsToBurnNanos: realTxMeta.CoinsToBurnNanos,
+			TransferRestrictionStatus: realTxMeta.TransferRestrictionStatus.String(),
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(creatorProfileEntry.PublicKey, utxoView.Params),
+			Metadata: metadata,
+		})
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
+		realTxMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
+		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
+		txnMeta.DAOCoinTransferTxindexMetadata = &DAOCoinTransferTxindexMetadata{
+			CreatorUsername:        string(creatorProfileEntry.Username),
+			DAOCoinToTransferNanos: realTxMeta.DAOCoinToTransferNanos,
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
+			Metadata:             "ReceiverPublicKey",
+		})
+	}
 
 	return txnMeta, nil
+}
+
+func pkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoView *UtxoView) map[string]uint64 {
+	if len(royaltyMap) == 0 {
+		return nil
+	}
+	pubKeyMap := make(map[string]uint64)
+	for pkid, royaltyBPs := range royaltyMap {
+		pubKeyMap[PkToString(utxoView.GetPublicKeyForPKID(&pkid), utxoView.Params)] = royaltyBPs
+	}
+	return pubKeyMap
+}
+
+func pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+	publicKeyRoyaltyPairs []*PublicKeyRoyaltyPair, params *DeSoParams) map[string]uint64 {
+	if len(publicKeyRoyaltyPairs) == 0 {
+		return nil
+	}
+	base58CheckToRoyaltyNanosMap := make(map[string]uint64)
+	for _, pubKeyRoyaltyPair := range publicKeyRoyaltyPairs {
+		base58CheckToRoyaltyNanosMap[PkToString(pubKeyRoyaltyPair.PublicKey, params)] =
+			pubKeyRoyaltyPair.RoyaltyAmountNanos
+	}
+	return base58CheckToRoyaltyNanosMap
 }
 
 func _computeBitcoinExchangeFields(params *DeSoParams,

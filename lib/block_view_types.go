@@ -325,7 +325,9 @@ type UtxoOperation struct {
 	AcceptNFTBidCreatorPublicKey        []byte
 	AcceptNFTBidBidderPublicKey         []byte
 	AcceptNFTBidCreatorRoyaltyNanos     uint64
+	AcceptNFTBidCreatorDESORoyaltyNanos uint64
 	AcceptNFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
+	AcceptNFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
@@ -333,7 +335,9 @@ type UtxoOperation struct {
 	NFTBidCreatorPublicKey        []byte
 	NFTBidBidderPublicKey         []byte
 	NFTBidCreatorRoyaltyNanos     uint64
+	NFTBidCreatorDESORoyaltyNanos uint64
 	NFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
+	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -829,6 +833,21 @@ func (transferRestrictionStatus TransferRestrictionStatus) IsUnrestricted() bool
 		return true
 	}
 	return false
+}
+
+func (transferRestrictionStatus TransferRestrictionStatus) String() string {
+	switch transferRestrictionStatus {
+	case TransferRestrictionStatusUnrestricted:
+		return "Unrestricted"
+	case TransferRestrictionStatusProfileOwnerOnly:
+		return "Profile Owner Only"
+	case TransferRestrictionStatusDAOMembersOnly:
+		return "DAO Members Only"
+	case TransferRestrictionStatusPermanentlyUnrestricted:
+		return "Permanently Unrestricted"
+	default:
+		return "INVALID TRANSFER RESTRICTION STATUS"
+	}
 }
 
 // This struct contains all the information required to support coin

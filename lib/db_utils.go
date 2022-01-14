@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/holiman/uint256"
 	"io"
 	"log"
 	"math"
@@ -3155,6 +3156,19 @@ type CreatorCoinTransferTxindexMetadata struct {
 	PostHashHex                string
 }
 
+type DAOCoinTransferTxindexMetadata struct {
+	CreatorUsername        string
+	DAOCoinToTransferNanos uint256.Int
+}
+
+type DAOCoinTxindexMetadata struct {
+	CreatorUsername           string
+	OperationType             string
+	CoinsToMintNanos          uint256.Int
+	CoinsToBurnNanos          uint256.Int
+	TransferRestrictionStatus string
+}
+
 type UpdateProfileTxindexMetadata struct {
 	ProfilePublicKeyBase58Check string
 
@@ -3209,24 +3223,44 @@ type SwapIdentityTxindexMetadata struct {
 	ToDeSoLockedNanos   uint64
 }
 
+type NFTRoyaltiesMetadata struct {
+	CreatorCoinRoyaltyNanos     uint64
+	CreatorRoyaltyNanos         uint64
+	CreatorPublicKeyBase58Check string
+	// We omit the maps when empty to save some space.
+	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
+	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
+}
+
 type NFTBidTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
 	BidAmountNanos uint64
 	IsBuyNowBid    bool
+	// We omit the empty object here as a bid that doesn't trigger a "buy now" operation will have no royalty metadata
+	NFTRoyaltiesMetadata `json:",omitempty"`
 }
 
 type AcceptNFTBidTxindexMetadata struct {
-	NFTPostHashHex              string
-	SerialNumber                uint64
-	BidAmountNanos              uint64
-	CreatorCoinRoyaltyNanos     uint64
-	CreatorPublicKeyBase58Check string
+	NFTPostHashHex string
+	SerialNumber   uint64
+	BidAmountNanos uint64
+	NFTRoyaltiesMetadata
 }
 
 type NFTTransferTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
+}
+
+type CreateNFTTxindexMetadata struct {
+	NFTPostHashHex string
+	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
+	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
+}
+
+type UpdateNFTTxindexMetadata struct {
+	NFTPostHashHex string
 }
 
 type TransactionMetadata struct {
@@ -3257,6 +3291,10 @@ type TransactionMetadata struct {
 	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
 	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
 	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
+	DAOCoinTxindexMetadata             *DAOCoinTxindexMetadata             `json:",omitempty"`
+	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
+	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
+	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
