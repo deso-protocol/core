@@ -232,87 +232,6 @@ func TestPrivateMessages(t *testing.T) {
 	message4Str := append([]byte("message4: "), RandomBytes(100)...)
 	message5Str := append([]byte("message5: "), RandomBytes(123)...)
 
-	// pk1 -> pk2: message1Str, tstamp1
-	require.NoError(DbPutMessageEntry(
-		db, MessageKey{
-			PublicKey: *NewPublicKey(pk1),
-			TstampNanos: tstamp1,
-		}, &MessageEntry{
-			SenderPublicKey:    NewPublicKey(pk1),
-			TstampNanos:        tstamp1,
-			RecipientPublicKey: NewPublicKey(pk2),
-			EncryptedText:      message1Str,
-			Version: 1,
-			SenderMessagingPublicKey: NewPublicKey(pk1),
-			SenderMessagingKeyName: BaseKeyName(),
-			RecipientMessagingPublicKey: NewPublicKey(pk2),
-			RecipientMessagingKeyName: BaseKeyName(),
-		}))
-	// pk2 -> pk1: message2Str, tstamp2
-	require.NoError(DbPutMessageEntry(
-		db, MessageKey{
-			PublicKey: *NewPublicKey(pk2),
-			TstampNanos: tstamp2,
-		}, &MessageEntry{
-			SenderPublicKey:    NewPublicKey(pk2),
-			TstampNanos:        tstamp2,
-			RecipientPublicKey: NewPublicKey(pk1),
-			EncryptedText:      message2Str,
-			Version: 1,
-			SenderMessagingPublicKey: NewPublicKey(pk2),
-			SenderMessagingKeyName: BaseKeyName(),
-			RecipientMessagingPublicKey: NewPublicKey(pk1),
-			RecipientMessagingKeyName: BaseKeyName(),
-		}))
-	// pk3 -> pk1: message3Str, tstamp3
-	require.NoError(DbPutMessageEntry(
-		db, MessageKey{
-			PublicKey: *NewPublicKey(pk3),
-			TstampNanos: tstamp3,
-		}, &MessageEntry{
-			SenderPublicKey:    NewPublicKey(pk3),
-			TstampNanos:        tstamp3,
-			RecipientPublicKey: NewPublicKey(pk1),
-			EncryptedText:      message3Str,
-			Version: 1,
-			SenderMessagingPublicKey: NewPublicKey(pk3),
-			SenderMessagingKeyName: BaseKeyName(),
-			RecipientMessagingPublicKey: NewPublicKey(pk1),
-			RecipientMessagingKeyName: BaseKeyName(),
-		}))
-	// pk2 -> pk1: message4Str, tstamp4
-	require.NoError(DbPutMessageEntry(
-		db, MessageKey{
-			PublicKey: *NewPublicKey(pk2),
-			TstampNanos: tstamp4,
-		}, &MessageEntry{
-			SenderPublicKey:    NewPublicKey(pk2),
-			TstampNanos:        tstamp4,
-			RecipientPublicKey: NewPublicKey(pk1),
-			EncryptedText:      message4Str,
-			Version: 1,
-			SenderMessagingPublicKey: NewPublicKey(pk2),
-			SenderMessagingKeyName: BaseKeyName(),
-			RecipientMessagingPublicKey: NewPublicKey(pk1),
-			RecipientMessagingKeyName: BaseKeyName(),
-		}))
-	// pk1 -> pk3: message5Str, tstamp5
-	require.NoError(DbPutMessageEntry(
-		db, MessageKey{
-			PublicKey: *NewPublicKey(pk1),
-			TstampNanos: tstamp5,
-		}, &MessageEntry{
-			SenderPublicKey:    NewPublicKey(pk1),
-			TstampNanos:        tstamp5,
-			RecipientPublicKey: NewPublicKey(pk3),
-			EncryptedText:      message5Str,
-			Version: 1,
-			SenderMessagingPublicKey: NewPublicKey(pk1),
-			SenderMessagingKeyName: BaseKeyName(),
-			RecipientMessagingPublicKey: NewPublicKey(pk3),
-			RecipientMessagingKeyName: BaseKeyName(),
-		}))
-
 	// Define all the messages as they appear in the db.
 	message1 := &MessageEntry{
 		SenderPublicKey:    NewPublicKey(pk1),
@@ -370,6 +289,71 @@ func TestPrivateMessages(t *testing.T) {
 		RecipientMessagingKeyName: BaseKeyName(),
 	}
 
+	// pk1 -> pk2: message1Str, tstamp1
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp1,
+		}, message1))
+	// same message but also store for pk2
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk2),
+			TstampNanos: tstamp1,
+		}, message1))
+
+	// pk2 -> pk1: message2Str, tstamp2
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk2),
+			TstampNanos: tstamp2,
+		}, message2))
+	// same message but also store for pk1
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp2,
+		}, message2))
+
+	// pk3 -> pk1: message3Str, tstamp3
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk3),
+			TstampNanos: tstamp3,
+		}, message3))
+	// same message but also store for pk1
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp3,
+		}, message3))
+
+	// pk2 -> pk1: message4Str, tstamp4
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk2),
+			TstampNanos: tstamp4,
+		}, message4))
+	// same message but also store for pk1
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp4,
+		}, message4))
+
+	// pk1 -> pk3: message5Str, tstamp5
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp5,
+		}, message5))
+	// same message but also store for pk3
+	require.NoError(DbPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk3),
+			TstampNanos: tstamp5,
+		}, message5))
+
 	// Fetch message3 directly using both public keys.
 	{
 		msg := DbGetMessageEntry(db, pk3, tstamp3)
@@ -419,6 +403,7 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Delete message3
 	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp3))
+	require.NoError(DbDeleteMessageEntryMappings(db, pk3, tstamp3))
 
 	// Now all the messages returned should exclude message3
 	{
@@ -451,12 +436,19 @@ func TestPrivateMessages(t *testing.T) {
 		}, messages)
 	}
 
-	// Delete all remaining messages, sometimes using the recipient rather
-	// than the sender public key
+	// Delete all remaining messages
+	// message1
 	require.NoError(DbDeleteMessageEntryMappings(db, pk2, tstamp1))
+	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp1))
+	// message2
 	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp2))
+	require.NoError(DbDeleteMessageEntryMappings(db, pk2, tstamp2))
+	// message4
 	require.NoError(DbDeleteMessageEntryMappings(db, pk2, tstamp4))
+	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp4))
+	// message5
 	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp5))
+	require.NoError(DbDeleteMessageEntryMappings(db, pk3, tstamp5))
 
 	// Now all public keys should have zero messages.
 	{
