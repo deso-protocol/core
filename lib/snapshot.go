@@ -379,9 +379,10 @@ func (snap *Snapshot) GetMostRecentSnapshot(handle *badger.DB, prefix []byte, la
 	//for ii := 0; ii < len(StatePrefixes); ii++ {
 	//	prefix := StatePrefixes[ii]
 	//for {
-	k1, v1, full, _ := DBIteratePrefixKeys(handle, prefix, lastKey, uint32(8<<8))
+	k1, v1, full, _ := DBIteratePrefixKeys(handle, prefix, lastKey, uint32(8<<16))
 	if len(*k1) == 0 {
-		return nil, false
+		DBEntries = append(DBEntries, EmptyDBEntry())
+		return DBEntries, false
 	}
 	//for i := 0; i < len(*k1); i++ {
 	//	fmt.Printf("Keys:%v\n Values:%v\n", (*k1)[i], (*v1)[i])

@@ -498,8 +498,6 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 
 // GetSnapshot kick off hyper sync
 func (srv *Server) GetSnapshot(pp *Peer) {
-	srv.blockchain.syncingState = false
-	srv.blockchain.finishedSyncing = true
 
 	var prefix []byte
 	lastDBEntry := EmptyDBEntry()
@@ -679,15 +677,22 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			return
 		}
 
-		if srv.blockchain.chainState() == SyncStateSyncingSnapshot {
+		if (pp.serviceFlags & SFHyperSync) != 0 {
 			// Add syncing logic, make sure we're a hyper-sync node and find a hyper-sync peer.
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at " +
 				"height %v from peer %v", srv.blockchain.blockTip().Header.Height+1, pp)
 			if srv.cmgr.hyperSync && !srv.blockchain.finishedSyncing {
-					srv.blockchain.syncingState = true
-					srv.GetSnapshot(pp)
+				srv.blockchain.syncingState = true
+				srv.GetSnapshot(pp)
+
+				k0, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, []byte{5}, []byte{5}, uint32(8<<20))
+				glog.V(1).Infof("STARTING SYNC: How many 5 prefixes:", len(*k0))
+				return
 			}
 		}
+		//if srv.blockchain.chainState() == SyncStateSyncingSnapshot {
+		//
+		//}
 
 		// If we have exhausted the peer's headers but our blocks aren't current,
 		// send a GetBlocks message to the peer for as many blocks as we can get.
@@ -812,11 +817,19 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 }
 
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
-	glog.V(1).Infof("srv._handleSnapshot: Called with message %v from Peer %v", msg, pp)
+	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: " +
+		"%v) from Peer %v", msg.SnapshotData[0].Key, msg.SnapshotData[len(msg.SnapshotData)-1].Key,
+		len(msg.SnapshotData), pp)
+
+	k0, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, []byte{5}, []byte{5}, uint32(8<<20))
+	glog.V(1).Infof("How many 5 prefixes:", len(*k0))
 
 	// Process the DBEntries from the msg
 	err := srv.blockchain.db.Update(func(txn *badger.Txn) error {
 		for _, dbEntry := range msg.SnapshotData {
+			if dbEntry.IsEmpty() {
+				break
+			}
 			key, err := hex.DecodeString(dbEntry.Key)
 			if err != nil {
 				return err
