@@ -2542,6 +2542,8 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderPublicKey []byte, recipientPublicKey []byte,
 	unencryptedMessageText string, encryptedMessageText string,
+	senderMessagingPublicKey []byte, senderMessagingKeyName []byte,
+	recipientMessagingPublicKey []byte, recipientMessagingKeyName []byte,
 	tstampNanos uint64,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -2580,6 +2582,29 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		// Add {V : 2} version field to ExtraData to indicate we are
 		// encrypting using shared secret.
 		messageExtraData["V"] = UintToBuf(2)
+
+		// Check for DeSo V3 Messages fields. Specifically, this request could be made with either sender
+		// or recipient public keys and key names. Having one key present is sufficient to set V3.
+		if len(senderMessagingPublicKey) > 0 || len(recipientMessagingPublicKey) > 0 {
+
+			// If we're using rotating messaging keys, then we're on {V : 3} messages.
+			if err = ValidateKeyAndName(senderMessagingPublicKey, senderMessagingKeyName); err == nil {
+				messageExtraData["V"] = UintToBuf(3)
+				messageExtraData[SenderMessagingPublicKey] = senderMessagingPublicKey
+				messageExtraData[SenderMessagingKeyName] = senderMessagingKeyName
+			}
+
+			if err = ValidateKeyAndName(recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+				// If we didn't pass validation of either sender or recipient, then we return an error.
+				if !reflect.DeepEqual(messageExtraData["V"], UintToBuf(3)) {
+					return nil, 0, 0, 0, err
+				}
+			} else {
+				messageExtraData["V"] = UintToBuf(3)
+				messageExtraData[RecipientMessagingPublicKey] = recipientMessagingPublicKey
+				messageExtraData[RecipientMessagingKeyName] = recipientMessagingKeyName
+			}
+		}
 	}
 
 	// Don't allow encryptedMessageBytes to be nil.
@@ -3639,6 +3664,9 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	accessSignature []byte,
 	deleteKey bool,
 	derivedKeySignature bool,
+	messagingPublicKey string,
+	messagingKeyName string,
+	messagingKeySignature string,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3671,6 +3699,42 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		extraData[DerivedPublicKey] = derivedPublicKey
 	}
 
+	if messagingPublicKey != "" && messagingKeyName != "" && messagingKeySignature != "" {
+		// Decode the messaging public key hex string into a byte array.
+		messagingPk, err := hex.DecodeString(messagingPublicKey)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
+				"Problem decoding messaging public key")
+		}
+
+		// Validate messaging public key and key name.
+		if err := ValidateKeyAndName(messagingPk, []byte(messagingKeyName)); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: Problem "+
+				"validating messaging public key and name")
+		}
+
+		// Check that messagingKeySignature can be parsed into byte array correctly.
+		messagingKeySig, err := hex.DecodeString(messagingKeySignature)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
+				"Problem decoding messagingKeySignature")
+		}
+
+		// If we get here, it means we have valid messaging public key, key name, and signature.
+		// Now we want to verify that the signature is correct for the owner public key.
+		bytes := append(messagingPk, []byte(messagingKeyName)...)
+		if err = _verifyBytesSignature(ownerPublicKey, bytes, messagingKeySig); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
+				"Problem verifying signature bytes")
+		}
+
+		// If we got here, we have valid public key, key name, and matching signature.
+		// We add the records to ExtraData.
+		extraData[MessagingPublicKey] = messagingPk
+		extraData[MessagingKeyName] = []byte(messagingKeyName)
+		extraData[MessagingKeySignature] = messagingKeySig
+	}
+
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: ownerPublicKey,
@@ -3697,6 +3761,46 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	// Sanity-check that the spendAmount is zero.
 	if spendAmount != 0 {
 		return nil, 0, 0, 0, fmt.Errorf("CreateAuthorizeDerivedKeyTxn: Spend amount "+
+			"should be zero but was %d instead: ", spendAmount)
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateMessagingKeyTxn(
+	senderPublicKey []byte,
+	messagingPublicKey []byte,
+	messagingKeyName []byte,
+	messagingKeySignature []byte,
+	encryptedKey []byte,
+	recipients []MessagingRecipient,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+    	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// We don't need to validate info here, so just construct the transaction instead.
+	txn := &MsgDeSoTxn{
+		PublicKey: senderPublicKey,
+		TxnMeta: &MessagingKeyMetadata{
+			MessagingPublicKey: messagingPublicKey,
+			MessagingKeyName: messagingKeyName,
+			KeySignature: messagingKeySignature,
+			Recipients: recipients,
+			EncryptedKey: encryptedKey,
+		},
+		TxOutputs: additionalOutputs,
+	}
+
+	// We don't need to make any tweaks to the amount because it's basically
+	// a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateMessagingKeyTxn: Spend amount "+
 			"should be zero but was %d instead: ", spendAmount)
 	}
 

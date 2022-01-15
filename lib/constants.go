@@ -160,6 +160,10 @@ type ForkHeights struct {
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight uint32
 
+	// DeSoV3MessagesBlockHeight defines the height at which messaging key and messsage party
+	// entries will be accepted by consensus.
+	DeSoV3MessagesBlockHeight = uint32(91100)
+
 	// BuyNowAndNFTSplitsBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an
 	// auction style and allows splitting of NFT royalties to user's other than the post's creator.
 	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
@@ -854,6 +858,15 @@ const (
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
 
+	// Messaging keys
+	MessagingPublicKey    = "MessagingPublicKey"
+	MessagingKeyName      = "MessagingKeyName"
+	MessagingKeySignature = "MessagingKeySignature"
+	SenderMessagingPublicKey    = "SenderMessagingPublicKey"
+	SenderMessagingKeyName      = "SenderMessagingKeyName"
+	RecipientMessagingPublicKey = "RecipientMessagingPublicKey"
+	RecipientMessagingKeyName   = "RecipientMessagingKeyName"
+
 	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
 	BuyNowPriceKey = "BuyNowPriceNanos"
 
@@ -907,4 +920,7 @@ const (
 	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
 	MinMaxCopiesPerNFT = 1
 	MaxMaxCopiesPerNFT = 10000
+	// Messaging key constants
+	MinMessagingKeyNameCharacters = 8
+	MaxMessagingKeyNameCharacters = 32
 )

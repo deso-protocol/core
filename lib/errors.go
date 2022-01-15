@@ -1,6 +1,9 @@
 package lib
 
-import "strings"
+import (
+	"github.com/btcsuite/btcd/btcec"
+	"strings"
+)
 
 // RuleError is an error type that specifies an error occurred during
 // block processing that is related to a consensus rule. By checking the
@@ -89,7 +92,14 @@ const (
 	RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple RuleError = "RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple"
 	RuleErrorPrivateMessageParsePubKeyError                        RuleError = "RuleErrorPrivateMessageParsePubKeyError"
 	RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey RuleError = "RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey"
+	RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight         RuleError = "RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight"
+	RuleErrorPrivateMessageSentWithoutProperMessagingParty         RuleError = "RuleErrorPrivateMessageSentWithoutProperMessagingParty"
+	RuleErrorPrivateMessageFailedToValidateMessagingKey            RuleError = "RuleErrorPrivateMessageFailedToValidateMessagingKey"
 	RuleErrorBurnAddressCannotBurnBitcoin                          RuleError = "RuleErrorBurnAddressCannotBurnBitcoin"
+	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
+	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
+
+
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
@@ -248,6 +258,24 @@ const (
 	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
 
+	// Messages
+	RuleErrorMessagingPublicKeyCannotBeOwnerKey     RuleError = "RuleErrorMessagingPublicKeyCannotBeOwnerKey"
+	RuleErrorMessagingSignatureInvalid              RuleError = "RuleErrorMessagingSignatureInvalid"
+	RuleErrorMessagingPublicKeyCannotBeDifferent    RuleError = "RuleErrorMessagingPublicKeyCannotBeDifferent"
+	RuleErrorMessagingEncryptedKeyCannotBeDifferent RuleError = "RuleErrorMessagingEncryptedKeyCannotBeDifferent"
+	RuleErrorMessagingRecipientEncryptedKeyTooShort RuleError = "RuleErrorMessagingRecipientEncryptedKeyTooShort"
+	RuleErrorMessagingRecipientKeyDoesntExist       RuleError = "RuleErrorMessagingRecipientKeyDoesntExist"
+	RuleErrorMessagingRecipientAlreadyExists        RuleError = "RuleErrorMessagingRecipientAlreadyExists"
+	RuleErrorMessagingKeyDoesntAddRecipients        RuleError = "RuleErrorMessagingKeyDoesntAddRecipients"
+	RuleErrorMessagingKeyNameNotProvided            RuleError = "RuleErrorMessagingKeyNameNotProvided"
+	RuleErrorMessagingKeyNameTooShort               RuleError = "RuleErrorMessagingKeyNameTooShort"
+	RuleErrorMessagingKeyNameTooLong                RuleError = "RuleErrorMessagingKeyNameTooLong"
+	RuleErrorMessagingKeyNameCannotBeZeros          RuleError = "RuleErrorMessagingKeyNameCannotBeZeros"
+	RuleErrorMessagingOwnerPublicKeyInvalid         RuleError = "RuleErrorMessagingOwnerPublicKeyInvalid"
+	RuleErrorMessagingKeyConnect                    RuleError = "RuleErrorMessagingKeyConnect"
+	RuleErrorMessagingKeySignatureNotProvided       RuleError = "RuleErrorMessagingKeySignatureNotProvided"
+	RuleErrorMessagingKeyBeforeBlockHeight          RuleError = "RuleErrorMessagingKeyBeforeBlockHeight"
+
 	// NFTs
 	RuleErrorTooManyNFTCopies                            RuleError = "RuleErrorTooManyNFTCopies"
 	RuleErrorCreateNFTRequiresNonZeroInput               RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
@@ -366,4 +394,17 @@ func IsRuleError(err error) bool {
 	return strings.Contains(err.Error(), "RuleError") ||
 		strings.Contains(err.Error(), "HeaderError") ||
 		strings.Contains(err.Error(), "TxError")
+}
+
+// IsByteArrayValidPublicKey is a general functionality that is used to verify if a
+// byte array is a valid secp256k1 public key
+func IsByteArrayValidPublicKey(bytes []byte) error {
+	if len(bytes) != btcec.PubKeyBytesLenCompressed {
+		return RuleErrorPubKeyLen
+	}
+	_, err := btcec.ParsePubKey(bytes, btcec.S256())
+	if err != nil {
+		return RuleErrorParsePublicKey
+	}
+	return nil
 }

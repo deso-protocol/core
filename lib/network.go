@@ -211,9 +211,11 @@ const (
 	TxnTypeAcceptNFTTransfer            TxnType = 20
 	TxnTypeBurnNFT                      TxnType = 21
 	TxnTypeAuthorizeDerivedKey          TxnType = 22
-	TxnTypeDAOCoin                      TxnType = 25
-	TxnTypeDAOCoinTransfer              TxnType = 26
-	// NEXT_ID = 27
+	TxnTypeMessagingKey                 TxnType = 23
+	TxnTypeDAOCoin                      TxnType = 24
+	TxnTypeDAOCoinTransfer              TxnType = 25
+
+	// NEXT_ID = 26
 )
 
 type TxnString string
@@ -241,6 +243,7 @@ const (
 	TxnStringAcceptNFTTransfer            TxnString = "ACCEPT_NFT_TRANSFER"
 	TxnStringBurnNFT                      TxnString = "BURN_NFT"
 	TxnStringAuthorizeDerivedKey          TxnString = "AUTHORIZE_DERIVED_KEY"
+	TxnStringMessagingKey                 TxnString = "MESSAGING_KEY"
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
@@ -252,15 +255,16 @@ var (
 		TxnTypeSubmitPost, TxnTypeUpdateProfile, TxnTypeUpdateBitcoinUSDExchangeRate, TxnTypeFollow, TxnTypeLike,
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
-		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeDAOCoin, TxnTypeDAOCoinTransfer,
+		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingKey,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
 		TxnStringSubmitPost, TxnStringUpdateProfile, TxnStringUpdateBitcoinUSDExchangeRate, TxnStringFollow, TxnStringLike,
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
-		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringDAOCoin,
-		TxnStringDAOCoinTransfer,
+		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingKey,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer,
 	}
 )
 
@@ -318,6 +322,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringBurnNFT
 	case TxnTypeAuthorizeDerivedKey:
 		return TxnStringAuthorizeDerivedKey
+	case TxnTypeMessagingKey:
+		return TxnStringMessagingKey
 	case TxnTypeDAOCoin:
 		return TxnStringDAOCoin
 	case TxnTypeDAOCoinTransfer:
@@ -373,6 +379,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeBurnNFT
 	case TxnStringAuthorizeDerivedKey:
 		return TxnTypeAuthorizeDerivedKey
+	case TxnStringMessagingKey:
+		return TxnTypeMessagingKey
 	case TxnStringDAOCoin:
 		return TxnTypeDAOCoin
 	case TxnStringDAOCoinTransfer:
@@ -436,6 +444,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&BurnNFTMetadata{}).New(), nil
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
+	case TxnTypeMessagingKey:
+		return (&MessagingKeyMetadata{}).New(), nil
 	case TxnTypeDAOCoin:
 		return (&DAOCoinMetadata{}).New(), nil
 	case TxnTypeDAOCoinTransfer:
@@ -4933,4 +4943,92 @@ func DeserializePubKeyToUint64Map (data []byte) (map[PublicKey]uint64, error) {
 	}
 
 	return mm, nil
+}
+
+// ==================================================================
+// MessagingKeyMetadata
+// ==================================================================
+
+type MessagingKeyMetadata struct {
+	// This struct is very similar to the MessagingKeyEntry type.
+	MessagingPublicKey []byte
+	MessagingKeyName []byte
+	KeySignature []byte
+
+	Recipients []MessagingRecipient
+	EncryptedKey []byte
+}
+
+func (txnData *MessagingKeyMetadata) GetTxnType() TxnType {
+	return TxnTypeMessagingKey
+}
+
+func (txnData *MessagingKeyMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingPublicKey)))...)
+	data = append(data, txnData.MessagingPublicKey...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingKeyName)))...)
+	data = append(data, txnData.MessagingKeyName...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.KeySignature)))...)
+	data = append(data, txnData.KeySignature...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.Recipients)))...)
+	for _, recipient := range txnData.Recipients {
+		data = append(data, recipient.Encode()...)
+	}
+
+	data = append(data, UintToBuf(uint64(len(txnData.EncryptedKey)))...)
+	data = append(data, txnData.EncryptedKey...)
+	return data, nil
+}
+
+func (txnData *MessagingKeyMetadata) FromBytes(data []byte) error {
+	ret := MessagingKeyMetadata{}
+	rr := bytes.NewReader(data)
+
+	var err error
+	ret.MessagingPublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
+			"Problem reading MessagingPublicKey")
+	}
+
+	ret.MessagingKeyName, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
+			"Problem reading MessagingKeyName")
+	}
+
+	ret.KeySignature, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err,"MessagingKeyMetadata.FromBytes: " +
+			"Problem reading KeySignature")
+	}
+
+	numRecipients, err := ReadUvarint(rr)
+	for ;numRecipients > 0; numRecipients-- {
+		recipient := MessagingRecipient{}
+		err = recipient.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
+				"error reading recipient")
+		}
+		ret.Recipients = append(ret.Recipients, recipient)
+	}
+
+	ret.EncryptedKey, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err,"MessagingKeyMetadata.FromBytes: " +
+			"Problem reading EncryptedKey")
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *MessagingKeyMetadata) New() DeSoTxnMetadata {
+	return &MessagingKeyMetadata{}
 }

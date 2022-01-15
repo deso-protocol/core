@@ -239,10 +239,18 @@ var (
 	_PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry = []byte{55}
 	_PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry = []byte{56}
 
+	// Prefix for Messaging Keys:
+	//		<prefix, PublicKey [33]byte, KeyName [32]byte> -> <>
+	_PrefixMessagingKey = []byte{57}
+
+	// Prefix for Message Recipients:
+	//		<prefix, PublicKey [33]byte, Messaging Public Key [33]byte> -> <>
+	_PrefixMessagingRecipient = []byte{58}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 57
+	// NEXT_TAG: 59
 )
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
@@ -601,50 +609,39 @@ func _dbSeekPrefixForMessagePublicKey(publicKey []byte) []byte {
 }
 
 // Note that this adds a mapping for the sender *and* the recipient.
-func DbPutMessageEntryWithTxn(
-	txn *badger.Txn, messageEntry *MessageEntry) error {
+func DBPutMessageEntryWithTxn(
+	txn *badger.Txn, messageKey MessageKey, messageEntry *MessageEntry) error {
 
-	if len(messageEntry.SenderPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DbPutPrivateMessageWithTxn: Sender public key "+
-			"length %d != %d", len(messageEntry.SenderPublicKey), btcec.PubKeyBytesLenCompressed)
+	if err := IsByteArrayValidPublicKey(messageEntry.SenderPublicKey[:]); err != nil {
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key")
 	}
-	if len(messageEntry.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DbPutPrivateMessageWithTxn: Recipient public key "+
-			"length %d != %d", len(messageEntry.RecipientPublicKey), btcec.PubKeyBytesLenCompressed)
+	if err := IsByteArrayValidPublicKey(messageEntry.RecipientPublicKey[:]); err != nil {
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key")
 	}
-	messageData := &MessageEntry{
-		SenderPublicKey:    messageEntry.SenderPublicKey,
-		RecipientPublicKey: messageEntry.RecipientPublicKey,
-		EncryptedText:      messageEntry.EncryptedText,
-		TstampNanos:        messageEntry.TstampNanos,
-		Version:            messageEntry.Version,
+	if err := ValidateKeyAndName(messageEntry.SenderMessagingPublicKey[:], messageEntry.SenderMessagingKeyName[:]); err != nil {
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key and key name")
 	}
-
-	messageDataBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(messageDataBuf).Encode(messageData)
+	if err := ValidateKeyAndName(messageEntry.RecipientMessagingPublicKey[:], messageEntry.RecipientMessagingKeyName[:]); err != nil {
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key and key name")
+	}
 
 	if err := txn.Set(_dbKeyForMessageEntry(
-		messageEntry.SenderPublicKey, messageEntry.TstampNanos), messageDataBuf.Bytes()); err != nil {
+		messageKey.PublicKey[:], messageKey.TstampNanos), messageEntry.Encode()); err != nil {
 
-		return errors.Wrapf(err, "DbPutMessageEntryWithTxn: Problem adding mapping for sender: ")
-	}
-	if err := txn.Set(_dbKeyForMessageEntry(
-		messageEntry.RecipientPublicKey, messageEntry.TstampNanos), messageDataBuf.Bytes()); err != nil {
-
-		return errors.Wrapf(err, "DbPutMessageEntryWithTxn: Problem adding mapping for recipient: ")
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem setting the message (%v)", messageEntry.Encode())
 	}
 
 	return nil
 }
 
-func DbPutMessageEntry(handle *badger.DB, messageEntry *MessageEntry) error {
+func DBPutMessageEntry(handle *badger.DB, messageKey MessageKey, messageEntry *MessageEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutMessageEntryWithTxn(txn, messageEntry)
+		return DBPutMessageEntryWithTxn(txn, messageKey, messageEntry)
 	})
 }
 
-func DbGetMessageEntryWithTxn(
+func DBGetMessageEntryWithTxn(
 	txn *badger.Txn, publicKey []byte, tstampNanos uint64) *MessageEntry {
 
 	key := _dbKeyForMessageEntry(publicKey, tstampNanos)
@@ -654,10 +651,10 @@ func DbGetMessageEntryWithTxn(
 		return nil
 	}
 	err = privateMessageItem.Value(func(valBytes []byte) error {
-		return gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj)
+		return privateMessageObj.Decode(valBytes)
 	})
 	if err != nil {
-		glog.Errorf("DbGetMessageEntryWithTxn: Problem reading "+
+		glog.Errorf("DBGetMessageEntryWithTxn: Problem reading "+
 			"MessageEntry for public key %s with tstampnanos %d",
 			PkToStringMainnet(publicKey), tstampNanos)
 		return nil
@@ -665,10 +662,10 @@ func DbGetMessageEntryWithTxn(
 	return privateMessageObj
 }
 
-func DbGetMessageEntry(db *badger.DB, publicKey []byte, tstampNanos uint64) *MessageEntry {
+func DBGetMessageEntry(db *badger.DB, publicKey []byte, tstampNanos uint64) *MessageEntry {
 	var ret *MessageEntry
 	db.View(func(txn *badger.Txn) error {
-		ret = DbGetMessageEntryWithTxn(txn, publicKey, tstampNanos)
+		ret = DBGetMessageEntryWithTxn(txn, publicKey, tstampNanos)
 		return nil
 	})
 	return ret
@@ -676,38 +673,34 @@ func DbGetMessageEntry(db *badger.DB, publicKey []byte, tstampNanos uint64) *Mes
 
 // Note this deletes the message for the sender *and* receiver since a mapping
 // should exist for each.
-func DbDeleteMessageEntryMappingsWithTxn(
+func DBDeleteMessageEntryMappingsWithTxn(
 	txn *badger.Txn, publicKey []byte, tstampNanos uint64) error {
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
-	existingMessage := DbGetMessageEntryWithTxn(txn, publicKey, tstampNanos)
+	existingMessage := DBGetMessageEntryWithTxn(txn, publicKey, tstampNanos)
 	if existingMessage == nil {
 		return nil
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := txn.Delete(_dbKeyForMessageEntry(existingMessage.SenderPublicKey, tstampNanos)); err != nil {
-		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
+	if err := txn.Delete(_dbKeyForMessageEntry(publicKey, tstampNanos)); err != nil {
+		return errors.Wrapf(err, "DBDeleteMessageEntryMappingsWithTxn: Deleting "+
 			"sender mapping for public key %s and tstamp %d failed",
-			PkToStringMainnet(existingMessage.SenderPublicKey), tstampNanos)
+			PkToStringMainnet(publicKey), tstampNanos)
 	}
-	if err := txn.Delete(_dbKeyForMessageEntry(existingMessage.RecipientPublicKey, tstampNanos)); err != nil {
-		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
-			"recipient mapping for public key %s and tstamp %d failed",
-			PkToStringMainnet(existingMessage.RecipientPublicKey), tstampNanos)
-	}
+
 
 	return nil
 }
 
-func DbDeleteMessageEntryMappings(handle *badger.DB, publicKey []byte, tstampNanos uint64) error {
+func DBDeleteMessageEntryMappings(handle *badger.DB, publicKey []byte, tstampNanos uint64) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteMessageEntryMappingsWithTxn(txn, publicKey, tstampNanos)
+		return DBDeleteMessageEntryMappingsWithTxn(txn, publicKey, tstampNanos)
 	})
 }
 
-func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
+func DBGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	_privateMessages []*MessageEntry, _err error) {
 
 	// Setting the prefix to a tstamp of zero should return all the messages
@@ -722,9 +715,9 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	privateMessages := []*MessageEntry{}
 	for _, valBytes := range valuesFound {
 		privateMessageObj := &MessageEntry{}
-		if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj); err != nil {
+		if err := privateMessageObj.Decode(valBytes); err != nil {
 			return nil, errors.Wrapf(
-				err, "DbGetMessageEntriesForPublicKey: Problem decoding value: ")
+				err, "DBGetMessageEntriesForPublicKey: Problem decoding value: ")
 		}
 
 		privateMessages = append(privateMessages, privateMessageObj)
@@ -733,30 +726,436 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	return privateMessages, nil
 }
 
-func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
+func _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(txn *badger.Txn, messagingKeys []*MessagingKeyEntry,
+	limit uint64) (_privateMessages []*MessageEntry, _err error) {
+
+	// Users can have many messaging keys. By default, a users has the base messaging key, which
+	// is just their main public key. Users can also register messaging keys, e.g. keys like the
+	// "default-key", which can be used by others when sending messages to the user. The final
+	// category of messaging keys are group chats, which also introduce a new messaging key that
+	// the user can use to decrypt messages. Overall, the user has many messaging keys and needs
+	// to index messages from multiple prefixes. To do so, we will make badger iterators for each
+	// messaging key and scan each valid message prefix in reverse to get messages sorted by timestamps.
+
+	// Get seek prefixes for each messaging key, we will use them to define iterators for message prefix
+	var prefixes [][]byte
+	for _, keyEntry := range messagingKeys {
+		prefixes = append(prefixes, _dbSeekPrefixForMessagePublicKey(keyEntry.MessagingPublicKey[:]))
+		//prefixes = append(prefixes, _dbSeekPrefixForMessagePartyPublicKey(keyEntry.MessagingPublicKey[:]))
+	}
+
+	// Initialize all iterators, add the 0xff byte to the seek prefix so that we can iterate backwards.
+	var messagingIterators []*badger.Iterator
+	for _, prefix := range prefixes {
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = true
+		iterator := txn.NewIterator(opts)
+		iterator.Seek(append(prefix, 0xff))
+		defer iterator.Close()
+		messagingIterators = append(messagingIterators, iterator)
+	}
+
+	// We will fetch at most (limit) messages.
+	for ;limit > 0; limit-- {
+
+		// This loop will find the latest message among all messaging keys.
+		// To do so, we find the greatest timestamp from iterator keys.
+		latestTimestamp := uint64(0)
+		latestTimestampIndex := -1
+		for ii := 0; ii < len(prefixes); ii++ {
+			if !messagingIterators[ii].ValidForPrefix(prefixes[ii]) {
+				continue
+			}
+			// Get the timestamp from the item key
+			key := messagingIterators[ii].Item().Key()
+			rr := bytes.NewReader(key[len(prefixes[ii]):])
+			timestamp, err := ReadUvarint(rr)
+			if err != nil {
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: problem reading timestamp " +
+					"for messaging iterator from prefix (%v) at key (%v)", prefixes[ii], messagingIterators[ii].Item().Key())
+			}
+
+			if timestamp > latestTimestamp {
+				latestTimestampIndex = ii
+				latestTimestamp = timestamp
+			}
+		}
+
+		// Now that we found the latest message, let's decode and process it.
+		if latestTimestampIndex == -1 {
+			break
+		} else {
+			// Get the message bytes and decode the message.
+			messageBytes, err := messagingIterators[latestTimestampIndex].Item().ValueCopy(nil)
+			if err != nil {
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem copying " +
+					"value from messaging iterator from prefix (%v) at key (%v)",
+					prefixes[latestTimestampIndex], messagingIterators[latestTimestampIndex].Item().Key())
+			}
+			message := &MessageEntry{}
+			if err := message.Decode(messageBytes); err != nil {
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem decoding message " +
+					"from messaging iterator from prefix (%v) at key (%v)",
+					prefixes[latestTimestampIndex], messagingIterators[latestTimestampIndex].Item().Key())
+			}
+			// Add the message to the list of fetched messages
+			_privateMessages = append(_privateMessages, message)
+			messagingIterators[latestTimestampIndex].Next()
+		}
+	}
+
+	return _privateMessages, nil
+}
+
+func DBGetLimitedMessageForMessagingKeys(handle *badger.DB, messagingKeys []*MessagingKeyEntry, limit uint64) (
 	_privateMessages []*MessageEntry, _err error) {
 
 	// Setting the prefix to a tstamp of zero should return all the messages
 	// for the public key in sorted order since 0 << the minimum timestamp in
 	// the db.
-	prefix := _dbSeekPrefixForMessagePublicKey(publicKey)
 
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
-	_, valuesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefix, uint64(MessagesToFetchPerInboxCall))
+	// Get all user messaging keys.
 
-	privateMessages := []*MessageEntry{}
-	for _, valBytes := range valuesFound {
-		privateMessageObj := &MessageEntry{}
-		if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj); err != nil {
-			return nil, errors.Wrapf(
-				err, "DbGetMessageEntriesForPublicKey: Problem decoding value: ")
+
+	err := handle.Update(func(txn *badger.Txn) error {
+		var err error
+		_privateMessages, err = _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(txn, messagingKeys, limit)
+		if err != nil {
+			return errors.Wrapf(err, "DBGetLimitedMessageForMessagingKeys: problem getting user messages")
 		}
 
-		privateMessages = append(privateMessages, privateMessageObj)
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DbGetLimitedMessageAndPartyEntriesForPublicKey: problem getting user messages in txn")
 	}
 
-	return privateMessages, nil
+	return _privateMessages, nil
+}
+
+// -------------------------------------------------------------------------------------
+// MessagingKeyEntry mapping functions
+// <prefix, PublicKey (33 bytes) || KeyName (32 bytes)> -> <MessagingKeyEntry>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForMessagingKeyEntry(messagingKey *MessagingKey) []byte {
+	prefixCopy := append([]byte{}, _PrefixMessagingKey...)
+	key := append(prefixCopy, messagingKey.PublicKey[:]...)
+	key = append(key, messagingKey.KeyName[:]...)
+	return key
+}
+
+func _dbSeekPrefixForMessagingKeyEntry(publicKey *PublicKey) []byte {
+	prefixCopy := append([]byte{}, _PrefixMessagingKey...)
+	return append(prefixCopy, publicKey[:]...)
+}
+
+func DBPutMessagingKeyEntryWithTxn(
+	txn *badger.Txn, messagingKeyEntry *MessagingKeyEntry) error {
+
+	// Sanity-check that the public key has the correct length.
+	if len(messagingKeyEntry.PublicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DBPutMessagingKeyEntryWithTxn: Public Key "+
+			"length %d != %d", len(messagingKeyEntry.PublicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	messagingKey := &MessagingKey{
+		PublicKey: *messagingKeyEntry.PublicKey,
+		KeyName:   *messagingKeyEntry.MessagingKeyName,
+	}
+	if err := txn.Set(_dbKeyForMessagingKeyEntry(messagingKey), messagingKeyEntry.Encode()); err != nil {
+		return errors.Wrapf(err, "DBPutMessagingKeyEntryWithTxn: Problem adding messaging key entry mapping: ")
+	}
+
+	return nil
+}
+
+func DBPutMessagingKeyEntry(handle *badger.DB, messagingKeyEntry *MessagingKeyEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutMessagingKeyEntryWithTxn(txn, messagingKeyEntry)
+	})
+}
+
+func DBGetMessagingKeyEntryWithTxn(
+	txn *badger.Txn, messagingKey *MessagingKey) *MessagingKeyEntry {
+
+	key := _dbKeyForMessagingKeyEntry(messagingKey)
+	messagingKeyEntry := &MessagingKeyEntry{}
+	messagingKeyItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = messagingKeyItem.Value(func(valBytes []byte) error {
+		messagingKeyEntry.Decode(valBytes)
+		return nil
+	})
+	if err != nil {
+		glog.Errorf("DBGetMessagingKeyEntryWithTxn: Problem reading "+
+			"MessagingKeyEntry for Messaging Key: %v", messagingKey)
+		return nil
+	}
+	return messagingKeyEntry
+}
+
+func DBGetMessagingKeyEntry(db *badger.DB, messagingKey *MessagingKey) *MessagingKeyEntry {
+	var ret *MessagingKeyEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetMessagingKeyEntryWithTxn(txn, messagingKey)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteMessagingKeyEntryWithTxn(
+	txn *badger.Txn, messagingKey *MessagingKey) error {
+
+	// First pull up the entry that exists for the messaging key.
+	// If one doesn't exist then there's nothing to do.
+	if entry := DBGetMessagingKeyEntryWithTxn(txn, messagingKey); entry == nil {
+		return nil
+	}
+
+	// When a messaging key entry exists, delete it from the DB.
+	if err := txn.Delete(_dbKeyForMessagingKeyEntry(messagingKey)); err != nil {
+		return errors.Wrapf(err, "DBDeleteMessagingKeyEntryWithTxn: Deleting "+
+			"entry for MessagingKey failed: %v", messagingKey)
+	}
+
+	return nil
+}
+
+func DBDeleteMessagingKeyEntry(handle *badger.DB, messagingKey *MessagingKey) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteMessagingKeyEntryWithTxn(txn, messagingKey)
+	})
+}
+
+func DBGetMessagingKeyEntriesWithTxn(txn *badger.Txn, publicKey *PublicKey) (
+	messagingKeyEntries []*MessagingKeyEntry, _err error) {
+
+	// Setting the prefix to owner's public key will allow us to fetch all messaging keys
+	// for the user. We enumerate this prefix.
+	prefix := _dbSeekPrefixForMessagingKeyEntry(publicKey)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetMessagingKeyEntriesWithTxn: " +
+			"problem enumerating messaging key entries for prefix (%v)", prefix)
+	}
+
+	// Decode found messaging key entries.
+	messagingKeyEntries = []*MessagingKeyEntry{}
+	for _, valBytes := range valuesFound {
+		messagingKeyEntry := &MessagingKeyEntry{}
+		err = messagingKeyEntry.Decode(valBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetMessagingKeyEntriesWithTxn: " +
+				"problem decoding messaging key entry for public key (%v)", publicKey)
+		}
+
+		messagingKeyEntries = append(messagingKeyEntries, messagingKeyEntry)
+	}
+
+	return messagingKeyEntries, nil
+}
+
+func DBGetAllUserMessagingKeysWithTxn(txn *badger.Txn, publicKey []byte) ([]*MessagingKeyEntry, error) {
+	// This function fetches all messaging keys for the user from the DB. This includes the
+	// base key, the regular messaging keys, and the recipient messaging keys.
+
+	// We will keep track of all messaging keys in this array.
+	var userKeys []*MessagingKeyEntry
+
+	// First add the base messaging key.
+	userKeys = append(userKeys, &MessagingKeyEntry{
+		PublicKey:          NewPublicKey(publicKey),
+		MessagingPublicKey: NewPublicKey(publicKey),
+		MessagingKeyName:   NewKeyName([]byte{}),
+	})
+
+	// Now add all the regular messaging keys.
+	messagingEntries, err := DBGetMessagingKeyEntriesWithTxn(txn, NewPublicKey(publicKey))
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllUserMessagingKeysWithTxn: problem getting messaging entries")
+	}
+	for ii := 0; ii < len(messagingEntries); ii++ {
+		messagingEntries[ii].PublicKey = NewPublicKey(publicKey)
+	}
+	userKeys = append(userKeys, messagingEntries...)
+
+	// And add the recipient messaging keys.
+	recipientEntries, err := DBGetAllMessagingRecipientsEntriesWithTxn(txn, NewPublicKey(publicKey))
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllUserMessagingKeysWithTxn: problem getting recipient entries")
+	}
+	for ii := 0; ii < len(recipientEntries); ii++ {
+		recipientEntries[ii].PublicKey = NewPublicKey(publicKey)
+	}
+	userKeys = append(userKeys, recipientEntries...)
+
+	return userKeys, nil
+}
+
+func DBGetAllUserMessagingKeys(handle *badger.DB, publicKey []byte) ([]*MessagingKeyEntry, error) {
+	var err error
+	var _messagingKeyEntries []*MessagingKeyEntry
+
+	err = handle.View(func(txn *badger.Txn) error {
+		_messagingKeyEntries, err = DBGetAllUserMessagingKeysWithTxn(txn, publicKey)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllUserMessagingKeys: problem getting user messaging keys")
+	}
+	return _messagingKeyEntries, nil
+}
+
+// -------------------------------------------------------------------------------------
+// Messaging recipient
+// <prefix, public key, messaging public key > -> <>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForMessagingRecipient(recipientPublicKey, messagingPublicKey *PublicKey) []byte {
+	prefixCopy := append([]byte{}, _PrefixMessagingRecipient...)
+	key := append(prefixCopy, recipientPublicKey[:]...)
+	key = append(key, messagingPublicKey[:]...)
+	return key
+}
+
+func _dbSeekPrefixForMessagingRecipient(recipientPublicKey *PublicKey) []byte {
+	prefixCopy := append([]byte{}, _PrefixMessagingRecipient...)
+	return append(prefixCopy, recipientPublicKey[:]...)
+}
+
+func DBPutMessagingRecipientWithTxn(txn *badger.Txn, messagingRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+	// Sanity-check that public keys have the correct length.
+
+	if len(messagingRecipient.EncryptedKey) < btcec.PrivKeyBytesLen {
+		return fmt.Errorf("DBPutMessagingRecipientWithTxn: Problem getting recipient " +
+			"entry for public key (%v)", messagingRecipient.RecipientPublicKey)
+	}
+
+	// We overload the MessagingKeyEntry struct for messaging recipients. We store the group chat's messaging public key
+	// as opposed to recipient's messaging public key corresponding to recipient's messaging key name, because we need to
+	// keep track of the group chat's public key. Recipient's messaging key can always be fetched at a later point.
+	recipientKeyEntry := MessagingKeyEntry{
+		PublicKey:          messagingRecipient.RecipientPublicKey,
+		MessagingPublicKey: messagingKeyEntry.MessagingPublicKey,
+		MessagingKeyName:   messagingRecipient.RecipientMessagingKeyName,
+		EncryptedKey:       messagingRecipient.EncryptedKey,
+	}
+
+	if err := txn.Set(_dbKeyForMessagingRecipient(
+		messagingRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey), recipientKeyEntry.Encode()); err != nil {
+
+		return errors.Wrapf(err, "DBPutMessagingRecipientWithTxn: Problem setting messaging recipient with key (%v) " +
+			"and entry (%v) in the db", _dbKeyForMessagingRecipient(
+			messagingRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey), recipientKeyEntry.Encode())
+	}
+
+	return nil
+}
+
+func DBPutMessagingRecipient(handle *badger.DB, messagingRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutMessagingRecipientWithTxn(txn, messagingRecipient, messagingKeyEntry)
+	})
+}
+
+func DBGetMessagingRecipientWithTxn(txn *badger.Txn, messagingRecipient *MessagingRecipient,
+	messagingKeyEntry *MessagingKeyEntry) *MessagingKeyEntry {
+
+	key := _dbKeyForMessagingRecipient(messagingRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey)
+	messagingRecipientEntry := &MessagingKeyEntry{}
+	messagingRecipientEntryItem, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+	err = messagingRecipientEntryItem.Value(func(valBytes []byte) error {
+		if err := messagingRecipientEntry.Decode(valBytes); err != nil {
+			return errors.Wrapf(err, "DBGetMessagingRecipientWithTxn: Problem decoding " +
+				"message recipient entry")
+		}
+		return nil
+	})
+	if err != nil {
+		glog.Errorf("DBGetMessagingRecipientWithTxn: Problem reading "+
+			"message recipient entry for public key %s with index %v",
+			messagingRecipient.RecipientPublicKey[:], messagingKeyEntry.MessagingPublicKey[:])
+		return nil
+	}
+	messagingRecipientEntry.IsRecipient = true
+	return messagingRecipientEntry
+}
+
+func DBGetMessagingRecipient(db *badger.DB, messagingRecipient *MessagingRecipient,
+	messagingKeyEntry *MessagingKeyEntry) *MessagingKeyEntry {
+
+	var ret *MessagingKeyEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetMessagingRecipientWithTxn(txn, messagingRecipient, messagingKeyEntry)
+		return nil
+	})
+	return ret
+}
+
+func DBGetAllMessagingRecipientsEntriesWithTxn(txn *badger.Txn, publicKey *PublicKey) (
+	[]*MessagingKeyEntry, error) {
+
+	// This function is used to fetch all messaging
+	var messagingEntries []*MessagingKeyEntry
+	prefix := _dbSeekPrefixForMessagingRecipient(publicKey)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetMessagingKeyEntriesWithTxn: " +
+			"problem enumerating messaging key entries for prefix (%v)", prefix)
+	}
+
+	for _, valBytes := range valuesFound {
+		messagingEntry := MessagingKeyEntry{}
+		err = messagingEntry.Decode(valBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllMessagingRecipientsEntriesWithTxn: problem reading " +
+				"an entry from DB")
+		}
+
+		messagingEntry.IsRecipient = true
+		messagingEntries = append(messagingEntries, &messagingEntry)
+	}
+
+	return messagingEntries, nil
+}
+
+// Note this deletes the message for the sender *and* receiver since a mapping
+// should exist for each.
+func DBDeleteMessagingRecipientMappingWithTxn(
+	txn *badger.Txn, messagingRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+
+	// First pull up the mapping that exists for the public key passed in.
+	// If one doesn't exist then there's nothing to do.
+	existingRecipient := DBGetMessagingRecipientWithTxn(txn, messagingRecipient, messagingKeyEntry)
+	if existingRecipient == nil {
+		return nil
+	}
+
+	// When a message exists, delete the mapping for the sender and receiver.
+	if err := txn.Delete(_dbKeyForMessagingRecipient(messagingRecipient.RecipientPublicKey, messagingKeyEntry.MessagingPublicKey)); err != nil {
+		return errors.Wrapf(err, "DbDeleteMessageRecipientMappingsWithTxn: Deleting mapping for public key %v " +
+			"and messaging public key %v failed", messagingRecipient.RecipientPublicKey[:], messagingKeyEntry.MessagingPublicKey[:])
+	}
+
+	return nil
+}
+
+func DBDeleteMessagingRecipientMappings(
+	handle *badger.DB, messageRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteMessagingRecipientMappingWithTxn(txn, messageRecipient, messagingKeyEntry)
+	})
 }
 
 // -------------------------------------------------------------------------------------
@@ -2633,8 +3032,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5410,7 +5809,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

@@ -42,6 +42,9 @@ type UtxoView struct {
 	// Messages data
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
+	// Messaging key entries.
+	MessagingKeyToMessagingKeyEntry map[MessagingKey]*MessagingKeyEntry
+
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -118,6 +121,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Messages data
 	bav.MessageKeyToMessageEntry = make(map[MessageKey]*MessageEntry)
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
+
+	// Messaging key entries
+	bav.MessagingKeyToMessagingKeyEntry = make(map[MessagingKey]*MessagingKeyEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -235,6 +241,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for txnHash, message := range bav.MessageMap {
 		newMessage := *message
 		newView.MessageMap[txnHash] = &newMessage
+	}
+
+	// Copy messaging key data
+	newView.MessagingKeyToMessagingKeyEntry = make(map[MessagingKey]*MessagingKeyEntry, len(bav.MessagingKeyToMessagingKeyEntry))
+	for pkid, entry := range bav.MessagingKeyToMessagingKeyEntry {
+		newEntry := *entry
+		newView.MessagingKeyToMessagingKeyEntry[pkid] = &newEntry
 	}
 
 	// Copy the follow data
@@ -845,6 +858,10 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
 		return bav._disconnectPrivateMessage(
 			OperationTypePrivateMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeMessagingKey {
+		return bav._disconnectMessagingKey(
+			OperationTypeMessagingKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		return bav._disconnectSubmitPost(
@@ -1614,6 +1631,11 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectPrivateMessage(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingKey {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectMessagingKey(
 				txn, txHash, blockHeight, verifySignatures)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
