@@ -1284,12 +1284,15 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	}
 
 	nftPaymentUtxoKeys := []*UtxoKey{}
-	nextUtxoIndex := uint32(len(args.Txn.TxOutputs))
+	// This may start negative but that's OK because the first thing we do is increment it
+	// in createUTXO
+	nextUtxoIndex := len(args.Txn.TxOutputs) - 1
 	createUTXO := func(amountNanos uint64, publicKey []byte, utxoType UtxoType) (_err error) {
+		// nextUtxoIndex is guaranteed to be >= 0 afer this increment
 		nextUtxoIndex += 1
 		royaltyOutputKey := &UtxoKey{
 			TxID:  *args.TxHash,
-			Index: nextUtxoIndex,
+			Index: uint32(nextUtxoIndex),
 		}
 
 		utxoEntry := UtxoEntry{

@@ -152,7 +152,7 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) 
 	}
 
 	for _, balanceEntry := range bav.GetHODLerPKIDCreatorPKIDToBalanceEntryMap(isDAOCoin) {
-		if reflect.DeepEqual(balanceEntry.HODLerPKID, pkid) {
+		if reflect.DeepEqual(balanceEntry.CreatorPKID, pkid) {
 			if _, ok := holdersMap[*balanceEntry.HODLerPKID]; ok {
 				// We found both an utxoView and a db balanceEntry. Update the BalanceEntry using utxoView data.
 				holdersMap[*balanceEntry.HODLerPKID].BalanceNanos = balanceEntry.BalanceNanos
