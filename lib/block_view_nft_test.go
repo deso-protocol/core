@@ -718,8 +718,6 @@ func _burnNFTWithTestMeta(
 }
 
 func TestNFTBasic(t *testing.T) {
-	BrokenNFTBidsFixBlockHeight = uint32(0)
-	BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -731,6 +729,8 @@ func TestNFTBasic(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
+	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4429,9 +4429,6 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 }
 
 func TestNFTTransfersAndBurns(t *testing.T) {
-	BrokenNFTBidsFixBlockHeight = uint32(0)
-	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -4441,6 +4438,9 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+
+	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -5146,7 +5146,6 @@ func TestBidAmountZero(t *testing.T) {
 }
 
 func TestNFTBuyNow(t *testing.T) {
-	BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -5157,6 +5156,7 @@ func TestNFTBuyNow(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -6025,7 +6025,7 @@ func TestNFTBuyNow(t *testing.T) {
 	// Case: NFT is transferred. Before being accepted, it can't be put on sale as a
 	// buy now NFT. Once accepted, all is good.
 	{
-		NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+		params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 		_transferNFTWithTestMeta(
 			testMeta,
 			10,
@@ -6163,7 +6163,6 @@ func TestNFTBuyNow(t *testing.T) {
 }
 
 func TestNFTSplits(t *testing.T) {
-	BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -6174,6 +6173,7 @@ func TestNFTSplits(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
