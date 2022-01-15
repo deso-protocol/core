@@ -853,16 +853,10 @@ func _dbSeekPrefixForMessagingKeyEntry(publicKey *PublicKey) []byte {
 }
 
 func DBPutMessagingKeyEntryWithTxn(
-	txn *badger.Txn, messagingKeyEntry *MessagingKeyEntry) error {
-
-	// Sanity-check that the public key has the correct length.
-	if len(messagingKeyEntry.PublicKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DBPutMessagingKeyEntryWithTxn: Public Key "+
-			"length %d != %d", len(messagingKeyEntry.PublicKey), btcec.PubKeyBytesLenCompressed)
-	}
+	txn *badger.Txn, ownerPublicKey *PublicKey, messagingKeyEntry *MessagingKeyEntry) error {
 
 	messagingKey := &MessagingKey{
-		PublicKey: *messagingKeyEntry.PublicKey,
+		PublicKey: *ownerPublicKey,
 		KeyName:   *messagingKeyEntry.MessagingKeyName,
 	}
 	if err := txn.Set(_dbKeyForMessagingKeyEntry(messagingKey), messagingKeyEntry.Encode()); err != nil {
@@ -872,10 +866,11 @@ func DBPutMessagingKeyEntryWithTxn(
 	return nil
 }
 
-func DBPutMessagingKeyEntry(handle *badger.DB, messagingKeyEntry *MessagingKeyEntry) error {
+func DBPutMessagingKeyEntry(handle *badger.DB, ownerPublicKey *PublicKey,
+	messagingKeyEntry *MessagingKeyEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessagingKeyEntryWithTxn(txn, messagingKeyEntry)
+		return DBPutMessagingKeyEntryWithTxn(txn, ownerPublicKey, messagingKeyEntry)
 	})
 }
 
@@ -970,9 +965,8 @@ func DBGetAllUserMessagingKeysWithTxn(txn *badger.Txn, publicKey []byte) ([]*Mes
 
 	// First add the base messaging key.
 	userKeys = append(userKeys, &MessagingKeyEntry{
-		PublicKey:          NewPublicKey(publicKey),
 		MessagingPublicKey: NewPublicKey(publicKey),
-		MessagingKeyName:   NewKeyName([]byte{}),
+		MessagingKeyName:   BaseKeyName(),
 	})
 
 	// Now add all the regular messaging keys.
@@ -980,18 +974,12 @@ func DBGetAllUserMessagingKeysWithTxn(txn *badger.Txn, publicKey []byte) ([]*Mes
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllUserMessagingKeysWithTxn: problem getting messaging entries")
 	}
-	for ii := 0; ii < len(messagingEntries); ii++ {
-		messagingEntries[ii].PublicKey = NewPublicKey(publicKey)
-	}
 	userKeys = append(userKeys, messagingEntries...)
 
 	// And add the recipient messaging keys.
 	recipientEntries, err := DBGetAllMessagingRecipientsEntriesWithTxn(txn, NewPublicKey(publicKey))
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllUserMessagingKeysWithTxn: problem getting recipient entries")
-	}
-	for ii := 0; ii < len(recipientEntries); ii++ {
-		recipientEntries[ii].PublicKey = NewPublicKey(publicKey)
 	}
 	userKeys = append(userKeys, recipientEntries...)
 
@@ -1029,7 +1017,8 @@ func _dbSeekPrefixForMessagingRecipient(recipientPublicKey *PublicKey) []byte {
 	return append(prefixCopy, recipientPublicKey[:]...)
 }
 
-func DBPutMessagingRecipientWithTxn(txn *badger.Txn, messagingRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+func DBPutMessagingRecipientWithTxn(txn *badger.Txn, messagingRecipient *MessagingRecipient,
+	ownerPublicKey *PublicKey, messagingKeyEntry *MessagingKeyEntry) error {
 	// Sanity-check that public keys have the correct length.
 
 	if len(messagingRecipient.EncryptedKey) < btcec.PrivKeyBytesLen {
@@ -1037,14 +1026,22 @@ func DBPutMessagingRecipientWithTxn(txn *badger.Txn, messagingRecipient *Messagi
 			"entry for public key (%v)", messagingRecipient.RecipientPublicKey)
 	}
 
-	// We overload the MessagingKeyEntry struct for messaging recipients. We store the group chat's messaging public key
-	// as opposed to recipient's messaging public key corresponding to recipient's messaging key name, because we need to
-	// keep track of the group chat's public key. Recipient's messaging key can always be fetched at a later point.
+	// Messaging keys for recipients are stored as messaging key entries with two special recipients. One of these
+	// recipients is the group owner, which is mainly stored for convenience. Thanks to this recipient entry, we
+	// can easily back-reference the main group messaging key. The other recipient is the actual recipient entry.
+	var recipients []MessagingRecipient
+	ownerRecipient := MessagingRecipient{
+		RecipientPublicKey: ownerPublicKey,
+		RecipientMessagingKeyName: BaseKeyName(),
+	}
+	recipients = append(recipients, ownerRecipient)
+	recipients = append(recipients, *messagingRecipient)
+
 	recipientKeyEntry := MessagingKeyEntry{
-		PublicKey:          messagingRecipient.RecipientPublicKey,
 		MessagingPublicKey: messagingKeyEntry.MessagingPublicKey,
-		MessagingKeyName:   messagingRecipient.RecipientMessagingKeyName,
-		EncryptedKey:       messagingRecipient.EncryptedKey,
+		MessagingKeyName:   messagingKeyEntry.MessagingKeyName,
+		Recipients:         recipients,
+		IsRecipient:        true,
 	}
 
 	if err := txn.Set(_dbKeyForMessagingRecipient(
@@ -1058,10 +1055,11 @@ func DBPutMessagingRecipientWithTxn(txn *badger.Txn, messagingRecipient *Messagi
 	return nil
 }
 
-func DBPutMessagingRecipient(handle *badger.DB, messagingRecipient *MessagingRecipient, messagingKeyEntry *MessagingKeyEntry) error {
+func DBPutMessagingRecipient(handle *badger.DB, messagingRecipient *MessagingRecipient,
+	ownerPublicKey *PublicKey, messagingKeyEntry *MessagingKeyEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessagingRecipientWithTxn(txn, messagingRecipient, messagingKeyEntry)
+		return DBPutMessagingRecipientWithTxn(txn, messagingRecipient, ownerPublicKey, messagingKeyEntry)
 	})
 }
 
