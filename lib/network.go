@@ -4956,7 +4956,6 @@ type MessagingKeyMetadata struct {
 	KeySignature []byte
 
 	Recipients []MessagingRecipient
-	EncryptedKey []byte
 }
 
 func (txnData *MessagingKeyMetadata) GetTxnType() TxnType {
@@ -4980,8 +4979,6 @@ func (txnData *MessagingKeyMetadata) ToBytes(preSignature bool) ([]byte, error) 
 		data = append(data, recipient.Encode()...)
 	}
 
-	data = append(data, UintToBuf(uint64(len(txnData.EncryptedKey)))...)
-	data = append(data, txnData.EncryptedKey...)
 	return data, nil
 }
 
@@ -5017,12 +5014,6 @@ func (txnData *MessagingKeyMetadata) FromBytes(data []byte) error {
 				"error reading recipient")
 		}
 		ret.Recipients = append(ret.Recipients, recipient)
-	}
-
-	ret.EncryptedKey, err = ReadVarString(rr)
-	if err != nil {
-		return errors.Wrapf(err,"MessagingKeyMetadata.FromBytes: " +
-			"Problem reading EncryptedKey")
 	}
 
 	*txnData = ret
