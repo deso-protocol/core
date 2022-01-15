@@ -166,12 +166,12 @@ func (bav *UtxoView) GetUserMessagingKeys(publicKey []byte) (
 			if reflect.DeepEqual(recipient.RecipientPublicKey[:], publicKey) {
 				// If user is a recipient of a group chat, we need to add a modified messaging entry.
 				recipientKeyEntry := &MessagingKeyEntry {
-					PublicKey: recipient.RecipientPublicKey,
+					PublicKey:          recipient.RecipientPublicKey,
 					MessagingPublicKey: messagingKeyEntry.MessagingPublicKey,
-					MessagingKeyName: recipient.RecipientMessagingKeyName,
-					EncryptedKey: recipient.EncryptedKey,
-					isDeleted: messagingKeyEntry.isDeleted,
-					isRecipient: true,
+					MessagingKeyName:   recipient.RecipientMessagingKeyName,
+					EncryptedKey:       recipient.EncryptedKey,
+					isDeleted:          messagingKeyEntry.isDeleted,
+					IsRecipient:        true,
 				}
 				messagingKeysMap[*messagingKeyEntry.MessagingPublicKey] = recipientKeyEntry
 				break

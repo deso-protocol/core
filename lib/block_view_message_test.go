@@ -1217,12 +1217,14 @@ func TestMessagingKeys(t *testing.T) {
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName:   BaseKeyName(),
 			EncryptedKey:       senderPrivBytes,
+			IsRecipient:        true,
 		})
 		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], &MessagingKeyEntry{
 			PublicKey: NewPublicKey(m1PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName: NewKeyName([]byte("totally-random-key")),
 			EncryptedKey: senderPrivBytes,
+			IsRecipient: true,
 		})
 	}
 	// Now we will go all-in on the group chats and create a 5-party group chat with everyone.
@@ -1271,24 +1273,28 @@ func TestMessagingKeys(t *testing.T) {
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName:   DefaultKeyName(),
 			EncryptedKey:       senderPrivBytes,
+			IsRecipient:        true,
 		})
 		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &MessagingKeyEntry{
 			PublicKey: NewPublicKey(m0PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName: NewKeyName([]byte("totally-random-key2")),
 			EncryptedKey: senderPrivBytes,
+			IsRecipient: true,
 		})
 		keyEntriesAdded[m2PublicKey] = append(keyEntriesAdded[m2PublicKey], &MessagingKeyEntry{
 			PublicKey: NewPublicKey(m2PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName: BaseKeyName(),
 			EncryptedKey: senderPrivBytes,
+			IsRecipient: true,
 		})
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], &MessagingKeyEntry{
 			PublicKey: NewPublicKey(m3PubKey),
 			MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingKeyName: DefaultKeyName(),
 			EncryptedKey: senderPrivBytes,
+			IsRecipient: true,
 		})
 	}
 	// Now we verify that all keys were properly added.

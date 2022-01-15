@@ -1087,7 +1087,7 @@ func DBGetMessagingRecipientWithTxn(txn *badger.Txn, messagingRecipient *Messagi
 			messagingRecipient.RecipientPublicKey[:], messagingKeyEntry.MessagingPublicKey[:])
 		return nil
 	}
-	messagingRecipientEntry.isRecipient = true
+	messagingRecipientEntry.IsRecipient = true
 	return messagingRecipientEntry
 }
 
@@ -1122,7 +1122,7 @@ func DBGetAllMessagingRecipientsEntriesWithTxn(txn *badger.Txn, publicKey *Publi
 				"an entry from DB")
 		}
 
-		messagingEntry.isRecipient = true
+		messagingEntry.IsRecipient = true
 		messagingEntries = append(messagingEntries, &messagingEntry)
 	}
 

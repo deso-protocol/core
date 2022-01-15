@@ -618,14 +618,14 @@ type MessagingKeyEntry struct {
 	// the encrypted key can be used to share the private key with the owner.
 	EncryptedKey []byte
 
+	// We allow overloading of the MessagingKeyEntry for message recipients, and
+	// this field is used to indicate that the struct is used to store recipient keys.
+	IsRecipient bool
+
 	// Whether this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if
 	// we disconnect the messaging key from UtxoView
 	isDeleted bool
-
-	// We allow overloading of the MessagingKeyEntry for message recipients, and
-	// this field is used to indicate that the struct is used to store recipient keys.
-	isRecipient bool
 }
 
 func (entry *MessagingKeyEntry) String() string {
@@ -644,6 +644,7 @@ func (entry *MessagingKeyEntry) Encode() []byte {
 		entryBytes = append(entryBytes, entry.Recipients[ii].Encode()...)
 	}
 	entryBytes = append(entryBytes, EncodeByteArray(entry.EncryptedKey)...)
+	entryBytes = append(entryBytes, BoolToByte(entry.IsRecipient))
 	return entryBytes
 }
 
@@ -686,6 +687,8 @@ func (entry *MessagingKeyEntry) Decode(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MessagingKeyEntry.Decode: Problem decoding recipients length")
 	}
+
+	entry.IsRecipient = ReadBoolByte(rr)
 	return nil
 }
 
