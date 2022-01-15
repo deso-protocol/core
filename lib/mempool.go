@@ -1461,13 +1461,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 		utxoOp := utxoOps[len(utxoOps)-1]
 		var nftRoyaltiesMetadata NFTRoyaltiesMetadata
+		var ownerAtTimeOfBid *PKID
 		// We don't send notifications for standing offers.
 		if realTxMeta.SerialNumber != 0 {
 			nftKey := MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
 			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
 			postEntry := utxoView.GetPostEntryForPostHash(nftEntry.NFTPostHash)
 
-			ownerAtTimeOfBid := nftEntry.OwnerPKID
+			ownerAtTimeOfBid = nftEntry.OwnerPKID
 
 			if utxoOp.PrevNFTEntry != nil && utxoOp.PrevNFTEntry.IsBuyNow {
 				isBuyNow = true
@@ -1512,12 +1513,18 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			}
 		}
 
+		var ownerPublicKeyBase58Check string
+		if ownerAtTimeOfBid != nil {
+			ownerPublicKeyBase58Check = PkToString(utxoView.GetPublicKeyForPKID(ownerAtTimeOfBid), utxoView.Params)
+		}
+
 		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
-			NFTPostHashHex:       hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber:         realTxMeta.SerialNumber,
-			BidAmountNanos:       realTxMeta.BidAmountNanos,
-			IsBuyNowBid:          isBuyNow,
-			NFTRoyaltiesMetadata: nftRoyaltiesMetadata,
+			NFTPostHashHex:            hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:              realTxMeta.SerialNumber,
+			BidAmountNanos:            realTxMeta.BidAmountNanos,
+			IsBuyNowBid:               isBuyNow,
+			NFTRoyaltiesMetadata:      nftRoyaltiesMetadata,
+			OwnerPublicKeyBase58Check: ownerPublicKeyBase58Check,
 		}
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
@@ -1569,7 +1576,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		additionalCoinRoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, utxoView)
 		txnMeta.CreateNFTTxindexMetadata = &CreateNFTTxindexMetadata{
-			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			NFTPostHashHex:             hex.EncodeToString(realTxMeta.NFTPostHash[:]),
 			AdditionalDESORoyaltiesMap: additionalDESORoyaltiesMap,
 			AdditionalCoinRoyaltiesMap: additionalCoinRoyaltiesMap,
 		}
@@ -1597,6 +1604,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, utxoView)
 		txnMeta.UpdateNFTTxindexMetadata = &UpdateNFTTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			IsForSale:      realTxMeta.IsForSale,
 		}
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
@@ -1664,16 +1672,16 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		}
 
 		txnMeta.DAOCoinTxindexMetadata = &DAOCoinTxindexMetadata{
-			CreatorUsername: string(creatorProfileEntry.Username),
-			OperationType: operationString,
-			CoinsToMintNanos: realTxMeta.CoinsToMintNanos,
-			CoinsToBurnNanos: realTxMeta.CoinsToBurnNanos,
+			CreatorUsername:           string(creatorProfileEntry.Username),
+			OperationType:             operationString,
+			CoinsToMintNanos:          realTxMeta.CoinsToMintNanos,
+			CoinsToBurnNanos:          realTxMeta.CoinsToBurnNanos,
 			TransferRestrictionStatus: realTxMeta.TransferRestrictionStatus.String(),
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 			PublicKeyBase58Check: PkToString(creatorProfileEntry.PublicKey, utxoView.Params),
-			Metadata: metadata,
+			Metadata:             metadata,
 		})
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {

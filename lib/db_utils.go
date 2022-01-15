@@ -3233,10 +3233,11 @@ type NFTRoyaltiesMetadata struct {
 }
 
 type NFTBidTxindexMetadata struct {
-	NFTPostHashHex string
-	SerialNumber   uint64
-	BidAmountNanos uint64
-	IsBuyNowBid    bool
+	NFTPostHashHex            string
+	SerialNumber              uint64
+	BidAmountNanos            uint64
+	IsBuyNowBid               bool
+	OwnerPublicKeyBase58Check string
 	// We omit the empty object here as a bid that doesn't trigger a "buy now" operation will have no royalty metadata
 	NFTRoyaltiesMetadata `json:",omitempty"`
 }
@@ -3254,13 +3255,14 @@ type NFTTransferTxindexMetadata struct {
 }
 
 type CreateNFTTxindexMetadata struct {
-	NFTPostHashHex string
+	NFTPostHashHex             string
 	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
 	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
 }
 
 type UpdateNFTTxindexMetadata struct {
 	NFTPostHashHex string
+	IsForSale      bool
 }
 
 type TransactionMetadata struct {
