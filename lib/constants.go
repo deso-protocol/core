@@ -381,6 +381,22 @@ func (params *DeSoParams) EnableRegtest() {
 	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
 	// Seed: verb find card ship another until version devote guilt strong lemon six
 	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
+
+	// In regtest, we start all the fork heights at zero. These can be adjusted
+	// for testing purposes to ensure that a transition does not cause issues.
+	params.ForkHeights = ForkHeights{
+		DeflationBombBlockHeight:                             0,
+		SalomonFixBlockHeight:                                uint32(0),
+		DeSoFounderRewardBlockHeight:                         uint32(0),
+		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
+		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
+		UpdateProfileFixBlockHeight:                          uint32(0),
+		BrokenNFTBidsFixBlockHeight:                          uint32(0),
+		DeSoDiamondsBlockHeight:                              uint32(0),
+		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
+		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
+		DAOCoinBlockHeight:                                   uint32(0),
+	}
 }
 
 // GenesisBlock defines the genesis block used for the DeSo maainnet and testnet
@@ -608,7 +624,6 @@ var DeSoMainnetParams = DeSoParams{
 
 	ForkHeights: ForkHeights{
 
-		// Triggers approximately Saturday June 12th at 8pm PT
 		DeflationBombBlockHeight:                             33783,
 		SalomonFixBlockHeight:                                uint32(15270),
 		DeSoFounderRewardBlockHeight:                         uint32(21869),
@@ -787,19 +802,21 @@ var DeSoTestnetParams = DeSoParams{
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
 	ForkHeights: ForkHeights{
-		DeflationBombBlockHeight:                             0,
-		SalomonFixBlockHeight:                                uint32(0),
-		DeSoFounderRewardBlockHeight:                         uint32(0),
-		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
-		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
-		UpdateProfileFixBlockHeight:                          uint32(0),
-		BrokenNFTBidsFixBlockHeight:                          uint32(0),
-		// In Testnet, there are diamonds given in creator coins after block 0, so we just set this to the same
-		// value as mainnet.
-		DeSoDiamondsBlockHeight:                    uint32(52112),
-		NFTTransferOrBurnAndDerivedKeysBlockHeight: uint32(0),
-		BuyNowAndNFTSplitsBlockHeight:              uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
-		DAOCoinBlockHeight:                         uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
+		// Initially, testnet fork heights were the same as mainnet heights
+		// This changed when we spun up a real testnet that runs independently
+		DeflationBombBlockHeight:                             33783,
+		SalomonFixBlockHeight:                                uint32(15270),
+		DeSoFounderRewardBlockHeight:                         uint32(21869),
+		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
+		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(39713),
+		UpdateProfileFixBlockHeight:                          uint32(46165),
+		BrokenNFTBidsFixBlockHeight:                          uint32(46917),
+		DeSoDiamondsBlockHeight:                              uint32(52112),
+		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
+
+		// Flags after this point can differ from mainnet
+		BuyNowAndNFTSplitsBlockHeight:                        uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
+		DAOCoinBlockHeight:                                   uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
 	},
 }
 
