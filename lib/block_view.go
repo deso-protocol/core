@@ -1248,7 +1248,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 	var previousDiamondPostEntry *PostEntry
 	var previousDiamondEntry *DiamondEntry
-	if hasDiamondPostHash && blockHeight > bav.Params.DeSoDiamondsBlockHeight &&
+	if hasDiamondPostHash && blockHeight > bav.Params.ForkHeights.DeSoDiamondsBlockHeight &&
 		txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		if !hasDiamondLevel {
 			return 0, 0, nil, RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel

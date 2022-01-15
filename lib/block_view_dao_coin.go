@@ -37,7 +37,7 @@ func (bav *UtxoView) _disconnectDAOCoin(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	if blockHeight < bav.Params.DAOCoinBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.DAOCoinBlockHeight {
 		return fmt.Errorf("_disconnectDAOCoin: DAOCoin transaction before block height")
 	}
 	// Verify that the last operation is a DAO Coin operation
@@ -306,7 +306,7 @@ func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *B
 	verifySignatures bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation,
 	_creatorProfileEntry *ProfileEntry, _err error) {
 
-	if blockHeight < bav.Params.DAOCoinBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.DAOCoinBlockHeight {
 		return 0, 0, nil, nil, RuleErrorDAOCoinBeforeDAOCoinBlockHeight
 	}
 	// Connect basic txn to get the total input and the total output without
@@ -637,7 +637,7 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < bav.Params.DAOCoinBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.DAOCoinBlockHeight {
 		return 0, 0, nil, errors.Wrapf(RuleErrorDAOCoinBeforeDAOCoinBlockHeight,
 			"_connectDAOCoinTransfer: ")
 	}

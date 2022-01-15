@@ -476,7 +476,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		diamondPostHash := &BlockHash{}
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 		// After the DeSoDiamondsBlockHeight, we no longer accept creator coin diamonds.
-		if hasDiamondPostHash && blockHeight > bav.Params.DeSoDiamondsBlockHeight {
+		if hasDiamondPostHash && blockHeight > bav.Params.ForkHeights.DeSoDiamondsBlockHeight {
 			return 0, 0, nil, RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight
 		} else if hasDiamondPostHash {
 			if !hasDiamondLevel {

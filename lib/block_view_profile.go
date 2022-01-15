@@ -566,7 +566,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		}
 		profilePublicKey = txMeta.ProfilePublicKey
 
-		if blockHeight > bav.Params.UpdateProfileFixBlockHeight {
+		if blockHeight > bav.Params.ForkHeights.UpdateProfileFixBlockHeight {
 			// Make sure that either (1) the profile pub key is the txn signer's  public key or
 			// (2) the signer is a param updater
 			if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) && !updaterIsParamUpdater {
@@ -698,7 +698,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// If below block height, use transaction public key.
 		// If above block height, use ProfilePublicKey if available.
 		profileEntryPublicKey := txn.PublicKey
-		if blockHeight > bav.Params.ParamUpdaterProfileUpdateFixBlockHeight {
+		if blockHeight > bav.Params.ForkHeights.ParamUpdaterProfileUpdateFixBlockHeight {
 			profileEntryPublicKey = profilePublicKey
 		} else if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) {
 			// In this case a clobbering will occur if there was a pre-existing profile
@@ -950,7 +950,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < bav.Params.NFTTransferOrBurnAndDerivedKeysBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorDerivedKeyBeforeBlockHeight
 	}
 

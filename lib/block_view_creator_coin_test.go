@@ -120,11 +120,11 @@ func _helpTestCreatorCoinBuySell(
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// These are block heights where deso forked.
-	params.SalomonFixBlockHeight = 0
-	params.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
-	params.DeSoFounderRewardBlockHeight = 0
+	params.ForkHeights.SalomonFixBlockHeight = 0
+	params.ForkHeights.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
+	params.ForkHeights.DeSoFounderRewardBlockHeight = 0
 	if !desoFounderReward {
-		params.DeSoFounderRewardBlockHeight = 1e9
+		params.ForkHeights.DeSoFounderRewardBlockHeight = 1e9
 	}
 
 	// Give paramUpdater some mony
@@ -1374,7 +1374,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Set the DeSoDiamondsBlockHeight so that it is immediately hit.
-	params.DeSoDiamondsBlockHeight = uint32(0)
+	params.ForkHeights.DeSoDiamondsBlockHeight = uint32(0)
 
 
 	// Give paramUpdater some mony.

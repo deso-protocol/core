@@ -729,8 +729,8 @@ func TestNFTBasic(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
-	params.BrokenNFTBidsFixBlockHeight = uint32(0)
-	params.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
+	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4439,8 +4439,8 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 
-	params.BrokenNFTBidsFixBlockHeight = uint32(0)
-	params.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -5156,7 +5156,7 @@ func TestNFTBuyNow(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
-	params.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -6025,7 +6025,7 @@ func TestNFTBuyNow(t *testing.T) {
 	// Case: NFT is transferred. Before being accepted, it can't be put on sale as a
 	// buy now NFT. Once accepted, all is good.
 	{
-		params.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+		params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 		_transferNFTWithTestMeta(
 			testMeta,
 			10,
@@ -6173,7 +6173,7 @@ func TestNFTSplits(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
-	params.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

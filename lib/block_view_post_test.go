@@ -1653,7 +1653,7 @@ func TestDeSoDiamonds(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
-	params.DeSoDiamondsBlockHeight = 0
+	params.ForkHeights.DeSoDiamondsBlockHeight = 0
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
 
@@ -1862,7 +1862,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
-	params.DeSoDiamondsBlockHeight = 0
+	params.ForkHeights.DeSoDiamondsBlockHeight = 0
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
 
