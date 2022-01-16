@@ -1643,9 +1643,6 @@ func findPostByPostHash(posts []*PostEntry, targetPostHash *BlockHash) (_targetP
 }
 
 func TestDeSoDiamonds(t *testing.T) {
-	DeSoDiamondsBlockHeight = 0
-	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
-
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1656,6 +1653,9 @@ func TestDeSoDiamonds(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ForkHeights.DeSoDiamondsBlockHeight = 0
+	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
+
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1852,9 +1852,6 @@ func TestDeSoDiamonds(t *testing.T) {
 }
 
 func TestDeSoDiamondErrorCases(t *testing.T) {
-	DeSoDiamondsBlockHeight = 0
-	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
-
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1865,6 +1862,9 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ForkHeights.DeSoDiamondsBlockHeight = 0
+	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
+
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

@@ -444,13 +444,15 @@ func (bav *UtxoView) GetAllNFTBidEntries(nftPostHash *BlockHash, serialNumber ui
 	return nftBidEntries
 }
 
-func _getBuyNowExtraData(txn *MsgDeSoTxn, blockHeight uint32) (
+func (bav *UtxoView) _getBuyNowExtraData(txn *MsgDeSoTxn, blockHeight uint32) (
 	_isBuyNow bool, _buyNowPrice uint64, _err error) {
 
 	isBuyNow := false
 	buyNowPrice := uint64(0)
+  
 	// Only extract the BuyNowPriceKey value if we are past the BuyNowAndNFTSplitsBlockHeight
-	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
+	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists &&
+		blockHeight >= bav.Params.ForkHeights.BuyNowAndNFTSplitsBlockHeight {
 		var bytesRead int
 		buyNowPrice, bytesRead = Uvarint(val)
 		if bytesRead <= 0 {
@@ -471,7 +473,9 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 
 	additionalRoyalties := make(map[PKID]uint64)
 	additionalRoyaltiesBasisPoints := uint64(0)
-	if mapBytes, exists := extraData[key]; exists && blockHeight >= BuyNowAndNFTSplitsBlockHeight {
+	if mapBytes, exists := extraData[key]; exists &&
+		blockHeight >= bav.Params.ForkHeights.BuyNowAndNFTSplitsBlockHeight {
+
 		var err error
 		additionalRoyaltiesByPubKey, err := DeserializePubKeyToUint64Map(mapBytes)
 		if err != nil {
@@ -527,7 +531,7 @@ func (bav *UtxoView) _connectCreateNFT(
 	}
 	txMeta := txn.TxnMeta.(*CreateNFTMetadata)
 
-	isBuyNow, buyNowPrice, err := _getBuyNowExtraData(txn, blockHeight)
+	isBuyNow, buyNowPrice, err := bav._getBuyNowExtraData(txn, blockHeight)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: ")
 	}
@@ -717,7 +721,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 	}
 	txMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 
-	isBuyNow, buyNowPrice, err := _getBuyNowExtraData(txn, blockHeight)
+	isBuyNow, buyNowPrice, err := bav._getBuyNowExtraData(txn, blockHeight)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateNFT: ")
 	}
@@ -1594,7 +1598,9 @@ func (bav *UtxoView) _connectNFTBid(
 			return 0, 0, nil, RuleErrorNFTBidLessThanMinBidAmountNanos
 		}
 		// Verify that we are not bidding on a Buy Now NFT before the Buy Now NFT Block Height. This should never happen.
-		if nftEntry.IsBuyNow && blockHeight < BuyNowAndNFTSplitsBlockHeight {
+		if nftEntry.IsBuyNow &&
+			blockHeight < bav.Params.ForkHeights.BuyNowAndNFTSplitsBlockHeight {
+
 			return 0, 0, nil, errors.Wrapf(RuleErrorBuyNowNFTBeforeBlockHeight, "_connectNFTBid: ")
 		}
 		// If the NFT is a Buy Now NFT and the bid amount is greater than the Buy Now Price, we treat this bid as a
@@ -1611,7 +1617,6 @@ func (bav *UtxoView) _connectNFTBid(
 		if prevNFTBidEntry != nil {
 			bav._deleteNFTBidEntryMappings(prevNFTBidEntry)
 		}
-
 		// If the new bid has a non-zero amount, set it.
 		if txMeta.BidAmountNanos != 0 {
 			// Zero bids are not allowed, submitting a zero bid effectively withdraws a prior bid.
@@ -1643,7 +1648,9 @@ func (bav *UtxoView) _connectNFTBid(
 		spendableBalance, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, tipHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: Error getting bidder balance: ")
-		} else if txMeta.BidAmountNanos > spendableBalance && blockHeight > BrokenNFTBidsFixBlockHeight {
+		} else if txMeta.BidAmountNanos > spendableBalance &&
+			blockHeight > bav.Params.ForkHeights.BrokenNFTBidsFixBlockHeight {
+
 			return 0, 0, nil, RuleErrorInsufficientFundsForNFTBid
 		}
 		// Force the input to be non-zero so that we can prevent replay attacks.
@@ -1703,7 +1710,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorNFTTransferBeforeBlockHeight
 	}
 
@@ -1828,7 +1835,7 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorAcceptNFTTransferBeforeBlockHeight
 	}
 
@@ -1915,7 +1922,7 @@ func (bav *UtxoView) _connectBurnNFT(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if blockHeight < NFTTransferOrBurnAndDerivedKeysBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight {
 		return 0, 0, nil, RuleErrorBurnNFTBeforeBlockHeight
 	}
 
