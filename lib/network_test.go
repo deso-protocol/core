@@ -1215,7 +1215,6 @@ func TestMessagingKey(t *testing.T) {
 		MessagingKeyName: keyName,
 		KeySignature: signature.Serialize(),
 		Recipients: []MessagingRecipient{},
-		EncryptedKey: encrypted,
 	}
 
 	data, err := txMeta.ToBytes(false)

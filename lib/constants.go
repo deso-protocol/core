@@ -921,6 +921,6 @@ const (
 	MinMaxCopiesPerNFT = 1
 	MaxMaxCopiesPerNFT = 10000
 	// Messaging key constants
-	MinMessagingKeyNameCharacters = 8
+	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
 )

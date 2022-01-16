@@ -955,12 +955,19 @@ func (bav *UtxoView) _flushMessagingKeyEntriesToDbWithTxn(txn *badger.Txn) error
 		} else {
 			// The entry isn't deleted so we re-add it to the DB. In particular, we add
 			// all of the recipients.
-			if err := DBPutMessagingKeyEntryWithTxn(txn, messagingKeyEntry); err != nil {
+			ownerPublicKey := messagingKey.PublicKey
+			if err := DBPutMessagingKeyEntryWithTxn(txn, &ownerPublicKey, messagingKeyEntry); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
 					"Problem putting MessagingKeyEntry %v to db", *messagingKeyEntry)
 			}
 			for _, recipient := range messagingKeyEntry.Recipients {
-				if err := DBPutMessagingRecipientWithTxn(txn, &recipient, messagingKeyEntry); err != nil {
+				// Group owner can be one of the recipients, particularly when we want to add the
+				// encrypted key addressed to the owner. This could happen when the group is created
+				// by a derived key, and we want to allow the main owner key to be able to read the chat.
+				if reflect.DeepEqual(recipient.RecipientPublicKey[:], ownerPublicKey[:]) {
+					continue
+				}
+				if err := DBPutMessagingRecipientWithTxn(txn, &recipient, &ownerPublicKey, messagingKeyEntry); err != nil {
 					return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
 						"Problem putting MessagingKeyEntry recipient (%v) to db", recipient)
 				}
