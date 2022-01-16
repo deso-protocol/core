@@ -767,9 +767,25 @@ func (bav *UtxoView) _connectMessagingKey(
 	// We have validated all information. At this point the inputs and outputs have been processed.
 	// Now we need to handle the metadata. We will proceed to add the key to UtxoView, and generate UtxoOps.
 
+	// We support "unencrypted" groups, which are a special-case of group chats that are intended for public
+	// access. For example, this could be used to make discussion groups, which anyone can discover and join.
+	// To do so, we hard-code an owner public key which will index all unencrypted group chats. We choose the
+	// secp256k1 base element. Essentially, unencrypted groups are treated as messaging keys that are created
+	// by the base element public key. To register an unencrypted group chat, the messaging key transaction
+	// should contain the base element as the messaging public key. Below, we check for this and adjust the
+	// messaging key and messaging public key appropriately so that we can properly index the DB entry.
+	var messagingKey *MessagingKey
+	var messagingPublicKey *PublicKey
+	if reflect.DeepEqual(txMeta.MessagingPublicKey, GetS256BasePointCompressed()) {
+		messagingKey = NewMessagingKey(NewPublicKey(GetS256BasePointCompressed()),  txMeta.MessagingKeyName)
+		_, keyPublic := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(txMeta.MessagingKeyName)[:])
+		messagingPublicKey = NewPublicKey(keyPublic.SerializeCompressed())
+	} else {
+		messagingKey = NewMessagingKey(NewPublicKey(txn.PublicKey), txMeta.MessagingKeyName)
+		messagingPublicKey = NewPublicKey(txMeta.MessagingPublicKey)
+	}
 	// First, let's check if this key doesn't already exist in UtxoView or in the DB.
 	// It's worth noting that we index messaging keys by the main public key and messaging key name.
-	messagingKey := NewMessagingKey(NewPublicKey(txn.PublicKey), txMeta.MessagingKeyName)
 	existingEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
 
 	// Make sure that the utxoView entry and the transaction entries have the same messaging public keys and encrypted key.
@@ -777,7 +793,7 @@ func (bav *UtxoView) _connectMessagingKey(
 	// user's main key when registering a messaging key via a derived key. This field will also be used in group chats, as
 	// we will later overload the MessagingKeyEntry struct for storing messaging keys for group participants.
 	if existingEntry != nil && !existingEntry.isDeleted {
-		if !reflect.DeepEqual(existingEntry.MessagingPublicKey[:], txMeta.MessagingPublicKey) {
+		if !reflect.DeepEqual(existingEntry.MessagingPublicKey[:], messagingPublicKey[:]) {
 			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingPublicKeyCannotBeDifferent,
 				"_connectMessagingKey: Messaging public key cannot differ from the existing entry")
 		}
@@ -803,7 +819,7 @@ func (bav *UtxoView) _connectMessagingKey(
 	existingRecipients := make(map[PublicKey]bool)
 
 	// Sanity-check a group messaging key recipients can't contain the messaging public key.
-	existingRecipients[*NewPublicKey(txMeta.MessagingPublicKey)] = true
+	existingRecipients[*messagingPublicKey] = true
 
 	// If we're adding more group recipients, then we need to make sure there are no overlapping recipients
 	// between the transaction's entry, and the existing entry.
@@ -866,7 +882,7 @@ func (bav *UtxoView) _connectMessagingKey(
 
 	// Create a MessagingKeyEntry so we can add the entry to UtxoView.
 	messagingKeyEntry := MessagingKeyEntry{
-		MessagingPublicKey: NewPublicKey(txMeta.MessagingPublicKey),
+		MessagingPublicKey: messagingPublicKey,
 		MessagingKeyName:   NewKeyName(txMeta.MessagingKeyName),
 		Recipients:         messagingRecipients,
 		isDeleted:          false,
@@ -877,7 +893,7 @@ func (bav *UtxoView) _connectMessagingKey(
 		prevMessagingKeyEntry = &MessagingKeyEntry{}
 		prevMessagingKeyEntry.Decode(existingEntry.Encode())
 	}
-	bav._setMessagingKeyToMessagingKeyEntryMapping(NewPublicKey(txn.PublicKey), &messagingKeyEntry)
+	bav._setMessagingKeyToMessagingKeyEntryMapping(&messagingKey.PublicKey, &messagingKeyEntry)
 
 	// Construct UtxoOperation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -913,8 +929,14 @@ func (bav *UtxoView) _disconnectMessagingKey(
 			"public key and key name")
 	}
 
-	// Get the messaging key that the messaging key name from ExtraData points to.
-	messagingKey := NewMessagingKey(NewPublicKey(currentTxn.PublicKey), txMeta.MessagingKeyName)
+	// Get the messaging key that the transaction metadata points to.
+	var messagingKey *MessagingKey
+	if reflect.DeepEqual(txMeta.MessagingPublicKey, GetS256BasePointCompressed()) {
+		messagingKey = NewMessagingKey(NewPublicKey(GetS256BasePointCompressed()),  txMeta.MessagingKeyName)
+	} else {
+		messagingKey = NewMessagingKey(NewPublicKey(currentTxn.PublicKey), txMeta.MessagingKeyName)
+	}
+
 	messagingKeyEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
 	if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
 		return fmt.Errorf("_disconnectBasicTransfer: Error, this key was already deleted "+
@@ -933,10 +955,10 @@ func (bav *UtxoView) _disconnectMessagingKey(
 
 
 	// Delete this item from UtxoView to indicate we should remove this entry from DB.
-	bav._deleteMessagingKeyToMessagingKeyEntryMapping(NewPublicKey(currentTxn.PublicKey), messagingKeyEntry)
+	bav._deleteMessagingKeyToMessagingKeyEntryMapping(&messagingKey.PublicKey, messagingKeyEntry)
 	// If the previous entry exists, we should set it in the utxoview
 	if prevMessagingKeyEntry != nil {
-		bav._setMessagingKeyToMessagingKeyEntryMapping(NewPublicKey(currentTxn.PublicKey), prevMessagingKeyEntry)
+		bav._setMessagingKeyToMessagingKeyEntryMapping(&messagingKey.PublicKey, prevMessagingKeyEntry)
 	}
 
 	// Now disconnect the basic transfer.
