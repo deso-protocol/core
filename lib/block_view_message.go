@@ -404,7 +404,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// to these messaging keys, as opposed to encrypting messages to user's main keys.
 	if version == 3 {
 		// Make sure DeSo V3 messages are live.
-		if blockHeight < DeSoV3MessagesBlockHeight {
+		if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight,
 				"_connectPrivateMessage: messaging party used before block height")
@@ -711,7 +711,7 @@ func (bav *UtxoView) _connectMessagingKey(
 	// we will explain later.
 
 	// Make sure DeSo V3 messages are live.
-	if blockHeight < DeSoV3MessagesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingKey: " +
 				"Problem connecting messaging key, too early block height")

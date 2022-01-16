@@ -162,7 +162,7 @@ type ForkHeights struct {
 
 	// DeSoV3MessagesBlockHeight defines the height at which messaging key and messsage party
 	// entries will be accepted by consensus.
-	DeSoV3MessagesBlockHeight = uint32(91100)
+	DeSoV3MessagesBlockHeight uint32
 
 	// BuyNowAndNFTSplitsBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an
 	// auction style and allows splitting of NFT royalties to user's other than the post's creator.
@@ -398,6 +398,7 @@ func (params *DeSoParams) EnableRegtest() {
 		BrokenNFTBidsFixBlockHeight:                          uint32(0),
 		DeSoDiamondsBlockHeight:                              uint32(0),
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
+		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
 	}
@@ -637,6 +638,7 @@ var DeSoMainnetParams = DeSoParams{
 		BrokenNFTBidsFixBlockHeight:                          uint32(46917),
 		DeSoDiamondsBlockHeight:                              uint32(52112),
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
+		DeSoV3MessagesBlockHeight:                            uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 		DAOCoinBlockHeight:                                   uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 	},
@@ -819,6 +821,7 @@ var DeSoTestnetParams = DeSoParams{
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
 
 		// Flags after this point can differ from mainnet
+		DeSoV3MessagesBlockHeight:                            uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
 		DAOCoinBlockHeight:                                   uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
 	},
