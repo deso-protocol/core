@@ -639,12 +639,12 @@ func TestMessagingKeys(t *testing.T) {
 	_ = require
 	_ = assert
 
-	// Set the DeSo V3 messages block height to 0
-	DeSoV3MessagesBlockHeight = 0
-
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_ = miner
+
+	// Set the DeSo V3 messages block height to 0
+	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1587,12 +1587,12 @@ func TestGroupMessages(t *testing.T) {
 	_ = require
 	_ = assert
 
-	// Set the DeSo V3 messages block height to 0
-	DeSoV3MessagesBlockHeight = 0
-
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_ = miner
+
+	// Set the DeSo V3 messages block height to 0
+	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
