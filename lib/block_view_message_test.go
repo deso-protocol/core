@@ -639,12 +639,12 @@ func TestMessagingKeys(t *testing.T) {
 	_ = require
 	_ = assert
 
-	// Set the DeSo V3 messages block height to 0
-	DeSoV3MessagesBlockHeight = 0
-
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_ = miner
+
+	// Set the DeSo V3 messages block height to 0
+	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1235,6 +1235,87 @@ func TestMessagingKeys(t *testing.T) {
 			Recipients: append(ownerRecipient, entry.Recipients[1]),
 		})
 	}
+	// We will test unencrypted groups, which are intended as large group chats that anyone can join.
+	{
+		// The unencrypted group will have the messaging public key set as the Secp256k1 base element.
+		groupKeyName := []byte("open-group")
+		_, _, entry := _generateMessagingKey(m0PubKey, m0PrivKey, groupKeyName)
+		basePk := NewPublicKey(GetS256BasePointCompressed())
+		entry.MessagingPublicKey = basePk
+		require.Equal(false, _verifyMessagingKey(testMeta, basePk, entry))
+		// This should pass.
+		_messagingKeyWithTestMeta(
+			testMeta,
+			m0PubKey,
+			m0Priv,
+			entry.MessagingPublicKey[:],
+			groupKeyName,
+			[]byte{},
+			entry.Recipients,
+			nil)
+		// The DB entry should have the messaging public key derived deterministically from the group key name.
+		// Compute the public key and compare it with the DB entry.
+		_, groupPkBytes := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(groupKeyName)[:])
+		groupPk := NewPublicKey(groupPkBytes.SerializeCompressed())
+		expectedEntry := &MessagingKeyEntry{}
+		require.NoError(expectedEntry.Decode(entry.Encode()))
+		expectedEntry.MessagingPublicKey = groupPk
+		// Should pass.
+		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
+
+		// Anyone can add recipients to the group.
+		entry.Recipients = append(entry.Recipients, MessagingRecipient{
+			&m1PublicKey,
+			BaseKeyName(),
+			senderPrivBytes,
+		})
+		_messagingKeyWithTestMeta(
+			testMeta,
+			m1PubKey,
+			m1Priv,
+			entry.MessagingPublicKey[:],
+			groupKeyName,
+			[]byte{},
+			entry.Recipients,
+			nil)
+		// Verify that the entry exists in the DB.
+		expectedEntry = &MessagingKeyEntry{}
+		require.NoError(expectedEntry.Decode(entry.Encode()))
+		expectedEntry.MessagingPublicKey = groupPk
+		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
+
+		// And the entry behaves as expected, as in we can't re-add recipients, etc.
+		_messagingKeyWithTestMeta(
+			testMeta,
+			m0PubKey,
+			m0Priv,
+			entry.MessagingPublicKey[:],
+			groupKeyName,
+			[]byte{},
+			entry.Recipients,
+			RuleErrorMessagingRecipientAlreadyExists)
+		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
+
+		// Now add all the entries to our expected entries list.
+		keyEntriesAdded[*basePk] = append(keyEntriesAdded[*basePk], expectedEntry)
+
+		ownerRecipient := []MessagingRecipient{
+			{
+				RecipientPublicKey: basePk,
+				RecipientMessagingKeyName: BaseKeyName(),
+			},
+		}
+		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], &MessagingKeyEntry{
+			MessagingPublicKey: groupPk,
+			MessagingKeyName: NewKeyName(groupKeyName),
+			Recipients: append(ownerRecipient, MessagingRecipient{
+				RecipientPublicKey: &m1PublicKey,
+				RecipientMessagingKeyName: BaseKeyName(),
+				EncryptedKey: senderPrivBytes,
+			}),
+			IsRecipient: true,
+		})
+	}
 	// Now we will go all-in on the group chats and create a 5-party group chat with everyone.
 	{
 		// Sender generates the group chat messaging key.
@@ -1506,12 +1587,12 @@ func TestGroupMessages(t *testing.T) {
 	_ = require
 	_ = assert
 
-	// Set the DeSo V3 messages block height to 0
-	DeSoV3MessagesBlockHeight = 0
-
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_ = miner
+
+	// Set the DeSo V3 messages block height to 0
+	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
