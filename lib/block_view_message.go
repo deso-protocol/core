@@ -703,7 +703,7 @@ func (bav *UtxoView) _connectMessagingKey(
 	// Messaging keys solve the problem with messages for holders of derived keys, who previously had no way to
 	// properly encrypt/decrypt messages, as they don't have access to user's main private key.
 	//
-	// A key name is a byte array between 8-32 bytes that labels the messaging public key. Applications have the
+	// A key name is a byte array between 1-32 bytes that labels the messaging public key. Applications have the
 	// choice to label users' messaging keys as they desire. For instance, a key name could represent the name of
 	// an on-chain group chat. On the db level, key names are always filled to 32 bytes with []byte(0) suffix.
 	//
@@ -790,7 +790,7 @@ func (bav *UtxoView) _connectMessagingKey(
 		messagingPublicKey = NewPublicKey(txMeta.MessagingPublicKey)
 	}
 	// First, let's check if this key doesn't already exist in UtxoView or in the DB.
-	// It's worth noting that we index messaging keys by the main public key and messaging key name.
+	// It's worth noting that we index messaging keys by the owner public key and messaging key name.
 	existingEntry := bav.GetMessagingKeyToMessagingKeyEntryMapping(messagingKey)
 
 	// Make sure that the utxoView entry and the transaction entries have the same messaging public keys and encrypted key.

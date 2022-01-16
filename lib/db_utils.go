@@ -240,11 +240,12 @@ var (
 	_PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry = []byte{56}
 
 	// Prefix for Messaging Keys:
-	//		<prefix, PublicKey [33]byte, KeyName [32]byte> -> <>
+	//		<prefix, GroupOwnerPublicKey [33]byte, KeyName [32]byte> -> <MessagingKeyEntry>
 	_PrefixMessagingKey = []byte{57}
 
 	// Prefix for Message Recipients:
-	//		<prefix, PublicKey [33]byte, Messaging Public Key [33]byte> -> <>
+	// Note that GroupMessagingPublicKey != GroupOwnerPublicKey
+	//		<prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
 	_PrefixMessagingRecipient = []byte{58}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
@@ -1032,6 +1033,7 @@ func DBPutMessagingRecipientWithTxn(txn *badger.Txn, messagingRecipient *Messagi
 	var recipients []MessagingRecipient
 	ownerRecipient := MessagingRecipient{
 		RecipientPublicKey: ownerPublicKey,
+		// The encoder gets mad if we don't do this
 		RecipientMessagingKeyName: BaseKeyName(),
 	}
 	recipients = append(recipients, ownerRecipient)
