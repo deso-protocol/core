@@ -264,6 +264,30 @@ func (bav *UtxoView) GetLimitedMessagesForUser(publicKey []byte, limit uint64) (
 	return _messageEntries, _messagingKeyEntries, nil
 }
 
+func ReadMessageVersion(txn *MsgDeSoTxn) (_version uint8, _err error){
+	if txn == nil {
+		return 0, fmt.Errorf("ReadMessageVersion: Called with nil MsgDeSoTxn")
+	}
+
+	// Check the version of the message by looking at the "V" field in ExtraData.
+	var version uint64
+	var err error
+	if extraV, hasExtraV := txn.ExtraData["V"]; hasExtraV {
+		rr := bytes.NewReader(extraV)
+		version, err = ReadUvarint(rr)
+		if err != nil {
+			return 0, errors.Wrapf(RuleErrorPrivateMessageInvalidVersion,
+				"ReadMessageVersion: Problem reading message version from ExtraData, error: (%v)", err)
+		}
+		if version < 0 || version > 3 {
+			return 0, errors.Wrapf(RuleErrorPrivateMessageInvalidVersion,
+				"ReadMessageVersion: Problem reading message version from ExtraData, expecting version " +
+					"between <1, 3> but got (%v)", version)
+		}
+	}
+	return uint8(version), nil
+}
+
 func ValidateKeyAndName(messagingPublicKey, keyName []byte) error {
 	// This is a helper function that allows us to verify messaging public key and key name.
 
@@ -370,19 +394,10 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// At this point the inputs and outputs have been processed. Now we
 	// need to handle the metadata.
 
-	// Check the version of the message by looking at the "V" field in ExtraData.
-	version := uint64(1)
-	if extraV, hasExtraV := txn.ExtraData["V"]; hasExtraV {
-		rr := bytes.NewReader(extraV)
-		version, err = ReadUvarint(rr)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageInvalidVersion,
-				"_connectPrivateMessage: Problem reading version from ExtraData, error: (%v)", err)
-		}
-		if version > 3 {
-			return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageInvalidVersion,
-				"_connectPrivateMessage: Problem reading version from ExtraData")
-		}
+	// Read the message version from ExtraData
+	version, err := ReadMessageVersion(txn)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: ")
 	}
 
 	// Create a MessageEntry, we do this now because we might modify some of the fields
@@ -555,19 +570,9 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	txMeta := currentTxn.TxnMeta.(*PrivateMessageMetadata)
 
 	// Check for the message version in transaction's ExtraData.
-	version := uint64(1)
-	if extraV, hasExtraV := currentTxn.ExtraData["V"]; hasExtraV {
-		var err error
-		rr := bytes.NewReader(extraV)
-		version, err = ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(RuleErrorPrivateMessageInvalidVersion,
-				"_disconnectPrivateMessage: Problem reading version from ExtraData, error: (%v)", err)
-		}
-		if version > 3 {
-			return errors.Wrapf(RuleErrorPrivateMessageInvalidVersion,
-				"_disconnectPrivateMessage: Problem reading version from ExtraData")
-		}
+	version, err := ReadMessageVersion(currentTxn)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectPrivateMessage: ")
 	}
 
 	// We keep track of sender and recipient messaging public keys. We will update them in V3 messages.
