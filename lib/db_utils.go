@@ -96,7 +96,7 @@ var (
 	// Messages are indexed by the public key of their senders and receivers. If
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
-	// <public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientPublicKey || EncryptedText >
+	// <public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientOwmerPublicKey || EncryptedText >
 	_PrefixPublicKeyTimestampToPrivateMessage = []byte{12}
 
 	// Tracks the tip of the transaction index. This is used to determine
@@ -240,12 +240,46 @@ var (
 	_PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry = []byte{56}
 
 	// Prefix for Messaging Keys:
-	//		<prefix, GroupOwnerPublicKey [33]byte, KeyName [32]byte> -> <MessagingKeyEntry>
+	//
+	// * This index is used to store information about messaging groups. A group is indexed
+	//   by the "owner" public key of the user who created the group and the key
+	//   name the owner selected when creating the group (can be anything, user-defined).
+	// * Groups can have recipients that all use a shared key to communicate. In this case,
+	//   the MessageKeyEntry will contain the metadata required for each participant to
+	//   compute the shared key.
+	// * Groups can also consist of a single person, and this is useful for "registering"
+	//   a key so that other people can message you. Generally, every user has a mapping of
+	//   the form:
+	//   - <OwnerPublicKey, "default-key"> -> MessagingKeyEntry
+	//   This "singleton" group is used to register a default key so that people can
+	//   message this user. Allowing users to register keys on-chain in this way is required
+	//   to make it so that messages can be decrypted on mobile, where apps do not have
+	//   easy access to the owner key for decrypting messages.
+	//
+	// <prefix, GroupOwnerPublicKey [33]byte, KeyName [32]byte> -> <MessagingKeyEntry>
 	_PrefixMessagingKey = []byte{57}
 
 	// Prefix for Message Recipients:
-	// Note that GroupMessagingPublicKey != GroupOwnerPublicKey
-	//		<prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
+	//
+	// * For each group that a user is a part of, we store a value in this index of
+	//   the form:
+	//   - <OwnerPublicKey for user, GroupMessagingPublicKey> -> <info>
+	//   The value needs to contain enough information to allow us to look up the
+	//   group's metatdata in the _PrefixMessagingKey index. It's also convenient for
+	//   the value to contain the encrypted messaging key for the user so that we can
+	//   decrypt messages for this user *without* looking up the group.
+	//
+	// * HackedMessagingKeyEntry is a MessageKeyEntry that we overload to store
+	// 	 information on a member of a group. We couldn't use the RecipientEntry
+	//   because we wanted to store additional information that made it easier to
+	//   use a MessagingKeyEntry instead.
+	//
+	// * Note that GroupMessagingPublicKey != GroupOwnerPublicKey. For this index
+	//   it was convenient for various reasons to put the messaging public key into
+	//   the index rather than the group owner's public key. This becomes clear if
+	//   you read all the fetching code around this index.
+	//
+	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
 	_PrefixMessagingRecipient = []byte{58}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
@@ -592,7 +626,7 @@ func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, publicKey []byte) error {
 // -------------------------------------------------------------------------------------
 // PrivateMessage mapping functions
 // <public key (33 bytes) || uint64 big-endian> ->
-// 		< SenderPublicKey || RecipientPublicKey || EncryptedText >
+// 		< SenderPublicKey || RecipientOwmerPublicKey || EncryptedText >
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessageEntry(publicKey []byte, tstampNanos uint64) []byte {
