@@ -410,7 +410,12 @@ func (bav *UtxoView) _setUtxoMappings(utxoEntry *UtxoEntry) error {
 	return nil
 }
 
-func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
+func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKeyArg *UtxoKey) *UtxoEntry {
+	utxoKey := &UtxoKey{}
+	if utxoKeyArg != nil {
+		*utxoKey = *utxoKeyArg
+	}
+
 	utxoEntry, ok := bav.UtxoKeyToUtxoEntry[*utxoKey]
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the
 	// db.
@@ -440,7 +445,9 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	return utxoEntry
 }
 
-func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
+func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint64, error) {
+	publicKey := publicKeyArg
+
 	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
@@ -498,8 +505,12 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 	return nil
 }
 
-func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
+func (bav *UtxoView) _spendUtxo(utxoKeyArg *UtxoKey) (*UtxoOperation, error) {
 	// Swap this utxo's position with the utxo in the last position and delete it.
+	utxoKey := &UtxoKey{}
+	if utxoKeyArg != nil {
+		*utxoKey = *utxoKeyArg
+	}
 
 	// Get the entry for this utxo from the view if it's cached,
 	// otherwise try and get it from the db.
@@ -1140,6 +1151,34 @@ func (bav *UtxoView) _connectBasicTransfer(
 			return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
 		}
 
+		// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
+		for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
+			pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
+			copy(pubKeyCopy, pubKeyIter[:])
+
+			if pkidEntry.isDeleted {
+				// If the ProfileEntry has isDeleted=true then there's nothing to do because
+				// we already deleted the entry above.
+			} else {
+				// Sanity-check that the public key in the entry matches the public key in
+				// the mapping.
+				if !reflect.DeepEqual(pubKeyCopy, pkidEntry.PublicKey) {
+					return 0, 0, nil, fmt.Errorf("_flushPKIDEntriesToDbWithTxn: Sanity-check failed. "+
+						"Public key in entry %v does not match public key in mapping %v ",
+						PkToString(pkidEntry.PublicKey[:], bav.Params),
+						PkToString(pubKeyCopy, bav.Params))
+				}
+				// Sanity-check that the mapping in the public key map lines up with the mapping
+				// in the PKID map.
+				if _, pkidEntryExists := bav.PKIDToPublicKey[*pkidEntry.PKID]; !pkidEntryExists {
+					return 0, 0, nil, fmt.Errorf("_flushPKIDEntriesToDbWithTxn: Sanity-check failed. "+
+						"PKID %v for public key %v does not exist in PKIDToPublicKey map.",
+						PkToString(pkidEntry.PKID[:], bav.Params),
+						PkToString(pubKeyCopy, bav.Params))
+				}
+			}
+		}
+
 		// Verify that the input's public key is the same as the public key specified
 		// in the transaction.
 		//
@@ -1155,7 +1194,11 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// reasons (e.g. reputation is way easier to manage without key rotation),
 		// then I don't think this constraint should pose much of an issue.
 		if !reflect.DeepEqual(utxoEntry.PublicKey, txn.PublicKey) {
-			return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey,
+				"utxoEntry.PublicKey: %v, txn.PublicKey: %v",
+				PkToStringBoth(utxoEntry.PublicKey),
+				PkToStringBoth(txn.PublicKey))
 		}
 
 		// Sanity check the amount of the input.
@@ -1908,7 +1951,9 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 	}
 
 	if len(publicKeys) > 0 {
-		for _, publicKey := range publicKeys {
+		for _, publicKeyIter := range publicKeys {
+			publicKey := publicKeyIter
+
 			publicKeyBytes := publicKey.ToBytes()
 			pkidEntry := &PKIDEntry{
 				PKID:      PublicKeyToPKID(publicKeyBytes),

@@ -483,7 +483,10 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 				"Problem reading bytes for additional royalties: ")
 		}
 		// Check that public keys are valid and sum basis points
-		for pkBytess, bps := range additionalRoyaltiesByPubKey {
+		for pkBytesIter, bps := range additionalRoyaltiesByPubKey {
+			// Make a copy of the iterator
+			pkBytess := pkBytesIter
+
 			// Validate the public key
 			if _, err = btcec.ParsePubKey(pkBytess[:], btcec.S256()); err != nil {
 				return nil, 0, errors.Wrapf(
@@ -1293,7 +1296,9 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// This may start negative but that's OK because the first thing we do is increment it
 	// in createUTXO
 	nextUtxoIndex := len(args.Txn.TxOutputs) - 1
-	createUTXO := func(amountNanos uint64, publicKey []byte, utxoType UtxoType) (_err error) {
+	createUTXO := func(amountNanos uint64, publicKeyArg []byte, utxoType UtxoType) (_err error) {
+		publicKey := publicKeyArg
+
 		// nextUtxoIndex is guaranteed to be >= 0 afer this increment
 		nextUtxoIndex += 1
 		royaltyOutputKey := &UtxoKey{
@@ -1339,7 +1344,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	}
 
 	// (4-a) Pay DESO royalties to any additional royalties specified
-	for _, publicKeyRoyaltyPair := range additionalDESORoyalties {
+	for _, publicKeyRoyaltyPairIter := range additionalDESORoyalties {
+		publicKeyRoyaltyPair := publicKeyRoyaltyPairIter
 		if publicKeyRoyaltyPair.RoyaltyAmountNanos > 0 {
 			if err = createUTXO(publicKeyRoyaltyPair.RoyaltyAmountNanos, publicKeyRoyaltyPair.PublicKey,
 				UtxoTypeNFTAdditionalDESORoyalty); err != nil {

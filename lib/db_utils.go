@@ -1751,7 +1751,8 @@ func DbGetPubKeysYouFollow(handle *badger.DB, yourPubKey []byte) (
 
 	// Convert the pkids to public keys
 	followPubKeys := [][]byte{}
-	for _, fpkid := range followPKIDs {
+	for _, fpkidIter := range followPKIDs {
+		fpkid := fpkidIter
 		followPk := DBGetPublicKeyForPKID(handle, fpkid)
 		followPubKeys = append(followPubKeys, followPk)
 	}
@@ -1771,7 +1772,8 @@ func DbGetPubKeysFollowingYou(handle *badger.DB, yourPubKey []byte) (
 
 	// Convert the pkids to public keys
 	followPubKeys := [][]byte{}
-	for _, fpkid := range followPKIDs {
+	for _, fpkidIter := range followPKIDs {
+		fpkid := fpkidIter
 		followPk := DBGetPublicKeyForPKID(handle, fpkid)
 		followPubKeys = append(followPubKeys, followPk)
 	}
@@ -2893,7 +2895,9 @@ func PutBlockWithTxn(txn *badger.Txn, desoBlock *MsgDeSoBlock) error {
 			pubKeyToBlockRewardMap[pkMapKey] += bro.AmountNanos
 		}
 	}
-	for pkMapKey, blockReward := range pubKeyToBlockRewardMap {
+	for pkMapKeyIter, blockReward := range pubKeyToBlockRewardMap {
+		pkMapKey := pkMapKeyIter
+
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
 		if err := txn.Set(blockRewardKey, EncodeUint64(blockReward)); err != nil {
 			return err
@@ -3808,7 +3812,9 @@ func DbPutTxindexTransactionMappingsWithTxn(
 	publicKeys := _getPublicKeysForTxn(txn, txnMeta, params)
 
 	// For each public key found, add the txID from its list.
-	for pkFound := range publicKeys {
+	for pkFoundIter := range publicKeys {
+		pkFound := pkFoundIter
+
 		// Simply add a new entry for each of the public keys found.
 		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(dbTx, pkFound[:], txID); err != nil {
 			return err
@@ -3843,7 +3849,8 @@ func DbDeleteTxindexTransactionMappingsWithTxn(
 	publicKeys := _getPublicKeysForTxn(txn, txnMeta, params)
 
 	// For each public key found, delete the txID mapping from the db.
-	for pkFound := range publicKeys {
+	for pkFoundIter := range publicKeys {
+		pkFound := pkFoundIter
 		if err := DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(dbTxn, pkFound[:], txID); err != nil {
 			return err
 		}
@@ -5776,7 +5783,8 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(
 	// Have to do this to convert the PKIDs back into public keys
 	// TODO: We should clean things up around public keys vs PKIDs
 	pubKeysMap := make(map[PkMapKey][]byte)
-	for _, pkidBytes := range pkidsFound {
+	for _, pkidBytesIter := range pkidsFound {
+		pkidBytes := pkidBytesIter
 		if len(pkidBytes) != btcec.PubKeyBytesLenCompressed {
 			continue
 		}
@@ -5797,7 +5805,8 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(
 
 	// Sigh.. convert the public keys *back* into PKIDs...
 	profilesFound := []*ProfileEntry{}
-	for _, pk := range pubKeysMap {
+	for _, pkIter := range pubKeysMap {
+		pk := pkIter
 		pkid := utxoView.GetPKIDForPublicKey(pk).PKID
 		profile := utxoView.GetProfileEntryForPKID(pkid)
 		// Double-check that a username matches the prefix.
@@ -5860,7 +5869,8 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	}
 
 	profilePubKeys := [][]byte{}
-	for _, pkidBytes := range profilePKIDs {
+	for _, pkidBytesIter := range profilePKIDs {
+		pkidBytes := pkidBytesIter
 		pkid := &PKID{}
 		copy(pkid[:], pkidBytes)
 		profilePubKeys = append(profilePubKeys, DBGetPublicKeyForPKID(db, pkid))
