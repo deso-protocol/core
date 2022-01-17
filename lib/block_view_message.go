@@ -404,7 +404,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 		RecipientPublicKey:             NewPublicKey(txMeta.RecipientPublicKey),
 		EncryptedText:                  txMeta.EncryptedText,
 		TstampNanos:                    txMeta.TimestampNanos,
-		Version:                        uint8(version),
+		Version:                        version,
 		SenderMessagingPublicKey:       NewPublicKey(txn.PublicKey),
 		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
 		RecipientMessagingPublicKey:    NewPublicKey(txMeta.RecipientPublicKey),

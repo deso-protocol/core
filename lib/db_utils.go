@@ -96,7 +96,7 @@ var (
 	// Messages are indexed by the public key of their senders and receivers. If
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
-	// <public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientOwnerPublicKey || EncryptedText >
+	// <public key (33 bytes) || uint64 big-endian> -> <MessageEntry>
 	_PrefixPublicKeyTimestampToPrivateMessage = []byte{12}
 
 	// Tracks the tip of the transaction index. This is used to determine
@@ -229,15 +229,15 @@ var (
 	//   - Schema: <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
 	_PrefixPublicKeyBlockHashToBlockReward = []byte{53}
 
-	// Prefix for Authorize Derived Key transactions:
-	// 		<prefix, OwnerPublicKey [33]byte> -> <>
-	_PrefixAuthorizeDerivedKey = []byte{54}
-
 	// Prefixes for DAO coin fields:
 	// <prefix, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
 	// <prefix, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
 	_PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry = []byte{55}
 	_PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry = []byte{56}
+
+	// Prefix for Authorize Derived Key transactions:
+	// 		<prefix, OwnerPublicKey [33]byte> -> <>
+	_PrefixAuthorizeDerivedKey = []byte{57}
 
 	// Prefix for MessagingGroupEntries indexed by OwnerPublicKey and GroupKeyName:
 	//
@@ -259,7 +259,7 @@ var (
 	//   easy access to the owner key for decrypting messages.
 	//
 	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupEntry>
-	_PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName = []byte{57}
+	_PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName = []byte{58}
 
 	// Prefix for Message MessagingGroupMembers:
 	//
@@ -282,12 +282,12 @@ var (
 	//   you read all the fetching code around this index.
 	//
 	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
-	_PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey = []byte{58}
+	_PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey = []byte{59}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 59
+	// NEXT_TAG: 60
 )
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
@@ -627,8 +627,7 @@ func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, publicKey []byte) error {
 
 // -------------------------------------------------------------------------------------
 // PrivateMessage mapping functions
-// <public key (33 bytes) || uint64 big-endian> ->
-// 		< SenderPublicKey || RecipientOwnerPublicKey || EncryptedText >
+// <public key (33 bytes) || uint64 big-endian> -> <MessageEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessageEntry(publicKey []byte, tstampNanos uint64) []byte {
@@ -1042,7 +1041,7 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 
 // -------------------------------------------------------------------------------------
 // Messaging recipient
-// <prefix, public key, messaging public key > -> <>
+// <prefix, public key, messaging public key > -> <HackedMessagingGroupEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessagingGroupMember(memberPublicKey *PublicKey, groupMessagingPublicKey *PublicKey) []byte {
