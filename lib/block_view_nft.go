@@ -1339,7 +1339,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	}
 
 	// (4-a) Pay DESO royalties to any additional royalties specified
-	for _, publicKeyRoyaltyPair := range additionalDESORoyalties {
+	for jj := range additionalDESORoyalties {
+		publicKeyRoyaltyPair := additionalDESORoyalties[jj]
 		if publicKeyRoyaltyPair.RoyaltyAmountNanos > 0 {
 			if err = createUTXO(publicKeyRoyaltyPair.RoyaltyAmountNanos, publicKeyRoyaltyPair.PublicKey,
 				UtxoTypeNFTAdditionalDESORoyalty); err != nil {
