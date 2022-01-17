@@ -197,7 +197,13 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKey []byte) *PKIDEntry {
 	}
 }
 
-func (bav *UtxoView) GetPublicKeyForPKID(pkid *PKID) []byte {
+func (bav *UtxoView) GetPublicKeyForPKID(pkidArg *PKID) []byte {
+	// Put this check in place, since sometimes people accidentally
+	// pass a pointer that shouldn't be copied.
+	pkid := &PKID{}
+	if pkidArg != nil {
+		*pkid = *pkidArg
+	}
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	mapValue, existsMapValue := bav.PKIDToPublicKey[*pkid]
 	if existsMapValue {
