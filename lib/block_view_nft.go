@@ -483,7 +483,8 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 				"Problem reading bytes for additional royalties: ")
 		}
 		// Check that public keys are valid and sum basis points
-		for pkBytess, bps := range additionalRoyaltiesByPubKey {
+		for pkBytessIter, bps := range additionalRoyaltiesByPubKey {
+			pkBytess := pkBytessIter
 			// Validate the public key
 			if _, err = btcec.ParsePubKey(pkBytess[:], btcec.S256()); err != nil {
 				return nil, 0, errors.Wrapf(
