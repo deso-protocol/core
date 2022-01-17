@@ -1063,7 +1063,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) error
 		}
 	}
 
-	// Get the owner public key and attempt turning it into *btcec.OwnerPublicKey.
+	// Get the owner public key and attempt turning it into *btcec.PublicKey.
 	ownerPkBytes := txn.PublicKey
 	ownerPk, err := btcec.ParsePubKey(ownerPkBytes, btcec.S256())
 	if err != nil {
