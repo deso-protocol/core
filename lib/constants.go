@@ -160,6 +160,10 @@ type ForkHeights struct {
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight uint32
 
+	// DeSoV3MessagesBlockHeight defines the height at which messaging key and messsage party
+	// entries will be accepted by consensus.
+	DeSoV3MessagesBlockHeight uint32
+
 	// BuyNowAndNFTSplitsBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an
 	// auction style and allows splitting of NFT royalties to user's other than the post's creator.
 	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
@@ -394,6 +398,7 @@ func (params *DeSoParams) EnableRegtest() {
 		BrokenNFTBidsFixBlockHeight:                          uint32(0),
 		DeSoDiamondsBlockHeight:                              uint32(0),
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
+		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
 	}
@@ -633,6 +638,7 @@ var DeSoMainnetParams = DeSoParams{
 		BrokenNFTBidsFixBlockHeight:                          uint32(46917),
 		DeSoDiamondsBlockHeight:                              uint32(52112),
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
+		DeSoV3MessagesBlockHeight:                            uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 		DAOCoinBlockHeight:                                   uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 	},
@@ -815,6 +821,7 @@ var DeSoTestnetParams = DeSoParams{
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
 
 		// Flags after this point can differ from mainnet
+		DeSoV3MessagesBlockHeight:                            uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
 		DAOCoinBlockHeight:                                   uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
 	},
@@ -854,6 +861,13 @@ const (
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
 
+	// Messaging keys
+	MessagingPublicKey             = "MessagingPublicKey"
+	SenderMessagingPublicKey       = "SenderMessagingPublicKey"
+	SenderMessagingGroupKeyName    = "SenderMessagingGroupKeyName"
+	RecipientMessagingPublicKey    = "RecipientMessagingPublicKey"
+	RecipientMessagingGroupKeyName = "RecipientMessagingGroupKeyName"
+
 	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
 	BuyNowPriceKey = "BuyNowPriceNanos"
 
@@ -864,6 +878,12 @@ const (
 	// Key in transaction's extra data map. If present, the value represents a map of pkid to basis points representing
 	// the amount of royalties that should be added to pkid's creator coin upon sale of this NFT.
 	CoinRoyaltiesMapKey = "CoinRoyaltiesMap"
+
+	// Used to distinguish v3 messages from previous iterations
+	MessagesVersionString = "V"
+	MessagesVersion1 = 1
+	MessagesVersion2 = 2
+	MessagesVersion3 = 3
 )
 
 // Defines values that may exist in a transaction's ExtraData map
@@ -907,4 +927,7 @@ const (
 	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
 	MinMaxCopiesPerNFT = 1
 	MaxMaxCopiesPerNFT = 10000
+	// Messaging key constants
+	MinMessagingKeyNameCharacters = 1
+	MaxMessagingKeyNameCharacters = 32
 )

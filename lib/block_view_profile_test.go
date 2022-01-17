@@ -238,7 +238,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		deleteKey,
 		false,
 		feeRateNanosPerKB,
-		nil, /*mempool*/
+		nil /*mempool*/,
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
