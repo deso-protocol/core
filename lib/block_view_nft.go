@@ -1303,7 +1303,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	createUTXO := func(amountNanos uint64, publicKeyArg []byte, utxoType UtxoType) (_err error) {
 		publicKey := publicKeyArg
 
-		// nextUtxoIndex is guaranteed to be >= 0 afer this increment
+		// nextUtxoIndex is guaranteed to be >= 0 after this increment
 		nextUtxoIndex += 1
 		royaltyOutputKey := &UtxoKey{
 			TxID:  *args.TxHash,
@@ -1450,7 +1450,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			args.Txn.TxnMeta.GetTxnType())
 	}
 
-	// Add an operation to the list at the end indicating we've connected an NFT bid.
+	// Add an operation to the list at the end indicating we've connected an NFT bid or Accept NFT Bid transaction.
 	utxoOpsForTxn = append(utxoOpsForTxn, transactionUtxoOp)
 
 	// HARDCORE SANITY CHECK:
