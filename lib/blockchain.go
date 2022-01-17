@@ -2542,6 +2542,8 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderPublicKey []byte, recipientPublicKey []byte,
 	unencryptedMessageText string, encryptedMessageText string,
+	senderMessagingPublicKey []byte, senderMessagingKeyName []byte,
+	recipientMessagingPublicKey []byte, recipientMessagingKeyName []byte,
 	tstampNanos uint64,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -2567,7 +2569,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 
 		// Add {V : 1} version field to ExtraData to indicate we are
 		// encrypting using legacy public key method.
-		messageExtraData["V"] = UintToBuf(1)
+		messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion1)
 	} else {
 		var err error
 		// Message is already encrypted, so just decode it to hex format
@@ -2579,7 +2581,30 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 
 		// Add {V : 2} version field to ExtraData to indicate we are
 		// encrypting using shared secret.
-		messageExtraData["V"] = UintToBuf(2)
+		messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion2)
+
+		// Check for DeSo V3 Messages fields. Specifically, this request could be made with either sender
+		// or recipient public keys and key names. Having one key present is sufficient to set V3.
+		if len(senderMessagingPublicKey) > 0 || len(recipientMessagingPublicKey) > 0 {
+
+			// If we're using rotating messaging keys, then we're on {V : 3} messages.
+			if err = ValidateGroupPublicKeyAndName(senderMessagingPublicKey, senderMessagingKeyName); err == nil {
+				messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+				messageExtraData[SenderMessagingPublicKey] = senderMessagingPublicKey
+				messageExtraData[SenderMessagingGroupKeyName] = senderMessagingKeyName
+			}
+
+			if err = ValidateGroupPublicKeyAndName(recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+				// If we didn't pass validation of either sender or recipient, then we return an error.
+				if !reflect.DeepEqual(messageExtraData[MessagesVersionString], UintToBuf(MessagesVersion3)) {
+					return nil, 0, 0, 0, err
+				}
+			} else {
+				messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+				messageExtraData[RecipientMessagingPublicKey] = recipientMessagingPublicKey
+				messageExtraData[RecipientMessagingGroupKeyName] = recipientMessagingKeyName
+			}
+		}
 	}
 
 	// Don't allow encryptedMessageBytes to be nil.
@@ -3697,6 +3722,44 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	// Sanity-check that the spendAmount is zero.
 	if spendAmount != 0 {
 		return nil, 0, 0, 0, fmt.Errorf("CreateAuthorizeDerivedKeyTxn: Spend amount "+
+			"should be zero but was %d instead: ", spendAmount)
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateMessagingKeyTxn(
+	senderPublicKey []byte,
+	messagingPublicKey []byte,
+	messagingGroupKeyName []byte,
+	messagingOwnerKeySignature []byte,
+	members []*MessagingGroupMember,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+    	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// We don't need to validate info here, so just construct the transaction instead.
+	txn := &MsgDeSoTxn{
+		PublicKey: senderPublicKey,
+		TxnMeta: &MessagingGroupMetadata{
+			MessagingPublicKey:    messagingPublicKey,
+			MessagingGroupKeyName: messagingGroupKeyName,
+			GroupOwnerSignature:   messagingOwnerKeySignature,
+			MessagingGroupMembers: members,
+		},
+		TxOutputs: additionalOutputs,
+	}
+
+	// We don't need to make any tweaks to the amount because it's basically
+	// a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateMessagingKeyTxn: Spend amount "+
 			"should be zero but was %d instead: ", spendAmount)
 	}
 

@@ -106,14 +106,6 @@ func _helpTestCreatorCoinBuySell(
 	creatorCoinTests []*_CreatorCoinTestData,
 	desoFounderReward bool) {
 
-	// These are block heights where deso forked.
-	SalomonFixBlockHeight = 0
-	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
-	DeSoFounderRewardBlockHeight = 0
-	if !desoFounderReward {
-		DeSoFounderRewardBlockHeight = 1e9
-	}
-
 	// Set up a blockchain
 	assert := assert.New(t)
 	require := require.New(t)
@@ -126,6 +118,14 @@ func _helpTestCreatorCoinBuySell(
 
 	// Create a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+
+	// These are block heights where deso forked.
+	params.ForkHeights.SalomonFixBlockHeight = 0
+	params.ForkHeights.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
+	params.ForkHeights.DeSoFounderRewardBlockHeight = 0
+	if !desoFounderReward {
+		params.ForkHeights.DeSoFounderRewardBlockHeight = 1e9
+	}
 
 	// Give paramUpdater some mony
 	_, _, _ = _doBasicTransferWithViewFlush(
@@ -1360,9 +1360,6 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 }
 
 func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
-	// Set the DeSoDiamondsBlockHeight so that it is immediately hit.
-	DeSoDiamondsBlockHeight = uint32(0)
-
 	// Set up a blockchain.
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1375,6 +1372,10 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 
 	// Create a paramUpdater for this test.
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+
+	// Set the DeSoDiamondsBlockHeight so that it is immediately hit.
+	params.ForkHeights.DeSoDiamondsBlockHeight = uint32(0)
+
 
 	// Give paramUpdater some mony.
 	_, _, _ = _doBasicTransferWithViewFlush(
