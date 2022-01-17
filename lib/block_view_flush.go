@@ -504,7 +504,8 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 	}
 
 	// Add back all of the entries that aren't nil or of length 0
-	for nftKey, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
+	for nftKeyIter, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
+		nftKey := nftKeyIter
 		if acceptedNFTBidEntries == nil || len(*acceptedNFTBidEntries) == 0 {
 			// If the acceptedNFTBidEntries is nil or has length 0 then there's nothing to do because
 			// we already deleted the entry above. length 0 means that there are no accepted bids yet.

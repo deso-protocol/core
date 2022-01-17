@@ -978,7 +978,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// Additionally save all the other previous coin entries
 	prevAdditionalCoinEntries := make(map[PKID]CoinEntry)
 	profileEntriesMap := make(map[PKID]ProfileEntry)
-	for pkid, _ := range nftPostEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+	for pkidIter, _ := range nftPostEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+		pkid := pkidIter
 		pkBytes := bav.GetPublicKeyForPKID(&pkid)
 		existingAdditionalProfileEntry := bav.GetProfileEntryForPublicKey(pkBytes)
 		if existingAdditionalProfileEntry == nil || existingAdditionalProfileEntry.isDeleted {
@@ -1043,7 +1044,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			PkToStringBoth(nftPostEntry.PosterPublicKey))
 	}
 	desoRoyaltiesBalancesBefore := make(map[PKID]uint64)
-	for pkid, _ := range nftPostEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
+	for pkidIter, _ := range nftPostEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
+		pkid := pkidIter
 		pkBytes := bav.GetPublicKeyForPKID(&pkid)
 		balanceBefore, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(pkBytes, tipHeight)
 		if err != nil {
@@ -1481,7 +1483,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	creatorPlusCoinDiff := big.NewInt(0).Add(big.NewInt(creatorDiff), big.NewInt(coinDiff))
 	// Compute additional DESO royalties diff
 	additionalDESORoyaltiesDiff := big.NewInt(0)
-	for pkid, balanceBefore := range desoRoyaltiesBalancesBefore {
+	for pkidIter, balanceBefore := range desoRoyaltiesBalancesBefore {
+		pkid := pkidIter
 		// Only relevant if additional royalty recipient != seller && != bidder (note: creator cannot be specified in
 		// additional DESO (or coin) royalties maps, so we do not need to check against that public key)
 		pkBytes := bav.GetPublicKeyForPKID(&pkid)
@@ -2267,7 +2270,8 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 
 	// (5-a) Revert the additional coin royalties CoinEntries if they exist.
 	if operationData.PrevCoinRoyaltyCoinEntries != nil {
-		for pkid, coinEntry := range operationData.PrevCoinRoyaltyCoinEntries {
+		for pkidIter, coinEntry := range operationData.PrevCoinRoyaltyCoinEntries {
+			pkid := pkidIter
 			profileEntry := bav.GetProfileEntryForPKID(&pkid)
 			if profileEntry == nil || profileEntry.isDeleted {
 				return errors.New("_helpDisconnectNFTSold: profile entry was nil or deleted for additional" +
