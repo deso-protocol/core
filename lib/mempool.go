@@ -1483,7 +1483,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			})
 			// Add notifications if buy now and additional royalties
 			if isBuyNow && len(postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
-				for pkid, _ := range postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
+				for pkidIter, _ := range postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
+					pkid := pkidIter
 					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 						PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&pkid), utxoView.Params),
 						Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
@@ -1492,7 +1493,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			}
 
 			if isBuyNow && len(postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
-				for pkid, _ := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+				for pkidIter, _ := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+					pkid := pkidIter
 					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 						PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&pkid), utxoView.Params),
 						Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
@@ -1552,14 +1554,16 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "NFTBidderPublicKeyBase58Check",
 		})
 
-		for pubKey, _ := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
+		for pubKeyIter, _ := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
+			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
 			})
 		}
 
-		for pubKey, _ := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalDESORoyaltiesMap {
+		for pubKeyIter, _ := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalDESORoyaltiesMap {
+			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
@@ -1580,13 +1584,15 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			AdditionalDESORoyaltiesMap: additionalDESORoyaltiesMap,
 			AdditionalCoinRoyaltiesMap: additionalCoinRoyaltiesMap,
 		}
-		for pubKey, _ := range additionalDESORoyaltiesMap {
+		for pubKeyIter, _ := range additionalDESORoyaltiesMap {
+			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
 			})
 		}
-		for pubKey, _ := range additionalCoinRoyaltiesMap {
+		for pubKeyIter, _ := range additionalCoinRoyaltiesMap {
+			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
@@ -1610,13 +1616,15 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
 			Metadata:             "NFTCreatorPublicKeyBase58Check",
 		})
-		for pubKey, _ := range additionalDESORoyaltiesMap {
+		for pubKeyIter, _ := range additionalDESORoyaltiesMap {
+			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
 			})
 		}
-		for pubKey, _ := range additionalCoinRoyaltiesMap {
+		for pubKeyIter, _ := range additionalCoinRoyaltiesMap {
+			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
@@ -1706,7 +1714,8 @@ func pkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoVie
 		return nil
 	}
 	pubKeyMap := make(map[string]uint64)
-	for pkid, royaltyBPs := range royaltyMap {
+	for pkidIter, royaltyBPs := range royaltyMap {
+		pkid := pkidIter
 		pubKeyMap[PkToString(utxoView.GetPublicKeyForPKID(&pkid), utxoView.Params)] = royaltyBPs
 	}
 	return pubKeyMap
