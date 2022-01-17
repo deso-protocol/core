@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"sort"
 )
 
 func (bav *UtxoView) _setNFTEntryMappings(nftEntry *NFTEntry) {
@@ -1209,6 +1210,9 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 				})
 			}
 		}
+		sort.Slice(additionalRoyalties,  func(ii, jj int) bool {
+			return PkToString(additionalRoyalties[ii].PublicKey, bav.Params) < PkToString(additionalRoyalties[jj].PublicKey, bav.Params)
+		})
 		return additionalRoyaltiesNanos, additionalRoyalties, nil
 	}
 

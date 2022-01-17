@@ -7150,6 +7150,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -7418,6 +7419,188 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			250,
 			"",
 		)
+	}
+
+	// M3 puts it on sale as a buy now NFT
+	{
+		_updateNFTWithTestMeta(testMeta,
+			10,
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			1,
+			true,
+			0,
+			true,
+			200,
+			)
+	}
+
+	// M0 buys their NFT back
+	{
+		_createNFTBidWithTestMeta(testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,
+			200,
+			)
+	}
+
+	// M0 puts it on sale again
+	{
+		_updateNFTWithTestMeta(testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			post1Hash,
+			1,
+			true,
+			10,
+			true,
+			200,
+			)
+	}
+
+	// M3 buys it back again
+	{
+		_createNFTBidWithTestMeta(testMeta,
+			10,
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			1,
+			200,
+			)
+	}
+
+	// M3 puts it on sale and m2 buys it this time
+	{
+		_updateNFTWithTestMeta(testMeta,
+			10,
+			m3Pub,
+			m3Priv,
+			post1Hash,
+			1,
+			true,
+			0,
+			true,
+			150,
+			)
+
+		_createNFTBidWithTestMeta(testMeta,
+			10,
+			m2Pub,
+			m2Priv,
+			post1Hash,
+			1,
+			150,
+			)
+	}
+
+	// M2 transfers it to M1 and m1 Accepts
+	{
+		_transferNFTWithTestMeta(testMeta,
+			10,
+			m2Pub,
+			m2Priv,
+			m1Pub,
+			post1Hash,
+			1,
+			"",
+			)
+
+		_acceptNFTTransferWithTestMeta(testMeta,
+			10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,
+			)
+	}
+
+	// M1 puts it on sale as an auction
+	{
+		_updateNFTWithTestMeta(testMeta,
+			10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,
+			true,
+			100,
+			false,
+			0,
+			)
+	}
+
+	// M4, M5, and M6 submit bids
+	{
+		_createNFTBidWithTestMeta(testMeta,
+			10,
+			m4Pub,
+			m4Priv,
+			post1Hash,
+			1,
+			100,
+			)
+
+		_createNFTBidWithTestMeta(testMeta,
+			10,
+			m5Pub,
+			m5Priv,
+			post1Hash,
+			1,
+			120,
+		)
+
+		_createNFTBidWithTestMeta(testMeta,
+			10,
+			m6Pub,
+			m6Priv,
+			post1Hash,
+			1,
+			110,
+		)
+	}
+
+	// M1 accepts M5's bid
+	{
+		_acceptNFTBidWithTestMeta(testMeta,
+			10,
+			m1Pub,
+			m1Priv,
+			post1Hash,
+			1,
+			m5Pub,
+			120,
+			"",
+		)
+	}
+
+	// M5 puts it on sale as a buy now NFT and M4 buys it
+	{
+		_updateNFTWithTestMeta(testMeta,
+			10,
+			m5Pub,
+			m5Priv,
+			post1Hash,
+			1,
+			true,
+			0,
+			true,
+			100,
+		)
+
+		_createNFTBidWithTestMeta(testMeta,
+			10,
+			m4Pub,
+			m4Priv,
+			post1Hash,
+			1,
+			100,
+			)
 	}
 
 	_rollBackTestMetaTxnsAndFlush(testMeta)
