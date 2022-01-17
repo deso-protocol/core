@@ -1179,7 +1179,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		_additionalRoyaltiesNanos uint64, _additionalRoyalties []*PublicKeyRoyaltyPair, _err error) {
 		additionalRoyaltiesNanos := uint64(0)
 		var additionalRoyalties []*PublicKeyRoyaltyPair
-		for pkid, bps := range royaltyMap {
+		for pkidIter, bps := range royaltyMap {
+			pkid := pkidIter
 			royaltyNanos := IntDiv(
 				IntMul(
 					big.NewInt(int64(args.BidAmountNanos)),
