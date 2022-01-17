@@ -683,10 +683,35 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				"height %v from peer %v", srv.blockchain.blockTip().Header.Height+1, pp)
 			if srv.cmgr.hyperSync && !srv.blockchain.finishedSyncing {
 				srv.blockchain.syncingState = true
-				srv.GetSnapshot(pp)
-
 				k0, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, []byte{5}, []byte{5}, uint32(8<<20))
 				glog.V(1).Infof("STARTING SYNC: How many 5 prefixes:", len(*k0))
+				srv.blockchain.db.Update(func(txn *badger.Txn) error {
+					for _, key := range *k0 {
+						glog.V(1).Infof("Deleting key: (%v)", key)
+						keyBytes, _ := hex.DecodeString(key)
+						err := txn.Delete(keyBytes)
+						if err != nil {
+							glog.Errorf("Problem deleting key (%v) error (%v)", key, err)
+						}
+					}
+					return nil
+				})
+
+				k1, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, []byte{7}, []byte{7}, uint32(8<<20))
+				glog.V(1).Infof("STARTING SYNC: How many 5 prefixes:", len(*k1))
+				srv.blockchain.db.Update(func(txn *badger.Txn) error {
+					for _, key := range *k1 {
+						glog.V(1).Infof("Deleting key: (%v)", key)
+						keyBytes, _ := hex.DecodeString(key)
+						err := txn.Delete(keyBytes)
+						if err != nil {
+							glog.Errorf("Problem deleting key (%v) error (%v)", key, err)
+						}
+					}
+					return nil
+				})
+
+				srv.GetSnapshot(pp)
 				return
 			}
 		}

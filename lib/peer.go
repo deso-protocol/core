@@ -134,6 +134,8 @@ type Peer struct {
 	messageQueue    []*DeSoMessageMeta
 
 	requestedBlocks map[BlockHash]bool
+
+	timeElapsed float64
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {

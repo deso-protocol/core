@@ -379,7 +379,7 @@ func (snap *Snapshot) GetMostRecentSnapshot(handle *badger.DB, prefix []byte, la
 	//for ii := 0; ii < len(StatePrefixes); ii++ {
 	//	prefix := StatePrefixes[ii]
 	//for {
-	k1, v1, full, _ := DBIteratePrefixKeys(handle, prefix, lastKey, uint32(8<<16))
+	k1, v1, full, _ := DBIteratePrefixKeys(handle, prefix, lastKey, uint32(8<<20))
 	if len(*k1) == 0 {
 		DBEntries = append(DBEntries, EmptyDBEntry())
 		return DBEntries, false
