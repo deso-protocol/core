@@ -3664,9 +3664,6 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	accessSignature []byte,
 	deleteKey bool,
 	derivedKeySignature bool,
-	messagingPublicKey string,
-	messagingKeyName string,
-	messagingKeySignature string,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {

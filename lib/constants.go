@@ -880,7 +880,7 @@ const (
 	CoinRoyaltiesMapKey = "CoinRoyaltiesMap"
 
 	// Used to distinguish v3 messages from previous iterations
-	MessagesVersionString = "MessagesVersion"
+	MessagesVersionString = "V"
 	MessagesVersion1 = 1
 	MessagesVersion2 = 2
 	MessagesVersion3 = 3

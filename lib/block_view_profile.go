@@ -926,12 +926,12 @@ func _verifyBytesSignature(signer, data, signature []byte) error {
 func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	expirationBlock uint64, accessSignature []byte) error {
 
-	// Sanity-check and convert ownerPublicKey to *btcec.OwnerPublicKey.
+	// Sanity-check and convert ownerPublicKey to *btcec.PublicKey.
 	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
 		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing owner public key")
 	}
 
-	// Sanity-check and convert derivedPublicKey to *btcec.OwnerPublicKey.
+	// Sanity-check and convert derivedPublicKey to *btcec.PublicKey.
 	if err := IsByteArrayValidPublicKey(derivedPublicKey); err != nil {
 		return errors.Wrapf(err, "_verifyAccessSignature: Problem parsing derived public key")
 	}

@@ -521,12 +521,12 @@ func _generateMessagingKey(senderPub []byte, senderPriv []byte, keyName []byte) 
 
 // _messagingKey adds a messaging key entry to a new utxo and flushes to DB.
 func _messagingKey(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
-	senderPk []byte, signerPriv string, MessagingPublicKeyy, messagingKeyName,
+	senderPk []byte, signerPriv string, messagingPublicKey []byte, messagingKeyName []byte,
 	keySignature []byte, recipients []*MessagingGroupMember) ([]*UtxoOperation, *MsgDeSoTxn, error) {
 
 	require := require.New(t)
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateMessagingKeyTxn(
-		senderPk, MessagingPublicKeyy, messagingKeyName, keySignature,
+		senderPk, messagingPublicKey, messagingKeyName, keySignature,
 		recipients, 10, nil, []*DeSoOutput{})
 	require.NoError(err)
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -557,7 +557,7 @@ func _messagingKey(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 
 // _messagingKeyWithTestMeta is used to connect and flush a messaging key to the DB.
 func _messagingKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv string,
-	MessagingPublicKeyy, messagingKeyName, keySignature []byte, recipients []*MessagingGroupMember,
+	messagingPublicKey []byte, messagingKeyName []byte, keySignature []byte, recipients []*MessagingGroupMember,
 	expectedError error) {
 
 	require := require.New(testMeta.t)
@@ -567,7 +567,7 @@ func _messagingKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv s
 	balance := _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check)
 
 	utxoOps, txn, err := _messagingKey(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
-		senderPk, signerPriv, MessagingPublicKeyy, messagingKeyName, keySignature, recipients)
+		senderPk, signerPriv, messagingPublicKey, messagingKeyName, keySignature, recipients)
 
 	if expectedError != nil {
 		assert.Equal(true, strings.Contains(err.Error(), expectedError.Error()))
@@ -626,10 +626,10 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 }
 
 // _initMessagingKey is a helper function that instantiates a MessagingGroupEntry.
-func _initMessagingKey(senderPub []byte, MessagingPublicKeyy []byte, messagingKeyName []byte) *MessagingGroupEntry {
+func _initMessagingKey(senderPub []byte, messagingPublicKey []byte, messagingKeyName []byte) *MessagingGroupEntry {
 	return &MessagingGroupEntry{
 		GroupOwnerPublicKey:   NewPublicKey(senderPub),
-		MessagingPublicKey:    NewPublicKey(MessagingPublicKeyy),
+		MessagingPublicKey:    NewPublicKey(messagingPublicKey),
 		MessagingGroupKeyName: NewGroupKeyName(messagingKeyName),
 	}
 }
@@ -1422,7 +1422,7 @@ func TestMessagingKeys(t *testing.T) {
 
 // This helper function connects a private message transaction with the message party in ExtraData.
 func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, senderPrivBase58 string,
-	recipientPkBytes, senderMessagingPublicKeyy, senderMessagingKeyName, recipientMessagingPublicKeyy,
+	recipientPkBytes, senderMessagingPublicKey []byte, senderMessagingKeyName []byte, recipientMessagingPublicKey []byte,
 	recipientMessagingKeyName []byte, encryptedMessageText string, tstampNanos uint64, expectedError error) {
 
 	require := require.New(testMeta.t)
@@ -1434,7 +1434,7 @@ func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, s
 	// Create a private message transaction with the sender and recipient messaging keys.
 	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, "", encryptedMessageText,
-		senderMessagingPublicKeyy, senderMessagingKeyName, recipientMessagingPublicKeyy,
+		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
 		recipientMessagingKeyName, tstampNanos, 10, nil, []*DeSoOutput{})
 	require.NoError(err)
 
@@ -1842,12 +1842,12 @@ func TestGroupMessages(t *testing.T) {
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, m1PublicKey, entry))
 
-		// m1 sends a message to the empty group
+		// m1 sends a message to the empty group, which in this case means it's sending a message to its own public key.
 		tstampNanos1 := uint64(time.Now().UnixNano())
 		testMessage1 := []byte{1, 5, 5, 4, 5, 6, 7, 8}
 		messageEntry1 := MessageEntry{
 			NewPublicKey(m1PubKey),
-			entry.MessagingPublicKey,
+			NewPublicKey(m1PubKey),
 			testMessage1,
 			tstampNanos1,
 			false,
@@ -1891,12 +1891,12 @@ func TestGroupMessages(t *testing.T) {
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, m1PublicKey, entry))
 
-		// m1 sends a message to the empty group.
+		// m1 sends a message to the empty group, which in this case means it's sending a message to its own public key.
 		tstampNanos1 := uint64(time.Now().UnixNano())
 		testMessage1 := []byte{1, 2, 5, 4, 5, 6, 7, 8, 15}
 		messageEntry1 := MessageEntry{
 			NewPublicKey(m1PubKey),
-			entry.MessagingPublicKey,
+			NewPublicKey(m1PubKey),
 			testMessage1,
 			tstampNanos1,
 			false,

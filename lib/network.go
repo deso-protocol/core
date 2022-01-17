@@ -201,19 +201,19 @@ const (
 	TxnTypeLike                         TxnType = 10
 	TxnTypeCreatorCoin                  TxnType = 11
 	TxnTypeSwapIdentity                 TxnType = 12
-	TxnTypeUpdateGlobalParams  TxnType = 13
-	TxnTypeCreatorCoinTransfer TxnType = 14
-	TxnTypeCreateNFT           TxnType = 15
-	TxnTypeUpdateNFT           TxnType = 16
-	TxnTypeAcceptNFTBid        TxnType = 17
-	TxnTypeNFTBid              TxnType = 18
-	TxnTypeNFTTransfer         TxnType = 19
-	TxnTypeAcceptNFTTransfer   TxnType = 20
-	TxnTypeBurnNFT             TxnType = 21
-	TxnTypeAuthorizeDerivedKey TxnType = 22
-	TxnTypeMessagingGroup      TxnType = 23
-	TxnTypeDAOCoin             TxnType = 24
-	TxnTypeDAOCoinTransfer     TxnType = 25
+	TxnTypeUpdateGlobalParams           TxnType = 13
+	TxnTypeCreatorCoinTransfer          TxnType = 14
+	TxnTypeCreateNFT                    TxnType = 15
+	TxnTypeUpdateNFT                    TxnType = 16
+	TxnTypeAcceptNFTBid                 TxnType = 17
+	TxnTypeNFTBid                       TxnType = 18
+	TxnTypeNFTTransfer                  TxnType = 19
+	TxnTypeAcceptNFTTransfer            TxnType = 20
+	TxnTypeBurnNFT                      TxnType = 21
+	TxnTypeAuthorizeDerivedKey          TxnType = 22
+	TxnTypeMessagingGroup               TxnType = 23
+	TxnTypeDAOCoin                      TxnType = 24
+	TxnTypeDAOCoinTransfer              TxnType = 25
 
 	// NEXT_ID = 26
 )
@@ -233,20 +233,20 @@ const (
 	TxnStringLike                         TxnString = "LIKE"
 	TxnStringCreatorCoin                  TxnString = "CREATOR_COIN"
 	TxnStringSwapIdentity                 TxnString = "SWAP_IDENTITY"
-	TxnStringUpdateGlobalParams  TxnString = "UPDATE_GLOBAL_PARAMS"
-	TxnStringCreatorCoinTransfer TxnString = "CREATOR_COIN_TRANSFER"
-	TxnStringCreateNFT           TxnString = "CREATE_NFT"
-	TxnStringUpdateNFT           TxnString = "UPDATE_NFT"
-	TxnStringAcceptNFTBid        TxnString = "ACCEPT_NFT_BID"
-	TxnStringNFTBid              TxnString = "NFT_BID"
-	TxnStringNFTTransfer         TxnString = "NFT_TRANSFER"
-	TxnStringAcceptNFTTransfer   TxnString = "ACCEPT_NFT_TRANSFER"
-	TxnStringBurnNFT             TxnString = "BURN_NFT"
-	TxnStringAuthorizeDerivedKey TxnString = "AUTHORIZE_DERIVED_KEY"
-	TxnStringMessagingGroup      TxnString = "MESSAGING_GROUP"
-	TxnStringDAOCoin             TxnString = "DAO_COIN"
-	TxnStringDAOCoinTransfer     TxnString = "DAO_COIN_TRANSFER"
-	TxnStringUndefined           TxnString = "TXN_UNDEFINED"
+	TxnStringUpdateGlobalParams           TxnString = "UPDATE_GLOBAL_PARAMS"
+	TxnStringCreatorCoinTransfer          TxnString = "CREATOR_COIN_TRANSFER"
+	TxnStringCreateNFT                    TxnString = "CREATE_NFT"
+	TxnStringUpdateNFT                    TxnString = "UPDATE_NFT"
+	TxnStringAcceptNFTBid                 TxnString = "ACCEPT_NFT_BID"
+	TxnStringNFTBid                       TxnString = "NFT_BID"
+	TxnStringNFTTransfer                  TxnString = "NFT_TRANSFER"
+	TxnStringAcceptNFTTransfer            TxnString = "ACCEPT_NFT_TRANSFER"
+	TxnStringBurnNFT                      TxnString = "BURN_NFT"
+	TxnStringAuthorizeDerivedKey          TxnString = "AUTHORIZE_DERIVED_KEY"
+	TxnStringMessagingGroup               TxnString = "MESSAGING_GROUP"
+	TxnStringDAOCoin                      TxnString = "DAO_COIN"
+	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
+	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
 var (

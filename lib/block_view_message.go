@@ -66,7 +66,7 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 	messagingGroupKey *MessagingGroupKey) *MessagingGroupEntry {
 
 	// This function is used to get a MessagingGroupEntry given a MessagingGroupKey. The V3 messages are
-	// backwards-compatible, and in particular each user has a built-in MessaginGroupKey, called the
+	// backwards-compatible, and in particular each user has a built-in MessagingGroupKey, called the
 	// "base group key," which is simply a messaging key corresponding to user's main key.
 	if EqualGroupKeyName(&messagingGroupKey.GroupKeyName, BaseGroupKeyName()) {
 		return &MessagingGroupEntry{
@@ -373,13 +373,6 @@ func (bav *UtxoView) _connectPrivateMessage(
 			RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
 	}
 
-	// You can't send a message to yourself.
-	if reflect.DeepEqual(txn.PublicKey, txMeta.RecipientPublicKey) {
-		return 0, 0, nil, errors.Wrapf(
-			RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey,
-			"_connectPrivateMessage: ")
-	}
-
 	// Check that the timestamp is greater than zero. Not doing this could make
 	// the message not get returned when we call Seek() in our db. It's also just
 	// a reasonable sanity check.
@@ -460,25 +453,9 @@ func (bav *UtxoView) _connectPrivateMessage(
 		// We do an analogous validation for the recipient's messaging key.
 		recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingGroupKeyName]
 		if existsRecipient && existsRecipientName {
-			// The below check exists because of an annoying edge-case where group owner wanted to send a message
-			// to the group. In this scenario, the sender and recipient public keys would be the same which would
-			// make us fail one of the previous checks. To circumvent this, we will enforce that group owners put
-			// group's messaging key as the recipient instead of his own public key. This is the "worst" edge-case
-			// with the messaging key architecture. Because of this check, we also have to make an exception for
-			// when recipient public key can equal messaging public key if it's a base key.
-			if !EqualGroupKeyName(NewGroupKeyName(recipientMessagingKeyName), BaseGroupKeyName()) &&
-				reflect.DeepEqual(txMeta.RecipientPublicKey, recipientMessagingPublicKey) {
-				// We know we entered this edge-case so we verify that the owner previously registered this key.
-				if err := bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
-					return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
-						"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
-				}
-			} else {
-				// Proceed normally in all other cases.
-				if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
-					return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
-						"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
-				}
+			if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
+					"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
 			}
 			// If everything worked, update the messaging key information in the message entry.
 			messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
@@ -486,9 +463,10 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 	}
 
-	// Make sure we don't try to send messages between identical public keys.
-	if reflect.DeepEqual(messageEntry.SenderPublicKey[:], messageEntry.RecipientPublicKey[:]) ||
-		reflect.DeepEqual(messageEntry.SenderMessagingPublicKey[:], messageEntry.RecipientMessagingPublicKey[:]) {
+	// Make sure we don't try to send messages between identical messaging public keys.
+	// We don't allow groups to send messages to themselves; however, a user is allowed to send a message to himself.
+	// This would happen if we set SenderPublicKey == RecipientPublicKey. This could be used as a "saved messages" feature.
+	if reflect.DeepEqual(messageEntry.SenderMessagingPublicKey[:], messageEntry.RecipientMessagingPublicKey[:]) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey,
 			"_connectPrivateMessage: Parse error: %v", err)
@@ -703,23 +681,22 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// Messaging groups are a part of DeSo V3 Messages.
 	//
-	// A MessagingGroupKey is a pair of an <ownerPublicKey, groupKeyName>. MessagingGroupKeys are
-	// registered on-chain and are intended to be used as senders/recipients of privateMessage
-	// transactions, as opposed to users' main keys. MessagingGroupKeys solve the problem with messages
-	// for holders of derived keys, who previously had no way to properly encrypt/decrypt messages,
-	// as they don't have access to user's main private key.
+	// A MessagingGroupKey is a pair of an <ownerPublicKey, groupKeyName>. MessagingGroupKeys are registered on-chain
+	// and are intended to be used as senders/recipients of privateMessage transactions, as opposed to users' main
+	// keys. MessagingGroupKeys solve the problem with messages for holders of derived keys, who previously had no
+	// way to properly encrypt/decrypt messages, as they don't have access to user's main private key.
 	//
-	// A groupkeyname is a byte array between 1-32 bytes that labels the MessagingGroupKey. Applications have the
-	// choice to label users' MessagingGroupKeys as they desire. For instance, a groupKeyName could represent the name of
-	// an on-chain group chat. On the db level, groupKeynames are always filled to 32 bytes with []byte(0) suffix.
+	// A groupKeyName is a byte array between 1-32 bytes that labels the MessagingGroupKey. Applications have the
+	// choice to label users' MessagingGroupKeys as they desire. For instance, a groupKeyName could represent the name
+	// of an on-chain group chat. On the db level, groupKeyNames are always filled to 32 bytes with []byte(0) suffix.
 	//
 	// We hard-code two MessagingGroupKeys:
 	// 	[]byte{}              : user's ownerPublicKey. This key is registered for all users natively.
 	//	[]byte("default-key") : intended to be registered when authorizing a derived key for the first time.
 	//
-	// The proposed flow is to register a default-key whenever first authorizing a derived key for a user. This
-	// way, the derived key can be used for sending and receiving messages. DeSo V3 Messages also enable group
-	// chats, which we will explain in more detail later.
+	// The proposed flow is to register a default-key whenever first authorizing a derived key for a user. This way,
+	// the derived key can be used for sending and receiving messages. DeSo V3 Messages also enable group chats, which
+	// we will explain in more detail later.
 
 	// Make sure DeSo V3 messages are live.
 	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
@@ -813,17 +790,17 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// In DeSo V3 Messages, a messaging key can initialize a group chat with more than two parties. In group chats, all
 	// messages are encrypted to the group messaging public key. The group members are provided with an encrypted
 	// private key of the group's messagingPublicKey so that each of them can read the messages. We refer to
-	// these group members as
-	// messaging members, and for each member we will store a MessagingMember object with the respective encrypted key.
-	// The encrypted key must be addressed to a registered groupKeyName for each member, e.g. the base or the default
-	// key names. In particular, this design choice allows derived keys to read group messages.
+	// these group members as messaging members, and for each member we will store a MessagingMember object with the
+	// respective encrypted key. The encrypted key must be addressed to a registered groupKeyName for each member, e.g.
+	// the base or the default key names. In particular, this design choice allows derived keys to read group messages.
 	//
 	// A MessagingGroup transaction can either initialize a groupMessagingKey or add more members. In the former case,
-	// there will be no existing MessagingGroupEntry; however, in the latter case there will be an entry present in DB or
-	// UtxoView. When adding members, we need to make sure that the transaction isn't trying to change data about existing
-	// members. An important limitation is that the current design doesn't support removing recipients. This would be
-	// tricky to impose in consensus, considering that removed users can't *forget* the messaging private key. Removing users
-	// can be facilitated in the application-layer, where we can issue a new group key and share it with all valid members.
+	// there will be no existing MessagingGroupEntry; however, in the latter case there will be an entry present in DB
+	// or UtxoView. When adding members, we need to make sure that the transaction isn't trying to change data about
+	// existing members. An important limitation is that the current design doesn't support removing recipients. This
+	// would be tricky to impose in consensus, considering that removed users can't *forget* the messaging private key.
+	// Removing users can be facilitated in the application-layer, where we can issue a new group key and share it with
+	// all valid members.
 
 	// We will keep track of all group messaging members.
 	var messagingMembers []*MessagingGroupMember
@@ -833,10 +810,10 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// Sanity-check a group's members can't contain the messagingPublicKey.
 	existingMembers[*messagingPublicKey] = true
 
-	// If we're adding more group members, then we need to make sure there are no overlapping members
-	// between the transaction's entry, and the existing entry.
+	// If we're adding more group members, then we need to make sure there are no overlapping members between the
+	// transaction's entry, and the existing entry.
 	if existingEntry != nil && !existingEntry.isDeleted {
-		// We make sure we'll add at least one messaging member in the the transaction.
+		// We make sure we'll add at least one messaging member in the transaction.
 		if len(txMeta.MessagingGroupMembers) == 0 {
 			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingKeyDoesntAddMembers,
 				"_connectMessagingGroup: Can't update a messaging key without any new recipients")

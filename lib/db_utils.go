@@ -96,7 +96,7 @@ var (
 	// Messages are indexed by the public key of their senders and receivers. If
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
-	// <public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientOwmerPublicKey || EncryptedText >
+	// <public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientOwnerPublicKey || EncryptedText >
 	_PrefixPublicKeyTimestampToPrivateMessage = []byte{12}
 
 	// Tracks the tip of the transaction index. This is used to determine
@@ -628,7 +628,7 @@ func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, publicKey []byte) error {
 // -------------------------------------------------------------------------------------
 // PrivateMessage mapping functions
 // <public key (33 bytes) || uint64 big-endian> ->
-// 		< SenderPublicKey || RecipientOwmerPublicKey || EncryptedText >
+// 		< SenderPublicKey || RecipientOwnerPublicKey || EncryptedText >
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessageEntry(publicKey []byte, tstampNanos uint64) []byte {
