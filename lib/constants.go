@@ -862,13 +862,11 @@ const (
 	DerivedPublicKey = "DerivedPublicKey"
 
 	// Messaging keys
-	MessagingPublicKey    = "MessagingPublicKey"
-	MessagingKeyName      = "MessagingKeyName"
-	MessagingKeySignature = "MessagingKeySignature"
-	SenderMessagingPublicKey    = "SenderMessagingPublicKey"
-	SenderMessagingKeyName      = "SenderMessagingKeyName"
-	RecipientMessagingPublicKey = "RecipientMessagingPublicKey"
-	RecipientMessagingKeyName   = "RecipientMessagingKeyName"
+	MessagingPublicKey             = "MessagingPublicKey"
+	SenderMessagingPublicKey       = "SenderMessagingPublicKey"
+	SenderMessagingGroupKeyName    = "SenderMessagingGroupKeyName"
+	RecipientMessagingPublicKey    = "RecipientMessagingPublicKey"
+	RecipientMessagingGroupKeyName = "RecipientMessagingGroupKeyName"
 
 	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
 	BuyNowPriceKey = "BuyNowPriceNanos"
@@ -880,6 +878,12 @@ const (
 	// Key in transaction's extra data map. If present, the value represents a map of pkid to basis points representing
 	// the amount of royalties that should be added to pkid's creator coin upon sale of this NFT.
 	CoinRoyaltiesMapKey = "CoinRoyaltiesMap"
+
+	// Used to distinguish v3 messages from previous iterations
+	MessagesVersionString = "MessagesVersion"
+	MessagesVersion1 = 1
+	MessagesVersion2 = 2
+	MessagesVersion3 = 3
 )
 
 // Defines values that may exist in a transaction's ExtraData map

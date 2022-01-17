@@ -42,8 +42,8 @@ type UtxoView struct {
 	// Messages data
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
-	// Messaging key entries.
-	MessagingKeyToMessagingKeyEntry map[MessagingKey]*MessagingKeyEntry
+	// Messaging group entries.
+	MessagingGroupKeyToMessagingGroupEntry map[MessagingGroupKey]*MessagingGroupEntry
 
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
@@ -122,8 +122,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.MessageKeyToMessageEntry = make(map[MessageKey]*MessageEntry)
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
 
-	// Messaging key entries
-	bav.MessagingKeyToMessagingKeyEntry = make(map[MessagingKey]*MessagingKeyEntry)
+	// Messaging group entries
+	bav.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -243,11 +243,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageMap[txnHash] = &newMessage
 	}
 
-	// Copy messaging key data
-	newView.MessagingKeyToMessagingKeyEntry = make(map[MessagingKey]*MessagingKeyEntry, len(bav.MessagingKeyToMessagingKeyEntry))
-	for pkid, entry := range bav.MessagingKeyToMessagingKeyEntry {
+	// Copy messaging group data
+	newView.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry, len(bav.MessagingGroupKeyToMessagingGroupEntry))
+	for pkid, entry := range bav.MessagingGroupKeyToMessagingGroupEntry {
 		newEntry := *entry
-		newView.MessagingKeyToMessagingKeyEntry[pkid] = &newEntry
+		newView.MessagingGroupKeyToMessagingGroupEntry[pkid] = &newEntry
 	}
 
 	// Copy the follow data
@@ -859,8 +859,8 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectPrivateMessage(
 			OperationTypePrivateMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeMessagingKey {
-		return bav._disconnectMessagingKey(
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+		return bav._disconnectMessagingGroup(
 			OperationTypeMessagingKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
@@ -1063,7 +1063,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) error
 		}
 	}
 
-	// Get the owner public key and attempt turning it into *btcec.PublicKey.
+	// Get the owner public key and attempt turning it into *btcec.OwnerPublicKey.
 	ownerPkBytes := txn.PublicKey
 	ownerPk, err := btcec.ParsePubKey(ownerPkBytes, btcec.S256())
 	if err != nil {
@@ -1633,9 +1633,9 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectPrivateMessage(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingKey {
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
 		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectMessagingKey(
+			bav._connectMessagingGroup(
 				txn, txHash, blockHeight, verifySignatures)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {

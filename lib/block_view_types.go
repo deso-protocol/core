@@ -284,8 +284,8 @@ type UtxoOperation struct {
 	// For disconnecting AuthorizeDerivedKey transactions.
 	PrevDerivedKeyEntry *DerivedKeyEntry
 
-	// For disconnecting MessagingKey transactions.
-	PrevMessagingKeyEntry *MessagingKeyEntry
+	// For disconnecting MessagingGroupKey transactions.
+	PrevMessagingKeyEntry *MessagingGroupEntry
 
 	// Save the previous repost entry and repost count when making an update.
 	PrevRepostEntry *RepostEntry
@@ -349,7 +349,7 @@ type UtxoOperation struct {
 }
 
 func (utxoEntry *UtxoEntry) String() string {
-	return fmt.Sprintf("< PublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
+	return fmt.Sprintf("< OwnerPublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
 		"isSpent: %v, utxoKey: %v>", PkToStringMainnet(utxoEntry.PublicKey),
 		utxoEntry.BlockHeight, utxoEntry.AmountNanos,
 		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
@@ -435,15 +435,15 @@ type MessageEntry struct {
 	// to encrypt the corresponding message.
 	SenderMessagingPublicKey *PublicKey
 
-	// SenderMessagingKeyName is the sender's key name of SenderMessagingPublicKey
-	SenderMessagingKeyName *KeyName
+	// SenderMessagingGroupKeyName is the sender's key name of SenderMessagingPublicKey
+	SenderMessagingGroupKeyName *GroupKeyName
 
 	// RecipientMessagingPublicKey is the recipient's messaging public key that was
 	// used to encrypt the corresponding message.
 	RecipientMessagingPublicKey *PublicKey
 
-	// RecipientMessagingKeyName is the recipient's key name of RecipientMessagingPublicKey
-	RecipientMessagingKeyName *KeyName
+	// RecipientMessagingGroupKeyName is the recipient's key name of RecipientMessagingPublicKey
+	RecipientMessagingGroupKeyName *GroupKeyName
 }
 
 func (message *MessageEntry) Encode() []byte {
@@ -455,9 +455,9 @@ func (message *MessageEntry) Encode() []byte {
 	data = append(data, UintToBuf(message.TstampNanos)...)
 	data = append(data, UintToBuf(uint64(message.Version))...)
 	data = append(data, EncodeByteArray(message.SenderMessagingPublicKey[:])...)
-	data = append(data, EncodeByteArray(message.SenderMessagingKeyName[:])...)
+	data = append(data, EncodeByteArray(message.SenderMessagingGroupKeyName[:])...)
 	data = append(data, EncodeByteArray(message.RecipientMessagingPublicKey[:])...)
-	data = append(data, EncodeByteArray(message.RecipientMessagingKeyName[:])...)
+	data = append(data, EncodeByteArray(message.RecipientMessagingGroupKeyName[:])...)
 	return data
 }
 
@@ -502,7 +502,7 @@ func (message *MessageEntry) Decode(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
 	}
-	message.SenderMessagingKeyName = NewKeyName(senderMessagingKeyName)
+	message.SenderMessagingGroupKeyName = NewGroupKeyName(senderMessagingKeyName)
 
 	recipientMessagingPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
@@ -514,42 +514,42 @@ func (message *MessageEntry) Decode(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding recipient messaging key name")
 	}
-	message.RecipientMessagingKeyName = NewKeyName(recipientMessagingKeyName)
+	message.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
 	return nil
 }
 
-// KeyName helps with handling key names in MessagingKey
-type KeyName [MaxMessagingKeyNameCharacters]byte
+// GroupKeyName helps with handling key names in MessagingGroupKey
+type GroupKeyName [MaxMessagingKeyNameCharacters]byte
 
-func (name *KeyName) ToBytes() []byte {
+func (name *GroupKeyName) ToBytes() []byte {
 	return name[:]
 }
 
 // Encode message key from varying length to a MaxMessagingKeyNameCharacters.
 // We fill the length of the messaging key to make sure there are no weird
 // prefix overlaps in DB.
-func NewKeyName(keyName []byte) *KeyName {
-	name := KeyName{}
+func NewGroupKeyName(groupKeyName []byte) *GroupKeyName {
+	name := GroupKeyName{}
 
 	// Fill with 0s to the MaxMessagingKeyNameCharacters.
 	for {
-		if len(keyName) < MaxMessagingKeyNameCharacters {
-			keyName = append(keyName, []byte{0}...)
+		if len(groupKeyName) < MaxMessagingKeyNameCharacters {
+			groupKeyName = append(groupKeyName, []byte{0}...)
 		} else {
-			copy(name[:], keyName)
+			copy(name[:], groupKeyName)
 			return &name
 		}
 	}
 }
 
 // Decode filled message key of length MaxMessagingKeyNameCharacters array.
-func MessagingKeyNameDecode(name *KeyName) []byte {
+func MessagingKeyNameDecode(name *GroupKeyName) []byte {
 
 	bytes := make([]byte, MaxMessagingKeyNameCharacters)
 	copy(bytes, name[:])
 
 	// Return empty byte array if we have a non-existent key.
-	if reflect.DeepEqual(bytes, (*NewKeyName([]byte{}))[:]) {
+	if reflect.DeepEqual(bytes, (*NewGroupKeyName([]byte{}))[:]) {
 		return []byte{}
 	}
 
@@ -563,56 +563,57 @@ func MessagingKeyNameDecode(name *KeyName) []byte {
 	}
 }
 
-func EqualKeyName(a, b *KeyName) bool {
+func EqualGroupKeyName(a, b *GroupKeyName) bool {
 	return reflect.DeepEqual(a.ToBytes(), b.ToBytes())
 }
 
-func BaseKeyName() *KeyName {
-	return NewKeyName([]byte{})
+func BaseGroupKeyName() *GroupKeyName {
+	return NewGroupKeyName([]byte{})
 }
 
-func DefaultKeyName() *KeyName {
-	return NewKeyName([]byte("default-key"))
+func DefaultGroupKeyName() *GroupKeyName {
+	return NewGroupKeyName([]byte("default-key"))
 }
 
-// MessagingKey is similar to the MessageKey, and is used to index messaging keys for a user.
-type MessagingKey struct {
-	PublicKey PublicKey
-	KeyName   KeyName
+// MessagingGroupKey is similar to the MessageKey, and is used to index messaging keys for a user.
+type MessagingGroupKey struct {
+	OwnerPublicKey PublicKey
+	GroupKeyName   GroupKeyName
 }
 
-func NewMessagingKey(publicKey *PublicKey, keyName []byte) *MessagingKey {
-	return &MessagingKey{
-		PublicKey: *publicKey,
-		KeyName:   *NewKeyName(keyName),
+func NewMessagingGroupKey(ownerPublicKey *PublicKey, groupKeyName []byte) *MessagingGroupKey {
+	return &MessagingGroupKey{
+		OwnerPublicKey: *ownerPublicKey,
+		GroupKeyName:   *NewGroupKeyName(groupKeyName),
 	}
 }
 
-func (key *MessagingKey) String() string {
-	return fmt.Sprintf("<PublicKey: %v, KeyName: %v",
-		key.PublicKey, key.KeyName)
+func (key *MessagingGroupKey) String() string {
+	return fmt.Sprintf("<OwnerPublicKey: %v, GroupKeyName: %v",
+		key.OwnerPublicKey, key.GroupKeyName)
 }
 
-// MessagingKeyEntry is used to update messaging keys for a user, this was added in
+// MessagingGroupEntry is used to update messaging keys for a user, this was added in
 // the DeSo V3 Messages protocol.
-type MessagingKeyEntry struct {
-	// MessagingPublicKey is the messaging key added. This will be the new
-	// messaging key that other users should encrypt messages to.
+type MessagingGroupEntry struct {
+	// GroupOwnerPublicKey represents the owner public key of the user who created
+	// this group. This key is what is used to index the group metadata in the db.
+	GroupOwnerPublicKey *PublicKey
+
+	// MessagingPublicKey is the key others will use to encrypt messages. The
+	// GroupOwnerPublicKey is used for indexing, but the MessagingPublicKey is the
+	// actual key used to encrypt/decrypt messages.
 	MessagingPublicKey *PublicKey
 
-	// MessagingKeyName is the name of the messaging key. This is used to identify
+	// MessagingGroupKeyName is the name of the messaging key. This is used to identify
 	// the message public key. You can pass any 8-32 character string (byte array).
 	// The standard Messages V3 key is named "default-key"
-	MessagingKeyName *KeyName
+	MessagingGroupKeyName *GroupKeyName
 
-	// Recipients is a list of recipients in a group chat. Messaging keys can have
+	// MessagingGroupMembers is a list of recipients in a group chat. Messaging keys can have
 	// multiple recipients, where the encrypted private key of the messaging public key
 	// is given to all group members.
-	Recipients []MessagingRecipient
-
-	// We allow overloading of the MessagingKeyEntry for message recipients, and
-	// this field is used to indicate that the struct is used to store recipient keys.
-	IsRecipient bool
+	MessagingGroupMembers []*MessagingGroupMember
 
 	// Whether this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if
@@ -620,83 +621,88 @@ type MessagingKeyEntry struct {
 	isDeleted bool
 }
 
-func (entry *MessagingKeyEntry) String() string {
-	return fmt.Sprintf("<MessagingKeyEntry | MessagingPublicKey : %v | MessagingKeyName : %v | isDeleted : %v >",
-		entry.MessagingPublicKey, entry.MessagingKeyName, entry.isDeleted)
+func (entry *MessagingGroupEntry) String() string {
+	return fmt.Sprintf("<MessagingGroupEntry: %v | MessagingPublicKey : %v | MessagingGroupKey : %v | isDeleted : %v >",
+		entry.GroupOwnerPublicKey, entry.MessagingPublicKey, entry.MessagingGroupKeyName, entry.isDeleted)
 }
 
-func (entry *MessagingKeyEntry) Encode() []byte {
+func (entry *MessagingGroupEntry) Encode() []byte {
 	var entryBytes []byte
 
+	entryBytes = append(entryBytes, EncodeByteArray(entry.GroupOwnerPublicKey[:])...)
 	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingPublicKey[:])...)
-	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingKeyName[:])...)
-	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.Recipients)))...)
-	for ii := 0; ii < len(entry.Recipients); ii++ {
-		entryBytes = append(entryBytes, entry.Recipients[ii].Encode()...)
+	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingGroupKeyName[:])...)
+	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MessagingGroupMembers)))...)
+	for ii := 0; ii < len(entry.MessagingGroupMembers); ii++ {
+		entryBytes = append(entryBytes, entry.MessagingGroupMembers[ii].Encode()...)
 	}
-	entryBytes = append(entryBytes, BoolToByte(entry.IsRecipient))
 	return entryBytes
 }
 
-func (entry *MessagingKeyEntry) Decode(data []byte) error {
+func (entry *MessagingGroupEntry) Decode(data []byte) error {
 	rr := bytes.NewReader(data)
+
+	groupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding groupOwnerPublicKeyBytes")
+	}
+	entry.GroupOwnerPublicKey = NewPublicKey(groupOwnerPublicKeyBytes)
 
 	messagingPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingKeyEntry.Decode: Problem decoding messagingPublicKey")
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding messagingPublicKey")
 	}
 	entry.MessagingPublicKey = NewPublicKey(messagingPublicKeyBytes)
 
 	messagingKeyNameBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingKeyEntry.Decode: Problem decoding messagingKeyName")
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding messagingKeyName")
 	}
-	entry.MessagingKeyName = NewKeyName(messagingKeyNameBytes)
+	entry.MessagingGroupKeyName = NewGroupKeyName(messagingKeyNameBytes)
 
 	recipientsLen, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingKeyEntry.Decode: Problem decoding recipients length")
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipients length")
 	}
-	for ;recipientsLen > 0; recipientsLen-- {
-		recipient := MessagingRecipient{}
+	for ; recipientsLen > 0; recipientsLen-- {
+		recipient := MessagingGroupMember{}
 		err = recipient.Decode(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MessagingKeyEntry.Decode: Problem decoding recipient")
+			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
 		}
 
-		entry.Recipients = append(entry.Recipients, recipient)
+		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &recipient)
 	}
 
-	entry.IsRecipient = ReadBoolByte(rr)
 	return nil
 }
 
-// MessagingRecipient is used to store information about a group chat member.
-type MessagingRecipient struct {
-	// RecipientPublicKey is the main public key of the group chat member.
+// MessagingGroupMember is used to store information about a group chat member.
+type MessagingGroupMember struct {
+	// GroupMemberPublicKey is the main public key of the group chat member.
 	// Importantly, it isn't a messaging public key.
-	RecipientPublicKey *PublicKey
+	GroupMemberPublicKey *PublicKey
 
-	// RecipientMessagingKeyName determines the key of the recipient that the
+	// GroupMemberKeyName determines the key of the recipient that the
 	// encrypted key is addressed to. We allow adding recipients by their
 	// messaging keys. It suffices to specify the recipient's main public key
 	// and recipient's messaging key name for the consensus to know how to
 	// index the recipient. That's why we don't actually store the messaging
-	// public key in the MessagingRecipient entry.
-	RecipientMessagingKeyName *KeyName
+	// public key in the MessagingGroupMember entry.
+	GroupMemberKeyName *GroupKeyName
 
 	// EncryptedKey is the encrypted messaging public key, addressed to the recipient.
 	EncryptedKey              []byte
 }
 
-func (rec *MessagingRecipient) Encode() []byte {
+func (rec *MessagingGroupMember) Encode() []byte {
 	data := []byte{}
 
-	data = append(data, UintToBuf(uint64(len(rec.RecipientPublicKey)))...)
-	data = append(data, rec.RecipientPublicKey[:]...)
+	data = append(data, UintToBuf(uint64(len(rec.GroupMemberPublicKey)))...)
+	data = append(data, rec.GroupMemberPublicKey[:]...)
 
-	data = append(data, UintToBuf(uint64(len(rec.RecipientMessagingKeyName)))...)
-	data = append(data, rec.RecipientMessagingKeyName[:]...)
+	data = append(data, UintToBuf(uint64(len(rec.GroupMemberKeyName)))...)
+	data = append(data, rec.GroupMemberKeyName[:]...)
 
 	data = append(data, UintToBuf(uint64(len(rec.EncryptedKey)))...)
 	data = append(data, rec.EncryptedKey...)
@@ -704,29 +710,29 @@ func (rec *MessagingRecipient) Encode() []byte {
 	return data
 }
 
-func (rec *MessagingRecipient) Decode(rr io.Reader) error {
+func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 
 	recipientPublicKeyBytes, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingRecipient.Decode: Problem reading " +
-			"RecipientPublicKey")
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+			"GroupMemberPublicKey")
 	}
 	recipientKeyName, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingRecipient.Decode: Problem reading " +
-			"RecipientMessagingKeyName")
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+			"GroupMemberKeyName")
 	}
-	err = ValidateKeyAndName(recipientPublicKeyBytes, recipientKeyName)
+	err = ValidateGroupPublicKeyAndName(recipientPublicKeyBytes, recipientKeyName)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingRecipient.Decode: Problem reading " +
-			"RecipientPublicKey and RecipientMessagingKeyName")
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+			"GroupMemberPublicKey and GroupMemberKeyName")
 	}
 
-	rec.RecipientPublicKey = NewPublicKey(recipientPublicKeyBytes)
-	rec.RecipientMessagingKeyName = NewKeyName(recipientKeyName)
+	rec.GroupMemberPublicKey = NewPublicKey(recipientPublicKeyBytes)
+	rec.GroupMemberKeyName = NewGroupKeyName(recipientKeyName)
 	rec.EncryptedKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingRecipient.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
 			"EncryptedKey")
 	}
 	return nil
@@ -1213,7 +1219,7 @@ type PKIDEntry struct {
 }
 
 func (pkid *PKIDEntry) String() string {
-	return fmt.Sprintf("< PKID: %s, PublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
+	return fmt.Sprintf("< PKID: %s, OwnerPublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
 }
 
 type ProfileEntry struct {

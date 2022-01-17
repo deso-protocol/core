@@ -232,7 +232,7 @@ func (bav *UtxoView) _disconnectLike(
 		// Sanity check: verify that the user on the likeEntry matches the transaction sender.
 		if !reflect.DeepEqual(prevLikeEntry.LikerPubKey, currentTxn.PublicKey) {
 			return fmt.Errorf("_disconnectLike: User public key on "+
-				"LikeEntry was %s but the PublicKey on the txn was %s",
+				"LikeEntry was %s but the OwnerPublicKey on the txn was %s",
 				PkToStringBoth(prevLikeEntry.LikerPubKey),
 				PkToStringBoth(currentTxn.PublicKey))
 		}
@@ -263,7 +263,7 @@ func (bav *UtxoView) _disconnectLike(
 		// Sanity check: verify that the user on the likeEntry matches the transaction sender.
 		if !reflect.DeepEqual(likeEntry.LikerPubKey, currentTxn.PublicKey) {
 			return fmt.Errorf("_disconnectLike: User public key on "+
-				"LikeEntry was %s but the PublicKey on the txn was %s",
+				"LikeEntry was %s but the OwnerPublicKey on the txn was %s",
 				PkToStringBoth(likeEntry.LikerPubKey),
 				PkToStringBoth(currentTxn.PublicKey))
 		}

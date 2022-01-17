@@ -201,19 +201,19 @@ const (
 	TxnTypeLike                         TxnType = 10
 	TxnTypeCreatorCoin                  TxnType = 11
 	TxnTypeSwapIdentity                 TxnType = 12
-	TxnTypeUpdateGlobalParams           TxnType = 13
-	TxnTypeCreatorCoinTransfer          TxnType = 14
-	TxnTypeCreateNFT                    TxnType = 15
-	TxnTypeUpdateNFT                    TxnType = 16
-	TxnTypeAcceptNFTBid                 TxnType = 17
-	TxnTypeNFTBid                       TxnType = 18
-	TxnTypeNFTTransfer                  TxnType = 19
-	TxnTypeAcceptNFTTransfer            TxnType = 20
-	TxnTypeBurnNFT                      TxnType = 21
-	TxnTypeAuthorizeDerivedKey          TxnType = 22
-	TxnTypeMessagingKey                 TxnType = 23
-	TxnTypeDAOCoin                      TxnType = 24
-	TxnTypeDAOCoinTransfer              TxnType = 25
+	TxnTypeUpdateGlobalParams  TxnType = 13
+	TxnTypeCreatorCoinTransfer TxnType = 14
+	TxnTypeCreateNFT           TxnType = 15
+	TxnTypeUpdateNFT           TxnType = 16
+	TxnTypeAcceptNFTBid        TxnType = 17
+	TxnTypeNFTBid              TxnType = 18
+	TxnTypeNFTTransfer         TxnType = 19
+	TxnTypeAcceptNFTTransfer   TxnType = 20
+	TxnTypeBurnNFT             TxnType = 21
+	TxnTypeAuthorizeDerivedKey TxnType = 22
+	TxnTypeMessagingGroup      TxnType = 23
+	TxnTypeDAOCoin             TxnType = 24
+	TxnTypeDAOCoinTransfer     TxnType = 25
 
 	// NEXT_ID = 26
 )
@@ -233,20 +233,20 @@ const (
 	TxnStringLike                         TxnString = "LIKE"
 	TxnStringCreatorCoin                  TxnString = "CREATOR_COIN"
 	TxnStringSwapIdentity                 TxnString = "SWAP_IDENTITY"
-	TxnStringUpdateGlobalParams           TxnString = "UPDATE_GLOBAL_PARAMS"
-	TxnStringCreatorCoinTransfer          TxnString = "CREATOR_COIN_TRANSFER"
-	TxnStringCreateNFT                    TxnString = "CREATE_NFT"
-	TxnStringUpdateNFT                    TxnString = "UPDATE_NFT"
-	TxnStringAcceptNFTBid                 TxnString = "ACCEPT_NFT_BID"
-	TxnStringNFTBid                       TxnString = "NFT_BID"
-	TxnStringNFTTransfer                  TxnString = "NFT_TRANSFER"
-	TxnStringAcceptNFTTransfer            TxnString = "ACCEPT_NFT_TRANSFER"
-	TxnStringBurnNFT                      TxnString = "BURN_NFT"
-	TxnStringAuthorizeDerivedKey          TxnString = "AUTHORIZE_DERIVED_KEY"
-	TxnStringMessagingKey                 TxnString = "MESSAGING_KEY"
-	TxnStringDAOCoin                      TxnString = "DAO_COIN"
-	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
-	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
+	TxnStringUpdateGlobalParams  TxnString = "UPDATE_GLOBAL_PARAMS"
+	TxnStringCreatorCoinTransfer TxnString = "CREATOR_COIN_TRANSFER"
+	TxnStringCreateNFT           TxnString = "CREATE_NFT"
+	TxnStringUpdateNFT           TxnString = "UPDATE_NFT"
+	TxnStringAcceptNFTBid        TxnString = "ACCEPT_NFT_BID"
+	TxnStringNFTBid              TxnString = "NFT_BID"
+	TxnStringNFTTransfer         TxnString = "NFT_TRANSFER"
+	TxnStringAcceptNFTTransfer   TxnString = "ACCEPT_NFT_TRANSFER"
+	TxnStringBurnNFT             TxnString = "BURN_NFT"
+	TxnStringAuthorizeDerivedKey TxnString = "AUTHORIZE_DERIVED_KEY"
+	TxnStringMessagingGroup      TxnString = "MESSAGING_GROUP"
+	TxnStringDAOCoin             TxnString = "DAO_COIN"
+	TxnStringDAOCoinTransfer     TxnString = "DAO_COIN_TRANSFER"
+	TxnStringUndefined           TxnString = "TXN_UNDEFINED"
 )
 
 var (
@@ -255,7 +255,7 @@ var (
 		TxnTypeSubmitPost, TxnTypeUpdateProfile, TxnTypeUpdateBitcoinUSDExchangeRate, TxnTypeFollow, TxnTypeLike,
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
-		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingKey,
+		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
 		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer,
 	}
 	AllTxnString = []TxnString{
@@ -263,7 +263,7 @@ var (
 		TxnStringSubmitPost, TxnStringUpdateProfile, TxnStringUpdateBitcoinUSDExchangeRate, TxnStringFollow, TxnStringLike,
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
-		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingKey,
+		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
 		TxnStringDAOCoin, TxnStringDAOCoinTransfer,
 	}
 )
@@ -322,8 +322,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringBurnNFT
 	case TxnTypeAuthorizeDerivedKey:
 		return TxnStringAuthorizeDerivedKey
-	case TxnTypeMessagingKey:
-		return TxnStringMessagingKey
+	case TxnTypeMessagingGroup:
+		return TxnStringMessagingGroup
 	case TxnTypeDAOCoin:
 		return TxnStringDAOCoin
 	case TxnTypeDAOCoinTransfer:
@@ -379,8 +379,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeBurnNFT
 	case TxnStringAuthorizeDerivedKey:
 		return TxnTypeAuthorizeDerivedKey
-	case TxnStringMessagingKey:
-		return TxnTypeMessagingKey
+	case TxnStringMessagingGroup:
+		return TxnTypeMessagingGroup
 	case TxnStringDAOCoin:
 		return TxnTypeDAOCoin
 	case TxnStringDAOCoinTransfer:
@@ -444,8 +444,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&BurnNFTMetadata{}).New(), nil
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
-	case TxnTypeMessagingKey:
-		return (&MessagingKeyMetadata{}).New(), nil
+	case TxnTypeMessagingGroup:
+		return (&MessagingGroupMetadata{}).New(), nil
 	case TxnTypeDAOCoin:
 		return (&DAOCoinMetadata{}).New(), nil
 	case TxnTypeDAOCoinTransfer:
@@ -3278,7 +3278,7 @@ func (txnData *FollowMetadata) ToBytes(preSignature bool) ([]byte, error) {
 
 	data := []byte{}
 
-	// RecipientPublicKey
+	// FollowedPublicKey
 	//
 	// We know the public key is set and has the expected length so we don't need
 	// to encode the length here.
@@ -4946,80 +4946,93 @@ func DeserializePubKeyToUint64Map (data []byte) (map[PublicKey]uint64, error) {
 }
 
 // ==================================================================
-// MessagingKeyMetadata
+// MessagingGroupMetadata
 // ==================================================================
 
-type MessagingKeyMetadata struct {
-	// This struct is very similar to the MessagingKeyEntry type.
-	MessagingPublicKey []byte
-	MessagingKeyName []byte
-	KeySignature []byte
+type MessagingGroupMetadata struct {
+	// This struct is very similar to the MessagingGroupEntry type.
+	MessagingPublicKey    []byte
+	MessagingGroupKeyName []byte
+	// This value is the signature of the following using the private key
+	// of the GroupOwnerPublicKey (aka txn.PublicKey):
+	// - Sha256DoubleHash(MessagingPublicKey || MessagingGroupKeyName)
+	//
+	// This signature is only required when setting up a group where
+	// - MessagingGroupKeyName = "default-key"
+	// In this case, we want to make sure that people don't accidentally register
+	// this group name with a derived key, and forcing this signature ensures that.
+	// The reason is that if someone accidentally registers the default-key with
+	// the wrong public key, then they won't be able to receive messages cross-device
+	// anymore.
+	//
+	// This field is not critical and can be removed in the future.
+	GroupOwnerSignature   []byte
 
-	Recipients []MessagingRecipient
+	MessagingGroupMembers []*MessagingGroupMember
 }
 
-func (txnData *MessagingKeyMetadata) GetTxnType() TxnType {
-	return TxnTypeMessagingKey
+func (txnData *MessagingGroupMetadata) GetTxnType() TxnType {
+	return TxnTypeMessagingGroup
 }
 
-func (txnData *MessagingKeyMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *MessagingGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	data = append(data, UintToBuf(uint64(len(txnData.MessagingPublicKey)))...)
 	data = append(data, txnData.MessagingPublicKey...)
 
-	data = append(data, UintToBuf(uint64(len(txnData.MessagingKeyName)))...)
-	data = append(data, txnData.MessagingKeyName...)
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupKeyName)))...)
+	data = append(data, txnData.MessagingGroupKeyName...)
 
-	data = append(data, UintToBuf(uint64(len(txnData.KeySignature)))...)
-	data = append(data, txnData.KeySignature...)
+	data = append(data, UintToBuf(uint64(len(txnData.GroupOwnerSignature)))...)
+	data = append(data, txnData.GroupOwnerSignature...)
 
-	data = append(data, UintToBuf(uint64(len(txnData.Recipients)))...)
-	for _, recipient := range txnData.Recipients {
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupMembers)))...)
+	for _, recipient := range txnData.MessagingGroupMembers {
 		data = append(data, recipient.Encode()...)
 	}
 
 	return data, nil
 }
 
-func (txnData *MessagingKeyMetadata) FromBytes(data []byte) error {
-	ret := MessagingKeyMetadata{}
+func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
+	ret := MessagingGroupMetadata{}
 	rr := bytes.NewReader(data)
 
 	var err error
 	ret.MessagingPublicKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
 			"Problem reading MessagingPublicKey")
 	}
 
-	ret.MessagingKeyName, err = ReadVarString(rr)
+	ret.MessagingGroupKeyName, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
-			"Problem reading MessagingKeyName")
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+			"Problem reading MessagingGroupKey")
 	}
 
-	ret.KeySignature, err = ReadVarString(rr)
+	ret.GroupOwnerSignature, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err,"MessagingKeyMetadata.FromBytes: " +
-			"Problem reading KeySignature")
+		return errors.Wrapf(err,"MessagingGroupMetadata.FromBytes: " +
+			"Problem reading GroupOwnerSignature")
 	}
 
 	numRecipients, err := ReadUvarint(rr)
-	for ;numRecipients > 0; numRecipients-- {
-		recipient := MessagingRecipient{}
+	for ; numRecipients > 0; numRecipients-- {
+		recipient := MessagingGroupMember{}
 		err = recipient.Decode(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MessagingKeyMetadata.FromBytes: " +
+			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
 				"error reading recipient")
 		}
-		ret.Recipients = append(ret.Recipients, recipient)
+		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)
 	}
 
 	*txnData = ret
 	return nil
 }
 
-func (txnData *MessagingKeyMetadata) New() DeSoTxnMetadata {
-	return &MessagingKeyMetadata{}
+func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
+	return &MessagingGroupMetadata{}
 }

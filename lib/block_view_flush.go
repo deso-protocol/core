@@ -101,7 +101,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
-	if err := bav._flushMessagingKeyEntriesToDbWithTxn(txn); err != nil {
+	if err := bav._flushMessagingGroupEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 
@@ -923,59 +923,65 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushMessagingKeyEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushMessagingKeyEntriesToDbWithTxn: flushing %d mappings", len(bav.MessagingKeyToMessagingKeyEntry))
+func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) error {
+	glog.V(1).Infof("_flushMessagingGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.MessagingGroupKeyToMessagingGroupEntry))
 	numDeleted := 0
 	numPut := 0
 
-	// Go through all entries in MessagingKeyToMessagingKeyEntry and add them to the DB.
+	// Go through all entries in MessagingGroupKeyToMessagingGroupEntry and add them to the DB.
 	// These records are part of the DeSo V3 Messages.
-	for messagingKey, messagingKeyEntry := range bav.MessagingKeyToMessagingKeyEntry {
+	for messagingGroupKey, messagingGroupEntry := range bav.MessagingGroupKeyToMessagingGroupEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
-		// later if isDeleted=false. Messaging entries can have a list of recipients, and
-		// we store these recipients under a separate prefix. To delete a messaging key
+		// later if isDeleted=false. Messaging entries can have a list of members, and
+		// we store these members under a separate prefix. To delete a messaging group
 		// we also have to go delete all of the recipients.
-		existingMessagingKeyEntry := DBGetMessagingKeyEntryWithTxn(txn, &messagingKey)
-		if existingMessagingKeyEntry != nil {
-			if err := DBDeleteMessagingKeyEntryWithTxn(txn, &messagingKey); err != nil {
-				return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
-					"Problem deleting MessagingKeyEntry %v from db", *messagingKeyEntry)
+		//
+		// TODO: We should have a single DeleteMappings function in db_utils.go that we push this
+		// complexity into.
+		existingMessagingGroupEntry := DBGetMessagingGroupEntryWithTxn(txn, &messagingGroupKey)
+		if existingMessagingGroupEntry != nil {
+			if err := DBDeleteMessagingGroupEntryWithTxn(txn, &messagingGroupKey); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+					"Problem deleting MessagingGroupEntry %v from db", *messagingGroupEntry)
 			}
-			for _, recipient := range existingMessagingKeyEntry.Recipients {
-				if err := DBDeleteMessagingRecipientMappingWithTxn(txn, &recipient, existingMessagingKeyEntry); err != nil {
-					return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
-						"Problem deleting MessagingKeyEntry recipients (%v) from db", recipient)
+			for _, member := range existingMessagingGroupEntry.MessagingGroupMembers {
+				if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, member, existingMessagingGroupEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+						"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
 				}
 			}
 		}
 
-		if messagingKeyEntry.isDeleted {
+		if messagingGroupEntry.isDeleted {
 			// Since entry is deleted, there's nothing to do.
 			numDeleted++
 		} else {
 			// The entry isn't deleted so we re-add it to the DB. In particular, we add
 			// all of the recipients.
-			ownerPublicKey := messagingKey.PublicKey
-			if err := DBPutMessagingKeyEntryWithTxn(txn, &ownerPublicKey, messagingKeyEntry); err != nil {
-				return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
-					"Problem putting MessagingKeyEntry %v to db", *messagingKeyEntry)
+			//
+			// TODO: We should have a single PutMappings function in db_utils.go that we push this
+			// complexity into.
+			ownerPublicKey := messagingGroupKey.OwnerPublicKey
+			if err := DBPutMessagingGroupEntryWithTxn(txn, &ownerPublicKey, messagingGroupEntry); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+					"Problem putting MessagingGroupEntry %v to db", *messagingGroupEntry)
 			}
-			for _, recipient := range messagingKeyEntry.Recipients {
+			for _, recipient := range messagingGroupEntry.MessagingGroupMembers {
 				// Group owner can be one of the recipients, particularly when we want to add the
 				// encrypted key addressed to the owner. This could happen when the group is created
 				// by a derived key, and we want to allow the main owner key to be able to read the chat.
-				if reflect.DeepEqual(recipient.RecipientPublicKey[:], ownerPublicKey[:]) {
+				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey[:]) {
 					continue
 				}
-				if err := DBPutMessagingRecipientWithTxn(txn, &recipient, &ownerPublicKey, messagingKeyEntry); err != nil {
-					return errors.Wrapf(err, "UtxoView._flushMessagingKeyEntriesToDbWithTxn: "+
-						"Problem putting MessagingKeyEntry recipient (%v) to db", recipient)
+				if err := DBPutMessagingGroupMemberWithTxn(txn, recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+						"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)
 				}
 			}
 			numPut++
 		}
 	}
 
-	glog.V(1).Infof("_flushMessagingKeyEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(1).Infof("_flushMessagingGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	return nil
 }

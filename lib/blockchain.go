@@ -2569,7 +2569,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 
 		// Add {V : 1} version field to ExtraData to indicate we are
 		// encrypting using legacy public key method.
-		messageExtraData["V"] = UintToBuf(1)
+		messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion1)
 	} else {
 		var err error
 		// Message is already encrypted, so just decode it to hex format
@@ -2581,28 +2581,28 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 
 		// Add {V : 2} version field to ExtraData to indicate we are
 		// encrypting using shared secret.
-		messageExtraData["V"] = UintToBuf(2)
+		messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion2)
 
 		// Check for DeSo V3 Messages fields. Specifically, this request could be made with either sender
 		// or recipient public keys and key names. Having one key present is sufficient to set V3.
 		if len(senderMessagingPublicKey) > 0 || len(recipientMessagingPublicKey) > 0 {
 
 			// If we're using rotating messaging keys, then we're on {V : 3} messages.
-			if err = ValidateKeyAndName(senderMessagingPublicKey, senderMessagingKeyName); err == nil {
-				messageExtraData["V"] = UintToBuf(3)
+			if err = ValidateGroupPublicKeyAndName(senderMessagingPublicKey, senderMessagingKeyName); err == nil {
+				messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
 				messageExtraData[SenderMessagingPublicKey] = senderMessagingPublicKey
-				messageExtraData[SenderMessagingKeyName] = senderMessagingKeyName
+				messageExtraData[SenderMessagingGroupKeyName] = senderMessagingKeyName
 			}
 
-			if err = ValidateKeyAndName(recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+			if err = ValidateGroupPublicKeyAndName(recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
 				// If we didn't pass validation of either sender or recipient, then we return an error.
-				if !reflect.DeepEqual(messageExtraData["V"], UintToBuf(3)) {
+				if !reflect.DeepEqual(messageExtraData[MessagesVersionString], UintToBuf(MessagesVersion3)) {
 					return nil, 0, 0, 0, err
 				}
 			} else {
-				messageExtraData["V"] = UintToBuf(3)
+				messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
 				messageExtraData[RecipientMessagingPublicKey] = recipientMessagingPublicKey
-				messageExtraData[RecipientMessagingKeyName] = recipientMessagingKeyName
+				messageExtraData[RecipientMessagingGroupKeyName] = recipientMessagingKeyName
 			}
 		}
 	}
@@ -3699,42 +3699,6 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		extraData[DerivedPublicKey] = derivedPublicKey
 	}
 
-	if messagingPublicKey != "" && messagingKeyName != "" && messagingKeySignature != "" {
-		// Decode the messaging public key hex string into a byte array.
-		messagingPk, err := hex.DecodeString(messagingPublicKey)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
-				"Problem decoding messaging public key")
-		}
-
-		// Validate messaging public key and key name.
-		if err := ValidateKeyAndName(messagingPk, []byte(messagingKeyName)); err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: Problem "+
-				"validating messaging public key and name")
-		}
-
-		// Check that messagingKeySignature can be parsed into byte array correctly.
-		messagingKeySig, err := hex.DecodeString(messagingKeySignature)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
-				"Problem decoding messagingKeySignature")
-		}
-
-		// If we get here, it means we have valid messaging public key, key name, and signature.
-		// Now we want to verify that the signature is correct for the owner public key.
-		bytes := append(messagingPk, []byte(messagingKeyName)...)
-		if err = _verifyBytesSignature(ownerPublicKey, bytes, messagingKeySig); err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAuthorizeDerivedKeyTxn: "+
-				"Problem verifying signature bytes")
-		}
-
-		// If we got here, we have valid public key, key name, and matching signature.
-		// We add the records to ExtraData.
-		extraData[MessagingPublicKey] = messagingPk
-		extraData[MessagingKeyName] = []byte(messagingKeyName)
-		extraData[MessagingKeySignature] = messagingKeySig
-	}
-
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: ownerPublicKey,
@@ -3770,20 +3734,20 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 func (bc *Blockchain) CreateMessagingKeyTxn(
 	senderPublicKey []byte,
 	messagingPublicKey []byte,
-	messagingKeyName []byte,
-	messagingKeySignature []byte,
-	recipients []MessagingRecipient,
+	messagingGroupKeyName []byte,
+	messagingOwnerKeySignature []byte,
+	members []*MessagingGroupMember,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
     	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// We don't need to validate info here, so just construct the transaction instead.
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
-		TxnMeta: &MessagingKeyMetadata{
-			MessagingPublicKey: messagingPublicKey,
-			MessagingKeyName: messagingKeyName,
-			KeySignature: messagingKeySignature,
-			Recipients: recipients,
+		TxnMeta: &MessagingGroupMetadata{
+			MessagingPublicKey:    messagingPublicKey,
+			MessagingGroupKeyName: messagingGroupKeyName,
+			GroupOwnerSignature:   messagingOwnerKeySignature,
+			MessagingGroupMembers: members,
 		},
 		TxOutputs: additionalOutputs,
 	}
