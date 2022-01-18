@@ -1468,6 +1468,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
 			postEntry := utxoView.GetPostEntryForPostHash(nftEntry.NFTPostHash)
 
+			creatorPublicKeyBase58Check := PkToString(postEntry.PosterPublicKey, utxoView.Params)
 			ownerAtTimeOfBid = nftEntry.OwnerPKID
 
 			if utxoOp.PrevNFTEntry != nil && utxoOp.PrevNFTEntry.IsBuyNow {
@@ -1506,7 +1507,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				nftRoyaltiesMetadata = NFTRoyaltiesMetadata{
 					CreatorCoinRoyaltyNanos:     utxoOp.NFTBidCreatorRoyaltyNanos,
 					CreatorRoyaltyNanos:         utxoOp.NFTBidCreatorDESORoyaltyNanos,
-					CreatorPublicKeyBase58Check: ownerPublicKeyBase58Check,
+					CreatorPublicKeyBase58Check: creatorPublicKeyBase58Check,
 					AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 						utxoOp.NFTBidAdditionalCoinRoyalties, utxoView.Params),
 					AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
@@ -1532,11 +1533,11 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 
-		var creatorPublicKey []byte
+		var creatorPublicKeyBase58Check string
 		for _, utxoOp := range utxoOps {
 			if utxoOp.Type == OperationTypeAcceptNFTBid {
 				if utxoOp.PrevPostEntry != nil {
-					creatorPublicKey = utxoOp.PrevPostEntry.PosterPublicKey
+					creatorPublicKeyBase58Check = PkToString(utxoOp.PrevPostEntry.PosterPublicKey, utxoView.Params)
 				}
 				break
 			}
@@ -1551,7 +1552,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			NFTRoyaltiesMetadata: NFTRoyaltiesMetadata{
 				CreatorCoinRoyaltyNanos:     utxoOp.AcceptNFTBidCreatorRoyaltyNanos,
 				CreatorRoyaltyNanos:         utxoOp.AcceptNFTBidCreatorDESORoyaltyNanos,
-				CreatorPublicKeyBase58Check: PkToString(creatorPublicKey, utxoView.Params),
+				CreatorPublicKeyBase58Check: creatorPublicKeyBase58Check,
 				AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 					utxoOp.AcceptNFTBidAdditionalCoinRoyalties, utxoView.Params),
 				AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
@@ -1562,6 +1563,11 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 			PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(realTxMeta.BidderPKID), utxoView.Params),
 			Metadata:             "NFTBidderPublicKeyBase58Check",
+		})
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: creatorPublicKeyBase58Check,
+			Metadata:             ""
 		})
 
 		for pubKeyIter, _ := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
