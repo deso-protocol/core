@@ -1727,7 +1727,8 @@ func pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 		return nil
 	}
 	base58CheckToRoyaltyNanosMap := make(map[string]uint64)
-	for _, pubKeyRoyaltyPair := range publicKeyRoyaltyPairs {
+	for _, pubKeyRoyaltyPairIter := range publicKeyRoyaltyPairs {
+		pubKeyRoyaltyPair := pubKeyRoyaltyPairIter
 		base58CheckToRoyaltyNanosMap[PkToString(pubKeyRoyaltyPair.PublicKey, params)] =
 			pubKeyRoyaltyPair.RoyaltyAmountNanos
 	}
