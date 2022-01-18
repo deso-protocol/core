@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"reflect"
@@ -410,7 +411,12 @@ func (bav *UtxoView) _setUtxoMappings(utxoEntry *UtxoEntry) error {
 	return nil
 }
 
-func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
+func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKeyArg *UtxoKey) *UtxoEntry {
+	utxoKey := &UtxoKey{}
+	if utxoKeyArg != nil {
+		*utxoKey = *utxoKeyArg
+	}
+
 	utxoEntry, ok := bav.UtxoKeyToUtxoEntry[*utxoKey]
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the
 	// db.
@@ -440,7 +446,9 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	return utxoEntry
 }
 
-func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
+func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint64, error) {
+	publicKey := publicKeyArg
+
 	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
@@ -498,8 +506,12 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 	return nil
 }
 
-func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
+func (bav *UtxoView) _spendUtxo(utxoKeyArg *UtxoKey) (*UtxoOperation, error) {
 	// Swap this utxo's position with the utxo in the last position and delete it.
+	utxoKey := &UtxoKey{}
+	if utxoKeyArg != nil {
+		*utxoKey = *utxoKeyArg
+	}
 
 	// Get the entry for this utxo from the view if it's cached,
 	// otherwise try and get it from the db.
@@ -1155,7 +1167,14 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// reasons (e.g. reputation is way easier to manage without key rotation),
 		// then I don't think this constraint should pose much of an issue.
 		if !reflect.DeepEqual(utxoEntry.PublicKey, txn.PublicKey) {
-			return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey,
+				"utxoEntry.PublicKey: %v, txn.PublicKey: %v, " +
+					"utxoEntry.UtxoKey: %v:%v, AmountNanos: %v",
+				PkToStringTestnet(utxoEntry.PublicKey),
+				PkToStringTestnet(txn.PublicKey),
+				hex.EncodeToString(utxoEntry.UtxoKey.TxID[:]),
+				utxoEntry.UtxoKey.Index, utxoEntry.AmountNanos)
 		}
 
 		// Sanity check the amount of the input.
