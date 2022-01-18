@@ -1532,6 +1532,16 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 
+		var creatorPublicKey []byte
+		for _, utxoOp := range utxoOps {
+			if utxoOp.Type == OperationTypeAcceptNFTBid {
+				if utxoOp.PrevPostEntry != nil {
+					creatorPublicKey = utxoOp.PrevPostEntry.PosterPublicKey
+				}
+				break
+			}
+		}
+
 		utxoOp := utxoOps[len(utxoOps)-1]
 
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
@@ -1541,7 +1551,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			NFTRoyaltiesMetadata: NFTRoyaltiesMetadata{
 				CreatorCoinRoyaltyNanos:     utxoOp.AcceptNFTBidCreatorRoyaltyNanos,
 				CreatorRoyaltyNanos:         utxoOp.AcceptNFTBidCreatorDESORoyaltyNanos,
-				CreatorPublicKeyBase58Check: PkToString(txn.PublicKey, utxoView.Params),
+				CreatorPublicKeyBase58Check: PkToString(creatorPublicKey, utxoView.Params),
 				AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 					utxoOp.AcceptNFTBidAdditionalCoinRoyalties, utxoView.Params),
 				AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
