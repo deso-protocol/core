@@ -1461,7 +1461,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 		utxoOp := utxoOps[len(utxoOps)-1]
 		var nftRoyaltiesMetadata NFTRoyaltiesMetadata
-		var ownerAtTimeOfBid *PKID
+		var ownerPublicKeyBase58Check string
 		// We don't send notifications for standing offers.
 		if realTxMeta.SerialNumber != 0 {
 			nftKey := MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
@@ -1469,14 +1469,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			postEntry := utxoView.GetPostEntryForPostHash(nftEntry.NFTPostHash)
 
 			creatorPublicKeyBase58Check := PkToString(postEntry.PosterPublicKey, utxoView.Params)
-			ownerAtTimeOfBid = nftEntry.OwnerPKID
+			ownerAtTimeOfBid := nftEntry.OwnerPKID
 
 			if utxoOp.PrevNFTEntry != nil && utxoOp.PrevNFTEntry.IsBuyNow {
 				isBuyNow = true
 				ownerAtTimeOfBid = utxoOp.PrevNFTEntry.OwnerPKID
 			}
 
-			ownerPublicKeyBase58Check := PkToString(utxoView.GetPublicKeyForPKID(ownerAtTimeOfBid), utxoView.Params)
+			ownerPublicKeyBase58Check = PkToString(utxoView.GetPublicKeyForPKID(ownerAtTimeOfBid), utxoView.Params)
 
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: ownerPublicKeyBase58Check,
@@ -1518,11 +1518,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 						utxoOp.NFTBidAdditionalDESORoyalties, utxoView.Params),
 				}
 			}
-		}
-
-		var ownerPublicKeyBase58Check string
-		if ownerAtTimeOfBid != nil {
-			ownerPublicKeyBase58Check = PkToString(utxoView.GetPublicKeyForPKID(ownerAtTimeOfBid), utxoView.Params)
 		}
 
 		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
