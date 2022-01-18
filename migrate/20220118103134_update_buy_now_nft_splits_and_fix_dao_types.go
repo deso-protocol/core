@@ -85,5 +85,5 @@ func init() {
 
 	opts := migrations.MigrationOptions{}
 
-	migrations.Register("20210623152412_create_tables", up, down, opts)
+	migrations.Register("20220118103134_update_buy_now_nft_splits_and_fix_dao_types", up, down, opts)
 }
