@@ -1462,13 +1462,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		utxoOp := utxoOps[len(utxoOps)-1]
 		var nftRoyaltiesMetadata NFTRoyaltiesMetadata
 		var ownerPublicKeyBase58Check string
+		var creatorPublicKeyBase58Check string
 		// We don't send notifications for standing offers.
 		if realTxMeta.SerialNumber != 0 {
 			nftKey := MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
 			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
 			postEntry := utxoView.GetPostEntryForPostHash(nftEntry.NFTPostHash)
 
-			creatorPublicKeyBase58Check := PkToString(postEntry.PosterPublicKey, utxoView.Params)
+			creatorPublicKeyBase58Check = PkToString(postEntry.PosterPublicKey, utxoView.Params)
 			ownerAtTimeOfBid := nftEntry.OwnerPKID
 
 			if utxoOp.PrevNFTEntry != nil && utxoOp.PrevNFTEntry.IsBuyNow {
@@ -1482,32 +1483,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				PublicKeyBase58Check: ownerPublicKeyBase58Check,
 				Metadata:             "NFTOwnerPublicKeyBase58Check",
 			})
-			// Add notifications if buy now and additional royalties
-			if isBuyNow && len(postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
-				for pkidIter, _ := range postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
-					pkid := pkidIter
-					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-						PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&pkid), utxoView.Params),
-						Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
-					})
-				}
-			}
-
-			if isBuyNow && len(postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
-				for pkidIter, _ := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-					pkid := pkidIter
-					txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-						PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&pkid), utxoView.Params),
-						Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
-					})
-				}
-			}
 
 			if isBuyNow {
-				txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-					PublicKeyBase58Check: creatorPublicKeyBase58Check,
-					Metadata: "NFTCreatorPublicKeyBase58Check",
-				})
 				nftRoyaltiesMetadata = NFTRoyaltiesMetadata{
 					CreatorCoinRoyaltyNanos:     utxoOp.NFTBidCreatorRoyaltyNanos,
 					CreatorRoyaltyNanos:         utxoOp.NFTBidCreatorDESORoyaltyNanos,
@@ -1527,6 +1504,37 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			IsBuyNowBid:               isBuyNow,
 			NFTRoyaltiesMetadata:      nftRoyaltiesMetadata,
 			OwnerPublicKeyBase58Check: ownerPublicKeyBase58Check,
+		}
+
+		if isBuyNow {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: creatorPublicKeyBase58Check,
+				Metadata: "NFTCreatorPublicKeyBase58Check",
+			})
+
+			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
+				pubKey := pubKeyIter
+				// Skip affected pub key if no royalty received
+				if amountNanos == 0 {
+					continue
+				}
+				txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+					PublicKeyBase58Check: pubKey,
+					Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
+				})
+			}
+
+			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.AdditionalDESORoyaltiesMap {
+				pubKey := pubKeyIter
+				// Skip affected pub key if no royalty received
+				if amountNanos == 0 {
+					continue
+				}
+				txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+					PublicKeyBase58Check: pubKey,
+					Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
+				})
+			}
 		}
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
