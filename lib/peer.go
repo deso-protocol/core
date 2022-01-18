@@ -136,6 +136,7 @@ type Peer struct {
 	requestedBlocks map[BlockHash]bool
 
 	timeElapsed float64
+	currentTime time.Time
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
@@ -488,6 +489,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		MessageChan:            messageChan,
 		requestedBlocks:        make(map[BlockHash]bool),
 	}
+	pp.currentTime = time.Now()
 	if _cmgr != nil {
 		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)
 	}

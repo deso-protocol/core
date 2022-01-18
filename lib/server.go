@@ -499,6 +499,10 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 // GetSnapshot kick off hyper sync
 func (srv *Server) GetSnapshot(pp *Peer) {
 
+	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
+	pp.currentTime = time.Now()
+	glog.Infof("Server.GetSnapshot: Started Peer timer with total elapsed (%v) and current time (%v)",
+    					pp.timeElapsed, pp.currentTime)
 	var prefix []byte
 	lastDBEntry := EmptyDBEntry()
 	// First check if the peer is already assigned to some prefix.
@@ -710,7 +714,10 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 					}
 					return nil
 				})
-
+				pp.timeElapsed = 0.0
+				pp.currentTime = time.Now()
+				glog.Infof("Server._handleHeaderBundle: Started Peer timer with total elapsed (%v) and current time (%v)",
+					pp.timeElapsed, pp.currentTime)
 				srv.GetSnapshot(pp)
 				return
 			}
@@ -812,6 +819,10 @@ func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
 
 func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	glog.V(1).Infof("srv._handleGetSnapshot: Called with message %v from Peer %v", msg, pp)
+	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
+	pp.currentTime = time.Now()
+	glog.Infof("Server._handleGetSnapshot: Started Peer timer with total elapsed (%v) and current time (%v)",
+		pp.timeElapsed, pp.currentTime)
 
 	// Ignore GetSnapshot requests we're still syncing.
 	if srv.blockchain.isSyncing() {
@@ -836,6 +847,8 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 		Prefix: msg.Prefix,
 	}, false)
 
+
+
 	glog.V(2).Infof("Server.GetSnapshot: Sending a SnapshotData message to peer (%v) " +
 		"with SnapshotHeight (%v) and SnapshotChecksum (%v) and Snapshotdata length (%v)", pp,
 		srv.blockchain.snapshot.BlockHeight, srv.blockchain.snapshot.Checksum.ToHashString(), len(dbEntries))
@@ -845,6 +858,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: " +
 		"%v) from Peer %v", msg.SnapshotData[0].Key, msg.SnapshotData[len(msg.SnapshotData)-1].Key,
 		len(msg.SnapshotData), pp)
+
+	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
+	pp.currentTime = time.Now()
+	glog.Infof("Server._handleSnapshot: Got into _handleSnapshot with total elapsed (%v) and current time (%v)",
+		pp.timeElapsed, pp.currentTime)
 
 	k0, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, []byte{5}, []byte{5}, uint32(8<<20))
 	glog.V(1).Infof("How many 5 prefixes:", len(*k0))
@@ -891,6 +909,10 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		glog.Errorf("srv._handleSnapshot: Problem updating HyperSyncProgress, not found")
 	}
 
+	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
+	pp.currentTime = time.Now()
+	glog.Infof("Server._handleSnapshot: Ådded the snapshot bundle into DB with with total elapsed (%v) and current time (%v)",
+			pp.timeElapsed, pp.currentTime)
 	for _, statePrefix := range StatePrefixes {
 		completed := false
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
