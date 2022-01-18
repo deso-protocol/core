@@ -167,6 +167,8 @@ var (
 	_PrefixCreatorPKIDHODLerPKIDToBalanceEntry = []byte{34}
 
 	_PrefixPosterPublicKeyTimestampPostHash = []byte{35}
+	// Only NFT posts are stored here in this index
+	_PrefixPosterPublicKeyTimestampNFTPostHash = []byte{59}
 
 	// If no mapping exists for a particular public key, then the PKID is simply
 	// the public key itself.
@@ -287,7 +289,7 @@ var (
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 59
+	// NEXT_TAG: 60
 )
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
@@ -3935,6 +3937,14 @@ func _dbKeyForPosterPublicKeyTimestampPostHash(publicKey []byte, timestampNanos 
 	key = append(key, postHash[:]...)
 	return key
 }
+func _dbKeyForPosterPublicKeyTimestampNFTPostHash(publicKey []byte, timestampNanos uint64, nftPostHash *BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	key := append([]byte{}, _PrefixPosterPublicKeyTimestampNFTPostHash...)
+	key = append(key, publicKey...)
+	key = append(key, EncodeUint64(timestampNanos)...)
+	key = append(key, nftPostHash[:]...)
+	return key
+}
 func _dbKeyForTstampPostHash(tstampNanos uint64, postHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	key := append([]byte{}, _PrefixTstampNanosPostHash...)
@@ -4053,6 +4063,14 @@ func DBDeletePostEntryMappingsWithTxn(
 		}
 	}
 
+	if postEntry.IsNFT {
+		if err := txn.Delete(_dbKeyForPosterPublicKeyTimestampNFTPostHash(
+			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash)); err != nil {
+			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
+				"tstamp NFT mapping for post hash %v", postHash)
+		}
+	}
+
 	// Delete the repost entries for the post.
 	if IsVanillaRepost(postEntry) {
 		if err := txn.Delete(
@@ -4151,6 +4169,15 @@ func DBPutPostEntryMappingsWithTxn(
 				"adding mapping for stakeMultipleBps: %v", postEntry)
 		}
 	}
+
+	if postEntry.IsNFT {
+		if err := txn.Set(_dbKeyForPosterPublicKeyTimestampNFTPostHash(
+			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash), []byte{}); err != nil {
+			return errors.Wrapf(err,"DbPutPostEntryMappingsWithTxn: Problem "+
+				"adding mapping for public key + nft post %v", postEntry)
+		}
+	}
+
 	// We treat reposting the same for both comments and posts.
 	// We only store repost entry mappings for vanilla reposts
 	if IsVanillaRepost(postEntry) {
