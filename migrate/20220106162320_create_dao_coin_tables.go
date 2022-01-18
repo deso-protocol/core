@@ -15,7 +15,7 @@ func init() {
 				operation_type              SMALLINT NOT NULL,
 				coins_to_mint_nanos         BIGINT NOT NULL,
 				coins_to_burn_nanos         BIGINT NOT NULL,
-				transfer_restriction_status SMALLINT NOT NULL,
+				transfer_restriction_status SMALLINT NOT NULL
 			);
 		`)
 		if err != nil {
@@ -52,7 +52,7 @@ func init() {
 				ADD COLUMN minting_disabled                     BOOL,
 				ADD COLUMN dao_coin_number_of_holders           BIGINT,
 				ADD COLUMN dao_coin_coins_in_circulation_nanos  BIGINT,
-				ADD COLUMN dao_coin_minting_disabled            BOOL
+				ADD COLUMN dao_coin_minting_disabled            BOOL,
 				ADD COLUMN dao_coin_transfer_restriction_status SMALLINT;
 			`)
 
@@ -68,7 +68,7 @@ func init() {
 				DROP COLUMN minting_disabled,
 				DROP COLUMN dao_coin_number_of_holders,
 				DROP COLUMN dao_coin_coins_in_circulation_nanos,
-				DROP COLUMN dao_coin_minting_disabled
+				DROP COLUMN dao_coin_minting_disabled,
 				DROP COLUMN dao_coin_transfer_restriction_status; 
 		`)
 		return err
