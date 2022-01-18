@@ -1815,7 +1815,8 @@ func _getPublicKeysToIndexForTxn(txn *MsgDeSoTxn, params *DeSoParams) [][]byte {
 func (mp *DeSoMempool) _addMempoolTxToPubKeyOutputMap(mempoolTx *MempoolTx) {
 	// Index the transaction by any associated public keys.
 	publicKeysToIndex := _getPublicKeysToIndexForTxn(mempoolTx.Tx, mp.bc.params)
-	for _, pkToIndex := range publicKeysToIndex {
+	for _, pkToIndexIter := range publicKeysToIndex {
+		pkToIndex := pkToIndexIter
 		mp._addTxnToPublicKeyMap(mempoolTx, pkToIndex)
 	}
 }
