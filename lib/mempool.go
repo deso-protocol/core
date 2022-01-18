@@ -1532,17 +1532,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 
-		var creatorPublicKeyBase58Check string
-		for _, utxoOp := range utxoOps {
-			if utxoOp.Type == OperationTypeAcceptNFTBid {
-				if utxoOp.PrevPostEntry != nil {
-					creatorPublicKeyBase58Check = PkToString(utxoOp.PrevPostEntry.PosterPublicKey, utxoView.Params)
-				}
-				break
-			}
-		}
-
 		utxoOp := utxoOps[len(utxoOps)-1]
+		creatorPublicKeyBase58Check := PkToString(utxoOp.PrevPostEntry.PosterPublicKey, utxoView.Params)
 
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
