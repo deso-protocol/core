@@ -885,6 +885,10 @@ const (
 	MessagesVersion1 = 1
 	MessagesVersion2 = 2
 	MessagesVersion3 = 3
+
+	// Key in transaction's extra data map. If present, this value represents the Node ID of the running node. This maps
+	// to the map of nodes in ./lib/nodes.go
+	NodeSourceMapKey = "NodeSource"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
