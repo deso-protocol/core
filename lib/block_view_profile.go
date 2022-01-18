@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"reflect"
 	"sort"
@@ -451,6 +452,16 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 	if profile.Empty() {
 		bav.ProfilePKIDToProfileEntry[*pkidEntry.PKID] = nil
 	} else {
+		var daoCoinsInCirculationNanos *uint256.Int
+		if profile.DAOCoinCoinsInCirculationNanos != "" {
+			var err error
+			daoCoinsInCirculationNanos, err = uint256.FromHex(profile.DAOCoinCoinsInCirculationNanos)
+			if err != nil {
+				daoCoinsInCirculationNanos = uint256.NewInt()
+			}
+		} else {
+			daoCoinsInCirculationNanos = uint256.NewInt()
+		}
 		profileEntry = &ProfileEntry{
 			PublicKey:   profile.PublicKey.ToBytes(),
 			Username:    []byte(profile.Username),
@@ -460,13 +471,13 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
 				DeSoLockedNanos:         profile.DeSoLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
-				CoinsInCirculationNanos: profile.CoinsInCirculationNanos,
+				CoinsInCirculationNanos: *uint256.NewInt().SetUint64(profile.CoinsInCirculationNanos),
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
 				MintingDisabled:         profile.MintingDisabled,
 			},
 			DAOCoinEntry: CoinEntry{
 				NumberOfHolders:           profile.DAOCoinNumberOfHolders,
-				CoinsInCirculationNanos:   profile.DAOCoinCoinsInCirculationNanos,
+				CoinsInCirculationNanos:   *daoCoinsInCirculationNanos,
 				MintingDisabled:           profile.DAOCoinMintingDisabled,
 				TransferRestrictionStatus: profile.DAOCoinTransferRestrictionStatus,
 			},
