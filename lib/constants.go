@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/holiman/uint256"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -166,12 +165,10 @@ type ForkHeights struct {
 
 	// BuyNowAndNFTSplitsBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an
 	// auction style and allows splitting of NFT royalties to user's other than the post's creator.
-	// FIXME: Currently set to a really high value until we decide when we want this to trigger.
 	BuyNowAndNFTSplitsBlockHeight uint32
 
 	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
 	// transactions will be accepted.
-	// TODO: Update this to a real value when we decide on timing for the fork.
 	DAOCoinBlockHeight uint32
 }
 
@@ -638,9 +635,11 @@ var DeSoMainnetParams = DeSoParams{
 		BrokenNFTBidsFixBlockHeight:                          uint32(46917),
 		DeSoDiamondsBlockHeight:                              uint32(52112),
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
-		DeSoV3MessagesBlockHeight:                            uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
-		BuyNowAndNFTSplitsBlockHeight:                        uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
-		DAOCoinBlockHeight:                                   uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
+
+		// Mon Jan 24 @ 12pm PST
+		DeSoV3MessagesBlockHeight:                            uint32(98474),
+		BuyNowAndNFTSplitsBlockHeight:                        uint32(98474),
+		DAOCoinBlockHeight:                                   uint32(98474),
 	},
 }
 
@@ -821,9 +820,11 @@ var DeSoTestnetParams = DeSoParams{
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
 
 		// Flags after this point can differ from mainnet
-		DeSoV3MessagesBlockHeight:                            uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
-		BuyNowAndNFTSplitsBlockHeight:                        uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
-		DAOCoinBlockHeight:                                   uint32(math.MaxUint32 - 1), // FIXME: Set real testnet height
+
+		// Thu Jan 20 @ 12pm PST
+		DeSoV3MessagesBlockHeight:                            uint32(97322),
+		BuyNowAndNFTSplitsBlockHeight:                        uint32(97322),
+		DAOCoinBlockHeight:                                   uint32(97322),
 	},
 }
 
