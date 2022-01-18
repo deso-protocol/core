@@ -55,6 +55,9 @@ func init() {
 				ADD COLUMN dao_coin_minting_disabled            BOOL,
 				ADD COLUMN dao_coin_transfer_restriction_status SMALLINT;
 			`)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	}
