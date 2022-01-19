@@ -15,13 +15,13 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/core/lib"
 	"github.com/deso-protocol/core/migrate"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/config"
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
-	"github.com/sasha-s/go-deadlock"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
@@ -46,11 +46,11 @@ func NewNode(config *Config) *Node {
 
 func (node *Node) Start() {
 	// TODO: Replace glog with logrus so we can also get rid of flag library
-	flag.Parse()
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
 	flag.Set("vmodule", node.Config.GlogVmodule)
-	glog.Init()
+	flag.Set("alsologtostderr", "true")
+	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
 
 	// Print config
@@ -314,22 +314,22 @@ func getAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
 func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.DeSoParams) {
 	ipAddrs, err := net.LookupIP(host)
 	if err != nil {
-		glog.Tracef("_addSeedAddrs: DNS discovery failed on seed host (continuing on): %s %v\n", host, err)
+		glog.V(2).Infof("_addSeedAddrs: DNS discovery failed on seed host (continuing on): %s %v\n", host, err)
 		return
 	}
 	if len(ipAddrs) == 0 {
-		glog.Tracef("_addSeedAddrs: No IPs found for host: %s\n", host)
+		glog.V(2).Infof("_addSeedAddrs: No IPs found for host: %s\n", host)
 		return
 	}
 
 	// Don't take more than 5 IPs per host.
 	ipsPerHost := 5
 	if len(ipAddrs) > ipsPerHost {
-		glog.Debugf("_addSeedAddrs: Truncating IPs found from %d to %d\n", len(ipAddrs), ipsPerHost)
+		glog.V(1).Infof("_addSeedAddrs: Truncating IPs found from %d to %d\n", len(ipAddrs), ipsPerHost)
 		ipAddrs = ipAddrs[:ipsPerHost]
 	}
 
-	glog.Debugf("_addSeedAddrs: Adding seed IPs from seed %s: %v\n", host, ipAddrs)
+	glog.V(1).Infof("_addSeedAddrs: Adding seed IPs from seed %s: %v\n", host, ipAddrs)
 
 	// Convert addresses to NetAddress'es.
 	netAddrs := make([]*wire.NetAddress, len(ipAddrs))
@@ -344,7 +344,7 @@ func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.De
 			ip,
 			params.DefaultSocketPort)
 	}
-	glog.Debugf("_addSeedAddrs: Computed the following wire.NetAddress'es: %s", spew.Sdump(netAddrs))
+	glog.V(1).Infof("_addSeedAddrs: Computed the following wire.NetAddress'es: %s", spew.Sdump(netAddrs))
 
 	// Normally the second argument is the source who told us about the
 	// addresses we're adding. In this case since the source is a DNS seed
@@ -365,7 +365,7 @@ func addSeedAddrsFromPrefixes(desoAddrMgr *addrmgr.AddrManager, params *lib.DeSo
 				wg.Add(1)
 				go func(dnsGenerator []string) {
 					dnsString := fmt.Sprintf("%s%d%s", dnsGenerator[0], dnsNumber, dnsGenerator[1])
-					glog.Tracef("_addSeedAddrsFromPrefixes: Querying DNS seed: %s", dnsString)
+					glog.V(2).Infof("_addSeedAddrsFromPrefixes: Querying DNS seed: %s", dnsString)
 					addIPsForHost(desoAddrMgr, dnsString, params)
 					wg.Done()
 				}(dnsGeneratorOuter)

@@ -1,6 +1,9 @@
 package lib
 
-import "strings"
+import (
+	"github.com/btcsuite/btcd/btcec"
+	"strings"
+)
 
 // RuleError is an error type that specifies an error occurred during
 // block processing that is related to a consensus rule. By checking the
@@ -89,7 +92,14 @@ const (
 	RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple RuleError = "RuleErrorPrivateMessageExistsWithRecipientPublicKeyTstampTuple"
 	RuleErrorPrivateMessageParsePubKeyError                        RuleError = "RuleErrorPrivateMessageParsePubKeyError"
 	RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey RuleError = "RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey"
+	RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight         RuleError = "RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight"
+	RuleErrorPrivateMessageSentWithoutProperMessagingParty         RuleError = "RuleErrorPrivateMessageSentWithoutProperMessagingParty"
+	RuleErrorPrivateMessageFailedToValidateMessagingKey            RuleError = "RuleErrorPrivateMessageFailedToValidateMessagingKey"
 	RuleErrorBurnAddressCannotBurnBitcoin                          RuleError = "RuleErrorBurnAddressCannotBurnBitcoin"
+	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
+	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
+
+
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
@@ -172,14 +182,16 @@ const (
 	RuleErrorBasicTransferDiamondCannotTransferToSelf             RuleError = "RuleErrorBasicTransferDiamondCannotTransferToSelf"
 	RuleErrorBasicTransferInsufficientDeSoForDiamondLevel         RuleError = "RuleErrorBasicTransferInsufficientDeSoForDiamondLevel"
 
-	RuleErrorCreatorCoinTransferRequiresNonZeroInput                    RuleError = "RuleErrorCreatorCoinTransferRequiresNonZeroInput"
-	RuleErrorCreatorCoinTransferInvalidProfilePubKeySize                RuleError = "RuleErrorCreatorCoinTransferInvalidProfilePubKeySize"
-	RuleErrorCreatorCoinTransferInvalidReceiverPubKeySize               RuleError = "RuleErrorCreatorCoinTransferInvalidReceiverPubKeySize"
-	RuleErrorCreatorCoinTransferOnNonexistentProfile                    RuleError = "RuleErrorCreatorCoinTransferOnNonexistentProfile"
-	RuleErrorCreatorCoinTransferBalanceEntryDoesNotExist                RuleError = "RuleErrorCreatorCoinTransferBalanceEntryDoesNotExist"
+	RuleErrorCoinTransferRequiresNonZeroInput                           RuleError = "RuleErrorCoinTransferRequiresNonZeroInput"
+	RuleErrorCoinTransferInvalidProfilePubKeySize                       RuleError = "RuleErrorCoinTransferInvalidProfilePubKeySize"
+	RuleErrorCoinTransferInvalidReceiverPubKeySize                      RuleError = "RuleErrorCoinTransferInvalidReceiverPubKeySize"
+	RuleErrorCoinTransferInvalidReceiverPubKey                          RuleError = "RuleErrorCoinTransferInvalidReceiverPubKey"
+	RuleErrorCoinTransferInvalidProfilePubKey                           RuleError = "RuleErrorCoinTransferInvalidProfilePubKey"
+	RuleErrorCoinTransferOnNonexistentProfile                           RuleError = "RuleErrorCoinTransferOnNonexistentProfile"
+	RuleErrorCoinTransferBalanceEntryDoesNotExist                       RuleError = "RuleErrorCoinTransferBalanceEntryDoesNotExist"
 	RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold           RuleError = "RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold"
-	RuleErrorCreatorCoinTransferInsufficientCoins                       RuleError = "RuleErrorCreatorCoinTransferInsufficientCoins"
-	RuleErrorCreatorCoinTransferCannotTransferToSelf                    RuleError = "RuleErrorCreatorCoinTransferCannotTransferToSelf"
+	RuleErrorCoinTransferInsufficientCoins                              RuleError = "RuleErrorCoinTransferInsufficientCoins"
+	RuleErrorCoinTransferCannotTransferToSelf                           RuleError = "RuleErrorCoinTransferCannotTransferToSelf"
 	RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel"
 	RuleErrorCreatorCoinTransferCantSendDiamondsForOtherProfiles        RuleError = "RuleErrorCreatorCoinTransferCantSendDiamondsForOtherProfiles"
 	RuleErrorCreatorCoinTransferCantDiamondYourself                     RuleError = "RuleErrorCreatorCoinTransferCantDiamondYourself"
@@ -211,6 +223,30 @@ const (
 	RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked               RuleError = "RuleErrorCreatorCoinSellNotAllowedWhenZeroDeSoLocked"
 	RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller                  RuleError = "RuleErrorDeSoReceivedIsLessThanMinimumSetBySeller"
 
+	// DAO Coins
+	RuleErrorDAOCoinRequiresNonZeroInput                  RuleError = "RuleErrorDAOCoinRequiresNonZeroInput"
+	RuleErrorDAOCoinInvalidPubKeySize                     RuleError = "RuleErrorDAOCoinInvalidPubKeySize"
+	RuleErrorDAOCoinInvalidPubKey                         RuleError = "RuleErrorDAOCoinInvalidPubKey"
+	RuleErrorDAOCoinOperationOnNonexistentProfile         RuleError = "RuleErrorDAOCoinOperationOnNonexistentProfile"
+	RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin            RuleError = "RuleErrorDAOCoinBurnMustBurnNonZeroDAOCoin"
+	RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist        RuleError = "RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist"
+	RuleErrorDAOCoinBurnInsufficientCoins                 RuleError = "RuleErrorDAOCoinBurnInsufficientCoins"
+	RuleErrorOnlyProfileOwnerCanMintDAOCoin               RuleError = "RuleErrorOnlyProfileOwnerCanMintDAOCoin"
+	RuleErrorDAOCoinMustMintNonZeroDAOCoin                RuleError = "RuleErrorDAOCoinMustMintNonZeroDAOCoin"
+	RuleErrorOverflowWhileMintingDAOCoins                 RuleError = "RuleErrorOverflowWhileMintingDAOCoins"
+	RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation   RuleError = "RuleErrorDAOCoinBurnAmountExceedsCoinsInCirculation"
+	RuleErrorDAOCoinBeforeDAOCoinBlockHeight              RuleError = "RuleErrorDAOCoinBeforeDAOCoinBlockHeight"
+	RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled RuleError = "RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled"
+	RuleErrorDAOCoinCannotMintIfMintingIsDisabled         RuleError = "RuleErrorDAOCoinCannotMintIfMintingIsDisabled"
+	RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin     RuleError = "RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin"
+	RuleErrorDAOCoinTransferProfileOwnerOnlyViolation     RuleError = "RuleErrorDAOCoinTransferProfileOwnerOnlyViolation"
+	RuleErrorDAOCoinTransferDAOMemberOnlyViolation        RuleError = "RuleErrorDAOCoinTransferDAOMemberOnlyViolation"
+
+	// DAO Coin Transfer Restrictions
+	RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus                    RuleError = "RuleErrorOnlyProfileOwnerCanUpdateTransferRestrictionStatus"
+	RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted RuleError = "RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted"
+	RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus           RuleError = "RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus"
+
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
 	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput    RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
@@ -222,30 +258,59 @@ const (
 	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
 
+	// Messages
+	RuleErrorMessagingPublicKeyCannotBeOwnerKey     RuleError = "RuleErrorMessagingPublicKeyCannotBeOwnerKey"
+	RuleErrorMessagingSignatureInvalid              RuleError = "RuleErrorMessagingSignatureInvalid"
+	RuleErrorMessagingPublicKeyCannotBeDifferent    RuleError = "RuleErrorMessagingPublicKeyCannotBeDifferent"
+	RuleErrorMessagingEncryptedKeyCannotBeDifferent RuleError = "RuleErrorMessagingEncryptedKeyCannotBeDifferent"
+	RuleErrorMessagingMemberEncryptedKeyTooShort    RuleError = "RuleErrorMessagingMemberEncryptedKeyTooShort"
+	RuleErrorMessagingMemberKeyDoesntExist          RuleError = "RuleErrorMessagingMemberKeyDoesntExist"
+	RuleErrorMessagingMemberAlreadyExists           RuleError = "RuleErrorMessagingMemberAlreadyExists"
+	RuleErrorMessagingKeyDoesntAddMembers           RuleError = "RuleErrorMessagingKeyDoesntAddMembers"
+	RuleErrorMessagingKeyNameNotProvided            RuleError = "RuleErrorMessagingKeyNameNotProvided"
+	RuleErrorMessagingKeyNameTooShort               RuleError = "RuleErrorMessagingKeyNameTooShort"
+	RuleErrorMessagingKeyNameTooLong                RuleError = "RuleErrorMessagingKeyNameTooLong"
+	RuleErrorMessagingKeyNameCannotBeZeros          RuleError = "RuleErrorMessagingKeyNameCannotBeZeros"
+	RuleErrorMessagingOwnerPublicKeyInvalid         RuleError = "RuleErrorMessagingOwnerPublicKeyInvalid"
+	RuleErrorMessagingKeyConnect                    RuleError = "RuleErrorMessagingKeyConnect"
+	RuleErrorMessagingKeySignatureNotProvided       RuleError = "RuleErrorMessagingKeySignatureNotProvided"
+	RuleErrorMessagingKeyBeforeBlockHeight          RuleError = "RuleErrorMessagingKeyBeforeBlockHeight"
+
 	// NFTs
-	RuleErrorTooManyNFTCopies                     RuleError = "RuleErrorTooManyNFTCopies"
-	RuleErrorCreateNFTRequiresNonZeroInput        RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
-	RuleErrorUpdateNFTRequiresNonZeroInput        RuleError = "RuleErrorUpdateNFTRequiresNonZeroInput"
-	RuleErrorCreateNFTOnNonexistentPost           RuleError = "RuleErrorCreateNFTOnNonexistentPost"
-	RuleErrorCreateNFTOnVanillaRepost             RuleError = "RuleErrorCreateNFTOnVanillaRepost"
-	RuleErrorCreateNFTWithInsufficientFunds       RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
-	RuleErrorCreateNFTOnPostThatAlreadyIsNFT      RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
-	RuleErrorCreateNFTMustBeCalledByPoster        RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
-	RuleErrorNFTMustHaveNonZeroCopies             RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
-	RuleErrorCannotUpdateNonExistentNFT           RuleError = "RuleErrorCannotUpdateNonExistentNFT"
-	RuleErrorCannotUpdatePendingNFTTransfer       RuleError = "RuleErrorCannotUpdatePendingNFTTransfer"
-	RuleErrorCannotAcceptBidForPendingNFTTransfer RuleError = "RuleErrorCannotAcceptBidForPendingNFTTransfer"
-	RuleErrorCannotBidForPendingNFTTransfer       RuleError = "RuleErrorCannotBidForPendingNFTTransfer"
-	RuleErrorUpdateNFTByNonOwner                  RuleError = "RuleErrorUpdateNFTByNonOwner"
-	RuleErrorAcceptNFTBidByNonOwner               RuleError = "RuleErrorAcceptNFTBidByNonOwner"
-	RuleErrorCantCreateNFTWithoutProfileEntry     RuleError = "RuleErrorCantCreateNFTWithoutProfileEntry"
-	RuleErrorNFTRoyaltyHasTooManyBasisPoints      RuleError = "RuleErrorNFTRoyaltyHasTooManyBasisPoints"
-	RuleErrorNFTRoyaltyOverflow                   RuleError = "RuleErrorNFTRoyaltyOverflow"
-	RuleErrorNFTUpdateMustUpdateIsForSaleStatus   RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
+	RuleErrorTooManyNFTCopies                            RuleError = "RuleErrorTooManyNFTCopies"
+	RuleErrorCreateNFTRequiresNonZeroInput               RuleError = "RuleErrorCreateNFTRequiresNonZeroInput"
+	RuleErrorUpdateNFTRequiresNonZeroInput               RuleError = "RuleErrorUpdateNFTRequiresNonZeroInput"
+	RuleErrorCreateNFTOnNonexistentPost                  RuleError = "RuleErrorCreateNFTOnNonexistentPost"
+	RuleErrorCreateNFTOnVanillaRepost                    RuleError = "RuleErrorCreateNFTOnVanillaRepost"
+	RuleErrorCreateNFTWithInsufficientFunds              RuleError = "RuleErrorCreateNFTWithInsufficientFunds"
+	RuleErrorCreateNFTOnPostThatAlreadyIsNFT             RuleError = "RuleErrorCreateNFTOnPostThatAlreadyIsNFT"
+	RuleErrorCannotHaveUnlockableAndBuyNowNFT            RuleError = "RuleErrorCannotHaveUnlockableAndBuyNowNFT"
+	RuleErrorCannotHaveBuyNowPriceBelowMinBidAmountNanos RuleError = "RuleErrorCannotHaveBuyNowPriceBelowMinBidAmountNanos"
+	RuleErrorCreateNFTMustBeCalledByPoster               RuleError = "RuleErrorCreateNFTMustBeCalledByPoster"
+	RuleErrorNFTMustHaveNonZeroCopies                    RuleError = "RuleErrorNFTMustHaveNonZeroCopies"
+	RuleErrorCannotUpdateNonExistentNFT                  RuleError = "RuleErrorCannotUpdateNonExistentNFT"
+	RuleErrorCannotUpdatePendingNFTTransfer              RuleError = "RuleErrorCannotUpdatePendingNFTTransfer"
+	RuleErrorCannotAcceptBidForPendingNFTTransfer        RuleError = "RuleErrorCannotAcceptBidForPendingNFTTransfer"
+	RuleErrorCannotBidForPendingNFTTransfer              RuleError = "RuleErrorCannotBidForPendingNFTTransfer"
+	RuleErrorUpdateNFTByNonOwner                         RuleError = "RuleErrorUpdateNFTByNonOwner"
+	RuleErrorAcceptNFTBidByNonOwner                      RuleError = "RuleErrorAcceptNFTBidByNonOwner"
+	RuleErrorCantCreateNFTWithoutProfileEntry            RuleError = "RuleErrorCantCreateNFTWithoutProfileEntry"
+	RuleErrorNFTRoyaltyHasTooManyBasisPoints             RuleError = "RuleErrorNFTRoyaltyHasTooManyBasisPoints"
+	RuleErrorNFTRoyaltyOverflow                          RuleError = "RuleErrorNFTRoyaltyOverflow"
+	RuleErrorNFTUpdateMustUpdateIsForSaleStatus          RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
+	RuleErrorBuyNowNFTBeforeBlockHeight                  RuleError = "RuleErrorBuyNowNFTBeforeBlockHeight"
+	RuleErrorAdditionalCoinRoyaltyMustHaveProfile        RuleError = "RuleErrorAdditionalCoinRoyaltyMustHaveProfile"
+	RuleErrorAdditionalCoinRoyaltyOverflow        		 RuleError = "RuleErrorAdditionalCoinRoyaltyOverflow"
+	RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty     RuleError = "RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty"
+	RuleErrorAdditionalRoyaltyPubKeyMustBeValid          RuleError = "RuleErrorAdditionalRoyaltyPubKeyMustBeValid"
 
 	// NFT Bids
 	RuleErrorNFTBidRequiresNonZeroInput                    RuleError = "RuleErrorNFTBidRequiresNonZeroInput"
 	RuleErrorAcceptNFTBidRequiresNonZeroInput              RuleError = "RuleErrorAcceptNFTBidRequiresNonZeroInput"
+	RuleErrorNFTBidTxnOutputWithInvalidBidAmount           RuleError = "RuleErrorNFTBidTxnOutputWithInvalidBidAmount"
+	RuleErrorBuyNowNFTBidTxnOutputExceedsInput             RuleError = "RuleErrorBuyNowNFTBidTxnOutputExceedsInput"
+	RuleErrorBuyNowNFTBidMustBidNonZeroDeSo                RuleError = "RuleErrorBuyNowNFTBidMustBidNonZeroDeSo"
+	RuleErrorBuyNowNFTBidMustHaveMinBidAmountNanos         RuleError = "RuleErrorBuyNowNFTBidMustHaveMinBidAmountNanos"
 	RuleErrorNFTBidOnNonExistentPost                       RuleError = "RuleErrorNFTBidOnNonExistentPost"
 	RuleErrorNFTBidOnPostThatIsNotAnNFT                    RuleError = "RuleErrorNFTBidOnPostThatIsNotAnNFT"
 	RuleErrorNFTBidOnInvalidSerialNumber                   RuleError = "RuleErrorNFTBidOnInvalidSerialNumber"
@@ -262,6 +327,7 @@ const (
 	RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount RuleError = "RuleErrorAcceptNFTBidderInputsInsufficientForBidAmount"
 	RuleErrorInsufficientFundsForNFTBid                    RuleError = "RuleErrorInsufficientFundsForNFTBid"
 	RuleErrorNFTBidLessThanMinBidAmountNanos               RuleError = "RuleErrorNFTBidLessThanMinBidAmountNanos"
+	RuleErrorZeroBidOnBuyNowNFT                            RuleError = "RuleErrorZeroBidOnBuyNowNFT"
 
 	// NFT Transfers
 	RuleErrorNFTTransferBeforeBlockHeight                 RuleError = "RuleErrorNFTTranserBeforeBlockHeight"
@@ -326,6 +392,19 @@ func IsRuleError(err error) bool {
 	// eventually we should clean this up and get rid of the string comparison both
 	// for the code's sake but also for the sake of our tests.
 	return strings.Contains(err.Error(), "RuleError") ||
-			strings.Contains(err.Error(), "HeaderError") ||
-			strings.Contains(err.Error(), "TxError")
+		strings.Contains(err.Error(), "HeaderError") ||
+		strings.Contains(err.Error(), "TxError")
+}
+
+// IsByteArrayValidPublicKey is a general functionality that is used to verify if a
+// byte array is a valid secp256k1 public key
+func IsByteArrayValidPublicKey(bytes []byte) error {
+	if len(bytes) != btcec.PubKeyBytesLenCompressed {
+		return RuleErrorPubKeyLen
+	}
+	_, err := btcec.ParsePubKey(bytes, btcec.S256())
+	if err != nil {
+		return RuleErrorParsePublicKey
+	}
+	return nil
 }

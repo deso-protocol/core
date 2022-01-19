@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/btcsuite/btcd/btcec"
 	"math/big"
 )
 
@@ -216,4 +217,9 @@ func BigFloatPow(z *big.Float, w *big.Float) *big.Float {
 	x.Mul(w, logZ)
 	x = BigFloatExp(x)
 	return x.SetPrec(z.Prec())
+}
+
+func GetS256BasePointCompressed() []byte {
+	basePoint, _ := btcec.S256().CurveParams.Gx.GobEncode()
+	return basePoint
 }

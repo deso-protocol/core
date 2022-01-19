@@ -2,12 +2,6 @@ module github.com/deso-protocol/core
 
 go 1.14
 
-replace github.com/golang/glog => ./third_party/github.com/golang/glog
-
-replace github.com/laser/go-merkle-tree => ./third_party/github.com/laser/go-merkle-tree
-
-replace github.com/sasha-s/go-deadlock => ./third_party/github.com/sasha-s/go-deadlock
-
 require (
 	github.com/DataDog/datadog-go v4.5.0+incompatible
 	github.com/DataDog/zstd v1.4.8 // indirect
@@ -20,20 +14,22 @@ require (
 	github.com/bxcodec/faker v2.0.1+incompatible
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/lru v1.0.0
+	github.com/deso-protocol/go-deadlock v1.0.0
+	github.com/deso-protocol/go-merkle-tree v1.0.0
 	github.com/dgraph-io/badger/v3 v3.2103.0
 	github.com/dgraph-io/ristretto v0.1.0 // indirect
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-pg/pg/v10 v10.10.0
-	github.com/golang/glog v0.0.0-20210429001901-424d2337a529
+	github.com/golang/glog v1.0.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.3 // indirect
 	github.com/google/flatbuffers v2.0.0+incompatible // indirect
 	github.com/google/pprof v0.0.0-20210226084205-cbba55b83ad5 // indirect
 	github.com/google/uuid v1.2.0 // indirect
+	github.com/holiman/uint256 v1.1.1
 	github.com/kr/text v0.2.0 // indirect
-	github.com/laser/go-merkle-tree v0.0.0-20180821204614-16c2f6ea4444
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/onsi/ginkgo v1.15.0 // indirect
 	github.com/onsi/gomega v1.10.5 // indirect
@@ -42,7 +38,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/robinjoseph08/go-pg-migrations/v3 v3.0.0
-	github.com/sasha-s/go-deadlock v0.2.0
 	github.com/shibukawa/configdir v0.0.0-20170330084843-e180dbdc8da0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5

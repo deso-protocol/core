@@ -21,9 +21,9 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
 )
 
 // mempool.go contains all of the mempool logic for the DeSo node.
@@ -603,7 +603,7 @@ func (mp *DeSoMempool) limitNumUnconnectedTxns() error {
 
 		numUnconnectedTxns := len(mp.unconnectedTxns)
 		if numExpired := prevNumUnconnectedTxns - numUnconnectedTxns; numExpired > 0 {
-			glog.Debugf("Expired %d unconnectedTxns (remaining: %d)", numExpired, numUnconnectedTxns)
+			glog.V(1).Infof("Expired %d unconnectedTxns (remaining: %d)", numExpired, numUnconnectedTxns)
 		}
 	}
 
@@ -645,7 +645,7 @@ func (mp *DeSoMempool) addUnconnectedTxn(tx *MsgDeSoTxn, peerID uint64) {
 		mp.unconnectedTxnsByPrev[UtxoKey(*txIn)][*txHash] = tx
 	}
 
-	glog.Debugf("Added unconnected transaction %v with total txns: %d)", txHash, len(mp.unconnectedTxns))
+	glog.V(1).Infof("Added unconnected transaction %v with total txns: %d)", txHash, len(mp.unconnectedTxns))
 }
 
 // Consider adding an unconnected txn to the pool. Must be called with the write lock held.
@@ -1058,6 +1058,15 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		return nil, nil, errors.Wrapf(TxErrorInsufficientFeeMinFee, errRet.Error())
 	}
 
+	// If the transaction is bigger than half the maximum allowable size,
+	// then reject it.
+	maxTxnSize := mp.bc.params.MinerMaxBlockSizeBytes / 2
+	if serializedLen > maxTxnSize {
+		mp.rebuildBackupView()
+		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: "+
+			"Txn size %v exceeds maximum allowable txn size %v", serializedLen, maxTxnSize)
+	}
+
 	// If the feerate is below the minimum we've configured for the node, then apply
 	// some rate-limiting logic to avoid stalling in situations in which someone is trying
 	// to flood the network with low-value transacitons. This avoids a form of amplification
@@ -1080,7 +1089,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		// Update the accumulator and potentially log the state.
 		oldTotal := mp.lowFeeTxSizeAccumulator
 		mp.lowFeeTxSizeAccumulator += float64(serializedLen)
-		glog.Tracef("tryAcceptTransaction: Rate limit current total ~(%v) bytes/10m, nextTotal: ~(%v) bytes/10m, "+
+		glog.V(2).Infof("tryAcceptTransaction: Rate limit current total ~(%v) bytes/10m, nextTotal: ~(%v) bytes/10m, "+
 			"limit ~(%v) bytes/10m", oldTotal, mp.lowFeeTxSizeAccumulator, LowFeeTxLimitBytesPerTenMinutes)
 	}
 
@@ -1093,14 +1102,13 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	}
 
 	// Calculate metadata
-	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, tx.Hash(), totalNanosPurchasedBefore,
+	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
 		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps)
 	if err == nil {
 		mempoolTx.TxMeta = txnMeta
 	}
-
 	mp.bc.sqsQueue.SendSQSTxnMessage(mempoolTx)
-	glog.Tracef("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
+	glog.V(2).Infof("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
 		len(mp.poolMap))
 
 	return nil, mempoolTx, nil
@@ -1112,7 +1120,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 	var err error
 	txnMeta := &TransactionMetadata{
-		BlockHashHex:    hex.EncodeToString(blockHash[:]),
 		TxnIndexInBlock: txnIndexInBlock,
 		TxnType:         txn.TxnMeta.GetTxnType().String(),
 
@@ -1135,6 +1142,10 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		},
 
 		TxnOutputs: txn.TxOutputs,
+	}
+
+	if blockHash != nil {
+		txnMeta.BlockHashHex = hex.EncodeToString(blockHash[:])
 	}
 
 	extraData := txn.ExtraData
@@ -1172,8 +1183,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		realTxMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 
 		// Rosetta needs to know the change in DESOLockedNanos so it can model the change in
-		// total deso locked in the creator coin. Calculate this by comparing the current CoinEntry
-		// to the previous CoinEntry
+		// total deso locked in the creator coin. Calculate this by comparing the current CreatorCoinEntry
+		// to the previous CreatorCoinEntry
 		profileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 		var prevCoinEntry *CoinEntry
 		for _, op := range utxoOps {
@@ -1187,7 +1198,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		if profileEntry == nil || prevCoinEntry == nil {
 			glog.Errorf("Update TxIndex: missing DESOLockedNanosDiff error: %v", txn.Hash().String())
 		} else {
-			desoLockedNanosDiff = int64(profileEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos)
+			desoLockedNanosDiff = int64(profileEntry.CreatorCoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos)
 		}
 
 		// Set the amount of the buy/sell/add
@@ -1309,7 +1320,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		bodyObj := &DeSoBodySchema{}
 		if err := json.Unmarshal(realTxMeta.Body, &bodyObj); err != nil {
 			// Don't worry about bad posts unless we're debugging with high verbosity.
-			glog.Tracef("UpdateTxindex: Error parsing post body for @ mentions: "+
+			glog.V(2).Infof("UpdateTxindex: Error parsing post body for @ mentions: "+
 				"%v %v", string(realTxMeta.Body), err)
 		} else {
 			terminators := []rune(" ,.\n&*()-+~'\"[]{}")
@@ -1421,13 +1432,13 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		fromNanos := uint64(0)
 		fromProfile := utxoView.GetProfileEntryForPublicKey(realTxMeta.FromPublicKey)
 		if fromProfile != nil {
-			fromNanos = fromProfile.CoinEntry.DeSoLockedNanos
+			fromNanos = fromProfile.CreatorCoinEntry.DeSoLockedNanos
 		}
 
 		toNanos := uint64(0)
 		toProfile := utxoView.GetProfileEntryForPublicKey(realTxMeta.ToPublicKey)
 		if toProfile != nil {
-			toNanos = toProfile.CoinEntry.DeSoLockedNanos
+			toNanos = toProfile.CreatorCoinEntry.DeSoLockedNanos
 		}
 
 		txnMeta.SwapIdentityTxindexMetadata = &SwapIdentityTxindexMetadata{
@@ -1452,20 +1463,33 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		realTxMeta := txn.TxnMeta.(*NFTBidMetadata)
 		_ = realTxMeta
 
-		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
-			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber:   realTxMeta.SerialNumber,
-			BidAmountNanos: realTxMeta.BidAmountNanos,
-		}
+		isBuyNow := false
 
 		// We don't send notifications for standing offers.
 		if realTxMeta.SerialNumber != 0 {
 			nftKey := MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
 			nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
+
+			ownerAtTimeOfBid := nftEntry.OwnerPKID
+
+			utxoOp := utxoOps[len(utxoOps)-1]
+
+			if utxoOp.PrevNFTEntry != nil && utxoOp.PrevNFTEntry.IsBuyNow {
+				isBuyNow = true
+				ownerAtTimeOfBid = utxoOp.PrevNFTEntry.OwnerPKID
+			}
+
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(nftEntry.OwnerPKID), utxoView.Params),
+				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(ownerAtTimeOfBid), utxoView.Params),
 				Metadata:             "NFTOwnerPublicKeyBase58Check",
 			})
+		}
+
+		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:   realTxMeta.SerialNumber,
+			BidAmountNanos: realTxMeta.BidAmountNanos,
+			IsBuyNowBid:    isBuyNow,
 		}
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
@@ -1492,10 +1516,10 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			glog.Errorf("Update TxIndex: Missing profile entry: %v", txn.Hash().String())
 		} else if prevCoinEntry == nil {
 			glog.Errorf("Update TxIndex: Missing previous coin entry: %v", txn.Hash().String())
-		} else if profileEntry.CoinEntry.DeSoLockedNanos < prevCoinEntry.DeSoLockedNanos {
+		} else if profileEntry.CreatorCoinEntry.DeSoLockedNanos < prevCoinEntry.DeSoLockedNanos {
 			glog.Errorf("Update TxIndex: CreatorCoinRoyaltyNanos overflow error: %v", txn.Hash().String())
 		} else {
-			creatorCoinRoyaltyNanos = profileEntry.CoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
+			creatorCoinRoyaltyNanos = profileEntry.CreatorCoinEntry.DeSoLockedNanos - prevCoinEntry.DeSoLockedNanos
 		}
 
 		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{
@@ -1510,6 +1534,21 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(realTxMeta.BidderPKID), utxoView.Params),
 			Metadata:             "NFTBidderPublicKeyBase58Check",
 		})
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+		realTxMeta := txn.TxnMeta.(*NFTTransferMetadata)
+		_ = realTxMeta
+
+		txnMeta.NFTTransferTxindexMetadata = &NFTTransferTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:   realTxMeta.SerialNumber,
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
+			Metadata:             "NFTTransferRecipientPublicKeyBase58Check",
+		})
+
 	}
 	if txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
@@ -1776,7 +1815,8 @@ func _getPublicKeysToIndexForTxn(txn *MsgDeSoTxn, params *DeSoParams) [][]byte {
 func (mp *DeSoMempool) _addMempoolTxToPubKeyOutputMap(mempoolTx *MempoolTx) {
 	// Index the transaction by any associated public keys.
 	publicKeysToIndex := _getPublicKeysToIndexForTxn(mempoolTx.Tx, mp.bc.params)
-	for _, pkToIndex := range publicKeysToIndex {
+	for _, pkToIndexIter := range publicKeysToIndex {
+		pkToIndex := pkToIndexIter
 		mp._addTxnToPublicKeyMap(mempoolTx, pkToIndex)
 	}
 }
@@ -1789,7 +1829,7 @@ func (mp *DeSoMempool) processTransaction(
 	if txHash == nil {
 		return nil, fmt.Errorf("ProcessTransaction: Problem hashing tx")
 	}
-	glog.Tracef("Processing transaction %v", txHash)
+	glog.V(2).Infof("Processing transaction %v", txHash)
 
 	// Run validation and try to add this txn to the pool.
 	missingParents, mempoolTx, err := mp.tryAcceptTransaction(
@@ -1821,7 +1861,7 @@ func (mp *DeSoMempool) processTransaction(
 
 	// Reject the txn if it's an unconnected txn and we're set up to reject unconnectedTxns.
 	if !allowUnconnectedTxn {
-		glog.Tracef("DeSoMempool.processTransaction: TxErrorUnconnectedTxnNotAllowed: %v %v",
+		glog.V(2).Infof("DeSoMempool.processTransaction: TxErrorUnconnectedTxnNotAllowed: %v %v",
 			tx.Hash(), tx.TxnMeta.GetTxnType())
 		return nil, TxErrorUnconnectedTxnNotAllowed
 	}
@@ -1829,7 +1869,7 @@ func (mp *DeSoMempool) processTransaction(
 	// Try to add the the transaction to the pool as an unconnected txn.
 	err = mp.tryAddUnconnectedTxn(tx, peerID)
 	if err != nil {
-		glog.Tracef("DeSoMempool.processTransaction: Error adding transaction as unconnected txn: %v", err)
+		glog.V(2).Infof("DeSoMempool.processTransaction: Error adding transaction as unconnected txn: %v", err)
 	}
 	return nil, err
 }
@@ -1978,19 +2018,19 @@ func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
 		for {
 			select {
 			case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
-				glog.Tracef("StartReadOnlyUtxoViewRegenerator: Woke up!")
+				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Woke up!")
 
 				// When we wake up, only do an update if one didn't occur since before
 				// we slept. Note that the number of transactions being processed can
 				// also trigger an update, which is why this check is necessary.
 				newSeqNum := atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
 				if oldSeqNum == newSeqNum {
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: Updating view at prescribed interval")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Updating view at prescribed interval")
 					// Acquire a read lock when we do this.
 					mp.RegenerateReadOnlyView()
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: Finished view update at prescribed interval")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Finished view update at prescribed interval")
 				} else {
-					glog.Tracef("StartReadOnlyUtxoViewRegenerator: View updated while sleeping; nothing to do")
+					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: View updated while sleeping; nothing to do")
 				}
 
 				// Get the sequence number before our timer hits.

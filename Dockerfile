@@ -5,7 +5,6 @@ RUN apk add --update go gcc g++ vips vips-dev
 
 WORKDIR /deso/src/core
 
-COPY third_party third_party
 COPY go.mod .
 COPY go.sum .
 

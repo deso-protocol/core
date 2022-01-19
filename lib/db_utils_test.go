@@ -60,6 +60,7 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	opts := badger.DefaultOptions(dir)
 	opts.Dir = dir
 	opts.ValueDir = dir
+	opts.MemTableSize = 1024 << 20
 	db, err := badger.Open(opts)
 	if err != nil {
 		log.Fatal(err)
@@ -221,6 +222,10 @@ func TestPrivateMessages(t *testing.T) {
 	tstamp3 := uint64(12345)
 	tstamp4 := uint64(time.Now().UnixNano())
 	tstamp5 := uint64(time.Now().UnixNano())
+	// Because M1 actually evaluates two consecutive time.Now().UnixNano() to the same number lol!
+	if tstamp5 == tstamp4 {
+		tstamp5 = tstamp4 + 1
+	}
 
 	message1Str := []byte("message1: abcdef")
 	message2Str := []byte("message2: ghi")
@@ -228,92 +233,141 @@ func TestPrivateMessages(t *testing.T) {
 	message4Str := append([]byte("message4: "), RandomBytes(100)...)
 	message5Str := append([]byte("message5: "), RandomBytes(123)...)
 
-	// pk1 -> pk2: message1Str, tstamp1
-	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk1,
-			TstampNanos:        tstamp1,
-			RecipientPublicKey: pk2,
-			EncryptedText:      message1Str,
-		}))
-	// pk2 -> pk1: message2Str, tstamp2
-	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk2,
-			TstampNanos:        tstamp2,
-			RecipientPublicKey: pk1,
-			EncryptedText:      message2Str,
-		}))
-	// pk3 -> pk1: message3Str, tstamp3
-	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk3,
-			TstampNanos:        tstamp3,
-			RecipientPublicKey: pk1,
-			EncryptedText:      message3Str,
-		}))
-	// pk2 -> pk1: message4Str, tstamp4
-	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk2,
-			TstampNanos:        tstamp4,
-			RecipientPublicKey: pk1,
-			EncryptedText:      message4Str,
-		}))
-	// pk1 -> pk3: message5Str, tstamp5
-	require.NoError(DbPutMessageEntry(
-		db, &MessageEntry{
-			SenderPublicKey:    pk1,
-			TstampNanos:        tstamp5,
-			RecipientPublicKey: pk3,
-			EncryptedText:      message5Str,
-		}))
-
 	// Define all the messages as they appear in the db.
 	message1 := &MessageEntry{
-		SenderPublicKey:    pk1,
-		RecipientPublicKey: pk2,
-		EncryptedText:      message1Str,
-		TstampNanos:        tstamp1,
+		SenderPublicKey:                NewPublicKey(pk1),
+		RecipientPublicKey:             NewPublicKey(pk2),
+		EncryptedText:                  message1Str,
+		TstampNanos:                    tstamp1,
+		Version:                        1,
+		SenderMessagingPublicKey:       NewPublicKey(pk1),
+		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
+		RecipientMessagingPublicKey:    NewPublicKey(pk2),
+		RecipientMessagingGroupKeyName: BaseGroupKeyName(),
 	}
 	message2 := &MessageEntry{
-		SenderPublicKey:    pk2,
-		RecipientPublicKey: pk1,
-		EncryptedText:      message2Str,
-		TstampNanos:        tstamp2,
+		SenderPublicKey:                NewPublicKey(pk2),
+		RecipientPublicKey:             NewPublicKey(pk1),
+		EncryptedText:                  message2Str,
+		TstampNanos:                    tstamp2,
+		Version:                        1,
+		SenderMessagingPublicKey:       NewPublicKey(pk2),
+		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
+		RecipientMessagingPublicKey:    NewPublicKey(pk1),
+		RecipientMessagingGroupKeyName: BaseGroupKeyName(),
 	}
 	message3 := &MessageEntry{
-		SenderPublicKey:    pk3,
-		RecipientPublicKey: pk1,
-		EncryptedText:      message3Str,
-		TstampNanos:        tstamp3,
+		SenderPublicKey:                NewPublicKey(pk3),
+		RecipientPublicKey:             NewPublicKey(pk1),
+		EncryptedText:                  message3Str,
+		TstampNanos:                    tstamp3,
+		Version:                        1,
+		SenderMessagingPublicKey:       NewPublicKey(pk3),
+		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
+		RecipientMessagingPublicKey:    NewPublicKey(pk1),
+		RecipientMessagingGroupKeyName: BaseGroupKeyName(),
 	}
 	message4 := &MessageEntry{
-		SenderPublicKey:    pk2,
-		RecipientPublicKey: pk1,
-		EncryptedText:      message4Str,
-		TstampNanos:        tstamp4,
+		SenderPublicKey:                NewPublicKey(pk2),
+		RecipientPublicKey:             NewPublicKey(pk1),
+		EncryptedText:                  message4Str,
+		TstampNanos:                    tstamp4,
+		Version:                        1,
+		SenderMessagingPublicKey:       NewPublicKey(pk2),
+		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
+		RecipientMessagingPublicKey:    NewPublicKey(pk1),
+		RecipientMessagingGroupKeyName: BaseGroupKeyName(),
 	}
 	message5 := &MessageEntry{
-		SenderPublicKey:    pk1,
-		RecipientPublicKey: pk3,
-		EncryptedText:      message5Str,
-		TstampNanos:        tstamp5,
+		SenderPublicKey:                NewPublicKey(pk1),
+		RecipientPublicKey:             NewPublicKey(pk3),
+		EncryptedText:                  message5Str,
+		TstampNanos:                    tstamp5,
+		Version:                        1,
+		SenderMessagingPublicKey:       NewPublicKey(pk1),
+		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
+		RecipientMessagingPublicKey:    NewPublicKey(pk3),
+		RecipientMessagingGroupKeyName: BaseGroupKeyName(),
 	}
+
+	// pk1 -> pk2: message1Str, tstamp1
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp1,
+		}, message1))
+	// same message but also store for pk2
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk2),
+			TstampNanos: tstamp1,
+		}, message1))
+
+	// pk2 -> pk1: message2Str, tstamp2
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk2),
+			TstampNanos: tstamp2,
+		}, message2))
+	// same message but also store for pk1
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp2,
+		}, message2))
+
+	// pk3 -> pk1: message3Str, tstamp3
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk3),
+			TstampNanos: tstamp3,
+		}, message3))
+	// same message but also store for pk1
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp3,
+		}, message3))
+
+	// pk2 -> pk1: message4Str, tstamp4
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk2),
+			TstampNanos: tstamp4,
+		}, message4))
+	// same message but also store for pk1
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp4,
+		}, message4))
+
+	// pk1 -> pk3: message5Str, tstamp5
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk1),
+			TstampNanos: tstamp5,
+		}, message5))
+	// same message but also store for pk3
+	require.NoError(DBPutMessageEntry(
+		db, MessageKey{
+			PublicKey: *NewPublicKey(pk3),
+			TstampNanos: tstamp5,
+		}, message5))
 
 	// Fetch message3 directly using both public keys.
 	{
-		msg := DbGetMessageEntry(db, pk3, tstamp3)
+		msg := DBGetMessageEntry(db, pk3, tstamp3)
 		require.Equal(message3, msg)
 	}
 	{
-		msg := DbGetMessageEntry(db, pk1, tstamp3)
+		msg := DBGetMessageEntry(db, pk1, tstamp3)
 		require.Equal(message3, msg)
 	}
 
 	// Fetch all messages for pk1
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk1)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk1)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -327,7 +381,7 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Fetch all messages for pk2
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk2)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk2)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -339,7 +393,7 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Fetch all messages for pk3
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk3)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk3)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -349,11 +403,12 @@ func TestPrivateMessages(t *testing.T) {
 	}
 
 	// Delete message3
-	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp3))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp3))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk3, tstamp3))
 
 	// Now all the messages returned should exclude message3
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk1)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk1)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -364,7 +419,7 @@ func TestPrivateMessages(t *testing.T) {
 		}, messages)
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk2)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk2)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -374,7 +429,7 @@ func TestPrivateMessages(t *testing.T) {
 		}, messages)
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk3)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk3)
 		require.NoError(err)
 
 		require.Equal([]*MessageEntry{
@@ -382,26 +437,33 @@ func TestPrivateMessages(t *testing.T) {
 		}, messages)
 	}
 
-	// Delete all remaining messages, sometimes using the recipient rather
-	// than the sender public key
-	require.NoError(DbDeleteMessageEntryMappings(db, pk2, tstamp1))
-	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp2))
-	require.NoError(DbDeleteMessageEntryMappings(db, pk2, tstamp4))
-	require.NoError(DbDeleteMessageEntryMappings(db, pk1, tstamp5))
+	// Delete all remaining messages
+	// message1
+	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp1))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp1))
+	// message2
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp2))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp2))
+	// message4
+	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp4))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp4))
+	// message5
+	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp5))
+	require.NoError(DBDeleteMessageEntryMappings(db, pk3, tstamp5))
 
 	// Now all public keys should have zero messages.
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk1)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk1)
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk2)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk2)
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
 	{
-		messages, err := DbGetMessageEntriesForPublicKey(db, pk3)
+		messages, err := DBGetMessageEntriesForPublicKey(db, pk3)
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}

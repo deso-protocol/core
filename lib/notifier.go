@@ -177,7 +177,7 @@ func (notifier *Notifier) Update() error {
 					terminators := []rune(" ,.\n&*()-+~'\"[]{}")
 					dollarTagsFound := mention.GetTagsAsUniqueStrings('$', string(bodyObj.Body), terminators...)
 					atTagsFound := mention.GetTagsAsUniqueStrings('@', string(bodyObj.Body), terminators...)
-					
+
 					tagsFound := append(dollarTagsFound, atTagsFound...)
 					for _, tag := range tagsFound {
 
@@ -255,7 +255,7 @@ func (notifier *Notifier) Start() {
 			//		glog.Error(fmt.Errorf("Notifier: Problem running update: %v", err))
 			//	}
 			//} else {
-			//	glog.Debugf("Notifier: Waiting for node to sync before updating")
+			//	glog.V(1).Infof("Notifier: Waiting for node to sync before updating")
 			//}
 
 			err := notifier.Update()

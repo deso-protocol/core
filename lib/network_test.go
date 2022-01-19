@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"github.com/holiman/uint256"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,7 +13,7 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/bxcodec/faker"
-	merkletree "github.com/laser/go-merkle-tree"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1071,6 +1072,182 @@ func TestBurnNFT(t *testing.T) {
 	err = testMeta.FromBytes(data)
 	require.NoError(err)
 	require.Equal(txMeta, testMeta)
+}
+
+func TestDAOCoin(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	{
+		txMeta := &DAOCoinMetadata{}
+		txMeta.ProfilePublicKey = []byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02}
+		txMeta.OperationType = DAOCoinOperationTypeMint
+		txMeta.CoinsToMintNanos = *uint256.NewInt().SetUint64(100)
+
+		data, err := txMeta.ToBytes(false)
+		require.NoError(err)
+
+		testMeta, err := NewTxnMetadata(TxnTypeDAOCoin)
+		require.NoError(err)
+		err = testMeta.FromBytes(data)
+		require.NoError(err)
+		require.Equal(txMeta, testMeta)
+	}
+
+	{
+		txMeta := &DAOCoinMetadata{}
+		txMeta.ProfilePublicKey = []byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02}
+		txMeta.OperationType = DAOCoinOperationTypeBurn
+		txMeta.CoinsToBurnNanos = *uint256.NewInt().SetUint64(100)
+
+		data, err := txMeta.ToBytes(false)
+		require.NoError(err)
+
+		testMeta, err := NewTxnMetadata(TxnTypeDAOCoin)
+		require.NoError(err)
+		err = testMeta.FromBytes(data)
+		require.NoError(err)
+		require.Equal(txMeta, testMeta)
+	}
+
+	{
+		txMeta := &DAOCoinMetadata{}
+		txMeta.ProfilePublicKey = []byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02}
+		txMeta.OperationType = DAOCoinOperationTypeDisableMinting
+
+		data, err := txMeta.ToBytes(false)
+		require.NoError(err)
+
+		testMeta, err := NewTxnMetadata(TxnTypeDAOCoin)
+		require.NoError(err)
+		err = testMeta.FromBytes(data)
+		require.NoError(err)
+		require.Equal(txMeta, testMeta)
+	}
+
+	{
+		txMeta := &DAOCoinMetadata{}
+		txMeta.ProfilePublicKey = []byte{
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+			0x00, 0x01, 0x02}
+		txMeta.OperationType = DAOCoinOperationTypeUpdateTransferRestrictionStatus
+		txMeta.TransferRestrictionStatus = TransferRestrictionStatusProfileOwnerOnly
+
+		data, err := txMeta.ToBytes(false)
+		require.NoError(err)
+
+		testMeta, err := NewTxnMetadata(TxnTypeDAOCoin)
+		require.NoError(err)
+		err = testMeta.FromBytes(data)
+		require.NoError(err)
+		require.Equal(txMeta, testMeta)
+	}
+}
+
+func TestDAOCoinTransfer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	txMeta := &DAOCoinTransferMetadata{}
+	txMeta.ProfilePublicKey = []byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02}
+	txMeta.ReceiverPublicKey = []byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02}
+	txMeta.DAOCoinToTransferNanos = *uint256.NewInt().SetUint64(100)
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeDAOCoinTransfer)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestMessagingKey(t *testing.T) {
+	require := require.New(t)
+
+	m0PrivBytes, _, err := Base58CheckDecode(m0Priv)
+	require.NoError(err)
+
+	privKey, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), m0PrivBytes)
+	hash := Sha256DoubleHash([]byte{0x00, 0x01})
+	signature, err := privKey.Sign(hash[:])
+	require.NoError(err)
+
+	encrypted, err := EncryptBytesWithPublicKey(hash[:], pubKey.ToECDSA())
+	require.NoError(err)
+
+	keyName := []byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+		0x00, 0x01,
+	}
+
+	txMeta := MessagingGroupMetadata{
+		MessagingPublicKey:    m0PkBytes,
+		MessagingGroupKeyName: keyName,
+		GroupOwnerSignature:   signature.Serialize(),
+		MessagingGroupMembers: []*MessagingGroupMember{},
+	}
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testTxMeta, err := NewTxnMetadata(TxnTypeMessagingGroup)
+	require.NoError(err)
+	err = testTxMeta.FromBytes(data)
+	require.NoError(err)
+	testData, err := testTxMeta.ToBytes(false)
+	require.NoError(err)
+	require.Equal(data, testData)
+
+	txMeta.MessagingGroupMembers = append(txMeta.MessagingGroupMembers, &MessagingGroupMember{
+		GroupMemberPublicKey: NewPublicKey(m1PkBytes),
+		GroupMemberKeyName:   NewGroupKeyName(keyName),
+		EncryptedKey:         encrypted,
+	})
+	txMeta.MessagingGroupMembers = append(txMeta.MessagingGroupMembers, &MessagingGroupMember{
+		GroupMemberPublicKey: NewPublicKey(m2PkBytes),
+		GroupMemberKeyName:   NewGroupKeyName(keyName),
+		EncryptedKey:         encrypted,
+	})
+	data, err = txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testTxMeta, err = NewTxnMetadata(TxnTypeMessagingGroup)
+	require.NoError(err)
+	err = testTxMeta.FromBytes(data)
+	require.NoError(err)
+	testData, err = testTxMeta.ToBytes(false)
+	require.NoError(err)
+	require.Equal(data, testData)
 }
 
 func TestDecodeHeaderVersion0(t *testing.T) {

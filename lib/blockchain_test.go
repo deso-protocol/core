@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
@@ -294,7 +295,9 @@ func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr 
 		return 0, 0
 	}
 
-	return creatorProfile.DeSoLockedNanos, creatorProfile.CoinsInCirculationNanos
+	// Note that it's OK to cast creator coin to uint64 because we check for
+	// overflow everywhere.
+	return creatorProfile.CreatorCoinEntry.DeSoLockedNanos, creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()
 }
 
 func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {
@@ -517,11 +520,7 @@ func TestSeedBalancesTest(t *testing.T) {
 
 func init() {
 	// Set up logging.
-	glog.GlogFlags.AlsoToStderr = true
-	glog.Init()
-	log.Printf("Logging to folder: %s", glog.GlogFlags.LogDir)
-	log.Printf("Symlink to latest: %s", glog.GlogFlags.Symlink)
-	log.Println("To log output on commandline, run with -alsologtostderr")
+	flag.Set("alsologtostderr", "true")
 	glog.CopyStandardLogTo("INFO")
 }
 

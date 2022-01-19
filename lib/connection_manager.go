@@ -11,9 +11,9 @@ import (
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrd/lru"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
 )
 
 // connection_manager.go contains most of the logic for creating and managing
@@ -172,7 +172,7 @@ func (cmgr *ConnectionManager) isRedundantGroupKey(na *wire.NetAddress) bool {
 	cmgr.mtxOutboundConnIPGroups.Unlock()
 
 	if numGroupsForKey != 0 && numGroupsForKey != 1 {
-		glog.Tracef("isRedundantGroupKey: Found numGroupsForKey != (0 or 1). Is (%d) "+
+		glog.V(2).Infof("isRedundantGroupKey: Found numGroupsForKey != (0 or 1). Is (%d) "+
 			"instead for addr (%s) and group key (%s). This "+
 			"should never happen.", numGroupsForKey, na.IP.String(), groupKey)
 	}
@@ -208,28 +208,28 @@ func (cmgr *ConnectionManager) getRandomAddr() *wire.NetAddress {
 		cmgr.mtxConnectedOutboundAddrs.RUnlock()
 
 		if addr == nil {
-			glog.Tracef("ConnectionManager.getRandomAddr: addr from GetAddressWithExclusions was nil")
+			glog.V(2).Infof("ConnectionManager.getRandomAddr: addr from GetAddressWithExclusions was nil")
 			break
 		}
 
 		if cmgr.connectedOutboundAddrs[addrmgr.NetAddressKey(addr.NetAddress())] {
-			glog.Tracef("ConnectionManager.getRandomAddr: Not choosing already connected address %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
+			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing already connected address %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
 			continue
 		}
 
 		// We can only have one outbound address per /16. This is similar to
 		// Bitcoin and we do it to prevent Sybil attacks.
 		if cmgr.isRedundantGroupKey(addr.NetAddress()) {
-			glog.Tracef("ConnectionManager.getRandomAddr: Not choosing address due to redundant group key %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
+			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing address due to redundant group key %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
 			continue
 		}
 
-		glog.Tracef("ConnectionManager.getRandomAddr: Returning %v:%v at %d iterations",
+		glog.V(2).Infof("ConnectionManager.getRandomAddr: Returning %v:%v at %d iterations",
 			addr.NetAddress().IP, addr.NetAddress().Port, tries)
 		return addr.NetAddress()
 	}
 
-	glog.Tracef("ConnectionManager.getRandomAddr: Returning nil")
+	glog.V(2).Infof("ConnectionManager.getRandomAddr: Returning nil")
 	return nil
 }
 
@@ -243,11 +243,11 @@ func _delayRetry(retryCount int, persistentAddrForLogging *wire.NetAddress) {
 	retryDelay := time.Duration(numSecs) * time.Second
 
 	if persistentAddrForLogging != nil {
-		glog.Debugf("Retrying connection to outbound persistent peer: "+
+		glog.V(1).Infof("Retrying connection to outbound persistent peer: "+
 			"(%s:%d) in (%d) seconds.", persistentAddrForLogging.IP.String(),
 			persistentAddrForLogging.Port, numSecs)
 	} else {
-		glog.Tracef("Retrying connection to outbound non-persistent peer in (%d) seconds.", numSecs)
+		glog.V(2).Infof("Retrying connection to outbound non-persistent peer in (%d) seconds.", numSecs)
 	}
 	time.Sleep(retryDelay)
 }
@@ -293,7 +293,7 @@ func (cmgr *ConnectionManager) _getOutboundConn(persistentAddr *wire.NetAddress)
 		// outbound peers, no need to keep trying non-persistent outbound
 		// connections.
 		if !isPersistent && cmgr.enoughOutboundPeers() {
-			glog.Debugf("Dropping connection request to non-persistent outbound " +
+			glog.V(1).Infof("Dropping connection request to non-persistent outbound " +
 				"peer because we have enough of them.")
 			return nil
 		}
@@ -305,7 +305,7 @@ func (cmgr *ConnectionManager) _getOutboundConn(persistentAddr *wire.NetAddress)
 		}
 		if ipNetAddr == nil {
 			// This should never happen but if it does, sleep a bit and try again.
-			glog.Debugf("_getOutboundConn: No valid addresses to connect to.")
+			glog.V(1).Infof("_getOutboundConn: No valid addresses to connect to.")
 			time.Sleep(time.Second)
 			continue
 		}
@@ -316,7 +316,7 @@ func (cmgr *ConnectionManager) _getOutboundConn(persistentAddr *wire.NetAddress)
 		}
 
 		// If the peer is not persistent, update the addrmgr.
-		glog.Debugf("Attempting to connect to addr: %v", netAddr)
+		glog.V(1).Infof("Attempting to connect to addr: %v", netAddr)
 		if !isPersistent {
 			cmgr.addrMgr.Attempt(ipNetAddr)
 		}
@@ -324,12 +324,12 @@ func (cmgr *ConnectionManager) _getOutboundConn(persistentAddr *wire.NetAddress)
 		conn, err := net.DialTimeout(netAddr.Network(), netAddr.String(), cmgr.params.DialTimeout)
 		if err != nil {
 			// If we failed to connect to this peer, get a new address and try again.
-			glog.Debugf("Connection to addr (%v) failed: %v", netAddr, err)
+			glog.V(1).Infof("Connection to addr (%v) failed: %v", netAddr, err)
 			continue
 		}
 
 		// We were able to dial successfully so we'll break out now.
-		glog.Debugf("Connected to addr: %v", netAddr)
+		glog.V(1).Infof("Connected to addr: %v", netAddr)
 
 		// If this was a non-persistent outbound connection, mark the address as
 		// connected in the addrmgr.
@@ -519,7 +519,7 @@ func (cmgr *ConnectionManager) _isFromRedundantInboundIPAddress(addrToCheck net.
 	// nodes on a local machine.
 	// TODO: Should this be a flag?
 	if net.IP([]byte{127, 0, 0, 1}).Equal(netAddr.IP) {
-		glog.Debugf("ConnectionManager._isFromRedundantInboundIPAddress: Allowing " +
+		glog.V(1).Infof("ConnectionManager._isFromRedundantInboundIPAddress: Allowing " +
 			"localhost IP address to connect")
 		return false
 	}
@@ -731,12 +731,12 @@ func (cmgr *ConnectionManager) _logOutboundPeerData() {
 	numOutboundPeers := int(atomic.LoadUint32(&cmgr.numOutboundPeers))
 	numInboundPeers := int(atomic.LoadUint32(&cmgr.numInboundPeers))
 	numPersistentPeers := int(atomic.LoadUint32(&cmgr.numPersistentPeers))
-	glog.Debugf("Num peers: OUTBOUND(%d) INBOUND(%d) PERSISTENT(%d)", numOutboundPeers, numInboundPeers, numPersistentPeers)
+	glog.V(1).Infof("Num peers: OUTBOUND(%d) INBOUND(%d) PERSISTENT(%d)", numOutboundPeers, numInboundPeers, numPersistentPeers)
 
 	cmgr.mtxOutboundConnIPGroups.Lock()
 	for _, vv := range cmgr.outboundConnIPGroups {
 		if vv != 0 && vv != 1 {
-			glog.Debugf("_logOutboundPeerData: Peer group count != (0 or 1). "+
+			glog.V(1).Infof("_logOutboundPeerData: Peer group count != (0 or 1). "+
 				"Is (%d) instead. This "+
 				"should never happen.", vv)
 		}
@@ -801,7 +801,7 @@ func (cmgr *ConnectionManager) Start() {
 				// outbound peers, then don't bother adding this one.
 				if !pp.isPersistent && pp.isOutbound && cmgr.enoughOutboundPeers() {
 					// TODO: Make this less verbose
-					glog.Debugf("Dropping peer because we already have enough outbound peer connections.")
+					glog.V(1).Infof("Dropping peer because we already have enough outbound peer connections.")
 					pp.conn.Close()
 					continue
 				}
@@ -860,7 +860,7 @@ func (cmgr *ConnectionManager) Start() {
 				// has already been called, since that is what's responsible for adding the peer
 				// to this queue in the first place.
 
-				glog.Debugf("Done with peer (%v).", pp)
+				glog.V(1).Infof("Done with peer (%v).", pp)
 
 				if !pp.PeerManuallyRemovedFromConnectionManager {
 					// Remove the peer from our data structures.

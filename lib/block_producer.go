@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/sasha-s/go-deadlock"
+	"github.com/deso-protocol/go-deadlock"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
@@ -229,7 +229,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 					glog.Infof(btcErrorString)
 					txnErrorString += (" " + btcErrorString)
 					scs := spew.ConfigState{DisableMethods: true, Indent: "  "}
-					glog.Debugf("Spewing Bitcoin txn: %v", scs.Sdump(mempoolTx.Tx))
+					glog.V(1).Infof("Spewing Bitcoin txn: %v", scs.Sdump(mempoolTx.Tx))
 				}
 
 				// Update the block template stats for the admin dashboard.
@@ -489,7 +489,7 @@ func (desoBlockProducer *DeSoBlockProducer) UpdateLatestBlockTemplate() error {
 	}
 
 	// Log the results.
-	glog.Debugf("Produced block template with difficulty target %v "+
+	glog.V(1).Infof("Produced block template with difficulty target %v "+
 		"and lastNode %v", diffTarget, lastNode)
 
 	desoBlockProducer.AddBlockTemplate(currentBlockTemplate, diffTarget)
@@ -539,7 +539,7 @@ func (desoBlockProducer *DeSoBlockProducer) Start() {
 		default:
 			secondsLeft := float64(desoBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
 			if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
-				glog.Debugf("Sleeping for %v seconds before producing next block template...", secondsLeft)
+				glog.V(1).Infof("Sleeping for %v seconds before producing next block template...", secondsLeft)
 				time.Sleep(time.Duration(math.Ceil(secondsLeft)) * time.Second)
 				continue
 			}
@@ -547,7 +547,7 @@ func (desoBlockProducer *DeSoBlockProducer) Start() {
 			// Update the time so start the clock for the next iteration.
 			lastBlockUpdate = time.Now()
 
-			glog.Debugf("Producing block template...")
+			glog.V(1).Infof("Producing block template...")
 			err := desoBlockProducer.UpdateLatestBlockTemplate()
 			if err != nil {
 				// If we hit an error, log it and sleep for a second. This could happen due to us

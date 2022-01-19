@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"github.com/sasha-s/go-deadlock"
 )
 
 // peer.go defines an interface for connecting to and managing an DeSo
@@ -171,7 +171,7 @@ func (pp *Peer) MaybeDequeueDeSoMessage() *DeSoMessageMeta {
 // This call blocks on the Peer's queue.
 func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// Get all the transactions we have from the mempool.
-	glog.Debugf("Peer._handleGetTransactions: Processing "+
+	glog.V(1).Infof("Peer._handleGetTransactions: Processing "+
 		"MsgDeSoGetTransactions message with %v txns from peer %v",
 		len(getTxnMsg.HashList), pp)
 
@@ -206,7 +206,7 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// we had available from the request. It should also be below the limit
 	// for number of transactions since the request itself was below the
 	// limit. So push the bundle to the Peer.
-	glog.Debugf("Peer._handleGetTransactions: Sending txn bundle with size %v to peer %v",
+	glog.V(1).Infof("Peer._handleGetTransactions: Sending txn bundle with size %v to peer %v",
 		len(res.Transactions), pp)
 	pp.QueueMessage(res)
 }
@@ -217,11 +217,11 @@ func (pp *Peer) HandleTransactionBundleMessage(msg *MsgDeSoTransactionBundle) {
 	// from multiple peers they'll be processed all at once, potentially interleaving with
 	// one another.
 
-	glog.Debugf("Received TransactionBundle "+
+	glog.V(1).Infof("Received TransactionBundle "+
 		"message of size %v from Peer %v", len(msg.Transactions), pp)
 
 	transactionsToRelay := pp.srv._processTransactions(pp, msg)
-	glog.Debugf("Server._handleTransactionBundle: Accepted %v txns from Peer %v",
+	glog.V(1).Infof("Server._handleTransactionBundle: Accepted %v txns from Peer %v",
 		len(transactionsToRelay), pp)
 
 	_ = transactionsToRelay
@@ -249,7 +249,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 	// Iterate through the message. Gather the transactions and the
 	// blocks we don't already have into separate inventory lists.
-	glog.Debugf("Server._handleInv: Processing INV message of size %v from peer %v", len(msg.InvList), pp)
+	glog.V(1).Infof("Server._handleInv: Processing INV message of size %v from peer %v", len(msg.InvList), pp)
 	txHashList := []*BlockHash{}
 	blockHashList := []*BlockHash{}
 
@@ -321,7 +321,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 			HashList: txHashList,
 		}, false /*inbound*/)
 	} else {
-		glog.Debugf("Server._handleInv: Not sending GET_TRANSACTIONS because no new hashes")
+		glog.V(1).Infof("Server._handleInv: Not sending GET_TRANSACTIONS because no new hashes")
 	}
 
 	// If the peer has sent us any block hashes that are new to us then send
@@ -363,7 +363,7 @@ func (pp *Peer) HandleInv(msg *MsgDeSoInv) {
 func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 	// Nothing to do if the request is empty.
 	if len(msg.HashList) == 0 {
-		glog.Debugf("Server._handleGetBlocks: Received empty GetBlocks "+
+		glog.V(1).Infof("Server._handleGetBlocks: Received empty GetBlocks "+
 			"request. No response needed for Peer %v", pp)
 		return
 	}
@@ -424,25 +424,25 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 
 		if msgToProcess.Inbound {
 			if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetTransactions {
-				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
 					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
 					len(msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions).HashList), pp)
 				pp.HandleGetTransactionsMsg(msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions))
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeTransactionBundle {
-				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
 					"type %v with num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
 					len(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle).Transactions), pp)
 				pp.HandleTransactionBundleMessage(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle))
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeInv {
-				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
 					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
 					len(msgToProcess.DeSoMessage.(*MsgDeSoInv).InvList), pp)
 				pp.HandleInv(msgToProcess.DeSoMessage.(*MsgDeSoInv))
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetBlocks {
-				glog.Debugf("StartDeSoMessageProcessor: RECEIVED message of "+
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
 					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
 					len(msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks).HashList), pp)
 				pp.HandleGetBlocks(msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks))
@@ -452,7 +452,7 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 					"type %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), pp)
 			}
 		} else {
-			glog.Debugf("StartDeSoMessageProcessor: SENDING message of "+
+			glog.V(1).Infof("StartDeSoMessageProcessor: SENDING message of "+
 				"type %v to peer %v", msgToProcess.DeSoMessage.GetMsgType(), pp)
 			pp.QueueMessage(msgToProcess.DeSoMessage)
 		}
@@ -555,7 +555,7 @@ const (
 // message.
 func (pp *Peer) handlePingMsg(msg *MsgDeSoPing) {
 	// Include nonce from ping so pong can be identified.
-	glog.Tracef("Peer.handlePingMsg: Received ping from peer %v: %v", pp, msg)
+	glog.V(2).Infof("Peer.handlePingMsg: Received ping from peer %v: %v", pp, msg)
 	// Queue up a pong message.
 	pp.QueueMessage(&MsgDeSoPong{Nonce: msg.Nonce})
 }
@@ -570,19 +570,19 @@ func (pp *Peer) handlePongMsg(msg *MsgDeSoPong) {
 	// and overlapping pings will be ignored. It is unlikely to occur
 	// without large usage of the ping call since we ping infrequently
 	// enough that if they overlap we would have timed out the peer.
-	glog.Tracef("Peer.handlePongMsg: Received pong from peer %v: %v", msg, pp)
+	glog.V(2).Infof("Peer.handlePongMsg: Received pong from peer %v: %v", msg, pp)
 	pp.StatsMtx.Lock()
 	defer pp.StatsMtx.Unlock()
 	if pp.LastPingNonce != 0 && msg.Nonce == pp.LastPingNonce {
 		pp.LastPingMicros = time.Since(pp.LastPingTime).Nanoseconds()
 		pp.LastPingMicros /= 1000 // convert to usec.
 		pp.LastPingNonce = 0
-		glog.Tracef("Peer.handlePongMsg: LastPingMicros(%d) from Peer %v", pp.LastPingMicros, pp)
+		glog.V(2).Infof("Peer.handlePongMsg: LastPingMicros(%d) from Peer %v", pp.LastPingMicros, pp)
 	}
 }
 
 func (pp *Peer) pingHandler() {
-	glog.Debugf("Peer.pingHandler: Starting ping handler for Peer %v", pp)
+	glog.V(1).Infof("Peer.pingHandler: Starting ping handler for Peer %v", pp)
 	pingTicker := time.NewTicker(pingInterval)
 	defer pingTicker.Stop()
 
@@ -590,7 +590,7 @@ out:
 	for {
 		select {
 		case <-pingTicker.C:
-			glog.Tracef("Peer.pingHandler: Initiating ping for Peer %v", pp)
+			glog.V(2).Infof("Peer.pingHandler: Initiating ping for Peer %v", pp)
 			nonce, err := wire.RandomUint64()
 			if err != nil {
 				glog.Errorf("Not sending ping to Peer %v: %v", pp, err)
@@ -723,7 +723,7 @@ func (pp *Peer) _setKnownAddressesMap(key string, val bool) {
 }
 
 func (pp *Peer) outHandler() {
-	glog.Debugf("Peer.outHandler: Starting outHandler for Peer %v", pp)
+	glog.V(1).Infof("Peer.outHandler: Starting outHandler for Peer %v", pp)
 	stallTicker := time.NewTicker(time.Second)
 out:
 	for {
@@ -796,7 +796,7 @@ out:
 		}
 	}
 
-	glog.Debugf("Peer.outHandler: Quitting outHandler for Peer %v", pp)
+	glog.V(1).Infof("Peer.outHandler: Quitting outHandler for Peer %v", pp)
 }
 
 func (pp *Peer) _maybeAddBlocksToSend(msg DeSoMessage) error {
@@ -884,7 +884,7 @@ func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 			// requested it so disconnect the Peer in this case.
 			errRet := fmt.Errorf("_handleInExpectedResponse: Received unsolicited message "+
 				"of type %v %v from peer %v -- disconnecting", msgType, rmsg, pp)
-			glog.Debugf(errRet.Error())
+			glog.V(1).Infof(errRet.Error())
 			// TODO: Removing this check so we can inject transactions into the node.
 			//return errRet
 		}
@@ -899,12 +899,12 @@ func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 // inHandler handles all incoming messages for the peer. It must be run as a
 // goroutine.
 func (pp *Peer) inHandler() {
-	glog.Debugf("Peer.inHandler: Starting inHandler for Peer %v", pp)
+	glog.V(1).Infof("Peer.inHandler: Starting inHandler for Peer %v", pp)
 
 	// The timer is stopped when a new message is received and reset after it
 	// is processed.
 	idleTimer := time.AfterFunc(idleTimeout, func() {
-		glog.Debugf("Peer.inHandler: Peer %v no answer for %v -- disconnecting", pp, idleTimeout)
+		glog.V(1).Infof("Peer.inHandler: Peer %v no answer for %v -- disconnecting", pp, idleTimeout)
 		pp.Disconnect()
 	})
 
@@ -987,7 +987,7 @@ out:
 
 		default:
 			// All other messages just forward back to the Server to handle them.
-			//glog.Tracef("Peer.inHandler: Received message of type %v from %v", rmsg.GetMsgType(), pp)
+			//glog.V(2).Infof("Peer.inHandler: Received message of type %v from %v", rmsg.GetMsgType(), pp)
 			pp.MessageChan <- &ServerMessage{
 				Peer: pp,
 				Msg:  msg,
@@ -1004,7 +1004,7 @@ out:
 	// Disconnect the Peer if it isn't already.
 	pp.Disconnect()
 
-	glog.Debugf("Peer.inHandler: done for peer: %v", pp)
+	glog.V(1).Infof("Peer.inHandler: done for peer: %v", pp)
 }
 
 func (pp *Peer) Start() {
@@ -1047,7 +1047,7 @@ func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
 	// Useful for debugging.
 	// TODO: This may be too verbose
 	messageSeq := atomic.AddUint64(&pp.totalMessages, 1)
-	glog.Debugf("SENDING( seq=%d ) message of type: %v to peer %v: %v",
+	glog.V(1).Infof("SENDING( seq=%d ) message of type: %v to peer %v: %v",
 		messageSeq, msg.GetMsgType(), pp, msg)
 
 	return nil
@@ -1068,7 +1068,7 @@ func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
 
 	// Useful for debugging.
 	messageSeq := atomic.AddUint64(&pp.totalMessages, 1)
-	glog.Debugf("RECEIVED( seq=%d ) message of type: %v from peer %v: %v",
+	glog.V(1).Infof("RECEIVED( seq=%d ) message of type: %v from peer %v: %v",
 		messageSeq, msg.GetMsgType(), pp, msg)
 
 	return msg, nil
@@ -1282,11 +1282,11 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 func (pp *Peer) Disconnect() {
 	// Only run the logic the first time Disconnect is called.
 	if atomic.AddInt32(&pp.disconnected, 1) != 1 {
-		glog.Debugf("Peer.Disconnect: Disconnect call ignored since it was already called before for Peer %v", pp)
+		glog.V(1).Infof("Peer.Disconnect: Disconnect call ignored since it was already called before for Peer %v", pp)
 		return
 	}
 
-	glog.Debugf("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
+	glog.V(1).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
 
 	// Close the connection object.
 	pp.conn.Close()
@@ -1311,7 +1311,7 @@ func (pp *Peer) _logVersionSuccess() {
 		persistentStr = "NON-PERSISTENT"
 	}
 	logStr := fmt.Sprintf("SUCCESS version negotiation for (%s) (%s) peer (%v).", inboundStr, persistentStr, pp)
-	glog.Debug(logStr)
+	glog.V(1).Info(logStr)
 }
 
 func (pp *Peer) _logAddPeer() {
@@ -1324,5 +1324,5 @@ func (pp *Peer) _logAddPeer() {
 		persistentStr = "NON-PERSISTENT"
 	}
 	logStr := fmt.Sprintf("ADDING (%s) (%s) peer (%v)", inboundStr, persistentStr, pp)
-	glog.Debug(logStr)
+	glog.V(1).Info(logStr)
 }

@@ -7,6 +7,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
+	"github.com/holiman/uint256"
 	"io"
 	"math"
 	"net"
@@ -15,8 +17,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-	merkletree "github.com/laser/go-merkle-tree"
 
 	"github.com/pkg/errors"
 )
@@ -37,44 +39,6 @@ var MaxHeadersPerMsg = uint32(2000)
 // a getheaders response. It is used to determine whether a node has more headers
 // to give us.
 var MaxBitcoinHeadersPerMsg = uint32(2000)
-
-const HashSizeBytes = 32
-
-// BlockHash is a convenient alias for a block hash.
-type BlockHash [HashSizeBytes]byte
-
-func NewBlockHash(input []byte) *BlockHash {
-	blockHash := &BlockHash{}
-	copy(blockHash[:], input)
-	return blockHash
-}
-
-func (bh *BlockHash) String() string {
-	return fmt.Sprintf("%064x", HashToBigint(bh))
-}
-
-func (bh *BlockHash) ToBytes() []byte {
-	res := make([]byte, HashSizeBytes)
-	copy(res, bh[:])
-	return res
-}
-
-// IsEqual returns true if target is the same as hash.
-func (bh *BlockHash) IsEqual(target *BlockHash) bool {
-	if bh == nil && target == nil {
-		return true
-	}
-	if bh == nil || target == nil {
-		return false
-	}
-	return *bh == *target
-}
-
-func (bh *BlockHash) NewBlockHash() *BlockHash {
-	newBlockhash := &BlockHash{}
-	copy(newBlockhash[:], bh[:])
-	return newBlockhash
-}
 
 // The MsgType is usually sent on the wire to indicate what type of
 // struct is being sent in the payload part of the message.
@@ -247,8 +211,11 @@ const (
 	TxnTypeAcceptNFTTransfer            TxnType = 20
 	TxnTypeBurnNFT                      TxnType = 21
 	TxnTypeAuthorizeDerivedKey          TxnType = 22
+	TxnTypeMessagingGroup               TxnType = 23
+	TxnTypeDAOCoin                      TxnType = 24
+	TxnTypeDAOCoinTransfer              TxnType = 25
 
-	// NEXT_ID = 23
+	// NEXT_ID = 26
 )
 
 type TxnString string
@@ -276,6 +243,9 @@ const (
 	TxnStringAcceptNFTTransfer            TxnString = "ACCEPT_NFT_TRANSFER"
 	TxnStringBurnNFT                      TxnString = "BURN_NFT"
 	TxnStringAuthorizeDerivedKey          TxnString = "AUTHORIZE_DERIVED_KEY"
+	TxnStringMessagingGroup               TxnString = "MESSAGING_GROUP"
+	TxnStringDAOCoin                      TxnString = "DAO_COIN"
+	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -285,14 +255,16 @@ var (
 		TxnTypeSubmitPost, TxnTypeUpdateProfile, TxnTypeUpdateBitcoinUSDExchangeRate, TxnTypeFollow, TxnTypeLike,
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
-		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey,
+		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
 		TxnStringSubmitPost, TxnStringUpdateProfile, TxnStringUpdateBitcoinUSDExchangeRate, TxnStringFollow, TxnStringLike,
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
-		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey,
+		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer,
 	}
 )
 
@@ -350,7 +322,12 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringBurnNFT
 	case TxnTypeAuthorizeDerivedKey:
 		return TxnStringAuthorizeDerivedKey
-
+	case TxnTypeMessagingGroup:
+		return TxnStringMessagingGroup
+	case TxnTypeDAOCoin:
+		return TxnStringDAOCoin
+	case TxnTypeDAOCoinTransfer:
+		return TxnStringDAOCoinTransfer
 	default:
 		return TxnStringUndefined
 	}
@@ -402,7 +379,12 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeBurnNFT
 	case TxnStringAuthorizeDerivedKey:
 		return TxnTypeAuthorizeDerivedKey
-
+	case TxnStringMessagingGroup:
+		return TxnTypeMessagingGroup
+	case TxnStringDAOCoin:
+		return TxnTypeDAOCoin
+	case TxnStringDAOCoinTransfer:
+		return TxnTypeDAOCoinTransfer
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -462,7 +444,12 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&BurnNFTMetadata{}).New(), nil
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
-
+	case TxnTypeMessagingGroup:
+		return (&MessagingGroupMetadata{}).New(), nil
+	case TxnTypeDAOCoin:
+		return (&DAOCoinMetadata{}).New(), nil
+	case TxnTypeDAOCoinTransfer:
+		return (&DAOCoinTransferMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -3291,7 +3278,7 @@ func (txnData *FollowMetadata) ToBytes(preSignature bool) ([]byte, error) {
 
 	data := []byte{}
 
-	// RecipientPublicKey
+	// FollowedPublicKey
 	//
 	// We know the public key is set and has the expected length so we don't need
 	// to encode the length here.
@@ -4659,4 +4646,393 @@ func (txnData *AuthorizeDerivedKeyMetadata) FromBytes(data []byte) error {
 
 func (txnData *AuthorizeDerivedKeyMetadata) New() DeSoTxnMetadata {
 	return &AuthorizeDerivedKeyMetadata{}
+}
+
+// ==================================================================
+// DAOCoinMetadata
+// ==================================================================
+
+type DAOCoinOperationType uint8
+
+const (
+	DAOCoinOperationTypeMint                            DAOCoinOperationType = 0
+	DAOCoinOperationTypeBurn                            DAOCoinOperationType = 1
+	DAOCoinOperationTypeDisableMinting                  DAOCoinOperationType = 2
+	DAOCoinOperationTypeUpdateTransferRestrictionStatus DAOCoinOperationType = 3
+)
+
+type DAOCoinMetadata struct {
+	// ProfilePublicKey is the public key of the profile that owns the
+	// coin the person wants to operate on.
+	ProfilePublicKey []byte
+
+	// OperationType specifies what the user wants to do with this
+	// DAO coin.
+	OperationType DAOCoinOperationType
+
+	// TODO: Should we only have one field that tracks number of coins in operation to keep this struct small?
+	// We will only ever need 1 of these fields.
+	// Mint field
+	CoinsToMintNanos uint256.Int
+
+	// Burn Fields
+	CoinsToBurnNanos uint256.Int
+
+	// TransferRestrictionStatus to set if OperationType == DAOCoinOperatoinTypeUpdateTransferRestrictionStatus
+	TransferRestrictionStatus
+}
+
+func (txnData *DAOCoinMetadata) GetTxnType() TxnType {
+	return TxnTypeDAOCoin
+}
+
+func (txnData *DAOCoinMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// ProfilePublicKey
+	data = append(data, UintToBuf(uint64(len(txnData.ProfilePublicKey)))...)
+	data = append(data, txnData.ProfilePublicKey...)
+
+	// OperationType byte
+	data = append(data, byte(txnData.OperationType))
+
+	// CoinsToMintNanos
+	{
+		coinsToMintBytes := txnData.CoinsToMintNanos.Bytes()
+		data = append(data, UintToBuf(uint64(len(coinsToMintBytes)))...)
+		data = append(data, coinsToMintBytes...)
+	}
+
+	// CoinsToBurnNanos
+	{
+		coinsToBurnBytes := txnData.CoinsToBurnNanos.Bytes()
+		data = append(data, UintToBuf(uint64(len(coinsToBurnBytes)))...)
+		data = append(data, coinsToBurnBytes...)
+	}
+
+	data = append(data, byte(txnData.TransferRestrictionStatus))
+
+	return data, nil
+}
+
+func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
+	ret := DAOCoinMetadata{}
+	rr := bytes.NewReader(data)
+
+	// ProfilePublicKey
+	var err error
+	ret.ProfilePublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinMetadata.FromBytes: Error reading ProfilePublicKey: %v", err)
+	}
+
+	// OperationType byte
+	operationType, err := rr.ReadByte()
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinMetadata.FromBytes: Error reading OperationType: %v", err)
+	}
+	ret.OperationType = DAOCoinOperationType(operationType)
+
+	// Set CoinsToMintNanos from the bytes
+	maxUint256BytesLen := len(MaxUint256.Bytes())
+	{
+		intLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "DAOCoinMetadata.FromBytes: Problem "+
+				"coinsToMint length")
+		}
+		if intLen > uint64(maxUint256BytesLen) {
+			return fmt.Errorf("DAOCoinMetadata.FromBytes: coinsToMintLen %d "+
+				"exceeds max %d", intLen, MaxMessagePayload)
+		}
+		coinsToMintBytes := make([]byte, intLen)
+		_, err = io.ReadFull(rr, coinsToMintBytes)
+		if err != nil {
+			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToMintBytes: %v", err)
+		}
+		ret.CoinsToMintNanos = *uint256.NewInt().SetBytes(coinsToMintBytes)
+	}
+
+	{
+		intLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "DAOCoinMetadata.FromBytes: Problem "+
+				"coinsToBurn length")
+		}
+		if intLen > uint64(maxUint256BytesLen) {
+			return fmt.Errorf("DAOCoinMetadata.FromBytes: coinsToBurnLen %d "+
+				"exceeds max %d", intLen, MaxMessagePayload)
+		}
+		coinsToBurnBytes := make([]byte, intLen)
+		_, err = io.ReadFull(rr, coinsToBurnBytes)
+		if err != nil {
+			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToBurnBytes: %v", err)
+		}
+		ret.CoinsToBurnNanos = *uint256.NewInt().SetBytes(coinsToBurnBytes)
+	}
+
+	transferRestrictionStatus, err := rr.ReadByte()
+	if err != nil {
+		return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading TransferRestrictionStatus: %v", err)
+	}
+	ret.TransferRestrictionStatus = TransferRestrictionStatus(transferRestrictionStatus)
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *DAOCoinMetadata) New() DeSoTxnMetadata {
+	return &DAOCoinMetadata{}
+}
+
+// ==================================================================
+// DAOCoinTransferMetadata
+// ==================================================================
+
+type DAOCoinTransferMetadata struct {
+	// ProfilePublicKey is the public key of the profile that owns the
+	// coin the person wants to transfer. DAO coins can only be
+	// transferred if a valid profile exists.
+	ProfilePublicKey []byte
+
+	DAOCoinToTransferNanos uint256.Int
+	ReceiverPublicKey      []byte
+}
+
+func (txnData *DAOCoinTransferMetadata) GetTxnType() TxnType {
+	return TxnTypeDAOCoinTransfer
+}
+
+func (txnData *DAOCoinTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// ProfilePublicKey
+	data = append(data, UintToBuf(uint64(len(txnData.ProfilePublicKey)))...)
+	data = append(data, txnData.ProfilePublicKey...)
+
+	// DAOCoinToTransferNanos uint64
+	{
+		coinsToTransferBytes := txnData.DAOCoinToTransferNanos.Bytes()
+		data = append(data, UintToBuf(uint64(len(coinsToTransferBytes)))...)
+		data = append(data, coinsToTransferBytes...)
+	}
+
+	// ReceiverPublicKey
+	data = append(data, UintToBuf(uint64(len(txnData.ReceiverPublicKey)))...)
+	data = append(data, txnData.ReceiverPublicKey...)
+
+	return data, nil
+}
+
+func (txnData *DAOCoinTransferMetadata) FromBytes(data []byte) error {
+	ret := DAOCoinTransferMetadata{}
+	rr := bytes.NewReader(data)
+
+	// ProfilePublicKey
+	var err error
+	ret.ProfilePublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinTransferMetadata.FromBytes: Error reading ProfilePublicKey: %v", err)
+	}
+
+	// DAOCoinToTransferNanos uint256
+	maxUint256BytesLen := len(MaxUint256.Bytes())
+	{
+		intLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "DAOCoinTransferMetadata.FromBytes: Problem "+
+				"coinsToTransfer length")
+		}
+		if intLen > uint64(maxUint256BytesLen) {
+			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: coinsToTransferLen %d "+
+				"exceeds max %d", intLen, MaxMessagePayload)
+		}
+		coinsToTransferBytes := make([]byte, intLen)
+		_, err = io.ReadFull(rr, coinsToTransferBytes)
+		if err != nil {
+			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: Error reading coinsToTransferBytes: %v", err)
+		}
+		ret.DAOCoinToTransferNanos = *uint256.NewInt().SetBytes(coinsToTransferBytes)
+	}
+
+	// ReceiverPublicKey
+	ret.ReceiverPublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinTransferMetadata.FromBytes: Error reading ReceiverPublicKey: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
+	return &DAOCoinTransferMetadata{}
+}
+
+func SerializePubKeyToUint64Map (mm map[PublicKey]uint64) ([]byte, error) {
+	data := []byte{}
+	// Encode the number of key/value pairs
+	numKeys := uint64(len(mm))
+	data = append(data, UintToBuf(numKeys)...)
+
+	// For each kv pair, encode the public key and the length
+	if numKeys > 0 {
+		// Sort the keys of the map based on the mainnet public key encoding.
+		// This ensures a deterministic sorting.
+		keys := make([]string, 0, numKeys)
+		for key := range mm {
+			keys = append(keys, PkToStringMainnet(key[:]))
+		}
+		sort.Strings(keys)
+		// Encode each (public key, uint64) pair
+		for _, key := range keys {
+			// Serialize the raw public key
+			pkBytes, _, err := Base58CheckDecode(key)
+			if err != nil {
+				// This should never happen since we just enoded it above,
+				// so panic if it does
+				return nil, err
+			}
+			data = append(data, pkBytes...)
+
+			// The value needs to be looked up using the raw public key
+			val, exists := mm[*NewPublicKey(pkBytes)]
+			if !exists {
+				return nil, fmt.Errorf("Missing pubkey %v in SerializePubKeyToUint64Map %v",
+					key, spew.Sdump(mm))
+			}
+
+			// Add the uint64 to the end of the map
+			data = append(data, UintToBuf(val)...)
+		}
+	}
+
+	return data, nil
+}
+
+func DeserializePubKeyToUint64Map (data []byte) (map[PublicKey]uint64, error) {
+	rr := bytes.NewReader(data)
+
+	numKeys, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem "+
+			"reading num keys")
+	}
+	mm := make(map[PublicKey]uint64, numKeys)
+	for ii := uint64(0); ii < numKeys; ii++ {
+		// Read in the public key bytes
+		pkBytes := make([]byte, btcec.PubKeyBytesLenCompressed)
+		_, err = io.ReadFull(rr, pkBytes)
+		if err != nil {
+			return nil, err
+		}
+		pk := *NewPublicKey(pkBytes)
+
+		// Read in the uint
+		val, err := ReadUvarint(rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem "+
+				"reading value for key %v", PkToStringMainnet(pkBytes))
+		}
+
+		mm[pk] = val
+	}
+
+	return mm, nil
+}
+
+// ==================================================================
+// MessagingGroupMetadata
+// ==================================================================
+
+type MessagingGroupMetadata struct {
+	// This struct is very similar to the MessagingGroupEntry type.
+	MessagingPublicKey    []byte
+	MessagingGroupKeyName []byte
+	// This value is the signature of the following using the private key
+	// of the GroupOwnerPublicKey (aka txn.PublicKey):
+	// - Sha256DoubleHash(MessagingPublicKey || MessagingGroupKeyName)
+	//
+	// This signature is only required when setting up a group where
+	// - MessagingGroupKeyName = "default-key"
+	// In this case, we want to make sure that people don't accidentally register
+	// this group name with a derived key, and forcing this signature ensures that.
+	// The reason is that if someone accidentally registers the default-key with
+	// the wrong public key, then they won't be able to receive messages cross-device
+	// anymore.
+	//
+	// This field is not critical and can be removed in the future.
+	GroupOwnerSignature   []byte
+
+	MessagingGroupMembers []*MessagingGroupMember
+}
+
+func (txnData *MessagingGroupMetadata) GetTxnType() TxnType {
+	return TxnTypeMessagingGroup
+}
+
+func (txnData *MessagingGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingPublicKey)))...)
+	data = append(data, txnData.MessagingPublicKey...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupKeyName)))...)
+	data = append(data, txnData.MessagingGroupKeyName...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.GroupOwnerSignature)))...)
+	data = append(data, txnData.GroupOwnerSignature...)
+
+	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupMembers)))...)
+	for _, recipient := range txnData.MessagingGroupMembers {
+		data = append(data, recipient.Encode()...)
+	}
+
+	return data, nil
+}
+
+func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
+	ret := MessagingGroupMetadata{}
+	rr := bytes.NewReader(data)
+
+	var err error
+	ret.MessagingPublicKey, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+			"Problem reading MessagingPublicKey")
+	}
+
+	ret.MessagingGroupKeyName, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+			"Problem reading MessagingGroupKey")
+	}
+
+	ret.GroupOwnerSignature, err = ReadVarString(rr)
+	if err != nil {
+		return errors.Wrapf(err,"MessagingGroupMetadata.FromBytes: " +
+			"Problem reading GroupOwnerSignature")
+	}
+
+	numRecipients, err := ReadUvarint(rr)
+	for ; numRecipients > 0; numRecipients-- {
+		recipient := MessagingGroupMember{}
+		err = recipient.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+				"error reading recipient")
+		}
+		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
+	return &MessagingGroupMetadata{}
 }
