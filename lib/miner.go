@@ -13,13 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/deso-protocol/core/desohash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/desohash"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/golang/glog"
-	merkletree "github.com/laser/go-merkle-tree"
 	"github.com/pkg/errors"
 )
 
@@ -92,7 +92,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		// This provides a way for outside processes to pause the miner.
 		if len(desoMiner.PublicKeys) == 0 {
 			if atomic.LoadInt32(&desoMiner.stopping) == 1 {
-				glog.Debugf("DeSoMiner._startThread: Stopping thread %d", threadIndex)
+				glog.V(1).Infof("DeSoMiner._startThread: Stopping thread %d", threadIndex)
 				break
 			}
 			time.Sleep(1 * time.Second)
@@ -124,7 +124,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		// Compute a few hashes before checking if we've solved the block.
 		timeBefore := time.Now()
 		bestHash, bestNonce, err := FindLowestHash(header, uint64(desoMiner.params.MiningIterationsPerCycle))
-		glog.Tracef("DeSoMiner._startThread: Time per iteration: %v", time.Since(timeBefore))
+		glog.V(2).Infof("DeSoMiner._startThread: Time per iteration: %v", time.Since(timeBefore))
 		if err != nil {
 			// If there's an error just log it and break out.
 			glog.Error(errors.Wrapf(err, "DeSoMiner._startThread: Problem while mining: "))
@@ -132,12 +132,12 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		}
 
 		if atomic.LoadInt32(&desoMiner.stopping) == 1 {
-			glog.Debugf("DeSoMiner._startThread: Stopping thread %d", threadIndex)
+			glog.V(1).Infof("DeSoMiner._startThread: Stopping thread %d", threadIndex)
 			break
 		}
 
 		if LessThan(diffTarget, bestHash) {
-			//glog.Tracef("DeSoMiner._startThread: Best hash found %v does not beat target %v",
+			//glog.V(2).Infof("DeSoMiner._startThread: Best hash found %v does not beat target %v",
 			//hex.EncodeToString(bestHash[:]), hex.EncodeToString(diffTarget[:]))
 			continue
 		}
@@ -187,13 +187,13 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	// Log information on the block we just mined.
 	bestHash, _ := blockToMine.Hash()
 	glog.Infof("================== YOU MINED A NEW BLOCK! ================== Height: %d, Hash: %s", blockToMine.Header.Height, hex.EncodeToString(bestHash[:]))
-	glog.Debugf("Height: (%d), Diff target: (%s), "+
+	glog.V(1).Infof("Height: (%d), Diff target: (%s), "+
 		"New hash: (%s), , Header Tip: %v, Block Tip: %v", blockToMine.Header.Height,
 		hex.EncodeToString(diffTarget[:])[:10], hex.EncodeToString(bestHash[:]),
 		desoMiner.BlockProducer.chain.headerTip().Header,
 		desoMiner.BlockProducer.chain.blockTip().Header)
 	scs := spew.ConfigState{DisableMethods: true, Indent: "  ", DisablePointerAddresses: true}
-	glog.Debugf(scs.Sdump(blockToMine))
+	glog.V(1).Infof(scs.Sdump(blockToMine))
 	// Sanitize the block for the comparison we're about to do. We need to do
 	// this because the comparison function below will think they're different
 	// if one has nil and one has an empty list. Annoying, but this solves the
@@ -208,7 +208,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		glog.Error(err)
 		return nil, err
 	}
-	glog.Debugf("Block bytes hex %d: %s", blockToMine.Header.Height, hex.EncodeToString(blockBytes))
+	glog.V(1).Infof("Block bytes hex %d: %s", blockToMine.Header.Height, hex.EncodeToString(blockBytes))
 	blockFromBytes := &MsgDeSoBlock{}
 	err = blockFromBytes.FromBytes(blockBytes)
 	if err != nil || !reflect.DeepEqual(*blockToMine, *blockFromBytes) {
@@ -217,11 +217,11 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		scs.Dump(blockToMine)
 		fmt.Println("Block as it was de-serialized:", *blockFromBytes)
 		scs.Dump(blockFromBytes)
-		glog.Debugf("In case you missed the hex %d: %s", blockToMine.Header.Height, hex.EncodeToString(blockBytes))
+		glog.V(1).Infof("In case you missed the hex %d: %s", blockToMine.Header.Height, hex.EncodeToString(blockBytes))
 		glog.Errorf("DeSoMiner.MineAndProcessSingleBlock: ERROR: Problem with block "+
 			"serialization (see above for dumps of blocks): Diff: %v, err?: %v", Diff(blockToMine, blockFromBytes), err)
 	}
-	glog.Tracef("Mined block height:num_txns: %d:%d\n", blockToMine.Header.Height, len(blockToMine.Txns))
+	glog.V(2).Infof("Mined block height:num_txns: %d:%d\n", blockToMine.Header.Height, len(blockToMine.Txns))
 
 	// TODO: This is duplicate code, but this whole file should probably be deleted or
 	// reworked to use the block producer API anyway.
@@ -235,7 +235,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	// TODO(miner): Replace with a call to SubmitBlock.
 	isMainChain, isOrphan, err := desoMiner.BlockProducer.chain.ProcessBlock(
 		blockToMine, verifySignatures)
-	glog.Tracef("Called ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+	glog.V(2).Infof("Called ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 		isMainChain, isOrphan, err)
 	if err != nil {
 		glog.Errorf("ERROR calling ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
@@ -259,7 +259,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	copy(diffTargetBaselineBlockHash[:], diffTargetBaseline)
 	diffTargetBaselineBigint := big.NewInt(0).Mul(HashToBigint(&diffTargetBaselineBlockHash), big.NewInt(decimalPlaces))
 	diffTargetBigint := HashToBigint(diffTarget)
-	glog.Debugf("Difficulty factor (1 = 1 core running): %v", float32(big.NewInt(0).Div(diffTargetBaselineBigint, diffTargetBigint).Int64())/float32(decimalPlaces))
+	glog.V(1).Infof("Difficulty factor (1 = 1 core running): %v", float32(big.NewInt(0).Div(diffTargetBaselineBigint, diffTargetBigint).Int64())/float32(decimalPlaces))
 
 	if atomic.LoadInt32(&desoMiner.stopping) == 1 {
 		return nil, fmt.Errorf("DeSoMiner._startThread: Stopping thread %d", threadIndex)
@@ -295,7 +295,7 @@ func (desoMiner *DeSoMiner) Start() {
 	// Start a bunch of threads to mine for blocks.
 	for threadIndex := uint32(0); threadIndex < desoMiner.numThreads; threadIndex++ {
 		go func(threadIndex uint32) {
-			glog.Debugf("DeSoMiner.Start: Starting thread %d", threadIndex)
+			glog.V(1).Infof("DeSoMiner.Start: Starting thread %d", threadIndex)
 			desoMiner._startThread(threadIndex)
 		}(threadIndex)
 	}

@@ -69,7 +69,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				false,
 				0,
 				10,
-				mempool /*mempool*/,
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 			_signTxn(t, txn, currentPrivStr)
