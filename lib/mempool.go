@@ -2000,6 +2000,9 @@ func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
 		for {
 			select {
 			case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
+				if mp.bc.syncingState {
+					continue
+				}
 				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Woke up!")
 
 				// When we wake up, only do an update if one didn't occur since before

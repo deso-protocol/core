@@ -240,7 +240,6 @@ var (
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
 	// NEXT_TAG: 55
-	_PrefixAncestralRecords = []byte{57}
 )
 
 var StatePrefixes = [][]byte{
@@ -300,7 +299,6 @@ var NonStatePrefixes = [][]byte{
 	_KeyTransactionIndexTip,
 	_PrefixPublicKeyToNextIndex,
 	_PrefixMempoolTxnHashToMsgDeSoTxn,
-	_PrefixAncestralRecords,
 }
 
 func isStateKey(key []byte) bool {

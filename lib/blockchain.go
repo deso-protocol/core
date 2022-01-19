@@ -1859,6 +1859,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, false, RuleErrorFirstTxnMustBeBlockReward
 	}
 
+	glog.Infof("ProcesssBlock: Got here")
 	// Do some txn sanity checks.
 	for _, txn := range desoBlock.Txns[1:] {
 		// There shouldn't be more than one block reward in the transaction list.
@@ -1874,6 +1875,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		}
 	}
 
+	glog.Infof("ProcesssBlock: Merkle thing")
 	// Compute and check the merkle root of all the txns.
 	merkleRoot, txHashes, err := ComputeMerkleRoot(desoBlock.Txns)
 	if err != nil {
@@ -1902,12 +1904,17 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// Try and store the block and its corresponding node info since it has passed
 	// basic validation.
 	nodeToValidate.Status |= StatusBlockStored
-
+	glog.Infof("ProcesssBlock: Before the upsert stuff ")
 	if bc.postgres != nil {
 		if err = bc.postgres.UpsertBlock(nodeToValidate); err != nil {
 			err = errors.Wrapf(err, "ProcessBlock: Problem saving block with StatusBlockStored")
 		}
 	} else {
+		var counter uint64
+		if bc.snapshot != nil {
+			counter = bc.snapshot.PrepareAncestralFlush()
+			glog.Infof("ProcessBlock: Preparing snapshot flush with counter (%v)", counter)
+		}
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			// Store the new block in the db under the
 			//   <blockHash> -> <serialized block>
@@ -1925,7 +1932,12 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			return nil
 		})
+		if bc.snapshot != nil {
+			glog.Infof("ProcessBlock: Snapshot flushing with counter (%v)", counter)
+			bc.snapshot.FlushAncestralRecords(counter)
+		}
 	}
+	glog.Infof("ProcesssBlock: Aaaand got here")
 
 	if err != nil {
 		return false, false, errors.Wrapf(err, "ProcessBlock: Problem storing block after basic validation")
@@ -1936,6 +1948,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 	// Get the current tip.
 	currentTip := bc.blockTip()
+	glog.Infof("ProcesssBlock: current tip height", currentTip.Height)
 
 	// See if the current tip is equal to the block's parent.
 	isMainChain := false
@@ -2382,7 +2395,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			bc.eventManager.blockConnected(&BlockEvent{Block: desoBlock})
 		}
 	}
-
+	glog.Infof("ProcesssBlock: finally got here")
+	currentTip = bc.blockTip()
+	glog.Infof("ProcesssBlock: current tip height after (%v)", currentTip.Height)
+	bc.snapshot.DeleteChannel <- uint64(currentTip.Height)
 	// If we've made it this far, the block has been validated and we have either added
 	// the block to the tip, done nothing with it (because its cumwork isn't high enough)
 	// or added it via a reorg and the db and our in-memory data structures reflect this

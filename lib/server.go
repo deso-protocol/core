@@ -289,7 +289,7 @@ func NewServer(
 	_connectIps []string,
 	_db *badger.DB,
 	postgres *Postgres,
-	_cacheSize uint32,
+	_snapshot *Snapshot,
 	_targetOutboundPeers uint32,
 	_maxInboundPeers uint32,
 	_minerPublicKeys []string,
@@ -351,8 +351,6 @@ func NewServer(
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
-
-	_snapshot, err := NewSnapshot(_cacheSize)
 
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
@@ -501,8 +499,8 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
 	pp.currentTime = time.Now()
-	glog.Infof("Server.GetSnapshot: Started Peer timer with total elapsed (%v) and current time (%v)",
-    					pp.timeElapsed, pp.currentTime)
+	glog.Infof("Server.GetSnapshot: Started execution with total elapsed (%v) and current time (%v)",
+		pp.timeElapsed, pp.currentTime)
 	var prefix []byte
 	lastDBEntry := EmptyDBEntry()
 	// First check if the peer is already assigned to some prefix.
@@ -548,6 +546,12 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 		Prefix: prefix,
 		SnapshotStartEntry: lastDBEntry,
 	}, false)
+
+	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
+	pp.currentTime = time.Now()
+	glog.Infof("Server.GetSnapshot: Sent peer a GetSnapshot message with total elapsed (%v) and current time (%v)",
+    		pp.timeElapsed, pp.currentTime)
+
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) " +
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastDBEntry)
 }
@@ -821,7 +825,7 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	glog.V(1).Infof("srv._handleGetSnapshot: Called with message %v from Peer %v", msg, pp)
 	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
 	pp.currentTime = time.Now()
-	glog.Infof("Server._handleGetSnapshot: Started Peer timer with total elapsed (%v) and current time (%v)",
+	glog.Infof("Server._handleGetSnapshot: Received a GetSnapshot message with total elapsed (%v) and current time (%v)",
 		pp.timeElapsed, pp.currentTime)
 
 	// Ignore GetSnapshot requests we're still syncing.
@@ -847,9 +851,13 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 		Prefix: msg.Prefix,
 	}, false)
 
+	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
+	pp.currentTime = time.Now()
+	glog.Infof("Server._handleGetSnapshot: Responded to the peer with total elapsed (%v) and current time (%v)",
+		pp.timeElapsed, pp.currentTime)
 
 
-	glog.V(2).Infof("Server.GetSnapshot: Sending a SnapshotData message to peer (%v) " +
+	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotData message to peer (%v) " +
 		"with SnapshotHeight (%v) and SnapshotChecksum (%v) and Snapshotdata length (%v)", pp,
 		srv.blockchain.snapshot.BlockHeight, srv.blockchain.snapshot.Checksum.ToHashString(), len(dbEntries))
 }
@@ -864,15 +872,23 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	glog.Infof("Server._handleSnapshot: Got into _handleSnapshot with total elapsed (%v) and current time (%v)",
 		pp.timeElapsed, pp.currentTime)
 
-	k0, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, []byte{5}, []byte{5}, uint32(8<<20))
-	glog.V(1).Infof("How many 5 prefixes:", len(*k0))
+	//k0, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, []byte{5}, []byte{5}, uint32(8<<20))
+	//glog.V(1).Infof("How many 5 prefixes:", len(*k0))
 
 	// Process the DBEntries from the msg
+	decodeTime := 0.0
+	setTime := 0.0
+	currentTime := time.Now()
 	err := srv.blockchain.db.Update(func(txn *badger.Txn) error {
+		pp.timeElapsed += time.Since(pp.currentTime).Seconds()
+		pp.currentTime = time.Now()
+		glog.Infof("Server._handleSnapshot: started an update transaction with total elapsed (%v) and current time (%v)",
+        		pp.timeElapsed, pp.currentTime)
 		for _, dbEntry := range msg.SnapshotData {
 			if dbEntry.IsEmpty() {
 				break
 			}
+			currentTime = time.Now()
 			key, err := hex.DecodeString(dbEntry.Key)
 			if err != nil {
 				return err
@@ -881,14 +897,25 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			if err != nil {
 				return err
 			}
+			decodeTime += time.Since(currentTime).Seconds()
+			currentTime = time.Now()
 
-    		err = DBSetWithTxn(txn, srv.blockchain.snapshot, key, value)
+    		//err = DBSetWithTxn(txn, srv.blockchain.snapshot, key, value)
+			err = txn.Set(key, value)
 			if err != nil {
 				return err
 			}
+			setTime += time.Since(currentTime).Seconds()
+			currentTime = time.Now()
     	}
 		return nil
 	})
+	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
+	pp.currentTime = time.Now()
+	glog.Infof("Server._handleSnapshot: _handleSnapshot finished setting to db with total elapsed (%v) and current time (%v) | " +
+		"timing decodes (%v) and DB set (%v), total spent on DB (%v)",
+		pp.timeElapsed, pp.currentTime, decodeTime, setTime, decodeTime+setTime)
+
 	if err != nil {
 		glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
 	}
@@ -911,7 +938,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
 	pp.currentTime = time.Now()
-	glog.Infof("Server._handleSnapshot: Ådded the snapshot bundle into DB with with total elapsed (%v) and current time (%v)",
+	glog.Infof("Server._handleSnapshot: Added the snapshot bundle into DB with with total elapsed (%v) and current time (%v)",
 			pp.timeElapsed, pp.currentTime)
 	for _, statePrefix := range StatePrefixes {
 		completed := false

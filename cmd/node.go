@@ -146,6 +146,11 @@ func (node *Node) Start() {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
+	snapshot, err := lib.NewSnapshot(node.Config.CacheSize, node.Config.DataDirectory)
+	if err != nil {
+		panic(err)
+	}
+
 	// Setup the server
 	node.Server, err = lib.NewServer(
 		node.Params,
@@ -154,7 +159,7 @@ func (node *Node) Start() {
 		node.Config.ConnectIPs,
 		node.chainDB,
 		node.Postgres,
-		node.Config.CacheSize,
+		snapshot,
 		node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers,
 		node.Config.MinerPublicKeys,
