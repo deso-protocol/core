@@ -437,7 +437,7 @@ type PGProfile struct {
 	// FIXME: Postgres will break when values exceed uint64
 	// We don't use Postgres right now so going to plow ahead and set this as-is
 	// to fix compile errors.
-	DAOCoinCoinsInCirculationNanos   uint256.Int               `pg:"dao_coin_coins_in_circulation_nanos"`
+	DAOCoinCoinsInCirculationNanos   string               	   `pg:"dao_coin_coins_in_circulation_nanos"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
 }
