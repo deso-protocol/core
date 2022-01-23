@@ -136,7 +136,7 @@ var (
 
 type Snapshot struct {
 	// DB is used to store ancestral records
-	db *badger.DB
+	Db *badger.DB
 
 	// Cache is used to store most recent DB records that we've read/wrote.
 	// This is particularly useful for maintaining ancestral records, because
@@ -157,6 +157,9 @@ type Snapshot struct {
 	FlushCounterModulus uint64
 	CounterChannel chan uint64
 	ExitChannel chan bool
+
+	// BatchSize is the size in bytes of the
+	BatchSize uint32
 
 	// Checksum allows us to confirm integrity of the state so that when we're
 	// syncing with peers, we are confident that data wasn't tampered with.
@@ -195,6 +198,7 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 	// Initialize database
 	snapshotDir := filepath.Join(GetBadgerDbPath(dataDirectory), "snapshot")
 	snapshotOpts := badger.DefaultOptions(snapshotDir)
+	// TODO: Remove this
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDir)
 	snapshotOpts.MemTableSize = 1024 << 20
 	glog.Infof("Snapshot BadgerDB Dir: %v", snapshotOpts.Dir)
@@ -210,13 +214,14 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 
 	// Set the snapshot
 	snap := &Snapshot{
-		db:                  snapshotDb,
+		Db:                  snapshotDb,
 		Cache:               lru.NewKVCache(uint(cacheSize)),
 		BlockHeight:         uint64(0),
-		BlockHeightModulus:  uint64(900),
+		BlockHeightModulus:  uint64(2000),
 		FlushCounter:        uint64(0),
 		FlushCounterModulus: uint64(25),
 		LastCounter:         uint64(0),
+		BatchSize:           uint32(8 << 20),
 		CounterChannel:      make(chan uint64),
 		DeleteChannel:       make(chan uint64),
 		Checksum:            checksum,
@@ -252,9 +257,9 @@ func (snap *Snapshot) Run() {
 				glog.Infof("Snapshot.Run: Getting into the delete channel with height (%v)", height)
 				if height % snap.BlockHeightModulus == 0 {
 					glog.Infof("Snapshot.Run: About to delete BlockHeight (%v) and set new height (%v)", snap.BlockHeight, height)
-					snap.DeleteAncestralRecords(snap.BlockHeight)
-					snap.BlockHeight = height
 					snap.LastCounter = snap.FlushCounter
+					snap.BlockHeight = height
+					snap.DeleteAncestralRecords(height)
 				}
 			}
 		}
@@ -270,7 +275,7 @@ func (snap *Snapshot) DeleteAncestralRecords(height uint64) {
 	//maxPrint := 5
 	snap.DBLock.Lock()
 	defer snap.DBLock.Unlock()
-	err := snap.db.DropPrefix(prefix)
+	err := snap.Db.DropPrefix(prefix)
 	if err != nil {
 		glog.Errorf("Snapshot.DeleteAncestralRecords: Problem deleting ancestral records error (%v)", err)
 		return
@@ -386,6 +391,8 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 	snap.DBLock.Lock()
 	defer snap.DBLock.Unlock()
 	if counter <= snap.LastCounter {
+		glog.Infof("Snapshot.FlushAncestralRecords: Discarding counter (%v) because it's before the last counter (%v)",
+			counter, snap.LastCounter)
 		delete(snap.MapKeyList, counter)
 		delete(snap.AncestralMap, counter)
 		delete(snap.NotExistsMap, counter)
@@ -394,12 +401,17 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 
 	// First sort the copyMapKeyList so that we write to BadgerDB in order.
 	// TODO: SEEMS LIKE SORT DOESN'T CARE ABOUT WEIRD MEMORY OVERLAPS, BECAUSE IT ONLY SWAPS ITEMS
-	sort.Strings(snap.MapKeyList[counter])
+	for _, key := range snap.MapKeyList[counter] {
+		if key == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+			glog.Infof("Snapshot.FlushAncestralRecords: FOUND THE MYSTERIOUS PREFIX DURING FLUSH BEFORE SORT")
+		}
+	}
+	//sort.Strings(snap.MapKeyList[counter])
 	glog.Infof("Snapshot.FlushAncestralRecords: Finished sorting map keys")
 
 	// We launch a new read-write transaction to set the records.
 
-	err := snap.db.Update(func(txn *badger.Txn) error {
+	err := snap.Db.Update(func(txn *badger.Txn) error {
 		// In case we kill the node in the middle of this update.
 		err := txn.Set(_PrefixSnapshotHealth, []byte{0})
 		if err != nil {
@@ -412,6 +424,9 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 		glog.Infof("Snapshot.FlushAncestralRecords: Adding (%v) NotExistsMap records", len(snap.NotExistsMap[counter]))
 		for _, key := range snap.MapKeyList[counter] {
 			// We store keys as strings because they're easier to store and sort this way.
+			if key == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+				glog.Infof("Snapshot.FlushAncestralRecords: FOUND THE MYSTERIOUS PREFIX DURING FLUSH")
+			}
 			keyBytes, err := hex.DecodeString(key)
 			if err != nil {
 				return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
@@ -420,7 +435,7 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 
 			// We check whether this record is already present in ancestral records,
 			// if so then there's nothing to do. What we want is err == badger.ErrKeyNotFound
-			_, err = txn.Get(keyBytes)
+			_, err = txn.Get(snap.GetSeekPrefix(keyBytes))
 			if err != nil && err != badger.ErrKeyNotFound {
 				return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 					"reading exsiting record in the DB at key: %v", key)
@@ -429,28 +444,42 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 				continue
 			}
 
-			prefix := snap._getSeekPrefix(keyBytes)
-			opts := badger.DefaultIteratorOptions
-		  	opts.PrefetchValues = false
-		  	it := txn.NewIterator(opts)
+			if key == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+				glog.Infof("Snapshot.FlushAncestralRecords: GOT HERE WITH THE MYSTERIOUS PREFIX DURING FLUSH")
+			}
 
-			it.Seek(prefix)
-		  	if it.ValidForPrefix(prefix){
-		  		it.Close()
-				return nil
-		  	}
-		  	it.Close()
+			//prefix := snap.GetSeekPrefix(keyBytes)
+			//opts := badger.DefaultIteratorOptions
+		  	//opts.PrefetchValues = false
+		  	//it := txn.NewIterator(opts)
+			//
+			//it.Seek(prefix)
+		  	//if it.ValidForPrefix(prefix){
+		  	//	it.Close()
+			//	continue
+		  	//}
+		  	//it.Close()
+
+		  	if key == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+				glog.Infof("Snapshot.FlushAncestralRecords: AND ALSO GOT HERE DURING MYSTERIOUS PREFIX FLUSH")
+			}
 
 			// If we get here, it means that no record existed in ancestral records at key.
 			// The key was either added to copyAncestralMap or copyNotExistsMap during flush.
 			if value, exists := snap.AncestralMap[counter][key]; exists {
-				err = txn.Set(snap._getCurrentPrefixAndKey(false, keyBytes), value)
+				err = txn.Set(snap.GetSeekPrefix(keyBytes), append(value, byte(1)))
+				if key == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+					glog.Infof("Snapshot.FlushAncestralRecords: JUST FLUSHED THE MYSTERIOUS PREFIX AS EXISTING")
+				}
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 						"flushing a record from copyAncestralMap at key %v:", key)
 				}
 			} else if _, exists = snap.NotExistsMap[counter][key]; exists {
-				err = txn.Set(snap._getCurrentPrefixAndKey(true, keyBytes), []byte{})
+				err = txn.Set(snap.GetSeekPrefix(keyBytes), []byte{byte(0)})
+				if key == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+					glog.Infof("Snapshot.FlushAncestralRecords: JUST FLUSHED THE MYSTERIOUS PREFIX AS NON-EXISTING")
+				}
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 						"flushing a record from copyNotExistsMap at key %v:", key)
@@ -514,6 +543,10 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 	//	}
 	snap.DBLock.Lock()
 	defer snap.DBLock.Unlock()
+	if key == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+		glog.Infof("PrepareAncestralRecord: THE MYSTERIOUS KEY IS HERE AGAIN (%v) AND VALUE (%v)",
+			key, value)
+	}
 	if _, ok := snap.AncestralMap[index][key]; ok {
 		return
 	}
@@ -526,6 +559,10 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 	} else {
 		snap.NotExistsMap[index][key] = true
 	}
+	if key == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+		glog.Infof("PrepareAncestralRecord: THE MYSTERIOUS KEY IS WAS SET IN SNAP (%v) AND VALUE (%v)" +
+			"EXISTED: (%v)", key, value, existed)
+	}
 
 	//} else {
 	//	if _, ok := snap.NotExistsMap[index]; !ok {
@@ -536,9 +573,9 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 	//}
 }
 
-// _getCurrentPrefixAndKey is used to get an ancestral record key from a main DB key.
+// GetCurrentPrefixAndKey is used to get an ancestral record key from a main DB key.
 // 		<prefix, type [1]byte, blockHeight [10]byte, key> -> <>
-func (snap *Snapshot) _getCurrentPrefixAndKey (notExistsRecord bool, key []byte) []byte {
+func (snap *Snapshot) GetCurrentPrefixAndKey (notExistsRecord bool, key []byte) []byte {
 	var prefix []byte
 
 	// Append block height, which is the current snapshot identifier.
@@ -559,7 +596,7 @@ func (snap *Snapshot) _getCurrentPrefixAndKey (notExistsRecord bool, key []byte)
 	return prefix
 }
 
-func (snap *Snapshot) _getSeekPrefix (key []byte) []byte {
+func (snap *Snapshot) GetSeekPrefix (key []byte) []byte {
 	var prefix []byte
 
 	// Append block height, which is the current snapshot identifier.
@@ -568,6 +605,21 @@ func (snap *Snapshot) _getSeekPrefix (key []byte) []byte {
 	// Finally, append the main DB key.
 	prefix = append(prefix, key...)
 	return prefix
+}
+
+func (snap *Snapshot) SnapPrefixToKey (prefix []byte) []byte {
+	if len(prefix) > 8 {
+		return prefix[8:]
+	} else {
+		return prefix
+	}
+}
+
+func (snap *Snapshot) CheckPrefixExists (value []byte) bool {
+	if len(value) > 0 {
+		return value[len(value)-1] == 1
+	}
+	return false
 }
 
 func (snap *Snapshot) PrepareAncestralFlush() uint64 {
@@ -659,7 +711,7 @@ func (snap *Snapshot) FlushAncestralRecords(counter uint64) {
 	glog.Infof("Snapshot.FlushAncestralRecords: Finished sorting map keys")
 
 	// We launch a new read-write transaction to set the records.
-	err := snap.db.Update(func(txn *badger.Txn) error {
+	err := snap.Db.Update(func(txn *badger.Txn) error {
 		// In case we kill the node in the middle of this update.
 		err := txn.Set(_PrefixSnapshotHealth, []byte{0})
 		if err != nil {
@@ -690,13 +742,13 @@ func (snap *Snapshot) FlushAncestralRecords(counter uint64) {
 			// If we get here, it means that no record existed in ancestral records at key.
 			// The key was either added to copyAncestralMap or copyNotExistsMap during flush.
 			if value, exists := copyAncestralMap[key]; exists {
-				err = txn.Set(snap._getCurrentPrefixAndKey(false, keyBytes), value)
+				err = txn.Set(snap.GetCurrentPrefixAndKey(false, keyBytes), value)
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 						"flushing a record from copyAncestralMap at key %v:", key)
 				}
 			} else if _, exists = copyNotExistsMap[key]; exists {
-				err = txn.Set(snap._getCurrentPrefixAndKey(true, keyBytes), []byte{})
+				err = txn.Set(snap.GetCurrentPrefixAndKey(true, keyBytes), []byte{})
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 						"flushing a record from copyNotExistsMap at key %v:", key)
@@ -790,74 +842,85 @@ func (entry *DBEntry) IsEmpty() bool {
 	return entry.Key == "-1"
 }
 
-func (snap *Snapshot) GetMostRecentSnapshot(handle *badger.DB, prefix []byte, lastKey []byte) (
-	[]DBEntry, bool) {
-	DBEntries := []DBEntry{}
-	//for ii := 0; ii < len(StatePrefixes); ii++ {
-	//	prefix := StatePrefixes[ii]
-	//for {
-	chunkSize := uint32(8 << 20)
-	kChunk, vChunk, chunkFull, _ := DBIteratePrefixKeys(handle, prefix, lastKey, chunkSize)
-	kAChunk, vAChunk, chunkFullA, _ := DBIteratePrefixKeys(snap.db, prefix, lastKey, chunkSize)
+// GetMostRecentSnapshot gets fetches a batch of records from the nodes DB that match the provided prefix
+// and have a key at least equal to the startKey lexicographically. The function will also fetch ancestral
+// records and combine them with the DB records so that the batch reflects an ancestral block.
+func (snap *Snapshot) GetMostRecentSnapshot(mainDb *badger.DB, prefix []byte, startKey []byte) (
+	_snapshotEntriesBatch []DBEntry, _snapshotEntriesFilled bool, _err error) {
+	// This the list of fetched DB entries.
+	var snapshotEntriesBatch []DBEntry
 
+	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
+	mainDbBatchKeys, mainDbBatchValues, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, snap.BatchSize)
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "Snapshot.GetMostRecentSnapshot: Problem fetching main Db records: ")
+	}
+	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
+	ancestralDbBatchKeys, ancestralDbBatchValues, ancestralDbFilled, err := DBIteratePrefixKeys(snap.Db,
+		snap.GetSeekPrefix(prefix), snap.GetSeekPrefix(startKey), snap.BatchSize)
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "Snapshot.GetMostRecentSnapshot: Problem fetching main Db records: ")
+	}
+
+	// To combine the main DB entries and the ancestral records DB entries, we iterate through the ancestral records and
+	// for each key we add all the main DB keys that are smaller than the currently processed key. The ancestral records
+	// entries have priority over the main DB entries, so whenever there are entries with the same key among the two DBs,
+	// we will only add the ancestral record entry to our snapshot batch. Also, the loop below might appear like O(n^2)
+	// but it's actually O(n) because the inside loop iterates at most O(n) times in total.
+
+	// Index to keep track of how many main DB entries we've already processed.
 	indexChunk := 0
-	for ii, keyA := range *kAChunk {
-		keyBytesA, _ := hex.DecodeString(keyA)
-		if bytes.HasPrefix(keyBytesA, prefix) {
-			DBEntries = append(DBEntries, DBEntry{
-				Key: keyA,
-				Entry: (*vAChunk)[ii],
+	for ii, keyAncestral := range *ancestralDbBatchKeys {
+		keyBytesA, _ := hex.DecodeString(keyAncestral)
+		keyTrimmedBytesA := snap.SnapPrefixToKey(keyBytesA)
+		trimmedKey := hex.EncodeToString(keyTrimmedBytesA)
+		valBytesA, _ := hex.DecodeString((*ancestralDbBatchValues)[ii])
+		valBytesString := hex.EncodeToString(valBytesA[:len(valBytesA)-1])
+		if bytes.HasPrefix(keyTrimmedBytesA, prefix) && snap.CheckPrefixExists(valBytesA) {
+			snapshotEntriesBatch = append(snapshotEntriesBatch, DBEntry{
+				Key: 	trimmedKey,
+				Entry: valBytesString,
 			})
 		}
-		for jj := indexChunk; jj < len(*kChunk); jj++ {
-			indexChunk = jj
-
-			keyBytes, _ := hex.DecodeString((*kChunk)[jj])
-			if bytes.Compare(keyBytes, keyBytesA) == -1 {
-					DBEntries = append(DBEntries, DBEntry{
-						Key: (*kChunk)[jj],
-						Entry: (*vChunk)[jj],
+		for jj := indexChunk; jj < len(*mainDbBatchKeys); {
+			keyBytes, _ := hex.DecodeString((*mainDbBatchKeys)[jj])
+			if bytes.Compare(keyBytes, keyTrimmedBytesA) == -1 {
+					snapshotEntriesBatch = append(snapshotEntriesBatch, DBEntry{
+						Key: (*mainDbBatchKeys)[jj],
+						Entry: (*mainDbBatchValues)[jj],
 					})
-			} else if bytes.Compare(keyBytes, keyBytesA) == 0 {
-				continue
-			} else {
+			} else if bytes.Compare(keyBytes, keyTrimmedBytesA) == 1 {
 				break
 			}
+			// if keys are equal we just skip
+			jj ++
+			indexChunk = jj
+		}
+		// If we filled the chunk for main db records, we will return so that there is no
+		// gap between the most recently added DBEntry and the next ancestral record. Otherwise,
+		// we will keep going with the loop and add all the ancestral records.
+		if mainDbFilled && indexChunk == len(*mainDbBatchKeys) {
+			break
 		}
 	}
-	for jj := indexChunk; jj < len(*kChunk); jj++ {
-		indexChunk = jj
-		DBEntries = append(DBEntries, DBEntry{
-			Key: (*kChunk)[jj],
-			Entry: (*vChunk)[jj],
-		})
+
+	// If we got all ancestral records, but there are still some main DB entries that we can add,
+	// we will do that now.
+	if !ancestralDbFilled {
+		for jj := indexChunk; jj < len(*mainDbBatchKeys); jj++ {
+			indexChunk = jj
+			snapshotEntriesBatch = append(snapshotEntriesBatch, DBEntry{
+				Key: (*mainDbBatchKeys)[jj],
+				Entry: (*mainDbBatchValues)[jj],
+			})
+		}
 	}
 
-	if len(DBEntries) == 0 {
-		DBEntries = append(DBEntries, EmptyDBEntry())
-		return DBEntries, false
+	if len(snapshotEntriesBatch) == 0 {
+		snapshotEntriesBatch = append(snapshotEntriesBatch, EmptyDBEntry())
+		return snapshotEntriesBatch, false, nil
 	}
-	//for i := 0; i < len(*k1); i++ {
-	//	fmt.Printf("Keys:%v\n Values:%v\n", (*k1)[i], (*v1)[i])
-	//}
-	//fmt.Println("iterated", *k1, *v1)
-	//for jj, key := range *k1 {
-	//	keyBytes, _ := hex.DecodeString(key)
-	//	//fmt.Println("comparing", keyBytes, key, prefix, bytes.HasPrefix(keyBytes, prefix))
-	//	if bytes.HasPrefix(keyBytes, prefix){
-	//		DBEntries = append(DBEntries, DBEntry{
-	//			Key:   key,
-	//			Entry: (*v1)[jj],
-	//		})
-	//	}
-	//}
-	//lastKey, _ = hex.DecodeString((*k1)[len(*k1)-1])
-	//fmt.Println("prefixes", full, prefix, lastKey)
-	//if !full || !bytes.HasPrefix(lastKey, prefix) {
-	//	break
-	//}
-	//}
-	//}
 
-	return DBEntries, chunkFull && chunkFullA
+	// If either of the chunks is full, we should return true.
+	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, nil
 }

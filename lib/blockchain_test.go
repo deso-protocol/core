@@ -168,7 +168,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	db, _ := GetTestBadgerDb()
+	db, dbDir := GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
@@ -214,7 +214,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 
 	// Temporarily modify the seed balances to make a specific public
 	// key have some DeSo
-	snap, err := NewSnapshot(100000)
+	snap, err := NewSnapshot(100000, dbDir)
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
 		&paramsCopy, timesource, db, nil, nil, snap)
 	if err != nil {

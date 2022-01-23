@@ -29,6 +29,7 @@ require (
 	github.com/google/uuid v1.2.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/oleiade/lane v1.0.1 // indirect
 	github.com/onsi/ginkgo v1.15.0 // indirect
 	github.com/onsi/gomega v1.10.5 // indirect
 	github.com/pelletier/go-toml v1.7.0 // indirect

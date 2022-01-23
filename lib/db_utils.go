@@ -360,6 +360,9 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 	// After a successful DB write, we update the snapshot.
 	if isState {
 		keyString := hex.EncodeToString(key)
+		if keyString == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+			glog.Infof("SETTING THE MYSTERIOUS KEY IN THE DB NOW (%v) AND VALUE (%v)", keyString, value)
+		}
 		// Update ancestral record structures depending on the existing DB record.
 		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
 		// Now save the newest record to cache.
@@ -434,6 +437,9 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 	// After a successful DB delete, we update the snapshot.
 	if isState {
 		keyString := hex.EncodeToString(key)
+		if keyString == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
+			glog.Infof("WOW DELETING THE MYSTERIOUS KEY IN THE DB NOW (%v) AND VALUE (%v)", keyString)
+		}
 		// Update ancestral record structures depending on the existing DB record.
 		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
 		// Now delete the past record from the cache.

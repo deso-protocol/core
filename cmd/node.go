@@ -146,9 +146,14 @@ func (node *Node) Start() {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
-	snapshot, err := lib.NewSnapshot(node.Config.CacheSize, node.Config.DataDirectory)
-	if err != nil {
-		panic(err)
+	var snapshot *lib.Snapshot
+	if node.Config.HyperSync {
+		snapshot, err = lib.NewSnapshot(node.Config.CacheSize, node.Config.DataDirectory)
+    	if err != nil {
+    		panic(err)
+    	}
+	} else {
+		snapshot = nil
 	}
 
 	// Setup the server

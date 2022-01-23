@@ -7,6 +7,7 @@ import (
 	"github.com/decred/dcrd/lru"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/oleiade/lane"
 	"github.com/stretchr/testify/require"
 	"math/big"
 	"math/rand"
@@ -17,6 +18,31 @@ import (
 	"testing"
 	"time"
 )
+
+func TestDeque(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	deque := lane.NewDeque()
+	fmt.Println(deque.Capacity(), deque.Empty())
+	for ii := 0; ii < 5; ii ++ {
+		fmt.Println(deque.Append(ii))
+	}
+
+	lastElem := make(map[int]int)
+	lastElem[1] = 5
+	lastElem[3] = 2
+	deque.Append(lastElem)
+	fmt.Println(deque.Capacity(), deque.Empty())
+
+	fmt.Println(deque.Shift())
+	fmt.Println(deque.Last())
+	lastElem[5] = 122
+	fmt.Println(deque.Last())
+	vv := deque.Last().(map[int]int)
+	vv[17] = 444
+	fmt.Println(deque.Last())
+}
 
 func TestBadgerConcurrentWrite(t *testing.T) {
 	require := require.New(t)

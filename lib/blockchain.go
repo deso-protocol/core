@@ -1948,7 +1948,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 	// Get the current tip.
 	currentTip := bc.blockTip()
-	glog.Infof("ProcesssBlock: current tip height", currentTip.Height)
+	glog.Infof("ProcesssBlock: current tip height (%v)", currentTip.Height)
 
 	// See if the current tip is equal to the block's parent.
 	isMainChain := false
@@ -2398,7 +2398,9 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	glog.Infof("ProcesssBlock: finally got here")
 	currentTip = bc.blockTip()
 	glog.Infof("ProcesssBlock: current tip height after (%v)", currentTip.Height)
-	bc.snapshot.DeleteChannel <- uint64(currentTip.Height)
+	if bc.snapshot != nil {
+		bc.snapshot.DeleteChannel <- uint64(currentTip.Height)
+	}
 	// If we've made it this far, the block has been validated and we have either added
 	// the block to the tip, done nothing with it (because its cumwork isn't high enough)
 	// or added it via a reorg and the db and our in-memory data structures reflect this
