@@ -300,7 +300,7 @@ const (
 	RuleErrorNFTUpdateMustUpdateIsForSaleStatus          RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
 	RuleErrorBuyNowNFTBeforeBlockHeight                  RuleError = "RuleErrorBuyNowNFTBeforeBlockHeight"
 	RuleErrorAdditionalCoinRoyaltyMustHaveProfile        RuleError = "RuleErrorAdditionalCoinRoyaltyMustHaveProfile"
-	RuleErrorAdditionalCoinRoyaltyOverflow        		 RuleError = "RuleErrorAdditionalCoinRoyaltyOverflow"
+	RuleErrorAdditionalCoinRoyaltyOverflow               RuleError = "RuleErrorAdditionalCoinRoyaltyOverflow"
 	RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty     RuleError = "RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty"
 	RuleErrorAdditionalRoyaltyPubKeyMustBeValid          RuleError = "RuleErrorAdditionalRoyaltyPubKeyMustBeValid"
 

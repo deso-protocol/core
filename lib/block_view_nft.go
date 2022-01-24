@@ -499,7 +499,7 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 			additionalRoyalties[*pkid.PKID] = bps
 
 			// Check for overflow when summing the bps
-			if additionalRoyaltiesBasisPoints > math.MaxUint64 - bps {
+			if additionalRoyaltiesBasisPoints > math.MaxUint64-bps {
 				return nil, 0, errors.Wrapf(
 					RuleErrorAdditionalCoinRoyaltyOverflow,
 					"additionalRoyaltiesBasisPoints: %v, bps: %v", additionalRoyaltiesBasisPoints, bps)
@@ -1444,8 +1444,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		transactionUtxoOp.AcceptNFTBidCreatorPublicKey = nftPostEntry.PosterPublicKey
 		transactionUtxoOp.AcceptNFTBidBidderPublicKey = bidderPublicKey
 		transactionUtxoOp.AcceptNFTBidCreatorRoyaltyNanos = creatorCoinRoyaltyNanos
+		transactionUtxoOp.AcceptNFTBidCreatorDESORoyaltyNanos = creatorRoyaltyNanos
 		if len(additionalCoinRoyalties) > 0 {
 			transactionUtxoOp.AcceptNFTBidAdditionalCoinRoyalties = additionalCoinRoyalties
+		}
+		if len(additionalDESORoyalties) > 0 {
+			transactionUtxoOp.AcceptNFTBidAdditionalDESORoyalties = additionalDESORoyalties
 		}
 	} else if args.Txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
 		transactionUtxoOp.Type = OperationTypeNFTBid
@@ -1453,8 +1457,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		transactionUtxoOp.NFTBidCreatorPublicKey = nftPostEntry.PosterPublicKey
 		transactionUtxoOp.NFTBidBidderPublicKey = bidderPublicKey
 		transactionUtxoOp.NFTBidCreatorRoyaltyNanos = creatorCoinRoyaltyNanos
+		transactionUtxoOp.NFTBidCreatorDESORoyaltyNanos = creatorRoyaltyNanos
 		if len(additionalCoinRoyalties) > 0 {
 			transactionUtxoOp.NFTBidAdditionalCoinRoyalties = additionalCoinRoyalties
+		}
+		if len(additionalDESORoyalties) > 0 {
+			transactionUtxoOp.NFTBidAdditionalDESORoyalties = additionalDESORoyalties
 		}
 	} else {
 		return 0, 0, nil, fmt.Errorf(

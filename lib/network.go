@@ -4873,7 +4873,7 @@ func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 	return &DAOCoinTransferMetadata{}
 }
 
-func SerializePubKeyToUint64Map (mm map[PublicKey]uint64) ([]byte, error) {
+func SerializePubKeyToUint64Map(mm map[PublicKey]uint64) ([]byte, error) {
 	data := []byte{}
 	// Encode the number of key/value pairs
 	numKeys := uint64(len(mm))
@@ -4914,7 +4914,7 @@ func SerializePubKeyToUint64Map (mm map[PublicKey]uint64) ([]byte, error) {
 	return data, nil
 }
 
-func DeserializePubKeyToUint64Map (data []byte) (map[PublicKey]uint64, error) {
+func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 	rr := bytes.NewReader(data)
 
 	numKeys, err := ReadUvarint(rr)
