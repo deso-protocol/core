@@ -436,7 +436,7 @@ type PGProfile struct {
 	CoinWatermarkNanos      uint64
 	MintingDisabled         bool
 	DAOCoinNumberOfHolders  uint64 `pg:"dao_coin_number_of_holders"`
-	DAOCoinCoinsInCirculationNanos   string                    `pg:"dao_coin_coins_in_circulation"`
+	DAOCoinCoinsInCirculationNanos   string                    `pg:"dao_coin_coins_in_circulation_nanos"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
 }
