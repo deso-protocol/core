@@ -25,6 +25,10 @@ func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
 }
 
+func (pkid *PKID) ToString() string {
+	return string(pkid.ToBytes())
+}
+
 func (pkid *PKID) NewPKID() *PKID {
 	newPkid := &PKID{}
 	copy(newPkid[:], pkid[:])
