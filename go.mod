@@ -10,6 +10,7 @@ require (
 	github.com/btcsuite/btcd v0.21.0-beta
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/bxcodec/faker v2.0.1+incompatible
+	github.com/cloudflare/circl v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/lru v1.1.1
 	github.com/deso-protocol/go-deadlock v1.0.0
@@ -45,10 +46,9 @@ require (
 	github.com/tyler-smith/go-bip39 v1.0.2
 	github.com/unrolled/secure v1.0.8
 	go.opencensus.io v0.23.0 // indirect
-	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/net v0.0.0-20210614182718-04defd469f4e // indirect
-	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22 // indirect
 	golang.org/x/time v0.0.0-20201208040808-7e3f01d25324 // indirect
 	golang.org/x/tools v0.1.0 // indirect
 	gopkg.in/DataDog/dd-trace-go.v1 v1.29.0

@@ -853,7 +853,7 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 			"problem decoding SnapshotStartEntry, msg: (%v), peer: (%v), error: (%v)", msg, pp, err)
 		return
 	}
-	dbEntries, full := srv.blockchain.snapshot.GetMostRecentSnapshot(srv.blockchain.db, msg.Prefix, lastKey)
+	dbEntries, full, _ := srv.blockchain.snapshot.GetMostRecentSnapshot(srv.blockchain.db, msg.Prefix, lastKey)
 	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
 		SnapshotHeight: srv.blockchain.snapshot.BlockHeight,
 		SnapshotChecksum: srv.blockchain.snapshot.Checksum.ToHashString(),

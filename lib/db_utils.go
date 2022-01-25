@@ -437,9 +437,6 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 	// After a successful DB delete, we update the snapshot.
 	if isState {
 		keyString := hex.EncodeToString(key)
-		if keyString == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
-			glog.Infof("WOW DELETING THE MYSTERIOUS KEY IN THE DB NOW (%v) AND VALUE (%v)", keyString)
-		}
 		// Update ancestral record structures depending on the existing DB record.
 		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
 		// Now delete the past record from the cache.

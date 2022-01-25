@@ -4,15 +4,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/NVIDIA/sortedmap"
-	"github.com/decred/dcrd/lru"
+	"github.com/cloudflare/circl/group"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/oleiade/lane"
 	"github.com/stretchr/testify/require"
-	"math/big"
 	"math/rand"
 	"reflect"
-	"runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -253,166 +251,42 @@ func TestSortedMap(t *testing.T) {
 	fmt.Printf("Total time to add and fetch keys in Sorted Map %v\n", timeSMapAddKeys + timeSMapGetKeys)
 }
 
-func TestRWLock(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	var mut sync.RWMutex
-	var wait sync.WaitGroup
-
-	wait.Add(4)
-	go func() {
-		time.Sleep(time.Second * 2)
-		mut.RLock()
-		fmt.Println("Routine 1 Start")
-		//time.Sleep(time.Second * 2)
-		fmt.Println("Routine 1 Stop")
-		mut.RUnlock()
-		wait.Done()
-	}()
-	go func() {
-		//time.Sleep(time.Second * 2)
-		mut.RLock()
-		fmt.Println("Routine 4 Start")
-		//time.Sleep(time.Second * 2)
-		fmt.Println("Routine 4 Stop")
-		mut.RUnlock()
-		wait.Done()
-	}()
-	go func() {
-		mut.RLock()
-		fmt.Println("Routine 2 Start")
-		//time.Sleep(time.Second * 3)
-		fmt.Println("Routine 2 Stop")
-		mut.RUnlock()
-		wait.Done()
-	}()
-	go func() {
-		//time.Sleep(time.Second * 1)
-		mut.Lock()
-		fmt.Println("Routine 3 Start")
-		//time.Sleep(time.Second * 4)
-		fmt.Println("Routine 3 Stop")
-		mut.Unlock()
-		wait.Done()
-	}()
-	wait.Wait()
-}
-
-func Concurrent1(wait *sync.WaitGroup, mutexMap *sync.Map, key interface{}) {
-	defer wait.Done()
-
-	val, ok := mutexMap.Load(key)
-	if !ok {
-		fmt.Printf("Error, not found key %v in Concurrent1", val)
-		return
-	}
-	val.(*sync.RWMutex).Lock()
-	defer val.(*sync.RWMutex).Unlock()
-
-	fmt.Println("Entered Concurrent1")
-	//time.Sleep(time.Second * 3)
-	fmt.Println("Leaving Concurrent1")
-}
-
-func Concurrent2(wait *sync.WaitGroup, mutexMap *sync.Map, key interface{}) {
-	defer wait.Done()
-
-	val, ok := mutexMap.Load(key)
-	if !ok {
-		fmt.Printf("Error, not found key %v in Concurrent2", val)
-		return
-	}
-	val.(*sync.RWMutex).Lock()
-	defer val.(*sync.RWMutex).Unlock()
-
-	fmt.Println("Entered Concurrent2")
-	//time.Sleep(time.Second * 1)
-	fmt.Println("Leaving Concurrent2")
-}
-
-func TestMutexMap(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	key := 5
-	db := make(map[int]string)
-	db[key] = "The value #1"
-	fmt.Println(runtime.GOMAXPROCS(0))
-
-	var mutexMap sync.Map
-	actual, exists := mutexMap.LoadOrStore(key, &sync.RWMutex{})
-	if exists {
-		fmt.Printf("existed %v\n", actual)
-	}
-
-	var wait sync.WaitGroup
-
-	wait.Add(2)
-	go Concurrent1(&wait, &mutexMap, key)
-	go Concurrent2(&wait, &mutexMap, key)
-
-	wait.Wait()
-}
-
 func TestStateChecksumBasicAddRemove(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
 	z := StateChecksum{}
 	z.Initialize()
-
-	x := lru.NewKVCache(5)
-	x.Add(hex.EncodeToString([]byte{4, 6, 12, 3}), 2222)
-	x.Add(hex.EncodeToString([]byte{1, 1}), 2444)
-	x.Add(hex.EncodeToString([]byte{8, 88, 22, 22, 4}), []byte{1, 5, 6, 8})
-	x.Add(hex.EncodeToString([]byte{5, 5, 5, 5}), []byte{5, 5, 5, 5})
-	x.Add(hex.EncodeToString([]byte{5, 5, 5, 5}), []byte{5, 5, 5, 7})
-	x.Add(hex.EncodeToString([]byte{8, 9, 9}), []byte{1, 2, 2, 2, 3})
-	x.Add(hex.EncodeToString([]byte{8, 9, 10}), []byte{1, 2, 2, 2, 7})
-	fmt.Printf("Contains: %v\n", x.Contains(hex.EncodeToString([]byte{1, 1})))
-
-	if val, ok := x.Lookup(hex.EncodeToString([]byte{1, 1})); ok {
-		fmt.Printf("Element %v\n", val)
-	}
-	if val, ok := x.Lookup(hex.EncodeToString([]byte{4, 6, 12, 3})); ok {
-		fmt.Printf("Element %v\n", val)
-	}
-	if val, ok := x.Lookup(hex.EncodeToString([]byte{5, 5, 5, 5})); ok {
-		fmt.Printf("Element %v\n", val)
-	}
-	fmt.Println(hex.EncodeToString([]byte{200, 2}))
-
-	if reflect.DeepEqual([]byte{1}[0], byte(1)) {
-		fmt.Println("equal")
-	} else {
-		fmt.Println("not equal")
-	}
-
-	zero := big.NewInt(0)
+	identity := group.Ristretto255.Identity()
 	bytesA := []byte("This is a test data")
 	bytesB := []byte("This is another test")
 	bytesC := []byte("This is yet another test")
 
 	// Basic check #1
 	// Compute checksum A + B, then remove B from the checksum and confirm it's equal to A
+	var check1, check2, check3 group.Element
+	check1 = group.Ristretto255.NewElement()
+	check2 = group.Ristretto255.NewElement()
+	check3 = group.Ristretto255.NewElement()
 	z.AddBytes(bytesA)
-	check1 := z.Checksum
+	check1Bytes, _ := z.Checksum.MarshalBinary()
+ 	_ = check1.UnmarshalBinary(check1Bytes)
 	z.AddBytes(bytesB)
-	check2 := z.Checksum
+ 	check2Bytes, _ := z.Checksum.MarshalBinary()
+	_ = check2.UnmarshalBinary(check2Bytes)
 	z.RemoveBytes(bytesB)
-	require.Equal(z.Checksum.Cmp(&check1), 0)
+	require.Equal(z.Checksum.IsEqual(check1), true)
 	z.RemoveBytes(bytesA)
-	require.Equal(z.Checksum.Cmp(zero), 0)
+	require.Equal(z.Checksum.IsEqual(identity), true)
 
 	// Basic check #2
 	// Check if checksum A + B is equal to checksum B + A
 	z.AddBytes(bytesB)
 	z.AddBytes(bytesA)
-	require.Equal(check2.Cmp(&z.Checksum), 0)
+	require.Equal(check2.IsEqual(z.Checksum), true)
 	z.RemoveBytes(bytesA)
 	z.RemoveBytes(bytesB)
-	require.Equal(z.Checksum.Cmp(zero), 0)
+	require.Equal(z.Checksum.IsEqual(identity), true)
 
 	// Basic check #3
 	// Check if checksum A + B + C is the same as C + A + B and B + A + C
@@ -421,46 +295,49 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	z.AddBytes(bytesA)
 	z.AddBytes(bytesB)
 	z.AddBytes(bytesC)
-	check1 = z.Checksum
+	check1Bytes, _ = z.Checksum.MarshalBinary()
+	_ = check1.UnmarshalBinary(check1Bytes)
 	// Remove C, A, B
 	z.RemoveBytes(bytesC)
 	z.RemoveBytes(bytesA)
 	z.RemoveBytes(bytesB)
-	require.Equal(z.Checksum.Cmp(zero), 0)
+	require.Equal(z.Checksum.IsEqual(identity), true)
 
 	// C + A + B
 	z.AddBytes(bytesC)
 	z.AddBytes(bytesA)
 	z.AddBytes(bytesB)
-	check2 = z.Checksum
+	check2Bytes, _ = z.Checksum.MarshalBinary()
+	_ = check2.UnmarshalBinary(check2Bytes)
 	// Remove A, B, C
 	z.RemoveBytes(bytesA)
 	z.RemoveBytes(bytesB)
 	z.RemoveBytes(bytesC)
-	require.Equal(z.Checksum.Cmp(zero), 0)
+	require.Equal(z.Checksum.IsEqual(identity), true)
 
 	// Add B + A + C
 	z.AddBytes(bytesB)
 	z.AddBytes(bytesA)
 	z.AddBytes(bytesC)
-	check3 := z.Checksum
-	require.Equal(check2.Cmp(&check1), 0)
-	require.Equal(check3.Cmp(&check1), 0)
+	check3Bytes, _ := z.Checksum.MarshalBinary()
+	_ = check3.UnmarshalBinary(check3Bytes)
+	require.Equal(check2.IsEqual(check1), true)
+	require.Equal(check3.IsEqual(check1), true)
 	z.RemoveBytes(bytesB)
 	z.RemoveBytes(bytesA)
 	z.RemoveBytes(bytesC)
-	require.Equal(z.Checksum.Cmp(zero), 0)
+	require.Equal(z.Checksum.IsEqual(identity), true)
 }
 
-func TestStateChecksumRandom(t *testing.T) {
+func TestStateChecksumBirthdayParadox(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
 	z := StateChecksum{}
 	z.Initialize()
 
-	iterationNumber := 10
-	testNumber := 10000
+	iterationNumber := 1
+	testNumber := 1000000
 
 	// We will test adding / removing a bunch of data to the state checksum and verify
 	// that the final checksum is identical regardless of the order of operation.
@@ -475,7 +352,10 @@ func TestStateChecksumRandom(t *testing.T) {
 	for jj := 0; jj < testNumber; jj++ {
 		z.AddBytes(hashes[jj])
 	}
-	val := z.Checksum
+	var val group.Element
+	val = group.Ristretto255.NewElement()
+	valBytes, _ := z.Checksum.MarshalBinary()
+	_ = val.UnmarshalBinary(valBytes)
 	for jj := 0; jj < testNumber; jj++ {
 		z.RemoveBytes(hashes[jj])
 	}
@@ -490,7 +370,7 @@ func TestStateChecksumRandom(t *testing.T) {
 	})
 
 	//fmt.Println(indexes)
-
+	repetitions := make(map[string]bool)
 	// Test the adding / removing of the hashes iteration number of times.
 	// Time how much time it took us to compute all the checksum operations.
 	totalElappsed := 0.0
@@ -501,8 +381,14 @@ func TestStateChecksumRandom(t *testing.T) {
 		timeStart := time.Now()
 		for jj := 0; jj < testNumber; jj++ {
 			z.AddBytes(hashes[jj])
+			checksumBytes, _ := z.Checksum.MarshalBinary()
+			checksumString := string(checksumBytes)
+			if _, exists := repetitions[checksumString]; exists {
+				t.Fatalf("Found birthday paradox solution! (%v)", checksumBytes)
+			}
+			repetitions[checksumString] = true
 		}
-		require.Equal(z.Checksum.Cmp(&val), 0)
+		require.Equal(z.Checksum.IsEqual(val), true)
 		for jj := 0; jj < testNumber; jj++ {
 			z.RemoveBytes(hashes[jj])
 		}
