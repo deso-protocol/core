@@ -5,14 +5,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/cloudflare/circl/group"
-"github.com/decred/dcrd/lru"
-		"github.com/dgraph-io/badger/v3"
+	"github.com/decred/dcrd/lru"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-		"io"
-		"path/filepath"
-		"sort"
-"sync"
+	"io"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"sync"
 	"sync/atomic"
 )
 
@@ -72,17 +73,17 @@ func (sc *StateChecksum) ToHashString() string {
 // -------------------------------------------------------------------------------------
 
 type DBEntry struct {
-	Key   string
-	Entry string
+	Key   []byte
+	Value []byte
 }
 
 func (entry *DBEntry) Encode() []byte {
 	data := []byte{}
 
 	data = append(data, UintToBuf(uint64(len(entry.Key)))...)
-	data = append(data, []byte(entry.Key)...)
-	data = append(data, UintToBuf(uint64(len(entry.Entry)))...)
-	data = append(data, []byte(entry.Entry)...)
+	data = append(data, entry.Key...)
+	data = append(data, UintToBuf(uint64(len(entry.Value)))...)
+	data = append(data, entry.Value...)
 	return data
 }
 
@@ -95,47 +96,55 @@ func (entry *DBEntry) Decode(rr io.Reader) error {
 		return err
 	}
 
-	keyBytes := make([]byte, keyLen)
-	_, err = io.ReadFull(rr, keyBytes)
+	entry.Key = make([]byte, keyLen)
+	_, err = io.ReadFull(rr, entry.Key)
 	if err != nil {
 		return err
 	}
-	entry.Key = string(keyBytes)
 
 	entryLen, err = ReadUvarint(rr)
 	if err != nil {
 		return err
 	}
 
-	entryBytes := make([]byte, entryLen)
-	_, err = io.ReadFull(rr, entryBytes)
+	entry.Value = make([]byte, entryLen)
+	_, err = io.ReadFull(rr, entry.Value)
 	if err!= nil {
 		return err
 	}
-	entry.Entry = string(entryBytes)
 
 	return nil
 }
 
-// PrefixDBEntry is used as a dummy entry that only contains the key.
-func PrefixDBEntry(prefix []byte) DBEntry {
-	return DBEntry{
-		Key: hex.EncodeToString(prefix),
-		Entry: "",
-	}
+// DBEntryKeyOnlyFromBytes is used as a dummy entry that only contains the key.
+func DBEntryKeyOnlyFromBytes(key []byte) *DBEntry {
+	dbEntry := &DBEntry{}
+	dbEntry.Key = make([]byte, len(key))
+	copy(dbEntry.Key, key)
+
+	return dbEntry
+}
+
+func DBEntryFromBytes(key []byte, value []byte) *DBEntry {
+	entry := DBEntryKeyOnlyFromBytes(key)
+	entry.Value = make([]byte, len(value))
+	copy(entry.Value, value)
+
+	return entry
 }
 
 // EmptyDBEntry indicates an empty DB entry.
-func EmptyDBEntry() DBEntry {
-	return DBEntry{
-		Key: "-1",
-		Entry: "",
+func EmptyDBEntry() *DBEntry {
+	// We do not use prefix 0 for state so we can use it as an empty entry for convenience.
+	return &DBEntry{
+		Key: []byte{0},
+		Value: []byte{},
 	}
 }
 
 // IsEmpty return true if the DBEntry is empty, false otherwise.
 func (entry *DBEntry) IsEmpty() bool {
-	return entry.Key == "-1"
+	return reflect.DeepEqual(entry.Key, []byte{0})
 }
 
 // -------------------------------------------------------------------------------------
@@ -233,7 +242,7 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 		Db:                  snapshotDb,
 		Cache:               lru.NewKVCache(uint(cacheSize)),
 		BlockHeight:         uint64(0),
-		BlockHeightModulus:  uint64(3000),
+		BlockHeightModulus:  uint64(900),
 		FlushCounter:        uint64(0),
 		FlushCounterModulus: uint64(25),
 		LastCounter:         uint64(0),
@@ -339,11 +348,29 @@ func (snap *Snapshot) GetSeekPrefix (key []byte) []byte {
 	return prefix
 }
 
-func (snap *Snapshot) SnapPrefixToKey (prefix []byte) []byte {
-	if len(prefix) > 8 {
-		return prefix[8:]
+func (snap *Snapshot) SnapKeyToDBEntryKey (key []byte) []byte {
+	if len(key) > 8 {
+		return key[8:]
 	} else {
-		return prefix
+		return key
+	}
+}
+
+func (snap *Snapshot) AncestralRecordToDBEntry (ancestralEntry *DBEntry) *DBEntry {
+	// TODO: copy?
+	var dbKey, dbVal []byte
+	if len(ancestralEntry.Key) > 8 {
+		dbKey = ancestralEntry.Key[8:]
+	} else {
+		dbKey = ancestralEntry.Key
+	}
+
+	if len(ancestralEntry.Value) > 0 {
+		dbVal = ancestralEntry.Value[:len(ancestralEntry.Value)-1]
+	}
+	return &DBEntry{
+		Key: dbKey,
+		Value: dbVal,
 	}
 }
 
@@ -528,17 +555,17 @@ func (snap *Snapshot) IncrementSemaphore() {
 // and have a key at least equal to the startKey lexicographically. The function will also fetch ancestral
 // records and combine them with the DB records so that the batch reflects an ancestral block.
 func (snap *Snapshot) GetMostRecentSnapshot(mainDb *badger.DB, prefix []byte, startKey []byte) (
-	_snapshotEntriesBatch []DBEntry, _snapshotEntriesFilled bool, _err error) {
+	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _err error) {
 	// This the list of fetched DB entries.
-	var snapshotEntriesBatch []DBEntry
+	var snapshotEntriesBatch []*DBEntry
 
 	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
-	mainDbBatchKeys, mainDbBatchValues, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, snap.BatchSize)
+	mainDbBatchEntries, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, snap.BatchSize)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "Snapshot.GetMostRecentSnapshot: Problem fetching main Db records: ")
 	}
 	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
-	ancestralDbBatchKeys, ancestralDbBatchValues, ancestralDbFilled, err := DBIteratePrefixKeys(snap.Db,
+	ancestralDbBatchEntries, ancestralDbFilled, err := DBIteratePrefixKeys(snap.Db,
 		snap.GetSeekPrefix(prefix), snap.GetSeekPrefix(startKey), snap.BatchSize)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "Snapshot.GetMostRecentSnapshot: Problem fetching main Db records: ")
@@ -552,26 +579,16 @@ func (snap *Snapshot) GetMostRecentSnapshot(mainDb *badger.DB, prefix []byte, st
 
 	// Index to keep track of how many main DB entries we've already processed.
 	indexChunk := 0
-	for ii, keyAncestral := range *ancestralDbBatchKeys {
-		keyBytesA, _ := hex.DecodeString(keyAncestral)
-		keyTrimmedBytesA := snap.SnapPrefixToKey(keyBytesA)
-		trimmedKey := hex.EncodeToString(keyTrimmedBytesA)
-		valBytesA, _ := hex.DecodeString((*ancestralDbBatchValues)[ii])
-		valBytesString := hex.EncodeToString(valBytesA[:len(valBytesA)-1])
-		if bytes.HasPrefix(keyTrimmedBytesA, prefix) && snap.CheckPrefixExists(valBytesA) {
-			snapshotEntriesBatch = append(snapshotEntriesBatch, DBEntry{
-				Key: 	trimmedKey,
-				Entry: valBytesString,
-			})
+	for _, ancestralEntry := range ancestralDbBatchEntries {
+		dbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
+		if snap.CheckPrefixExists(ancestralEntry.Value) {
+			snapshotEntriesBatch = append(snapshotEntriesBatch, dbEntry)
 		}
-		for jj := indexChunk; jj < len(*mainDbBatchKeys); {
-			keyBytes, _ := hex.DecodeString((*mainDbBatchKeys)[jj])
-			if bytes.Compare(keyBytes, keyTrimmedBytesA) == -1 {
-					snapshotEntriesBatch = append(snapshotEntriesBatch, DBEntry{
-						Key: (*mainDbBatchKeys)[jj],
-						Entry: (*mainDbBatchValues)[jj],
-					})
-			} else if bytes.Compare(keyBytes, keyTrimmedBytesA) == 1 {
+
+		for jj := indexChunk; jj < len(mainDbBatchEntries); {
+			if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == -1 {
+					snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
+			} else if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == 1 {
 				break
 			}
 			// if keys are equal we just skip
@@ -581,7 +598,7 @@ func (snap *Snapshot) GetMostRecentSnapshot(mainDb *badger.DB, prefix []byte, st
 		// If we filled the chunk for main db records, we will return so that there is no
 		// gap between the most recently added DBEntry and the next ancestral record. Otherwise,
 		// we will keep going with the loop and add all the ancestral records.
-		if mainDbFilled && indexChunk == len(*mainDbBatchKeys) {
+		if mainDbFilled && indexChunk == len(mainDbBatchEntries) {
 			break
 		}
 	}
@@ -589,12 +606,9 @@ func (snap *Snapshot) GetMostRecentSnapshot(mainDb *badger.DB, prefix []byte, st
 	// If we got all ancestral records, but there are still some main DB entries that we can add,
 	// we will do that now.
 	if !ancestralDbFilled {
-		for jj := indexChunk; jj < len(*mainDbBatchKeys); jj++ {
+		for jj := indexChunk; jj < len(mainDbBatchEntries); jj++ {
 			indexChunk = jj
-			snapshotEntriesBatch = append(snapshotEntriesBatch, DBEntry{
-				Key: (*mainDbBatchKeys)[jj],
-				Entry: (*mainDbBatchValues)[jj],
-			})
+			snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
 		}
 	}
 

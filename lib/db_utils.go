@@ -449,9 +449,9 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 }
 
 func DBIteratePrefixKeys(db *badger.DB, prefix []byte, lastKey []byte, maxBytes uint32) (
-	*[]string, *[]string, bool, error) {
-	var keys, values []string
-	currentBytes := 0
+	[]*DBEntry, bool, error) {
+	var dbEntries []*DBEntry
+	totalBytes := 0
 	full := false
 
 	err := db.View(func(txn *badger.Txn) error {
@@ -464,10 +464,9 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, lastKey []byte, maxBytes 
 			item := it.Item()
 			k := item.Key()
 			err := item.Value(func(v []byte) error {
-				keys = append(keys, hex.EncodeToString(k))
-				values = append(values, hex.EncodeToString(v))
-				currentBytes += len(k) + len(v)
-				if currentBytes > int(maxBytes) {
+				dbEntries = append(dbEntries, DBEntryFromBytes(k, v))
+				totalBytes += len(k) + len(v)
+				if totalBytes > int(maxBytes) {
 					full = true
 				}
 				return nil
@@ -479,9 +478,9 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, lastKey []byte, maxBytes 
 		return nil
 	})
 	if err != nil {
-		return nil, nil, true, err
+		return nil, true, err
 	}
-	return &keys, &values, full, nil
+	return dbEntries, full, nil
 }
 
 func DBStreamPrefixKeys(db *badger.DB) (*map[string][]byte, error) {

@@ -2243,7 +2243,7 @@ func (msg *MsgDeSoBlock) String() string {
 type MsgDeSoGetSnapshot struct {
 	Prefix []byte
 	// SnapshotStartKey is the first key to fetch.
-	SnapshotStartEntry  DBEntry
+	SnapshotStartEntry  *DBEntry
 }
 
 func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
@@ -2269,6 +2269,7 @@ func (msg *MsgDeSoGetSnapshot) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading prefix")
 	}
 
+	msg.SnapshotStartEntry = &DBEntry{}
 	err = msg.SnapshotStartEntry.Decode(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading snapshot start entry")
@@ -2284,12 +2285,9 @@ type MsgDeSoSnapshotData struct {
 	SnapshotHeight    uint64
 
 	SnapshotChecksum  string
-	// SnapshotKeys are BadgerDB prefixes of the state data.
-	// TODO: make these strings
-	//SnapshotKeys      [][]byte
+
 	// SnapshotData is the data associated with StateKeys.
-	//SnapshotStateData [][]byte
-	SnapshotData       []DBEntry
+	SnapshotData       []*DBEntry
 	SnapshotFullPrefix bool
 
 	Prefix []byte
@@ -2313,19 +2311,6 @@ func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, BoolToByte(msg.SnapshotFullPrefix))
 	data = append(data, UintToBuf(uint64(len(msg.Prefix)))...)
 	data = append(data, msg.Prefix...)
-	//
-	//data = append(data, UintToBuf(uint64(len(msg.SnapshotKeys)))...)
-	//for _, vv := range msg.SnapshotKeys {
-	//	data = append(data, UintToBuf(uint64(len(vv)))...)
-	//	data = append(data, vv...)
-	//}
-	//
-	//// Encode snapshot state data
-	//data = append(data, UintToBuf(uint64(len(msg.SnapshotStateData)))...)
-	//for _, vv := range msg.SnapshotStateData {
-	//	data = append(data, UintToBuf(uint64(len(vv)))...)
-	//	data = append(data, vv...)
-	//}
 
 	return data, nil
 }
@@ -2357,7 +2342,7 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotData")
 	}
 	for ;dataLen > 0; dataLen-- {
-		dbEntry := DBEntry{}
+		dbEntry := &DBEntry{}
 		err = dbEntry.Decode(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotData")
@@ -2375,46 +2360,6 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding prefix")
 	}
-	//snapshotKeys := [][]byte{}
-	//for i := uint64(0); i < keysLen ; i++ {
-	//	keyLength, err := ReadUvarint(rr)
-	//	if err != nil {
-	//		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of key of SnapshotKeys")
-	//	}
-	//
-	//	key := make([]byte, keyLength)
-	//	_, err = io.ReadFull(rr, key[:])
-	//	if err != nil {
-	//		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding key of SnapshotKeys")
-	//	}
-	//	snapshotKeys = append(snapshotKeys, key)
-	//}
-	//
-	//// Decode snapshot state data
-	//dataLen, err := ReadUvarint(rr)
-	//if err != nil {
-	//	return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotKeys")
-	//}
-	//snapshotData := [][]byte{}
-	//for i := uint64(0); i < dataLen ; i++ {
-	//	keyLength, err := ReadUvarint(rr)
-	//	if err != nil {
-	//		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of key of SnapshotKeys")
-	//	}
-	//
-	//	key := make([]byte, keyLength)
-	//	_, err = io.ReadFull(rr, key[:])
-	//	if err != nil {
-	//		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding key of SnapshotKeys")
-	//	}
-	//	snapshotData = append(snapshotData, key)
-	//}
-	//
-	//*msg = MsgDeSoSnapshotData{
-	//	SnapshotKeysOnly: snapshotKeysOnly,
-	//	SnapshotKeys: snapshotKeys,
-	//	SnapshotStateData: snapshotData,
-	//}
 
 	return nil
 }

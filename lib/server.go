@@ -46,7 +46,7 @@ type ServerReply struct {
 type SyncPrefixProgress struct {
 	PrefixSyncPeer *Peer
 	Prefix         []byte
-	LastDBEntry    DBEntry
+	LastDBEntry    *DBEntry
 	Completed      bool
 }
 
@@ -531,7 +531,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 					LastDBEntry: EmptyDBEntry(),
 					Completed: false,
 				})
-				lastDBEntry = PrefixDBEntry(prefix)
+				lastDBEntry = DBEntryKeyOnlyFromBytes(prefix)
 				break
 			}
 		}
@@ -715,15 +715,14 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				//	glog.Errorf("Server._handleHeaderBundle: Problem deleting prefixes error (%v)", err)
 				//}
 				for _, prefix := range StatePrefixes {
-					k0, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, prefix, prefix, uint32(8<<20))
+					entries, _, _ := DBIteratePrefixKeys(srv.blockchain.db, prefix, prefix, uint32(8<<20))
 					glog.V(1).Infof("Server._handleHeaderBundle: Deleting prefix: (%v) with total of (%v) " +
-						"entries", prefix, len(*k0))
+						"entries", prefix, len(entries))
 					srv.blockchain.db.Update(func(txn *badger.Txn) error {
-						for _, key := range *k0 {
-							keyBytes, _ := hex.DecodeString(key)
-							err := txn.Delete(keyBytes)
+						for _, entry := range entries {
+							err := txn.Delete(entry.Key)
 							if err != nil {
-								glog.Errorf("Problem deleting key (%v) error (%v)", key, err)
+								glog.Errorf("Problem deleting key (%v) error (%v)", entry.Key, err)
 							}
 						}
 						return nil
@@ -847,13 +846,8 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 		return
 	}
 
-	lastKey, err := hex.DecodeString(msg.SnapshotStartEntry.Key)
-	if err != nil {
-		glog.V(1).Infof("Server._handleGetSnapshot: Ignoring GetSnapshot from Peer "+
-			"problem decoding SnapshotStartEntry, msg: (%v), peer: (%v), error: (%v)", msg, pp, err)
-		return
-	}
-	dbEntries, full, _ := srv.blockchain.snapshot.GetMostRecentSnapshot(srv.blockchain.db, msg.Prefix, lastKey)
+	// TODO: Any restrictions on how many snapshots a peer can request?
+	dbEntries, full, _ := srv.blockchain.snapshot.GetMostRecentSnapshot(srv.blockchain.db, msg.Prefix, msg.SnapshotStartEntry.Key)
 	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
 		SnapshotHeight: srv.blockchain.snapshot.BlockHeight,
 		SnapshotChecksum: srv.blockchain.snapshot.Checksum.ToHashString(),
@@ -884,13 +878,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		"SnapshotFullPrefix (%v)", msg.SnapshotFullPrefix,
 		pp.timeElapsed, pp.currentTime)
 
-	//k0, _, _, _ := DBIteratePrefixKeys(srv.blockchain.db, []byte{5}, []byte{5}, uint32(8<<20))
-	//glog.V(1).Infof("How many 5 prefixes:", len(*k0))
-
 	// Process the DBEntries from the msg
-	decodeTime := 0.0
-	setTime := 0.0
-	currentTime := time.Now()
 	err := srv.blockchain.db.Update(func(txn *badger.Txn) error {
 		pp.timeElapsed += time.Since(pp.currentTime).Seconds()
 		pp.currentTime = time.Now()
@@ -901,43 +889,28 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 				glog.Infof("Server._handleSnapshot: db entry is empty for prefix (%v)", msg.Prefix)
 				break
 			}
-			currentTime = time.Now()
-			key, err := hex.DecodeString(dbEntry.Key)
+			err := txn.Set(dbEntry.Key, dbEntry.Value)
 			if err != nil {
 				return err
 			}
-			value, err := hex.DecodeString(dbEntry.Entry)
-			if err != nil {
-				return err
-			}
-			decodeTime += time.Since(currentTime).Seconds()
-			currentTime = time.Now()
-
-    		//err = DBSetWithTxn(txn, srv.blockchain.snapshot, key, value)
-			err = txn.Set(key, value)
-			if err != nil {
-				return err
-			}
-			setTime += time.Since(currentTime).Seconds()
-			currentTime = time.Now()
     	}
 		return nil
 	})
+
 	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
 	pp.currentTime = time.Now()
-	glog.Infof("Server._handleSnapshot: _handleSnapshot finished setting to db with total elapsed (%v) and current time (%v) | " +
-		"timing decodes (%v) and DB set (%v), total spent on DB (%v)",
-		pp.timeElapsed, pp.currentTime, decodeTime, setTime, decodeTime+setTime)
+	glog.Infof("Server._handleSnapshot: _handleSnapshot finished setting to db with total elapsed (%v) and current time (%v)",
+		pp.timeElapsed, pp.currentTime)
 
 	if err != nil {
 		glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
 	}
 
-	lastKey, _ := hex.DecodeString(msg.SnapshotData[len(msg.SnapshotData)-1].Key)
+	lastDbEntry := msg.SnapshotData[len(msg.SnapshotData)-1]
 	added := false
 	for ii:=0; ii<len(srv.HyperSyncProgress.PrefixProgress); ii++ {
 		if reflect.DeepEqual(srv.HyperSyncProgress.PrefixProgress[ii].Prefix, msg.Prefix) {
-			srv.HyperSyncProgress.PrefixProgress[ii].LastDBEntry = PrefixDBEntry(lastKey)
+			srv.HyperSyncProgress.PrefixProgress[ii].LastDBEntry = DBEntryKeyOnlyFromBytes(lastDbEntry.Key)
 			if !msg.SnapshotFullPrefix {
 				srv.HyperSyncProgress.PrefixProgress[ii].Completed = true
 			}

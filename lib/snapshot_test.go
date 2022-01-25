@@ -1,14 +1,17 @@
 package lib
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"github.com/NVIDIA/sortedmap"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/cloudflare/circl/group"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/oleiade/lane"
 	"github.com/stretchr/testify/require"
+	"math"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -16,6 +19,171 @@ import (
 	"testing"
 	"time"
 )
+
+type enhancedHeader struct {
+	// Note this is encoded as a fixed-width uint32 rather than a
+	// uvarint or a uint64.
+	Version uint32
+
+	// Hash of the previous block in the chain.
+	PrevBlockHash *BlockHash
+
+	// The merkle root of all the transactions contained within the block.
+	TransactionMerkleRoot *BlockHash
+
+	// The unix timestamp (in seconds) specifying when this block was
+	// mined.
+	TstampSecs uint64
+
+	// The height of the block this header corresponds to.
+	Height uint64
+
+	// The nonce that is used by miners in order to produce valid blocks.
+	//
+	// Note: Before the upgrade from HeaderVersion0 to HeaderVersion1, miners would make
+	// use of ExtraData in the BlockRewardMetadata to get extra nonces. However, this is
+	// no longer needed since HeaderVersion1 upgraded the nonce to 64 bits from 32 bits.
+	Nonce uint64
+
+	// An extra nonce that can be used to provice *even more* entropy for miners, in the
+	// event that ASICs become powerful enough to have birthday problems in the future.
+	ExtraNonce uint64
+}
+
+func (msg *enhancedHeader) ToBytes(preSignature bool) ([]byte, error) {
+	retBytes := []byte{}
+
+	// Version
+	{
+		scratchBytes := [4]byte{}
+		binary.BigEndian.PutUint32(scratchBytes[:], msg.Version)
+		retBytes = append(retBytes, scratchBytes[:]...)
+	}
+
+	// PrevBlockHash
+	prevBlockHash := msg.PrevBlockHash
+	if prevBlockHash == nil {
+		prevBlockHash = &BlockHash{}
+	}
+	retBytes = append(retBytes, prevBlockHash[:]...)
+
+	// TransactionMerkleRoot
+	transactionMerkleRoot := msg.TransactionMerkleRoot
+	if transactionMerkleRoot == nil {
+		transactionMerkleRoot = &BlockHash{}
+	}
+	retBytes = append(retBytes, transactionMerkleRoot[:]...)
+
+	// TstampSecs
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.TstampSecs)
+		retBytes = append(retBytes, scratchBytes[:]...)
+
+		// TODO: Don't allow this field to exceed 32-bits for now. This will
+		// adjust once other parts of the code are fixed to handle the wider
+		// type.
+		if msg.TstampSecs > math.MaxUint32 {
+			return nil, fmt.Errorf("EncodeHeaderVersion1: TstampSecs not yet allowed " +
+				"to exceed max uint32. This will be fixed in the future")
+		}
+	}
+
+	// Height
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.Height)
+		retBytes = append(retBytes, scratchBytes[:]...)
+
+		// TODO: Don't allow this field to exceed 32-bits for now. This will
+		// adjust once other parts of the code are fixed to handle the wider
+		// type.
+		if msg.Height > math.MaxUint32 {
+			return nil, fmt.Errorf("EncodeHeaderVersion1: Height not yet allowed " +
+				"to exceed max uint32. This will be fixed in the future")
+		}
+	}
+
+	// Nonce
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.Nonce)
+		retBytes = append(retBytes, scratchBytes[:]...)
+	}
+
+	// ExtraNonce
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.ExtraNonce)
+		retBytes = append(retBytes, scratchBytes[:]...)
+	}
+
+	return retBytes, nil
+}
+
+func TestFromBytes(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	priv, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	expectedBlock.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
+	require.NoError(err)
+
+	bytesExpectedBlock, err := expectedBlock.ToBytes(false)
+	require.NoError(err)
+
+	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+	err = testBlock.FromBytes(bytesExpectedBlock)
+	require.NoError(err)
+
+	require.Equal(*testBlock, *expectedBlock)
+
+	expectedHeader := &MsgDeSoHeader{
+		Version: 1,
+		PrevBlockHash: &BlockHash{
+			0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
+			0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
+			0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31,
+			0x32, 0x33,
+		},
+		TransactionMerkleRoot: &BlockHash{
+			0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
+			0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
+			0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
+			0x64, 0x65,
+		},
+		TstampSecs: uint64(0x70717273),
+		Height:     uint64(99999),
+		Nonce:      uint64(123456),
+	}
+
+	enhancedHeader := &enhancedHeader{
+		Version: expectedHeader.Version,
+		PrevBlockHash: expectedHeader.PrevBlockHash,
+		TransactionMerkleRoot: &BlockHash{
+			0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
+			0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
+			0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
+			0x64, 0x65,
+		},
+		TstampSecs: expectedHeader.TstampSecs,
+		Height: expectedHeader.Height,
+		Nonce: expectedHeader.Nonce,
+    }
+
+	expectedHeaderBytes, err := expectedHeader.ToBytes(false)
+	enhancedHeaderBytes, err := enhancedHeader.ToBytes(false)
+	testHeader := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
+	err = testHeader.FromBytes(enhancedHeaderBytes)
+	require.NoError(err)
+	testHeaderBytes, err := testHeader.ToBytes(false)
+	require.NoError(err)
+	fmt.Println(expectedHeaderBytes)
+	fmt.Println(testHeaderBytes)
+}
+
+
 
 func TestDeque(t *testing.T) {
 	require := require.New(t)
