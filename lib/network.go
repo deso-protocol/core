@@ -2286,8 +2286,8 @@ type MsgDeSoSnapshotData struct {
 
 	SnapshotChecksum  string
 
-	// SnapshotData is the data associated with StateKeys.
-	SnapshotData       []*DBEntry
+	// SnapshotChunk is the data associated with StateKeys.
+	SnapshotChunk       []*DBEntry
 	SnapshotFullPrefix bool
 
 	Prefix []byte
@@ -2301,11 +2301,11 @@ func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 
 	// Encode the snapshot data
 	data = append(data, []byte(msg.SnapshotChecksum)...)
-	if len(msg.SnapshotData) == 0 {
+	if len(msg.SnapshotChunk) == 0 {
 		return nil, fmt.Errorf("MsgDeSoSnapshotData.ToBytes: Snapshot data should not be empty")
 	}
-	data = append(data, UintToBuf(uint64(len(msg.SnapshotData)))...)
-	for _, vv := range msg.SnapshotData {
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotChunk)))...)
+	for _, vv := range msg.SnapshotChunk {
 		data = append(data, vv.Encode()...)
 	}
 	data = append(data, BoolToByte(msg.SnapshotFullPrefix))
@@ -2339,15 +2339,15 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 	// Decode snapshot keys
 	dataLen, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotData")
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotChunk")
 	}
 	for ;dataLen > 0; dataLen-- {
 		dbEntry := &DBEntry{}
 		err = dbEntry.Decode(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotData")
+			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunk")
 		}
-		msg.SnapshotData = append(msg.SnapshotData, dbEntry)
+		msg.SnapshotChunk = append(msg.SnapshotChunk, dbEntry)
 	}
 	msg.SnapshotFullPrefix = ReadBoolByte(rr)
 

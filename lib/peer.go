@@ -1052,7 +1052,7 @@ func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
 	messageSeq := atomic.AddUint64(&pp.totalMessages, 1)
 
 	if msg.GetMsgType() == MsgTypeSnapshotData {
-		snapshotData := msg.(*MsgDeSoSnapshotData).SnapshotData
+		snapshotData := msg.(*MsgDeSoSnapshotData).SnapshotChunk
 		glog.V(1).Infof("SENDING( seq=%d ) message of type: %v to peer %v: (First: <%v>, Last: <%v>)",
 			messageSeq, msg.GetMsgType(), pp, snapshotData[0].Key, snapshotData[len(snapshotData)-1].Key)
 	} else {
@@ -1080,7 +1080,7 @@ func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
 	messageSeq := atomic.AddUint64(&pp.totalMessages, 1)
 
 	if msg.GetMsgType() == MsgTypeSnapshotData {
-		snapshotData := msg.(*MsgDeSoSnapshotData).SnapshotData
+		snapshotData := msg.(*MsgDeSoSnapshotData).SnapshotChunk
 		glog.V(1).Infof("RECEIVED( seq=%d ) message of type: %v from peer %v: (First: <%v>, Last: <%v>)",
 			messageSeq, msg.GetMsgType(), pp, snapshotData[0].Key, snapshotData[len(snapshotData)-1].Key)
 	}

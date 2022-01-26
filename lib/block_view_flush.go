@@ -107,6 +107,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 
 	if bav.Snapshot != nil {
 		bav.Snapshot.FlushAncestralRecords(counter)
+		glog.Infof("FlushToDbWithTxn: Current checksum (%v)", bav.Snapshot.Checksum.ToHashString())
 	}
 	return nil
 }

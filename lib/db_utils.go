@@ -34,9 +34,10 @@ const (
 	// BadgerDbFolder is the subfolder in the config dir where we
 	// store the badgerdb database by default.
 	BadgerDbFolder = "badgerdb"
+	MaxPrefixLen = 1
 )
 
-var (
+type DBPrefixes struct {
 	// The key prefixes for the key-value database. To store a particular
 	// type of data, we create a key prefix and store all those types of
 	// data with a key prefixed by that key prefix.
@@ -44,272 +45,261 @@ var (
 	// https://bitcoin.stackexchange.com/questions/28168/what-are-the-keys-used-in-the-blockchain-leveldb-ie-what-are-the-keyvalue-pair
 
 	// The prefix for the block index:
-	// Key format: <hash BlockHash>
+	// Key format: <prefix_id, hash BlockHash>
 	// Value format: serialized MsgDeSoBlock
-	_PrefixBlockHashToBlock = []byte{0}
+	PrefixBlockHashToBlock []byte `prefix_id:"[0]"`
 
 	// The prefix for the node index that we use to reconstruct the block tree.
 	// Storing the height in big-endian byte order allows us to read in all the
 	// blocks in height-sorted order from the db and construct the block tree by connecting
 	// nodes to their parents as we go.
 	//
-	// Key format: <height uint32 (big-endian), hash BlockHash>
+	// Key format: <prefix_id, height uint32 (big-endian), hash BlockHash>
 	// Value format: serialized BlockNode
-	_PrefixHeightHashToNodeInfo        = []byte{1}
-	_PrefixBitcoinHeightHashToNodeInfo = []byte{2}
+	PrefixHeightHashToNodeInfo []byte `prefix_id:"[1]"`
+	PrefixBitcoinHeightHashToNodeInfo []byte `prefix_id:"[2]"`
 
 	// We store the hash of the node that is the current tip of the main chain.
 	// This key is used to look it up.
 	// Value format: BlockHash
-	_KeyBestDeSoBlockHash = []byte{3}
+	PrefixBestDeSoBlockHash []byte `prefix_id:"[3]"`
 
-	_KeyBestBitcoinHeaderHash = []byte{4}
+	PrefixBestBitcoinHeaderHash []byte `prefix_id:"[4]"`
 
 	// Utxo table.
-	// <txid BlockHash, output_index uint64> -> UtxoEntry
-	_PrefixUtxoKeyToUtxoEntry = []byte{5}
-	// <prefix, pubKey [33]byte, utxoKey< txid BlockHash, index uint32 >> -> <>
-	_PrefixPubKeyUtxoKey = []byte{7}
+	// <prefix_id, txid BlockHash, output_index uint64> -> UtxoEntry
+	PrefixUtxoKeyToUtxoEntry []byte `prefix_id:"[5]" is_state:"true"`
+	// <prefix_id, pubKey [33]byte, utxoKey< txid BlockHash, index uint32 >> -> <>
+	PrefixPubKeyUtxoKey []byte `prefix_id:"[7]" is_state:"true"`
 	// The number of utxo entries in the database.
-	_KeyUtxoNumEntries = []byte{8}
+	PrefixUtxoNumEntries []byte `prefix_id:"[8]" is_state:"true"`
 	// Utxo operations table.
 	// This table contains, for each blockhash on the main chain, the UtxoOperations
 	// that were applied by this block. To roll back the block, one must loop through
 	// the UtxoOperations for a particular block backwards and invert them.
 	//
-	// < hash *BlockHash > -> < serialized []UtxoOperation using gob encoding >
-	_PrefixBlockHashToUtxoOperations = []byte{9}
-
+	// <prefix_id, hash *BlockHash > -> < serialized []UtxoOperation using gob encoding >
+	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]"`
 	// The below are mappings related to the validation of BitcoinExchange transactions.
 	//
 	// The number of nanos that has been purchased thus far.
-	_KeyNanosPurchased = []byte{10}
+	PrefixNanosPurchased []byte `prefix_id:"[10]" is_state:"true"`
 	// How much Bitcoin is work in USD cents.
-	_KeyUSDCentsPerBitcoinExchangeRate = []byte{27}
-	// <key> -> <GlobalParamsEntry gob serialized>
-	_KeyGlobalParams = []byte{40}
+	PrefixUSDCentsPerBitcoinExchangeRate []byte `prefix_id:"[27]"`
+	// <prefix_id, key> -> <GlobalParamsEntry gob serialized>
+	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true"`
 
 	// The prefix for the Bitcoin TxID map. If a key is set for a TxID that means this
 	// particular TxID has been processed as part of a BitcoinExchange transaction. If
 	// no key is set for a TxID that means it has not been processed (and thus it can be
 	// used to create new nanos).
-	// <BitcoinTxID BlockHash> -> <nothing>
-	_PrefixBitcoinBurnTxIDs = []byte{11}
-
+	// <prefix_id, BitcoinTxID BlockHash> -> <nothing>
+	PrefixBitcoinBurnTxIDs []byte `prefix_id:"[11]" is_state:"true"`
 	// Messages are indexed by the public key of their senders and receivers. If
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
-	// <public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientPublicKey || EncryptedText >
-	_PrefixPublicKeyTimestampToPrivateMessage = []byte{12}
+	// <prefix_id, public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientPublicKey || EncryptedText >
+	PrefixPublicKeyTimestampToPrivateMessage []byte `prefix_id:"[12]" is_state:"true"`
 
 	// Tracks the tip of the transaction index. This is used to determine
 	// which blocks need to be processed in order to update the index.
-	_KeyTransactionIndexTip = []byte{14}
-	// <prefix, transactionID BlockHash> -> <TransactionMetadata struct>
-	_PrefixTransactionIDToMetadata = []byte{15}
-	// <prefix, publicKey []byte, index uint32> -> <txid BlockHash>
-	_PrefixPublicKeyIndexToTransactionIDs = []byte{16}
-	// <prefx, publicKey []byte> -> <index uint32>
-	_PrefixPublicKeyToNextIndex = []byte{42}
+	PrefixTransactionIndexTip []byte `prefix_id:"[14]"`
+	// <prefix_id, transactionID BlockHash> -> <TransactionMetadata struct>
+	PrefixTransactionIDToMetadata []byte `prefix_id:"[15]"`
+	// <prefix_id, publicKey []byte, index uint32> -> <txid BlockHash>
+	PrefixPublicKeyIndexToTransactionIDs []byte `prefix_id:"[16]"`
+	// <prefix_id, publicKey []byte> -> <index uint32>
+	PrefixPublicKeyToNextIndex []byte `prefix_id:"[42]"`
 
 	// Main post index.
-	// <prefix, PostHash BlockHash> -> PostEntry
-	_PrefixPostHashToPostEntry = []byte{17}
-
+	// <prefix_id, PostHash BlockHash> -> PostEntry
+	PrefixPostHashToPostEntry []byte `prefix_id:"[17]" is_state:"true"`
 	// Post sorts
-	// <prefix, publicKey [33]byte, PostHash> -> <>
-	_PrefixPosterPublicKeyPostHash = []byte{18}
+	// <prefix_id, publicKey [33]byte, PostHash> -> <>
+	PrefixPosterPublicKeyPostHash []byte `prefix_id:"[18]" is_state:"true"`
 
-	// <prefix, tstampNanos uint64, PostHash> -> <>
-	_PrefixTstampNanosPostHash = []byte{19}
-	// <prefix, creatorbps uint64, PostHash> -> <>
-	_PrefixCreatorBpsPostHash = []byte{20}
-	// <prefix, multiplebps uint64, PostHash> -> <>
-	_PrefixMultipleBpsPostHash = []byte{21}
-
+	// <prefix_id, tstampNanos uint64, PostHash> -> <>
+	PrefixTstampNanosPostHash []byte `prefix_id:"[19]" is_state:"true"`
+	// <prefix_id, creatorbps uint64, PostHash> -> <>
+	PrefixCreatorBpsPostHash []byte `prefix_id:"[20]" is_state:"true"`
+	// <prefix_id, multiplebps uint64, PostHash> -> <>
+	PrefixMultipleBpsPostHash []byte `prefix_id:"[21]" is_state:"true"`
 	// Comments are just posts that have their ParentStakeID set, and
 	// so we have a separate index that allows us to return all the
 	// comments for a given StakeID
-	// <prefix, parent stakeID [33]byte, tstampnanos uint64, post hash> -> <>
-	_PrefixCommentParentStakeIDToPostHash = []byte{22}
+	// <prefix_id, parent stakeID [33]byte, tstampnanos uint64, post hash> -> <>
+	PrefixCommentParentStakeIDToPostHash []byte `prefix_id:"[22]" is_state:"true"`
 
 	// Main profile index
-	// <prefix, PKID [33]byte> -> ProfileEntry
-	_PrefixPKIDToProfileEntry = []byte{23}
-
+	// <prefix_id, PKID [33]byte> -> ProfileEntry
+	PrefixPKIDToProfileEntry []byte `prefix_id:"[23]" is_state:"true"`
 	// Profile sorts
 	// For username, we set the PKID as a value since the username is not fixed width.
 	// We always lowercase usernames when using them as map keys in order to make
 	// all uniqueness checks case-insensitive
-	// <prefix, username> -> <PKID>
-	_PrefixProfileUsernameToPKID = []byte{25}
+	// <prefix_id, username> -> <PKID>
+	PrefixProfileUsernameToPKID []byte `prefix_id:"[25]" is_state:"true"`
 	// This allows us to sort the profiles by the value of their coin (since
 	// the amount of DeSo locked in a profile is proportional to coin price).
-	_PrefixCreatorDeSoLockedNanosCreatorPKID = []byte{32}
-
+	PrefixCreatorDeSoLockedNanosCreatorPKID []byte `prefix_id:"[32]" is_state:"true"`
 	// The StakeID is a post hash for posts and a public key for users.
-	// <StakeIDType | AmountNanos uint64 | StakeID [var]byte> -> <>
-	_PrefixStakeIDTypeAmountStakeIDIndex = []byte{26}
+	// <prefix_id, StakeIDType, AmountNanos uint64, StakeID [var]byte> -> <>
+	PrefixStakeIDTypeAmountStakeIDIndex []byte `prefix_id:"[26]" is_state:"true"`
 
 	// Prefixes for follows:
-	// <prefix, follower PKID [33]byte, followed PKID [33]byte> -> <>
-	// <prefix, followed PKID [33]byte, follower PKID [33]byte> -> <>
-	_PrefixFollowerPKIDToFollowedPKID = []byte{28}
-	_PrefixFollowedPKIDToFollowerPKID = []byte{29}
+	// <prefix_id, follower PKID [33]byte, followed PKID [33]byte> -> <>
+	// <prefix_id, followed PKID [33]byte, follower PKID [33]byte> -> <>
+	PrefixFollowerPKIDToFollowedPKID []byte `prefix_id:"[28]" is_state:"true"`
+	PrefixFollowedPKIDToFollowerPKID []byte `prefix_id:"[29]" is_state:"true"`
 
 	// Prefixes for likes:
-	// <prefix, user pub key [33]byte, liked post hash [32]byte> -> <>
-	// <prefix, post hash [32]byte, user pub key [33]byte> -> <>
-	_PrefixLikerPubKeyToLikedPostHash = []byte{30}
-	_PrefixLikedPostHashToLikerPubKey = []byte{31}
+	// <prefix_id, user pub key [33]byte, liked post hash [32]byte> -> <>
+	// <prefix_id, post hash [32]byte, user pub key [33]byte> -> <>
+	PrefixLikerPubKeyToLikedPostHash []byte `prefix_id:"[30]" is_state:"true"`
+	PrefixLikedPostHashToLikerPubKey []byte `prefix_id:"[31]" is_state:"true"`
 
 	// Prefixes for creator coin fields:
-	// <prefix, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
-	// <prefix, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
-	_PrefixHODLerPKIDCreatorPKIDToBalanceEntry = []byte{33}
-	_PrefixCreatorPKIDHODLerPKIDToBalanceEntry = []byte{34}
+	// <prefix_id, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
+	// <prefix_id, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
+	PrefixHODLerPKIDCreatorPKIDToBalanceEntry []byte `prefix_id:"[33]" is_state:"true"`
+	PrefixCreatorPKIDHODLerPKIDToBalanceEntry []byte `prefix_id:"[34]" is_state:"true"`
 
-	_PrefixPosterPublicKeyTimestampPostHash = []byte{35}
-
+	PrefixPosterPublicKeyTimestampPostHash []byte `prefix_id:"[35]" is_state:"true"`
 	// If no mapping exists for a particular public key, then the PKID is simply
 	// the public key itself.
-	// <[33]byte> -> <PKID [33]byte>
-	_PrefixPublicKeyToPKID = []byte{36}
-	// <PKID [33]byte> -> <PublicKey [33]byte>
-	_PrefixPKIDToPublicKey = []byte{37}
-
+	// <prefix_id, [33]byte> -> <PKID [33]byte>
+	PrefixPublicKeyToPKID []byte `prefix_id:"[36]" is_state:"true"`
+	// <prefix_id, PKID [33]byte> -> <PublicKey [33]byte>
+	PrefixPKIDToPublicKey []byte `prefix_id:"[37]" is_state:"true"`
 	// Prefix for storing mempool transactions in badger. These stored transactions are
 	// used to restore the state of a node after it is shutdown.
-	// <prefix, tx hash BlockHash> -> <*MsgDeSoTxn>
-	_PrefixMempoolTxnHashToMsgDeSoTxn = []byte{38}
+	// <prefix_id, tx hash BlockHash> -> <*MsgDeSoTxn>
+	PrefixMempoolTxnHashToMsgDeSoTxn []byte `prefix_id:"[38]"`
 
 	// Prefixes for Reposts:
-	// <prefix, user pub key [39]byte, reposted post hash [39]byte> -> RepostEntry
-	_PrefixReposterPubKeyRepostedPostHashToRepostPostHash = []byte{39}
-
+	// <prefix_id, user pub key [39]byte, reposted post hash [39]byte> -> RepostEntry
+	PrefixReposterPubKeyRepostedPostHashToRepostPostHash []byte `prefix_id:"[39]" is_state:"true"`
 	// Prefixes for diamonds:
-	//  <prefix, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
-	//  <prefix, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
-	_PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash = []byte{41}
-	_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash = []byte{43}
-
+	//  <prefix_id, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
+	//  <prefix_id, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
+	PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash []byte `prefix_id:"[41]" is_state:"true"`
+	PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash []byte `prefix_id:"[43]" is_state:"true"`
 	// Public keys that have been restricted from signing blocks.
-	// <prefix, ForbiddenPublicKey [33]byte> -> <>
-	_PrefixForbiddenBlockSignaturePubKeys = []byte{44}
+	// <prefix_id, ForbiddenPublicKey [33]byte> -> <>
+	PrefixForbiddenBlockSignaturePubKeys []byte `prefix_id:"[44]" is_state:"true"`
 
 	// These indexes are used in order to fetch the pub keys of users that liked or diamonded a post.
-	// 		Reposts: <prefix, RepostedPostHash, ReposterPubKey> -> <>
-	// 		Quote Reposts: <prefix, RepostedPostHash, ReposterPubKey, RepostPostHash> -> <>
-	// 		Diamonds: <prefix, DiamondedPostHash, DiamonderPubKey [33]byte> -> <DiamondLevel (uint64)>
-	_PrefixRepostedPostHashReposterPubKey               = []byte{45}
-	_PrefixRepostedPostHashReposterPubKeyRepostPostHash = []byte{46}
-	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   = []byte{47}
-
+	// 		Reposts: <prefix_id, RepostedPostHash, ReposterPubKey> -> <>
+	// 		Quote Reposts: <prefix_id, RepostedPostHash, ReposterPubKey, RepostPostHash> -> <>
+	// 		Diamonds: <prefix_id, DiamondedPostHash, DiamonderPubKey [33]byte> -> <DiamondLevel (uint64)>
+	PrefixRepostedPostHashReposterPubKey []byte `prefix_id:"[45]" is_state:"true"`
+	PrefixRepostedPostHashReposterPubKeyRepostPostHash []byte `prefix_id:"[46]" is_state:"true"`
+	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel []byte `prefix_id:"[47]" is_state:"true"`
 	// Prefixes for NFT ownership:
-	// 	<prefix, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
-	_PrefixPostHashSerialNumberToNFTEntry = []byte{48}
-	//  <prefix, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
-	_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry = []byte{49}
-
+	// 	<prefix_id, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
+	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[8]" is_state:"true"`
+	//  <prefix_id, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
+	PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry []byte `prefix_id:"[49]" is_state:"true"`
 	// Prefixes for NFT bids:
-	//  <prefix, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
-	_PrefixPostHashSerialNumberBidNanosBidderPKID = []byte{50}
-	//  <BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
-	_PrefixBidderPKIDPostHashSerialNumberToBidNanos = []byte{51}
-
+	//  <prefix_id, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
+	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true"`
+	//  <prefix_id, BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
+	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
 	// Prefix for NFT accepted bid entries:
 	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
 	//     not core to consensus and should not be relied upon as it could get inefficient.
-	//   - Schema: <prefix>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
-	_PrefixPostHashSerialNumberToAcceptedBidEntries = []byte{54}
+	//   - Schema: <prefix_id>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
+	PrefixPostHashSerialNumberToAcceptedBidEntries []byte `prefix_id:"[54]" is_state:"true"`
 
-	// <prefix, PublicKey [33]byte> -> uint64
-	_PrefixPublicKeyToDeSoBalanceNanos = []byte{52}
-	// Block reward prefix:
+	// <prefix_id, PublicKey [33]byte> -> uint64
+	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"`	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
 	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
-	//   - Schema: <hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
-	_PrefixPublicKeyBlockHashToBlockReward = []byte{53}
+	//   - Schema: <prefix_id, hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
+	PrefixPublicKeyBlockHashToBlockReward []byte `prefix_id:"[53]" is_state:"true"`
 
 	// Prefix for Authorize Derived Key transactions:
-	// 		<prefix, OwnerPublicKey [33]byte> -> <>
-	_PrefixAuthorizeDerivedKey = []byte{55}
-
+	// 		<prefix_id, OwnerPublicKey [33]byte> -> <>
+	PrefixAuthorizeDerivedKey []byte `prefix_id:"[55]" is_state:"true"`
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
 	// NEXT_TAG: 55
-)
-
-var StatePrefixes = [][]byte{
-	_PrefixUtxoKeyToUtxoEntry,
-	_PrefixPubKeyUtxoKey,
-	_KeyUtxoNumEntries,
-	_KeyNanosPurchased,
-	_KeyGlobalParams,
-	_PrefixBitcoinBurnTxIDs,
-	_PrefixPublicKeyTimestampToPrivateMessage,
-	_PrefixPostHashToPostEntry,
-	_PrefixPosterPublicKeyPostHash,
-	_PrefixTstampNanosPostHash,
-	_PrefixCreatorBpsPostHash,
-	_PrefixMultipleBpsPostHash,
-	_PrefixCommentParentStakeIDToPostHash,
-	_PrefixPKIDToProfileEntry,
-	_PrefixProfileUsernameToPKID,
-	_PrefixCreatorDeSoLockedNanosCreatorPKID,
-	_PrefixStakeIDTypeAmountStakeIDIndex,
-	_PrefixFollowerPKIDToFollowedPKID,
-	_PrefixFollowedPKIDToFollowerPKID,
-	_PrefixLikerPubKeyToLikedPostHash,
-	_PrefixLikedPostHashToLikerPubKey,
-	_PrefixHODLerPKIDCreatorPKIDToBalanceEntry,
-	_PrefixCreatorPKIDHODLerPKIDToBalanceEntry,
-	_PrefixPosterPublicKeyTimestampPostHash,
-	_PrefixPublicKeyToPKID,
-	_PrefixPKIDToPublicKey,
-	_PrefixReposterPubKeyRepostedPostHashToRepostPostHash,
-	_PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash,
-	_PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash,
-	_PrefixForbiddenBlockSignaturePubKeys,
-	_PrefixRepostedPostHashReposterPubKey,
-	_PrefixRepostedPostHashReposterPubKeyRepostPostHash,
-	_PrefixDiamondedPostHashDiamonderPKIDDiamondLevel,
-	_PrefixPostHashSerialNumberToNFTEntry,
-	_PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry,
-	_PrefixPostHashSerialNumberBidNanosBidderPKID,
-	_PrefixBidderPKIDPostHashSerialNumberToBidNanos,
-	_PrefixPostHashSerialNumberToAcceptedBidEntries,
-	_PrefixPublicKeyToDeSoBalanceNanos,
-	_PrefixPublicKeyBlockHashToBlockReward,
-	_PrefixAuthorizeDerivedKey,
 }
 
-var NonStatePrefixes = [][]byte{
-	_PrefixBlockHashToBlock,
-	_PrefixHeightHashToNodeInfo,
-	_PrefixBitcoinHeightHashToNodeInfo,
-	_KeyBestDeSoBlockHash,
-	_KeyBestBitcoinHeaderHash,
-	_PrefixBlockHashToUtxoOperations,
-	_PrefixTransactionIDToMetadata,
-	_PrefixPublicKeyIndexToTransactionIDs,
-	_KeyUSDCentsPerBitcoinExchangeRate,
-	_KeyTransactionIndexTip,
-	_PrefixPublicKeyToNextIndex,
-	_PrefixMempoolTxnHashToMsgDeSoTxn,
+func getPrefixIdValue (structFields reflect.StructField, fieldType reflect.Type) (prefixId reflect.Value) {
+	var ref reflect.Value
+	if value := structFields.Tag.Get("prefix_id"); value != "-" {
+		ref = reflect.New(fieldType)
+		ref.Elem().Set(reflect.MakeSlice(fieldType, 0, 0))
+		if value != "" && value != "[]" {
+			if err := json.Unmarshal([]byte(value), ref.Interface()); err != nil {
+				panic(err)
+			}
+		}
+	} else {
+		panic(fmt.Errorf("prefix_id cannot be empty"))
+	}
+	return ref.Elem()
+}
+
+var Prefixes = GetPrefixes()
+func GetPrefixes() *DBPrefixes {
+	prefixes := &DBPrefixes{}
+	prefixElements := reflect.ValueOf(prefixes).Elem()
+	structFields := prefixElements.Type()
+	for i := 0; i < structFields.NumField(); i++ {
+		prefixField := prefixElements.Field(i)
+		prefixId := getPrefixIdValue(structFields.Field(i), prefixField.Type())
+		prefixField.Set(prefixId)
+	}
+	return prefixes
+}
+
+var StatePrefixes = GetStatePrefixes()
+type DBStatePrefixes struct {
+	Prefixes *DBPrefixes
+
+	StatePrefixesMap map[byte]bool
+	StatePrefixesList [][]byte
+}
+
+func GetStatePrefixes() *DBStatePrefixes {
+	statePrefixes := &DBStatePrefixes{}
+	statePrefixes.Prefixes = &DBPrefixes{}
+	statePrefixes.StatePrefixesMap = make(map[byte]bool)
+
+	prefixElements := reflect.ValueOf(statePrefixes.Prefixes).Elem()
+	structFields := prefixElements.Type()
+	for i := 0; i < structFields.NumField(); i++ {
+		prefixField := prefixElements.Field(i)
+		prefixId := getPrefixIdValue(structFields.Field(i), prefixField.Type())
+		prefixBytes := prefixId.Bytes()
+		if len(prefixBytes) > MaxPrefixLen {
+			panic(fmt.Errorf("prefix (%v) is longer than MaxPrefixLen: (%v)",
+				structFields.Field(i).Name, MaxPrefixLen))
+		}
+		prefix := prefixBytes[0]
+		if structFields.Field(i).Tag.Get("is_state") == "true" {
+			statePrefixes.StatePrefixesMap[prefix] = true
+			statePrefixes.StatePrefixesList = append(statePrefixes.StatePrefixesList, []byte{prefix})
+		} else {
+			statePrefixes.StatePrefixesMap[prefix] = false
+		}
+	}
+	return statePrefixes
 }
 
 func isStateKey(key []byte) bool {
-	isStatePrefix := true
-	for ii := 0; ii < len(NonStatePrefixes); ii++ {
-		if reflect.DeepEqual(NonStatePrefixes[ii][0], key[0]) {
-			isStatePrefix = false
-			break
-		}
+	if MaxPrefixLen > 1 {
+		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
 	}
-	return isStatePrefix
+	prefix := key[0]
+	if isState, exists := StatePrefixes.StatePrefixesMap[prefix]; exists && isState {
+		return true
+	}
+	return false
 }
 
 func EncodeKeyValue(key []byte, value []byte) []byte {
@@ -360,9 +350,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 	// After a successful DB write, we update the snapshot.
 	if isState {
 		keyString := hex.EncodeToString(key)
-		if keyString == "05000000000000000000000000000000000000000000000000000000000000000000000083" {
-			glog.Infof("SETTING THE MYSTERIOUS KEY IN THE DB NOW (%v) AND VALUE (%v)", keyString, value)
-		}
+
 		// Update ancestral record structures depending on the existing DB record.
 		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
 		// Now save the newest record to cache.
@@ -486,14 +474,9 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, lastKey []byte, maxBytes 
 func DBStreamPrefixKeys(db *badger.DB) (*map[string][]byte, error) {
 	stream := db.NewStream()
 	stream.NumGo = 4
-	stream.Prefix = _PrefixUtxoKeyToUtxoEntry
+	stream.Prefix = Prefixes.PrefixUtxoKeyToUtxoEntry
 	stream.LogPrefix = "Badger.Streaming"
 
-	//stream.ChooseKey = func(item *badger.Item) bool {
-	//	fmt.Printf("Key: %v\n", hex.EncodeToString(item.Key()))
-	//	return bytes.HasPrefix(item.Key(), _PrefixUtxoKeyToUtxoEntry)
-	//}
-	//stream.KeyToList = nil
 	output := make(map[string][]byte)
 	stream.Send = func(batch *z.Buffer) error {
 		list, err := badger.BufferToKVList(batch)
@@ -501,7 +484,6 @@ func DBStreamPrefixKeys(db *badger.DB) (*map[string][]byte, error) {
 			return err
 		}
 		for _, kv := range list.Kv {
-			//fmt.Printf("Key: %v\n Value %v\n", hex.EncodeToString(kv.Key), hex.EncodeToString(kv.Value))
 			output[hex.EncodeToString(kv.Key)] = kv.Value
 		}
 		return nil
@@ -518,7 +500,7 @@ func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKe
 		return nil
 	}
 
-	prefix := append([]byte{}, _PrefixPublicKeyToPKID...)
+	prefix := append([]byte{}, Prefixes.PrefixPublicKeyToPKID...)
 	pkidBytes, err := DBGetWithTxn(txn, snap, append(prefix, publicKey...))
 
 	if err != nil {
@@ -553,7 +535,7 @@ func DBGetPKIDEntryForPublicKey(db *badger.DB, snap *Snapshot, publicKey []byte)
 }
 
 func DBGetPublicKeyForPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkidd *PKID) []byte {
-	prefix := append([]byte{}, _PrefixPKIDToPublicKey...)
+	prefix := append([]byte{}, Prefixes.PrefixPKIDToPublicKey...)
 	pkidBytes, err := DBGetWithTxn(txn, snap, append(prefix, pkidd[:]...))
 
 	if err != nil {
@@ -582,7 +564,7 @@ func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	// Set the main pub key -> pkid mapping.
 	{
-		prefix := append([]byte{}, _PrefixPublicKeyToPKID...)
+		prefix := append([]byte{}, Prefixes.PrefixPublicKeyToPKID...)
 		pubKeyToPkidKey := append(prefix, publicKey...)
 		if err := DBSetWithTxn(txn, snap, pubKeyToPkidKey, pkidEntry.Encode()); err != nil {
 
@@ -594,7 +576,7 @@ func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	// Set the reverse mapping: pkid -> pub key
 	{
-		prefix := append([]byte{}, _PrefixPKIDToPublicKey...)
+		prefix := append([]byte{}, Prefixes.PrefixPKIDToPublicKey...)
 		pkidToPubKey := append(prefix, pkidEntry.PKID[:]...)
 		if err := DBSetWithTxn(txn, snap, pkidToPubKey, publicKey); err != nil {
 
@@ -614,7 +596,7 @@ func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	pkidEntry := DBGetPKIDEntryForPublicKeyWithTxn(txn, snap, publicKey)
 
 	{
-		prefix := append([]byte{}, _PrefixPublicKeyToPKID...)
+		prefix := append([]byte{}, Prefixes.PrefixPublicKeyToPKID...)
 		pubKeyToPkidKey := append(prefix, publicKey...)
 		if err := DBDeleteWithTxn(txn, snap, pubKeyToPkidKey); err != nil {
 
@@ -625,7 +607,7 @@ func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	{
-		prefix := append([]byte{}, _PrefixPKIDToPublicKey...)
+		prefix := append([]byte{}, Prefixes.PrefixPKIDToPublicKey...)
 		pubKeyToPkidKey := append(prefix, pkidEntry.PKID[:]...)
 		if err := DBDeleteWithTxn(txn, snap, pubKeyToPkidKey); err != nil {
 
@@ -744,13 +726,13 @@ func _enumerateLimitedKeysReversedForPrefixWithTxn(txn *badger.Txn, dbPrefix []b
 
 func _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPublicKeyToDeSoBalanceNanos...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPublicKeyToDeSoBalanceNanos...)
 	key := append(prefixCopy, publicKey...)
 	return key
 }
 
 func DbGetPrefixForPublicKeyToDesoBalanceNanos() []byte {
-	return append([]byte{}, _PrefixPublicKeyToDeSoBalanceNanos...)
+	return append([]byte{}, Prefixes.PrefixPublicKeyToDeSoBalanceNanos...)
 }
 
 func DbGetDeSoBalanceNanosForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte,
@@ -843,7 +825,7 @@ func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, snap *Snapshot, publicKey
 
 func _dbKeyForMessageEntry(publicKey []byte, tstampNanos uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPublicKeyTimestampToPrivateMessage...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPublicKeyTimestampToPrivateMessage...)
 	key := append(prefixCopy, publicKey...)
 	key = append(key, EncodeUint64(tstampNanos)...)
 	return key
@@ -851,7 +833,7 @@ func _dbKeyForMessageEntry(publicKey []byte, tstampNanos uint64) []byte {
 
 func _dbSeekPrefixForMessagePublicKey(publicKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPublicKeyTimestampToPrivateMessage...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPublicKeyTimestampToPrivateMessage...)
 	return append(prefixCopy, publicKey...)
 }
 
@@ -1007,12 +989,12 @@ func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte)
 
 // -------------------------------------------------------------------------------------
 // Forbidden block signature public key functions
-// <prefix, public key> -> <>
+// <prefix_id, public key> -> <>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForForbiddenBlockSignaturePubKeys(publicKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixForbiddenBlockSignaturePubKeys...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixForbiddenBlockSignaturePubKeys...)
 	key := append(prefixCopy, publicKey...)
 	return key
 }
@@ -1086,14 +1068,14 @@ func DbDeleteForbiddenBlockSignaturePubKey(
 
 // -------------------------------------------------------------------------------------
 // Likes mapping functions
-// 		<prefix, user pub key [33]byte, liked post BlockHash> -> <>
-// 		<prefix, liked post BlockHash, user pub key [33]byte> -> <>
+// 		<prefix_id, user pub key [33]byte, liked post BlockHash> -> <>
+// 		<prefix_id, liked post BlockHash, user pub key [33]byte> -> <>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForLikerPubKeyToLikedPostHashMapping(
 	userPubKey []byte, likedPostHash BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixLikerPubKeyToLikedPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixLikerPubKeyToLikedPostHash...)
 	key := append(prefixCopy, userPubKey...)
 	key = append(key, likedPostHash[:]...)
 	return key
@@ -1102,7 +1084,7 @@ func _dbKeyForLikerPubKeyToLikedPostHashMapping(
 func _dbKeyForLikedPostHashToLikerPubKeyMapping(
 	likedPostHash BlockHash, userPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixLikedPostHashToLikerPubKey...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixLikedPostHashToLikerPubKey...)
 	key := append(prefixCopy, likedPostHash[:]...)
 	key = append(key, userPubKey...)
 	return key
@@ -1110,13 +1092,13 @@ func _dbKeyForLikedPostHashToLikerPubKeyMapping(
 
 func _dbSeekPrefixForPostHashesYouLike(yourPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixLikerPubKeyToLikedPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixLikerPubKeyToLikedPostHash...)
 	return append(prefixCopy, yourPubKey...)
 }
 
 func _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixLikedPostHashToLikerPubKey...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixLikedPostHashToLikerPubKey...)
 	return append(prefixCopy, likedPostHash[:]...)
 }
 
@@ -1249,33 +1231,33 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 
 // -------------------------------------------------------------------------------------
 // Reposts mapping functions
-// 		<prefix, user pub key [33]byte, reposted post BlockHash> -> <>
-// 		<prefix, reposted post BlockHash, user pub key [33]byte> -> <>
+// 		<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
+// 		<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
 // -------------------------------------------------------------------------------------
-//_PrefixReposterPubKeyRepostedPostHashToRepostPostHash
+//PrefixReposterPubKeyRepostedPostHashToRepostPostHash
 func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
 	key := append(prefixCopy, userPubKey...)
 	key = append(key, repostedPostHash[:]...)
 	return key
 }
 
-//_PrefixRepostedPostHashReposterPubKey
+//PrefixRepostedPostHashReposterPubKey
 func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *BlockHash, reposterPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixRepostedPostHashReposterPubKey...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKey...)
 	key := append(prefixCopy, repostedPostHash[:]...)
 	key = append(key, reposterPubKey...)
 	return key
 }
 
 // **For quoted reposts**
-//_PrefixRepostedPostHashReposterPubKeyRepostPostHash
+//PrefixRepostedPostHashReposterPubKeyRepostPostHash
 func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
 	repostedPostHash *BlockHash, reposterPubKey []byte, repostPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
 	key := append(prefixCopy, repostedPostHash[:]...)
 	key = append(key, reposterPubKey...)
 	key = append(key, repostPostHash[:]...)
@@ -1284,7 +1266,7 @@ func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
 
 func _dbSeekPrefixForPostHashesYouRepost(yourPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
 	return append(prefixCopy, yourPubKey...)
 }
 
@@ -1389,14 +1371,14 @@ func DbGetPostHashesYouRepost(handle *badger.DB, yourPublicKey []byte) (
 
 // -------------------------------------------------------------------------------------
 // Follows mapping functions
-// 		<prefix, follower pub key [33]byte, followed pub key [33]byte> -> <>
-// 		<prefix, followed pub key [33]byte, follower pub key [33]byte> -> <>
+// 		<prefix_id, follower pub key [33]byte, followed pub key [33]byte> -> <>
+// 		<prefix_id, followed pub key [33]byte, follower pub key [33]byte> -> <>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForFollowerToFollowedMapping(
 	followerPKID *PKID, followedPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixFollowerPKIDToFollowedPKID...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixFollowerPKIDToFollowedPKID...)
 	key := append(prefixCopy, followerPKID[:]...)
 	key = append(key, followedPKID[:]...)
 	return key
@@ -1405,7 +1387,7 @@ func _dbKeyForFollowerToFollowedMapping(
 func _dbKeyForFollowedToFollowerMapping(
 	followedPKID *PKID, followerPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixFollowedPKIDToFollowerPKID...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixFollowedPKIDToFollowerPKID...)
 	key := append(prefixCopy, followedPKID[:]...)
 	key = append(key, followerPKID[:]...)
 	return key
@@ -1413,13 +1395,13 @@ func _dbKeyForFollowedToFollowerMapping(
 
 func _dbSeekPrefixForPKIDsYouFollow(yourPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixFollowerPKIDToFollowedPKID...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixFollowerPKIDToFollowedPKID...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
 func _dbSeekPrefixForPKIDsFollowingYou(yourPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixFollowedPKIDToFollowerPKID...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixFollowedPKIDToFollowerPKID...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
@@ -1599,12 +1581,12 @@ func DbGetPubKeysFollowingYou(handle *badger.DB, snap *Snapshot, yourPubKey []by
 
 // -------------------------------------------------------------------------------------
 // Diamonds mapping functions
-//  <prefix, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <[]byte{DiamondLevel}>
+//  <prefix_id, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <[]byte{DiamondLevel}>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry *DiamondEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	key := append(prefixCopy, diamondEntry.ReceiverPKID[:]...)
 	key = append(key, diamondEntry.SenderPKID[:]...)
 	key = append(key, diamondEntry.DiamondPostHash[:]...)
@@ -1614,7 +1596,7 @@ func _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry *DiamondEntry) 
 func _dbKeyForDiamondReceiverToDiamondSenderMappingWithoutEntry(
 	diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	key := append(prefixCopy, diamondReceiverPKID[:]...)
 	key = append(key, diamondSenderPKID[:]...)
 	key = append(key, diamondPostHash[:]...)
@@ -1623,7 +1605,7 @@ func _dbKeyForDiamondReceiverToDiamondSenderMappingWithoutEntry(
 
 func _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry *DiamondEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	key := append(prefixCopy, diamondEntry.DiamondPostHash[:]...)
 	key = append(key, diamondEntry.SenderPKID[:]...)
 	// Diamond level is an int64 in extraData but it forced to be non-negative in consensus.
@@ -1633,13 +1615,13 @@ func _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry *DiamondEn
 
 func _dbSeekPrefixForPKIDsThatDiamondedYou(yourPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
 func _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry *DiamondEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	key := append(prefixCopy, diamondEntry.SenderPKID[:]...)
 	key = append(key, diamondEntry.ReceiverPKID[:]...)
 	key = append(key, diamondEntry.DiamondPostHash[:]...)
@@ -1649,7 +1631,7 @@ func _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry *DiamondEntry) 
 func _dbKeyForDiamondSenderToDiamondReceiverMappingWithoutEntry(
 	diamondReceiverPKID *PKID, diamondSenderPKID *PKID, diamondPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	key := append(prefixCopy, diamondSenderPKID[:]...)
 	key = append(key, diamondReceiverPKID[:]...)
 	key = append(key, diamondPostHash[:]...)
@@ -1658,13 +1640,13 @@ func _dbKeyForDiamondSenderToDiamondReceiverMappingWithoutEntry(
 
 func _dbSeekPrefixForPKIDsThatYouDiamonded(yourPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash...)
 	return append(prefixCopy, yourPKID[:]...)
 }
 
 func _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID *PKID, senderPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash...)
 	key := append(prefixCopy, receiverPKID[:]...)
 	return append(key, senderPKID[:]...)
 }
@@ -1934,7 +1916,7 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 func _keyForBitcoinBurnTxID(bitcoinBurnTxID *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same
 	// underlying array.
-	prefixCopy := append([]byte{}, _PrefixBitcoinBurnTxIDs...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixBitcoinBurnTxIDs...)
 	return append(prefixCopy, bitcoinBurnTxID[:]...)
 }
 
@@ -1964,7 +1946,7 @@ func DbDeleteBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurn
 }
 
 func DbGetAllBitcoinBurnTxIDs(handle *badger.DB) (_bitcoinBurnTxIDs []*BlockHash) {
-	keysFound, _ := _enumerateKeysForPrefix(handle, _PrefixBitcoinBurnTxIDs)
+	keysFound, _ := _enumerateKeysForPrefix(handle, Prefixes.PrefixBitcoinBurnTxIDs)
 	bitcoinBurnTxIDs := []*BlockHash{}
 	for _, key := range keysFound {
 		bbtxid := &BlockHash{}
@@ -2022,7 +2004,7 @@ func DecodeUint64(scoreBytes []byte) uint64 {
 }
 
 func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64) error {
-	return DBSetWithTxn(txn, snap, _KeyNanosPurchased, EncodeUint64(nanosPurchased))
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixNanosPurchased, EncodeUint64(nanosPurchased))
 }
 
 func DbPutNanosPurchased(handle *badger.DB, snap *Snapshot, nanosPurchased uint64) error {
@@ -2032,7 +2014,7 @@ func DbPutNanosPurchased(handle *badger.DB, snap *Snapshot, nanosPurchased uint6
 }
 
 func DbGetNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot) uint64 {
-	nanosPurchasedBytes, err := DBGetWithTxn(txn, snap, _KeyNanosPurchased)
+	nanosPurchasedBytes, err := DBGetWithTxn(txn, snap, Prefixes.PrefixNanosPurchased)
 	if err != nil {
 		return 0
 	}
@@ -2061,7 +2043,7 @@ func DbPutGlobalParamsEntry(handle *badger.DB, snap *Snapshot,
 func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	globalParamsEntry GlobalParamsEntry) error {
 
-	err := DBSetWithTxn(txn, snap, _KeyGlobalParams, globalParamsEntry.Encode())
+	err := DBSetWithTxn(txn, snap, Prefixes.PrefixGlobalParams, globalParamsEntry.Encode())
 	if err != nil {
 		return errors.Wrapf(err, "DbPutGlobalParamsEntryWithTxn: Problem adding global params entry to db: ")
 	}
@@ -2069,7 +2051,7 @@ func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 func DbGetGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot) *GlobalParamsEntry {
-	globalParamsEntryBytes, err := DBGetWithTxn(txn, snap, _KeyGlobalParams)
+	globalParamsEntryBytes, err := DBGetWithTxn(txn, snap, Prefixes.PrefixGlobalParams)
 	if err != nil {
 		return &InitialGlobalParamsEntry
 	}
@@ -2091,12 +2073,12 @@ func DbGetGlobalParamsEntry(handle *badger.DB, snap *Snapshot) *GlobalParamsEntr
 func DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn *badger.Txn, snap *Snapshot,
 	usdCentsPerBitcoinExchangeRate uint64) error {
 
-	return DBSetWithTxn(txn, snap, _KeyUSDCentsPerBitcoinExchangeRate,
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixUSDCentsPerBitcoinExchangeRate,
 		EncodeUint64(usdCentsPerBitcoinExchangeRate))
 }
 
 func DbGetUSDCentsPerBitcoinExchangeRateWithTxn(txn *badger.Txn, snap *Snapshot) uint64 {
-	usdCentsPerBitcoinExchangeRateBytes, err := DBGetWithTxn(txn, snap, _KeyUSDCentsPerBitcoinExchangeRate)
+	usdCentsPerBitcoinExchangeRateBytes, err := DBGetWithTxn(txn, snap, Prefixes.PrefixUSDCentsPerBitcoinExchangeRate)
 	if err != nil {
 		return InitialUSDCentsPerBitcoinExchangeRate
 	}
@@ -2115,7 +2097,7 @@ func DbGetUSDCentsPerBitcoinExchangeRate(handle *badger.DB, snap *Snapshot) uint
 }
 
 func GetUtxoNumEntriesWithTxn(txn *badger.Txn, snap *Snapshot) uint64 {
-	indexBytes, err := DBGetWithTxn(txn, snap, _KeyUtxoNumEntries)
+	indexBytes, err := DBGetWithTxn(txn, snap, Prefixes.PrefixUtxoNumEntries)
 	if err != nil {
 		return 0
 	}
@@ -2141,7 +2123,7 @@ func _SerializeUtxoKey(utxoKey *UtxoKey) []byte {
 }
 
 func _DbKeyForUtxoKey(utxoKey *UtxoKey) []byte {
-	return append(append([]byte{}, _PrefixUtxoKeyToUtxoEntry...), _SerializeUtxoKey(utxoKey)...)
+	return append(append([]byte{}, Prefixes.PrefixUtxoKeyToUtxoEntry...), _SerializeUtxoKey(utxoKey)...)
 }
 
 // Implements the reverse of _DbKeyForUtxoKey. This doesn't error-check
@@ -2162,7 +2144,7 @@ func _UtxoKeyFromDbKey(utxoDbKey []byte) *UtxoKey {
 }
 
 func PutUtxoNumEntriesWithTxn(txn *badger.Txn, snap *Snapshot, newNumEntries uint64) error {
-	return DBSetWithTxn(txn, snap, _KeyUtxoNumEntries, EncodeUint64(newNumEntries))
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixUtxoNumEntries, EncodeUint64(newNumEntries))
 }
 
 func PutUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot,
@@ -2203,7 +2185,7 @@ func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 		return fmt.Errorf("DeletePubKeyUtxoKeyMappingWithTxn: Public key has improper length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	keyToDelete := append(append([]byte{}, _PrefixPubKeyUtxoKey...), publicKey...)
+	keyToDelete := append(append([]byte{}, Prefixes.PrefixPubKeyUtxoKey...), publicKey...)
 	keyToDelete = append(keyToDelete, _SerializeUtxoKey(utxoKey)...)
 
 	return DBDeleteWithTxn(txn, snap, keyToDelete)
@@ -2220,7 +2202,7 @@ func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, 
 		return fmt.Errorf("PutPubKeyUtxoKeyWithTxn: Public key has improper length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	keyToAdd := append(append([]byte{}, _PrefixPubKeyUtxoKey...), publicKey...)
+	keyToAdd := append(append([]byte{}, Prefixes.PrefixPubKeyUtxoKey...), publicKey...)
 	keyToAdd = append(keyToAdd, _SerializeUtxoKey(utxoKey)...)
 
 	return DBSetWithTxn(txn, snap, keyToAdd, []byte{})
@@ -2243,7 +2225,7 @@ func DbGetUtxosForPubKey(publicKey []byte, handle *badger.DB, snap *Snapshot) ([
 		opts := badger.DefaultIteratorOptions
 		nodeIterator := txn.NewIterator(opts)
 		defer nodeIterator.Close()
-		prefix := append(append([]byte{}, _PrefixPubKeyUtxoKey...), publicKey...)
+		prefix := append(append([]byte{}, Prefixes.PrefixPubKeyUtxoKey...), publicKey...)
 		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
 			// Strip the prefix off the key. What's left should be the UtxoKey.
 			pkUtxoKey := nodeIterator.Item().Key()
@@ -2253,7 +2235,7 @@ func DbGetUtxosForPubKey(publicKey []byte, handle *badger.DB, snap *Snapshot) ([
 			if len(utxoKeyBytes) != HashSizeBytes+4 {
 				return fmt.Errorf("Problem reading <pk, utxoKey> mapping; key size %d "+
 					"is not equal to (prefix_byte=%d + len(publicKey)=%d + len(utxoKey)=%d)=%d. "+
-					"Key found: %#v", len(pkUtxoKey), len(_PrefixPubKeyUtxoKey), len(publicKey), HashSizeBytes+4, len(prefix)+HashSizeBytes+4, pkUtxoKey)
+					"Key found: %#v", len(pkUtxoKey), len(Prefixes.PrefixPubKeyUtxoKey), len(publicKey), HashSizeBytes+4, len(prefix)+HashSizeBytes+4, pkUtxoKey)
 			}
 			// Try and convert the utxo key bytes into a utxo key.
 			utxoKey := _UtxoKeyFromDbKey(utxoKeyBytes)
@@ -2344,7 +2326,7 @@ func _EncodeUtxoOperations(utxoOp [][]*UtxoOperation) []byte {
 }
 
 func _DbKeyForUtxoOps(blockHash *BlockHash) []byte {
-	return append(append([]byte{}, _PrefixBlockHashToUtxoOperations...), blockHash[:]...)
+	return append(append([]byte{}, Prefixes.PrefixBlockHashToUtxoOperations...), blockHash[:]...)
 }
 
 func GetUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash) ([][]*UtxoOperation, error) {
@@ -2497,9 +2479,9 @@ func _prefixForChainType(chainType ChainType) []byte {
 	var prefix []byte
 	switch chainType {
 	case ChainTypeDeSoBlock:
-		prefix = _KeyBestDeSoBlockHash
+		prefix = Prefixes.PrefixBestDeSoBlockHash
 	case ChainTypeBitcoinHeader:
-		prefix = _KeyBestBitcoinHeaderHash
+		prefix = Prefixes.PrefixBestBitcoinHeaderHash
 	default:
 		glog.Errorf("_prefixForChainType: Unknown ChainType %d; this should never happen", chainType)
 		return nil
@@ -2535,12 +2517,12 @@ func PutBestHash(handle *badger.DB, snap *Snapshot, bh *BlockHash, chainType Cha
 }
 
 func BlockHashToBlockKey(blockHash *BlockHash) []byte {
-	return append(append([]byte{}, _PrefixBlockHashToBlock...), blockHash[:]...)
+	return append(append([]byte{}, Prefixes.PrefixBlockHashToBlock...), blockHash[:]...)
 }
 
 func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPublicKeyBlockHashToBlockReward...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPublicKeyBlockHashToBlockReward...)
 	key := append(prefixCopy, publicKey...)
 	key = append(key, blockHash[:]...)
 	return key
@@ -2676,9 +2658,9 @@ func DbGetBlockRewardForPublicKeyBlockHash(db *badger.DB, snap *Snapshot, public
 }
 
 func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
-	prefix := append([]byte{}, _PrefixHeightHashToNodeInfo...)
+	prefix := append([]byte{}, Prefixes.PrefixHeightHashToNodeInfo...)
 	if bitcoinNodes {
-		prefix = append([]byte{}, _PrefixBitcoinHeightHashToNodeInfo...)
+		prefix = append([]byte{}, Prefixes.PrefixBitcoinHeightHashToNodeInfo...)
 	}
 
 	return prefix
@@ -3066,11 +3048,11 @@ func PkToStringTestnet(pk []byte) string {
 }
 
 func DbGetTxindexTip(handle *badger.DB, snap *Snapshot) *BlockHash {
-	return _getBlockHashForPrefix(handle, snap, _KeyTransactionIndexTip)
+	return _getBlockHashForPrefix(handle, snap, Prefixes.PrefixTransactionIndexTip)
 }
 
 func DbPutTxindexTipWithTxn(txn *badger.Txn, snap *Snapshot, tipHash *BlockHash) error {
-	return DBSetWithTxn(txn, snap, _KeyTransactionIndexTip, tipHash[:])
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixTransactionIndexTip, tipHash[:])
 }
 
 func DbPutTxindexTip(handle *badger.DB, snap *Snapshot, tipHash *BlockHash) error {
@@ -3080,11 +3062,11 @@ func DbPutTxindexTip(handle *badger.DB, snap *Snapshot, tipHash *BlockHash) erro
 }
 
 func _DbTxindexPublicKeyNextIndexPrefix(publicKey []byte) []byte {
-	return append(append([]byte{}, _PrefixPublicKeyToNextIndex...), publicKey...)
+	return append(append([]byte{}, Prefixes.PrefixPublicKeyToNextIndex...), publicKey...)
 }
 
 func DbTxindexPublicKeyPrefix(publicKey []byte) []byte {
-	return append(append([]byte{}, _PrefixPublicKeyIndexToTransactionIDs...), publicKey...)
+	return append(append([]byte{}, Prefixes.PrefixPublicKeyIndexToTransactionIDs...), publicKey...)
 }
 
 func DbTxindexPublicKeyIndexToTxnKey(publicKey []byte, index uint32) []byte {
@@ -3260,7 +3242,7 @@ func DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn,
 }
 
 func DbTxindexTxIDKey(txID *BlockHash) []byte {
-	return append(append([]byte{}, _PrefixTransactionIDToMetadata...), txID[:]...)
+	return append(append([]byte{}, Prefixes.PrefixTransactionIDToMetadata...), txID[:]...)
 }
 
 type AffectedPublicKey struct {
@@ -3457,7 +3439,7 @@ func DbGetTxindexTransactionRefByTxID(handle *badger.DB, snap *Snapshot, txID *B
 func DbPutTxindexTransactionWithTxn(txn *badger.Txn, snap *Snapshot,
 	txID *BlockHash, txnMeta *TransactionMetadata) error {
 
-	key := append(append([]byte{}, _PrefixTransactionIDToMetadata...), txID[:]...)
+	key := append(append([]byte{}, Prefixes.PrefixTransactionIDToMetadata...), txID[:]...)
 	valBuf := bytes.NewBuffer([]byte{})
 	gob.NewEncoder(valBuf).Encode(txnMeta)
 
@@ -3626,20 +3608,20 @@ func DbGetTxindexFullTransactionByTxID(txindexDBHandle *badger.DB, snap *Snapsho
 
 func _dbKeyForPostEntryHash(postHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPostHashToPostEntry...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashToPostEntry...)
 	key := append(prefixCopy, postHash[:]...)
 	return key
 }
 func _dbKeyForPublicKeyPostHash(publicKey []byte, postHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	key := append([]byte{}, _PrefixPosterPublicKeyPostHash...)
+	key := append([]byte{}, Prefixes.PrefixPosterPublicKeyPostHash...)
 	key = append(key, publicKey...)
 	key = append(key, postHash[:]...)
 	return key
 }
 func _dbKeyForPosterPublicKeyTimestampPostHash(publicKey []byte, timestampNanos uint64, postHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	key := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
+	key := append([]byte{}, Prefixes.PrefixPosterPublicKeyTimestampPostHash...)
 	key = append(key, publicKey...)
 	key = append(key, EncodeUint64(timestampNanos)...)
 	key = append(key, postHash[:]...)
@@ -3647,26 +3629,26 @@ func _dbKeyForPosterPublicKeyTimestampPostHash(publicKey []byte, timestampNanos 
 }
 func _dbKeyForTstampPostHash(tstampNanos uint64, postHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	key := append([]byte{}, _PrefixTstampNanosPostHash...)
+	key := append([]byte{}, Prefixes.PrefixTstampNanosPostHash...)
 	key = append(key, EncodeUint64(tstampNanos)...)
 	key = append(key, postHash[:]...)
 	return key
 }
 func _dbKeyForCreatorBpsPostHash(creatorBps uint64, postHash *BlockHash) []byte {
-	key := append([]byte{}, _PrefixCreatorBpsPostHash...)
+	key := append([]byte{}, Prefixes.PrefixCreatorBpsPostHash...)
 	key = append(key, EncodeUint64(creatorBps)...)
 	key = append(key, postHash[:]...)
 	return key
 }
 func _dbKeyForStakeMultipleBpsPostHash(stakeMultipleBps uint64, postHash *BlockHash) []byte {
-	key := append([]byte{}, _PrefixMultipleBpsPostHash...)
+	key := append([]byte{}, Prefixes.PrefixMultipleBpsPostHash...)
 	key = append(key, EncodeUint64(stakeMultipleBps)...)
 	key = append(key, postHash[:]...)
 	return key
 }
 func _dbKeyForCommentParentStakeIDToPostHash(
 	stakeID []byte, tstampNanos uint64, postHash *BlockHash) []byte {
-	key := append([]byte{}, _PrefixCommentParentStakeIDToPostHash...)
+	key := append([]byte{}, Prefixes.PrefixCommentParentStakeIDToPostHash...)
 	key = append(key, stakeID[:]...)
 	key = append(key, EncodeUint64(tstampNanos)...)
 	key = append(key, postHash[:]...)
@@ -3902,7 +3884,7 @@ func DBGetAllPostsAndCommentsForPublicKeyOrderedByTimestamp(handle *badger.DB,
 	tstampsFetched := []uint64{}
 	postAndCommentHashesFetched := []*BlockHash{}
 	postAndCommentEntriesFetched := []*PostEntry{}
-	dbPrefixx := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
+	dbPrefixx := append([]byte{}, Prefixes.PrefixPosterPublicKeyTimestampPostHash...)
 	dbPrefixx = append(dbPrefixx, publicKey...)
 
 	err := handle.View(func(txn *badger.Txn) error {
@@ -3982,7 +3964,7 @@ func DBGetAllPostsByTstamp(handle *badger.DB, snap *Snapshot, fetchEntries bool)
 	tstampsFetched := []uint64{}
 	postHashesFetched := []*BlockHash{}
 	postEntriesFetched := []*PostEntry{}
-	dbPrefixx := append([]byte{}, _PrefixTstampNanosPostHash...)
+	dbPrefixx := append([]byte{}, Prefixes.PrefixTstampNanosPostHash...)
 
 	err := handle.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
@@ -4055,7 +4037,7 @@ func DBGetCommentPostHashesForParentStakeID(
 	tstampsFetched := []uint64{}
 	commentPostHashes := []*BlockHash{}
 	commentEntriesFetched := []*PostEntry{}
-	dbPrefixx := append([]byte{}, _PrefixCommentParentStakeIDToPostHash...)
+	dbPrefixx := append([]byte{}, Prefixes.PrefixCommentParentStakeIDToPostHash...)
 	dbPrefixx = append(dbPrefixx, stakeIDXXX...)
 
 	err := handle.View(func(txn *badger.Txn) error {
@@ -4122,14 +4104,14 @@ func DBGetCommentPostHashesForParentStakeID(
 // =======================================================================================
 func _dbKeyForNFTPostHashSerialNumber(nftPostHash *BlockHash, serialNumber uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToNFTEntry...)
 	key := append(prefixCopy, nftPostHash[:]...)
 	key = append(key, EncodeUint64(serialNumber)...)
 	return key
 }
 
 func _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(pkid *PKID, isForSale bool, bidAmountNanos uint64, nftPostHash *BlockHash, serialNumber uint64) []byte {
-	prefixCopy := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	key := append(prefixCopy, pkid[:]...)
 	key = append(key, BoolToByte(isForSale))
 	key = append(key, EncodeUint64(bidAmountNanos)...)
@@ -4228,7 +4210,7 @@ func DBPutNFTEntryMappings(handle *badger.DB, snap *Snapshot, nftEntry *NFTEntry
 // DBGetNFTEntriesForPostHash gets NFT Entries *from the DB*. Does not include mempool txns.
 func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nftEntries []*NFTEntry) {
 	nftEntries := []*NFTEntry{}
-	prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
+	prefix := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, nftPostHash[:]...)
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
@@ -4273,7 +4255,7 @@ func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, snap *Snapshot, ownerPKID
 // DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
 func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
 	var nftEntries []*NFTEntry
-	prefix := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
+	prefix := append([]byte{}, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
@@ -4322,7 +4304,7 @@ func DecodeAcceptedNFTBidEntries(data []byte) *[]*NFTBidEntry {
 }
 
 func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
-	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberToAcceptedBidEntries...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToAcceptedBidEntries...)
 	key := append(prefixCopy, nftPostHash[:]...)
 	key = append(key, EncodeUint64(serialNumber)...)
 	return key
@@ -4406,7 +4388,7 @@ func DBDeleteAcceptedNFTBidMappings(handle *badger.DB, snap *Snapshot,
 
 func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *NFTBidEntry) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID...)
 	key := append(prefixCopy, bidEntry.NFTPostHash[:]...)
 	key = append(key, EncodeUint64(bidEntry.SerialNumber)...)
 	key = append(key, EncodeUint64(bidEntry.BidAmountNanos)...)
@@ -4417,7 +4399,7 @@ func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *NFTBidEntry) [
 func _dbKeyForNFTBidderPKIDPostHashSerialNumber(
 	bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
 	key := append(prefixCopy, bidderPKID[:]...)
 	key = append(key, nftPostHash[:]...)
 	key = append(key, EncodeUint64(serialNumber)...)
@@ -4426,7 +4408,7 @@ func _dbKeyForNFTBidderPKIDPostHashSerialNumber(
 
 func _dbSeekKeyForNFTBids(nftHash *BlockHash, serialNumber uint64) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID...)
 	key := append(prefixCopy, nftHash[:]...)
 	key = append(key, EncodeUint64(serialNumber)...)
 	return key
@@ -4530,7 +4512,7 @@ func DBPutNFTBidEntryMappings(handle *badger.DB, snap *Snapshot, nftEntry *NFTBi
 func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntries []*NFTBidEntry) {
 	nftBidEntries := []*NFTBidEntry{}
 	{
-		prefix := append([]byte{}, _PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
+		prefix := append([]byte{}, Prefixes.PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
 		keyPrefix := append(prefix, bidderPKID[:]...)
 		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix)
 		bidderPKIDLength := len(bidderPKID[:])
@@ -4566,7 +4548,7 @@ func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber 
 ) (_nftBidEntries []*NFTBidEntry) {
 	nftBidEntries := []*NFTBidEntry{}
 	{
-		prefix := append([]byte{}, _PrefixPostHashSerialNumberBidNanosBidderPKID...)
+		prefix := append([]byte{}, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID...)
 		keyPrefix := append(prefix, nftPostHash[:]...)
 		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
 		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix)
@@ -4655,13 +4637,13 @@ func DBGetNFTBidEntriesPaginated(
 
 // ======================================================================================
 // Authorize derived key functions
-//  	<prefix, owner pub key [33]byte, derived pub key [33]byte> -> <DerivedKeyEntry>
+//  	<prefix_id, owner pub key [33]byte, derived pub key [33]byte> -> <DerivedKeyEntry>
 // ======================================================================================
 
 func _dbKeyForOwnerToDerivedKeyMapping(
 	ownerPublicKey PublicKey, derivedPublicKey PublicKey) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixAuthorizeDerivedKey...)
 	key := append(prefixCopy, ownerPublicKey[:]...)
 	key = append(key, derivedPublicKey[:]...)
 	return key
@@ -4670,7 +4652,7 @@ func _dbKeyForOwnerToDerivedKeyMapping(
 func _dbSeekPrefixForDerivedKeyMappings(
 	ownerPublicKey PublicKey) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixAuthorizeDerivedKey...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixAuthorizeDerivedKey...)
 	key := append(prefixCopy, ownerPublicKey[:]...)
 	return key
 }
@@ -4776,13 +4758,13 @@ func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicK
 // Profile code
 // ======================================================================================
 func _dbKeyForPKIDToProfileEntry(pkid *PKID) []byte {
-	prefixCopy := append([]byte{}, _PrefixPKIDToProfileEntry...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPKIDToProfileEntry...)
 	key := append(prefixCopy, pkid[:]...)
 	return key
 }
 func _dbKeyForProfileUsernameToPKID(nonLowercaseUsername []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	key := append([]byte{}, _PrefixProfileUsernameToPKID...)
+	key := append([]byte{}, Prefixes.PrefixProfileUsernameToPKID...)
 	// Always lowercase the username when we use it as a key in our db. This allows
 	// us to check uniqueness in a case-insensitive way.
 	lowercaseUsername := []byte(strings.ToLower(string(nonLowercaseUsername)))
@@ -4792,14 +4774,14 @@ func _dbKeyForProfileUsernameToPKID(nonLowercaseUsername []byte) []byte {
 
 // This is the key we use to sort profiles by their amount of DeSo locked
 func _dbKeyForCreatorDeSoLockedNanosCreatorPKID(desoLockedNanos uint64, pkid *PKID) []byte {
-	key := append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
+	key := append([]byte{}, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID...)
 	key = append(key, EncodeUint64(desoLockedNanos)...)
 	key = append(key, pkid[:]...)
 	return key
 }
 
 func DbPrefixForCreatorDeSoLockedNanosCreatorPKID() []byte {
-	return append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
+	return append([]byte{}, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID...)
 }
 
 func DBGetPKIDForUsernameWithTxn(txn *badger.Txn,
@@ -4953,7 +4935,7 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, snap *Snapshot, fetchEntries
 	lockedDeSoNanosFetched := []uint64{}
 	profilePublicKeysFetched := []*PKID{}
 	profileEntriesFetched := []*ProfileEntry{}
-	dbPrefixx := append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
+	dbPrefixx := append([]byte{}, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID...)
 
 	err := handle.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
@@ -5020,13 +5002,13 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, snap *Snapshot, fetchEntries
 // Creator coin balance entry code
 // =====================================================================================
 func _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID *PKID, creatorPKID *PKID) []byte {
-	key := append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
+	key := append([]byte{}, Prefixes.PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
 	key = append(key, hodlerPKID[:]...)
 	key = append(key, creatorPKID[:]...)
 	return key
 }
 func _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID *PKID, hodlerPKID *PKID) []byte {
-	key := append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
+	key := append([]byte{}, Prefixes.PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
 	key = append(key, creatorPKID[:]...)
 	key = append(key, hodlerPKID[:]...)
 	return key
@@ -5190,7 +5172,7 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances
 	// Get the balance entries for the coins that *you hold*
 	balanceEntriesYouHodl := []*BalanceEntry{}
 	{
-		prefix := append([]byte{}, _PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
+		prefix := append([]byte{}, Prefixes.PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
 		keyPrefix := append(prefix, pkid[:]...)
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
@@ -5211,7 +5193,7 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalan
 	// Get the balance entries for the coins that *hold you*
 	balanceEntriesThatHodlYou := []*BalanceEntry{}
 	{
-		prefix := append([]byte{}, _PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
+		prefix := append([]byte{}, Prefixes.PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
 		keyPrefix := append(prefix, pkid[:]...)
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
@@ -5238,7 +5220,7 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalan
 // validForPrefix helps determine when the iteration should stop. The iteration
 // stops at the last entry that has this prefix. Setting it to
 // an empty byte string would cause the iteration to seek to the beginning of the db,
-// whereas setting it to one of the _Prefix bytes would cause the iteration to stop
+// whereas setting it to one of the Prefix bytes would cause the iteration to stop
 // at the last entry with that prefix.
 //
 // maxKeyLen is required so we can pad the key with FF in the case the user wants
@@ -5340,7 +5322,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	_postHashes []*BlockHash, _tstampNanos []uint64, _postEntries []*PostEntry,
 	_err error) {
 
-	startPostPrefix := append([]byte{}, _PrefixTstampNanosPostHash...)
+	startPostPrefix := append([]byte{}, Prefixes.PrefixTstampNanosPostHash...)
 
 	if startPostTimestampNanos > 0 {
 		startTstampBytes := EncodeUint64(startPostTimestampNanos)
@@ -5354,8 +5336,8 @@ func DBGetPaginatedPostsOrderedByTime(
 	// We fetch in reverse to get the latest posts.
 	maxUint64Tstamp := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
-		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
-		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
+		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
+		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
 		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
@@ -5364,8 +5346,8 @@ func DBGetPaginatedPostsOrderedByTime(
 	// Cut the post hashes and timestamps out of the returned keys.
 	postHashes := []*BlockHash{}
 	tstamps := []uint64{}
-	startTstampIndex := len(_PrefixTstampNanosPostHash)
-	hashStartIndex := len(_PrefixTstampNanosPostHash) + len(maxUint64Tstamp)
+	startTstampIndex := len(Prefixes.PrefixTstampNanosPostHash)
+	hashStartIndex := len(Prefixes.PrefixTstampNanosPostHash) + len(maxUint64Tstamp)
 	hashEndIndex := hashStartIndex + HashSizeBytes
 	for _, postKeyBytes := range postIndexKeys {
 		currentPostHash := &BlockHash{}
@@ -5396,7 +5378,7 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(db *badger.DB,
 	snap *Snapshot, usernamePrefix string, utxoView *UtxoView) (
 	_profileEntries []*ProfileEntry, _err error) {
 
-	startPrefix := append([]byte{}, _PrefixProfileUsernameToPKID...)
+	startPrefix := append([]byte{}, Prefixes.PrefixProfileUsernameToPKID...)
 	lowercaseUsernamePrefixString := strings.ToLower(usernamePrefix)
 	lowercaseUsernamePrefix := []byte(lowercaseUsernamePrefixString)
 	startPrefix = append(startPrefix, lowercaseUsernamePrefix...)
@@ -5463,7 +5445,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	// Convert the start public key to a PKID.
 	pkidEntry := DBGetPKIDEntryForPublicKey(db, snap, startProfilePubKeyy)
 
-	startProfilePrefix := append([]byte{}, _PrefixCreatorDeSoLockedNanosCreatorPKID...)
+	startProfilePrefix := append([]byte{}, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID...)
 	var startDeSoLockedBytes []byte
 	if pkidEntry != nil {
 		startDeSoLockedBytes = EncodeUint64(startDeSoLockedNanos)
@@ -5476,10 +5458,10 @@ func DBGetPaginatedProfilesByDeSoLocked(
 		startProfilePrefix = append(startProfilePrefix, startDeSoLockedBytes...)
 	}
 
-	keyLen := len(_PrefixCreatorDeSoLockedNanosCreatorPKID) + len(startDeSoLockedBytes) + btcec.PubKeyBytesLenCompressed
+	keyLen := len(Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID) + len(startDeSoLockedBytes) + btcec.PubKeyBytesLenCompressed
 	// We fetch in reverse to get the profiles with the most DeSo locked.
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
-		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
+		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
 		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
@@ -5488,7 +5470,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 
 	// Cut the pkids out of the returned keys.
 	profilePKIDs := [][]byte{}
-	startPKIDIndex := len(_PrefixCreatorDeSoLockedNanosCreatorPKID) + len(startDeSoLockedBytes)
+	startPKIDIndex := len(Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID) + len(startDeSoLockedBytes)
 	endPKIDIndex := startPKIDIndex + btcec.PubKeyBytesLenCompressed
 	for _, profileKeyBytes := range profileIndexKeys {
 		currentPKID := make([]byte, btcec.PubKeyBytesLenCompressed)
@@ -5526,12 +5508,12 @@ func DBGetPaginatedProfilesByDeSoLocked(
 
 // -------------------------------------------------------------------------------------
 // Mempool Txn mapping funcions
-// <prefix, txn hash BlockHash> -> <*MsgDeSoTxn>
+// <prefix_id, txn hash BlockHash> -> <*MsgDeSoTxn>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMempoolTxn(mempoolTx *MempoolTx) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, _PrefixMempoolTxnHashToMsgDeSoTxn...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn...)
 	timeAddedBytes := EncodeUint64(uint64(mempoolTx.Added.UnixNano()))
 	key := append(prefixCopy, timeAddedBytes...)
 	key = append(key, mempoolTx.Hash[:]...)
@@ -5586,7 +5568,7 @@ func DbGetMempoolTxn(db *badger.DB, snap *Snapshot, mempoolTx *MempoolTx) *MsgDe
 }
 
 func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*MsgDeSoTxn, _error error) {
-	_, valuesFound := _enumerateKeysForPrefix(handle, _PrefixMempoolTxnHashToMsgDeSoTxn)
+	_, valuesFound := _enumerateKeysForPrefix(handle, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn)
 
 	mempoolTxns := []*MsgDeSoTxn{}
 	for _, mempoolTxnBytes := range valuesFound {
@@ -5605,7 +5587,7 @@ func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*Ms
 }
 
 func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn, snap *Snapshot) error {
-	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, _PrefixMempoolTxnHashToMsgDeSoTxn)
+	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn)
 	if err != nil {
 		return errors.Wrapf(err, "DbDeleteAllMempoolTxnsWithTxn: ")
 	}

@@ -52,6 +52,7 @@ type SyncPrefixProgress struct {
 
 type SyncProgress struct {
 	PrefixProgress []SyncPrefixProgress
+	Completed bool
 }
 
 // Server is the core of the DeSo node. It effectively runs a single-threaded
@@ -516,7 +517,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 	// If peer isn't assigned to any prefix, we will assign him now.
 	if lastDBEntry.IsEmpty() {
 		// We will assign the peer to a non-existing prefix.
-		for _, prefix = range StatePrefixes {
+		for _, prefix = range StatePrefixes.StatePrefixesList {
 			exists := false
 			for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
 				if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
@@ -691,30 +692,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				"height %v from peer %v", srv.blockchain.blockTip().Header.Height+1, pp)
 			if srv.cmgr.hyperSync && !srv.blockchain.finishedSyncing {
 				srv.blockchain.syncingState = true
-				//err := srv.blockchain.db.Update(func(txn *badger.Txn) error {
-				//	opts := badger.DefaultIteratorOptions
-				//	opts.PrefetchValues = false
-				//	it := txn.NewIterator(opts)
-				//	for _, prefix := range StatePrefixes {
-				//		numDeleted := 0
-				//		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-				//			key := it.Item().Key()
-				//			err := txn.Delete(key)
-				//			if err != nil {
-				//				glog.Errorf("Server._handleHeaderBundle: Problem deleting key (%v)", key)
-				//				return err
-				//			}
-				//			numDeleted ++
-				//		}
-				//		glog.Infof("Server._handleHeaderBundle: Deleted prefix (%v); total deleted (%v)", prefix, numDeleted)
-				//	}
-				//	it.Close()
-				//	return nil
-				//})
-				//if err != nil {
-				//	glog.Errorf("Server._handleHeaderBundle: Problem deleting prefixes error (%v)", err)
-				//}
-				for _, prefix := range StatePrefixes {
+				for _, prefix := range StatePrefixes.StatePrefixesList {
 					entries, _, _ := DBIteratePrefixKeys(srv.blockchain.db, prefix, prefix, uint32(8<<20))
 					glog.V(1).Infof("Server._handleHeaderBundle: Deleting prefix: (%v) with total of (%v) " +
 						"entries", prefix, len(entries))
@@ -728,6 +706,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 						return nil
 					})
 				}
+				srv.blockchain.snapshot.Checksum.Initialize()
 				pp.timeElapsed = 0.0
 				pp.currentTime = time.Now()
 				glog.Infof("Server._handleHeaderBundle: Started Peer timer with total elapsed (%v) and current time (%v)",
@@ -847,11 +826,11 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	}
 
 	// TODO: Any restrictions on how many snapshots a peer can request?
-	dbEntries, full, _ := srv.blockchain.snapshot.GetMostRecentSnapshot(srv.blockchain.db, msg.Prefix, msg.SnapshotStartEntry.Key)
+	dbEntries, full, _ := srv.blockchain.snapshot.GetSnapshotChunk(srv.blockchain.db, msg.Prefix, msg.SnapshotStartEntry.Key)
 	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
 		SnapshotHeight: srv.blockchain.snapshot.BlockHeight,
 		SnapshotChecksum: srv.blockchain.snapshot.Checksum.ToHashString(),
-		SnapshotData: dbEntries,
+		SnapshotChunk: dbEntries,
 		SnapshotFullPrefix: full,
 		Prefix: msg.Prefix,
 	}, false)
@@ -862,51 +841,34 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 		pp.timeElapsed, pp.currentTime)
 
 
-	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotData message to peer (%v) " +
+	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) " +
 		"with SnapshotHeight (%v) and SnapshotChecksum (%v) and Snapshotdata length (%v)", pp,
 		srv.blockchain.snapshot.BlockHeight, srv.blockchain.snapshot.Checksum.ToHashString(), len(dbEntries))
 }
 
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: " +
-		"%v) from Peer %v", msg.SnapshotData[0].Key, msg.SnapshotData[len(msg.SnapshotData)-1].Key,
-		len(msg.SnapshotData), pp)
+		"%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
+		len(msg.SnapshotChunk), pp)
 
 	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
 	pp.currentTime = time.Now()
 	glog.Infof("Server._handleSnapshot: Got into _handleSnapshot with total elapsed (%v) and current time (%v) " +
-		"SnapshotFullPrefix (%v)", msg.SnapshotFullPrefix,
-		pp.timeElapsed, pp.currentTime)
+		"SnapshotFullPrefix (%v)", msg.SnapshotFullPrefix, pp.timeElapsed, pp.currentTime)
 
 	// Process the DBEntries from the msg
-	err := srv.blockchain.db.Update(func(txn *badger.Txn) error {
-		pp.timeElapsed += time.Since(pp.currentTime).Seconds()
-		pp.currentTime = time.Now()
-		glog.Infof("Server._handleSnapshot: started an update transaction with total elapsed (%v) and current time (%v)",
-        		pp.timeElapsed, pp.currentTime)
-		for _, dbEntry := range msg.SnapshotData {
-			if dbEntry.IsEmpty() {
-				glog.Infof("Server._handleSnapshot: db entry is empty for prefix (%v)", msg.Prefix)
-				break
-			}
-			err := txn.Set(dbEntry.Key, dbEntry.Value)
-			if err != nil {
-				return err
-			}
-    	}
-		return nil
-	})
+	err := srv.blockchain.snapshot.SetSnapshotChunk(srv.blockchain.db, msg.SnapshotChunk)
+	if err != nil {
+		glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
+	}
+	glog.Infof("Server._handleSnapshot: Current checksum (%v)", srv.blockchain.snapshot.Checksum.ToHashString())
 
 	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
 	pp.currentTime = time.Now()
 	glog.Infof("Server._handleSnapshot: _handleSnapshot finished setting to db with total elapsed (%v) and current time (%v)",
 		pp.timeElapsed, pp.currentTime)
 
-	if err != nil {
-		glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
-	}
-
-	lastDbEntry := msg.SnapshotData[len(msg.SnapshotData)-1]
+	lastDbEntry := msg.SnapshotChunk[len(msg.SnapshotChunk)-1]
 	added := false
 	for ii:=0; ii<len(srv.HyperSyncProgress.PrefixProgress); ii++ {
 		if reflect.DeepEqual(srv.HyperSyncProgress.PrefixProgress[ii].Prefix, msg.Prefix) {
@@ -926,17 +888,17 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	pp.currentTime = time.Now()
 	glog.Infof("Server._handleSnapshot: Added the snapshot bundle into DB with with total elapsed (%v) and current time (%v)",
 			pp.timeElapsed, pp.currentTime)
-	for _, statePrefix := range StatePrefixes {
+	for _, prefix := range StatePrefixes.StatePrefixesList {
 		completed := false
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
-			if reflect.DeepEqual(statePrefix, prefixProgress.Prefix) {
+			if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
 				completed = prefixProgress.Completed
-				glog.Infof("Server._handleSnapshot: prefix (%v), completed (%v)", statePrefix, completed)
+				glog.Infof("Server._handleSnapshot: prefix (%v), completed (%v)", prefix, completed)
 				break
 			}
 		}
 		if !completed {
-			glog.Infof("srv._handleSnapshot: Prefix (%v) not completed, calling GetSnapshot", statePrefix)
+			glog.Infof("srv._handleSnapshot: Prefix (%v) not completed, calling GetSnapshot", prefix)
 			srv.GetSnapshot(pp)
 			return
 		}

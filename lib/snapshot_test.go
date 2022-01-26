@@ -121,6 +121,25 @@ func (msg *enhancedHeader) ToBytes(preSignature bool) ([]byte, error) {
 	return retBytes, nil
 }
 
+
+func TestTypes(t *testing.T) {
+	r := Prefixes
+	fmt.Println(r)
+
+	fmt.Println(Prefixes.PrefixBlockHashToBlock)
+    v := reflect.ValueOf(*r)
+	fmt.Println("ITERATING OVER ALL FIELDS")
+    for i := 0; i < v.NumField(); i++ {
+		fmt.Println("PREFIX:", v.Field(i).Interface())
+    }
+
+	//for i := 0; i < v.NumField(); i++ {
+	//	if v.Field(i).Interface().(PrefixType).IsState() {
+	//		fmt.Println("STATE PREFIX:", v.Field(i).Interface())
+	//	}
+	//}
+}
+
 func TestFromBytes(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -505,7 +524,7 @@ func TestStateChecksumBirthdayParadox(t *testing.T) {
 	z.Initialize()
 
 	iterationNumber := 1
-	testNumber := 1000000
+	testNumber := 1000
 
 	// We will test adding / removing a bunch of data to the state checksum and verify
 	// that the final checksum is identical regardless of the order of operation.

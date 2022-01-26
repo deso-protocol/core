@@ -551,10 +551,10 @@ func (snap *Snapshot) IncrementSemaphore() {
 	atomic.AddInt32(&snap.DBWriteSemaphore, 1)
 }
 
-// GetMostRecentSnapshot gets fetches a batch of records from the nodes DB that match the provided prefix
+// GetSnapshotChunk gets fetches a batch of records from the nodes DB that match the provided prefix
 // and have a key at least equal to the startKey lexicographically. The function will also fetch ancestral
 // records and combine them with the DB records so that the batch reflects an ancestral block.
-func (snap *Snapshot) GetMostRecentSnapshot(mainDb *badger.DB, prefix []byte, startKey []byte) (
+func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKey []byte) (
 	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _err error) {
 	// This the list of fetched DB entries.
 	var snapshotEntriesBatch []*DBEntry
@@ -562,13 +562,13 @@ func (snap *Snapshot) GetMostRecentSnapshot(mainDb *badger.DB, prefix []byte, st
 	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
 	mainDbBatchEntries, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, snap.BatchSize)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "Snapshot.GetMostRecentSnapshot: Problem fetching main Db records: ")
+		return nil, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
 	ancestralDbBatchEntries, ancestralDbFilled, err := DBIteratePrefixKeys(snap.Db,
 		snap.GetSeekPrefix(prefix), snap.GetSeekPrefix(startKey), snap.BatchSize)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "Snapshot.GetMostRecentSnapshot: Problem fetching main Db records: ")
+		return nil, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 
 	// To combine the main DB entries and the ancestral records DB entries, we iterate through the ancestral records and
@@ -619,4 +619,30 @@ func (snap *Snapshot) GetMostRecentSnapshot(mainDb *badger.DB, prefix []byte, st
 
 	// If either of the chunks is full, we should return true.
 	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, nil
+}
+
+func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) error {
+	return mainDb.Update(func(txn *badger.Txn) error {
+		for _, dbEntry := range chunk {
+			if dbEntry.IsEmpty() {
+				glog.Infof("Server._handleSnapshot: received an empty DBEntry")
+				break
+			}
+			// TODO: This check is important, should be re-implemented.
+			_, err := txn.Get(dbEntry.Key)
+			if err == nil {
+				continue
+			}
+			if err != nil && err != badger.ErrKeyNotFound {
+				return err
+			}
+
+			err = txn.Set(dbEntry.Key, dbEntry.Value)
+			if err != nil {
+				return err
+			}
+			snap.Checksum.AddBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value))
+		}
+		return nil
+	})
 }
