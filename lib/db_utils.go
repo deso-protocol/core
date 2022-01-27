@@ -358,7 +358,9 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
-		snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue))
+		if getError == nil {
+			snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue))
+		}
 		// We also add the new record to the checksum.
 		snap.Checksum.AddBytes(EncodeKeyValue(key, value))
 	}

@@ -1,12 +1,16 @@
 package lib
 
 import (
-	"encoding/binary"
+	"crypto"
+"crypto/sha512"
+"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"github.com/NVIDIA/sortedmap"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/cloudflare/circl/group"
+	r255 "github.com/bwesterb/go-ristretto"
+"github.com/bwesterb/go-ristretto/edwards25519"
+"github.com/cloudflare/circl/group"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/oleiade/lane"
@@ -515,6 +519,182 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	z.RemoveBytes(bytesC)
 	require.Equal(z.Checksum.IsEqual(identity), true)
 }
+
+type ristrettoElement struct {
+	p r255.Point
+}
+
+func (g ristrettoElement)MarshalBinary() (data []byte, err error) {
+	panic("implement me")
+}
+
+func (g ristrettoElement)UnmarshalBinary(data []byte) error {
+	panic("implement me")
+}
+
+func (g ristrettoElement) IsIdentity() bool {return false}
+func (g ristrettoElement) IsEqual(group.Element) bool {return false}
+func (g ristrettoElement) Add(group.Element, group.Element) group.Element {return ristrettoElement{}}
+func (g ristrettoElement) Dbl(group.Element) group.Element {return ristrettoElement{}}
+func (g ristrettoElement) Neg(group.Element) group.Element {return ristrettoElement{}}
+func (g ristrettoElement) Mul(group.Element, group.Scalar) group.Element {return ristrettoElement{}}
+func (g ristrettoElement) MulGen(group.Scalar) group.Element {return ristrettoElement{}}
+func (g ristrettoElement) MarshalBinaryCompress() ([]byte, error) {return nil, nil}
+
+
+func TestFasterHashToCurve(t *testing.T) {
+	//p1 := group.Ristretto255.Identity()
+	//p2 := group.Ristretto255.Identity()
+	bytes1 := []byte("random byte string")
+	//bytes2 := []byte("random byte string2")
+	dst := []byte("random-dst")
+
+	xmd := group.NewExpanderMD(crypto.SHA512, dst)
+	data := xmd.Expand(bytes1, 64)
+	var point r255.Point
+	point.SetZero()
+	var ptBuf [32]byte
+	h := sha512.Sum512(data)
+	copy(ptBuf[:], h[:32])
+	//return point.SetElligator(&ptBuf)
+	var fe edwards25519.FieldElement
+	var cp edwards25519.CompletedPoint
+	fe.SetBytes(&ptBuf)
+	jp := customElligator2(&fe)
+	cp.SetJacobiQuartic(jp)
+	(*edwards25519.ExtendedPoint)(&point).SetCompleted(&cp)
+	fmt.Println(point.MarshalBinary())
+
+	elem := group.Ristretto255.HashToElement(bytes1, dst)
+	fmt.Println(elem.MarshalBinaryCompress())
+}
+
+var (
+	// sqrt(-1)
+	feI = edwards25519.FieldElement{
+		1718705420411056, 234908883556509, 2233514472574048,
+		2117202627021982, 765476049583133,
+	}
+
+	// parameter d of Edwards25519
+	feD = edwards25519.FieldElement{
+		929955233495203, 466365720129213, 1662059464998953,
+		2033849074728123, 1442794654840575,
+	}
+
+	feOne = edwards25519.FieldElement{1, 0, 0, 0, 0}
+
+	// 1 - d^2
+	feOneMinusDSquared = edwards25519.FieldElement{
+		1136626929484150, 1998550399581263, 496427632559748,
+		118527312129759, 45110755273534,
+	}
+
+	// (d-1)^2
+	feDMinusOneSquared = edwards25519.FieldElement{
+		1507062230895904, 1572317787530805, 683053064812840,
+		317374165784489, 1572899562415810,
+	}
+
+	feMinusOne = edwards25519.FieldElement{2251799813685228, 2251799813685247,
+		2251799813685247, 2251799813685247, 2251799813685247}
+)
+
+// Returns 1 if b == c and 0 otherwise.  Assumes 0 <= b, c < 2^30.
+func equal30(b, c int32) int32 {
+	x := uint32(b ^ c)
+	x--
+	return int32(x >> 31)
+}
+
+// Sets fe to a + b without normalizing.  Returns fe.
+func add(a, b, fe *edwards25519.FieldElement) {
+	fe[0] = a[0] + b[0]
+	fe[1] = a[1] + b[1]
+	fe[2] = a[2] + b[2]
+	fe[3] = a[3] + b[3]
+	fe[4] = a[4] + b[4]
+}
+
+// Sets fe to a-b. Returns fe.
+func sub(a, b, fe *edwards25519.FieldElement) {
+	var t edwards25519.FieldElement
+	t = *b
+
+	t[1] += t[0] >> 51
+	t[0] = t[0] & 0x7ffffffffffff
+	t[2] += t[1] >> 51
+	t[1] = t[1] & 0x7ffffffffffff
+	t[3] += t[2] >> 51
+	t[2] = t[2] & 0x7ffffffffffff
+	t[4] += t[3] >> 51
+	t[3] = t[3] & 0x7ffffffffffff
+	t[0] += (t[4] >> 51) * 19
+	t[4] = t[4] & 0x7ffffffffffff
+
+	fe[0] = (a[0] + 0xfffffffffffda) - t[0]
+	fe[1] = (a[1] + 0xffffffffffffe) - t[1]
+	fe[2] = (a[2] + 0xffffffffffffe) - t[2]
+	fe[3] = (a[3] + 0xffffffffffffe) - t[3]
+	fe[4] = (a[4] + 0xffffffffffffe) - t[4]
+
+}
+
+func customElligator2(r0 *edwards25519.FieldElement) *edwards25519.JacobiPoint {
+	var r, rPlusD, rPlusOne, D, N, ND, sqrt, twiddle, sgn edwards25519.FieldElement
+	var rSubOne, r0i, sNeg edwards25519.FieldElement
+	var jc edwards25519.JacobiPoint
+
+	var b int32
+
+	// r := i * r0^2
+	r0i.Mul(r0, &feI)
+	r.Mul(r0, &r0i)
+
+	// D := -((d*r)+1) * (r + d)
+	add(&feD, &r, &rPlusD)
+	D.Mul(&feD, &r)
+	add(&D, &feOne, &D)
+	D.Mul(&D, &rPlusD)
+	D.Neg(&D)
+
+	// N := -(d^2 - 1)(r + 1)
+	add(&r, &feOne, &rPlusOne)
+	N.Mul(&feOneMinusDSquared, &rPlusOne)
+
+	// sqrt is the inverse square root of N*D or of i*N*D.
+	// b=1 iff n1 is square.
+	ND.Mul(&N, &D)
+
+	// TODO: FIX THIS GUUY
+	b = sqrt.InvSqrtI(&ND)
+
+
+	sqrt.Abs(&sqrt)
+
+	twiddle.SetOne()
+	twiddle.ConditionalSet(&r0i, 1-b)
+	sgn.SetOne()
+	sgn.ConditionalSet(&feMinusOne, 1-b)
+	sqrt.Mul(&sqrt, &twiddle)
+
+	// s = N * sqrt * twiddle
+	jc.S.Mul(&sqrt, &N)
+
+	// t = -sgn * sqrt * s * (r-1) * (d-1)^2 - 1
+	jc.T.Neg(&sgn)
+	jc.T.Mul(&sqrt, &jc.T)
+	jc.T.Mul(&jc.S, &jc.T)
+	jc.T.Mul(&feDMinusOneSquared, &jc.T)
+	sub(&r, &feOne, &rSubOne)
+	jc.T.Mul(&rSubOne, &jc.T)
+	sub(&jc.T, &feOne, &jc.T)
+
+	sNeg.Neg(&jc.S)
+	jc.S.ConditionalSet(&sNeg, equal30(jc.S.IsNegativeI(), b))
+	return &jc
+}
+
 
 func TestStateChecksumBirthdayParadox(t *testing.T) {
 	require := require.New(t)
