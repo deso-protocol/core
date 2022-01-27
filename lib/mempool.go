@@ -26,7 +26,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// mempool.go contains all of the mempool logic for the DeSo node.
+// Mempool.go contains all of the Mempool logic for the DeSo node.
 
 const (
 	// MaxTotalTransactionSizeBytes is the maximum number of bytes the pool can store
@@ -56,7 +56,7 @@ var (
 	ReadOnlyUtxoViewRegenerationIntervalTxns    = int64(1000)
 
 	// LowFeeTxLimitBytesPerTenMinutes defines the number of bytes per 10 minutes of "low fee"
-	// transactions the mempool will tolerate before it starts rejecting transactions
+	// transactions the Mempool will tolerate before it starts rejecting transactions
 	// that fail to meet the MinTxFeePerKBNanos threshold.
 	LowFeeTxLimitBytesPerTenMinutes = 150000 // Allow 150KB per minute in low-fee txns.
 )
@@ -93,12 +93,12 @@ type MempoolTx struct {
 	index int
 }
 
-// Summary stats for a set of transactions of a specific type in the mempool.
+// Summary stats for a set of transactions of a specific type in the Mempool.
 type SummaryStats struct {
-	// Number of transactions of this type in the mempool.
+	// Number of transactions of this type in the Mempool.
 	Count uint32
 
-	// Number of bytes for transactions of this type in the mempool.
+	// Number of bytes for transactions of this type in the Mempool.
 	TotalBytes uint64
 }
 
@@ -148,10 +148,10 @@ type UnconnectedTx struct {
 	expiration time.Time
 }
 
-// DeSoMempool is the core mempool object. It's what any outside service should use
+// DeSoMempool is the core Mempool object. It's what any outside service should use
 // to aggregate transactions and mine them into blocks.
 type DeSoMempool struct {
-	// Stops the mempool's services.
+	// Stops the Mempool's services.
 	quit chan struct{}
 
 	// A reference to a blockchain object that can be used to validate transactions before
@@ -164,7 +164,7 @@ type DeSoMempool struct {
 	// rateLimitFeeRateNanosPerKB defines the minimum transaction feerate in "nanos per KB"
 	// before a transaction is considered for rate-limiting. Note that even if a
 	// transaction with a feerate below this threshold is not rate-limited, it must
-	// still have a high enough feerate to be considered as part of the mempool.
+	// still have a high enough feerate to be considered as part of the Mempool.
 	rateLimitFeeRateNanosPerKB uint64
 
 	mtx deadlock.RWMutex
@@ -198,7 +198,7 @@ type DeSoMempool struct {
 	lastLowFeeTxUnixTime int64
 
 	// pubKeyToTxnMap stores a mapping from the public key of outputs added
-	// to the mempool to the corresponding transaction that resulted in their
+	// to the Mempool to the corresponding transaction that resulted in their
 	// addition. It is useful for figuring out how much DeSo a particular public
 	// key has available to spend.
 	pubKeyToTxnMap map[PkMapKey]map[BlockHash]*MempoolTx
@@ -210,7 +210,7 @@ type DeSoMempool struct {
 	blockCypherAPIKey string
 
 	// These two views are used to check whether a transaction is valid before
-	// adding it to the mempool. This is done by applying the transaction to the
+	// adding it to the Mempool. This is done by applying the transaction to the
 	// backup view, and then restoring the backup view if there's an error. In
 	// the future, if we can figure out an easy way to rollback bad transactions
 	// on a single view, then we won't need the second view anymore.
@@ -224,15 +224,15 @@ type DeSoMempool struct {
 
 	// Whether or not we should be computing readOnlyUtxoViews.
 	generateReadOnlyUtxoView bool
-	// A view that contains a *near* up-to-date snapshot of the mempool. It is
+	// A view that contains a *near* up-to-date snapshot of the Mempool. It is
 	// updated periodically after N transactions OR after M  seconds, whichever
 	// comes first. It's useful because it can be obtained without acquiring a
-	// lock on the mempool.
+	// lock on the Mempool.
 	//
 	// This field isn't reset with ResetPool. It requires an explicit call to
 	// UpdateReadOnlyView.
 	readOnlyUtxoView *UtxoView
-	// Keep a list of all transactions in the mempool. This is useful for dumping
+	// Keep a list of all transactions in the Mempool. This is useful for dumping
 	// to the database periodically.
 	readOnlyUniversalTransactionList []*MempoolTx
 	readOnlyUniversalTransactionMap  map[BlockHash]*MempoolTx
@@ -252,11 +252,11 @@ type DeSoMempool struct {
 	totalProcessTransactionCalls int64
 
 	// We pass a copy of the data dir flag to the tx pool so that we can instantiate
-	// temp badger db instances and dump mempool txns to them.
+	// temp badger db instances and dump Mempool txns to them.
 	dataDir string
 }
 
-// See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
+// See comment on RemoveUnconnectedTxn. The Mempool lock must be called for writing
 // when calling this function.
 func (mp *DeSoMempool) removeUnconnectedTxn(tx *MsgDeSoTxn, removeRedeemers bool) {
 	txHash := tx.Hash()
@@ -343,12 +343,12 @@ func (mp *DeSoMempool) resetPool(newPool *DeSoMempool) {
 	// the old values should be unaffected.
 }
 
-// UpdateAfterConnectBlock updates the mempool after a block has been added to the
+// UpdateAfterConnectBlock updates the Mempool after a block has been added to the
 // blockchain. It does this by basically removing all known transactions in the block
-// from the mempool as follows:
+// from the Mempool as follows:
 // - Build a map of all of the transactions in the block indexed by their hash.
-// - Create a new mempool object.
-// - Iterate through all the transactions in the mempool and add the transactions
+// - Create a new Mempool object.
+// - Iterate through all the transactions in the Mempool and add the transactions
 //   to the new pool object *only if* they don't appear in the block. Do this for
 //   transactions in the pool and in the unconnectedTx pool.
 // - Compute which transactions were newly-accepted into the pool by effectively diffing
@@ -377,7 +377,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 	// Don't make the new pool object deal with the BlockCypher API.
 	newPool := NewDeSoMempool(
 		mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
-		0,     /* minFeeRateNanosPerKB */
+		0,     /* MinFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
 		"" /*dataDir*/, "")
@@ -396,7 +396,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 			continue
 		}
 
-		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
+		// Attempt to add the txn to the Mempool as we go. If it fails that's fine.
 		txnsAccepted, err := newPool.processTransaction(
 			mempoolTx.Tx, true /*allowUnconnected*/, false, /*rateLimit*/
 			0 /*peerID*/, false /*verifySignatures*/)
@@ -429,7 +429,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 	}
 
 	// At this point, the new pool should contain an up-to-date view of the transactions
-	// that should be in the mempool after connecting this block.
+	// that should be in the Mempool after connecting this block.
 
 	// Figure out what transactions are in the new pool but not in the old pool. These
 	// are transactions that were newly-added as a result of this block clearing up some
@@ -445,19 +445,19 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 	// Now set the fields on the old pool to match the new pool.
 	mp.resetPool(newPool)
 
-	// Return the newly accepted transactions now that we've fully updated our mempool.
+	// Return the newly accepted transactions now that we've fully updated our Mempool.
 	return newlyAcceptedTxns
 }
 
-// UpdateAfterDisconnectBlock updates the mempool to reflect that a block has been
+// UpdateAfterDisconnectBlock updates the Mempool to reflect that a block has been
 // disconnected from the blockchain. It does this by basically adding all the
-// transactions in the block back to the mempool as follows:
+// transactions in the block back to the Mempool as follows:
 // - A new pool object is created containing no transactions.
 // - The block's transactions are added to this new pool object. This is done in order
-//   to minimize dependency-related conflicts with transactions already in the mempool.
+//   to minimize dependency-related conflicts with transactions already in the Mempool.
 // - Then the transactions in the original pool are layered on top of the block's
 //   transactions in the new pool object. Again this is done to avoid dependency
-//   issues since the ordering of <block txns> followed by <original mempool txns>
+//   issues since the ordering of <block txns> followed by <original Mempool txns>
 //   is much less likely to have issues.
 // - Then, once the new pool object is up-to-date, the fields of the new pool object
 //   replace the fields of the original pool object.
@@ -468,7 +468,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 // TODO: This is fairly inefficient and basically only necessary because computing a
 // transaction's dependencies is a little shaky. If we end up making the dependency
 // detection logic more robust then we could come back here and change this so that
-// we're not effectively reprocessing the entire mempool every time we have a new block.
+// we're not effectively reprocessing the entire Mempool every time we have a new block.
 // But until then doing it this way significantly reduces complexity and should hold up
 // for a while.
 func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
@@ -481,7 +481,7 @@ func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 	//
 	// Don't make the new pool object deal with the BlockCypher API.
 	newPool := NewDeSoMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* minFeeRateNanosPerKB */
+		0, /* MinFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, "")
 
@@ -513,7 +513,7 @@ func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 	// Iterate through the pool transactions and add them to our new pool.
 
 	for _, mempoolTx := range oldMempoolTxns {
-		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
+		// Attempt to add the txn to the Mempool as we go. If it fails that's fine.
 		txnsAccepted, err := newPool.processTransaction(
 			mempoolTx.Tx, true /*allowUnconnectedTxns*/, false, /*rateLimit*/
 			0 /*peerID*/, false /*verifySignatures*/)
@@ -536,7 +536,7 @@ func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 		}
 	}
 
-	// At this point the new mempool should be a duplicate of the original mempool but with
+	// At this point the new Mempool should be a duplicate of the original Mempool but with
 	// the block's transactions added (with timestamps set before the transactions that
 	// were in the original pool.
 
@@ -570,8 +570,8 @@ func (mp *DeSoMempool) GetTransaction(txId *BlockHash) (txn *MempoolTx) {
 	return mp.readOnlyUniversalTransactionMap[*txId]
 }
 
-// GetTransactionsOrderedByTimeAdded returns all transactions in the mempool ordered
-// by when they were added to the mempool.
+// GetTransactionsOrderedByTimeAdded returns all transactions in the Mempool ordered
+// by when they were added to the Mempool.
 func (mp *DeSoMempool) _getTransactionsOrderedByTimeAdded() (_poolTxns []*MempoolTx, _unconnectedTxns []*UnconnectedTx, _err error) {
 	poolTxns := []*MempoolTx{}
 	for _, mempoolTx := range mp.poolMap {
@@ -699,16 +699,16 @@ func (mp *DeSoMempool) isUnconnectedTxnInPool(hash *BlockHash) bool {
 }
 
 func (mp *DeSoMempool) DumpTxnsToDB() {
-	// Dump all mempool txns into data_dir_path/temp_mempool_dump.
+	// Dump all Mempool txns into data_dir_path/temp_mempool_dump.
 	err := mp.OpenTempDBAndDumpTxns()
 	if err != nil {
-		glog.Infof("DumpTxnsToDB: Problem opening temp db / dumping mempool txns: %v", err)
+		glog.Infof("DumpTxnsToDB: Problem opening temp db / dumping Mempool txns: %v", err)
 		return
 	}
 
 	// Now we shuffle the directories we created. The temp that we just created will become
 	// the latest dump and the latest dump will become the previous dump.  By doing this
-	// shuffle, we ensure that we always have a complete view of the mempool to load from.
+	// shuffle, we ensure that we always have a complete view of the Mempool to load from.
 	tempDir := filepath.Join(mp.mempoolDir, "temp_mempool_dump")
 	previousDir := filepath.Join(mp.mempoolDir, "previous_mempool_dump")
 	latestDir := filepath.Join(mp.mempoolDir, "latest_mempool_dump")
@@ -724,7 +724,7 @@ func (mp *DeSoMempool) DumpTxnsToDB() {
 		}
 		err = os.Rename(latestDir, previousDir)
 		if err != nil {
-			glog.Infof("DumpTxnsToDB: Problem moving latest mempool dir to previous: %v", err)
+			glog.Infof("DumpTxnsToDB: Problem moving latest Mempool dir to previous: %v", err)
 			return
 		}
 	}
@@ -732,7 +732,7 @@ func (mp *DeSoMempool) DumpTxnsToDB() {
 	// Move tempDir --> latestDir. No need to delete latestDir, it was renamed above.
 	err = os.Rename(tempDir, latestDir)
 	if err != nil {
-		glog.Infof("DumpTxnsToDB: Problem moving temp mempool dir to previous: %v", err)
+		glog.Infof("DumpTxnsToDB: Problem moving temp Mempool dir to previous: %v", err)
 		return
 	}
 }
@@ -769,13 +769,13 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	tempMempoolDBOpts.MemTableSize = 1024 << 20
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
-		return fmt.Errorf("OpenTempDBAndDumpTxns: Could not open temp db to dump mempool: %v", err)
+		return fmt.Errorf("OpenTempDBAndDumpTxns: Could not open temp db to dump Mempool: %v", err)
 	}
 	defer tempMempoolDB.Close()
 
-	// Dump txns into the temp mempool db.
+	// Dump txns into the temp Mempool db.
 	startTime := time.Now()
-	// Flush the new mempool state to the DB.
+	// Flush the new Mempool state to the DB.
 	//
 	// Dump 1k txns at a time to avoid overwhelming badger
 	txnsToDump := []*MempoolTx{}
@@ -789,7 +789,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 				return FlushMempoolToDbWithTxn(txn, txnsToDump)
 			})
 			if err != nil {
-				return fmt.Errorf("OpenTempDBAndDumpTxns: Error flushing mempool txns to DB: %v", err)
+				return fmt.Errorf("OpenTempDBAndDumpTxns: Error flushing Mempool txns to DB: %v", err)
 			}
 			txnsToDump = []*MempoolTx{}
 		}
@@ -821,14 +821,14 @@ func (mp *DeSoMempool) addTransaction(
 
 	// If this txn would put us over our threshold then don't accept it.
 	//
-	// TODO: We don't replace txns in the mempool right now. Instead, a node can be
+	// TODO: We don't replace txns in the Mempool right now. Instead, a node can be
 	// rebooted with a higher fee if the transactions start to get rejected due to
-	// the mempool being full.
+	// the Mempool being full.
 	if serializedLen+mp.totalTxSizeBytes > MaxTotalTransactionSizeBytes {
 		return nil, errors.Wrapf(TxErrorInsufficientFeePriorityQueue, "addTransaction: ")
 	}
 
-	// At this point we are certain that the mempool has enough room to accomodate
+	// At this point we are certain that the Mempool has enough room to accomodate
 	// this transaction.
 
 	mempoolTx := &MempoolTx{
@@ -850,13 +850,13 @@ func (mp *DeSoMempool) addTransaction(
 	}
 	// Add the transaction to the min heap.
 	heap.Push(&mp.txFeeMinheap, mempoolTx)
-	// Update the size of the mempool to reflect the added transaction.
+	// Update the size of the Mempool to reflect the added transaction.
 	mp.totalTxSizeBytes += mempoolTx.TxSizeBytes
 
-	// Whenever transactions are accepted into the mempool, add a mapping
+	// Whenever transactions are accepted into the Mempool, add a mapping
 	// for each public key that they send an output to. This is useful so
 	// we can find all of these outputs if, for example, the user wants
-	// to know her balance while factoring in mempool transactions.
+	// to know her balance while factoring in Mempool transactions.
 	mp._addMempoolTxToPubKeyOutputMap(mempoolTx)
 
 	// Add it to the universal view. We assume the txn was already added to the
@@ -893,15 +893,15 @@ func (mp *DeSoMempool) CheckSpend(op UtxoKey) *MsgDeSoTxn {
 // when we want to validate a transaction that builds on a transaction that has
 // not yet been mined into a block. It is also useful for when we want to fetch all
 // the unspent UtxoEntrys factoring in what's been spent by transactions in
-// the mempool.
+// the Mempool.
 func (mp *DeSoMempool) GetAugmentedUtxoViewForPublicKey(pkBytes []byte, optionalTxn *MsgDeSoTxn) (*UtxoView, error) {
 	return mp.GetAugmentedUniversalView()
 }
 
 // GetAugmentedUniversalView creates a view that just connects everything
-// in the mempool...
+// in the Mempool...
 // TODO(performance): We should make a read-only version of the universal view that
-// you can get from the mempool.
+// you can get from the Mempool.
 func (mp *DeSoMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 	newView, err := mp.readOnlyUtxoView.CopyUtxoView()
 	if err != nil {
@@ -941,9 +941,9 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// that we can do this because _findMempoolDependencies returns the transactions in
 	// sorted order based on when transactions were added.
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
-	// Don't verify signatures since this transaction is already in the mempool.
+	// Don't verify signatures since this transaction is already in the Mempool.
 	//
-	// Additionally mempool verification does not require that BitcoinExchange
+	// Additionally Mempool verification does not require that BitcoinExchange
 	// transactions meet the MinBurnWork requirement. Note that a BitcoinExchange
 	// transaction will only get this far once we are positive the BitcoinManager
 	// has the block corresponding to the transaction.
@@ -1046,7 +1046,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// Transactions with a feerate below the minimum threshold will be outright
 	// rejected. This is the first line of defense against attacks against the
-	// mempool.
+	// Mempool.
 	if rateLimit && txFeePerKB < mp.minFeeRateNanosPerKB {
 		errRet := fmt.Errorf("tryAcceptTransaction: Fee rate per KB found was %d, which is below the "+
 			"minimum required which is %d (= %d * %d / 1000). Total input: %d, total output: %d, "+
@@ -2065,7 +2065,7 @@ func (mp *DeSoMempool) processTransaction(
 }
 
 // ProcessTransaction is the main function called by outside services to potentially
-// add a transaction to the mempool. It will try to add the txn to the main pool, and
+// add a transaction to the Mempool. It will try to add the txn to the main pool, and
 // then try to add it as an unconnected txn if that fails.
 func (mp *DeSoMempool) ProcessTransaction(tx *MsgDeSoTxn, allowUnconnectedTxn bool, rateLimit bool, peerID uint64, verifySignatures bool) ([]*MempoolTx, error) {
 	// Protect concurrent access.
@@ -2075,7 +2075,7 @@ func (mp *DeSoMempool) ProcessTransaction(tx *MsgDeSoTxn, allowUnconnectedTxn bo
 	return mp.processTransaction(tx, allowUnconnectedTxn, rateLimit, peerID, verifySignatures)
 }
 
-// Returns an estimate of the number of txns in the mempool. This is an estimate because
+// Returns an estimate of the number of txns in the Mempool. This is an estimate because
 // it looks up the number from a readOnly view, which updates at regular intervals and
 // *not* every time a txn is added to the pool.
 func (mp *DeSoMempool) Count() int {
@@ -2115,7 +2115,7 @@ func (mp *DeSoMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*Su
 
 	transactionSummaryStats := make(map[string]*SummaryStats)
 	for _, mempoolTx := range allTxns {
-		// Update the mempool summary stats.
+		// Update the Mempool summary stats.
 		updatedSummaryStats := &SummaryStats{}
 		txnType := mempoolTx.Tx.TxnMeta.GetTxnType().String()
 		summaryStats := transactionSummaryStats[txnType]
@@ -2137,7 +2137,7 @@ func (mp *DeSoMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*Su
 
 func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 	// In this case we remove the transaction by re-adding all the txns we can
-	// to the mempool except this one.
+	// to the Mempool except this one.
 	// TODO(performance): This could be a bit slow.
 	//
 	// Create a new DeSoMempool. No need to set the min fees since we're just using
@@ -2145,7 +2145,7 @@ func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 	//
 	// Don't make the new pool object deal with the BlockCypher API.
 	newPool := NewDeSoMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* minFeeRateNanosPerKB */
+		0, /* MinFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, "")
 	// At this point the block txns have been added to the new pool. Now we need to
@@ -2161,7 +2161,7 @@ func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 			continue
 		}
 
-		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
+		// Attempt to add the txn to the Mempool as we go. If it fails that's fine.
 		txnsAccepted, err := newPool.processTransaction(
 			mempoolTx.Tx, false /*allowUnconnectedTxn*/, false, /*rateLimit*/
 			0 /*peerID*/, false /*verifySignatures*/)
@@ -2183,7 +2183,7 @@ func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 		}
 	}
 
-	// At this point the new mempool should be a duplicate of the original mempool but with
+	// At this point the new Mempool should be a duplicate of the original Mempool but with
 	// the non-double-spend transactions added (with timestamps set before the transactions that
 	// were in the original pool.
 
@@ -2296,10 +2296,10 @@ func (mp *DeSoMempool) StartMempoolDBDumper() {
 }
 
 func (mp *DeSoMempool) LoadTxnsFromDB() {
-	glog.Infof("LoadTxnsFromDB: Loading mempool txns from db because --load_mempool_txns_from_db was set")
+	glog.Infof("LoadTxnsFromDB: Loading Mempool txns from db because --load_mempool_txns_from_db was set")
 	startTime := time.Now()
 
-	// The mempool shuffles dumped txns between temp, previous, and latest dirs. By dumping txns
+	// The Mempool shuffles dumped txns between temp, previous, and latest dirs. By dumping txns
 	// to temp first, we ensure that we always have a full set of txns in latest and previous dir.
 	// Note that it is possible for previousDir to exist even if latestDir does not because
 	// the machine could crash after moving latest to previous. Thus, we check both.
@@ -2317,19 +2317,19 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 		return
 	}
 
-	// If we make it this far, we found a mempool dump to load.  Woohoo!
+	// If we make it this far, we found a Mempool dump to load.  Woohoo!
 	tempMempoolDBOpts := badger.DefaultOptions(savedTxnsDir)
 	tempMempoolDBOpts.ValueDir = savedTxnsDir
 	tempMempoolDBOpts.MemTableSize = 1024 << 20
 	glog.Infof("LoadTxnsFrom: Opening new temp db %v", savedTxnsDir)
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
-		glog.Infof("LoadTxnsFrom: Could not open temp db to dump mempool: %v", err)
+		glog.Infof("LoadTxnsFrom: Could not open temp db to dump Mempool: %v", err)
 		return
 	}
 	defer tempMempoolDB.Close()
 
-	// Get all saved mempool transactions from the DB.
+	// Get all saved Mempool transactions from the DB.
 	dbMempoolTxnsOrderedByTime, err := DbGetAllMempoolTxnsSortedByTimeAdded(tempMempoolDB)
 	if err != nil {
 		log.Fatalf("NewDeSoMempool: Failed to get mempoolTxs from the DB: %v", err)

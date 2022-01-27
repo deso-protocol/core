@@ -33,10 +33,15 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
 		[]byte{}, []byte{}, []byte{}, []byte{},
-		tstampNanos, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		tstampNanos, &standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -356,17 +361,17 @@ func TestPrivateMessage(t *testing.T) {
 		require.Equal(0, len(messages))
 	}
 
-	// Apply all the transactions to a mempool object and make sure we don't get any
+	// Apply all the transactions to a Mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
 	for ii, tx := range txns {
 		// See comment above on this transaction.
-		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
+		fmt.Printf("Adding txn %d of type %v to Mempool\n", ii, tx.TxnMeta.GetTxnType())
 
 		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, senderPkString))
 		require.Equal(expectedRecipientBalances[ii], _getBalance(t, chain, mempool, recipientPkString))
 
 		acceptedTxns, err := mempool.ProcessTransaction(tx, false, false, 0, true)
-		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
+		require.NoError(err, "Problem adding transaction %d to Mempool: %v", ii, tx)
 		require.Equal(1, len(acceptedTxns))
 	}
 
@@ -439,7 +444,7 @@ func TestPrivateMessage(t *testing.T) {
 		require.Equal(int64(1), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 1)))
 	}
 
-	// All the txns should be in the mempool already so mining a block should put
+	// All the txns should be in the Mempool already so mining a block should put
 	// all those transactions in it.
 	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -1431,11 +1436,16 @@ func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, s
 	senderPkBase58Check := Base58CheckEncode(senderPkBytes, false, testMeta.params)
 	balance := _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = 10
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	// Create a private message transaction with the sender and recipient messaging keys.
 	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, "", encryptedMessageText,
 		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
-		recipientMessagingKeyName, tstampNanos, 10, nil, []*DeSoOutput{})
+		recipientMessagingKeyName, tstampNanos, &standardTxnFields)
 	require.NoError(err)
 
 	require.Equal(totalInputMake, changeAmountMake+feesMake)

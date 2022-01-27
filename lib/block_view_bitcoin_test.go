@@ -73,7 +73,7 @@ func _dumpAndLoadMempool(mempool *DeSoMempool) {
 	mempool.DumpTxnsToDB()
 	newMempool := NewDeSoMempool(
 		mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* minFeeRateNanosPerKB */, "", true,
+		0 /* MinFeeRateNanosPerKB */, "", true,
 		mempool.dataDir, mempoolDir)
 	mempool.mempoolDir = ""
 	mempool.resetPool(newMempool)
@@ -356,9 +356,9 @@ func TestBitcoinExchange(t *testing.T) {
 	)
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
-	// Reset the pool to give the mempool access to the new BitcoinManager object.
+	// Reset the pool to give the Mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* minFeeRateNanosPerKB */
+		0, /* MinFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
 
@@ -380,7 +380,7 @@ func TestBitcoinExchange(t *testing.T) {
 			burnTxn1.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// According to the mempool, the balance of the user whose public key created
+	// According to the Mempool, the balance of the user whose public key created
 	// the Bitcoin burn transaction should now have some DeSo.
 	pkBytes1, _ := hex.DecodeString(BitcoinTestnetPub1)
 	pkBytes2, _ := hex.DecodeString(BitcoinTestnetPub2)
@@ -393,7 +393,7 @@ func TestBitcoinExchange(t *testing.T) {
 		assert.Equal(int64(2697810060), int64(utxoEntries[0].AmountNanos))
 	}
 
-	// The mempool should be able to process a burn transaction directly.
+	// The Mempool should be able to process a burn transaction directly.
 	{
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
@@ -407,7 +407,7 @@ func TestBitcoinExchange(t *testing.T) {
 			burnTxn2.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// According to the mempool, the balances should have updated.
+	// According to the Mempool, the balances should have updated.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, mempool, nil)
 		require.NoError(err)
@@ -416,7 +416,7 @@ func TestBitcoinExchange(t *testing.T) {
 		assert.Equal(int64(3372255472), int64(utxoEntries[0].AmountNanos))
 	}
 
-	// If the mempool is not consulted, the balances should be zero.
+	// If the Mempool is not consulted, the balances should be zero.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, nil, nil)
 		require.NoError(err)
@@ -680,7 +680,7 @@ func TestBitcoinExchange(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// Running all the transactions through the mempool should work and result
+	// Running all the transactions through the Mempool should work and result
 	// in all of them being added.
 	{
 		for _, burnTxn := range bitcoinExchangeTxns {
@@ -697,11 +697,11 @@ func TestBitcoinExchange(t *testing.T) {
 		}
 	}
 
-	// Test that the mempool can be backed up properly by dumping them and then
+	// Test that the Mempool can be backed up properly by dumping them and then
 	// reloading them.
 	_dumpAndLoadMempool(mempool)
 
-	// The balances according to the mempool after applying all the transactions
+	// The balances according to the Mempool after applying all the transactions
 	// should be correct.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
@@ -727,7 +727,7 @@ func TestBitcoinExchange(t *testing.T) {
 		assert.Equal(int64(16517205024), int64(totalBalance))
 	}
 
-	// Remove all the transactions from the mempool.
+	// Remove all the transactions from the Mempool.
 	for _, burnTxn := range bitcoinExchangeTxns {
 		mempool.inefficientRemoveTransaction(burnTxn)
 	}
@@ -736,7 +736,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// then reloading the db state into the view.
 	_dumpAndLoadMempool(mempool)
 
-	// The balances should be zero after removing transactions from the mempool.
+	// The balances should be zero after removing transactions from the Mempool.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
 		require.NoError(err)
@@ -753,7 +753,7 @@ func TestBitcoinExchange(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// Re-add all of the transactions to the mempool so we can mine them into a block.
+	// Re-add all of the transactions to the Mempool so we can mine them into a block.
 	{
 		for _, burnTxn := range bitcoinExchangeTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
@@ -761,24 +761,24 @@ func TestBitcoinExchange(t *testing.T) {
 				true /*verifySignatures*/)
 			require.NoError(err)
 			require.Equal(1, len(mempoolTxsAdded))
-			//require.Equal(0, len(mempool.immatureBitcoinTxns))
+			//require.Equal(0, len(Mempool.immatureBitcoinTxns))
 		}
 	}
 
 	// Check the db one more time after adding back all the txns.
 	_dumpAndLoadMempool(mempool)
 
-	// Mine a block with all the mempool transactions.
+	// Mine a block with all the Mempool transactions.
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
 	//
-	// All the txns should be in the mempool already but only some of them have enough
+	// All the txns should be in the Mempool already but only some of them have enough
 	// burn work to satisfy the miner. Note we need to mine two blocks since the first
 	// one just makes the DeSo chain time-current.
 	finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	_ = finalBlock1
-	// Check the mempool dumps and loads from the db properly each time
+	// Check the Mempool dumps and loads from the db properly each time
 	_dumpAndLoadMempool(mempool)
 
 	finalBlock2, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1056,9 +1056,9 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// the bitcoinManager.
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
-	// Reset the pool to give the mempool access to the new BitcoinManager object.
+	// Reset the pool to give the Mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* minFeeRateNanosPerKB */
+		0, /* MinFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
 
@@ -1072,7 +1072,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// The user we just applied this transaction for should have a balance now.
 	pkBytes1, _ := hex.DecodeString(BitcoinTestnetPub1)
 
-	// Applying the full transaction with its merkle proof to the mempool should
+	// Applying the full transaction with its merkle proof to the Mempool should
 	// replace the existing "unmined" version that we added previously.
 	{
 		mempoolTxs, err := mempool.processTransaction(
@@ -1099,7 +1099,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			burnTxn1.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// According to the mempool, the balance of the user whose public key created
+	// According to the Mempool, the balance of the user whose public key created
 	// the Bitcoin burn transaction should now have some DeSo.
 	pkBytes2, _ := hex.DecodeString(BitcoinTestnetPub2)
 	pkBytes3, _ := hex.DecodeString(BitcoinTestnetPub3)
@@ -1111,7 +1111,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		assert.Equal(int64(2697810060), int64(utxoEntries[0].AmountNanos))
 	}
 
-	// The mempool should be able to process a burn transaction directly.
+	// The Mempool should be able to process a burn transaction directly.
 	{
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
@@ -1125,7 +1125,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			burnTxn2.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// According to the mempool, the balances should have updated.
+	// According to the Mempool, the balances should have updated.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, mempool, nil)
 		require.NoError(err)
@@ -1134,7 +1134,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		assert.Equal(int64(3372255472), int64(utxoEntries[0].AmountNanos))
 	}
 
-	// If the mempool is not consulted, the balances should be zero.
+	// If the Mempool is not consulted, the balances should be zero.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, nil, nil)
 		require.NoError(err)
@@ -1408,7 +1408,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// Running all the transactions through the mempool should work and result
+	// Running all the transactions through the Mempool should work and result
 	// in all of them being added.
 	{
 		for _, burnTxn := range bitcoinExchangeTxns {
@@ -1425,11 +1425,11 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		}
 	}
 
-	// Test that the mempool can be backed up properly by dumping them and then
+	// Test that the Mempool can be backed up properly by dumping them and then
 	// reloading them.
 	_dumpAndLoadMempool(mempool)
 
-	// The balances according to the mempool after applying all the transactions
+	// The balances according to the Mempool after applying all the transactions
 	// should be correct.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
@@ -1455,7 +1455,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		assert.Equal(int64(16517205024), int64(totalBalance))
 	}
 
-	// Remove all the transactions from the mempool.
+	// Remove all the transactions from the Mempool.
 	for _, burnTxn := range bitcoinExchangeTxns {
 		mempool.inefficientRemoveTransaction(burnTxn)
 	}
@@ -1464,7 +1464,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// then reloading the db state into the view.
 	_dumpAndLoadMempool(mempool)
 
-	// The balances should be zero after removing transactions from the mempool.
+	// The balances should be zero after removing transactions from the Mempool.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
 		require.NoError(err)
@@ -1481,7 +1481,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// Re-add all of the transactions to the mempool so we can mine them into a block.
+	// Re-add all of the transactions to the Mempool so we can mine them into a block.
 	{
 		for _, burnTxn := range bitcoinExchangeTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
@@ -1489,7 +1489,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 				true /*verifySignatures*/)
 			require.NoError(err)
 			require.Equal(1, len(mempoolTxsAdded))
-			//require.Equal(0, len(mempool.immatureBitcoinTxns))
+			//require.Equal(0, len(Mempool.immatureBitcoinTxns))
 		}
 	}
 
@@ -1499,13 +1499,13 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
 
-	// All the txns should be in the mempool already but only some of them have enough
+	// All the txns should be in the Mempool already but only some of them have enough
 	// burn work to satisfy the miner. Note we need to mine two blocks since the first
 	// one just makes the DeSo chain time-current.
 	finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	_ = finalBlock1
-	// Check the mempool dumps and loads from the db properly each time
+	// Check the Mempool dumps and loads from the db properly each time
 	_dumpAndLoadMempool(mempool)
 
 	finalBlock2, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1782,9 +1782,9 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// the bitcoinManager.
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
-	// Reset the pool to give the mempool access to the new BitcoinManager object.
+	// Reset the pool to give the Mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* minFeeRateNanosPerKB */
+		0, /* MinFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
 
@@ -1794,7 +1794,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	burnTxn2 := bitcoinExchangeTxns[1]
 	txHash1 := burnTxn1.Hash()
 
-	// The mempool should accept a BitcoinExchange transaction if its merkle proof
+	// The Mempool should accept a BitcoinExchange transaction if its merkle proof
 	// is empty, since it skips the merkle proof checks in this case.
 	{
 		txnCopy := *burnTxn1
@@ -1824,12 +1824,12 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// DO NOT process the Bitcoin block containing the first set of burn transactions.
 	// This is the difference between this test and the previous test.
 
-	// According to the mempool, the balance of the user whose public key created
+	// According to the Mempool, the balance of the user whose public key created
 	// the Bitcoin burn transaction should now have some DeSo.
 	pkBytes2, _ := hex.DecodeString(BitcoinTestnetPub2)
 	pkBytes3, _ := hex.DecodeString(BitcoinTestnetPub3)
 
-	// The mempool should be able to process a burn transaction directly.
+	// The Mempool should be able to process a burn transaction directly.
 	{
 		txnCopy := *burnTxn2
 		txnCopy.TxnMeta = &BitcoinExchangeMetadata{
@@ -1850,7 +1850,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			txnCopy.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// According to the mempool, the balances should have updated.
+	// According to the Mempool, the balances should have updated.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, mempool, nil)
 		require.NoError(err)
@@ -1859,7 +1859,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		assert.Equal(int64(3372255472), int64(utxoEntries[0].AmountNanos))
 	}
 
-	// If the mempool is not consulted, the balances should be zero.
+	// If the Mempool is not consulted, the balances should be zero.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, nil, nil)
 		require.NoError(err)
@@ -1871,7 +1871,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
 	paramsCopy.ParamUpdaterPublicKeys = params.ParamUpdaterPublicKeys
 
-	// Running the remaining transactions through the mempool should work and result
+	// Running the remaining transactions through the Mempool should work and result
 	// in all of them being added.
 	{
 		// Add a placeholder where the rate update is going to be
@@ -2043,10 +2043,10 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
 
-	// At this point, the mempool should contain *mined* BitcoinExchange
+	// At this point, the Mempool should contain *mined* BitcoinExchange
 	// transactions with fully proper merkle proofs.
 
-	// Now mining the blocks should get us the balances that the mempool
+	// Now mining the blocks should get us the balances that the Mempool
 	// reported previously.
 	finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -2066,9 +2066,9 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	require.Equal(len(finalBlock4.Txns), 1)
 
 	// The transactions should all have been processed into blocks and
-	// removed from the mempool.
+	// removed from the Mempool.
 	require.Equal(0, len(mempool.poolMap))
-	// The balances should be what they were even if you query the mempool
+	// The balances should be what they were even if you query the Mempool
 	// because the txns have now moved into the db.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
@@ -2120,7 +2120,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	}
 
 	// Roll back the blocks and make sure we don't hit any errors. Call
-	// the mempool's disconnect function to make sure we get the txns
+	// the Mempool's disconnect function to make sure we get the txns
 	// back during a reorg.
 	{
 		utxoView, err := NewUtxoView(db, paramsCopy, nil)
@@ -2188,7 +2188,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		mempool.UpdateAfterDisconnectBlock(finalBlock1)
 	}
 
-	// The balances according to the db without querying the mempool should
+	// The balances according to the db without querying the Mempool should
 	// be zero again.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, nil, nil)
@@ -2206,7 +2206,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// The mempool should have all of its txns back and the balances should be what
+	// The Mempool should have all of its txns back and the balances should be what
 	// they were before we did a block reorg.
 	require.Equal(prevMempoolSize, len(mempool.poolMap))
 	{
@@ -2385,9 +2385,9 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// the bitcoinManager.
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
-	// Reset the pool to give the mempool access to the new BitcoinManager object.
+	// Reset the pool to give the Mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* minFeeRateNanosPerKB */
+		0, /* MinFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
 
@@ -2395,7 +2395,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	burnTxn1 := bitcoinExchangeTxns[0]
 	burnTxn2 := bitcoinExchangeTxns[1]
 
-	// Applying the full transaction with its merkle proof to the mempool should work
+	// Applying the full transaction with its merkle proof to the Mempool should work
 	{
 		mempoolTxs, err := mempool.processTransaction(
 			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
@@ -2408,7 +2408,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			burnTxn1.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// According to the mempool, the balance of the user whose public key created
+	// According to the Mempool, the balance of the user whose public key created
 	// the Bitcoin burn transaction should now have some DeSo.
 	pkBytes1, _ := hex.DecodeString(BitcoinTestnetPub1)
 	pkBytes2, _ := hex.DecodeString(BitcoinTestnetPub2)
@@ -2421,7 +2421,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		assert.Equal(int64(1907640147), int64(utxoEntries[0].AmountNanos))
 	}
 
-	// The mempool should be able to process a burn transaction directly.
+	// The Mempool should be able to process a burn transaction directly.
 	{
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
@@ -2435,7 +2435,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			burnTxn2.TxnMeta.(*BitcoinExchangeMetadata))
 	}
 
-	// According to the mempool, the balances should have updated.
+	// According to the Mempool, the balances should have updated.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, mempool, nil)
 		require.NoError(err)
@@ -2444,7 +2444,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		assert.Equal(int64(2384546633), int64(utxoEntries[0].AmountNanos))
 	}
 
-	// If the mempool is not consulted, the balances should be zero.
+	// If the Mempool is not consulted, the balances should be zero.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, nil, nil)
 		require.NoError(err)
@@ -2695,7 +2695,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// Running all the transactions through the mempool should work and result
+	// Running all the transactions through the Mempool should work and result
 	// in all of them being added.
 	{
 		for _, burnTxn := range bitcoinExchangeTxns {
@@ -2712,7 +2712,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		}
 	}
 
-	// The balances according to the mempool after applying all the transactions
+	// The balances according to the Mempool after applying all the transactions
 	// should be correct.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
@@ -2738,12 +2738,12 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		assert.Equal(int64(9922118448), int64(totalBalance))
 	}
 
-	// Remove all the transactions from the mempool.
+	// Remove all the transactions from the Mempool.
 	for _, burnTxn := range bitcoinExchangeTxns {
 		mempool.inefficientRemoveTransaction(burnTxn)
 	}
 
-	// The balances should be zero after removing transactions from the mempool.
+	// The balances should be zero after removing transactions from the Mempool.
 	{
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, mempool, nil)
 		require.NoError(err)
@@ -2760,7 +2760,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
-	// Re-add all of the transactions to the mempool so we can mine them into a block.
+	// Re-add all of the transactions to the Mempool so we can mine them into a block.
 	{
 		for _, burnTxn := range bitcoinExchangeTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
@@ -2768,13 +2768,13 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 				true /*verifySignatures*/)
 			require.NoError(err)
 			require.Equal(1, len(mempoolTxsAdded))
-			//require.Equal(0, len(mempool.immatureBitcoinTxns))
+			//require.Equal(0, len(Mempool.immatureBitcoinTxns))
 		}
 	}
 
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
-	// All the txns should be in the mempool already so mining a block should put
+	// All the txns should be in the Mempool already so mining a block should put
 	// all those transactions in it. Note we need to mine two blocks since the first
 	// one just makes the DeSo chain time-current.
 	finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

@@ -176,7 +176,7 @@ var (
 	// <PKID [33]byte> -> <PublicKey [33]byte>
 	_PrefixPKIDToPublicKey = []byte{37}
 
-	// Prefix for storing mempool transactions in badger. These stored transactions are
+	// Prefix for storing Mempool transactions in badger. These stored transactions are
 	// used to restore the state of a node after it is shutdown.
 	// <prefix, tx hash BlockHash> -> <*MsgDeSoTxn>
 	_PrefixMempoolTxnHashToMsgDeSoTxn = []byte{38}
@@ -4568,7 +4568,7 @@ func DBPutNFTEntryMappings(handle *badger.DB, nftEntry *NFTEntry) error {
 	})
 }
 
-// DBGetNFTEntriesForPostHash gets NFT Entries *from the DB*. Does not include mempool txns.
+// DBGetNFTEntriesForPostHash gets NFT Entries *from the DB*. Does not include Mempool txns.
 func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nftEntries []*NFTEntry) {
 	nftEntries := []*NFTEntry{}
 	prefix := append([]byte{}, _PrefixPostHashSerialNumberToNFTEntry...)
@@ -4617,7 +4617,7 @@ func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, ownerPKID *PKID, isForSal
 	return ret
 }
 
-// DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
+// DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include Mempool txns.
 func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
 	nftEntries := []*NFTEntry{}
 	prefix := append([]byte{}, _PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
@@ -4884,7 +4884,7 @@ func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntr
 	return nftBidEntries
 }
 
-// Get NFT bid Entries *from the DB*. Does not include mempool txns.
+// Get NFT bid Entries *from the DB*. Does not include Mempool txns.
 func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber uint64,
 ) (_nftBidEntries []*NFTBidEntry) {
 	nftBidEntries := []*NFTBidEntry{}
@@ -6028,7 +6028,7 @@ func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn) error {
 	for _, txnKey := range txnKeysFound {
 		err := DbDeleteMempoolTxnKeyWithTxn(txn, txnKey)
 		if err != nil {
-			return errors.Wrapf(err, "DbDeleteAllMempoolTxMappings: Deleting mempool txnKey failed.")
+			return errors.Wrapf(err, "DbDeleteAllMempoolTxMappings: Deleting Mempool txnKey failed.")
 		}
 	}
 
@@ -6040,7 +6040,7 @@ func FlushMempoolToDbWithTxn(txn *badger.Txn, allTxns []*MempoolTx) error {
 		err := DbPutMempoolTxnWithTxn(txn, mempoolTx)
 		if err != nil {
 			return errors.Wrapf(err, "FlushMempoolToDb: Putting "+
-				"mempool tx hash %s failed.", mempoolTx.Hash.String())
+				"Mempool tx hash %s failed.", mempoolTx.Hash.String())
 		}
 	}
 
@@ -6071,7 +6071,7 @@ func DbDeleteMempoolTxnWithTxn(txn *badger.Txn, mempoolTx *MempoolTx) error {
 	// When a mapping exists, delete it.
 	if err := txn.Delete(_dbKeyForMempoolTxn(mempoolTx)); err != nil {
 		return errors.Wrapf(err, "DbDeleteMempoolTxMappingWithTxn: Deleting "+
-			"mempool tx key failed.")
+			"Mempool tx key failed.")
 	}
 
 	return nil
@@ -6094,7 +6094,7 @@ func DbDeleteMempoolTxnKeyWithTxn(txn *badger.Txn, txnKey []byte) error {
 	// When a mapping exists, delete it.
 	if err := txn.Delete(txnKey); err != nil {
 		return errors.Wrapf(err, "DbDeleteMempoolTxMappingWithTxn: Deleting "+
-			"mempool tx key failed.")
+			"Mempool tx key failed.")
 	}
 
 	return nil

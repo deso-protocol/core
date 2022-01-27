@@ -433,6 +433,13 @@ type Blockchain struct {
 	orphanList *list.List
 }
 
+type StandardTxnFields struct {
+	MinFeeRateNanosPerKB uint64
+	Mempool           *DeSoMempool
+	AdditionalOutputs []*DeSoOutput
+	NodeSource        uint64
+}
+
 func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
 	newBlockIndex := make(map[BlockHash]*BlockNode)
 	for kk, vv := range bc.blockIndex {
@@ -2319,13 +2326,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 }
 
 // ValidateTransaction creates a UtxoView and sees if the transaction can be connected
-// to it. If a mempool is provided, this function tries to find dependencies of the
+// to it. If a Mempool is provided, this function tries to find dependencies of the
 // passed-in transaction in the pool and connect them before trying to connect the
 // passed-in transaction.
 func (bc *Blockchain) ValidateTransaction(
 	txnMsg *MsgDeSoTxn, blockHeight uint32, verifySignatures bool, mempool *DeSoMempool) error {
 
-	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// Create a new UtxoView. If we have access to a Mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
@@ -2334,7 +2341,7 @@ func (bc *Blockchain) ValidateTransaction(
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(txnMsg.PublicKey, txnMsg)
 		if err != nil {
-			return errors.Wrapf(err, "ValidateTransaction: Problem getting augmented UtxoView from mempool: ")
+			return errors.Wrapf(err, "ValidateTransaction: Problem getting augmented UtxoView from Mempool: ")
 		}
 	}
 
@@ -2432,13 +2439,13 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 }
 
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
-	// If we have access to a mempool, use it to account for utxos we might not
+	// If we have access to a Mempool, use it to account for utxos we might not
 	// get otherwise.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem initializing UtxoView: ")
 	}
-	// Use the reference UtxoView if provided. Otherwise try to get one from the mempool.
+	// Use the reference UtxoView if provided. Otherwise try to get one from the Mempool.
 	// This improves efficiency when we have a UtxoView already handy.
 	if referenceUtxoView != nil {
 		utxoView = referenceUtxoView
@@ -2446,7 +2453,7 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 		if mempool != nil {
 			utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(spendPublicKeyBytes, nil)
 			if err != nil {
-				return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem getting augmented UtxoView from mempool: ")
+				return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem getting augmented UtxoView from Mempool: ")
 			}
 		}
 	}
@@ -2486,7 +2493,7 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 			continue
 		}
 
-		// Don't consider utxos that are already consumed by the mempool.
+		// Don't consider utxos that are already consumed by the Mempool.
 		if mempool != nil && mempool.CheckSpend(*utxoEntry.UtxoKey) != nil {
 			continue
 		}
@@ -2545,7 +2552,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderMessagingPublicKey []byte, senderMessagingKeyName []byte,
 	recipientMessagingPublicKey []byte, recipientMessagingKeyName []byte,
 	tstampNanos uint64,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	var encryptedMessageBytes []byte
@@ -2613,7 +2620,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	}
 
 	// Create a transaction containing the encrypted message text.
-	// A PrivateMessage transaction doesn't need any inputs or outputs (except additionalOutputs provided).
+	// A PrivateMessage transaction doesn't need any inputs or outputs (except AdditionalOutputs provided).
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
 		TxnMeta: &PrivateMessageMetadata{
@@ -2622,20 +2629,23 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 			TimestampNanos:     tstampNanos,
 		},
 		ExtraData: messageExtraData,
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem adding inputs: ")
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, standardTxnFields.AdditionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreatePrivateMessageTxn: %v", err)
 	}
 
@@ -2644,31 +2654,34 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 
 func (bc *Blockchain) CreateLikeTxn(
 	userPublicKey []byte, likedPostHash BlockHash, isUnlike bool,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64,
 	_err error) {
 
-	// A Like transaction doesn't need any inputs or outputs (except additionalOutputs provided).
+	// A Like transaction doesn't need any inputs or outputs (except AdditionalOutputs provided).
 	txn := &MsgDeSoTxn{
 		PublicKey: userPublicKey,
 		TxnMeta: &LikeMetadata{
 			LikedPostHash: &likedPostHash,
 			IsUnlike:      isUnlike,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "CreateLikeTxn: Problem adding inputs: ")
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, standardTxnFields.AdditionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateLikeTxn: %v", err)
 	}
 
@@ -2677,31 +2690,34 @@ func (bc *Blockchain) CreateLikeTxn(
 
 func (bc *Blockchain) CreateFollowTxn(
 	senderPublicKey []byte, followedPublicKey []byte, isUnfollow bool,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64,
 	_err error) {
 
-	// A Follow transaction doesn't need any inputs or outputs (except additionalOutputs provided).
+	// A Follow transaction doesn't need any inputs or outputs (except AdditionalOutputs provided).
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
 		TxnMeta: &FollowMetadata{
 			FollowedPublicKey: followedPublicKey,
 			IsUnfollow:        isUnfollow,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "CreateFollowTxn: Problem adding inputs: ")
 	}
 
 	// Sanity-check that the spendAmount is zero.
-	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, standardTxnFields.AdditionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateFollowTxn: %v", err)
 	}
 
@@ -2810,7 +2826,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	postExtraData map[string][]byte,
 	isHidden bool,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Initialize txnExtraData to postExtraData.
@@ -2842,7 +2858,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 			TimestampNanos:           tstampNanos,
 			IsHidden:                 isHidden,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -2851,16 +2867,19 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 		txn.ExtraData = txnExtraData
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateSubmitPostTxn: Problem adding inputs: ")
 	}
 
 	// The spend amount should be zero for post submissions.
-	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount, standardTxnFields.AdditionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateSubmitPostTxn: %v", err)
 	}
 
@@ -2879,7 +2898,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	IsHidden bool,
 	AdditionalFees uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the profile fields.
@@ -2894,7 +2913,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 			NewStakeMultipleBasisPoints: NewStakeMultipleBasisPoints,
 			IsHidden:                    IsHidden,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 
@@ -2902,13 +2921,13 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the create profile fee.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, AdditionalFees)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, standardTxnFields.MinFeeRateNanosPerKB, 0, standardTxnFields.Mempool, AdditionalFees)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateProfileTxn: Problem adding inputs: ")
 	}
 
 	// The spend amount should equal to the additional fees for profile submissions.
-	if err = amountEqualsAdditionalOutputs(spendAmount-AdditionalFees, additionalOutputs); err != nil {
+	if err = amountEqualsAdditionalOutputs(spendAmount-AdditionalFees, standardTxnFields.AdditionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
 	}
 
@@ -2963,7 +2982,7 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 	MinDeSoExpectedNanos uint64,
 	MinCreatorCoinExpectedNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the creator coin fields.
@@ -2978,16 +2997,19 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 			MinDeSoExpectedNanos,
 			MinCreatorCoinExpectedNanos,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
+
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
 
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(
-			txn, minFeeRateNanosPerKB, mempool)
+			txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
 	}
@@ -3010,7 +3032,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 	CreatorCoinToTransferNanos uint64,
 	RecipientPublicKey []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the creator coin fields.
@@ -3021,15 +3043,18 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 			CreatorCoinToTransferNanos,
 			RecipientPublicKey,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTransferTxn: Problem adding inputs: ")
 	}
@@ -3135,7 +3160,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	AdditionalDESORoyalties map[PublicKey]uint64,
 	AdditionalCoinRoyalties map[PublicKey]uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the create NFT fields.
@@ -3150,7 +3175,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 			NFTRoyaltyToCreatorBasisPoints,
 			NFTRoyaltyToCoinBasisPoints,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3185,9 +3210,12 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 		txn.ExtraData = extraData
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, standardTxnFields.MinFeeRateNanosPerKB, 0, standardTxnFields.Mempool, NFTFee)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
 	}
@@ -3251,7 +3279,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	SerialNumber uint64,
 	BidAmountNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 	// Create a transaction containing the NFT bid fields.
 	txn := &MsgDeSoTxn{
@@ -3261,14 +3289,17 @@ func (bc *Blockchain) CreateNFTBidTxn(
 			SerialNumber,
 			BidAmountNanos,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTBidTxn: Problem adding inputs: ")
 	}
@@ -3291,7 +3322,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 	SerialNumber uint64,
 	EncryptedUnlockableTextBytes []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the NFT transfer fields.
@@ -3303,14 +3334,17 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 			ReceiverPublicKey,
 			EncryptedUnlockableTextBytes,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTTransferTxn: Problem adding inputs: ")
 	}
@@ -3330,7 +3364,7 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the accept NFT transfer fields.
@@ -3340,14 +3374,17 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 			NFTPostHash,
 			SerialNumber,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"CreateAcceptNFTTransferTxn: Problem adding inputs: ")
@@ -3369,7 +3406,7 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the burn NFT fields.
@@ -3379,14 +3416,17 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 			NFTPostHash,
 			SerialNumber,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateBurnNFTTxn: Problem adding inputs: ")
 	}
@@ -3409,21 +3449,21 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	BidAmountNanos uint64,
 	EncryptedUnlockableTextBytes []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// Create a new UtxoView. If we have access to a Mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
 	}
-	if mempool != nil {
-		utxoView, err = mempool.GetAugmentedUniversalView()
+	if standardTxnFields.Mempool != nil {
+		utxoView, err = standardTxnFields.Mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
-				"Blockchain.CreateAcceptNFTBidTxn: Problem getting augmented UtxoView from mempool: ")
+				"Blockchain.CreateAcceptNFTBidTxn: Problem getting augmented UtxoView from Mempool: ")
 		}
 	}
 
@@ -3445,14 +3485,17 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 			EncryptedUnlockableTextBytes,
 			bidderInputs,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem adding inputs: ")
 	}
@@ -3477,7 +3520,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	IsBuyNow bool,
 	BuyNowPriceNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the update NFT fields.
@@ -3489,7 +3532,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 			IsForSale,
 			MinBidAmountNanos,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3501,9 +3544,12 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 		txn.ExtraData = extraData
 	}
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateNFTTxn: Problem adding inputs: ")
 	}
@@ -3586,10 +3632,10 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// Create a new UtxoView. If we have access to a Mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
@@ -3597,12 +3643,12 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 			"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
 				"Problem creating new utxo view: ")
 	}
-	if mempool != nil {
-		utxoView, err = mempool.GetAugmentedUniversalView()
+	if standardTxnFields.Mempool != nil {
+		utxoView, err = standardTxnFields.Mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
-					"Problem getting augmented UtxoView from mempool: ")
+					"Problem getting augmented UtxoView from Mempool: ")
 		}
 	}
 
@@ -3625,7 +3671,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 			uint64(float64(creatorCoinToTransferNanos) * 1.05),
 			ReceiverPublicKey,
 		},
-		TxOutputs: additionalOutputs,
+		TxOutputs: standardTxnFields.AdditionalOutputs,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3636,10 +3682,13 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	diamondsExtraData[DiamondPostHashKey] = DiamondPostHash[:]
 	txn.ExtraData = diamondsExtraData
 
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
+
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "CreateCreatorCoinTransferTxnWithDiamonds: Problem adding inputs: ")
@@ -3771,10 +3820,10 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _spendAmount uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// Create a new UtxoView. If we have access to a Mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
@@ -3782,12 +3831,12 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
 				"Problem creating new utxo view: ")
 	}
-	if mempool != nil {
-		utxoView, err = mempool.GetAugmentedUniversalView()
+	if standardTxnFields.Mempool != nil {
+		utxoView, err = standardTxnFields.Mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
-					"Problem getting augmented UtxoView from mempool: ")
+					"Problem getting augmented UtxoView from Mempool: ")
 		}
 	}
 
@@ -3811,7 +3860,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	txn := &MsgDeSoTxn{
 		PublicKey: SenderPublicKey,
 		TxnMeta:   &BasicTransferMetadata{},
-		TxOutputs: append(additionalOutputs, &DeSoOutput{
+		TxOutputs: append(standardTxnFields.AdditionalOutputs, &DeSoOutput{
 			PublicKey:   diamondPostEntry.PosterPublicKey,
 			AmountNanos: desoToTransferNanos,
 		}),
@@ -3828,7 +3877,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, standardTxnFields.MinFeeRateNanosPerKB, standardTxnFields.Mempool)
 	if err != nil {
 		return nil, 0, 0, 0, 0, errors.Wrapf(
 			err, "CreateBasicTransferTxnWithDiamonds: Problem adding inputs: ")
@@ -3847,8 +3896,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 }
 
 func (bc *Blockchain) CreateMaxSpend(
-	senderPkBytes []byte, recipientPkBytes []byte, minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	senderPkBytes []byte, recipientPkBytes []byte, standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInputAdded uint64, _spendAmount uint64, _fee uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
@@ -3857,7 +3905,7 @@ func (bc *Blockchain) CreateMaxSpend(
 		// Set a single output with the maximum possible size to ensure we don't
 		// underestimate the fee. Note it must be a max size output because outputs
 		// are encoded as uvarints.
-		TxOutputs: append(additionalOutputs, &DeSoOutput{
+		TxOutputs: append(standardTxnFields.AdditionalOutputs, &DeSoOutput{
 			PublicKey:   recipientPkBytes,
 			AmountNanos: math.MaxUint64,
 		}),
@@ -3866,10 +3914,13 @@ func (bc *Blockchain) CreateMaxSpend(
 	}
 
 	// Get the spendable UtxoEntrys.
-	spendableUtxos, err := bc.GetSpendableUtxosForPublicKey(senderPkBytes, mempool, nil)
+	spendableUtxos, err := bc.GetSpendableUtxosForPublicKey(senderPkBytes, standardTxnFields.Mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem getting spendable UtxoEntrys: ")
 	}
+
+	// Add node source to txn ExtraData, if provided
+	AddNodeSourceToTxnMetadata(txn, standardTxnFields.NodeSource)
 
 	totalInput := uint64(0)
 	for _, utxoEntry := range spendableUtxos {
@@ -3895,7 +3946,7 @@ func (bc *Blockchain) CreateMaxSpend(
 		}
 	}
 
-	txnFee := _computeMaxTxFee(txn, minFeeRateNanosPerKB)
+	txnFee := _computeMaxTxFee(txn, standardTxnFields.MinFeeRateNanosPerKB)
 
 	if totalInput < txnFee {
 		return nil, 0, 0, 0, fmt.Errorf("CreateMaxSpend: Total input value %d would "+
@@ -3967,7 +4018,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
 	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
 		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
-		// Create a new UtxoView. If we have access to a mempool object, use it to
+		// Create a new UtxoView. If we have access to a Mempool object, use it to
 		// get an augmented view that factors in pending transactions.
 		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 		if err != nil {
@@ -3978,7 +4029,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			utxoView, err = mempool.GetAugmentedUniversalView()
 			if err != nil {
 				return 0, 0, 0, 0, errors.Wrapf(err,
-					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
+					"_computeInputsForTxn: Problem getting augmented UtxoView from Mempool: ")
 			}
 		}
 
@@ -4206,4 +4257,17 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 		return minFeeRateNanosPerKB
 	}
 	return allFeesNanosPerKB[medianPos]
+}
+
+func AddNodeSourceToTxnMetadata (txn *MsgDeSoTxn, nodeSource uint64) {
+	if nodeSource != 0 {
+		nodeSourceBuf := UintToBuf(nodeSource)
+		if len(txn.ExtraData) == 0 {
+			txnExtraData := make(map[string][]byte)
+			txnExtraData[NodeSourceMapKey] = nodeSourceBuf
+			txn.ExtraData = txnExtraData
+		} else {
+			txn.ExtraData[NodeSourceMapKey] = nodeSourceBuf
+		}
+	}
 }

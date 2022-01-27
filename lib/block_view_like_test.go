@@ -543,17 +543,17 @@ func TestLikeTxns(t *testing.T) {
 	}
 	testDisconnectedState()
 
-	// Apply all the transactions to a mempool object and make sure we don't get any
+	// Apply all the transactions to a Mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
 	for ii, tx := range txns {
 		// See comment above on this transaction.
-		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
+		fmt.Printf("Adding txn %d of type %v to Mempool\n", ii, tx.TxnMeta.GetTxnType())
 
 		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, senderPkString))
 		require.Equal(expectedRecipientBalances[ii], _getBalance(t, chain, mempool, recipientPkString))
 
 		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
-		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
+		require.NoError(err, "Problem adding transaction %d to Mempool: %v", ii, tx)
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
@@ -695,7 +695,7 @@ func TestLikeTxns(t *testing.T) {
 
 	testDisconnectedState()
 
-	// All the txns should be in the mempool already so mining a block should put
+	// All the txns should be in the Mempool already so mining a block should put
 	// all those transactions in it.
 	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)

@@ -374,7 +374,7 @@ func (bav *UtxoView) GetParentPostEntriesForPostEntry(postEntry *PostEntry, maxD
 }
 
 // Just fetch all the posts from the db and join them with all the posts
-// in the mempool. Then sort them by their timestamp. This can be called
+// in the Mempool. Then sort them by their timestamp. This can be called
 // on an empty view or a view that already has a lot of transactions
 // applied to it.
 func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash map[BlockHash][]*PostEntry, _err error) {
@@ -538,7 +538,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 	}
 
 	var postEntries []*PostEntry
-	// Iterate over the view. Put all posts authored by the public key into our mempool posts slice
+	// Iterate over the view. Put all posts authored by the public key into our Mempool posts slice
 	for _, postEntry := range bav.PostHashToPostEntry {
 		// Ignore deleted or hidden posts and any comments.
 		if postEntry.isDeleted || postEntry.IsHidden || len(postEntry.ParentStakeID) != 0 {

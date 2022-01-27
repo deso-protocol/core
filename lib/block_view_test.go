@@ -250,7 +250,7 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 }
 
 func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
-	// Apply all the transactions to a mempool object and make sure we don't get any
+	// Apply all the transactions to a Mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
 	for ii, tx := range testMeta.txns {
 		require.Equal(
@@ -258,10 +258,10 @@ func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
 			testMeta.expectedSenderBalances[ii],
 			_getBalance(testMeta.t, testMeta.chain, testMeta.mempool, PkToStringTestnet(tx.PublicKey)))
 
-		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
+		fmt.Printf("Adding txn %d of type %v to Mempool\n", ii, tx.TxnMeta.GetTxnType())
 
 		_, err := testMeta.mempool.ProcessTransaction(tx, false, false, 0, true)
-		require.NoError(testMeta.t, err, "Problem adding transaction %d to mempool: %v", ii, tx)
+		require.NoError(testMeta.t, err, "Problem adding transaction %d to Mempool: %v", ii, tx)
 	}
 }
 

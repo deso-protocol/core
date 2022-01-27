@@ -2146,7 +2146,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 // in any transactions that have already been connected to it. This is useful,
 // as an example, when one whats to see what UtxoEntrys are available for spending
 // after factoring in (i.e. connecting) all of the transactions currently in the
-// mempool that are related to this public key.
+// Mempool that are related to this public key.
 //
 // At a high level, this function allows one to get the utxos that are the union of:
 // - utxos in the db

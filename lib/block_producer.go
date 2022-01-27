@@ -59,7 +59,7 @@ type BlockTemplateStats struct {
 	// The "Added" time on a transaction changes every time a block is mined so we record
 	// the first time added val we are aware of for a specific txn hash here.
 	FailingTxnOriginalTimeAdded time.Time
-	// The time since the failing txn was added to the mempool.
+	// The time since the failing txn was added to the Mempool.
 	FailingTxnMinutesSinceAdded float64
 }
 
@@ -172,10 +172,10 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	if desoBlockProducer.chain.chainState() != SyncStateSyncingHeaders &&
 		desoBlockProducer.chain.chainState() != SyncStateNeedBlocksss {
 
-		// Fetch a bunch of mempool transactions to add.
+		// Fetch a bunch of Mempool transactions to add.
 		txnsOrderedByTimeAdded, _, err := desoBlockProducer.mempool.GetTransactionsOrderedByTimeAdded()
 		if err != nil {
-			return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem getting mempool transactions: ")
+			return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem getting Mempool transactions: ")
 		}
 
 		// Now keep
@@ -250,7 +250,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 					blockTemplateStats.FailingTxnOriginalTimeAdded = failingTxnOriginalTimeAdded
 					desoBlockProducer.latestBlockTemplateStats = blockTemplateStats
 				}
-				// Compute the time since this txn started holding up the mempool.
+				// Compute the time since this txn started holding up the Mempool.
 				currentTime := time.Now()
 				timeElapsed := currentTime.Sub(failingTxnOriginalTimeAdded)
 				desoBlockProducer.latestBlockTemplateStats.FailingTxnMinutesSinceAdded = timeElapsed.Minutes()
@@ -324,7 +324,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem computing next difficulty: ")
 	}
 
-	glog.Infof("Produced block with %v txns with approx %v total txns in mempool",
+	glog.Infof("Produced block with %v txns with approx %v total txns in Mempool",
 		len(blockRet.Txns), len(desoBlockProducer.mempool.readOnlyUniversalTransactionList))
 	return blockRet, diffTarget, lastNode, nil
 }

@@ -120,7 +120,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		isHidden,
 		0,
 		feeRateNanosPerKB,
-		nil, /*mempool*/
+		nil, /*Mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -238,7 +238,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		deleteKey,
 		false,
 		feeRateNanosPerKB,
-		nil /*mempool*/,
+		nil /*Mempool*/,
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -1075,17 +1075,17 @@ func TestUpdateProfile(t *testing.T) {
 	// Verify that all the profiles have been deleted.
 	checkProfilesDeleted()
 
-	// Apply all the transactions to a mempool object and make sure we don't get any
+	// Apply all the transactions to a Mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
 	for ii, tx := range txns {
 		// See comment above on this transaction.
-		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
+		fmt.Printf("Adding txn %d of type %v to Mempool\n", ii, tx.TxnMeta.GetTxnType())
 
 		require.Equal(expectedSenderBalances[ii], _getBalance(
 			t, chain, mempool, PkToStringTestnet(tx.PublicKey)))
 
 		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
-		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
+		require.NoError(err, "Problem adding transaction %d to Mempool: %v", ii, tx)
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
@@ -1128,7 +1128,7 @@ func TestUpdateProfile(t *testing.T) {
 	// Verify that all the profiles have been deleted.
 	checkProfilesDeleted()
 
-	// All the txns should be in the mempool already so mining a block should put
+	// All the txns should be in the Mempool already so mining a block should put
 	// all those transactions in it.
 	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -1193,20 +1193,20 @@ func TestSpamUpdateProfile(t *testing.T) {
 			false, /*isHidden*/
 			0,
 			feeRateNanosPerKB, /*feeRateNanosPerKB*/
-			mempool,           /*mempool*/
+			mempool,           /*Mempool*/
 			[]*DeSoOutput{})
 		require.NoError(err)
 		_signTxn(t, txn, moneyPrivString)
 		fmt.Printf("Creating txn took: %v seconds\n", time.Since(startTimeCreateTxn).Seconds())
 
-		fmt.Println("Running txns through mempool: ", ii)
+		fmt.Println("Running txns through Mempool: ", ii)
 		startTimeMempoolAdd := time.Now()
 		mempoolTxsAdded, err := mempool.processTransaction(
 			txn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 			true /*verifySignatures*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
-		fmt.Printf("Adding to mempool took: %v seconds\n", time.Since(startTimeMempoolAdd).Seconds())
+		fmt.Printf("Adding to Mempool took: %v seconds\n", time.Since(startTimeMempoolAdd).Seconds())
 	}
 }
 
@@ -3070,7 +3070,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool, /*mempool*/
+				mempool, /*Mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -3095,7 +3095,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool, /*mempool*/
+				mempool, /*Mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -3127,7 +3127,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool, /*mempool*/
+				mempool, /*Mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -3153,7 +3153,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool, /*mempool*/
+				mempool, /*Mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -3187,7 +3187,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool, /*mempool*/
+				mempool, /*Mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -3219,7 +3219,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool, /*mempool*/
+				mempool, /*Mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -3245,7 +3245,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				false,
 				0,
 				100,
-				mempool, /*mempool*/
+				mempool, /*Mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 
@@ -3346,7 +3346,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Verify that the balance and expiration block in the db match expectation.
 	_verifyTest := func(derivedPublicKey []byte, expirationBlockExpected uint64,
 		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *DeSoMempool) {
-		// Verify that expiration block was persisted in the db or is in mempool utxoView
+		// Verify that expiration block was persisted in the db or is in Mempool utxoView
 		if mempool == nil {
 			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
@@ -3625,21 +3625,21 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed disconnecting all txn on a single utxoView")
 	}
-	// Connect transactions to a single mempool, should pass.
+	// Connect transactions to a single Mempool, should pass.
 	{
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 				true /*verifySignatures*/)
-			require.NoErrorf(err, "mempool index %v", ii)
+			require.NoErrorf(err, "Mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
 
-		// This will check the expiration block and balances according to the mempool augmented utxoView.
+		// This will check the expiration block and balances according to the Mempool augmented utxoView.
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
-		fmt.Println("Passed connecting all txn to the mempool")
+		fmt.Println("Passed connecting all txn to the Mempool")
 	}
-	// Check basic transfer signed with a random key, when passing mempool.
+	// Check basic transfer signed with a random key, when passing Mempool.
 	// Should fail.
 	{
 		// Generate a random key pair
@@ -3651,16 +3651,16 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDerivedKeyNotAuthorized)
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
-		fmt.Println("Fail basic transfer signed with random key with mempool.")
+		fmt.Println("Fail basic transfer signed with random key with Mempool.")
 	}
-	// Remove all the transactions from the mempool. Should pass.
+	// Remove all the transactions from the Mempool. Should pass.
 	{
 		for _, burnTxn := range testTxns {
 			mempool.inefficientRemoveTransaction(burnTxn)
 		}
-		// This will check the expiration block and balances according to the mempool augmented utxoView.
+		// This will check the expiration block and balances according to the Mempool augmented utxoView.
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, mempool)
-		fmt.Println("Passed removing all txn from the mempool.")
+		fmt.Println("Passed removing all txn from the Mempool.")
 	}
 	// After disconnecting, check basic transfer signed with unauthorized derived key.
 	// Should fail.
@@ -3672,25 +3672,25 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, mempool)
 		fmt.Println("Failed basic transfer signed with unauthorized derived key after disconnecting")
 	}
-	// Re-connect transactions to a single mempool, should pass.
+	// Re-connect transactions to a single Mempool, should pass.
 	{
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 				true /*verifySignatures*/)
-			require.NoErrorf(err, "mempool index %v", ii)
+			require.NoErrorf(err, "Mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
 
-		// This will check the expiration block and balances according to the mempool augmented utxoView.
+		// This will check the expiration block and balances according to the Mempool augmented utxoView.
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
-		fmt.Println("Passed connecting all txn to the mempool.")
+		fmt.Println("Passed connecting all txn to the Mempool.")
 	}
 	// We will be adding some blocks so we define an array to keep track of them.
 	testBlocks := []*MsgDeSoBlock{}
-	// Mine a block with all the mempool transactions.
+	// Mine a block with all the Mempool transactions.
 	{
-		// All the txns should be in the mempool already so mining a block should put
+		// All the txns should be in the Mempool already so mining a block should put
 		// all those transactions in it.
 		addedBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 		require.NoError(err)
@@ -3838,21 +3838,21 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, 0, 2, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed connecting AuthorizeDerivedKey txn signed with an authorized private key.")
 	}
-	// Re-connect transactions to a single mempool, should pass.
+	// Re-connect transactions to a single Mempool, should pass.
 	{
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 				true /*verifySignatures*/)
-			require.NoErrorf(err, "mempool index %v", ii)
+			require.NoErrorf(err, "Mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
 
-		// This will check the expiration block and balances according to the mempool augmented utxoView.
+		// This will check the expiration block and balances according to the Mempool augmented utxoView.
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, mempool)
-		fmt.Println("Passed connecting all txn to the mempool.")
+		fmt.Println("Passed connecting all txn to the Mempool.")
 	}
-	// Mine a block so that mempool gets flushed to db
+	// Mine a block so that Mempool gets flushed to db
 	{
 		addedBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 		require.NoError(err)
@@ -3980,21 +3980,21 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
 		fmt.Println("Passed disconnecting all txns. Flushed to Db.")
 	}
-	// Connect transactions to a single mempool, should pass.
+	// Connect transactions to a single Mempool, should pass.
 	{
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 				true /*verifySignatures*/)
-			require.NoErrorf(err, "mempool index %v", ii)
+			require.NoErrorf(err, "Mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
 
-		// This will check the expiration block and balances according to the mempool augmented utxoView.
+		// This will check the expiration block and balances according to the Mempool augmented utxoView.
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
-		fmt.Println("Passed connecting all txn to the mempool")
+		fmt.Println("Passed connecting all txn to the Mempool")
 	}
-	// Check adding basic transfer to mempool signed with new authorized derived key.
+	// Check adding basic transfer to Mempool signed with new authorized derived key.
 	// Now that key has been de-authorized this must fail.
 	{
 		_, _, err = _basicTransfer(senderPkBytes, recipientPkBytes,
@@ -4003,7 +4003,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 		// Since this should fail, balance wouldn't change.
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
-		fmt.Println("Failed basic transfer signed with de-authorized derived key in mempool.")
+		fmt.Println("Failed basic transfer signed with de-authorized derived key in Mempool.")
 	}
 	// Attempt re-authorizing a previously de-authorized derived key.
 	// Since we've already deleted this derived key, this must fail.
@@ -4028,7 +4028,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 4, AuthorizeDerivedKeyOperationNotValid, mempool)
 		fmt.Println("Failed connecting AuthorizeDerivedKey txn with de-authorized private key.")
 	}
-	// Mine a block so that mempool gets flushed to db
+	// Mine a block so that Mempool gets flushed to db
 	{
 		addedBlock, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 		require.NoError(err)
