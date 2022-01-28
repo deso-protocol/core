@@ -56,6 +56,11 @@ func TestComputeMaxTPS(t *testing.T) {
 			txns = append(txns, txn)
 		}
 
+		standardTxnFields := StandardTxnFields{}
+		standardTxnFields.MinFeeRateNanosPerKB = 10
+		standardTxnFields.Mempool = nil
+		standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 		// Create a profile for this key
 		{
 			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
@@ -68,9 +73,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				12500,
 				false,
 				0,
-				10,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 			_signTxn(t, txn, currentPrivStr)
 			_, err = mempool.ProcessTransaction(
@@ -85,6 +88,10 @@ func TestComputeMaxTPS(t *testing.T) {
 		bodyBytes, err := json.Marshal(bodyObj)
 		require.NoError(err)
 		postExtraData := make(map[string][]byte)
+		standardTxnFields = StandardTxnFields{}
+		standardTxnFields.MinFeeRateNanosPerKB = 100
+		standardTxnFields.Mempool = nil
+		standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 		// Create posts for this profile
 		for jj := 0; jj < numPostsPerProfile; jj++ {
 			fmt.Println("Processing inner txn: ", len(txns))
@@ -98,9 +105,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				uint64(time.Now().UnixNano()),
 				postExtraData,
 				false,
-				100,
-				mempool,
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.

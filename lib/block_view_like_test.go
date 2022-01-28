@@ -24,8 +24,13 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateLikeTxn(
-		senderPkBytes, likedPostHash, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		senderPkBytes, likedPostHash, isUnfollow, &standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}

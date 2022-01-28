@@ -109,6 +109,11 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
 		updaterPkBytes,
 		profilePubKey,
@@ -119,9 +124,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		newStakeMultipleBasisPoints,
 		isHidden,
 		0,
-		feeRateNanosPerKB,
-		nil, /*mempool*/
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1182,6 +1185,10 @@ func TestSpamUpdateProfile(t *testing.T) {
 		fmt.Println("Creating txns: ", ii)
 		startTimeCreateTxn := time.Now()
 		moneyPkBytes, _, _ := Base58CheckDecode(moneyPkString)
+		standardTxnFields := StandardTxnFields{}
+		standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+		standardTxnFields.Mempool = mempool
+		standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
 			moneyPkBytes,
 			nil,
@@ -1192,9 +1199,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 			12500, /*StakeMultiple*/
 			false, /*isHidden*/
 			0,
-			feeRateNanosPerKB, /*feeRateNanosPerKB*/
-			mempool,           /*mempool*/
-			[]*DeSoOutput{})
+			&standardTxnFields)
 		require.NoError(err)
 		_signTxn(t, txn, moneyPrivString)
 		fmt.Printf("Creating txn took: %v seconds\n", time.Since(startTimeCreateTxn).Seconds())
@@ -3056,7 +3061,10 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		_, _, _ = _doBasicTransferWithViewFlush(
 			t, chain, db, params, moneyPkString, m3Pub,
 			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-
+		standardTxnFields := StandardTxnFields{}
+		standardTxnFields.MinFeeRateNanosPerKB = 100
+		standardTxnFields.Mempool = mempool
+		standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 		// m0 takes m0
 		{
 			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
@@ -3069,9 +3077,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -3084,6 +3090,10 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			require.Equal(1, len(mempoolTxsAdded))
 		}
 		{
+			standardTxnFields = StandardTxnFields{}
+			standardTxnFields.MinFeeRateNanosPerKB = 100
+			standardTxnFields.Mempool = mempool
+			standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
 				m1PkBytes,
 				m1PkBytes,
@@ -3094,9 +3104,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -3116,6 +3124,10 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 
 		// m1 takes m2
 		{
+			standardTxnFields = StandardTxnFields{}
+			standardTxnFields.MinFeeRateNanosPerKB = 100
+			standardTxnFields.Mempool = mempool
+			standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
 				m1PkBytes,
 				m1PkBytes,
@@ -3126,9 +3138,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -3142,6 +3152,10 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		}
 		// m0 takes m1
 		{
+			standardTxnFields = StandardTxnFields{}
+			standardTxnFields.MinFeeRateNanosPerKB = 100
+			standardTxnFields.Mempool = mempool
+			standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
 				m0PkBytes,
 				m0PkBytes,
@@ -3152,9 +3166,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -3176,6 +3188,10 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		}
 		// m1 takes m0
 		{
+			standardTxnFields = StandardTxnFields{}
+			standardTxnFields.MinFeeRateNanosPerKB = 100
+			standardTxnFields.Mempool = mempool
+			standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
 				m1PkBytes,
 				m1PkBytes,
@@ -3186,9 +3202,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -3208,6 +3222,10 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 
 		// m2 takes m0 should fail
 		{
+			standardTxnFields = StandardTxnFields{}
+			standardTxnFields.MinFeeRateNanosPerKB = 100
+			standardTxnFields.Mempool = mempool
+			standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
 				m2PkBytes,
 				m2PkBytes,
@@ -3218,9 +3236,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -3234,6 +3250,10 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		}
 		// m3 takes m0 should fail
 		{
+			standardTxnFields = StandardTxnFields{}
+			standardTxnFields.MinFeeRateNanosPerKB = 100
+			standardTxnFields.Mempool = mempool
+			standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
 			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
 				m3PkBytes,
 				m3PkBytes,
@@ -3244,9 +3264,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				&standardTxnFields)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.

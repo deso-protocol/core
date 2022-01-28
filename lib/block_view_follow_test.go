@@ -27,8 +27,13 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateFollowTxn(
-		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		senderPkBytes, followedPkBytes, isUnfollow, &standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
