@@ -352,17 +352,23 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 		keyString := hex.EncodeToString(key)
 
 		// Update ancestral record structures depending on the existing DB record.
-		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
+		if err := snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound); err != nil {
+			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
+		}
 		// Now save the newest record to cache.
 		snap.Cache.Add(keyString, value)
 
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
 		if getError == nil {
-			snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue))
+			if err := snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue)); err != nil {
+				return errors.Wrapf(err, "DBSetWithTxn: Problem updating the checksum ")
+			}
 		}
 		// We also add the new record to the checksum.
-		snap.Checksum.AddBytes(EncodeKeyValue(key, value))
+		if err := snap.Checksum.AddBytes(EncodeKeyValue(key, value)); err != nil {
+			return errors.Wrapf(err, "DBSetWithTxn: Problem updating the checksum ")
+		}
 	}
 	return nil
 }
@@ -410,9 +416,12 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 		// We check if we've already read this key and stored it in the cache.
 		// Otherwise, we fetch the current value of this record from the DB.
 		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+		if getError == badger.ErrKeyNotFound {
+			return nil
+		}
 
 		// If there is some error with the DB read, other than non-existent key, we return.
-		if getError != nil && getError != badger.ErrKeyNotFound {
+		if getError != nil {
 			return errors.Wrapf(getError, "DBDeleteWithTxn: problem checking for DB record " +
 				"with key: %v", key)
 		}
@@ -427,13 +436,18 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 	// After a successful DB delete, we update the snapshot.
 	if isState {
 		keyString := hex.EncodeToString(key)
+
 		// Update ancestral record structures depending on the existing DB record.
-		snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound)
+		if err := snap.PrepareAncestralRecord(keyString, ancestralValue, true); err != nil {
+			return errors.Wrapf(err, "DBDeleteWithTxn: Problem preparing ancestral record")
+		}
 		// Now delete the past record from the cache.
 		snap.Cache.Delete(keyString)
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
-		snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue))
+		if err := snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue)); err != nil {
+			return errors.Wrapf(err, "DBSetWithTxn: Problem updating the checksum ")
+		}
 	}
 	return nil
 }
@@ -2570,6 +2584,12 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 }
 
 func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+	var counter uint64
+	if snap != nil {
+		counter = snap.PrepareAncestralFlush()
+		glog.Infof("ProcessBlock: Preparing snapshot flush with counter (%v)", counter)
+	}
+
 	if desoBlock.Header == nil {
 		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
 	}
@@ -2616,6 +2636,11 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward)); err != nil {
 			return err
 		}
+	}
+
+	if snap != nil {
+		glog.Infof("ProcessBlock: Snapshot flushing with counter (%v)", counter)
+		snap.FlushAncestralRecords(counter)
 	}
 
 	return nil

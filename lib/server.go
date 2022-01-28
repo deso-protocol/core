@@ -826,11 +826,16 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	}
 
 	// TODO: Any restrictions on how many snapshots a peer can request?
-	dbEntries, full, _ := srv.blockchain.snapshot.GetSnapshotChunk(srv.blockchain.db, msg.Prefix, msg.SnapshotStartEntry.Key)
+	snapshotChunk, full, _ := srv.blockchain.snapshot.GetSnapshotChunk(srv.blockchain.db, msg.Prefix, msg.SnapshotStartEntry.Key)
+	snapshotChecksum, err := srv.blockchain.snapshot.Checksum.ToBytes()
+	if err != nil {
+		glog.Errorf("server._handleGetSnapshot: Problem getting snapshot (%v)", err)
+		return
+	}
 	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
 		SnapshotHeight: srv.blockchain.snapshot.BlockHeight,
-		SnapshotChecksum: srv.blockchain.snapshot.Checksum.ToHashString(),
-		SnapshotChunk: dbEntries,
+		SnapshotChecksum: snapshotChecksum,
+		SnapshotChunk: snapshotChunk,
 		SnapshotFullPrefix: full,
 		Prefix: msg.Prefix,
 	}, false)
@@ -843,7 +848,7 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 
 	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) " +
 		"with SnapshotHeight (%v) and SnapshotChecksum (%v) and Snapshotdata length (%v)", pp,
-		srv.blockchain.snapshot.BlockHeight, srv.blockchain.snapshot.Checksum.ToHashString(), len(dbEntries))
+		srv.blockchain.snapshot.BlockHeight, snapshotChecksum, len(snapshotChunk))
 }
 
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
@@ -860,8 +865,14 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	err := srv.blockchain.snapshot.SetSnapshotChunk(srv.blockchain.db, msg.SnapshotChunk)
 	if err != nil {
 		glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
+		return
 	}
-	glog.Infof("Server._handleSnapshot: Current checksum (%v)", srv.blockchain.snapshot.Checksum.ToHashString())
+	stateChecksum, err := srv.blockchain.snapshot.Checksum.ToBytes()
+	if err != nil {
+		glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
+		return
+	}
+	glog.Infof("Server._handleSnapshot: Current checksum (%v)", stateChecksum)
 
 	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
 	pp.currentTime = time.Now()

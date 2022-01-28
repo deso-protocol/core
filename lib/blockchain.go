@@ -1910,11 +1910,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			err = errors.Wrapf(err, "ProcessBlock: Problem saving block with StatusBlockStored")
 		}
 	} else {
-		var counter uint64
-		if bc.snapshot != nil {
-			counter = bc.snapshot.PrepareAncestralFlush()
-			glog.Infof("ProcessBlock: Preparing snapshot flush with counter (%v)", counter)
-		}
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			// Store the new block in the db under the
 			//   <blockHash> -> <serialized block>
@@ -1932,10 +1927,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			return nil
 		})
-		if bc.snapshot != nil {
-			glog.Infof("ProcessBlock: Snapshot flushing with counter (%v)", counter)
-			bc.snapshot.FlushAncestralRecords(counter)
-		}
 	}
 	glog.Infof("ProcesssBlock: Aaaand got here")
 
@@ -2400,7 +2391,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	glog.Infof("ProcesssBlock: current tip height after (%v)", currentTip.Height)
 	if bc.snapshot != nil {
 		bc.snapshot.DeleteChannel <- uint64(currentTip.Height)
-		glog.Infof("ProcessBlock: snapshot is (%v)", bc.snapshot.Checksum.ToHashString())
+		stateChecksum, err := bc.snapshot.Checksum.ToBytes()
+		if err != nil {
+			glog.Errorf("FlushToDbWithTxn: Problem getting checksum bytes (%v)", err)
+		}
+		glog.Infof("ProcessBlock: snapshot is (%v)", stateChecksum)
 	}
 	// If we've made it this far, the block has been validated and we have either added
 	// the block to the tip, done nothing with it (because its cumwork isn't high enough)

@@ -2,16 +2,20 @@ package lib
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"github.com/cloudflare/circl/group"
 	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
+	"github.com/oleiade/lane"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/semaphore"
 	"io"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -39,33 +43,97 @@ import (
 // TODO: I think we need to use the multiplicative group, unfortunately. Seems like the DLP
 // assumption only holds if the factorization is difficult.
 type StateChecksum struct {
-	Curve group.Group
-	Checksum group.Element
+	curve group.Group
+	checksum group.Element
 
+	Semaphore *semaphore.Weighted
+	Ctx context.Context
+	AddMutex sync.Mutex
+
+	maxWorkers int64
 	dst []byte
 }
 
 // Initialize starts the state checksum by initializing it to zero.
 func (sc *StateChecksum) Initialize() {
-	sc.Curve = group.Ristretto255
-	sc.Checksum = sc.Curve.Identity()
+	sc.curve = group.Ristretto255
+	sc.checksum = sc.curve.Identity()
+	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
+	sc.Semaphore = semaphore.NewWeighted(sc.maxWorkers)
+	sc.Ctx = context.TODO()
 	sc.dst = []byte("DESO-DST-V1:Ristretto255")
 }
 
-func (sc *StateChecksum) AddBytes(bytes []byte) {
-	hashElement := sc.Curve.HashToElement(bytes, sc.dst)
-	sc.Checksum.Add(sc.Checksum, hashElement)
+func (sc *StateChecksum) AddBytes(bytes []byte) error {
+	if err := sc.Semaphore.Acquire(sc.Ctx, 1); err != nil {
+		return errors.Wrapf(err, "StateChecksum.AddBytes: problem acquiring semaphore")
+	}
+
+	go func(sc *StateChecksum, bytes []byte) {
+		defer sc.Semaphore.Release(1)
+
+		hashElement := sc.curve.HashToElement(bytes, sc.dst)
+
+		sc.AddMutex.Lock()
+		sc.checksum.Add(sc.checksum, hashElement)
+		sc.AddMutex.Unlock()
+	}(sc, bytes)
+
+	return nil
 }
 
-func (sc *StateChecksum) RemoveBytes(bytes []byte) {
-	hashElement := sc.Curve.HashToElement(bytes, sc.dst)
-	hashElement = hashElement.Neg(hashElement)
-	sc.Checksum.Add(sc.Checksum, hashElement)
+func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
+	if err := sc.Semaphore.Acquire(sc.Ctx, 1); err != nil {
+		return errors.Wrapf(err, " StateChecksum.RemoveBytes: problem acquiring semaphore")
+	}
+
+	go func(sc *StateChecksum, bytes []byte) {
+		defer sc.Semaphore.Release(1)
+
+		hashElement := sc.curve.HashToElement(bytes, sc.dst)
+		hashElement = hashElement.Neg(hashElement)
+
+		sc.AddMutex.Lock()
+		sc.checksum.Add(sc.checksum, hashElement)
+		sc.AddMutex.Unlock()
+	}(sc, bytes)
+	return nil
 }
 
-func (sc *StateChecksum) ToHashString() string {
-	keyBytes, _ := sc.Checksum.MarshalBinaryCompress()
-	return hex.EncodeToString(keyBytes)
+func (sc *StateChecksum) GetChecksum() (group.Element, error) {
+	if err := sc.Semaphore.Acquire(sc.Ctx, sc.maxWorkers); err != nil {
+		return nil, errors.Wrapf(err, "StateChecksum.GetChecksum: problem acquiring semaphore")
+	}
+	defer sc.Semaphore.Release(sc.maxWorkers)
+
+	// Clone the checksum by adding it to identity. That's faster than doing ToBytes / FromBytes
+	checksumCopy := group.Ristretto255.Identity()
+	checksumCopy.Add(checksumCopy, sc.checksum)
+
+	return checksumCopy, nil
+}
+
+func (sc *StateChecksum) Wait() error {
+	if err := sc.Semaphore.Acquire(sc.Ctx, sc.maxWorkers); err != nil {
+		return errors.Wrapf(err, "StateChecksum.Wait: problem acquiring semaphore")
+	}
+	defer sc.Semaphore.Release(sc.maxWorkers)
+	return nil
+}
+
+// Don't use this function to deep copy the checksum, use the copy pattern in GetChecksum instead.
+// Parsing checksum to bytes is doing an inverse square root so it is slow.
+func (sc *StateChecksum) ToBytes() ([]byte, error) {
+	checksum, err := sc.GetChecksum()
+	if err != nil {
+		return nil, errors.Wrapf(err, "StateChecksum.ToBytes: problem getting checksum")
+	}
+
+	checksumBytes, err := checksum.MarshalBinary()
+	if err != nil {
+		return nil, errors.Wrapf(err, "stateChecksum.ToBytes: error during MarshalBinary")
+	}
+	return checksumBytes, nil
 }
 
 // -------------------------------------------------------------------------------------
@@ -159,6 +227,31 @@ var (
 	_PrefixSnapshotHealth = []byte{2}
 )
 
+type AncestralCache struct {
+	index uint64
+
+	// AncestralMap keeps track of original data in place of modified records
+	// during utxo_view flush, which is where we're modifying state data.
+	AncestralMap    map[string][]byte //*lane.Deque//map[uint64]map[string][]byte
+
+	// NotExistsMap keeps track of non-existent records in the DB. We need to
+	// do this because we need to distinguish non-existent records from []byte{}.
+	NotExistsMap     map[string]bool//*lane.Deque//map[uint64]map[string]bool
+
+	// MapKeyList is a list of keys in AncestralMap and NotExistsMap. We will sort
+	// it so that writes to BadgerDB are faster
+	MapKeyList       []string//*lane.Deque//map[uint64][]string
+}
+
+func NewAncestralCache(index uint64) *AncestralCache {
+	return &AncestralCache{
+		index: index,
+		AncestralMap: make(map[string][]byte),
+		NotExistsMap: make(map[string]bool),
+		MapKeyList: make([]string, 0),
+	}
+}
+
 type Snapshot struct {
 	// DB is used to store ancestral records
 	Db *badger.DB
@@ -190,17 +283,7 @@ type Snapshot struct {
 	// syncing with peers, we are confident that data wasn't tampered with.
 	Checksum         *StateChecksum
 
-	// AncestralMap keeps track of original data in place of modified records
-	// during utxo_view flush, which is where we're modifying state data.
-	AncestralMap     map[uint64]map[string][]byte
-
-	// NotExistsMap keeps track of non-existent records in the DB. We need to
-	// do this because we need to distinguish non-existent records from []byte{}.
-	NotExistsMap     map[uint64]map[string]bool
-
-	// MapKeyList is a list of keys in AncestralMap and NotExistsMap. We will sort
-	// it so that writes to BadgerDB are faster
-	MapKeyList       map[uint64][]string
+	AncestralMemory *lane.Deque
 
 	// DBWriteSemaphore is an atomically accessed semaphore counter that will be
 	// used to mitigate DB race conditions between sync and utxo_view flush.
@@ -250,18 +333,10 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 		CounterChannel:      make(chan uint64),
 		DeleteChannel:       make(chan uint64),
 		Checksum:            checksum,
-		AncestralMap:        make(map[uint64]map[string][]byte),
-		NotExistsMap:        make(map[uint64]map[string]bool),
-		MapKeyList:          make(map[uint64][]string),
+		AncestralMemory:     lane.NewDeque(),
 		DBWriteSemaphore:    int32(0),
 		brokenSnapshot:      false,
 	}
-
-	index := snap.FlushCounter
-	snap.MapKeyList[index] = []string{}
-	snap.AncestralMap[index] = make(map[string][]byte)
-	snap.NotExistsMap[index] = make(map[string]bool)
-
 	go snap.Run()
 
 	return snap, nil
@@ -275,7 +350,7 @@ func (snap *Snapshot) Run() {
 		case counter := <-snap.CounterChannel:
 			{
 				glog.Infof("Snapshot.Run: Flushing ancestral records with counter (%v)", counter)
-				snap.FlushAncestralRecordsWithCounter(counter)
+				snap.FlushAncestralRecordsWithCounter()
 			}
 		case height := <-snap.DeleteChannel:
 			{
@@ -292,26 +367,37 @@ func (snap *Snapshot) Run() {
 }
 
 // PrepareAncestralRecord sets an adequate record in AncestralMap or NotExistsMap.
-func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed bool) {
+func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed bool) error {
 	// If the record was not found, we add it to the NotExistsMap, otherwise to AncestralMap.
 	// We record the key in MapKeyList.
 	index := snap.FlushCounter
 
-	snap.DBLock.Lock()
-	defer snap.DBLock.Unlock()
+	if snap.AncestralMemory.Empty() {
+		return fmt.Errorf("Snapshot.PrepareAncestralRecords: ancestral memory is empty. " +
+			"Did you forget to call Snapshot.PrepareAncestralFlush?")
+	}
 
-	if _, ok := snap.AncestralMap[index][key]; ok {
-		return
+	lastAncestralCache := snap.AncestralMemory.Last().(*AncestralCache)
+	if lastAncestralCache.index != index {
+		return fmt.Errorf("Snapshot.PrepareAncestralRecords: last ancestral cache index (%v) is " +
+			"greater than current flush index (%v)", lastAncestralCache.index, index)
 	}
-	if _, ok := snap.NotExistsMap[index][key]; ok {
-		return
+
+	if _, ok := lastAncestralCache.AncestralMap[key]; ok {
+		return nil
 	}
-	snap.MapKeyList[index] = append(snap.MapKeyList[index], key)
+
+	if _, ok := lastAncestralCache.NotExistsMap[key]; ok {
+		return nil
+	}
+
+	lastAncestralCache.MapKeyList = append(lastAncestralCache.MapKeyList, key)
 	if existed {
-		snap.AncestralMap[index][key] = value
+		lastAncestralCache.AncestralMap[key] = value
 	} else {
-		snap.NotExistsMap[index][key] = true
+		lastAncestralCache.NotExistsMap[key] = true
 	}
+	return nil
 }
 
 // GetCurrentPrefixAndKey is used to get an ancestral record key from a main DB key.
@@ -386,11 +472,9 @@ func (snap *Snapshot) PrepareAncestralFlush() uint64 {
 	snap.IncrementSemaphore()
 
 	snap.FlushCounter += 1
-
 	index := snap.FlushCounter
-	snap.MapKeyList[index] = []string{}
-	snap.AncestralMap[index] = make(map[string][]byte)
-	snap.NotExistsMap[index] = make(map[string]bool)
+
+	snap.AncestralMemory.Append(NewAncestralCache(index))
 
 	glog.Infof("Snapshot.PrepareAncestralFlush: Created structs at index (%v)", index)
 	// TODO: is this everything we want to do prior to a flush?
@@ -404,6 +488,12 @@ func (snap *Snapshot) FlushAncestralRecords(counter uint64) {
 	glog.Infof("Snapshot.FlushAncestralRecords: Initiated the flush")
 	// Decrement snapshot semaphore counter.
 	atomic.AddInt32(&snap.DBWriteSemaphore, int32(-1))
+
+	err := snap.Checksum.Wait()
+	if err != nil {
+		glog.Errorf("Snapshot.FlushAncestralRecords: Error while waiting for checksum: (%v)", err)
+		return
+	}
 
 	if snap.brokenSnapshot {
 		glog.Errorf("Snapshot.FlushAncestralRecords: Broken snapshot, aborting")
@@ -422,7 +512,10 @@ func (snap *Snapshot) isState(key []byte) bool {
 
 // FlushAncestralRecords updates the ancestral records after a utxo_view flush.
 // This function should be called in a go-routine after all utxo_view flushes.
-func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
+func (snap *Snapshot) FlushAncestralRecordsWithCounter() {
+	snap.DBLock.Lock()
+	defer snap.DBLock.Unlock()
+
 	// If snapshot is broken then there's nothing to do.
 	glog.Infof("Snapshot.FlushAncestralRecords: Initiated the flush")
 	// Decrement snapshot semaphore counter.
@@ -433,19 +526,18 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 		return
 	}
 
-	snap.DBLock.Lock()
-	defer snap.DBLock.Unlock()
-	if counter <= snap.LastCounter {
-		glog.Infof("Snapshot.FlushAncestralRecords: Discarding counter (%v) because it's before the last counter (%v)",
-			counter, snap.LastCounter)
-		delete(snap.MapKeyList, counter)
-		delete(snap.AncestralMap, counter)
-		delete(snap.NotExistsMap, counter)
+	lastAncestralCache := snap.AncestralMemory.First().(*AncestralCache)
+
+	if lastAncestralCache.index <= snap.LastCounter {
+		glog.Infof("Snapshot.FlushAncestralRecords: Discarding index (%v) because it's before the last index (%v)",
+			lastAncestralCache.index, snap.LastCounter)
+		snap.AncestralMemory.Shift()
+
 		return
 	}
 
 	// First sort the copyMapKeyList so that we write to BadgerDB in order.
-	sort.Strings(snap.MapKeyList[counter])
+	sort.Strings(lastAncestralCache.MapKeyList)
 	glog.Infof("Snapshot.FlushAncestralRecords: Finished sorting map keys")
 
 	// We launch a new read-write transaction to set the records.
@@ -458,10 +550,10 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 				"snapshot health")
 		}
 		// Iterate through all now-sorted keys.
-		glog.Infof("Snapshot.FlushAncestralRecords: Adding (%v) new records", len(snap.MapKeyList[counter]))
-		glog.Infof("Snapshot.FlushAncestralRecords: Adding (%v) AncestralMap records", len(snap.AncestralMap[counter]))
-		glog.Infof("Snapshot.FlushAncestralRecords: Adding (%v) NotExistsMap records", len(snap.NotExistsMap[counter]))
-		for _, key := range snap.MapKeyList[counter] {
+		glog.Infof("Snapshot.FlushAncestralRecords: Adding (%v) new records", len(lastAncestralCache.MapKeyList))
+		glog.Infof("Snapshot.FlushAncestralRecords: Adding (%v) AncestralMap records", len(lastAncestralCache.AncestralMap))
+		glog.Infof("Snapshot.FlushAncestralRecords: Adding (%v) NotExistsMap records", len(lastAncestralCache.NotExistsMap))
+		for _, key := range lastAncestralCache.MapKeyList {
 			// We store keys as strings because they're easier to store and sort this way.
 			keyBytes, err := hex.DecodeString(key)
 			if err != nil {
@@ -482,13 +574,13 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 
 			// If we get here, it means that no record existed in ancestral records at key.
 			// The key was either added to copyAncestralMap or copyNotExistsMap during flush.
-			if value, exists := snap.AncestralMap[counter][key]; exists {
+			if value, exists := lastAncestralCache.AncestralMap[key]; exists {
 				err = txn.Set(snap.GetSeekPrefix(keyBytes), append(value, byte(1)))
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 						"flushing a record from copyAncestralMap at key %v:", key)
 				}
-			} else if _, exists = snap.NotExistsMap[counter][key]; exists {
+			} else if _, exists = lastAncestralCache.NotExistsMap[key]; exists {
 				err = txn.Set(snap.GetSeekPrefix(keyBytes), []byte{byte(0)})
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
@@ -512,22 +604,21 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter(counter uint64) {
 		glog.Errorf("Snapshot.FlushAncestralRecords: Problem flushing snapshot %v, Error %v", snap, err)
 	}
 
-	delete(snap.MapKeyList, counter)
-	delete(snap.AncestralMap, counter)
-	delete(snap.NotExistsMap, counter)
+	snap.AncestralMemory.Shift()
 	glog.Infof("Snapshot.FlushAncestralRecords: Snapshot, finished flushing ancestral records. Snapshot " +
 		"status, brokenSnapshot: (%v)", snap.brokenSnapshot)
 }
 
 func (snap *Snapshot) DeleteAncestralRecords(height uint64) {
+	snap.DBLock.Lock()
+	defer snap.DBLock.Unlock()
+
 	var prefix []byte
 	prefix = append(prefix, EncodeUint64(height)...)
 
 	glog.Infof("Snapshot.DeleteAncestralRecords: Starting delete process for height (%v)", height)
 	numDeleted := 0
 	//maxPrint := 5
-	snap.DBLock.Lock()
-	defer snap.DBLock.Unlock()
 	err := snap.Db.DropPrefix(prefix)
 	if err != nil {
 		glog.Errorf("Snapshot.DeleteAncestralRecords: Problem deleting ancestral records error (%v)", err)
@@ -641,7 +732,9 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 			if err != nil {
 				return err
 			}
-			snap.Checksum.AddBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value))
+			if err := snap.Checksum.AddBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value)); err != nil {
+				return errors.Wrapf(err, "DBSetWithTxn: Problem updating the checksum ")
+			}
 		}
 		return nil
 	})

@@ -2284,7 +2284,7 @@ func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
 type MsgDeSoSnapshotData struct {
 	SnapshotHeight    uint64
 
-	SnapshotChecksum  string
+	SnapshotChecksum  []byte
 
 	// SnapshotChunk is the data associated with StateKeys.
 	SnapshotChunk       []*DBEntry
@@ -2297,10 +2297,11 @@ func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	data = append(data, UintToBuf(msg.SnapshotHeight)...)
-	data = append(data, UintToBuf(uint64(len(msg.SnapshotChecksum)))...)
 
-	// Encode the snapshot data
-	data = append(data, []byte(msg.SnapshotChecksum)...)
+	// Encode the snapshot checksum
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotChecksum)))...)
+	data = append(data, msg.SnapshotChecksum...)
+
 	if len(msg.SnapshotChunk) == 0 {
 		return nil, fmt.Errorf("MsgDeSoSnapshotData.ToBytes: Snapshot data should not be empty")
 	}
@@ -2329,12 +2330,11 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 	if err != nil {
 		return err
 	}
-	checksumBytes := make([]byte, checksumLen)
-	_, err = io.ReadFull(rr, checksumBytes)
+	msg.SnapshotChecksum = make([]byte, checksumLen)
+	_, err = io.ReadFull(rr, msg.SnapshotChecksum)
 	if err != nil {
 		return err
 	}
-	msg.SnapshotChecksum = string(checksumBytes)
 
 	// Decode snapshot keys
 	dataLen, err := ReadUvarint(rr)

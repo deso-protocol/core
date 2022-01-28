@@ -1,22 +1,22 @@
 package lib
 
 import (
-	"crypto"
-"crypto/sha512"
-"encoding/binary"
+	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"github.com/NVIDIA/sortedmap"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/bwesterb/go-ristretto/edwards25519"
-"github.com/cloudflare/circl/group"
+	"github.com/cloudflare/circl/group"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/oleiade/lane"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/semaphore"
 	"math"
 	"math/rand"
 	"reflect"
+	"runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -230,6 +230,32 @@ func TestDeque(t *testing.T) {
 	vv := deque.Last().(map[int]int)
 	vv[17] = 444
 	fmt.Println(deque.Last())
+
+	lastArray := make([]byte, 0)
+	lastArray = append(lastArray, 5)
+	lastArray = append(lastArray, 7)
+	deque.Append(lastArray)
+	lastArray = append(lastArray, 9)
+
+	fmt.Println(lastArray)
+	fmt.Println(deque.Last())
+
+	type x struct {
+		arr []byte
+	}
+	tester := &x{
+		arr: make([]byte, 0),
+	}
+	tester.arr = append(tester.arr, 8)
+	tester.arr = append(tester.arr, 20)
+	fmt.Println(tester)
+	deque.Append(tester)
+	tester.arr = append(tester.arr, 11)
+	fmt.Println(deque.Last())
+	zz := deque.Last().(*x)
+	zz.arr = append(zz.arr, 18)
+	fmt.Println(deque.Last())
+	fmt.Println(tester)
 }
 
 func TestBadgerConcurrentWrite(t *testing.T) {
@@ -458,173 +484,103 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	check1 = group.Ristretto255.NewElement()
 	check2 = group.Ristretto255.NewElement()
 	check3 = group.Ristretto255.NewElement()
-	z.AddBytes(bytesA)
-	check1Bytes, _ := z.Checksum.MarshalBinary()
- 	_ = check1.UnmarshalBinary(check1Bytes)
-	z.AddBytes(bytesB)
- 	check2Bytes, _ := z.Checksum.MarshalBinary()
-	_ = check2.UnmarshalBinary(check2Bytes)
-	z.RemoveBytes(bytesB)
-	require.Equal(z.Checksum.IsEqual(check1), true)
-	z.RemoveBytes(bytesA)
-	require.Equal(z.Checksum.IsEqual(identity), true)
+	require.NoError(z.AddBytes(bytesA))
+	check1Bytes, err := z.ToBytes()
+	vv, err := z.GetChecksum()
+	check1.Add(group.Ristretto255.Identity(), vv)
+	fmt.Println("check1", check1)
+	require.NoError(err)
+ 	//err = check1.UnmarshalBinary(check1Bytes)
+ 	require.NoError(err)
+ 	fmt.Println("check1", check1)
+	require.NoError(z.AddBytes(bytesB))
+ 	fmt.Println("check1", check1)
+ 	fmt.Println(z.GetChecksum())
+ 	check2Bytes, err := z.ToBytes()
+ 	require.NoError(err)
+	err = check2.UnmarshalBinary(check2Bytes)
+	require.NoError(err)
+	require.NoError(z.RemoveBytes(bytesB))
+
+	checksum, err := z.GetChecksum()
+	require.NoError(err)
+	fmt.Println("check1", check1)
+	fmt.Println("checksum", checksum)
+	require.Equal(checksum.IsEqual(check1), true)
+	require.NoError(z.RemoveBytes(bytesA))
+	checksum, err = z.GetChecksum()
+	require.NoError(err)
+	require.Equal(checksum.IsEqual(identity), true)
 
 	// Basic check #2
 	// Check if checksum A + B is equal to checksum B + A
-	z.AddBytes(bytesB)
-	z.AddBytes(bytesA)
-	require.Equal(check2.IsEqual(z.Checksum), true)
-	z.RemoveBytes(bytesA)
-	z.RemoveBytes(bytesB)
-	require.Equal(z.Checksum.IsEqual(identity), true)
+	require.NoError(z.AddBytes(bytesB))
+	require.NoError(z.AddBytes(bytesA))
+	checksum, err = z.GetChecksum()
+	require.NoError(err)
+	require.Equal(check2.IsEqual(checksum), true)
+	require.NoError(z.RemoveBytes(bytesA))
+	require.NoError(z.RemoveBytes(bytesB))
+	checksum, err = z.GetChecksum()
+	require.NoError(err)
+	require.Equal(checksum.IsEqual(identity), true)
 
 	// Basic check #3
 	// Check if checksum A + B + C is the same as C + A + B and B + A + C
 	// Do some random removes to make sure everything is commutative.
 	// A + B + C
-	z.AddBytes(bytesA)
-	z.AddBytes(bytesB)
-	z.AddBytes(bytesC)
-	check1Bytes, _ = z.Checksum.MarshalBinary()
-	_ = check1.UnmarshalBinary(check1Bytes)
+	require.NoError(z.AddBytes(bytesA))
+	require.NoError(z.AddBytes(bytesB))
+	require.NoError(z.AddBytes(bytesC))
+	check1Bytes, err = z.ToBytes()
+	require.NoError(err)
+	err = check1.UnmarshalBinary(check1Bytes)
+	require.NoError(err)
 	// Remove C, A, B
-	z.RemoveBytes(bytesC)
-	z.RemoveBytes(bytesA)
-	z.RemoveBytes(bytesB)
-	require.Equal(z.Checksum.IsEqual(identity), true)
+	require.NoError(z.RemoveBytes(bytesC))
+	require.NoError(z.RemoveBytes(bytesA))
+	require.NoError(z.RemoveBytes(bytesB))
+	checksum, err = z.GetChecksum()
+	require.NoError(err)
+	require.Equal(checksum.IsEqual(identity), true)
 
 	// C + A + B
-	z.AddBytes(bytesC)
-	z.AddBytes(bytesA)
-	z.AddBytes(bytesB)
-	check2Bytes, _ = z.Checksum.MarshalBinary()
-	_ = check2.UnmarshalBinary(check2Bytes)
+	require.NoError(z.AddBytes(bytesC))
+	require.NoError(z.AddBytes(bytesA))
+	require.NoError(z.AddBytes(bytesB))
+	check2Bytes, err = z.ToBytes()
+	require.NoError(err)
+	err = check2.UnmarshalBinary(check2Bytes)
+	require.NoError(err)
 	// Remove A, B, C
-	z.RemoveBytes(bytesA)
-	z.RemoveBytes(bytesB)
-	z.RemoveBytes(bytesC)
-	require.Equal(z.Checksum.IsEqual(identity), true)
+	require.NoError(z.RemoveBytes(bytesA))
+	require.NoError(z.RemoveBytes(bytesB))
+	require.NoError(z.RemoveBytes(bytesC))
+	checksum, err = z.GetChecksum()
+	require.NoError(err)
+	require.Equal(checksum.IsEqual(identity), true)
 
 	// Add B + A + C
-	z.AddBytes(bytesB)
-	z.AddBytes(bytesA)
-	z.AddBytes(bytesC)
-	check3Bytes, _ := z.Checksum.MarshalBinary()
-	_ = check3.UnmarshalBinary(check3Bytes)
+	require.NoError(z.AddBytes(bytesB))
+	require.NoError(z.AddBytes(bytesA))
+	require.NoError(z.AddBytes(bytesC))
+	check3Bytes, err := z.ToBytes()
+	require.NoError(err)
+	err = check3.UnmarshalBinary(check3Bytes)
+	require.NoError(err)
 	require.Equal(check2.IsEqual(check1), true)
 	require.Equal(check3.IsEqual(check1), true)
-	z.RemoveBytes(bytesB)
-	z.RemoveBytes(bytesA)
-	z.RemoveBytes(bytesC)
-	require.Equal(z.Checksum.IsEqual(identity), true)
+	require.NoError(z.RemoveBytes(bytesB))
+	require.NoError(z.RemoveBytes(bytesA))
+	require.NoError(z.RemoveBytes(bytesC))
+	checksum, err = z.GetChecksum()
+	require.NoError(err)
+	require.Equal(checksum.IsEqual(identity), true)
 }
 
-type HashCoordinator struct {
-	Elligator2Configs []*Elligator2Config
-	MaxCount int32
-}
-
-func (coordinator *HashCoordinator) Map (t *testing.T, msg []byte, dst []byte) {
-	config := Elligator2Map(t, msg, dst)
-	coordinator.Elligator2Configs = append(coordinator.Elligator2Configs, config)
-}
-
-func (coordinator *HashCoordinator) Reduce(t *testing.T) *edwards25519.ExtendedPoint {
-	var sqrt, twiddle, sgn, chk, corr, rSubOne, sNeg edwards25519.FieldElement
-	var jc edwards25519.JacobiPoint
-	var inCaseA, inCaseB, inCaseD, b int32
-
-	if len(coordinator.Elligator2Configs) == 0 {
-		return nil
-	}
-
-	// 2**252 - 3
-	// 2**253 - 6
-	// 2**254 - 12
-	// 2**255 - 24
-	// 2**255
-	var ndCopy, ndCopySqrt edwards25519.FieldElement
-	add(&feOne, &ND, &ndCopy)
-
-
-	ndCopySqrt.Exp22523(&ndCopy)
-	for ii := 0; ii < 3; ii++ {
-		ndCopySqrt.Square(&ndCopySqrt)
-		//fmt.Printf("sqrt #%v, value: (%v)\n", ii, ndCopySqrt.String())
-	}
-	for ii := 0; ii < 4; ii++ {
-		ndCopySqrt.Mul(&ndCopySqrt, &ndCopy)
-		//fmt.Printf("mult #%v, value: (%v)\n", ii, ndCopySqrt.String())
-	}
-	exp3andMult4()
-	//fmt.Println("FINAL:", ndCopySqrt.String(), ndCopySqrt.String() == "1")
-	require.Equal("1", ndCopySqrt.String())
-
-	// den3, chk (local), tt, ND, r,
-	// inCaseA (local), inCaseD (local), inCaseB (local), corr (local),
-	// sqrt (local), twiddle (local), r0i (local), sgn (local), jc (local), rSubOne (local), sNeg (local)
-
-	// configuration: den3, chk, ND,
-
-	// case       A           B            C             D
-	// ---------------------------------------------------------------
-	// t          1/sqrt(a)   -i/sqrt(a)   1/sqrt(i*a)   -i/sqrt(i*a)
-	// chk        1           -1           -i            i
-	// corr       1           i            1             i
-	// ret        1           1            0             0
-
-
-	config.tt.Exp22523(config.tt)
-	config.tt.Mul(config.tt, config.den3)
-	chk.Square(config.tt)
-	chk.Mul(&chk, config.ND)
-
-	inCaseA = chk.IsOneI()
-	inCaseD = chk.EqualsI(&feI)
-	chk.Neg(&chk)
-	inCaseB = chk.IsOneI()
-
-	corr.SetOne()
-	corr.ConditionalSet(&feI, inCaseB+inCaseD)
-	config.tt.Mul(config.tt, &corr)
-	sqrt.Set(config.tt)
-
-	b = inCaseA + inCaseB
-	/// here -----------------
-
-	sqrt.Abs(&sqrt)
-
-	twiddle.SetOne()
-	twiddle.ConditionalSet(config.r0i, 1-b)
-	sgn.SetOne()
-	sgn.ConditionalSet(&feMinusOne, 1-b)
-	sqrt.Mul(&sqrt, &twiddle)
-
-	// s = N * sqrt * twiddle
-	jc.S.Mul(&sqrt, config.N)
-
-	// t = -sgn * sqrt * s * (r-1) * (d-1)^2 - 1
-	jc.T.Neg(&sgn)
-	jc.T.Mul(&sqrt, &jc.T)
-	jc.T.Mul(&jc.S, &jc.T)
-	jc.T.Mul(&feDMinusOneSquared, &jc.T)
-	sub(config.r, &feOne, &rSubOne)
-	jc.T.Mul(&rSubOne, &jc.T)
-	sub(&jc.T, &feOne, &jc.T)
-
-	sNeg.Neg(&jc.S)
-	jc.S.ConditionalSet(&sNeg, equal30(jc.S.IsNegativeI(), b))
-
-	var cp edwards25519.CompletedPoint
-	cp.SetJacobiQuartic(&jc)
-	var point edwards25519.ExtendedPoint
-	point.SetZero()
-	point.SetCompleted(&cp)
-	return &point
-}
 
 func TestFasterHashToCurve(t *testing.T) {
-	require := require.New(t)
+	//require := require.New(t)
 
 	//p1 := group.Ristretto255.Identity()
 	//p2 := group.Ristretto255.Identity()
@@ -632,179 +588,47 @@ func TestFasterHashToCurve(t *testing.T) {
 	//bytes2 := []byte("random byte string2")
 	dst := []byte("random-dst")
 
-	testCounter := uint64(100000)
+	fmt.Println(int(float64(runtime.GOMAXPROCS(0)) * 0.35))
+	maxWorkers := runtime.GOMAXPROCS(0)
+	sem := semaphore.NewWeighted(int64(maxWorkers))
+	ctx := context.TODO()
+	//if err := sem.Acquire(ctx, 5); err != nil {
+	//	fmt.Printf("Failed to acquire the semaphore: (%v)\n", err)
+	//}
+	//go func() {
+	//	time.Sleep(2*time.Second)
+	//	sem.Release(5)
+	//	fmt.Println("Finished the wait")
+	//}()
+	//fmt.Println("Waiting sir")
+	//if err := sem.Acquire(ctx, int64(maxWorkers)); err != nil {
+	//	fmt.Printf("Failed to acquire the semaphore: (%v)\n", err)
+	//}
+	//fmt.Println("Acquired sir")
+	//sem.Release(int64(maxWorkers))
+
+
+	testCounter := uint64(1 << 19)
+	var muter sync.Mutex
 	for ii := uint64(0); ii < testCounter; ii++ {
-		bytes := append(seedString, EncodeUint64(ii)...)
-
-		//fmt.Println(point.MarshalBinary())
-		//fmt.Println("fe:", fe.String())
-		//_ = Elligator2Map(t, &fe)
-		//jp := Elligator2Map(t, &fe)
-		coordinator := HashCoordinator{}
-		coordinator.Map(t, bytes, dst)
-		point := coordinator.Reduce(t)
-
-		elem := group.Ristretto255.HashToElement(bytes, dst)
-		//fmt.Println(elem.MarshalBinaryCompress())
-
-		var pointBytes [32]byte
-		point.RistrettoInto(&pointBytes)
-		elemBytes, err := elem.MarshalBinaryCompress()
-		require.NoError(err)
-		require.Equal(true, reflect.DeepEqual(pointBytes[:], elemBytes))
+		if err := sem.Acquire(ctx, 1); err != nil {
+			fmt.Printf("Failed to acquire the semaphore: (%v)\n", err)
+		}
+		go func(jj uint64) {
+			defer sem.Release(1)
+			bytes := append(seedString, EncodeUint64(jj)...)
+			elem := group.Ristretto255.HashToElement(bytes, dst)
+			muter.Lock()
+			elem.Add(elem, elem)
+			muter.Unlock()
+			//fmt.Println(elem.MarshalBinaryCompress())
+		}(ii)
 	}
-}
-
-var (
-	// sqrt(-1)
-	feI = edwards25519.FieldElement{
-		1718705420411056, 234908883556509, 2233514472574048,
-		2117202627021982, 765476049583133,
+	if err := sem.Acquire(ctx, int64(maxWorkers)); err != nil {
+		fmt.Println("FAILED")
 	}
-
-	// parameter d of Edwards25519
-	feD = edwards25519.FieldElement{
-		929955233495203, 466365720129213, 1662059464998953,
-		2033849074728123, 1442794654840575,
-	}
-
-	feOne = edwards25519.FieldElement{1, 0, 0, 0, 0}
-
-	// 1 - d^2
-	feOneMinusDSquared = edwards25519.FieldElement{
-		1136626929484150, 1998550399581263, 496427632559748,
-		118527312129759, 45110755273534,
-	}
-
-	// (d-1)^2
-	feDMinusOneSquared = edwards25519.FieldElement{
-		1507062230895904, 1572317787530805, 683053064812840,
-		317374165784489, 1572899562415810,
-	}
-
-	feMinusOne = edwards25519.FieldElement{2251799813685228, 2251799813685247,
-		2251799813685247, 2251799813685247, 2251799813685247}
-)
-
-// Returns 1 if b == c and 0 otherwise.  Assumes 0 <= b, c < 2^30.
-func equal30(b, c int32) int32 {
-	x := uint32(b ^ c)
-	x--
-	return int32(x >> 31)
+	fmt.Println("YEAAAH")
 }
-
-// Sets fe to a + b without normalizing.  Returns fe.
-func add(a, b, fe *edwards25519.FieldElement) {
-	fe[0] = a[0] + b[0]
-	fe[1] = a[1] + b[1]
-	fe[2] = a[2] + b[2]
-	fe[3] = a[3] + b[3]
-	fe[4] = a[4] + b[4]
-}
-
-// Sets fe to a-b. Returns fe.
-func sub(a, b, fe *edwards25519.FieldElement) {
-	var t edwards25519.FieldElement
-	t = *b
-
-	t[1] += t[0] >> 51
-	t[0] = t[0] & 0x7ffffffffffff
-	t[2] += t[1] >> 51
-	t[1] = t[1] & 0x7ffffffffffff
-	t[3] += t[2] >> 51
-	t[2] = t[2] & 0x7ffffffffffff
-	t[4] += t[3] >> 51
-	t[3] = t[3] & 0x7ffffffffffff
-	t[0] += (t[4] >> 51) * 19
-	t[4] = t[4] & 0x7ffffffffffff
-
-	fe[0] = (a[0] + 0xfffffffffffda) - t[0]
-	fe[1] = (a[1] + 0xffffffffffffe) - t[1]
-	fe[2] = (a[2] + 0xffffffffffffe) - t[2]
-	fe[3] = (a[3] + 0xffffffffffffe) - t[3]
-	fe[4] = (a[4] + 0xffffffffffffe) - t[4]
-
-}
-
-func exp3andMult4(a *edwards25519.FieldElement, mult *edwards25519.FieldElement) *edwards25519.FieldElement {
-	var exp3, mult4 edwards25519.FieldElement
-
-	exp3.Square(a)
-	for ii := 0; ii < 2; ii++ {
-		exp3.Square(&exp3)
-		//fmt.Printf("sqrt #%v, value: (%v)\n", ii, ndCopySqrt.String())
-	}
-
-	mult4.Square(mult)
-	mult4.Square(&mult4)
-	return exp3.Mul(&exp3, &mult4)
-}
-
-type Elligator2Config struct {
-	den3 *edwards25519.FieldElement
-	tt *edwards25519.FieldElement
-	ND *edwards25519.FieldElement
-	r *edwards25519.FieldElement
-	r0i *edwards25519.FieldElement
-	N *edwards25519.FieldElement
-}
-
-func Elligator2Map(t *testing.T, msg []byte, dst []byte) *Elligator2Config {
-	xmd := group.NewExpanderMD(crypto.SHA512, dst)
-	data := xmd.Expand(msg, 64)
-	var ptBuf [32]byte
-	h := sha512.Sum512(data)
-	copy(ptBuf[:], h[:32])
-	var r0 edwards25519.FieldElement
-	r0.SetBytes(&ptBuf)
-
-	var r, rPlusD, rPlusOne, D, N, ND edwards25519.FieldElement
-	var r0i edwards25519.FieldElement
-
-	// r := i * r0^2
-	r0i.Mul(&r0, &feI)
-	r.Mul(&r0, &r0i)
-
-	// D := -((d*r)+1) * (r + d)
-	add(&feD, &r, &rPlusD)
-	D.Mul(&feD, &r)
-	add(&D, &feOne, &D)
-	D.Mul(&D, &rPlusD)
-	D.Neg(&D)
-
-	// N := -(d^2 - 1)(r + 1)
-	add(&r, &feOne, &rPlusOne)
-	N.Mul(&feOneMinusDSquared, &rPlusOne)
-
-	// sqrt is the inverse square root of N*D or of i*N*D.
-	// b=1 iff n1 is square.
-	ND.Mul(&N, &D)
-
-	// FROM HERE ----------------
-
-	var den2, den3, den4, den6, tt edwards25519.FieldElement
-	den2.Square(&ND)
-	den3.Mul(&den2, &ND)
-	den4.Square(&den2)
-	den6.Mul(&den2, &den4)
-	tt.Mul(&den6, &ND)
-
-	// TODO: SPLIT THIS GUUY
-
-	return &Elligator2Config{
-		den3: &den3,
-		tt: &tt,
-		N: &N,
-		ND: &ND,
-		r: &r,
-		r0i: &r0i,
-	}
-}
-
-func Elligator2Reduce(t *testing.T, config *Elligator2Config) *edwards25519.ExtendedPoint {
-
-}
-
 
 func TestStateChecksumBirthdayParadox(t *testing.T) {
 	require := require.New(t)
@@ -827,14 +651,15 @@ func TestStateChecksumBirthdayParadox(t *testing.T) {
 		hashes = append(hashes, hash)
 	}
 	for jj := 0; jj < testNumber; jj++ {
-		z.AddBytes(hashes[jj])
+		require.NoError(z.AddBytes(hashes[jj]))
 	}
 	var val group.Element
 	val = group.Ristretto255.NewElement()
-	valBytes, _ := z.Checksum.MarshalBinary()
+	valBytes, err := z.ToBytes()
+	require.NoError(err)
 	_ = val.UnmarshalBinary(valBytes)
 	for jj := 0; jj < testNumber; jj++ {
-		z.RemoveBytes(hashes[jj])
+		require.NoError(z.RemoveBytes(hashes[jj]))
 	}
 
 	// Build a list of indexes so we can reorder the hashes when we add / remove them.
@@ -857,17 +682,20 @@ func TestStateChecksumBirthdayParadox(t *testing.T) {
 		})
 		timeStart := time.Now()
 		for jj := 0; jj < testNumber; jj++ {
-			z.AddBytes(hashes[jj])
-			checksumBytes, _ := z.Checksum.MarshalBinary()
+			require.NoError(z.AddBytes(hashes[jj]))
+			checksumBytes, err := z.ToBytes()
+			require.NoError(err)
 			checksumString := string(checksumBytes)
 			if _, exists := repetitions[checksumString]; exists {
 				t.Fatalf("Found birthday paradox solution! (%v)", checksumBytes)
 			}
 			repetitions[checksumString] = true
 		}
-		require.Equal(z.Checksum.IsEqual(val), true)
+		checksum, err := z.GetChecksum()
+		require.NoError(err)
+		require.Equal(checksum.IsEqual(val), true)
 		for jj := 0; jj < testNumber; jj++ {
-			z.RemoveBytes(hashes[jj])
+			require.NoError(z.RemoveBytes(hashes[jj]))
 		}
 		totalElappsed += (time.Since(timeStart)).Seconds()
 	}
