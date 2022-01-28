@@ -8,8 +8,7 @@ import (
 	"fmt"
 	"github.com/NVIDIA/sortedmap"
 	"github.com/btcsuite/btcd/btcec"
-	r255 "github.com/bwesterb/go-ristretto"
-"github.com/bwesterb/go-ristretto/edwards25519"
+	"github.com/bwesterb/go-ristretto/edwards25519"
 "github.com/cloudflare/circl/group"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
@@ -520,53 +519,140 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	require.Equal(z.Checksum.IsEqual(identity), true)
 }
 
-type ristrettoElement struct {
-	p r255.Point
+type HashCoordinator struct {
+	Elligator2Configs []*Elligator2Config
+	MaxCount int32
 }
 
-func (g ristrettoElement)MarshalBinary() (data []byte, err error) {
-	panic("implement me")
+func (coordinator *HashCoordinator) Map (t *testing.T, msg []byte, dst []byte) {
+	config := Elligator2Map(t, msg, dst)
+	coordinator.Elligator2Configs = append(coordinator.Elligator2Configs, config)
 }
 
-func (g ristrettoElement)UnmarshalBinary(data []byte) error {
-	panic("implement me")
+func (coordinator *HashCoordinator) Reduce(t *testing.T) *edwards25519.ExtendedPoint {
+	var sqrt, twiddle, sgn, chk, corr, rSubOne, sNeg edwards25519.FieldElement
+	var jc edwards25519.JacobiPoint
+	var inCaseA, inCaseB, inCaseD, b int32
+
+	if len(coordinator.Elligator2Configs) == 0 {
+		return nil
+	}
+
+	// 2**252 - 3
+	// 2**253 - 6
+	// 2**254 - 12
+	// 2**255 - 24
+	// 2**255
+	var ndCopy, ndCopySqrt edwards25519.FieldElement
+	add(&feOne, &ND, &ndCopy)
+
+
+	ndCopySqrt.Exp22523(&ndCopy)
+	for ii := 0; ii < 3; ii++ {
+		ndCopySqrt.Square(&ndCopySqrt)
+		//fmt.Printf("sqrt #%v, value: (%v)\n", ii, ndCopySqrt.String())
+	}
+	for ii := 0; ii < 4; ii++ {
+		ndCopySqrt.Mul(&ndCopySqrt, &ndCopy)
+		//fmt.Printf("mult #%v, value: (%v)\n", ii, ndCopySqrt.String())
+	}
+	exp3andMult4()
+	//fmt.Println("FINAL:", ndCopySqrt.String(), ndCopySqrt.String() == "1")
+	require.Equal("1", ndCopySqrt.String())
+
+	// den3, chk (local), tt, ND, r,
+	// inCaseA (local), inCaseD (local), inCaseB (local), corr (local),
+	// sqrt (local), twiddle (local), r0i (local), sgn (local), jc (local), rSubOne (local), sNeg (local)
+
+	// configuration: den3, chk, ND,
+
+	// case       A           B            C             D
+	// ---------------------------------------------------------------
+	// t          1/sqrt(a)   -i/sqrt(a)   1/sqrt(i*a)   -i/sqrt(i*a)
+	// chk        1           -1           -i            i
+	// corr       1           i            1             i
+	// ret        1           1            0             0
+
+
+	config.tt.Exp22523(config.tt)
+	config.tt.Mul(config.tt, config.den3)
+	chk.Square(config.tt)
+	chk.Mul(&chk, config.ND)
+
+	inCaseA = chk.IsOneI()
+	inCaseD = chk.EqualsI(&feI)
+	chk.Neg(&chk)
+	inCaseB = chk.IsOneI()
+
+	corr.SetOne()
+	corr.ConditionalSet(&feI, inCaseB+inCaseD)
+	config.tt.Mul(config.tt, &corr)
+	sqrt.Set(config.tt)
+
+	b = inCaseA + inCaseB
+	/// here -----------------
+
+	sqrt.Abs(&sqrt)
+
+	twiddle.SetOne()
+	twiddle.ConditionalSet(config.r0i, 1-b)
+	sgn.SetOne()
+	sgn.ConditionalSet(&feMinusOne, 1-b)
+	sqrt.Mul(&sqrt, &twiddle)
+
+	// s = N * sqrt * twiddle
+	jc.S.Mul(&sqrt, config.N)
+
+	// t = -sgn * sqrt * s * (r-1) * (d-1)^2 - 1
+	jc.T.Neg(&sgn)
+	jc.T.Mul(&sqrt, &jc.T)
+	jc.T.Mul(&jc.S, &jc.T)
+	jc.T.Mul(&feDMinusOneSquared, &jc.T)
+	sub(config.r, &feOne, &rSubOne)
+	jc.T.Mul(&rSubOne, &jc.T)
+	sub(&jc.T, &feOne, &jc.T)
+
+	sNeg.Neg(&jc.S)
+	jc.S.ConditionalSet(&sNeg, equal30(jc.S.IsNegativeI(), b))
+
+	var cp edwards25519.CompletedPoint
+	cp.SetJacobiQuartic(&jc)
+	var point edwards25519.ExtendedPoint
+	point.SetZero()
+	point.SetCompleted(&cp)
+	return &point
 }
-
-func (g ristrettoElement) IsIdentity() bool {return false}
-func (g ristrettoElement) IsEqual(group.Element) bool {return false}
-func (g ristrettoElement) Add(group.Element, group.Element) group.Element {return ristrettoElement{}}
-func (g ristrettoElement) Dbl(group.Element) group.Element {return ristrettoElement{}}
-func (g ristrettoElement) Neg(group.Element) group.Element {return ristrettoElement{}}
-func (g ristrettoElement) Mul(group.Element, group.Scalar) group.Element {return ristrettoElement{}}
-func (g ristrettoElement) MulGen(group.Scalar) group.Element {return ristrettoElement{}}
-func (g ristrettoElement) MarshalBinaryCompress() ([]byte, error) {return nil, nil}
-
 
 func TestFasterHashToCurve(t *testing.T) {
+	require := require.New(t)
+
 	//p1 := group.Ristretto255.Identity()
 	//p2 := group.Ristretto255.Identity()
-	bytes1 := []byte("random byte string")
+	seedString := []byte("random byte string4")
 	//bytes2 := []byte("random byte string2")
 	dst := []byte("random-dst")
 
-	xmd := group.NewExpanderMD(crypto.SHA512, dst)
-	data := xmd.Expand(bytes1, 64)
-	var point r255.Point
-	point.SetZero()
-	var ptBuf [32]byte
-	h := sha512.Sum512(data)
-	copy(ptBuf[:], h[:32])
-	//return point.SetElligator(&ptBuf)
-	var fe edwards25519.FieldElement
-	var cp edwards25519.CompletedPoint
-	fe.SetBytes(&ptBuf)
-	jp := customElligator2(&fe)
-	cp.SetJacobiQuartic(jp)
-	(*edwards25519.ExtendedPoint)(&point).SetCompleted(&cp)
-	fmt.Println(point.MarshalBinary())
+	testCounter := uint64(100000)
+	for ii := uint64(0); ii < testCounter; ii++ {
+		bytes := append(seedString, EncodeUint64(ii)...)
 
-	elem := group.Ristretto255.HashToElement(bytes1, dst)
-	fmt.Println(elem.MarshalBinaryCompress())
+		//fmt.Println(point.MarshalBinary())
+		//fmt.Println("fe:", fe.String())
+		//_ = Elligator2Map(t, &fe)
+		//jp := Elligator2Map(t, &fe)
+		coordinator := HashCoordinator{}
+		coordinator.Map(t, bytes, dst)
+		point := coordinator.Reduce(t)
+
+		elem := group.Ristretto255.HashToElement(bytes, dst)
+		//fmt.Println(elem.MarshalBinaryCompress())
+
+		var pointBytes [32]byte
+		point.RistrettoInto(&pointBytes)
+		elemBytes, err := elem.MarshalBinaryCompress()
+		require.NoError(err)
+		require.Equal(true, reflect.DeepEqual(pointBytes[:], elemBytes))
+	}
 }
 
 var (
@@ -640,16 +726,44 @@ func sub(a, b, fe *edwards25519.FieldElement) {
 
 }
 
-func customElligator2(r0 *edwards25519.FieldElement) *edwards25519.JacobiPoint {
-	var r, rPlusD, rPlusOne, D, N, ND, sqrt, twiddle, sgn edwards25519.FieldElement
-	var rSubOne, r0i, sNeg edwards25519.FieldElement
-	var jc edwards25519.JacobiPoint
+func exp3andMult4(a *edwards25519.FieldElement, mult *edwards25519.FieldElement) *edwards25519.FieldElement {
+	var exp3, mult4 edwards25519.FieldElement
 
-	var b int32
+	exp3.Square(a)
+	for ii := 0; ii < 2; ii++ {
+		exp3.Square(&exp3)
+		//fmt.Printf("sqrt #%v, value: (%v)\n", ii, ndCopySqrt.String())
+	}
+
+	mult4.Square(mult)
+	mult4.Square(&mult4)
+	return exp3.Mul(&exp3, &mult4)
+}
+
+type Elligator2Config struct {
+	den3 *edwards25519.FieldElement
+	tt *edwards25519.FieldElement
+	ND *edwards25519.FieldElement
+	r *edwards25519.FieldElement
+	r0i *edwards25519.FieldElement
+	N *edwards25519.FieldElement
+}
+
+func Elligator2Map(t *testing.T, msg []byte, dst []byte) *Elligator2Config {
+	xmd := group.NewExpanderMD(crypto.SHA512, dst)
+	data := xmd.Expand(msg, 64)
+	var ptBuf [32]byte
+	h := sha512.Sum512(data)
+	copy(ptBuf[:], h[:32])
+	var r0 edwards25519.FieldElement
+	r0.SetBytes(&ptBuf)
+
+	var r, rPlusD, rPlusOne, D, N, ND edwards25519.FieldElement
+	var r0i edwards25519.FieldElement
 
 	// r := i * r0^2
-	r0i.Mul(r0, &feI)
-	r.Mul(r0, &r0i)
+	r0i.Mul(&r0, &feI)
+	r.Mul(&r0, &r0i)
 
 	// D := -((d*r)+1) * (r + d)
 	add(&feD, &r, &rPlusD)
@@ -666,33 +780,29 @@ func customElligator2(r0 *edwards25519.FieldElement) *edwards25519.JacobiPoint {
 	// b=1 iff n1 is square.
 	ND.Mul(&N, &D)
 
-	// TODO: FIX THIS GUUY
-	b = sqrt.InvSqrtI(&ND)
+	// FROM HERE ----------------
 
+	var den2, den3, den4, den6, tt edwards25519.FieldElement
+	den2.Square(&ND)
+	den3.Mul(&den2, &ND)
+	den4.Square(&den2)
+	den6.Mul(&den2, &den4)
+	tt.Mul(&den6, &ND)
 
-	sqrt.Abs(&sqrt)
+	// TODO: SPLIT THIS GUUY
 
-	twiddle.SetOne()
-	twiddle.ConditionalSet(&r0i, 1-b)
-	sgn.SetOne()
-	sgn.ConditionalSet(&feMinusOne, 1-b)
-	sqrt.Mul(&sqrt, &twiddle)
+	return &Elligator2Config{
+		den3: &den3,
+		tt: &tt,
+		N: &N,
+		ND: &ND,
+		r: &r,
+		r0i: &r0i,
+	}
+}
 
-	// s = N * sqrt * twiddle
-	jc.S.Mul(&sqrt, &N)
+func Elligator2Reduce(t *testing.T, config *Elligator2Config) *edwards25519.ExtendedPoint {
 
-	// t = -sgn * sqrt * s * (r-1) * (d-1)^2 - 1
-	jc.T.Neg(&sgn)
-	jc.T.Mul(&sqrt, &jc.T)
-	jc.T.Mul(&jc.S, &jc.T)
-	jc.T.Mul(&feDMinusOneSquared, &jc.T)
-	sub(&r, &feOne, &rSubOne)
-	jc.T.Mul(&rSubOne, &jc.T)
-	sub(&jc.T, &feOne, &jc.T)
-
-	sNeg.Neg(&jc.S)
-	jc.S.ConditionalSet(&sNeg, equal30(jc.S.IsNegativeI(), b))
-	return &jc
 }
 
 
