@@ -3452,7 +3452,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a new UtxoView. If we have access to a Mempool object, use it to
+	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
@@ -3463,7 +3463,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 		utxoView, err = standardTxnFields.Mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
-				"Blockchain.CreateAcceptNFTBidTxn: Problem getting augmented UtxoView from Mempool: ")
+				"Blockchain.CreateAcceptNFTBidTxn: Problem getting augmented UtxoView from mempool: ")
 		}
 	}
 
@@ -3635,7 +3635,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a new UtxoView. If we have access to a Mempool object, use it to
+	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
@@ -3648,7 +3648,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
-					"Problem getting augmented UtxoView from Mempool: ")
+					"Problem getting augmented UtxoView from mempool: ")
 		}
 	}
 
@@ -3823,7 +3823,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	standardTxnFields *StandardTxnFields) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _spendAmount uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Create a new UtxoView. If we have access to a Mempool object, use it to
+	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
@@ -3836,7 +3836,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 		if err != nil {
 			return nil, 0, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
-					"Problem getting augmented UtxoView from Mempool: ")
+					"Problem getting augmented UtxoView from mempool: ")
 		}
 	}
 
@@ -4018,7 +4018,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
 	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
 		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
-		// Create a new UtxoView. If we have access to a Mempool object, use it to
+		// Create a new UtxoView. If we have access to a mempool object, use it to
 		// get an augmented view that factors in pending transactions.
 		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 		if err != nil {
@@ -4029,7 +4029,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			utxoView, err = mempool.GetAugmentedUniversalView()
 			if err != nil {
 				return 0, 0, 0, 0, errors.Wrapf(err,
-					"_computeInputsForTxn: Problem getting augmented UtxoView from Mempool: ")
+					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
 			}
 		}
 

@@ -77,7 +77,7 @@ type Server struct {
 	// hasRequestedSync indicates whether we've bootstrapped our mempool
 	// by requesting all mempool transactions from a
 	// peer. It's initially false
-	// when the server boots up but gets set to true after we make a Mempool
+	// when the server boots up but gets set to true after we make a mempool
 	// request once we're fully synced.
 	// The waitGroup is used to manage the cleanup of the Server.
 	waitGroup deadlock.WaitGroup
@@ -206,7 +206,7 @@ func (srv *Server) GetMiner() *DeSoMiner {
 }
 
 func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
-	// Use the backendServer to add the transaction to the Mempool and
+	// Use the backendServer to add the transaction to the mempool and
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
 	// because we generally will have done that already.
@@ -215,7 +215,7 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
 	}
 
-	// At this point, we know the transaction has been run through the Mempool.
+	// At this point, we know the transaction has been run through the mempool.
 	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
 	srv.mempool.BlockUntilReadOnlyViewRegenerated()
 
@@ -350,19 +350,19 @@ func NewServer(
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
 		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
 
-	// Create a Mempool to store transactions until they're ready to be mined into
+	// Create a mempool to store transactions until they're ready to be mined into
 	// blocks.
 	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir)
 
-	// Useful for debugging. Every second, it outputs the contents of the Mempool
+	// Useful for debugging. Every second, it outputs the contents of the mempool
 	// and the contents of the addrmanager.
 	/*
 		go func() {
 			time.Sleep(3 * time.Second)
 			for {
-				glog.V(2).Infof("Current Mempool txns: ")
+				glog.V(2).Infof("Current mempool txns: ")
 				counter := 0
 				for kk, mempoolTx := range _mempool.poolMap {
 					kkCopy := kk
@@ -567,11 +567,11 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	}
 
 	// After processing all the headers this will check to see if we are fully current
-	// and send a request to our Peer to start a Mempool sync if so.
+	// and send a request to our Peer to start a mempool sync if so.
 	//
 	// This statement makes it so that if we boot up our node such that
 	// its initial state is fully current we'll always bootstrap our mempools with a
-	// Mempool request. The alternative is that our state is not fully current
+	// mempool request. The alternative is that our state is not fully current
 	// when we boot up, and we cover this second case in the _handleBlock function.
 	srv._maybeRequestSync(pp)
 
@@ -789,7 +789,7 @@ func (srv *Server) _cleanupDonePeerPeerState(pp *Peer) {
 	// requests eventually expiring, which will cause us to remove them from
 	// inventoryProcessed and potentially get the data from another Peer in the future.
 	//
-	// TODO: Sending a sync/Mempool message to a random Peer periodically seems like it would
+	// TODO: Sending a sync/mempool message to a random Peer periodically seems like it would
 	// be a good way to fill any gaps.
 	newPeer := srv.cmgr.RandomPeer()
 	if newPeer == nil {
@@ -839,7 +839,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 	glog.V(1).Infof("Server._handleBitcoinManagerUpdate: Being called")
 
 	// Regardless of whether the DeSo chain is in-sync, consider adding any BitcoinExchange
-	// transactions we've found to our Mempool. We do this to minimize the chances that the
+	// transactions we've found to our mempool. We do this to minimize the chances that the
 	// network ever loses track of someone's BitcoinExchange.
 	if len(bmUpdate.TransactionsFound) > 0 {
 		go func() {
@@ -851,14 +851,14 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 			// worth our time. This saves us from getting spammed by _addNewTxnAndRelay
 			// when processing stale blocks.
 			//
-			// Note that we pass a nil Mempool in order to avoid considering transactions
-			// that are in the Mempool but lacking a merkle proof. If transactions are
-			// invalid then a separate Mempool check later will catch them.
+			// Note that we pass a nil mempool in order to avoid considering transactions
+			// that are in the mempool but lacking a merkle proof. If transactions are
+			// invalid then a separate mempool check later will catch them.
 			validTransactions := []*MsgDeSoTxn{}
 			for _, burnTxn := range bmUpdate.TransactionsFound {
 				err := srv.blockchain.ValidateTransaction(
 					burnTxn, srv.blockchain.blockTip().Height+1, true, /*verifySignatures*/
-					nil /*Mempool*/)
+					nil /*mempool*/)
 				if err == nil {
 					validTransactions = append(validTransactions, burnTxn)
 				} else {
@@ -874,7 +874,7 @@ func (srv *Server) _handleBitcoinManagerUpdate(bmUpdate *MsgDeSoBitcoinManagerUp
 			totalAdded := 0
 			for _, validTx := range validTransactions {
 				// This shouldn't care about the min burn work because it tries to add to
-				// the Mempool directly. We should never get an error here because we've already
+				// the mempool directly. We should never get an error here because we've already
 				// validated all of the transactions.
 				//
 				// Note we set rateLimit=false because we have a global minimum txn fee that should
@@ -954,11 +954,11 @@ func (srv *Server) _handleDonePeer(pp *Peer) {
 }
 
 func (srv *Server) _relayTransactions() {
-	glog.V(1).Infof("Server._relayTransactions: Waiting for Mempool readOnlyView to regenerate")
+	glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
 	srv.mempool.BlockUntilReadOnlyViewRegenerated()
-	glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
+	glog.V(1).Infof("Server._relayTransactions: mempool view has regenerated")
 
-	// For each peer, compute the transactions they're missing from the Mempool and
+	// For each peer, compute the transactions they're missing from the mempool and
 	// send them an inv.
 	allPeers := srv.cmgr.GetAllPeers()
 	txnList := srv.mempool.readOnlyUniversalTransactionList
@@ -1012,7 +1012,7 @@ func (srv *Server) _addNewTxn(
 
 	glog.V(1).Infof("Server._addNewTxnAndRelay: txn: %v, peer: %v", txn, pp)
 
-	// Try and add the transaction to the Mempool.
+	// Try and add the transaction to the mempool.
 	peerID := uint64(0)
 	if pp != nil {
 		peerID = pp.ID
@@ -1023,7 +1023,7 @@ func (srv *Server) _addNewTxn(
 		txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
 	srv.blockchain.ChainLock.RUnlock()
 	if err != nil {
-		return nil, errors.Wrapf(err, "Server._handleTransaction: Problem adding transaction to Mempool: ")
+		return nil, errors.Wrapf(err, "Server._handleTransaction: Problem adding transaction to mempool: ")
 	}
 
 	glog.V(1).Infof("Server._addNewTxnAndRelay: newlyAcceptedTxns: %v, Peer: %v", newlyAcceptedTxns, pp)
@@ -1036,7 +1036,7 @@ func (srv *Server) _addNewTxn(
 func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	blk := event.Block
 
-	// Don't do anything Mempool-related until our best block chain is done
+	// Don't do anything mempool-related until our best block chain is done
 	// syncing.
 	//
 	// We add a second check as an edge-case to protect against when
@@ -1046,9 +1046,9 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 		return
 	}
 
-	// If we're current, update the Mempool to remove the transactions
+	// If we're current, update the mempool to remove the transactions
 	// in this block from it. We can't do this in a goroutine because we
-	// need each Mempool update to happen in the same order as that in which
+	// need each mempool update to happen in the same order as that in which
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	newlyAcceptedTxns := srv.mempool.UpdateAfterConnectBlock(blk)
@@ -1064,15 +1064,15 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 	blk := event.Block
 
-	// Don't do anything Mempool-related until our best block chain is done
+	// Don't do anything mempool-related until our best block chain is done
 	// syncing.
 	if srv.blockchain.isSyncing() {
 		return
 	}
 
-	// If we're current, update the Mempool to add back the transactions
+	// If we're current, update the mempool to add back the transactions
 	// in this block. We can't do this in a goroutine because we
-	// need each Mempool update to happen in the same order as that in which
+	// need each mempool update to happen in the same order as that in which
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterDisconnectBlock(blk)
@@ -1083,16 +1083,16 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 }
 
 func (srv *Server) _maybeRequestSync(pp *Peer) {
-	// Send the Mempool message if DeSo and Bitcoin are fully current
+	// Send the mempool message if DeSo and Bitcoin are fully current
 	if srv.blockchain.chainState() == SyncStateFullyCurrent {
 		if pp != nil {
-			glog.V(1).Infof("Server._maybeRequestSync: Sending Mempool message: %v", pp)
+			glog.V(1).Infof("Server._maybeRequestSync: Sending mempool message: %v", pp)
 			pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
 		} else {
-			glog.V(1).Infof("Server._maybeRequestSync: NOT sending Mempool message because peer is nil: %v", pp)
+			glog.V(1).Infof("Server._maybeRequestSync: NOT sending mempool message because peer is nil: %v", pp)
 		}
 	} else {
-		glog.V(1).Infof("Server._maybeRequestSync: NOT sending Mempool message because not current: %v, %v",
+		glog.V(1).Infof("Server._maybeRequestSync: NOT sending mempool message because not current: %v, %v",
 			srv.blockchain.chainState(),
 			pp)
 	}
@@ -1107,10 +1107,10 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 	}
 
 	// If we're fully current after accepting all the blocks but we have not
-	// yet requested all of the Mempool transactions from one of our peers, do
+	// yet requested all of the mempool transactions from one of our peers, do
 	// that now. This covers the case where our node is behind when it boots
 	// up, making it so that right at the end of the node's initial sync, after
-	// everything has been connected, we then bootstrap our Mempool.
+	// everything has been connected, we then bootstrap our mempool.
 	srv._maybeRequestSync(nil)
 
 	// Construct an inventory vector to relay to peers.
@@ -1168,7 +1168,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		delete(pp.requestedBlocks, *blockHash)
 	}
 
-	// Check that the Mempool has not received a transaction that would forbid this block's signature pubkey.
+	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
 	// This is a minimal check, a more thorough check is made in the ProcessBlock function. This check is
 	// necessary because the ProcessBlock function only has access to mined transactions. Therefore, if an
 	// attacker were to prevent a "forbid X pubkey" transaction from mining, they could force nodes to continue
@@ -1269,7 +1269,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	}
 
 	// If we get here, it means we're in SyncStateFullySynced, which is great.
-	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the Mempool.
+	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
 	srv._maybeRequestSync(pp)
 }
 
@@ -1308,7 +1308,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(
 }
 
 func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle) []*MempoolTx {
-	// Try and add all the transactions to our Mempool in the order we received
+	// Try and add all the transactions to our mempool in the order we received
 	// them. If any fail to get added, just log an error.
 	//
 	// TODO: It would be nice if we did something fancy here like if we kept
@@ -1325,7 +1325,7 @@ func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle)
 		newlyAcceptedTxns, err := srv.ProcessSingleTxnWithChainLock(pp, txn)
 		if err != nil {
 			glog.Errorf(fmt.Sprintf("Server._handleTransactionBundle: Rejected "+
-				"transaction %v from peer %v from Mempool: %v", txn, pp, err))
+				"transaction %v from peer %v from mempool: %v", txn, pp, err))
 			// A peer should know better than to send us a transaction that's below
 			// our min feerate, which they see when we send them a version message.
 			if err == TxErrorInsufficientFeeMinFee {
@@ -1343,7 +1343,7 @@ func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle)
 				"Transaction %v from peer %v was added as an ORPHAN", spew.Sdump(txn), pp))
 		}
 
-		// If we get here then the transaction was accepted into our Mempool.
+		// If we get here then the transaction was accepted into our mempool.
 		// Queue the transactions that were accepted them for relay to all of the peers
 		// who don't yet have them.
 		transactionsToRelay = append(transactionsToRelay, newlyAcceptedTxns...)
@@ -1360,7 +1360,7 @@ func (srv *Server) _handleTransactionBundle(pp *Peer, msg *MsgDeSoTransactionBun
 }
 
 func (srv *Server) _handleMempool(pp *Peer, msg *MsgDeSoMempool) {
-	glog.V(1).Infof("Server._handleMempool: Received Mempool message from Peer %v", pp)
+	glog.V(1).Infof("Server._handleMempool: Received mempool message from Peer %v", pp)
 
 	pp.canReceiveInvMessagess = true
 }
@@ -1373,7 +1373,7 @@ func (srv *Server) StartStatsdReporter() {
 			case <-time.After(5 * time.Second):
 				tags := []string{}
 
-				// Report Mempool size
+				// Report mempool size
 				mempoolTotal := len(srv.mempool.readOnlyUniversalTransactionList)
 				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(mempoolTotal), tags, 1)
 
@@ -1663,12 +1663,12 @@ func (srv *Server) Stop() {
 	}
 
 	if srv.mempool != nil {
-		// Before the node shuts down, write all the Mempool txns to disk
+		// Before the node shuts down, write all the mempool txns to disk
 		// if the flag is set.
 		if srv.mempool.mempoolDir != "" {
-			glog.Info("Doing final Mempool dump...")
+			glog.Info("Doing final mempool dump...")
 			srv.mempool.DumpTxnsToDB()
-			glog.Info("Final Mempool dump complete!")
+			glog.Info("Final mempool dump complete!")
 		}
 
 		srv.mempool.Stop()

@@ -238,7 +238,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		extraData,
 		isHidden,
 		feeRateNanosPerKB,
-		nil, /*Mempool*/
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -1482,16 +1482,16 @@ func TestSubmitPost(t *testing.T) {
 	// Verify that all the profiles have been deleted.
 	checkPostsDeleted()
 
-	// Apply all the transactions to a Mempool object and make sure we don't get any
+	// Apply all the transactions to a mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
 	for ii, tx := range txns {
 		// See comment above on this transaction.
-		fmt.Printf("Adding txn %d of type %v to Mempool\n", ii, tx.TxnMeta.GetTxnType())
+		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
 		require.Equal(expectedSenderBalances[ii], _getBalance(t, chain, mempool, PkToStringTestnet(tx.PublicKey)))
 
 		_, err := mempool.ProcessTransaction(tx, false, false, 0, true)
-		require.NoError(err, "Problem adding transaction %d to Mempool: %v", ii, tx)
+		require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, tx)
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
@@ -1590,7 +1590,7 @@ func TestSubmitPost(t *testing.T) {
 	// Verify that all the profiles have been deleted.
 	checkPostsDeleted()
 
-	// All the txns should be in the Mempool already so mining a block should put
+	// All the txns should be in the mempool already so mining a block should put
 	// all those transactions in it.
 	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)

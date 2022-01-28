@@ -543,7 +543,7 @@ var DeSoMainnetParams = DeSoParams{
 	// transactions can usually be relied upon to give the user the illusion of
 	// instant gratification (particularly since we implement a limited form of
 	// RBF that makes it difficult to reverse transactions once they're in the
-	// Mempool of nodes). Moreover, longer block times mean we require fewer
+	// mempool of nodes). Moreover, longer block times mean we require fewer
 	// headers to be downloaded by light clients in the long run, which is a
 	// big win in terms of performance.
 	TimeBetweenBlocks: 5 * time.Minute,

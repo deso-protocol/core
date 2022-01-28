@@ -51,7 +51,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				currentPubStr, moneyPrivString, mempool)
 
 			_, err := mempool.ProcessTransaction(txn, false, false, 0, false)
-			require.NoError(err, "Problem adding transaction %d to Mempool: %v", ii, txn)
+			require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, txn)
 
 			txns = append(txns, txn)
 		}
@@ -69,13 +69,13 @@ func TestComputeMaxTPS(t *testing.T) {
 				false,
 				0,
 				10,
-				mempool, /*Mempool*/
+				mempool, /*mempool*/
 				[]*DeSoOutput{})
 			require.NoError(err)
 			_signTxn(t, txn, currentPrivStr)
 			_, err = mempool.ProcessTransaction(
 				txn, false, false, 0, false)
-			require.NoError(err, "Problem adding transaction %d to Mempool: %v", ii, txn)
+			require.NoError(err, "Problem adding transaction %d to mempool: %v", ii, txn)
 
 			txns = append(txns, txn)
 		}
@@ -108,7 +108,7 @@ func TestComputeMaxTPS(t *testing.T) {
 
 			_, err = mempool.ProcessTransaction(
 				txn, false, false, 0, false)
-			require.NoError(err, "Problem adding transaction %d to Mempool: %v", jj, txn)
+			require.NoError(err, "Problem adding transaction %d to mempool: %v", jj, txn)
 
 			txns = append(txns, txn)
 		}
@@ -145,8 +145,8 @@ func TestComputeMaxTPS(t *testing.T) {
 		pprof.StopCPUProfile()
 	}
 
-	// At this point we have some number of transactions. Clear the Mempool and see how
-	// long it takes to add them all to the Mempool.
+	// At this point we have some number of transactions. Clear the mempool and see how
+	// long it takes to add them all to the mempool.
 	mempool.resetPool(NewDeSoMempool(mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* MinFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
@@ -167,7 +167,7 @@ func TestComputeMaxTPS(t *testing.T) {
 
 	}
 
-	// Mine blocks until the Mempool is empty.
+	// Mine blocks until the mempool is empty.
 	blocksMined := []*MsgDeSoBlock{}
 	mempoolTxns, _, err := mempool.GetTransactionsOrderedByTimeAdded()
 	require.NoError(err)
@@ -209,7 +209,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, db
 
-	// Mine blocks until the Mempool is empty.
+	// Mine blocks until the mempool is empty.
 	numBlocksToMine := 10
 	blocksMined := []*MsgDeSoBlock{}
 	for ii := 0; ii < numBlocksToMine; ii++ {

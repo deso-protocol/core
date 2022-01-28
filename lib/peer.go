@@ -125,7 +125,7 @@ type Peer struct {
 	knownInventory lru.Cache
 
 	// Whether the peer is ready to receive INV messages. For a peer that
-	// still needs a Mempool download, this is false.
+	// still needs a mempool download, this is false.
 	canReceiveInvMessagess bool
 
 	// We process GetTransaction requests in a separate loop. This allows us
@@ -170,7 +170,7 @@ func (pp *Peer) MaybeDequeueDeSoMessage() *DeSoMessageMeta {
 
 // This call blocks on the Peer's queue.
 func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
-	// Get all the transactions we have from the Mempool.
+	// Get all the transactions we have from the mempool.
 	glog.V(1).Infof("Peer._handleGetTransactions: Processing "+
 		"MsgDeSoGetTransactions message with %v txns from peer %v",
 		len(getTxnMsg.HashList), pp)
@@ -189,7 +189,7 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 		mempoolTxs = append(mempoolTxs, mempoolTx)
 	}
 
-	// Sort the transactions in the order in which they were added to the Mempool.
+	// Sort the transactions in the order in which they were added to the mempool.
 	// Doing this helps the Peer when they go to add the transactions by reducing
 	// unconnectedTxns and transactions being rejected due to missing dependencies.
 	sort.Slice(mempoolTxs, func(ii, jj int) bool {
@@ -238,7 +238,7 @@ func (pp *Peer) HandleTransactionBundleMessage(msg *MsgDeSoTransactionBundle) {
 	pp.srv.dataLock.Unlock()
 
 	// At this point we should have attempted to add all the transactions to our
-	// Mempool.
+	// mempool.
 	pp.srv.hasProcessedFirstTransactionBundle = true
 }
 
@@ -283,7 +283,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 		if invVect.Type == InvTypeTx {
 			// For transactions, check that the transaction isn't in the
-			// Mempool and that it isn't currently being requested.
+			// mempool and that it isn't currently being requested.
 			_, requestIsInFlight := pp.srv.requestedTransactionsMap[currentHash]
 			if requestIsInFlight || pp.srv.mempool.IsTransactionInPool(&currentHash) {
 				continue
@@ -346,7 +346,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 func (pp *Peer) HandleInv(msg *MsgDeSoInv) {
 	// Ignore invs while we're still syncing and before we've requested
-	// all Mempool transactions from one of our peers to bootstrap.
+	// all mempool transactions from one of our peers to bootstrap.
 	if pp.srv.blockchain.isSyncing() {
 		glog.Infof("Server._handleInv: Ignoring INV while syncing from Peer %v", pp)
 		return
@@ -513,7 +513,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 }
 
 // MinFeeRateNanosPerKB returns the minimum fee rate this peer requires in order to
-// accept transactions into its Mempool. We should generally not send a peer a
+// accept transactions into its mempool. We should generally not send a peer a
 // transaction below this fee rate.
 func (pp *Peer) MinFeeRateNanosPerKB() uint64 {
 	pp.StatsMtx.RLock()

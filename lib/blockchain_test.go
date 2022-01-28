@@ -232,7 +232,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 
 	mempool := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* MinFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	minerPubKeys := []string{}
 	if isSender {
@@ -1552,7 +1552,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	require.NoError(err)
 	require.Equal(1, len(txDescsAdded))
 
-	// Make sure that the forbidden pub key made it into the Mempool properly.
+	// Make sure that the forbidden pub key made it into the mempool properly.
 	_, entryExists := mempool.universalUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(blockSignerPkBytes)]
 	require.True(entryExists)
 

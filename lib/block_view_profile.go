@@ -14,7 +14,7 @@ import (
 )
 
 // Just fetch all the profiles from the db and join them with all the profiles
-// in the Mempool. Then sort them by their DeSo. This can be called
+// in the mempool. Then sort them by their DeSo. This can be called
 // on an empty view or a view that already has a lot of transactions
 // applied to it.
 func (bav *UtxoView) GetAllProfiles(readerPK []byte) (

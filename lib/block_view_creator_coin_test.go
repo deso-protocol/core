@@ -173,7 +173,7 @@ func _helpTestCreatorCoinBuySell(
 			return
 		}
 
-		// If a Mempool object is provided then just check balances and return
+		// If a mempool object is provided then just check balances and return
 		if mempool != nil {
 			// DeSo balances
 			if _getBalance(t, chain, mempool, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
@@ -650,7 +650,7 @@ func _helpTestCreatorCoinBuySell(
 			int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BatchDisconnect is incorrect")
 	}
 
-	// Running all the transactions through the Mempool should work and result
+	// Running all the transactions through the mempool should work and result
 	// in all of them being added.
 	{
 		for ii, currentTxn := range testTxns {
@@ -660,17 +660,17 @@ func _helpTestCreatorCoinBuySell(
 			require.NoErrorf(err, "Mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 
-			// This will check the balances according to the Mempool
+			// This will check the balances according to the mempool
 			_checkTestData(creatorCoinTests[ii], fmt.Sprintf("MempoolIncrementalBalances: %v", ii), nil, mempool)
 		}
 	}
 
-	// Remove all the transactions from the Mempool.
+	// Remove all the transactions from the mempool.
 	for _, burnTxn := range testTxns {
 		mempool.inefficientRemoveTransaction(burnTxn)
 	}
 
-	// The balances should be reset after removing transactions from the Mempool.
+	// The balances should be reset after removing transactions from the mempool.
 	assert.Equalf(int64(m0StartNanos),
 		int64(_getBalance(t, chain, nil, m0Pub)), "m0 DeSo balance after BatchDisconnect is incorrect")
 	assert.Equalf(int64(m1StartNanos),
@@ -686,7 +686,7 @@ func _helpTestCreatorCoinBuySell(
 	assert.Equalf(int64(m6StartNanos),
 		int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BatchDisconnect is incorrect")
 
-	// Re-add all of the transactions to the Mempool so we can mine them into a block.
+	// Re-add all of the transactions to the mempool so we can mine them into a block.
 	{
 		for _, burnTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
@@ -697,9 +697,9 @@ func _helpTestCreatorCoinBuySell(
 		}
 	}
 
-	// Mine a block with all the Mempool transactions.
+	// Mine a block with all the mempool transactions.
 	//
-	// All the txns should be in the Mempool already so mining a block should put
+	// All the txns should be in the mempool already so mining a block should put
 	// all those transactions in it. Note we need to mine two blocks since the first
 	// one just makes the DeSo chain time-current.
 	finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4050,7 +4050,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		MinDeSoExpectedNanos,
 		MinCreatorCoinExpectedNanos,
 		feeRateNanosPerKB,
-		nil, /*Mempool*/
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 
 	if err != nil {
@@ -4221,7 +4221,7 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		CreatorCoinToTransferNanos,
 		receiverPkBytes,
 		feeRateNanosPerKB,
-		nil, /*Mempool*/
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err

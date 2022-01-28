@@ -246,7 +246,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 			isMainChain, isOrphan, err)
 	}
 
-	// If a Mempool object is passed then update it. Normally this isn't necessary because
+	// If a mempool object is passed then update it. Normally this isn't necessary because
 	// ProcessBlock will trigger it because the backendServer will be set on the blockchain
 	// object. But it's useful for tests.
 	if mempoolToUpdate != nil {

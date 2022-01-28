@@ -1069,12 +1069,12 @@ func (msg *MsgDeSoMempool) GetMsgType() MsgType {
 }
 
 func (msg *MsgDeSoMempool) ToBytes(preSignature bool) ([]byte, error) {
-	// A Mempool message is just empty.
+	// A mempool message is just empty.
 	return []byte{}, nil
 }
 
 func (msg *MsgDeSoMempool) FromBytes(data []byte) error {
-	// A Mempool message is just empty.
+	// A mempool message is just empty.
 	return nil
 }
 
