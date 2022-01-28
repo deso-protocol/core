@@ -77,7 +77,7 @@ type Server struct {
 	// hasRequestedSync indicates whether we've bootstrapped our mempool
 	// by requesting all mempool transactions from a
 	// peer. It's initially false
-	// when the server boots up but gets set to true after we make a mempool
+	// when the server boots up but gets set to true after we make a Mempool
 	// request once we're fully synced.
 	// The waitGroup is used to manage the cleanup of the Server.
 	waitGroup deadlock.WaitGroup
@@ -567,7 +567,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	}
 
 	// After processing all the headers this will check to see if we are fully current
-	// and send a request to our Peer to start a mempool sync if so.
+	// and send a request to our Peer to start a Mempool sync if so.
 	//
 	// This statement makes it so that if we boot up our node such that
 	// its initial state is fully current we'll always bootstrap our mempools with a
@@ -956,7 +956,7 @@ func (srv *Server) _handleDonePeer(pp *Peer) {
 func (srv *Server) _relayTransactions() {
 	glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
 	srv.mempool.BlockUntilReadOnlyViewRegenerated()
-	glog.V(1).Infof("Server._relayTransactions: mempool view has regenerated")
+	glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
 
 	// For each peer, compute the transactions they're missing from the mempool and
 	// send them an inv.
@@ -1360,7 +1360,7 @@ func (srv *Server) _handleTransactionBundle(pp *Peer, msg *MsgDeSoTransactionBun
 }
 
 func (srv *Server) _handleMempool(pp *Peer, msg *MsgDeSoMempool) {
-	glog.V(1).Infof("Server._handleMempool: Received mempool message from Peer %v", pp)
+	glog.V(1).Infof("Server._handleMempool: Received Mempool message from Peer %v", pp)
 
 	pp.canReceiveInvMessagess = true
 }

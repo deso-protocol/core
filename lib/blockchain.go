@@ -2326,13 +2326,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 }
 
 // ValidateTransaction creates a UtxoView and sees if the transaction can be connected
-// to it. If a Mempool is provided, this function tries to find dependencies of the
+// to it. If a mempool is provided, this function tries to find dependencies of the
 // passed-in transaction in the pool and connect them before trying to connect the
 // passed-in transaction.
 func (bc *Blockchain) ValidateTransaction(
 	txnMsg *MsgDeSoTxn, blockHeight uint32, verifySignatures bool, mempool *DeSoMempool) error {
 
-	// Create a new UtxoView. If we have access to a Mempool object, use it to
+	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
@@ -2341,7 +2341,7 @@ func (bc *Blockchain) ValidateTransaction(
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(txnMsg.PublicKey, txnMsg)
 		if err != nil {
-			return errors.Wrapf(err, "ValidateTransaction: Problem getting augmented UtxoView from Mempool: ")
+			return errors.Wrapf(err, "ValidateTransaction: Problem getting augmented UtxoView from mempool: ")
 		}
 	}
 
@@ -2439,13 +2439,13 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 }
 
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
-	// If we have access to a Mempool, use it to account for utxos we might not
+	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem initializing UtxoView: ")
 	}
-	// Use the reference UtxoView if provided. Otherwise try to get one from the Mempool.
+	// Use the reference UtxoView if provided. Otherwise try to get one from the mempool.
 	// This improves efficiency when we have a UtxoView already handy.
 	if referenceUtxoView != nil {
 		utxoView = referenceUtxoView
@@ -2453,7 +2453,7 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 		if mempool != nil {
 			utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(spendPublicKeyBytes, nil)
 			if err != nil {
-				return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem getting augmented UtxoView from Mempool: ")
+				return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem getting augmented UtxoView from mempool: ")
 			}
 		}
 	}
@@ -2493,7 +2493,7 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 			continue
 		}
 
-		// Don't consider utxos that are already consumed by the Mempool.
+		// Don't consider utxos that are already consumed by the mempool.
 		if mempool != nil && mempool.CheckSpend(*utxoEntry.UtxoKey) != nil {
 			continue
 		}
@@ -2620,7 +2620,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	}
 
 	// Create a transaction containing the encrypted message text.
-	// A PrivateMessage transaction doesn't need any inputs or outputs (except AdditionalOutputs provided).
+	// A PrivateMessage transaction doesn't need any inputs or outputs (except additionalOutputs provided).
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
 		TxnMeta: &PrivateMessageMetadata{
@@ -2658,7 +2658,7 @@ func (bc *Blockchain) CreateLikeTxn(
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64,
 	_err error) {
 
-	// A Like transaction doesn't need any inputs or outputs (except AdditionalOutputs provided).
+	// A Like transaction doesn't need any inputs or outputs (except additionalOutputs provided).
 	txn := &MsgDeSoTxn{
 		PublicKey: userPublicKey,
 		TxnMeta: &LikeMetadata{

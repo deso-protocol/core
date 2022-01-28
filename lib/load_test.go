@@ -148,7 +148,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	// At this point we have some number of transactions. Clear the mempool and see how
 	// long it takes to add them all to the mempool.
 	mempool.resetPool(NewDeSoMempool(mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* MinFeeRateNanosPerKB */
+		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
 	{

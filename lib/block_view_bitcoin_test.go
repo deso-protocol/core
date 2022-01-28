@@ -1784,7 +1784,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* MinFeeRateNanosPerKB */
+		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
 
@@ -2387,7 +2387,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
 	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* MinFeeRateNanosPerKB */
+		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, ""))
 

@@ -40,7 +40,7 @@ func _setupFiveBlocks(t *testing.T) (*Blockchain, *DeSoParams, []byte, []byte) {
 	return chain, params, senderPkBytes, recipientPkBytes
 }
 
-// Create a chain of transactions that is too long for our Mempool to
+// Create a chain of transactions that is too long for our mempool to
 // handle and ensure it gets rejected.
 func TestMempoolLongChainOfDependencies(t *testing.T) {
 	require := require.New(t)
@@ -55,14 +55,14 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 	// Validate this txn.
 	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* MinFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	_, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 
 	prevTxn := txn1
 	// Create fewer than the maximum number of dependencies allowed by the
-	// Mempool and make sure all of these transactions are accepted. Then,
+	// mempool and make sure all of these transactions are accepted. Then,
 	// add one more transaction and make sure it's rejected.
 	chainLen := 2500
 	for ii := 0; ii < chainLen+1; ii++ {
@@ -98,7 +98,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 
 // Create a chain of transactions with zero fees. Have one public key just
 // send 1 DeSo to itself over and over again. Then run all the txns
-// through the Mempool at once and verify that they are rejected when
+// through the mempool at once and verify that they are rejected when
 // a ratelimit is set.
 func TestMempoolRateLimit(t *testing.T) {
 	require := require.New(t)
@@ -114,7 +114,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	// accept all of the transactions we're about to create without fail.
 	mpNoMinFees := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* MinFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 
 	// Create a transaction that sends 1 DeSo to the recipient as its
@@ -122,7 +122,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	txn1 := _assembleBasicTransferTxnFullySigned(t, chain, 1, 0,
 		senderPkString, recipientPkString, senderPrivString, nil)
 
-	// Validate this txn with the no-fee Mempool.
+	// Validate this txn with the no-fee mempool.
 	_, err := mpNoMinFees.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 
@@ -130,7 +130,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	// if we set rateLimit to true.
 	mpWithMinFee := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		100 /* MinFeeRateNanosPerKB */, "", true,
+		100 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.Error(err)
@@ -143,7 +143,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	txnsCreated := []*MsgDeSoTxn{txn1}
 	prevTxn := txn1
 	// Create fewer than the maximum number of dependencies allowed by the
-	// Mempool to avoid transactions being rejected.
+	// mempool to avoid transactions being rejected.
 	for ii := 0; ii < 24; ii++ {
 		if ii%100 == 0 {
 			fmt.Printf("TestMempoolRateLimit: Processing txn %d\n", ii)
@@ -179,7 +179,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	// feerate set since 24 transactions should be ~2400 bytes.
 	mpWithRateLimit := NewDeSoMempool(
 		chain, 100, /* rateLimitFeeRateNanosPerKB */
-		0 /* MinFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	processingErrors := []error{}
 	for _, txn := range txnsCreated {
@@ -300,7 +300,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	// not testing that here.
 	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* MinFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 
 	// Process the first transaction.

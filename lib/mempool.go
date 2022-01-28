@@ -198,7 +198,7 @@ type DeSoMempool struct {
 	lastLowFeeTxUnixTime int64
 
 	// pubKeyToTxnMap stores a mapping from the public key of outputs added
-	// to the Mempool to the corresponding transaction that resulted in their
+	// to the mempool to the corresponding transaction that resulted in their
 	// addition. It is useful for figuring out how much DeSo a particular public
 	// key has available to spend.
 	pubKeyToTxnMap map[PkMapKey]map[BlockHash]*MempoolTx
@@ -377,7 +377,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 	// Don't make the new pool object deal with the BlockCypher API.
 	newPool := NewDeSoMempool(
 		mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
-		0,     /* MinFeeRateNanosPerKB */
+		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
 		"" /*dataDir*/, "")
@@ -481,7 +481,7 @@ func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 	//
 	// Don't make the new pool object deal with the BlockCypher API.
 	newPool := NewDeSoMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* MinFeeRateNanosPerKB */
+		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, "")
 
@@ -2145,7 +2145,7 @@ func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 	//
 	// Don't make the new pool object deal with the BlockCypher API.
 	newPool := NewDeSoMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
-		0, /* MinFeeRateNanosPerKB */
+		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
 		"" /*dataDir*/, "")
 	// At this point the block txns have been added to the new pool. Now we need to

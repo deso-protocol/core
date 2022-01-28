@@ -657,7 +657,7 @@ func _helpTestCreatorCoinBuySell(
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 				true /*verifySignatures*/)
-			require.NoErrorf(err, "Mempool index %v", ii)
+			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 
 			// This will check the balances according to the mempool
