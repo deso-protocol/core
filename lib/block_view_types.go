@@ -107,6 +107,7 @@ const (
 	OperationTypeMessagingKey                 OperationType = 24
 	OperationTypeDAOCoin                      OperationType = 25
 	OperationTypeDAOCoinTransfer              OperationType = 26
+	OperationTypeSpendingLimitAccounting      OperationType = 27
 
 	// NEXT_TAG = 27
 )
@@ -216,6 +217,10 @@ func (op OperationType) String() string {
 	case OperationTypeDAOCoinTransfer:
 		{
 			return "OperationTypeDAOCoinTransfer"
+		}
+	case OperationTypeSpendingLimitAccounting:
+		{
+			return "OperationTypeSpendingLimitAccounting"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -696,7 +701,7 @@ type MessagingGroupMember struct {
 	GroupMemberKeyName *GroupKeyName
 
 	// EncryptedKey is the encrypted messaging public key, addressed to the recipient.
-	EncryptedKey              []byte
+	EncryptedKey []byte
 }
 
 func (rec *MessagingGroupMember) Encode() []byte {
@@ -718,17 +723,17 @@ func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 
 	recipientPublicKeyBytes, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey")
 	}
 	recipientKeyName, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberKeyName")
 	}
 	err = ValidateGroupPublicKeyAndName(recipientPublicKeyBytes, recipientKeyName)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey and GroupMemberKeyName")
 	}
 
@@ -736,7 +741,7 @@ func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 	rec.GroupMemberKeyName = NewGroupKeyName(recipientKeyName)
 	rec.EncryptedKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"EncryptedKey")
 	}
 	return nil
@@ -847,6 +852,12 @@ type DerivedKeyEntry struct {
 	// Operation type determines if the derived key is
 	// authorized or de-authorized.
 	OperationType AuthorizeDerivedKeyOperationType
+
+	// Transaction Spending limit Tracker
+	TransactionSpendingLimitTracker *TransactionSpendingLimit
+
+	// Memo that tells you what this derived key is for
+	Memo []byte
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool

@@ -99,8 +99,6 @@ const (
 	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
 	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
 
-
-
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
 	RuleErrorFollowEntryAlreadyExists                RuleError = "RuleErrorFollowEntryAlreadyExists"
@@ -358,6 +356,15 @@ const (
 	RuleErrorInvalidToPublicKey             RuleError = "RuleErrorInvalidToPublicKey"
 	RuleErrorOldFromPublicKeyHasDeletedPKID RuleError = "RuleErrorOldFromPublicKeyHasDeletedPKID"
 	RuleErrorOldToPublicKeyHasDeletedPKID   RuleError = "RuleErrorOldToPublicKeyHasDeletedPKID"
+
+	// Derived Key Transaction Spending Limits
+	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorTxnTypeNotAuthorized"
+	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorTxnSpendsMoreThanGlobalDESOLimit"
+	RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation  RuleError = "RuleErrorInvalidCreatorCoinLimitOperation"
+	RuleErrorDerivedKeyInvalidDAOCoinLimitOperation      RuleError = "RuleErrorInvalidDAOCoinLimitOperation"
+	RuleErrorDerivedKeyNFTOperationNotAuthorized         RuleError = "RuleErrorDerivedKeyNFTOperationNotAuthorized"
+	RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized RuleError = "RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized"
+	RuleErrorDerivedKeyDAOCoinOperationNotAuthorized     RuleError = "RuleErrorDerivedKeyDAOCoinOperationNotAuthorized"
 
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"

@@ -21,6 +21,14 @@ func NewPKID(pkidBytes []byte) *PKID {
 	return pkid
 }
 
+// TODO: this is a hacky fix... how can I represent a nil value for a creator in one of the
+// transaction spending limit keys.
+func NewPKIDForNilCreator() PKID {
+	pkid := PKID{}
+	copy(pkid[:], []byte{0})
+	return pkid
+}
+
 func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
 }
@@ -72,6 +80,14 @@ type BlockHash [HashSizeBytes]byte
 func NewBlockHash(input []byte) *BlockHash {
 	blockHash := &BlockHash{}
 	copy(blockHash[:], input)
+	return blockHash
+}
+
+// TODO: this is a hacky fix... how can I represent a nil value for a blockhash in one of the
+// transaction spending limit keys.
+func NewBlockHashForNilPostHash() BlockHash {
+	blockHash := BlockHash{}
+	copy(blockHash[:], []byte{0})
 	return blockHash
 }
 

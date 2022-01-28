@@ -220,6 +220,14 @@ type TestMeta struct {
 	savedHeight            uint32
 }
 
+func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}
+
 func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 	// Roll back all of the above using the utxoOps from each.
 	for ii := 0; ii < len(testMeta.txnOps); ii++ {
