@@ -1,7 +1,5 @@
 FROM alpine:latest AS core
 
-RUN echo env > test.txt
-
 RUN apk update && apk upgrade
 RUN apk add --update go gcc g++ vips vips-dev
 
@@ -28,5 +26,6 @@ FROM alpine:edge
 RUN apk add --update vips-dev
 
 COPY --from=core /deso/src/core/bin/core /deso/bin/core
+RUN echo env > test.txt
 
 ENTRYPOINT ["/deso/bin/core"]
