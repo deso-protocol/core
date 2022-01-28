@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/holiman/uint256"
 	"log"
 	"math/big"
 	"os"
@@ -71,62 +72,7 @@ const (
 )
 
 var (
-	// The block height at which various forks occurred including an
-	// explanation as to why they're necessary.
-
-	// SalomonFixBlockHeight defines a block height where the protocol implements
-	// two changes:
-	// 	(1) The protocol now prints founder reward for all buy transactions instead
-	//		of just when creators reach a new all time high.
-	//		This was decided in order to provide lasting incentive for creators
-	//		to utilize the protocol.
-	//	(2) A fix was created to deal with a bug accidentally triggered by @salomon.
-	//		After a series of buys and sells @salomon was left with a single creator coin
-	//		nano in circulation and a single DeSo nano locked. This caused a detach
-	//		between @salomon's bonding curve and others on the protocol. As more buys and sells
-	//		continued, @salomon's bonding curve continued to detach further and further from its peers.
-	// 		At its core, @salomon had too few creator coins in circulation. This fix introduces
-	//		this missing supply back into circulation as well as prevented detached Bancor bonding
-	//		curves from coming into existence.
-	//		^ It was later decided to leave Salomon's coin circulation alone. A fix was introduced
-	//		to prevent similar cases from occurring again, but @salomon is left alone.
-	SalomonFixBlockHeight = uint32(15270)
-
-	// DeSoFounderRewardBlockHeight defines a block height where the protocol switches from
-	// paying the founder reward in the founder's own creator coin to paying in DeSo instead.
-	DeSoFounderRewardBlockHeight = uint32(21869)
-
-	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight defines a block height after which the protocol will create
-	// a new BalanceEntry when a user purchases a Creator Coin and their current BalanceEntry is deleted.
-	// The situation in which a BalanceEntry reaches a deleted state occurs when a user transfers all their holdings
-	// of a certain creator to another public key and subsequently purchases that same creator within the same block.
-	// This resolves a bug in which users would purchase creator coins after transferring all holdings within the same
-	// block and then the creator coins would be added to a deleted balance.  When the Balance Entries are flushed to
-	// the database, the user would lose the creator coins they purchased.
-	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = uint32(39713)
-
-	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
-	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
-	ParamUpdaterProfileUpdateFixBlockHeight = uint32(39713)
-
-	// UpdateProfileFixBlockHeight defines the height at which a patch was added to prevent user from
-	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
-	UpdateProfileFixBlockHeight = uint32(46165)
-
-	// BrokenNFTBidsFixBlockHeight defines the height at which the deso balance index takes effect
-	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
-	// deso balance index, allowing bids to be submitted that were greater than the user's deso balance.
-	BrokenNFTBidsFixBlockHeight = uint32(46917)
-
-	// DeSoDiamondsBlockHeight defines the height at which diamonds will be given in DESO
-	// rather than in creator coin.
-	// Triggers: 3pm PT on 8/16/2021
-	DeSoDiamondsBlockHeight = uint32(52112)
-
-	// NFTTransfersBlockHeight defines the height at which NFT transfer txns, accept NFT
-	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
-	// Triggers: 12PM PT on 9/15/2021
-	NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 )
 
 func (nt NetworkType) String() string {
@@ -154,6 +100,81 @@ var (
 	TikTokShortURLRegex = regexp.MustCompile("^.*(vm\\.tiktok\\.com/)([A-Za-z0-9]{6,12}).*")
 	TikTokFullURLRegex  = regexp.MustCompile("^.*((tiktok\\.com/)(v/)|(@[A-Za-z0-9_-]{2,24}/video/)|(embed/v2/))(\\d{0,30}).*")
 )
+
+type ForkHeights struct {
+	// Global Block Heights:
+	// The block height at which various forks occurred including an
+	// explanation as to why they're necessary.
+
+	// The most deflationary event in DeSo history has yet to come...
+	DeflationBombBlockHeight uint64
+
+	// SalomonFixBlockHeight defines a block height where the protocol implements
+	// two changes:
+	// 	(1) The protocol now prints founder reward for all buy transactions instead
+	//		of just when creators reach a new all time high.
+	//		This was decided in order to provide lasting incentive for creators
+	//		to utilize the protocol.
+	//	(2) A fix was created to deal with a bug accidentally triggered by @salomon.
+	//		After a series of buys and sells @salomon was left with a single creator coin
+	//		nano in circulation and a single DeSo nano locked. This caused a detach
+	//		between @salomon's bonding curve and others on the protocol. As more buys and sells
+	//		continued, @salomon's bonding curve continued to detach further and further from its peers.
+	// 		At its core, @salomon had too few creator coins in circulation. This fix introduces
+	//		this missing supply back into circulation as well as prevented detached Bancor bonding
+	//		curves from coming into existence.
+	//		^ It was later decided to leave Salomon's coin circulation alone. A fix was introduced
+	//		to prevent similar cases from occurring again, but @salomon is left alone.
+	SalomonFixBlockHeight uint32
+
+	// DeSoFounderRewardBlockHeight defines a block height where the protocol switches from
+	// paying the founder reward in the founder's own creator coin to paying in DeSo instead.
+	DeSoFounderRewardBlockHeight uint32
+
+	// BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight defines a block height after which the protocol will create
+	// a new BalanceEntry when a user purchases a Creator Coin and their current BalanceEntry is deleted.
+	// The situation in which a BalanceEntry reaches a deleted state occurs when a user transfers all their holdings
+	// of a certain creator to another public key and subsequently purchases that same creator within the same block.
+	// This resolves a bug in which users would purchase creator coins after transferring all holdings within the same
+	// block and then the creator coins would be added to a deleted balance.  When the Balance Entries are flushed to
+	// the database, the user would lose the creator coins they purchased.
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight uint32
+
+	// ParamUpdaterProfileUpdateFixBlockHeight defines a block height after which the protocol uses the update profile
+	// txMeta's ProfilePublicKey when the Param Updater is creating a profile for ProfilePublicKey.
+	ParamUpdaterProfileUpdateFixBlockHeight uint32
+
+	// UpdateProfileFixBlockHeight defines the height at which a patch was added to prevent user from
+	// updating the profile entry for arbitrary public keys that do not have existing profile entries.
+	UpdateProfileFixBlockHeight uint32
+
+	// BrokenNFTBidsFixBlockHeight defines the height at which the deso balance index takes effect
+	// for accepting NFT bids.  This is used to fix a fork that was created by nodes running with a corrupted
+	// deso balance index, allowing bids to be submitted that were greater than the user's deso balance.
+	BrokenNFTBidsFixBlockHeight uint32
+
+	// DeSoDiamondsBlockHeight defines the height at which diamonds will be given in DESO
+	// rather than in creator coin.
+	// Triggers: 3pm PT on 8/16/2021
+	DeSoDiamondsBlockHeight uint32
+
+	// NFTTransfersBlockHeight defines the height at which NFT transfer txns, accept NFT
+	// transfer txns, NFT burn txns, and AuthorizeDerivedKey txns will be accepted.
+	// Triggers: 12PM PT on 9/15/2021
+	NFTTransferOrBurnAndDerivedKeysBlockHeight uint32
+
+	// DeSoV3MessagesBlockHeight defines the height at which messaging key and messsage party
+	// entries will be accepted by consensus.
+	DeSoV3MessagesBlockHeight uint32
+
+	// BuyNowAndNFTSplitsBlockHeight defines the height at which NFTs can be sold at a fixed price instead of an
+	// auction style and allows splitting of NFT royalties to user's other than the post's creator.
+	BuyNowAndNFTSplitsBlockHeight uint32
+
+	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
+	// transactions will be accepted.
+	DAOCoinBlockHeight uint32
+}
 
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
@@ -344,8 +365,7 @@ type DeSoParams struct {
 	// attack the bancor curve to any meaningful measure.
 	CreatorCoinAutoSellThresholdNanos uint64
 
-	// The most deflationary event in DeSo history has yet to come...
-	DeflationBombBlockHeight uint64
+	ForkHeights ForkHeights
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
@@ -369,6 +389,23 @@ func (params *DeSoParams) EnableRegtest() {
 	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
 	// Seed: verb find card ship another until version devote guilt strong lemon six
 	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
+
+	// In regtest, we start all the fork heights at zero. These can be adjusted
+	// for testing purposes to ensure that a transition does not cause issues.
+	params.ForkHeights = ForkHeights{
+		DeflationBombBlockHeight:                             0,
+		SalomonFixBlockHeight:                                uint32(0),
+		DeSoFounderRewardBlockHeight:                         uint32(0),
+		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
+		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
+		UpdateProfileFixBlockHeight:                          uint32(0),
+		BrokenNFTBidsFixBlockHeight:                          uint32(0),
+		DeSoDiamondsBlockHeight:                              uint32(0),
+		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
+		DeSoV3MessagesBlockHeight:                            uint32(0),
+		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
+		DAOCoinBlockHeight:                                   uint32(0),
+	}
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -596,8 +633,23 @@ var DeSoMainnetParams = DeSoParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
-	// Triggers approximately Saturday June 12th at 8pm PT
-	DeflationBombBlockHeight: 33783,
+	ForkHeights: ForkHeights{
+
+		DeflationBombBlockHeight:                             33783,
+		SalomonFixBlockHeight:                                uint32(15270),
+		DeSoFounderRewardBlockHeight:                         uint32(21869),
+		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
+		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(39713),
+		UpdateProfileFixBlockHeight:                          uint32(46165),
+		BrokenNFTBidsFixBlockHeight:                          uint32(46917),
+		DeSoDiamondsBlockHeight:                              uint32(52112),
+		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
+
+		// Mon Jan 24 @ 12pm PST
+		DeSoV3MessagesBlockHeight:                            uint32(98474),
+		BuyNowAndNFTSplitsBlockHeight:                        uint32(98474),
+		DAOCoinBlockHeight:                                   uint32(98474),
+	},
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -764,6 +816,27 @@ var DeSoTestnetParams = DeSoParams{
 	// It's just high enough where you avoid drifting creating coin
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
+
+	ForkHeights: ForkHeights{
+		// Initially, testnet fork heights were the same as mainnet heights
+		// This changed when we spun up a real testnet that runs independently
+		DeflationBombBlockHeight:                             33783,
+		SalomonFixBlockHeight:                                uint32(15270),
+		DeSoFounderRewardBlockHeight:                         uint32(21869),
+		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
+		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(39713),
+		UpdateProfileFixBlockHeight:                          uint32(46165),
+		BrokenNFTBidsFixBlockHeight:                          uint32(46917),
+		DeSoDiamondsBlockHeight:                              uint32(52112),
+		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
+
+		// Flags after this point can differ from mainnet
+
+		// Thu Jan 20 @ 12pm PST
+		DeSoV3MessagesBlockHeight:                            uint32(97322),
+		BuyNowAndNFTSplitsBlockHeight:                        uint32(97322),
+		DAOCoinBlockHeight:                                   uint32(97322),
+	},
 }
 
 // GetDataDir gets the user data directory where we store files
@@ -799,6 +872,34 @@ const (
 
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
+
+	// Messaging keys
+	MessagingPublicKey             = "MessagingPublicKey"
+	SenderMessagingPublicKey       = "SenderMessagingPublicKey"
+	SenderMessagingGroupKeyName    = "SenderMessagingGroupKeyName"
+	RecipientMessagingPublicKey    = "RecipientMessagingPublicKey"
+	RecipientMessagingGroupKeyName = "RecipientMessagingGroupKeyName"
+
+	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
+	BuyNowPriceKey = "BuyNowPriceNanos"
+
+	// Key in transaction's extra data map. If present, the value represents a map of pkid to basis points representing
+	// the amount of royalties the pkid should receive upon sale of this NFT.
+	DESORoyaltiesMapKey = "DESORoyaltiesMap"
+
+	// Key in transaction's extra data map. If present, the value represents a map of pkid to basis points representing
+	// the amount of royalties that should be added to pkid's creator coin upon sale of this NFT.
+	CoinRoyaltiesMapKey = "CoinRoyaltiesMap"
+
+	// Used to distinguish v3 messages from previous iterations
+	MessagesVersionString = "V"
+	MessagesVersion1 = 1
+	MessagesVersion2 = 2
+	MessagesVersion3 = 3
+
+	// Key in transaction's extra data map. If present, this value represents the Node ID of the running node. This maps
+	// to the map of nodes in ./lib/nodes.go
+	NodeSourceMapKey = "NodeSource"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
@@ -842,4 +943,7 @@ const (
 	// Min/MaxMaxCopiesPerNFTNanos - Min/max value to which the create NFT fee can be set.
 	MinMaxCopiesPerNFT = 1
 	MaxMaxCopiesPerNFT = 10000
+	// Messaging key constants
+	MinMessagingKeyNameCharacters = 1
+	MaxMessagingKeyNameCharacters = 32
 )

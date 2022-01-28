@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"reflect"
@@ -42,6 +43,9 @@ type UtxoView struct {
 	// Messages data
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
+	// Messaging group entries.
+	MessagingGroupKeyToMessagingGroupEntry map[MessagingGroupKey]*MessagingGroupEntry
+
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -72,8 +76,11 @@ type UtxoView struct {
 	ProfilePKIDToProfileEntry     map[PKID]*ProfileEntry
 	ProfileUsernameToProfileEntry map[UsernameMapKey]*ProfileEntry
 
-	// Coin balance entries
+	// Creator coin balance entries
 	HODLerPKIDCreatorPKIDToBalanceEntry map[BalanceEntryMapKey]*BalanceEntry
+
+	// DAO coin balance entries
+	HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry map[BalanceEntryMapKey]*BalanceEntry
 
 	// Derived Key entries. Map key is a combination of owner and derived public keys.
 	DerivedKeyToDerivedEntry map[DerivedKeyMapKey]*DerivedKeyEntry
@@ -117,6 +124,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.MessageKeyToMessageEntry = make(map[MessageKey]*MessageEntry)
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
 
+	// Messaging group entries
+	bav.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry)
+
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
 
@@ -134,8 +144,11 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Repost data
 	bav.RepostKeyToRepostEntry = make(map[RepostKey]*RepostEntry)
 
-	// Coin balance entries
+	// Creator Coin Balance Entries
 	bav.HODLerPKIDCreatorPKIDToBalanceEntry = make(map[BalanceEntryMapKey]*BalanceEntry)
+
+	// DAO Coin Balance Entries
+	bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry = make(map[BalanceEntryMapKey]*BalanceEntry)
 
 	// Derived Key entries
 	bav.DerivedKeyToDerivedEntry = make(map[DerivedKeyMapKey]*DerivedKeyEntry)
@@ -232,6 +245,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageMap[txnHash] = &newMessage
 	}
 
+	// Copy messaging group data
+	newView.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry, len(bav.MessagingGroupKeyToMessagingGroupEntry))
+	for pkid, entry := range bav.MessagingGroupKeyToMessagingGroupEntry {
+		newEntry := *entry
+		newView.MessagingGroupKeyToMessagingGroupEntry[pkid] = &newEntry
+	}
+
 	// Copy the follow data
 	newView.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry, len(bav.FollowKeyToFollowEntry))
 	for followKey, followEntry := range bav.FollowKeyToFollowEntry {
@@ -261,7 +281,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.RepostKeyToRepostEntry[repostKey] = &newRepostEntry
 	}
 
-	// Copy the balance entry data
+	// Copy the creator coin balance entry data
 	newView.HODLerPKIDCreatorPKIDToBalanceEntry = make(
 		map[BalanceEntryMapKey]*BalanceEntry, len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 	for balanceEntryMapKey, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
@@ -271,6 +291,18 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 		newBalanceEntry := *balanceEntry
 		newView.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryMapKey] = &newBalanceEntry
+	}
+
+	// Copy the DAO coin balance entry data
+	newView.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry = make(
+		map[BalanceEntryMapKey]*BalanceEntry, len(bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry))
+	for daoBalanceEntryMapKey, daoBalanceEntry := range bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry {
+		if daoBalanceEntry == nil {
+			continue
+		}
+
+		newDAOBalanceEntry := *daoBalanceEntry
+		newView.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry[daoBalanceEntryMapKey] = &newDAOBalanceEntry
 	}
 
 	// Copy the Diamond data
@@ -375,7 +407,12 @@ func (bav *UtxoView) _setUtxoMappings(utxoEntry *UtxoEntry) error {
 	return nil
 }
 
-func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
+func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKeyArg *UtxoKey) *UtxoEntry {
+	utxoKey := &UtxoKey{}
+	if utxoKeyArg != nil {
+		*utxoKey = *utxoKeyArg
+	}
+
 	utxoEntry, ok := bav.UtxoKeyToUtxoEntry[*utxoKey]
 	// If the utxo entry isn't in our in-memory data structure, fetch it from the
 	// db.
@@ -405,7 +442,9 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKey *UtxoKey) *UtxoEntry {
 	return utxoEntry
 }
 
-func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKey []byte) (uint64, error) {
+func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint64, error) {
+	publicKey := publicKeyArg
+
 	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
@@ -463,8 +502,12 @@ func (bav *UtxoView) _unSpendUtxo(utxoEntryy *UtxoEntry) error {
 	return nil
 }
 
-func (bav *UtxoView) _spendUtxo(utxoKey *UtxoKey) (*UtxoOperation, error) {
+func (bav *UtxoView) _spendUtxo(utxoKeyArg *UtxoKey) (*UtxoOperation, error) {
 	// Swap this utxo's position with the utxo in the last position and delete it.
+	utxoKey := &UtxoKey{}
+	if utxoKeyArg != nil {
+		*utxoKey = *utxoKeyArg
+	}
 
 	// Get the entry for this utxo from the view if it's cached,
 	// otherwise try and get it from the db.
@@ -824,6 +867,10 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectPrivateMessage(
 			OperationTypePrivateMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+		return bav._disconnectMessagingGroup(
+			OperationTypeMessagingKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		return bav._disconnectSubmitPost(
 			OperationTypeSubmitPost, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
@@ -855,6 +902,14 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
 		return bav._disconnectCreatorCoinTransfer(
 			OperationTypeCreatorCoinTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+		return bav._disconnectDAOCoin(
+			OperationTypeDAOCoin, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
+		return bav._disconnectDAOCoinTransfer(
+			OperationTypeDAOCoinTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
 		return bav._disconnectSwapIdentity(
@@ -1108,7 +1163,14 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// reasons (e.g. reputation is way easier to manage without key rotation),
 		// then I don't think this constraint should pose much of an issue.
 		if !reflect.DeepEqual(utxoEntry.PublicKey, txn.PublicKey) {
-			return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey,
+				"utxoEntry.PublicKey: %v, txn.PublicKey: %v, " +
+					"utxoEntry.UtxoKey: %v:%v, AmountNanos: %v",
+				PkToStringTestnet(utxoEntry.PublicKey),
+				PkToStringTestnet(txn.PublicKey),
+				hex.EncodeToString(utxoEntry.UtxoKey.TxID[:]),
+				utxoEntry.UtxoKey.Index, utxoEntry.AmountNanos)
 		}
 
 		// Sanity check the amount of the input.
@@ -1218,7 +1280,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 	diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 	var previousDiamondPostEntry *PostEntry
 	var previousDiamondEntry *DiamondEntry
-	if hasDiamondPostHash && blockHeight > DeSoDiamondsBlockHeight &&
+	if hasDiamondPostHash && blockHeight > bav.Params.ForkHeights.DeSoDiamondsBlockHeight &&
 		txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		if !hasDiamondLevel {
 			return 0, 0, nil, RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel
@@ -1586,6 +1648,11 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectPrivateMessage(
 				txn, txHash, blockHeight, verifySignatures)
 
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectMessagingGroup(
+				txn, txHash, blockHeight, verifySignatures)
+
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSubmitPost(
@@ -1623,6 +1690,16 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreatorCoinTransfer(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectDAOCoin(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectDAOCoinTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
@@ -1836,6 +1913,10 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 			txnMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 			publicKeys = append(publicKeys, NewPublicKey(txn.PublicKey))
 			publicKeys = append(publicKeys, NewPublicKey(txnMeta.ProfilePublicKey))
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+			txnMeta := txn.TxnMeta.(*DAOCoinMetadata)
+			publicKeys = append(publicKeys, NewPublicKey(txn.PublicKey))
+			publicKeys = append(publicKeys, NewPublicKey(txnMeta.ProfilePublicKey))
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
 			publicKeys = append(publicKeys, NewPublicKey(txn.PublicKey))
 		}
@@ -1868,6 +1949,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 	var outputs []*PGTransactionOutput
 	var follows []*PGFollow
 	var balances []*PGCreatorCoinBalance
+	var daoBalances []*PGDAOCoinBalance
 	var likes []*PGLike
 	var posts []*PGPost
 	var lowercaseUsernames []string
@@ -1905,7 +1987,7 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 			balances = append(balances, balance)
 
 			// We cache the balances as not present and then fill them in later
-			balanceEntryKey := MakeCreatorCoinBalanceKey(balance.HolderPKID, balance.CreatorPKID)
+			balanceEntryKey := MakeBalanceEntryKey(balance.HolderPKID, balance.CreatorPKID)
 			bav.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryKey] = nil
 
 			// Fetch the creator's balance entry if they're not buying their own coin
@@ -1917,8 +1999,34 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 				balances = append(balances, balance)
 
 				// We cache the balances as not present and then fill them in later
-				balanceEntryKey = MakeCreatorCoinBalanceKey(balance.HolderPKID, balance.CreatorPKID)
+				balanceEntryKey = MakeBalanceEntryKey(balance.HolderPKID, balance.CreatorPKID)
 				bav.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryKey] = nil
+			}
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+			txnMeta := txn.TxnMeta.(*DAOCoinMetadata)
+
+			// Fetch the buyer's balance entry
+			daoBalance := &PGDAOCoinBalance{
+				HolderPKID:  bav.GetPKIDForPublicKey(txn.PublicKey).PKID.NewPKID(),
+				CreatorPKID: bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
+			}
+			daoBalances = append(daoBalances, daoBalance)
+
+			// We cache the balances as not present and then fill them in later
+			balanceEntryKey := MakeBalanceEntryKey(daoBalance.HolderPKID, daoBalance.CreatorPKID)
+			bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry[balanceEntryKey] = nil
+
+			// Fetch the creator's balance entry if they're not buying their own coin
+			if !reflect.DeepEqual(txn.PublicKey, txnMeta.ProfilePublicKey) {
+				daoBalance = &PGDAOCoinBalance{
+					HolderPKID:  bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
+					CreatorPKID: bav.GetPKIDForPublicKey(txnMeta.ProfilePublicKey).PKID.NewPKID(),
+				}
+				daoBalances = append(daoBalances, daoBalance)
+
+				// We cache the balances as not present and then fill them in later
+				balanceEntryKey = MakeBalanceEntryKey(daoBalance.HolderPKID, daoBalance.CreatorPKID)
+				bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry[balanceEntryKey] = nil
 			}
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
 			txnMeta := txn.TxnMeta.(*LikeMetadata)
@@ -1992,7 +2100,15 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
 		foundBalances := bav.Postgres.GetCreatorCoinBalances(balances)
 		for _, balance := range foundBalances {
 			balanceEntry := balance.NewBalanceEntry()
-			bav._setBalanceEntryMappings(balanceEntry)
+			bav._setCreatorCoinBalanceEntryMappings(balanceEntry)
+		}
+	}
+
+	if len(daoBalances) > 0 {
+		foundDAOBalances := bav.Postgres.GetDAOCoinBalances(daoBalances)
+		for _, daoBalance := range foundDAOBalances {
+			daoBalanceEntry := daoBalance.NewBalanceEntry()
+			bav._setDAOCoinBalanceEntryMappings(daoBalanceEntry)
 		}
 	}
 

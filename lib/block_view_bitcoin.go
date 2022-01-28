@@ -133,8 +133,8 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	if bav.Params.DeflationBombBlockHeight != 0 &&
-		uint64(blockHeight) >= bav.Params.DeflationBombBlockHeight {
+	if bav.Params.ForkHeights.DeflationBombBlockHeight != 0 &&
+		uint64(blockHeight) >= bav.Params.ForkHeights.DeflationBombBlockHeight {
 
 		return 0, 0, nil, RuleErrorDeflationBombForbidsMintingAnyMoreDeSo
 	}

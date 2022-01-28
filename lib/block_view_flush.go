@@ -74,6 +74,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		if err := bav._flushBalanceEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
+		if err := bav._flushDAOCoinBalanceEntriesToDbWithTxn(txn); err != nil {
+			return err
+		}
 		if err := bav._flushDeSoBalancesToDbWithTxn(txn); err != nil {
 			return err
 		}
@@ -102,6 +105,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		return err
 	}
 	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+	if err := bav._flushMessagingGroupEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 
@@ -284,39 +290,23 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 		// Make a copy of the iterator since we take references to it below.
 		messageKey := messageKeyIter
 
-		// Sanity-check that one of the MessageKey computed from the MEssageEntry is
-		// equal to the MessageKey that maps to that entry.
-		senderMessageKeyInEntry := MakeMessageKey(
-			messageEntry.SenderPublicKey, messageEntry.TstampNanos)
-		recipientMessageKeyInEntry := MakeMessageKey(
-			messageEntry.RecipientPublicKey, messageEntry.TstampNanos)
-		if senderMessageKeyInEntry != messageKey && recipientMessageKeyInEntry != messageKey {
-			return fmt.Errorf("_flushMessageEntriesToDbWithTxn: MessageEntry has "+
-				"SenderMessageKey: %v and RecipientMessageKey %v, neither of which match "+
-				"the MessageKeyToMessageEntry map key %v",
-				&senderMessageKeyInEntry, &recipientMessageKeyInEntry, &messageKey)
-		}
-
 		// Delete the existing mappings in the db for this MessageKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteMessageEntryMappingsWithTxn(txn, bav.Snapshot,
+		if err := DBDeleteMessageEntryMappingsWithTxn(txn, bav.Snapshot,
 			messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushMessageEntriesToDbWithTxn: Problem deleting mappings "+
 					"for MessageKey: %v: ", &messageKey)
 		}
-	}
-	// Go through all the entries in the MessageKeyToMessageEntry map.
-	for _, messageEntry := range bav.MessageKeyToMessageEntry {
+
 		if messageEntry.isDeleted {
 			// If the MessageEntry has isDeleted=true then there's nothing to do because
 			// we already deleted the entry above.
 		} else {
 			// If the MessageEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutMessageEntryWithTxn(txn, bav.Snapshot, messageEntry); err != nil {
-
+			if err := DBPutMessageEntryWithTxn(txn, bav.Snapshot, messageKey, messageEntry); err != nil {
 				return err
 			}
 		}
@@ -533,7 +523,8 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 	}
 
 	// Add back all of the entries that aren't nil or of length 0
-	for nftKey, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
+	for nftKeyIter, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
+		nftKey := nftKeyIter
 		if acceptedNFTBidEntries == nil || len(*acceptedNFTBidEntries) == 0 {
 			// If the acceptedNFTBidEntries is nil or has length 0 then there's nothing to do because
 			// we already deleted the entry above. length 0 means that there are no accepted bids yet.
@@ -812,6 +803,9 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
+// TODO: All of these functions should be renamed "CreatorCoinBalanceEntry" to
+// distinguish them from DAOCoinBalanceEntry, which is a different but similar index
+// that got introduced later.
 func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 
@@ -822,7 +816,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Sanity-check that the balance key in the map is the same
 		// as the public key in the entry.
-		computedBalanceKey := MakeCreatorCoinBalanceKey(
+		computedBalanceKey := MakeBalanceEntryKey(
 			balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
 		if !reflect.DeepEqual(balanceKey, computedBalanceKey) {
 			return fmt.Errorf("_flushBalanceEntriesToDbWithTxn: BalanceEntry has "+
@@ -833,8 +827,8 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(txn, bav.Snapshot,
-			&(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID)); err != nil {
+		if err := DBDeleteBalanceEntryMappingsWithTxn(txn, bav.Snapshot,
+			&(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), false); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushBalanceEntriesToDbWithTxn: Problem deleting mappings "+
@@ -854,8 +848,8 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutCreatorCoinBalanceEntryMappingsWithTxn(
-				txn, bav.Snapshot, balanceEntry); err != nil {
+			if err := DBPutBalanceEntryMappingsWithTxn(
+				txn, bav.Snapshot, balanceEntry, false); err != nil {
 
 				return err
 			}
@@ -864,7 +858,65 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 
 	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
-	// At this point all of the PostEntry mappings in the db should be up-to-date.
+	// At this point all of the creator coin mappings in the db should be up-to-date.
+
+	return nil
+}
+
+// TODO: This could theoretically be consolidated with the other BalanceEntry flusher.
+func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
+	glog.V(1).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry))
+
+	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
+	for balanceKeyIter, balanceEntry := range bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry {
+		// Make a copy of the iterator since we take references to it below.
+		balanceKey := balanceKeyIter
+
+		// Sanity-check that the balance key in the map is the same
+		// as the public key in the entry.
+		computedBalanceKey := MakeBalanceEntryKey(
+			balanceEntry.HODLerPKID, balanceEntry.CreatorPKID)
+		if !reflect.DeepEqual(balanceKey, computedBalanceKey) {
+			return fmt.Errorf("_flushDAOCoinBalanceEntriesToDbWithTxn: BalanceEntry has "+
+				"map key: %v which does not match match "+
+				"the HODLerPubKeyCreatorPubKeyToBalanceEntry map key %v",
+				balanceKey, computedBalanceKey)
+		}
+
+		// Delete the existing mappings in the db for this balance key. They will be re-added
+		// if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteBalanceEntryMappingsWithTxn(txn, bav.Snapshot,
+			&(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), true); err != nil {
+
+			return errors.Wrapf(
+				err, "_flushDAOCoinBalanceEntriesToDbWithTxn: Problem deleting mappings "+
+					"for public key: %v: ", balanceKey)
+		}
+	}
+	numDeleted := 0
+	numPut := 0
+	// Go through all the entries in the HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry map.
+	for _, balanceEntry := range bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry {
+		// Make a copy of the iterator since we take references to it below.
+		if balanceEntry.isDeleted {
+			numDeleted++
+			// If the ProfileEntry has isDeleted=true then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			numPut++
+			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
+			// mappings for it into the db.
+			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot,
+				balanceEntry, true); err != nil {
+
+				return err
+			}
+		}
+	}
+
+	glog.V(1).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+
+	// At this point all of the DAO coin mappings in the db should be up-to-date.
 
 	return nil
 }
@@ -900,5 +952,71 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 		glog.V(1).Infof("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
 
+	return nil
+}
+
+func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) error {
+	glog.V(1).Infof("_flushMessagingGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.MessagingGroupKeyToMessagingGroupEntry))
+	numDeleted := 0
+	numPut := 0
+
+	// Go through all entries in MessagingGroupKeyToMessagingGroupEntry and add them to the DB.
+	// These records are part of the DeSo V3 Messages.
+	for messagingGroupKey, messagingGroupEntry := range bav.MessagingGroupKeyToMessagingGroupEntry {
+		// Delete the existing mapping in the DB for this map key, this will be re-added
+		// later if isDeleted=false. Messaging entries can have a list of members, and
+		// we store these members under a separate prefix. To delete a messaging group
+		// we also have to go delete all of the recipients.
+		//
+		// TODO: We should have a single DeleteMappings function in db_utils.go that we push this
+		// complexity into.
+		existingMessagingGroupEntry := DBGetMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey)
+		if existingMessagingGroupEntry != nil {
+			if err := DBDeleteMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+					"Problem deleting MessagingGroupEntry %v from db", *messagingGroupEntry)
+			}
+			for _, member := range existingMessagingGroupEntry.MessagingGroupMembers {
+				if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
+					member, existingMessagingGroupEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+						"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
+				}
+			}
+		}
+
+		if messagingGroupEntry.isDeleted {
+			// Since entry is deleted, there's nothing to do.
+			numDeleted++
+		} else {
+			// The entry isn't deleted so we re-add it to the DB. In particular, we add
+			// all of the recipients.
+			//
+			// TODO: We should have a single PutMappings function in db_utils.go that we push this
+			// complexity into.
+			ownerPublicKey := messagingGroupKey.OwnerPublicKey
+			if err := DBPutMessagingGroupEntryWithTxn(txn, bav.Snapshot,
+				&ownerPublicKey, messagingGroupEntry); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+					"Problem putting MessagingGroupEntry %v to db", *messagingGroupEntry)
+			}
+			for _, recipient := range messagingGroupEntry.MessagingGroupMembers {
+				// Group owner can be one of the recipients, particularly when we want to add the
+				// encrypted key addressed to the owner. This could happen when the group is created
+				// by a derived key, and we want to allow the main owner key to be able to read the chat.
+				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey[:]) {
+					continue
+				}
+				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot,
+					recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+						"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)
+				}
+			}
+			numPut++
+		}
+	}
+
+	glog.V(1).Infof("_flushMessagingGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	return nil
 }

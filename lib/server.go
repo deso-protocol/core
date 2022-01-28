@@ -1029,7 +1029,8 @@ func (srv *Server) _cleanupDonePeerState(pp *Peer) {
 		// If we don't have a new Peer, remove everything that was destined for
 		// this Peer. Note we don't need to copy the iterator because everything
 		// below doesn't take a reference to it.
-		for hash, requestInfo := range srv.requestedTransactionsMap {
+		for hashIter, requestInfo := range srv.requestedTransactionsMap {
+			hash := hashIter
 			if requestInfo.PeerWhoSentInv.ID == pp.ID {
 				srv._removeRequest(&hash)
 			}

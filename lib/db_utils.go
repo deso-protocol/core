@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/dgraph-io/ristretto/z"
+	"github.com/holiman/uint256"
 	"io"
 	"log"
 	"math"
@@ -98,7 +99,7 @@ type DBPrefixes struct {
 	// Messages are indexed by the public key of their senders and receivers. If
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
-	// <prefix_id, public key (33 bytes) || uint64 big-endian> -> < SenderPublicKey || RecipientPublicKey || EncryptedText >
+	// <public key (33 bytes) || uint64 big-endian> -> <MessageEntry>
 	PrefixPublicKeyTimestampToPrivateMessage []byte `prefix_id:"[12]" is_state:"true"`
 
 	// Tracks the tip of the transaction index. This is used to determine
@@ -180,8 +181,8 @@ type DBPrefixes struct {
 	// <prefix_id, user pub key [39]byte, reposted post hash [39]byte> -> RepostEntry
 	PrefixReposterPubKeyRepostedPostHashToRepostPostHash []byte `prefix_id:"[39]" is_state:"true"`
 	// Prefixes for diamonds:
-	//  <prefix_id, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
-	//  <prefix_id, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <gob-encoded DiamondEntry>
+	//  <prefix_id, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <DiamondEntry>
+	//  <prefix_id, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <DiamondEntry>
 	PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash []byte `prefix_id:"[41]" is_state:"true"`
 	PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash []byte `prefix_id:"[43]" is_state:"true"`
 	// Public keys that have been restricted from signing blocks.
@@ -221,11 +222,63 @@ type DBPrefixes struct {
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix_id, OwnerPublicKey [33]byte> -> <>
-	PrefixAuthorizeDerivedKey []byte `prefix_id:"[55]" is_state:"true"`
+	PrefixAuthorizeDerivedKey []byte `prefix_id:"[54]" is_state:"true"`
+
+	// Prefixes for DAO coin fields:
+	// <prefix, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
+	// <prefix, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
+	PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[55]" is_state:"true"`
+	PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[56]" is_state:"true"`
+
+	// Prefix for MessagingGroupEntries indexed by OwnerPublicKey and GroupKeyName:
+	//
+	// * This index is used to store information about messaging groups. A group is indexed
+	//   by the "owner" public key of the user who created the group and the key
+	//   name the owner selected when creating the group (can be anything, user-defined).
+	//
+	// * Groups can have members that all use a shared key to communicate. In this case,
+	//   the MessagingGroupEntry will contain the metadata required for each participant to
+	//   compute the shared key.
+	//
+	// * Groups can also consist of a single person, and this is useful for "registering"
+	//   a key so that other people can message you. Generally, every user has a mapping of
+	//   the form:
+	//   - <OwnerPublicKey, "default-key"> -> MessagingGroupEntry
+	//   This "singleton" group is used to register a default key so that people can
+	//   message this user. Allowing users to register default keys on-chain in this way is required
+	//   to make it so that messages can be decrypted on mobile devices, where apps do not have
+	//   easy access to the owner key for decrypting messages.
+	//
+	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupEntry>
+	PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[57]" is_state:"true"`
+
+	// Prefix for Message MessagingGroupMembers:
+	//
+	// * For each group that a user is a member of, we store a value in this index of
+	//   the form:
+	//   - <OwnerPublicKey for user, GroupMessagingPublicKey> -> <HackedMessagingGroupEntry>
+	//   The value needs to contain enough information to allow us to look up the
+	//   group's metatdata in the _PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName index. It's also convenient for
+	//   the value to contain the encrypted messaging key for the user so that we can
+	//   decrypt messages for this user *without* looking up the group.
+	//
+	// * HackedMessagingGroupEntry is a MessagingGroupEntry that we overload to store
+	// 	 information on a member of a group. We couldn't use the MessagingGroupMember
+	//   because we wanted to store additional information that "back-references" the
+	//   MessagingGroupEntry for this group.
+	//
+	// * Note that GroupMessagingPublicKey != GroupOwnerPublicKey. For this index
+	//   it was convenient for various reasons to put the messaging public key into
+	//   the index rather than the group owner's public key. This becomes clear if
+	//   you read all the fetching code around this index.
+	//
+	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
+	PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey []byte `prefix_id:"[58]" is_state:"true"`
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 55
+	// NEXT_TAG: 59
 }
 
 func getPrefixIdValue (structFields reflect.StructField, fieldType reflect.Type) (prefixId reflect.Value) {
@@ -836,8 +889,7 @@ func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, snap *Snapshot, publicKey
 
 // -------------------------------------------------------------------------------------
 // PrivateMessage mapping functions
-// <public key (33 bytes) || uint64 big-endian> ->
-// 		< SenderPublicKey || RecipientPublicKey || EncryptedText >
+// <public key (33 bytes) || uint64 big-endian> -> <MessageEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessageEntry(publicKey []byte, tstampNanos uint64) []byte {
@@ -855,52 +907,46 @@ func _dbSeekPrefixForMessagePublicKey(publicKey []byte) []byte {
 }
 
 // Note that this adds a mapping for the sender *and* the recipient.
-func DbPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
-	messageEntry *MessageEntry) error {
+func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
+	messageKey MessageKey, messageEntry *MessageEntry) error {
 
-	if len(messageEntry.SenderPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DbPutPrivateMessageWithTxn: Sender public key "+
-			"length %d != %d", len(messageEntry.SenderPublicKey), btcec.PubKeyBytesLenCompressed)
+	if err := IsByteArrayValidPublicKey(messageEntry.SenderPublicKey[:]); err != nil {
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key")
 	}
-	if len(messageEntry.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DbPutPrivateMessageWithTxn: Recipient public key "+
-			"length %d != %d", len(messageEntry.RecipientPublicKey), btcec.PubKeyBytesLenCompressed)
+	if err := IsByteArrayValidPublicKey(messageEntry.RecipientPublicKey[:]); err != nil {
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key")
 	}
 
-	messageEntryBytes := messageEntry.Encode()
+	if err := ValidateGroupPublicKeyAndName(messageEntry.SenderMessagingPublicKey[:], messageEntry.SenderMessagingGroupKeyName[:]); err != nil {
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key and key name")
+	}
+	if err := ValidateGroupPublicKeyAndName(messageEntry.RecipientMessagingPublicKey[:], messageEntry.RecipientMessagingGroupKeyName[:]); err != nil {
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key and key name")
+	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForMessageEntry(
-		messageEntry.SenderPublicKey, messageEntry.TstampNanos), messageEntryBytes); err != nil {
+		messageKey.PublicKey[:], messageKey.TstampNanos), messageEntry.Encode()); err != nil {
 
-		return errors.Wrapf(err, "DbPutMessageEntryWithTxn: Problem adding mapping for sender: ")
-	}
-	if err := DBSetWithTxn(txn, snap, _dbKeyForMessageEntry(
-		messageEntry.RecipientPublicKey, messageEntry.TstampNanos), messageEntryBytes); err != nil {
-
-		return errors.Wrapf(err, "DbPutMessageEntryWithTxn: Problem adding mapping for recipient: ")
+		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem setting the message (%v)", messageEntry.Encode())
 	}
 
 	return nil
 }
 
-func DbPutMessageEntry(handle *badger.DB, snap *Snapshot, messageEntry *MessageEntry) error {
+func DBPutMessageEntry(handle *badger.DB, snap *Snapshot,
+	messageKey MessageKey, messageEntry *MessageEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutMessageEntryWithTxn(txn, snap, messageEntry)
+		return DBPutMessageEntryWithTxn(txn, snap, messageKey, messageEntry)
 	})
 }
 
-func DbGetMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
+func DBGetMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	publicKey []byte, tstampNanos uint64) *MessageEntry {
 
 	key := _dbKeyForMessageEntry(publicKey, tstampNanos)
 	privateMessageBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
-		if err != badger.ErrKeyNotFound {
-			glog.Errorf("DbGetMessageEntryWithTxn: Problem reading "+
-				"MessageEntry for public key %s with tstampnanos %d",
-				PkToStringMainnet(publicKey), tstampNanos)
-		}
 		return nil
 	}
 
@@ -909,12 +955,12 @@ func DbGetMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	return privateMessageObj
 }
 
-func DbGetMessageEntry(db *badger.DB, snap *Snapshot,
+func DBGetMessageEntry(db *badger.DB, snap *Snapshot,
 	publicKey []byte, tstampNanos uint64) *MessageEntry {
 
 	var ret *MessageEntry
 	db.View(func(txn *badger.Txn) error {
-		ret = DbGetMessageEntryWithTxn(txn, snap, publicKey, tstampNanos)
+		ret = DBGetMessageEntryWithTxn(txn, snap, publicKey, tstampNanos)
 		return nil
 	})
 	return ret
@@ -922,40 +968,35 @@ func DbGetMessageEntry(db *badger.DB, snap *Snapshot,
 
 // Note this deletes the message for the sender *and* receiver since a mapping
 // should exist for each.
-func DbDeleteMessageEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
+func DBDeleteMessageEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	publicKey []byte, tstampNanos uint64) error {
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
-	existingMessage := DbGetMessageEntryWithTxn(txn, snap, publicKey, tstampNanos)
+	existingMessage := DBGetMessageEntryWithTxn(txn, snap, publicKey, tstampNanos)
 	if existingMessage == nil {
 		return nil
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessageEntry(existingMessage.SenderPublicKey, tstampNanos)); err != nil {
-		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessageEntry(publicKey, tstampNanos)); err != nil {
+		return errors.Wrapf(err, "DBDeleteMessageEntryMappingsWithTxn: Deleting "+
 			"sender mapping for public key %s and tstamp %d failed",
-			PkToStringMainnet(existingMessage.SenderPublicKey), tstampNanos)
-	}
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessageEntry(existingMessage.RecipientPublicKey, tstampNanos)); err != nil {
-		return errors.Wrapf(err, "DbDeleteMessageEntryMappingsWithTxn: Deleting "+
-			"recipient mapping for public key %s and tstamp %d failed",
-			PkToStringMainnet(existingMessage.RecipientPublicKey), tstampNanos)
+			PkToStringMainnet(publicKey), tstampNanos)
 	}
 
 	return nil
 }
 
-func DbDeleteMessageEntryMappings(handle *badger.DB, snap *Snapshot,
+func DBDeleteMessageEntryMappings(handle *badger.DB, snap *Snapshot,
 	publicKey []byte, tstampNanos uint64) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteMessageEntryMappingsWithTxn(txn, snap, publicKey, tstampNanos)
+		return DBDeleteMessageEntryMappingsWithTxn(txn, snap, publicKey, tstampNanos)
 	})
 }
 
-func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
+func DBGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	_privateMessages []*MessageEntry, _err error) {
 
 	// Setting the prefix to a tstamp of zero should return all the messages
@@ -970,7 +1011,10 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	privateMessages := []*MessageEntry{}
 	for _, valBytes := range valuesFound {
 		privateMessageObj := &MessageEntry{}
-		privateMessageObj.Decode(valBytes)
+		if err := privateMessageObj.Decode(valBytes); err != nil {
+			return nil, errors.Wrapf(
+				err, "DBGetMessageEntriesForPublicKey: Problem decoding value: ")
+		}
 
 		privateMessages = append(privateMessages, privateMessageObj)
 	}
@@ -978,30 +1022,419 @@ func DbGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	return privateMessages, nil
 }
 
-func DbGetLimitedMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
+func _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(
+	txn *badger.Txn, messagingGroupEntries []*MessagingGroupEntry,
+	limit uint64) (_privateMessages []*MessageEntry, _err error) {
+
+	// Users can have many messaging keys. By default, a users has the base messaging key, which
+	// is just their main public key. Users can also register messaging keys, e.g. keys like the
+	// "default-key", which can be used by others when sending messages to the user. The final
+	// category of messaging keys are group chats, which also introduce a new messaging key that
+	// the user can use to decrypt messages. Overall, the user has many messaging keys and needs
+	// to index messages from multiple prefixes. To do so, we will make badger iterators for each
+	// messaging key and scan each valid message prefix in reverse to get messages sorted by timestamps.
+
+	// Get seek prefixes for each messaging key, we will use them to define iterators for message prefix
+	var prefixes [][]byte
+	for _, keyEntry := range messagingGroupEntries {
+		prefixes = append(prefixes, _dbSeekPrefixForMessagePublicKey(keyEntry.MessagingPublicKey[:]))
+		//prefixes = append(prefixes, _dbSeekPrefixForMessagePartyPublicKey(keyEntry.MessagingPublicKey[:]))
+	}
+
+	// Initialize all iterators, add the 0xff byte to the seek prefix so that we can iterate backwards.
+	var messagingIterators []*badger.Iterator
+	for _, prefix := range prefixes {
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = true
+		iterator := txn.NewIterator(opts)
+		iterator.Seek(append(prefix, 0xff))
+		defer iterator.Close()
+		messagingIterators = append(messagingIterators, iterator)
+	}
+
+	// We will fetch at most (limit) messages.
+	privateMessages := []*MessageEntry{}
+	for ; limit > 0; limit-- {
+
+		// This loop will find the latest message among all messaging keys.
+		// To do so, we find the greatest timestamp from iterator keys.
+		latestTimestamp := uint64(0)
+		latestTimestampIndex := -1
+		for ii := 0; ii < len(prefixes); ii++ {
+			if !messagingIterators[ii].ValidForPrefix(prefixes[ii]) {
+				continue
+			}
+			// Get the timestamp from the item key
+			key := messagingIterators[ii].Item().Key()
+			rr := bytes.NewReader(key[len(prefixes[ii]):])
+			timestamp, err := ReadUvarint(rr)
+			if err != nil {
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: problem reading timestamp " +
+					"for messaging iterator from prefix (%v) at key (%v)", prefixes[ii], messagingIterators[ii].Item().Key())
+			}
+
+			if timestamp > latestTimestamp {
+				latestTimestampIndex = ii
+				latestTimestamp = timestamp
+			}
+		}
+
+		// Now that we found the latest message, let's decode and process it.
+		if latestTimestampIndex == -1 {
+			break
+		} else {
+			// Get the message bytes and decode the message.
+			messageBytes, err := messagingIterators[latestTimestampIndex].Item().ValueCopy(nil)
+			if err != nil {
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem copying " +
+					"value from messaging iterator from prefix (%v) at key (%v)",
+					prefixes[latestTimestampIndex], messagingIterators[latestTimestampIndex].Item().Key())
+			}
+			message := &MessageEntry{}
+			if err := message.Decode(messageBytes); err != nil {
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem decoding message " +
+					"from messaging iterator from prefix (%v) at key (%v)",
+					prefixes[latestTimestampIndex], messagingIterators[latestTimestampIndex].Item().Key())
+			}
+			// Add the message to the list of fetched messages
+			privateMessages = append(privateMessages, message)
+			messagingIterators[latestTimestampIndex].Next()
+		}
+	}
+
+	return privateMessages, nil
+}
+
+func DBGetLimitedMessageForMessagingKeys(handle *badger.DB, messagingKeys []*MessagingGroupEntry, limit uint64) (
 	_privateMessages []*MessageEntry, _err error) {
 
 	// Setting the prefix to a tstamp of zero should return all the messages
 	// for the public key in sorted order since 0 << the minimum timestamp in
 	// the db.
-	prefix := _dbSeekPrefixForMessagePublicKey(publicKey)
 
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
-	_, valuesFound := _enumerateLimitedKeysReversedForPrefix(handle, prefix, uint64(MessagesToFetchPerInboxCall))
+	// Get all user messaging keys.
 
-	privateMessages := []*MessageEntry{}
-	for _, valBytes := range valuesFound {
-		privateMessageObj := &MessageEntry{}
-		if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(privateMessageObj); err != nil {
-			return nil, errors.Wrapf(
-				err, "DbGetMessageEntriesForPublicKey: Problem decoding value: ")
+
+	err := handle.Update(func(txn *badger.Txn) error {
+		var err error
+		_privateMessages, err = _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(txn, messagingKeys, limit)
+		if err != nil {
+			return errors.Wrapf(err, "DBGetLimitedMessageForMessagingKeys: problem getting user messages")
 		}
 
-		privateMessages = append(privateMessages, privateMessageObj)
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DbGetLimitedMessageAndPartyEntriesForPublicKey: problem getting user messages in txn")
 	}
 
-	return privateMessages, nil
+	return _privateMessages, nil
+}
+
+// -------------------------------------------------------------------------------------
+// MessagingGroupEntry mapping functions
+// <prefix, OwnerPublicKey (33 bytes) || GroupKeyName (32 bytes)> -> <MessagingGroupEntry>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForMessagingGroupEntry(messagingGroupEntry *MessagingGroupKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName...)
+	key := append(prefixCopy, messagingGroupEntry.OwnerPublicKey[:]...)
+	key = append(key, messagingGroupEntry.GroupKeyName[:]...)
+	return key
+}
+
+func _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey *PublicKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName...)
+	return append(prefixCopy, ownerPublicKey[:]...)
+}
+
+func DBPutMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
+	ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+
+	messagingKey := &MessagingGroupKey{
+		OwnerPublicKey: *ownerPublicKey,
+		GroupKeyName:   *messagingGroupEntry.MessagingGroupKeyName,
+	}
+	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupEntry(messagingKey), messagingGroupEntry.Encode()); err != nil {
+		return errors.Wrapf(err, "DBPutMessagingGroupEntryWithTxn: Problem adding messaging key entry mapping: ")
+	}
+
+	return nil
+}
+
+func DBPutMessagingGroupEntry(handle *badger.DB, snap *Snapshot, ownerPublicKey *PublicKey,
+	messagingGroupEntry *MessagingGroupEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutMessagingGroupEntryWithTxn(txn, snap, ownerPublicKey, messagingGroupEntry)
+	})
+}
+
+func DBGetMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
+	messagingGroupKey *MessagingGroupKey) *MessagingGroupEntry {
+
+	key := _dbKeyForMessagingGroupEntry(messagingGroupKey)
+
+	messagingGroupBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		return nil
+	}
+	messagingGroupEntry := &MessagingGroupEntry{}
+	messagingGroupEntry.Decode(messagingGroupBytes)
+	return messagingGroupEntry
+}
+
+func DBGetMessagingGroupEntry(db *badger.DB, snap *Snapshot,
+	messagingGroupKey *MessagingGroupKey) *MessagingGroupEntry {
+	var ret *MessagingGroupEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetMessagingGroupEntryWithTxn(txn, snap, messagingGroupKey)
+		return nil
+	})
+	return ret
+}
+
+func DBDeleteMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
+	messagingGroupKey *MessagingGroupKey) error {
+
+	// First pull up the entry that exists for the messaging key.
+	// If one doesn't exist then there's nothing to do.
+	if entry := DBGetMessagingGroupEntryWithTxn(txn, snap, messagingGroupKey); entry == nil {
+		return nil
+	}
+
+	// When a messaging key entry exists, delete it from the DB.
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessagingGroupEntry(messagingGroupKey)); err != nil {
+		return errors.Wrapf(err, "DBDeleteMessagingGroupEntryWithTxn: Deleting "+
+			"entry for MessagingGroupKey failed: %v", messagingGroupKey)
+	}
+
+	return nil
+}
+
+func DBDeleteMessagingGroupEntry(handle *badger.DB, snap *Snapshot,
+	messagingGroupKey *MessagingGroupKey) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteMessagingGroupEntryWithTxn(txn, snap, messagingGroupKey)
+	})
+}
+
+func DBGetMessagingGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *PublicKey) (
+	_messagingKeyEntries []*MessagingGroupEntry, _err error) {
+
+	// Setting the prefix to owner's public key will allow us to fetch all messaging keys
+	// for the user. We enumerate this prefix.
+	prefix := _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: " +
+			"problem enumerating messaging key entries for prefix (%v)", prefix)
+	}
+
+	// Decode found messaging key entries.
+	messagingKeyEntries := []*MessagingGroupEntry{}
+	for _, valBytes := range valuesFound {
+		messagingKeyEntry := &MessagingGroupEntry{}
+		err = messagingKeyEntry.Decode(valBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: " +
+				"problem decoding messaging key entry for public key (%v)", ownerPublicKey)
+		}
+
+		messagingKeyEntries = append(messagingKeyEntries, messagingKeyEntry)
+	}
+
+	return messagingKeyEntries, nil
+}
+
+func DBGetAllUserGroupEntiresWithTxn(txn *badger.Txn, ownerPublicKey []byte) ([]*MessagingGroupEntry, error) {
+	// This function fetches all MessagingGroupEntries for the user from the DB. This includes the
+	// base entry, the owner group entries, and the member group entries.
+
+	// We will keep track of all group entries in this array.
+	var userGroupEntries []*MessagingGroupEntry
+
+	// First add the base messaging key.
+	userGroupEntries = append(userGroupEntries, &MessagingGroupEntry{
+		GroupOwnerPublicKey:   NewPublicKey(ownerPublicKey),
+		MessagingPublicKey:    NewPublicKey(ownerPublicKey),
+		MessagingGroupKeyName: BaseGroupKeyName(),
+	})
+
+	// Now add all the groups where this user is the owner
+	ownerGroupEntries, err := DBGetMessagingGroupEntriesForOwnerWithTxn(txn, NewPublicKey(ownerPublicKey))
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllUserGroupEntiresWithTxn: problem getting messaging entries")
+	}
+	userGroupEntries = append(userGroupEntries, ownerGroupEntries...)
+
+	// And add the groups where the user is a member
+	memberGroupEntries, err := DBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(ownerPublicKey))
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllUserGroupEntiresWithTxn: problem getting recipient entries")
+	}
+	userGroupEntries = append(userGroupEntries, memberGroupEntries...)
+
+	return userGroupEntries, nil
+}
+
+func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*MessagingGroupEntry, error) {
+	var err error
+	var messagingGroupEntries []*MessagingGroupEntry
+
+	err = handle.View(func(txn *badger.Txn) error {
+		messagingGroupEntries, err = DBGetAllUserGroupEntiresWithTxn(txn, ownerPublicKey)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllUserGroupEntries: problem getting user messaging keys")
+	}
+	return messagingGroupEntries, nil
+}
+
+// -------------------------------------------------------------------------------------
+// Messaging recipient
+// <prefix, public key, messaging public key > -> <HackedMessagingGroupEntry>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForMessagingGroupMember(memberPublicKey *PublicKey, groupMessagingPublicKey *PublicKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey...)
+	key := append(prefixCopy, memberPublicKey[:]...)
+	key = append(key, groupMessagingPublicKey[:]...)
+	return key
+}
+
+func _dbSeekPrefixForMessagingGroupMember(memberPublicKey *PublicKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey...)
+	return append(prefixCopy, memberPublicKey[:]...)
+}
+
+func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, messagingGroupMember *MessagingGroupMember,
+	groupOwnerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+	// Sanity-check that public keys have the correct length.
+
+	if len(messagingGroupMember.EncryptedKey) < btcec.PrivKeyBytesLen {
+		return fmt.Errorf("DBPutMessagingGroupMemberWithTxn: Problem getting recipient " +
+			"entry for public key (%v)", messagingGroupMember.GroupMemberPublicKey)
+	}
+
+	// Entries for group members are stored as MessagingGroupEntries where the only member in
+	// the entry is the member specified. This is a bit of a hack to allow us to store a "back-reference"
+	// to the GroupEntry inside the value of this field.
+	memberGroupEntry := MessagingGroupEntry{
+		GroupOwnerPublicKey:   groupOwnerPublicKey,
+		MessagingPublicKey:    messagingGroupEntry.MessagingPublicKey,
+		MessagingGroupKeyName: messagingGroupEntry.MessagingGroupKeyName,
+		MessagingGroupMembers: []*MessagingGroupMember{
+			messagingGroupMember,
+		},
+	}
+
+	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
+		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey), memberGroupEntry.Encode()); err != nil {
+
+		return errors.Wrapf(err, "DBPutMessagingGroupMemberWithTxn: Problem setting messaging recipient with key (%v) " +
+			"and entry (%v) in the db", _dbKeyForMessagingGroupMember(
+			messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey), memberGroupEntry.Encode())
+	}
+
+	return nil
+}
+
+func DBPutMessagingGroupMember(handle *badger.DB, snap *Snapshot, messagingGroupMember *MessagingGroupMember,
+	ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutMessagingGroupMemberWithTxn(txn, snap, messagingGroupMember, ownerPublicKey, messagingGroupEntry)
+	})
+}
+
+func DBGetMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, messagingGroupMember *MessagingGroupMember,
+	messagingGroupEntry *MessagingGroupEntry) *MessagingGroupEntry {
+
+	key := _dbKeyForMessagingGroupMember(
+		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey)
+	// This is a hacked MessagingGroupEntry that contains a single member entry
+	// for the member we're fetching in the members list.
+	messagingGroupMemberEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		return nil
+	}
+	messagingGroupMemberEntry := &MessagingGroupEntry{}
+	messagingGroupMemberEntry.Decode(messagingGroupMemberEntryBytes)
+
+	return messagingGroupMemberEntry
+}
+
+func DBGetMessagingMember(db *badger.DB, snap *Snapshot, messagingMember *MessagingGroupMember,
+	messagingGroupEntry *MessagingGroupEntry) *MessagingGroupEntry {
+
+	var ret *MessagingGroupEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetMessagingGroupMemberWithTxn(txn, snap, messagingMember, messagingGroupEntry)
+		return nil
+	})
+	return ret
+}
+
+func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicKey *PublicKey) (
+	[]*MessagingGroupEntry, error) {
+
+	// This function is used to fetch all messaging
+	var messagingGroupEntries []*MessagingGroupEntry
+	prefix := _dbSeekPrefixForMessagingGroupMember(ownerPublicKey)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: " +
+			"problem enumerating messaging key entries for prefix (%v)", prefix)
+	}
+
+	for _, valBytes := range valuesFound {
+		messagingGroupEntry := MessagingGroupEntry{}
+		err = messagingGroupEntry.Decode(valBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: problem reading " +
+				"an entry from DB")
+		}
+
+		messagingGroupEntries = append(messagingGroupEntries, &messagingGroupEntry)
+	}
+
+	return messagingGroupEntries, nil
+}
+
+// Note this deletes the message for the sender *and* receiver since a mapping
+// should exist for each.
+func DBDeleteMessagingGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot,
+	messagingGroupMember *MessagingGroupMember, messagingGroupEntry *MessagingGroupEntry) error {
+
+	// First pull up the mapping that exists for the public key passed in.
+	// If one doesn't exist then there's nothing to do.
+	existingMember := DBGetMessagingGroupMemberWithTxn(txn, snap, messagingGroupMember, messagingGroupEntry)
+	if existingMember == nil {
+		return nil
+	}
+
+	// When a message exists, delete the mapping for the sender and receiver.
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
+		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey)); err != nil {
+
+		return errors.Wrapf(err, "DBDeleteMessagingGroupMemberMappingWithTxn: Deleting mapping for public key %v " +
+			"and messaging public key %v failed", messagingGroupMember.GroupMemberPublicKey[:],
+			messagingGroupEntry.MessagingPublicKey[:])
+	}
+
+	return nil
+}
+
+func DBDeleteMessagingGroupMemberMappings(handle *badger.DB, snap *Snapshot,
+	messagingGroupMember *MessagingGroupMember, messagingGroupEntry *MessagingGroupEntry) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBDeleteMessagingGroupMemberMappingWithTxn(txn, snap, messagingGroupMember, messagingGroupEntry)
+	})
 }
 
 // -------------------------------------------------------------------------------------
@@ -1568,7 +2001,8 @@ func DbGetPubKeysYouFollow(handle *badger.DB, snap *Snapshot, yourPubKey []byte)
 
 	// Convert the pkids to public keys
 	followPubKeys := [][]byte{}
-	for _, fpkid := range followPKIDs {
+	for _, fpkidIter := range followPKIDs {
+		fpkid := fpkidIter
 		followPk := DBGetPublicKeyForPKID(handle, snap, fpkid)
 		followPubKeys = append(followPubKeys, followPk)
 	}
@@ -1588,7 +2022,8 @@ func DbGetPubKeysFollowingYou(handle *badger.DB, snap *Snapshot, yourPubKey []by
 
 	// Convert the pkids to public keys
 	followPubKeys := [][]byte{}
-	for _, fpkid := range followPKIDs {
+	for _, fpkidIter := range followPKIDs {
+		fpkid := fpkidIter
 		followPk := DBGetPublicKeyForPKID(handle, snap, fpkid)
 		followPubKeys = append(followPubKeys, followPk)
 	}
@@ -2632,7 +3067,9 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 			pubKeyToBlockRewardMap[pkMapKey] += bro.AmountNanos
 		}
 	}
-	for pkMapKey, blockReward := range pubKeyToBlockRewardMap {
+	for pkMapKeyIter, blockReward := range pubKeyToBlockRewardMap {
+		pkMapKey := pkMapKeyIter
+
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
 		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward)); err != nil {
 			return err
@@ -2801,8 +3238,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -3321,6 +3758,19 @@ type CreatorCoinTransferTxindexMetadata struct {
 	PostHashHex                string
 }
 
+type DAOCoinTransferTxindexMetadata struct {
+	CreatorUsername        string
+	DAOCoinToTransferNanos uint256.Int
+}
+
+type DAOCoinTxindexMetadata struct {
+	CreatorUsername           string
+	OperationType             string
+	CoinsToMintNanos          uint256.Int
+	CoinsToBurnNanos          uint256.Int
+	TransferRestrictionStatus string
+}
+
 type UpdateProfileTxindexMetadata struct {
 	ProfilePublicKeyBase58Check string
 
@@ -3375,23 +3825,46 @@ type SwapIdentityTxindexMetadata struct {
 	ToDeSoLockedNanos   uint64
 }
 
+type NFTRoyaltiesMetadata struct {
+	CreatorCoinRoyaltyNanos     uint64
+	CreatorRoyaltyNanos         uint64
+	CreatorPublicKeyBase58Check string
+	// We omit the maps when empty to save some space.
+	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
+	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
+}
+
 type NFTBidTxindexMetadata struct {
-	NFTPostHashHex string
-	SerialNumber   uint64
-	BidAmountNanos uint64
+	NFTPostHashHex            string
+	SerialNumber              uint64
+	BidAmountNanos            uint64
+	IsBuyNowBid               bool
+	OwnerPublicKeyBase58Check string
+	// We omit the empty object here as a bid that doesn't trigger a "buy now" operation will have no royalty metadata
+	NFTRoyaltiesMetadata `json:",omitempty"`
 }
 
 type AcceptNFTBidTxindexMetadata struct {
-	NFTPostHashHex              string
-	SerialNumber                uint64
-	BidAmountNanos              uint64
-	CreatorCoinRoyaltyNanos     uint64
-	CreatorPublicKeyBase58Check string
+	NFTPostHashHex string
+	SerialNumber   uint64
+	BidAmountNanos uint64
+	NFTRoyaltiesMetadata
 }
 
 type NFTTransferTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
+}
+
+type CreateNFTTxindexMetadata struct {
+	NFTPostHashHex             string
+	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
+	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
+}
+
+type UpdateNFTTxindexMetadata struct {
+	NFTPostHashHex string
+	IsForSale      bool
 }
 
 type TransactionMetadata struct {
@@ -3422,6 +3895,10 @@ type TransactionMetadata struct {
 	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
 	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
 	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
+	DAOCoinTxindexMetadata             *DAOCoinTxindexMetadata             `json:",omitempty"`
+	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
+	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
+	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, snap *Snapshot, txID *BlockHash) bool {
@@ -3535,7 +4012,9 @@ func DbPutTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	publicKeys := _getPublicKeysForTxn(desoTxn, txnMeta, params)
 
 	// For each public key found, add the txID from its list.
-	for pkFound := range publicKeys {
+	for pkFoundIter := range publicKeys {
+		pkFound := pkFoundIter
+
 		// Simply add a new entry for each of the public keys found.
 		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID); err != nil {
 			return err
@@ -3570,7 +4049,8 @@ func DbDeleteTxindexTransactionMappingsWithTxn(txn *badger.Txn,
 	publicKeys := _getPublicKeysForTxn(desoTxn, txnMeta, params)
 
 	// For each public key found, delete the txID mapping from the db.
-	for pkFound := range publicKeys {
+	for pkFoundIter := range publicKeys {
+		pkFound := pkFoundIter
 		if err := DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID); err != nil {
 			return err
 		}
@@ -4772,10 +5252,7 @@ func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicK
 	var derivedEntries []*DerivedKeyEntry
 	for _, keyBytes := range valsFound {
 		derivedKeyEntry := &DerivedKeyEntry{}
-		err := gob.NewDecoder(bytes.NewReader(keyBytes)).Decode(derivedKeyEntry)
-		if err != nil {
-			return nil, err
-		}
+		derivedKeyEntry.Decode(keyBytes)
 		derivedEntries = append(derivedEntries, derivedKeyEntry)
 	}
 
@@ -4903,7 +5380,7 @@ func DBDeleteProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	// The coin deso mapping
 	if err := DBDeleteWithTxn(txn, snap,
 		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
-			profileEntry.DeSoLockedNanos, pkid)); err != nil {
+			profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid)); err != nil {
 
 		return errors.Wrapf(err, "DbDeleteProfileEntryMappingsWithTxn: Deleting "+
 			"coin mapping for profile username %v", string(profileEntry.Username))
@@ -4934,7 +5411,7 @@ func DBPutProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	// The coin deso mapping
 	if err := DBSetWithTxn(txn, snap,
 		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
-			profileEntry.DeSoLockedNanos, pkid), []byte{}); err != nil {
+			profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid), []byte{}); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile coin: ")
@@ -5027,68 +5504,97 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, snap *Snapshot, fetchEntries
 }
 
 // =====================================================================================
-// Creator coin balance entry code
+//  Coin balance entry code - Supports both creator coins and DAO coins
 // =====================================================================================
-func _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID *PKID, creatorPKID *PKID) []byte {
-	key := append([]byte{}, Prefixes.PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
+func _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin bool) []byte {
+	if isDAOCoin {
+		return Prefixes.PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry
+	} else {
+		return Prefixes.PrefixHODLerPKIDCreatorPKIDToBalanceEntry
+	}
+}
+
+func _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin bool) []byte {
+	if isDAOCoin {
+		return Prefixes.PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry
+	} else {
+		return Prefixes.PrefixCreatorPKIDHODLerPKIDToBalanceEntry
+	}
+}
+
+func _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) []byte {
+	key := append([]byte{}, _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin)...)
 	key = append(key, hodlerPKID[:]...)
 	key = append(key, creatorPKID[:]...)
 	return key
 }
-func _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID *PKID, hodlerPKID *PKID) []byte {
-	key := append([]byte{}, Prefixes.PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
+func _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID *PKID, hodlerPKID *PKID, isDAOCoin bool) []byte {
+	key := append([]byte{}, _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin)...)
 	key = append(key, creatorPKID[:]...)
 	key = append(key, hodlerPKID[:]...)
 	return key
 }
 
-func DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
-	txn *badger.Txn, snap *Snapshot, hodlerPKID *PKID, creatorPKID *PKID) *BalanceEntry {
+func DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(txn *badger.Txn, snap *Snapshot,
+	hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) *BalanceEntry {
 
-	key := _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID)
+	key := _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID, isDAOCoin)
 	balanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		return nil
 	}
-
 	balanceEntryObj := &BalanceEntry{}
 	balanceEntryObj.Decode(balanceEntryBytes)
 	return balanceEntryObj
 }
 
-func DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDs(handle *badger.DB,
-	snap *Snapshot, hodlerPKID *PKID, creatorPKID *PKID) *BalanceEntry {
+func DBGetBalanceEntryForHODLerAndCreatorPKIDs(handle *badger.DB, snap *Snapshot,
+	hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) *BalanceEntry {
 
 	var ret *BalanceEntry
 	handle.View(func(txn *badger.Txn) error {
-		ret = DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
-			txn, snap, hodlerPKID, creatorPKID)
+		ret = DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
+			txn, snap, hodlerPKID, creatorPKID, isDAOCoin)
 		return nil
 	})
 	return ret
 }
 
-func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	hodlerPKID *PKID, creatorPKID *PKID) error {
+func DBGetBalanceEntryForCreatorPKIDAndHODLerPubKeyWithTxn(txn *badger.Txn, snap *Snapshot,
+	creatorPKID *PKID, hodlerPKID *PKID, isDAOCoin bool) *BalanceEntry {
+
+	key := _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID, isDAOCoin)
+	balanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		return nil
+	}
+	balanceEntryObj := &BalanceEntry{}
+	balanceEntryObj.Decode(balanceEntryBytes)
+
+	return balanceEntryObj
+}
+
+func DBDeleteBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
+	hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) error {
 
 	// First pull up the mappings that exists for the keys passed in.
 	// If one doesn't exist then there's nothing to do.
-	//balanceEntry := DBGetCreatorCoinBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
-	//	txn, hodlerPKID, creatorPKID)
-	//if balanceEntry == nil {
-	//	return nil
-	//}
+	balanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(
+		txn, snap, hodlerPKID, creatorPKID, isDAOCoin)
+	if balanceEntry == nil {
+		return nil
+	}
 
 	// When an entry exists, delete the mappings for it.
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID)); err != nil {
-		return errors.Wrapf(err, "DbDeleteCreatorCoinBalanceEntryMappingsWithTxn: Deleting "+
-			"mappings with keys: %v %v", PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID, isDAOCoin)); err != nil {
+		return errors.Wrapf(err, "DBDeleteBalanceEntryMappingsWithTxn: Deleting "+
+			"mappings with keys: %v %v",
+			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
 	}
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID)); err != nil {
-		return errors.Wrapf(err, "DbDeleteCreatorCoinBalanceEntryMappingsWithTxn: Deleting "+
-			"mappings with keys: %v %v", PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID, isDAOCoin)); err != nil {
+		return errors.Wrapf(err, "DBDeleteBalanceEntryMappingsWithTxn: Deleting "+
+			"mappings with keys: %v %v",
+			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
 	}
 
 	// Note: We don't update the CreatorDeSoLockedNanosCreatorPubKeyIIndex
@@ -5098,25 +5604,25 @@ func DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snaps
 	return nil
 }
 
-func DBDeleteCreatorCoinBalanceEntryMappings(handle *badger.DB, snap *Snapshot,
-	hodlerPKID *PKID, creatorPKID *PKID) error {
+func DBDeleteBalanceEntryMappings(handle *badger.DB, snap *Snapshot,
+	hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteCreatorCoinBalanceEntryMappingsWithTxn(
-			txn, snap, hodlerPKID, creatorPKID)
+		return DBDeleteBalanceEntryMappingsWithTxn(
+			txn, snap, hodlerPKID, creatorPKID, isDAOCoin)
 	})
 }
 
-func DBPutCreatorCoinBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	balanceEntry *BalanceEntry) error {
+func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
+	balanceEntry *BalanceEntry, isDAOCoin bool) error {
 
 	balanceEntryBytes := balanceEntry.Encode()
 	// Set the forward direction for the HODLer
 	if err := DBSetWithTxn(txn, snap, _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-		balanceEntry.HODLerPKID, balanceEntry.CreatorPKID),
+		balanceEntry.HODLerPKID, balanceEntry.CreatorPKID, isDAOCoin),
 		balanceEntryBytes); err != nil {
 
-		return errors.Wrapf(err, "DbPutCreatorCoinBalanceEntryMappingsWithTxn: Problem "+
+		return errors.Wrapf(err, "DBPutBalanceEntryMappingsWithTxn: Problem "+
 			"adding forward mappings for pub keys: %v %v",
 			PkToStringBoth(balanceEntry.HODLerPKID[:]),
 			PkToStringBoth(balanceEntry.CreatorPKID[:]))
@@ -5124,10 +5630,10 @@ func DBPutCreatorCoinBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot
 
 	// Set the reverse direction for the creator
 	if err := DBSetWithTxn(txn, snap, _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(
-		balanceEntry.CreatorPKID, balanceEntry.HODLerPKID),
+		balanceEntry.CreatorPKID, balanceEntry.HODLerPKID, isDAOCoin),
 		balanceEntryBytes); err != nil {
 
-		return errors.Wrapf(err, "DbPutCreatorCoinBalanceEntryMappingsWithTxn: Problem "+
+		return errors.Wrapf(err, "DBPutBalanceEntryMappingsWithTxn: Problem "+
 			"adding reverse mappings for pub keys: %v %v",
 			PkToStringBoth(balanceEntry.HODLerPKID[:]),
 			PkToStringBoth(balanceEntry.CreatorPKID[:]))
@@ -5136,18 +5642,19 @@ func DBPutCreatorCoinBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot
 	return nil
 }
 
-func DBPutCreatorCoinBalanceEntryMappings(handle *badger.DB, snap *Snapshot,
-	balanceEntry *BalanceEntry) error {
+func DBPutBalanceEntryMappings(handle *badger.DB, snap *Snapshot,
+	balanceEntry *BalanceEntry, isDAOCoin bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutCreatorCoinBalanceEntryMappingsWithTxn(txn, snap, balanceEntry)
+		return DBPutBalanceEntryMappingsWithTxn(
+			txn, snap, balanceEntry, isDAOCoin)
 	})
 }
 
-// GetSingleBalanceEntryFromPublicKeys fetchs a single balance entry of a holder's creator coin.
+// GetSingleBalanceEntryFromPublicKeys fetches a single balance entry of a holder's creator or DAO coin.
 // Returns nil if the balance entry never existed.
 // TODO: This is suboptimal, shouldn't be passing UtxoView
-func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView *UtxoView) (*BalanceEntry, error) {
+func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView *UtxoView, isDAOCoin bool) (*BalanceEntry, error) {
 	holderPKIDEntry := utxoView.GetPKIDForPublicKey(holder)
 	if holderPKIDEntry == nil || holderPKIDEntry.isDeleted {
 		return nil, fmt.Errorf("DbGetSingleBalanceEntryFromPublicKeys: holderPKID was nil or deleted; this should never happen")
@@ -5160,31 +5667,32 @@ func GetSingleBalanceEntryFromPublicKeys(holder []byte, creator []byte, utxoView
 	creatorPKID := creatorPKIDEntry.PKID
 
 	// Check if there's a balance entry in the view
-	balanceEntryMapKey := BalanceEntryMapKey{HODLerPKID: *holderPKID, CreatorPKID: *creatorPKID}
-	balanceEntryFromView, _ := utxoView.HODLerPKIDCreatorPKIDToBalanceEntry[balanceEntryMapKey]
+	balanceEntryMapKey := MakeBalanceEntryKey(holderPKID, creatorPKID)
+	balanceEntryFromView := utxoView.GetHODLerPKIDCreatorPKIDToBalanceEntryMap(isDAOCoin)[balanceEntryMapKey]
 	if balanceEntryFromView != nil {
 		return balanceEntryFromView, nil
 	}
 
 	// Check if there's a balance entry in the database
-	balanceEntryFromDb := DbGetBalanceEntry(utxoView.Handle, utxoView.Snapshot, holderPKID, creatorPKID)
+	balanceEntryFromDb := DbGetBalanceEntry(utxoView.Handle, utxoView.Snapshot, holderPKID, creatorPKID, isDAOCoin)
 	return balanceEntryFromDb, nil
 }
 
 // DbGetBalanceEntry returns a balance entry from the database
-func DbGetBalanceEntry(db *badger.DB, snap *Snapshot, holder *PKID, creator *PKID) *BalanceEntry {
+func DbGetBalanceEntry(db *badger.DB, snap *Snapshot,
+	holder *PKID, creator *PKID, isDAOCoin bool) *BalanceEntry {
 	var ret *BalanceEntry
 	db.View(func(txn *badger.Txn) error {
-		ret = DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn, snap, holder, creator)
+		ret = DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn, snap, holder, creator, isDAOCoin)
 		return nil
 	})
 	return ret
 }
 
 func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot,
-	holder *PKID, creator *PKID) *BalanceEntry {
+	holder *PKID, creator *PKID, isDAOCoin bool) *BalanceEntry {
 
-	key := _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creator, holder)
+	key := _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creator, holder, isDAOCoin)
 	balanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		return nil
@@ -5195,18 +5703,18 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, snap *Snap
 	return balanceEntryObj
 }
 
-// DbGetBalanceEntriesHodlingYou fetchs the BalanceEntries that the passed in pkid holds.
-func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances bool) ([]*BalanceEntry, error) {
+// DbGetBalanceEntriesYouHold fetches the BalanceEntries that the passed in pkid holds.
+func DbGetBalanceEntriesYouHold(db *badger.DB, snap *Snapshot, pkid *PKID, filterOutZeroBalances bool, isDAOCoin bool) ([]*BalanceEntry, error) {
 	// Get the balance entries for the coins that *you hold*
 	balanceEntriesYouHodl := []*BalanceEntry{}
 	{
-		prefix := append([]byte{}, Prefixes.PrefixHODLerPKIDCreatorPKIDToBalanceEntry...)
+		prefix := _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			currentEntry.Decode(byteString)
-			if filterOutZeroBalances && currentEntry.BalanceNanos == 0 {
+			if filterOutZeroBalances && currentEntry.BalanceNanos.IsZero() {
 				continue
 			}
 			balanceEntriesYouHodl = append(balanceEntriesYouHodl, currentEntry)
@@ -5217,17 +5725,17 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, pkid *PKID, filterOutZeroBalances
 }
 
 // DbGetBalanceEntriesHodlingYou fetches the BalanceEntries that hold the pkid passed in.
-func DbGetBalanceEntriesHodlingYou(db *badger.DB, pkid *PKID, filterOutZeroBalances bool) ([]*BalanceEntry, error) {
+func DbGetBalanceEntriesHodlingYou(db *badger.DB, snap *Snapshot, pkid *PKID, filterOutZeroBalances bool, isDAOCoin bool) ([]*BalanceEntry, error) {
 	// Get the balance entries for the coins that *hold you*
 	balanceEntriesThatHodlYou := []*BalanceEntry{}
 	{
-		prefix := append([]byte{}, Prefixes.PrefixCreatorPKIDHODLerPKIDToBalanceEntry...)
+		prefix := _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			currentEntry.Decode(byteString)
-			if filterOutZeroBalances && currentEntry.BalanceNanos == 0 {
+			if filterOutZeroBalances && currentEntry.BalanceNanos.IsZero() {
 				continue
 			}
 			balanceEntriesThatHodlYou = append(balanceEntriesThatHodlYou, currentEntry)
@@ -5423,7 +5931,8 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(db *badger.DB,
 	// Have to do this to convert the PKIDs back into public keys
 	// TODO: We should clean things up around public keys vs PKIDs
 	pubKeysMap := make(map[PkMapKey][]byte)
-	for _, pkidBytes := range pkidsFound {
+	for _, pkidBytesIter := range pkidsFound {
+		pkidBytes := pkidBytesIter
 		if len(pkidBytes) != btcec.PubKeyBytesLenCompressed {
 			continue
 		}
@@ -5444,7 +5953,8 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(db *badger.DB,
 
 	// Sigh.. convert the public keys *back* into PKIDs...
 	profilesFound := []*ProfileEntry{}
-	for _, pk := range pubKeysMap {
+	for _, pkIter := range pubKeysMap {
+		pk := pkIter
 		pkid := utxoView.GetPKIDForPublicKey(pk).PKID
 		profile := utxoView.GetProfileEntryForPKID(pkid)
 		// Double-check that a username matches the prefix.
@@ -5458,7 +5968,7 @@ func DBGetProfilesByUsernamePrefixAndDeSoLocked(db *badger.DB,
 	// If there is no error, sort and return numToFetch. Username searches are always
 	// sorted by coin value.
 	sort.Slice(profilesFound, func(ii, jj int) bool {
-		return profilesFound[ii].CoinEntry.DeSoLockedNanos > profilesFound[jj].CoinEntry.DeSoLockedNanos
+		return profilesFound[ii].CreatorCoinEntry.DeSoLockedNanos > profilesFound[jj].CreatorCoinEntry.DeSoLockedNanos
 	})
 
 	return profilesFound, nil
@@ -5491,7 +6001,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -5507,7 +6017,8 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	}
 
 	profilePubKeys := [][]byte{}
-	for _, pkidBytes := range profilePKIDs {
+	for _, pkidBytesIter := range profilePKIDs {
+		pkidBytes := pkidBytesIter
 		pkid := &PKID{}
 		copy(pkid[:], pkidBytes)
 		profilePubKeys = append(profilePubKeys, DBGetPublicKeyForPKID(db, snap, pkid))
