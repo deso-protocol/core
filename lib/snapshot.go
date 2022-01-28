@@ -287,7 +287,8 @@ type Snapshot struct {
 
 	// DBWriteSemaphore is an atomically accessed semaphore counter that will be
 	// used to mitigate DB race conditions between sync and utxo_view flush.
-	DBWriteSemaphore int32
+	MainDBSemaphore int32
+	AncestralDBSemaphore int32
 
 	// brokenSnapshot indicates that we need to rebuild entire snapshot from scratch.
 	// Updates to the snapshot happen in the background, so sometimes they can be broken
@@ -322,20 +323,21 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 
 	// Set the snapshot
 	snap := &Snapshot{
-		Db:                  snapshotDb,
-		Cache:               lru.NewKVCache(uint(cacheSize)),
-		BlockHeight:         uint64(0),
-		BlockHeightModulus:  uint64(900),
-		FlushCounter:        uint64(0),
-		FlushCounterModulus: uint64(25),
-		LastCounter:         uint64(0),
-		BatchSize:           uint32(8 << 20),
-		CounterChannel:      make(chan uint64),
-		DeleteChannel:       make(chan uint64),
-		Checksum:            checksum,
-		AncestralMemory:     lane.NewDeque(),
-		DBWriteSemaphore:    int32(0),
-		brokenSnapshot:      false,
+		Db:                   snapshotDb,
+		Cache:                lru.NewKVCache(uint(cacheSize)),
+		BlockHeight:          uint64(0),
+		BlockHeightModulus:   uint64(900),
+		FlushCounter:         uint64(0),
+		FlushCounterModulus:  uint64(25),
+		LastCounter:          uint64(0),
+		BatchSize:            uint32(8 << 20),
+		CounterChannel:       make(chan uint64),
+		DeleteChannel:        make(chan uint64),
+		Checksum:             checksum,
+		AncestralMemory:      lane.NewDeque(),
+		MainDBSemaphore:      int32(0),
+		AncestralDBSemaphore: int32(0),
+		brokenSnapshot:       false,
 	}
 	go snap.Run()
 
@@ -468,8 +470,8 @@ func (snap *Snapshot) CheckPrefixExists (value []byte) bool {
 }
 
 func (snap *Snapshot) PrepareAncestralFlush() uint64 {
-	// Increment snapshot semaphore counter to indicate we're about to flush.
-	snap.IncrementSemaphore()
+	// Signal that the main db update has started by incrementing the main semaphore.
+	atomic.AddInt32(&snap.MainDBSemaphore, int32(1))
 
 	snap.FlushCounter += 1
 	index := snap.FlushCounter
@@ -486,8 +488,6 @@ func (snap *Snapshot) PrepareAncestralFlush() uint64 {
 func (snap *Snapshot) FlushAncestralRecords(counter uint64) {
 	// If snapshot is broken then there's nothing to do.
 	glog.Infof("Snapshot.FlushAncestralRecords: Initiated the flush")
-	// Decrement snapshot semaphore counter.
-	atomic.AddInt32(&snap.DBWriteSemaphore, int32(-1))
 
 	err := snap.Checksum.Wait()
 	if err != nil {
@@ -500,6 +500,10 @@ func (snap *Snapshot) FlushAncestralRecords(counter uint64) {
 		return
 	}
 
+	// Signal that the main db update has finished by incrementing the main semaphore.
+	// Also signal that the ancestral db write started by increasing the ancestral semaphore.
+	atomic.AddInt32(&snap.AncestralDBSemaphore, int32(1))
+	atomic.AddInt32(&snap.MainDBSemaphore, int32(1))
 	glog.Infof("Snapshot.FlushAncestralRecords: Sending counter (%v) to the CounterChannel", snap.FlushCounter)
 	// We send the flush counter to the counter to indicate that a flush should take place.
 	snap.CounterChannel <- counter
@@ -518,8 +522,6 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter() {
 
 	// If snapshot is broken then there's nothing to do.
 	glog.Infof("Snapshot.FlushAncestralRecords: Initiated the flush")
-	// Decrement snapshot semaphore counter.
-	atomic.AddInt32(&snap.DBWriteSemaphore, int32(-1))
 
 	if snap.brokenSnapshot {
 		glog.Errorf("Snapshot.FlushAncestralRecords: Broken snapshot, aborting")
@@ -604,6 +606,8 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter() {
 		glog.Errorf("Snapshot.FlushAncestralRecords: Problem flushing snapshot %v, Error %v", snap, err)
 	}
 
+	// Signal that the ancestral db write has finished by incrementing the semaphore.
+	atomic.AddInt32(&snap.AncestralDBSemaphore, int32(1))
 	snap.AncestralMemory.Shift()
 	glog.Infof("Snapshot.FlushAncestralRecords: Snapshot, finished flushing ancestral records. Snapshot " +
 		"status, brokenSnapshot: (%v)", snap.brokenSnapshot)
@@ -631,35 +635,33 @@ func (snap *Snapshot) String() string {
 	return fmt.Sprintf("< Snapshot | height: %v | broken: %v >", snap.BlockHeight, snap.brokenSnapshot)
 }
 
-func (snap *Snapshot) IncrementSemaphore() {
-	// TODO: DON'T REALLY NEED TO CHECK THAT IF WE'RE USING THE CHANNEL
-	//currentSemaphore := atomic.LoadInt32(&snap.DBWriteSemaphore)
-	//if currentSemaphore > 0 {
-	//	snap.brokenSnapshot = true
-	//	glog.Errorf("UtxoView.FlushToDbWithTxn: Race condition in flush to snapshot, " +
-	//		"current DBWriteSemaphore: %v", currentSemaphore)
-	//}
-	atomic.AddInt32(&snap.DBWriteSemaphore, 1)
-}
 
 // GetSnapshotChunk gets fetches a batch of records from the nodes DB that match the provided prefix
 // and have a key at least equal to the startKey lexicographically. The function will also fetch ancestral
 // records and combine them with the DB records so that the batch reflects an ancestral block.
 func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKey []byte) (
-	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _err error) {
+	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _concurrencyFault bool, _err error) {
+
+	ancestralDBSemaphoreBefore := atomic.LoadInt32(&snap.AncestralDBSemaphore)
+	mainDBSemaphoreBefore := atomic.LoadInt32(&snap.MainDBSemaphore)
+	if ancestralDBSemaphoreBefore != mainDBSemaphoreBefore ||
+		(ancestralDBSemaphoreBefore | mainDBSemaphoreBefore) % 2 == 1{
+		return nil, false, true, nil
+	}
+
 	// This the list of fetched DB entries.
 	var snapshotEntriesBatch []*DBEntry
 
 	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
 	mainDbBatchEntries, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, snap.BatchSize)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
+		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
 	ancestralDbBatchEntries, ancestralDbFilled, err := DBIteratePrefixKeys(snap.Db,
 		snap.GetSeekPrefix(prefix), snap.GetSeekPrefix(startKey), snap.BatchSize)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
+		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 
 	// To combine the main DB entries and the ancestral records DB entries, we iterate through the ancestral records and
@@ -705,11 +707,18 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 
 	if len(snapshotEntriesBatch) == 0 {
 		snapshotEntriesBatch = append(snapshotEntriesBatch, EmptyDBEntry())
-		return snapshotEntriesBatch, false, nil
+		return snapshotEntriesBatch, false, false, nil
+	}
+
+	ancestralDBSemaphoreAfter := atomic.LoadInt32(&snap.AncestralDBSemaphore)
+	mainDBSemaphoreAfter := atomic.LoadInt32(&snap.MainDBSemaphore)
+	if ancestralDBSemaphoreBefore != ancestralDBSemaphoreAfter ||
+		mainDBSemaphoreBefore != mainDBSemaphoreAfter {
+		return nil, false, true, nil
 	}
 
 	// If either of the chunks is full, we should return true.
-	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, nil
+	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, false, nil
 }
 
 func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) error {

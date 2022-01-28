@@ -826,7 +826,8 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	}
 
 	// TODO: Any restrictions on how many snapshots a peer can request?
-	snapshotChunk, full, _ := srv.blockchain.snapshot.GetSnapshotChunk(srv.blockchain.db, msg.Prefix, msg.SnapshotStartEntry.Key)
+	// TODO: Handle concurrency fault
+	snapshotChunk, full, _, _ := srv.blockchain.snapshot.GetSnapshotChunk(srv.blockchain.db, msg.Prefix, msg.SnapshotStartEntry.Key)
 	snapshotChecksum, err := srv.blockchain.snapshot.Checksum.ToBytes()
 	if err != nil {
 		glog.Errorf("server._handleGetSnapshot: Problem getting snapshot (%v)", err)

@@ -397,7 +397,8 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	itemData, err := item.ValueCopy(nil)
 
 	// If DBWriteSemaphore semaphore indicates that a flush takes place, we don't update cache.
-	if isState && atomic.LoadInt32(&snap.DBWriteSemaphore) == 0 {
+	if isState && atomic.LoadInt32(&snap.MainDBSemaphore) % 2 == 0 {
+		// TODO: Can this somehow f us if the flush starts after we got here?
 		snap.Cache.Add(keyString, itemData)
 	}
 	return itemData, nil
