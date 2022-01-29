@@ -1715,7 +1715,7 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 
 		return result, nil
 	} else {
-		return []byte{}, nil
+		return nil, nil
 	}
 }
 
