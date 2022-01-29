@@ -3248,6 +3248,11 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// Set the best hash to the genesis block in the db since its the only node
 	// we're currently aware of. Set it for both the header chain and the block
 	// chain.
+	var counter uint64
+	if snap != nil {
+		counter = snap.PrepareAncestralFlush()
+	}
+
 	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 	}
@@ -3264,6 +3269,10 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	}
 	if err := DbPutGlobalParamsEntry(handle, snap, InitialGlobalParamsEntry); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting GlobalParamsEntry into db for block chain")
+	}
+
+	if snap != nil {
+		snap.FlushAncestralRecords(counter)
 	}
 
 	// We apply seed transactions here. This step is useful for setting

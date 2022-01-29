@@ -495,7 +495,7 @@ func (bc *Blockchain) _initChain() error {
 		if bc.postgres != nil {
 			err = bc.postgres.InitGenesisBlock(bc.params, bc.db)
 		} else {
-			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager, nil)
+			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager, bc.snapshot)
 		}
 		if err != nil {
 			return errors.Wrapf(err, "_initChain: Problem initializing db with genesis block")
