@@ -1,7 +1,8 @@
 package lib
 
 import (
-	"encoding/hex"
+	"bytes"
+"encoding/hex"
 	"fmt"
 	"net"
 	"reflect"
@@ -44,14 +45,14 @@ type ServerReply struct {
 }
 
 type SyncPrefixProgress struct {
-	PrefixSyncPeer *Peer
-	Prefix         []byte
-	LastDBEntry    *DBEntry
-	Completed      bool
+	PrefixSyncPeer   *Peer
+	Prefix           []byte
+	LastKeyRequested *DBEntry
+	Completed        bool
 }
 
 type SyncProgress struct {
-	PrefixProgress []SyncPrefixProgress
+	PrefixProgress []*SyncPrefixProgress
 	Completed bool
 }
 
@@ -142,6 +143,8 @@ type Server struct {
 	statsdClient *statsd.Client
 
 	Notifier *Notifier
+
+	timer *Timer
 }
 
 func (srv *Server) HasProcessedFirstTransactionBundle() bool {
@@ -454,6 +457,10 @@ func NewServer(
 	// This will initialize the request queues.
 	srv.ResetRequestQueues()
 
+	timer := &Timer{}
+	timer.Initialize()
+	srv.timer = timer
+
 	return srv, nil
 }
 
@@ -498,10 +505,7 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 // GetSnapshot kick off hyper sync
 func (srv *Server) GetSnapshot(pp *Peer) {
 
-	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
-	pp.currentTime = time.Now()
-	glog.Infof("Server.GetSnapshot: Started execution with total elapsed (%v) and current time (%v)",
-		pp.timeElapsed, pp.currentTime)
+	srv.timer.Start("Get Snapshot")
 	var prefix []byte
 	lastDBEntry := EmptyDBEntry()
 	// First check if the peer is already assigned to some prefix.
@@ -511,7 +515,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 		}
 		if prefixProgress.PrefixSyncPeer.ID == pp.ID {
 			prefix = prefixProgress.Prefix
-			lastDBEntry = prefixProgress.LastDBEntry
+			lastDBEntry = prefixProgress.LastKeyRequested
 		}
 	}
 	// If peer isn't assigned to any prefix, we will assign him now.
@@ -526,10 +530,10 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 				}
 			}
 			if !exists {
-				srv.HyperSyncProgress.PrefixProgress = append(srv.HyperSyncProgress.PrefixProgress, SyncPrefixProgress{
+				srv.HyperSyncProgress.PrefixProgress = append(srv.HyperSyncProgress.PrefixProgress, &SyncPrefixProgress{
 					PrefixSyncPeer: pp,
 					Prefix: prefix,
-					LastDBEntry: EmptyDBEntry(),
+					LastKeyRequested: EmptyDBEntry(),
 					Completed: false,
 				})
 				lastDBEntry = DBEntryKeyOnlyFromBytes(prefix)
@@ -547,11 +551,6 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 		Prefix: prefix,
 		SnapshotStartEntry: lastDBEntry,
 	}, false)
-
-	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
-	pp.currentTime = time.Now()
-	glog.Infof("Server.GetSnapshot: Sent peer a GetSnapshot message with total elapsed (%v) and current time (%v)",
-    		pp.timeElapsed, pp.currentTime)
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) " +
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastDBEntry)
@@ -707,10 +706,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 					})
 				}
 				srv.blockchain.snapshot.Checksum.Initialize()
-				pp.timeElapsed = 0.0
-				pp.currentTime = time.Now()
-				glog.Infof("Server._handleHeaderBundle: Started Peer timer with total elapsed (%v) and current time (%v)",
-					pp.timeElapsed, pp.currentTime)
+				srv.timer.Start("Hyper sync")
 				srv.GetSnapshot(pp)
 				return
 			}
@@ -812,10 +808,7 @@ func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
 
 func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	glog.V(1).Infof("srv._handleGetSnapshot: Called with message %v from Peer %v", msg, pp)
-	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
-	pp.currentTime = time.Now()
-	glog.Infof("Server._handleGetSnapshot: Received a GetSnapshot message with total elapsed (%v) and current time (%v)",
-		pp.timeElapsed, pp.currentTime)
+	srv.timer.Start("Send Snapshot")
 
 	// Ignore GetSnapshot requests we're still syncing.
 	if srv.blockchain.isSyncing() {
@@ -828,11 +821,8 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	// TODO: Any restrictions on how many snapshots a peer can request?
 	// TODO: Handle concurrency fault
 	snapshotChunk, full, _, _ := srv.blockchain.snapshot.GetSnapshotChunk(srv.blockchain.db, msg.Prefix, msg.SnapshotStartEntry.Key)
-	snapshotChecksum, err := srv.blockchain.snapshot.Checksum.ToBytes()
-	if err != nil {
-		glog.Errorf("server._handleGetSnapshot: Problem getting snapshot (%v)", err)
-		return
-	}
+	snapshotChecksum := srv.blockchain.snapshot.LastChecksum
+
 	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
 		SnapshotHeight: srv.blockchain.snapshot.BlockHeight,
 		SnapshotChecksum: snapshotChecksum,
@@ -841,50 +831,122 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 		Prefix: msg.Prefix,
 	}, false)
 
-	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
-	pp.currentTime = time.Now()
-	glog.Infof("Server._handleGetSnapshot: Responded to the peer with total elapsed (%v) and current time (%v)",
-		pp.timeElapsed, pp.currentTime)
 
-
+	srv.timer.End("Send Snapshot")
+	srv.timer.Print("Send Snapshot")
 	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) " +
-		"with SnapshotHeight (%v) and SnapshotChecksum (%v) and Snapshotdata length (%v)", pp,
+		"with SnapshotHeight (%v) and LastChecksum (%v) and Snapshotdata length (%v)", pp,
 		srv.blockchain.snapshot.BlockHeight, snapshotChecksum, len(snapshotChunk))
 }
 
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: " +
-		"%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
-		len(msg.SnapshotChunk), pp)
+		"%v) and checksum (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
+		len(msg.SnapshotChunk), msg.SnapshotChecksum, pp)
 
-	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
-	pp.currentTime = time.Now()
-	glog.Infof("Server._handleSnapshot: Got into _handleSnapshot with total elapsed (%v) and current time (%v) " +
-		"SnapshotFullPrefix (%v)", msg.SnapshotFullPrefix, pp.timeElapsed, pp.currentTime)
+	srv.timer.End("Get Snapshot")
+	srv.timer.Start("Server._handleSnapshot Main")
 
-	// Process the DBEntries from the msg
-	err := srv.blockchain.snapshot.SetSnapshotChunk(srv.blockchain.db, msg.SnapshotChunk)
-	if err != nil {
-		glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
+	// Validate the snapshot chunk message
+
+	// First find the hyper sync progress struct that matches the received message.
+	var syncPrefixProgress *SyncPrefixProgress
+	for _, syncProgress := range srv.HyperSyncProgress.PrefixProgress {
+		if bytes.Equal(msg.Prefix, syncProgress.Prefix) {
+			syncPrefixProgress = syncProgress
+			break
+		}
+	}
+	// If peer sent a message with an incorrect prefix, we should disconnect them.
+	if syncPrefixProgress == nil {
+		// We should disconnect the peer because he is misbehaving
+		glog.Errorf("srv._handleSnapshot: Problem finding appropriate sync prefix progress " +
+			"disconnecting misbehaving peer (%v)", pp)
 		return
 	}
-	stateChecksum, err := srv.blockchain.snapshot.Checksum.ToBytes()
-	if err != nil {
-		glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
+
+	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
+	// at least one entry sent, which is either the empty entry or the last key we've requested.
+	if len(msg.SnapshotChunk) == 0 {
+		// We should disconnect the peer because he is misbehaving
+		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk " +
+			"disconnecting misbehaving peer (%v)", pp)
 		return
 	}
-	glog.Infof("Server._handleSnapshot: Current checksum (%v)", stateChecksum)
 
-	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
-	pp.currentTime = time.Now()
-	glog.Infof("Server._handleSnapshot: _handleSnapshot finished setting to db with total elapsed (%v) and current time (%v)",
-		pp.timeElapsed, pp.currentTime)
+	// dbChunk will have the entries that we will add to the database. Usually the first entry in the chunk will
+	// be the same as the lastKey that we've put in the GetSnapshot request. However, if we've asked for a prefix
+	// for the first time, the lastKey can be different from the first chunk entry. Also, if the prefix is empty or
+	// we've exhausted all entries for a prefix, the first snapshot chunk entry can be empty.
+	var dbChunk []*DBEntry
+	chunkEmpty := false
+	if msg.SnapshotChunk[0].IsEmpty() {
+		// We send the empty DB entry whenever we've exhausted the prefix. It can only be the first entry in the
+		// chunk. We set chunkEmpty to true.
+		glog.Infof("srv._handleSnapshot: First snapshot chunk is empty")
+		chunkEmpty = true
+	} else if syncPrefixProgress.LastKeyRequested.IsEmpty() {
+		// If this is the first message that we're receiving for this sync progress, the LastKeyRequested
+		// is going to be an empty DBEntry.
+		if !bytes.HasPrefix(msg.SnapshotChunk[0].Key, msg.Prefix) {
+			// We should disconnect the peer because he is misbehaving.
+			glog.Errorf("srv._handleSnapshot: DBEntry key has mismatched prefix " +
+				"disconnecting misbehaving peer (%v)", pp)
+			return
+		}
+		dbChunk = append(dbChunk, msg.SnapshotChunk[0])
+	} else {
+		// If this is not the first message that we're receiving for this sync prefix, then the lastKeyRequested
+		// should be identical to the first key in snapshot chunk. If it is not, then the peer either re-send
+		// the same payload twice, a message was dropped by network, or he is misbehaving.
+		if !bytes.Equal(syncPrefixProgress.LastKeyRequested.Key, msg.SnapshotChunk[0].Key) {
+			// TODO: Do we want to disconnect the peer in here? It's technically not misbehaving
+			// but we would never request the same chunk twice
+			glog.Errorf("srv._handleSnapshot: Received a snapshot chunk that's not in-line with the sync progress " +
+				"disconnecting misbehaving peer (%v)", pp)
+			return
+		}
+	}
+	// Now add the remaining snapshot entries to the list of dbEntries we want to set in the DB.
+	dbChunk = append(dbChunk, msg.SnapshotChunk[1:]...)
 
+	if !chunkEmpty {
+		for ii := 1; ii < len(dbChunk); ii ++ {
+			// Make sure that all dbChunk entries have the same prefix as in the message.
+			if !bytes.HasPrefix(dbChunk[ii].Key, msg.Prefix) {
+				// We should disconnect the peer because he is misbehaving
+				glog.Errorf("srv._handleSnapshot: DBEntry key has mismatched prefix " +
+					"disconnecting misbehaving peer (%v)", pp)
+				return
+			}
+			// Make sure that the dbChunk is sorted increasingly.
+			if bytes.Compare(dbChunk[ii-1].Key, dbChunk[ii].Key) != -1 {
+				// We should disconnect the peer because he is misbehaving
+				glog.Errorf("srv._handleSnapshot: dbChunk entries are not sorted: first entry at index (%v) with " +
+					"value (%v) and second entry with index (%v) and value (%v) disconnecting misbehaving peer (%v)",
+					ii-1, dbChunk[ii-1].Key, ii, dbChunk[ii].Key, pp)
+				return
+			}
+		}
+
+		// Process the DBEntries from the msg
+		srv.timer.Start("Server._handleSnapshot Set")
+		err := srv.blockchain.snapshot.SetSnapshotChunk(srv.blockchain.db, msg.SnapshotChunk)
+		if err != nil {
+			glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
+			return
+		}
+		srv.timer.End("Server._handleSnapshot Set")
+		srv.timer.Start("Server._handleSnapshot Checksum")
+		srv.timer.End("Server._handleSnapshot Checksum")
+	}
+
+	srv.timer.Start("Server._handleSnapshot prefix progress")
 	lastDbEntry := msg.SnapshotChunk[len(msg.SnapshotChunk)-1]
 	added := false
 	for ii:=0; ii<len(srv.HyperSyncProgress.PrefixProgress); ii++ {
 		if reflect.DeepEqual(srv.HyperSyncProgress.PrefixProgress[ii].Prefix, msg.Prefix) {
-			srv.HyperSyncProgress.PrefixProgress[ii].LastDBEntry = DBEntryKeyOnlyFromBytes(lastDbEntry.Key)
+			srv.HyperSyncProgress.PrefixProgress[ii].LastKeyRequested = DBEntryKeyOnlyFromBytes(lastDbEntry.Key)
 			if !msg.SnapshotFullPrefix {
 				srv.HyperSyncProgress.PrefixProgress[ii].Completed = true
 			}
@@ -895,11 +957,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if !added {
 		glog.Errorf("srv._handleSnapshot: Problem updating HyperSyncProgress, not found")
 	}
+	srv.timer.End("Server._handleSnapshot prefix progress")
+	srv.timer.End("Server._handleSnapshot Main")
 
-	pp.timeElapsed += time.Since(pp.currentTime).Seconds()
-	pp.currentTime = time.Now()
-	glog.Infof("Server._handleSnapshot: Added the snapshot bundle into DB with with total elapsed (%v) and current time (%v)",
-			pp.timeElapsed, pp.currentTime)
 	for _, prefix := range StatePrefixes.StatePrefixesList {
 		completed := false
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
@@ -914,6 +974,22 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			srv.GetSnapshot(pp)
 			return
 		}
+	}
+	srv.timer.End("Hyper sync")
+	srv.timer.Print("Get Snapshot")
+	srv.timer.Print("Server._handleSnapshot Set")
+	srv.timer.Print("Server._handleSnapshot Checksum")
+	srv.timer.Print("Server._handleSnapshot prefix progress")
+	srv.timer.Print("Server._handleSnapshot Main")
+	srv.timer.Print("Hyper sync")
+
+	for {
+		if len(srv.blockchain.snapshot.OperationChannel) > 0 {
+			continue
+		}
+		bytes, _ := srv.blockchain.snapshot.Checksum.ToBytes()
+		glog.Infof("Final checksum is (%v)", bytes)
+		break
 	}
 
 	// If we got here then we finished the snapshot sync

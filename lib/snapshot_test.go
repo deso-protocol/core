@@ -258,6 +258,41 @@ func TestDeque(t *testing.T) {
 	fmt.Println(tester)
 }
 
+func TestChannelThingy(t *testing.T) {
+	testChan := make(chan int, 10)
+
+	delay := func(ii int) {
+		fmt.Println("Got in, chanel len is:", len(testChan), "and ii is:", ii)
+		time.Sleep(time.Second)
+	}
+
+	fmt.Println(len(testChan))
+
+	testChan <- 1
+	testChan <- 2
+	testChan <- 3
+
+	go func(){
+		for {
+			if len(testChan) > 0 {
+				continue
+			} else {
+				break
+			}
+		}
+		fmt.Println("Got out!")
+	}()
+
+out:
+	for {
+		ii := <- testChan
+		delay(ii)
+		if ii == 3 {
+			break out
+		}
+	}
+}
+
 func TestBadgerConcurrentWrite(t *testing.T) {
 	require := require.New(t)
 	_ = require

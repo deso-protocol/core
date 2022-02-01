@@ -414,14 +414,10 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
 		if getError == nil {
-			if err := snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue)); err != nil {
-				return errors.Wrapf(err, "DBSetWithTxn: Problem updating the checksum ")
-			}
+			snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
 		}
 		// We also add the new record to the checksum.
-		if err := snap.Checksum.AddBytes(EncodeKeyValue(key, value)); err != nil {
-			return errors.Wrapf(err, "DBSetWithTxn: Problem updating the checksum ")
-		}
+		snap.AddChecksumBytes(EncodeKeyValue(key, value))
 	}
 	return nil
 }
@@ -499,9 +495,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 		snap.Cache.Delete(keyString)
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
-		if err := snap.Checksum.RemoveBytes(EncodeKeyValue(key, ancestralValue)); err != nil {
-			return errors.Wrapf(err, "DBSetWithTxn: Problem updating the checksum ")
-		}
+		snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
 	}
 	return nil
 }
@@ -3020,10 +3014,9 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 }
 
 func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
-	var counter uint64
 	if snap != nil {
-		counter = snap.PrepareAncestralFlush()
-		glog.Infof("ProcessBlock: Preparing snapshot flush with counter (%v)", counter)
+		snap.PrepareAncestralFlush()
+		glog.Infof("ProcessBlock: Preparing snapshot flush")
 	}
 
 	if desoBlock.Header == nil {
@@ -3077,8 +3070,8 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 	}
 
 	if snap != nil {
-		glog.Infof("ProcessBlock: Snapshot flushing with counter (%v)", counter)
-		snap.FlushAncestralRecords(counter)
+		glog.Infof("ProcessBlock: Snapshot flushing")
+		snap.FlushAncestralRecords()
 	}
 
 	return nil
@@ -3248,9 +3241,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// Set the best hash to the genesis block in the db since its the only node
 	// we're currently aware of. Set it for both the header chain and the block
 	// chain.
-	var counter uint64
 	if snap != nil {
-		counter = snap.PrepareAncestralFlush()
+		snap.PrepareAncestralFlush()
 	}
 
 	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock); err != nil {
@@ -3272,7 +3264,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	}
 
 	if snap != nil {
-		snap.FlushAncestralRecords(counter)
+		snap.FlushAncestralRecords()
 	}
 
 	// We apply seed transactions here. This step is useful for setting

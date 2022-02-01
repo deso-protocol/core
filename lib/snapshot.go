@@ -1,24 +1,27 @@
 package lib
 
 import (
-	"bytes"
-	"context"
-	"encoding/hex"
-	"fmt"
-	"github.com/cloudflare/circl/group"
-	"github.com/decred/dcrd/lru"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
-	"github.com/oleiade/lane"
-	"github.com/pkg/errors"
-	"golang.org/x/sync/semaphore"
-	"io"
-	"path/filepath"
-	"reflect"
-	"runtime"
-	"sort"
-	"sync"
-	"sync/atomic"
+
+"bytes"
+"context"
+"encoding/hex"
+"fmt"
+"github.com/cloudflare/circl/group"
+"github.com/decred/dcrd/lru"
+"github.com/dgraph-io/badger/v3"
+"github.com/golang/glog"
+"github.com/oleiade/lane"
+"github.com/pkg/errors"
+"golang.org/x/sync/semaphore"
+"io"
+"path/filepath"
+"reflect"
+"runtime"
+"sort"
+"sync"
+"sync/atomic"
+"time"
+
 )
 
 // -------------------------------------------------------------------------------------
@@ -265,7 +268,6 @@ type Snapshot struct {
 	BlockHeight      uint64
 
 	BlockHeightModulus uint64
-	DeleteChannel chan uint64
 	LastCounter        uint64
 	// Do we even need to use a mutex if we're going to hold it?
 	DBLock sync.RWMutex
@@ -273,7 +275,6 @@ type Snapshot struct {
 	// FlushCounter is used to offset ancestral records flush to occur only after x blocks.
 	FlushCounter     uint64
 	FlushCounterModulus uint64
-	CounterChannel chan uint64
 	ExitChannel chan bool
 
 	// BatchSize is the size in bytes of the
@@ -281,7 +282,9 @@ type Snapshot struct {
 
 	// Checksum allows us to confirm integrity of the state so that when we're
 	// syncing with peers, we are confident that data wasn't tampered with.
+	OperationChannel chan *SnapshotOperation
 	Checksum         *StateChecksum
+	LastChecksum []byte
 
 	AncestralMemory *lane.Deque
 
@@ -295,6 +298,23 @@ type Snapshot struct {
 	// by unexpected concurrency. One such edge-case is long block reorg occurring after
 	// moving to next snapshot version. Health checks will detect these and set brokenSnapshot.
 	brokenSnapshot   bool
+
+	timer *Timer
+}
+
+type SnapshotOperationType uint8
+const (
+	SnapshotOperationFlush SnapshotOperationType = iota
+	SnapshotOperationProcessBlock
+	SnapshotOperationChecksumAdd
+	SnapshotOperationChecksumRemove
+)
+
+type SnapshotOperation struct {
+	operationType SnapshotOperationType
+
+	checksumBytes []byte
+	blockHeight uint64
 }
 
 // NewSnapshot creates a new snapshot with specified cache size.
@@ -321,6 +341,9 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 	checksum := &StateChecksum{}
 	checksum.Initialize()
 
+	timer := &Timer{}
+	timer.Initialize()
+
 	// Set the snapshot
 	snap := &Snapshot{
 		Db:                   snapshotDb,
@@ -331,13 +354,14 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 		FlushCounterModulus:  uint64(25),
 		LastCounter:          uint64(0),
 		BatchSize:            uint32(8 << 20),
-		CounterChannel:       make(chan uint64),
-		DeleteChannel:        make(chan uint64),
+		OperationChannel:      make(chan *SnapshotOperation, 10000),
 		Checksum:             checksum,
+		LastChecksum:         []byte{},
 		AncestralMemory:      lane.NewDeque(),
 		MainDBSemaphore:      int32(0),
 		AncestralDBSemaphore: int32(0),
 		brokenSnapshot:       false,
+		timer: timer,
 	}
 	go snap.Run()
 
@@ -345,26 +369,68 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 }
 
 func (snap *Snapshot) Run() {
-	glog.Infof("Snapshot.Run: Starting the run loop")
+
+out:
 	for {
-		glog.Infof("Snapshot.Run: Beginning loop iteration")
 		select {
-		case counter := <-snap.CounterChannel:
+		case operation := <-snap.OperationChannel:
 			{
-				glog.Infof("Snapshot.Run: Flushing ancestral records with counter (%v)", counter)
-				snap.FlushAncestralRecordsWithCounter()
-			}
-		case height := <-snap.DeleteChannel:
-			{
-				glog.Infof("Snapshot.Run: Getting into the delete channel with height (%v)", height)
-				if height % snap.BlockHeightModulus == 0 {
-					glog.Infof("Snapshot.Run: About to delete BlockHeight (%v) and set new height (%v)", snap.BlockHeight, height)
-					snap.LastCounter = snap.FlushCounter
-					snap.BlockHeight = height
-					snap.DeleteAncestralRecords(height)
+				switch operation.operationType {
+					case SnapshotOperationFlush:
+						glog.Infof("Snapshot.Run: Flushing ancestral records with counter (%v)")
+						snap.FlushAncestralRecordsWithCounter()
+
+					case SnapshotOperationProcessBlock:
+						glog.Infof("Snapshot.Run: Getting into the delete channel with height (%v)", operation.blockHeight)
+						if operation.blockHeight % snap.BlockHeightModulus == 0 {
+							var err error
+							glog.Infof("Snapshot.Run: About to delete BlockHeight (%v) and set new height (%v)",
+								snap.BlockHeight, operation.blockHeight)
+							snap.LastCounter = snap.FlushCounter
+							snap.BlockHeight = operation.blockHeight
+							snap.LastChecksum, err = snap.Checksum.ToBytes()
+							if err != nil {
+								glog.Errorf("FlushToDbWithTxn: Problem getting checksum bytes (%v)", err)
+							}
+							glog.Infof("ProcessBlock: snapshot is (%v)", snap.LastChecksum)
+							snap.DeleteAncestralRecords(operation.blockHeight)
+						}
+
+					case SnapshotOperationChecksumAdd:
+						if err := snap.Checksum.AddBytes(operation.checksumBytes); err != nil {
+							glog.Errorf("Snapshot.Run: Problem adding checksum bytes operation (%v)", operation)
+						}
+
+					case SnapshotOperationChecksumRemove:
+						if err := snap.Checksum.RemoveBytes(operation.checksumBytes); err != nil {
+							glog.Errorf("Snapshot.Run: Problem removing checksum bytes operation (%v)", operation)
+						}
 				}
 			}
+		case <- snap.ExitChannel:
+			break out
 		}
+	}
+}
+
+func (snap *Snapshot) FinishProcessBlock(blockHeight uint64) {
+	snap.OperationChannel <- &SnapshotOperation{
+		operationType: SnapshotOperationProcessBlock,
+		blockHeight: blockHeight,
+	}
+}
+
+func (snap *Snapshot) AddChecksumBytes(bytes []byte) {
+	snap.OperationChannel <- &SnapshotOperation{
+		operationType: SnapshotOperationChecksumAdd,
+		checksumBytes: bytes,
+	}
+}
+
+func (snap *Snapshot) RemoveChecksumBytes(bytes []byte) {
+	snap.OperationChannel <- &SnapshotOperation{
+		operationType: SnapshotOperationChecksumRemove,
+		checksumBytes: bytes,
 	}
 }
 
@@ -469,7 +535,7 @@ func (snap *Snapshot) CheckPrefixExists (value []byte) bool {
 	return false
 }
 
-func (snap *Snapshot) PrepareAncestralFlush() uint64 {
+func (snap *Snapshot) PrepareAncestralFlush() {
 	// Signal that the main db update has started by incrementing the main semaphore.
 	atomic.AddInt32(&snap.MainDBSemaphore, int32(1))
 
@@ -480,12 +546,11 @@ func (snap *Snapshot) PrepareAncestralFlush() uint64 {
 
 	glog.Infof("Snapshot.PrepareAncestralFlush: Created structs at index (%v)", index)
 	// TODO: is this everything we want to do prior to a flush?
-	return index
 }
 
 // FlushAncestralRecords updates the ancestral records after a utxo_view flush.
 // This function should be called in a go-routine after all utxo_view flushes.
-func (snap *Snapshot) FlushAncestralRecords(counter uint64) {
+func (snap *Snapshot) FlushAncestralRecords() {
 	// If snapshot is broken then there's nothing to do.
 	glog.Infof("Snapshot.FlushAncestralRecords: Initiated the flush")
 
@@ -506,7 +571,9 @@ func (snap *Snapshot) FlushAncestralRecords(counter uint64) {
 	atomic.AddInt32(&snap.MainDBSemaphore, int32(1))
 	glog.Infof("Snapshot.FlushAncestralRecords: Sending counter (%v) to the CounterChannel", snap.FlushCounter)
 	// We send the flush counter to the counter to indicate that a flush should take place.
-	snap.CounterChannel <- counter
+	snap.OperationChannel <- &SnapshotOperation{
+		operationType: SnapshotOperationFlush,
+	}
 	return
 }
 
@@ -674,9 +741,6 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 	indexChunk := 0
 	for _, ancestralEntry := range ancestralDbBatchEntries {
 		dbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
-		if snap.CheckPrefixExists(ancestralEntry.Value) {
-			snapshotEntriesBatch = append(snapshotEntriesBatch, dbEntry)
-		}
 
 		for jj := indexChunk; jj < len(mainDbBatchEntries); {
 			if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == -1 {
@@ -687,6 +751,9 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 			// if keys are equal we just skip
 			jj ++
 			indexChunk = jj
+		}
+		if snap.CheckPrefixExists(ancestralEntry.Value) {
+			snapshotEntriesBatch = append(snapshotEntriesBatch, dbEntry)
 		}
 		// If we filled the chunk for main db records, we will return so that there is no
 		// gap between the most recently added DBEntry and the next ancestral record. Otherwise,
@@ -723,12 +790,14 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 
 func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) error {
 	return mainDb.Update(func(txn *badger.Txn) error {
+		snap.timer.Start("SetSnapshotChunk.Total")
 		for _, dbEntry := range chunk {
 			if dbEntry.IsEmpty() {
-				glog.Infof("Server._handleSnapshot: received an empty DBEntry")
+				glog.Infof("Server.SetSnapshotChunk: received an empty DBEntry")
 				break
 			}
 			// TODO: This check is important, should be re-implemented.
+			snap.timer.Start("SetSnapshotChunk.Get")
 			_, err := txn.Get(dbEntry.Key)
 			if err == nil {
 				continue
@@ -736,15 +805,73 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 			if err != nil && err != badger.ErrKeyNotFound {
 				return err
 			}
+			snap.timer.End("SetSnapshotChunk.Get")
 
+			snap.timer.Start("SetSnapshotChunk.Set")
 			err = txn.Set(dbEntry.Key, dbEntry.Value)
 			if err != nil {
 				return err
 			}
-			if err := snap.Checksum.AddBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value)); err != nil {
-				return errors.Wrapf(err, "DBSetWithTxn: Problem updating the checksum ")
-			}
+			snap.timer.End("SetSnapshotChunk.Set")
+
+			snap.timer.Start("SetSnapshotChunk.Checksum")
+			snap.AddChecksumBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value))
+			snap.timer.End("SetSnapshotChunk.Checksum")
 		}
+		snap.timer.End("SetSnapshotChunk.Total")
+
+		snap.timer.Print("SetSnapshotChunk.Total")
+		snap.timer.Print("SetSnapshotChunk.Get")
+		snap.timer.Print("SetSnapshotChunk.Set")
+		snap.timer.Print("SetSnapshotChunk.Checksum")
 		return nil
 	})
+}
+
+// -------------------------------------------------------------------------------------
+// Timer
+// -------------------------------------------------------------------------------------
+
+type Timer struct {
+	totalElapsedTimes map[string]float64
+	lastTimes map[string]time.Time
+	productionMode bool
+}
+
+func (t *Timer) Initialize() {
+	t.totalElapsedTimes = make(map[string]float64)
+	t.lastTimes = make(map[string]time.Time)
+	// Change this to true to stop timing
+	t.productionMode = false
+}
+
+func (t *Timer) Start(eventName string) {
+	if t.productionMode {
+		return
+	}
+	if _, exists := t.lastTimes[eventName]; !exists {
+		t.totalElapsedTimes[eventName] = 0.0
+	}
+	t.lastTimes[eventName] = time.Now()
+}
+
+func (t *Timer) End(eventName string) {
+	if t.productionMode {
+		return
+	}
+	if _, exists := t.totalElapsedTimes[eventName]; !exists {
+		glog.Errorf("Timer.End: Error called with non-existent eventName")
+		return
+	}
+	t.totalElapsedTimes[eventName] += time.Since(t.lastTimes[eventName]).Seconds()
+}
+
+func (t *Timer) Print(eventName string) {
+	if t.productionMode {
+		return
+	}
+	if _, exists := t.lastTimes[eventName]; exists {
+		glog.Infof("Timer.End: event (%s) total elapsed time (%v)",
+    		eventName, t.totalElapsedTimes[eventName])
+	}
 }

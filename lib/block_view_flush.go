@@ -40,9 +40,8 @@ func (bav *UtxoView) FlushToDb() error {
 
 func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	// Increment snapshot semaphore counter to indicate we're about to flush.
-	var counter uint64
 	if bav.Snapshot != nil {
-		counter = bav.Snapshot.PrepareAncestralFlush()
+		bav.Snapshot.PrepareAncestralFlush()
 	}
 
 	// Only flush to BadgerDB if Postgres is disabled
@@ -112,7 +111,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	if bav.Snapshot != nil {
-		bav.Snapshot.FlushAncestralRecords(counter)
+		bav.Snapshot.FlushAncestralRecords()
 		stateChecksum, err := bav.Snapshot.Checksum.ToBytes()
 		if err != nil {
 			glog.Errorf("FlushToDbWithTxn: Problem getting checksum bytes (%v)", err)

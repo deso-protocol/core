@@ -981,18 +981,18 @@ func (bc *Blockchain) GetBlockAtHeight(height uint32) *MsgDeSoBlock {
 
 func (bc *Blockchain) isTipMaxed(tip *BlockNode) bool {
 	if bc.maxSyncBlockHeight > 0 {
-		glog.V(2).Infof("Blockchain.isTipCurrent got into the check and will return %v",
-			tip.Height >= bc.maxSyncBlockHeight)
+		//glog.V(2).Infof("Blockchain.isTipCurrent got into the check and will return %v",
+		//	tip.Height >= bc.maxSyncBlockHeight)
 		return tip.Height >= bc.maxSyncBlockHeight
 	}
 	return false
 }
 
 func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
-	glog.V(2).Infof("Blockchain.isTipCurrent got to the check")
+	//glog.V(2).Infof("Blockchain.isTipCurrent got to the check")
 	if bc.maxSyncBlockHeight > 0 {
-		glog.V(2).Infof("Blockchain.isTipCurrent got into the check and will return %v",
-			tip.Height >= bc.maxSyncBlockHeight)
+		//glog.V(2).Infof("Blockchain.isTipCurrent got into the check and will return %v",
+		//	tip.Height >= bc.maxSyncBlockHeight)
 		return tip.Height >= bc.maxSyncBlockHeight
 	}
 
@@ -1000,9 +1000,9 @@ func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 
 	// Not current if the cumulative work is below the threshold.
 	if tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
-		glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
-		"CumWork (%v) is less than minChainWorkBytes (%v)",
-		tip.CumWork, BytesToBigint(minChainWorkBytes))
+		//glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
+		//"CumWork (%v) is less than minChainWorkBytes (%v)",
+		//tip.CumWork, BytesToBigint(minChainWorkBytes))
 		return false
 	}
 
@@ -1622,7 +1622,7 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// If all went well with storing the header, set it in our in-memory
 	// index. If we're still syncing then it's safe to just set it. Otherwise, we
 	// need to make a copy first since there could be some concurrency issues.
-	glog.V(2).Infof("blockchain.processHeader isSyncing.chainState()")
+	//glog.V(2).Infof("blockchain.processHeader isSyncing.chainState()")
 	if bc.isSyncing() {
 		bc.blockIndex[*newNode.Hash] = newNode
 	} else {
@@ -2368,16 +2368,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			bc.eventManager.blockConnected(&BlockEvent{Block: desoBlock})
 		}
 	}
-	glog.Infof("ProcesssBlock: finally got here")
-	currentTip = bc.blockTip()
+
 	glog.Infof("ProcesssBlock: current tip height after (%v)", currentTip.Height)
 	if bc.snapshot != nil {
-		bc.snapshot.DeleteChannel <- uint64(currentTip.Height)
-		stateChecksum, err := bc.snapshot.Checksum.ToBytes()
-		if err != nil {
-			glog.Errorf("FlushToDbWithTxn: Problem getting checksum bytes (%v)", err)
-		}
-		glog.Infof("ProcessBlock: snapshot is (%v)", stateChecksum)
+		currentTip = bc.blockTip()
+		bc.snapshot.FinishProcessBlock(uint64(currentTip.Height))
 	}
 	// If we've made it this far, the block has been validated and we have either added
 	// the block to the tip, done nothing with it (because its cumwork isn't high enough)
