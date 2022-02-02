@@ -337,7 +337,9 @@ type UtxoOperation struct {
 	AcceptNFTBidCreatorPublicKey        []byte
 	AcceptNFTBidBidderPublicKey         []byte
 	AcceptNFTBidCreatorRoyaltyNanos     uint64
+	AcceptNFTBidCreatorDESORoyaltyNanos uint64
 	AcceptNFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
+	AcceptNFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 
 	// These values are used by Rosetta in order to create input and output
 	// operations. They make it so that we don't have to reconnect all txns
@@ -345,7 +347,9 @@ type UtxoOperation struct {
 	NFTBidCreatorPublicKey        []byte
 	NFTBidBidderPublicKey         []byte
 	NFTBidCreatorRoyaltyNanos     uint64
+	NFTBidCreatorDESORoyaltyNanos uint64
 	NFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
+	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -692,7 +696,7 @@ type MessagingGroupMember struct {
 	GroupMemberKeyName *GroupKeyName
 
 	// EncryptedKey is the encrypted messaging public key, addressed to the recipient.
-	EncryptedKey              []byte
+	EncryptedKey []byte
 }
 
 func (rec *MessagingGroupMember) Encode() []byte {
@@ -714,17 +718,17 @@ func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 
 	recipientPublicKeyBytes, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey")
 	}
 	recipientKeyName, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberKeyName")
 	}
 	err = ValidateGroupPublicKeyAndName(recipientPublicKeyBytes, recipientKeyName)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey and GroupMemberKeyName")
 	}
 
@@ -732,7 +736,7 @@ func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 	rec.GroupMemberKeyName = NewGroupKeyName(recipientKeyName)
 	rec.EncryptedKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"EncryptedKey")
 	}
 	return nil
@@ -1150,6 +1154,21 @@ func (transferRestrictionStatus TransferRestrictionStatus) IsUnrestricted() bool
 		return true
 	}
 	return false
+}
+
+func (transferRestrictionStatus TransferRestrictionStatus) String() string {
+	switch transferRestrictionStatus {
+	case TransferRestrictionStatusUnrestricted:
+		return "Unrestricted"
+	case TransferRestrictionStatusProfileOwnerOnly:
+		return "Profile Owner Only"
+	case TransferRestrictionStatusDAOMembersOnly:
+		return "DAO Members Only"
+	case TransferRestrictionStatusPermanentlyUnrestricted:
+		return "Permanently Unrestricted"
+	default:
+		return "INVALID TRANSFER RESTRICTION STATUS"
+	}
 }
 
 // This struct contains all the information required to support coin

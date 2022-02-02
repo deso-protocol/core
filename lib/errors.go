@@ -99,8 +99,6 @@ const (
 	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
 	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
 
-
-
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
 	RuleErrorFollowEntryAlreadyExists                RuleError = "RuleErrorFollowEntryAlreadyExists"
@@ -300,7 +298,7 @@ const (
 	RuleErrorNFTUpdateMustUpdateIsForSaleStatus          RuleError = "RuleErrorNFTUpdateMustUpdateIsForSaleStatus"
 	RuleErrorBuyNowNFTBeforeBlockHeight                  RuleError = "RuleErrorBuyNowNFTBeforeBlockHeight"
 	RuleErrorAdditionalCoinRoyaltyMustHaveProfile        RuleError = "RuleErrorAdditionalCoinRoyaltyMustHaveProfile"
-	RuleErrorAdditionalCoinRoyaltyOverflow        		 RuleError = "RuleErrorAdditionalCoinRoyaltyOverflow"
+	RuleErrorAdditionalCoinRoyaltyOverflow               RuleError = "RuleErrorAdditionalCoinRoyaltyOverflow"
 	RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty     RuleError = "RuleErrorCannotSpecifyCreatorAsAdditionalRoyalty"
 	RuleErrorAdditionalRoyaltyPubKeyMustBeValid          RuleError = "RuleErrorAdditionalRoyaltyPubKeyMustBeValid"
 
