@@ -12,10 +12,7 @@ import (
 )
 
 func _doTxn(
-	t *testing.T,
-	chain *Blockchain,
-	db *badger.DB,
-	params *DeSoParams,
+	testMeta *TestMeta,
 	feeRateNanosPerKB uint64,
 	TransactorPublicKeyBase58Check string,
 	TransactorPrivKeyBase58Check string,
@@ -24,16 +21,17 @@ func _doTxn(
 	txnMeta DeSoTxnMetadata,
 	extraData map[string]interface{}) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
-	assert := assert.New(t)
-	require := require.New(t)
+	assert := assert.New(testMeta.t)
+	require := require.New(testMeta.t)
 	_ = assert
 	_ = require
 
 	transactorPublicKey, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil)
 	require.NoError(err)
+	chain := testMeta.chain
 
 	var txn *MsgDeSoTxn
 	var totalInputMake uint64
@@ -260,9 +258,9 @@ func _doTxn(
 		return nil, nil, 0, err
 	}
 	if isDerivedTransactor {
-		_signTxnWithDerivedKey(t, txn, TransactorPrivKeyBase58Check)
+		_signTxnWithDerivedKey(testMeta.t, txn, TransactorPrivKeyBase58Check)
 	} else {
-		_signTxn(t, txn, TransactorPrivKeyBase58Check)
+		_signTxn(testMeta.t, txn, TransactorPrivKeyBase58Check)
 	}
 
 	txHash := txn.Hash()
@@ -279,7 +277,7 @@ func _doTxn(
 	// for each output, and one operation that corresponds to the txn type at the end.
 	// TODO: generalize?
 	utxoOpExpectation := len(txn.TxInputs)+len(txn.TxOutputs)+1
-	if isDerivedTransactor {
+	if isDerivedTransactor && testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
 		utxoOpExpectation++
 	}
 	require.Equal(utxoOpExpectation, len(utxoOps))
@@ -304,7 +302,7 @@ func _doTxnWithTestMeta(
 	ExtraData map[string]interface{}) {
 	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check))
 
-	currentOps, currentTxn, _, err := _doTxn(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+	currentOps, currentTxn, _, err := _doTxn(testMeta,
 		feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, IsDerivedTransactor,
 		TxnType, TxnMeta, ExtraData)
 
@@ -479,7 +477,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// for each output, (and 1 for the spending limit accounting if we're passed the block height)
 	// and one OperationTypeUpdateProfile operation at the end.
 	transactionSpendingLimitCount := 0
-	if params.ForkHeights.DerivedKeySpendingLimitsBlockHeight < blockHeight {
+	if params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
 		transactionSpendingLimitCount++
 	}
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1+transactionSpendingLimitCount, len(utxoOps))
@@ -1383,7 +1381,8 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2302,7 +2301,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
@@ -2461,10 +2461,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	// Now the derived key can't do anything else for M1 DAO coin
 	{
 		_, _, _, err = _doTxn(
-			testMeta.t,
-			testMeta.chain,
-			testMeta.db,
-			params,
+			testMeta,
 			10,
 			m1Pub,
 			derivedPrivBase58Check,
@@ -2578,10 +2575,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 
 	{
 		_, _, _, err = _doTxn(
-			testMeta.t,
-			testMeta.chain,
-			testMeta.db,
-			params,
+			testMeta,
 			10,
 			m0Pub,
 			derived0PrivBase58Check,
@@ -2620,10 +2614,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 
 	{
 		_, _, _, err = _doTxn(
-			testMeta.t,
-			testMeta.chain,
-			testMeta.db,
-			params,
+			testMeta,
 			10,
 			m0Pub,
 			derived0PrivBase58Check,
@@ -2662,10 +2653,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 
 	{
 		_, _, _, err = _doTxn(
-			testMeta.t,
-			testMeta.chain,
-			testMeta.db,
-			params,
+			testMeta,
 			10,
 			m0Pub,
 			derived0PrivBase58Check,
@@ -2722,4 +2710,263 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_executeAllTestRollbackAndFlush(testMeta)
+}
+
+func TestAuthorizedDerivedKeyWithDifferentSetAndTrackBlockHeights(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(5)
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// We take the block tip to be the blockchain height rather than the
+	// header chain height.
+	savedHeight := chain.blockTip().Height + 1
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: savedHeight,
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 100)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 100)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 100)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 100)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
+
+	m0Balance := 100
+	m1Balance := 100
+	m2Balance := 100
+	m3Balance := 100
+	m4Balance := 100
+	paramUpdaterBalance := 100
+
+	_, _, _, _, _, _ = m0Balance, m1Balance, m2Balance, m3Balance, m4Balance, paramUpdaterBalance
+	// Create profiles for M0 and M1
+	// Create a profile for m0
+	{
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			false,
+			TxnTypeUpdateProfile,
+			&UpdateProfileMetadata{
+				NewUsername:                 []byte("m0"),
+				NewDescription:              []byte("i am the m0"),
+				NewProfilePic:               []byte(shortPic),
+				NewCreatorBasisPoints:       10 * 100,
+				NewStakeMultipleBasisPoints: 1.25 * 100 * 100,
+				IsHidden:                    false,
+			},
+			nil,
+		)
+
+		// Create a profile for m1
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			m1Priv,
+			false,
+			TxnTypeUpdateProfile,
+			&UpdateProfileMetadata{
+				NewUsername:                 []byte("m1"),
+				NewDescription:              []byte("i am the m1"),
+				NewProfilePic:               []byte(shortPic),
+				NewCreatorBasisPoints:       10 * 100,
+				NewStakeMultipleBasisPoints: 1.25 * 100 * 100,
+				IsHidden:                    false,
+			},
+			nil,
+		)
+	}
+	utxoView, err := mempool.GetAugmentedUniversalView()
+	m1PrivKeyBytes, _, err := Base58CheckDecode(m1Priv)
+	m1PrivateKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), m1PrivKeyBytes)
+	m1PKID := utxoView.GetPKIDForPublicKey(m1PkBytes).PKID
+	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadata(t, m1PrivateKey, 6, false)
+	derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
+	{
+		// Derived key will fail if transaction spending limit isn't included in the access sig after
+		// the set block height
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m1Pub,
+			derivedPrivBase58Check,
+			true,
+			TxnTypeAuthorizeDerivedKey,
+			authTxnMeta,
+			nil,
+		)
+		require.Error(err)
+	}
+
+	transactionSpendingLimit := &TransactionSpendingLimit{
+		GlobalDESOLimit:              10,
+		TransactionCountLimitMap:     make(map[TxnType]uint64),
+		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTLimitOperationMap:         make(map[NFTOperationLimitKey]uint64),
+	}
+	//transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
+	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeBasicTransfer] = 1
+	// Mint and update transfer restriction status
+	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoin] = 2
+	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoinTransfer] = 1
+	transactionSpendingLimit.DAOCoinOperationLimitMap[MakeDAOCoinOperationLimitKey(*m1PKID, MintDAOCoinOperation)] = 1
+	transactionSpendingLimit.DAOCoinOperationLimitMap[MakeDAOCoinOperationLimitKey(*m1PKID, TransferDAOCoinOperation)] = 1
+	authTxnMeta, derivedPriv = _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(t, m1PrivateKey, 10, transactionSpendingLimit, false)
+	derivedPrivBase58Check = Base58CheckEncode(derivedPriv.Serialize(), true, params)
+	{
+		extraData := make(map[string]interface{})
+		extraData[TransactionSpendingLimitKey] = transactionSpendingLimit
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			derivedPrivBase58Check,
+			true,
+			TxnTypeAuthorizeDerivedKey,
+			authTxnMeta,
+			extraData,
+		)
+	}
+
+	// Do some action this key isn't authorized to do before the block height. Spending 20 on CreatorCoin Buys is
+	// not authorized AFTER the Track block height, but is fine until we hit it.
+	{
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			derivedPrivBase58Check,
+			true,
+			TxnTypeCreatorCoin,
+			&CreatorCoinMetadataa{
+				ProfilePublicKey: m1PkBytes,
+				OperationType: CreatorCoinOperationTypeBuy,
+				DeSoToSellNanos: 20,
+			},
+			nil,
+			)
+	}
+	derivedPublicKey := derivedPriv.PubKey()
+	derivedPkBytes := derivedPublicKey.SerializeCompressed()
+	// Do a DAO Coin operation and check that the transaction counter doesn't decrease
+	{
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			derivedPrivBase58Check,
+			true,
+			TxnTypeDAOCoin,
+			&DAOCoinMetadata{
+				ProfilePublicKey: m1PkBytes,
+				OperationType: DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *uint256.NewInt().SetUint64(100 * NanosPerUnit),
+			},
+			nil,
+			)
+		derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(testMeta.db, *NewPublicKey(m1PkBytes), *NewPublicKey(derivedPkBytes))
+		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit, uint64(10))
+		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap[TxnTypeDAOCoin], uint64(2))
+	}
+
+
+	// Mine a few blocks to get us past the block height to start tracking
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	// Okay now we shouldn't be able to do creator coin buys, even if they don't spend beyond our limit
+	{
+		extraData := make(map[string]interface{})
+		extraData[TransactionSpendingLimitKey] = transactionSpendingLimit
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m1Pub,
+			derivedPrivBase58Check,
+			true,
+			TxnTypeCreatorCoin,
+			&CreatorCoinMetadataa{
+				ProfilePublicKey: m1PkBytes,
+				OperationType: CreatorCoinOperationTypeBuy,
+				DeSoToSellNanos: 5,
+			},
+			extraData,
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDerivedKeyTxnTypeNotAuthorized)
+	}
+	// This derived key should be able to do a DAO coin operation because we didn't reduce its count for the DAO Coin
+	// Txn before the track block height.
+	{
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			derivedPrivBase58Check,
+			true,
+			TxnTypeDAOCoin,
+			&DAOCoinMetadata{
+				ProfilePublicKey: m1PkBytes,
+				OperationType: DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *uint256.NewInt().SetUint64(100),
+			},
+			nil,
+			)
+	}
+
+	// Now the derived key is out of mint DAO Coin ops on M1's DAO Coin, so it will fail.
+	{
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m1Pub,
+			derivedPrivBase58Check,
+			true,
+			TxnTypeDAOCoin,
+			&DAOCoinMetadata{
+				ProfilePublicKey: m1PkBytes,
+				OperationType: DAOCoinOperationTypeMint,
+				CoinsToMintNanos: *uint256.NewInt().SetUint64(100),
+			},
+			nil,
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
+	}
 }

@@ -130,7 +130,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// defined in extra data
 	var newTransactionSpendingLimit *TransactionSpendingLimit
 	var memo []byte
-	if bav.Params.ForkHeights.DerivedKeySpendingLimitsBlockHeight < blockHeight {
+	if bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight < blockHeight {
 		// Extract TransactionSpendingLimit from extra data
 		// We need to merge the new transaction spending limit struct into the old one
 		if prevDerivedKeyEntry != nil {
@@ -263,7 +263,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 
 	// If we're passed the derived key spending limit block height, we actually need to fetch the derived key
 	// entry again since the basic transfer reduced the txn count on the derived key txn
-	if bav.Params.ForkHeights.DerivedKeySpendingLimitsBlockHeight < blockHeight {
+	if bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight < blockHeight {
 		derivedKeyEntry = *bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
 	}
 
@@ -357,7 +357,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	// reverting the DerivedKeyEntry mappings because the basic transfer connect logic modifies the
 	// transaction spending limit for the derived key entry prior to it being updated in the connect logic for
 	// authorize derived key.
-	if bav.Params.ForkHeights.DerivedKeySpendingLimitsBlockHeight < blockHeight {
+	if bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
 		if err = bav._disconnectBasicTransfer(
 			currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight); err != nil {
 			return err

@@ -656,7 +656,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	// If we are, search for a spending limit accounting operation. If one exists, we disconnect
 	// the accounting changes and decrement the operation index to move past it.
 	operationIndex := len(utxoOpsForTxn) - 1
-	if bav.Params.ForkHeights.DerivedKeySpendingLimitsBlockHeight < blockHeight {
+	if bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
 		for ii := operationIndex; ii >= 0; ii-- {
 			if utxoOpsForTxn[ii].Type == OperationTypeSpendingLimitAccounting {
 				operationIndex = ii
@@ -1430,7 +1430,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		} else {
 			if derivedPkBytes, err := bav._verifySignature(txn, blockHeight); err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem verifying txn signature: ")
-			} else if bav.Params.ForkHeights.DerivedKeySpendingLimitsBlockHeight < blockHeight &&
+			} else if bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight &&
 				derivedPkBytes != nil {
 				// Now we check the transaction limits on the derived key
 				if utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn); err != nil {

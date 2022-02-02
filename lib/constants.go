@@ -172,7 +172,15 @@ type ForkHeights struct {
 	// transactions will be accepted.
 	DAOCoinBlockHeight uint32
 
-	DerivedKeySpendingLimitsBlockHeight uint32
+	// DerivedKeySetSpendingLimitsBlockHeight defines the height at which derived key transactions will have their
+	// transaction spending limits in the extra data field parsed.
+	DerivedKeySetSpendingLimitsBlockHeight uint32
+
+	// DerivedKeyTrackSpendingLimitsBlockHeight defines the height at which derived key's transaction spending limits
+	// will come in effect - accounting of DESO spent and transaction counts will begin at this height. These heights
+	// are separated to allow developers time to generate new derived keys for their users. NOTE: this must always
+	// be greater than or equal to DerivedKeySetSpendingLimitsBlockHeight.
+	DerivedKeyTrackSpendingLimitsBlockHeight uint32
 }
 
 // DeSoParams defines the full list of possible parameters for the
@@ -401,11 +409,12 @@ func (params *DeSoParams) EnableRegtest() {
 		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
-		DerivedKeySpendingLimitsBlockHeight:                  math.MaxUint32,
+		DerivedKeySetSpendingLimitsBlockHeight:               math.MaxUint32,
+		DerivedKeyTrackSpendingLimitsBlockHeight:             math.MaxUint32,
 	}
 }
 
-// GenesisBlock defines the genesis block used for the DeSo maainnet and testnet
+// GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
 var (
 	ArchitectPubKeyBase58Check = "BC1YLg3oh6Boj8e2boCo1vQCYHLk1rjsHF6jthBdvSw79bixQvKK6Qa"
 	// This is the public key corresponding to the BitcoinBurnAddress on mainnet.
@@ -644,7 +653,8 @@ var DeSoMainnetParams = DeSoParams{
 		DeSoV3MessagesBlockHeight:                            uint32(98474),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(98474),
 		DAOCoinBlockHeight:                                   uint32(98474),
-		DerivedKeySpendingLimitsBlockHeight:                  math.MaxUint32,
+		DerivedKeySetSpendingLimitsBlockHeight:               math.MaxUint32,
+		DerivedKeyTrackSpendingLimitsBlockHeight:             math.MaxUint32,
 	},
 }
 
@@ -831,7 +841,8 @@ var DeSoTestnetParams = DeSoParams{
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(97322),
 		DAOCoinBlockHeight:                                   uint32(97322),
 
-		DerivedKeySpendingLimitsBlockHeight:                  math.MaxUint32,
+		DerivedKeySetSpendingLimitsBlockHeight:               math.MaxUint32,
+		DerivedKeyTrackSpendingLimitsBlockHeight:             math.MaxUint32,
 	},
 }
 
