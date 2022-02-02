@@ -798,17 +798,17 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 			}
 			// TODO: This check is important, should be re-implemented.
 			snap.timer.Start("SetSnapshotChunk.Get")
-			_, err := txn.Get(dbEntry.Key)
-			if err == nil {
-				continue
-			}
-			if err != nil && err != badger.ErrKeyNotFound {
-				return err
-			}
+			//_, err := txn.Get(dbEntry.Key)
+			//if err == nil {
+			//	continue
+			//}
+			//if err != nil && err != badger.ErrKeyNotFound {
+			//	return err
+			//}
 			snap.timer.End("SetSnapshotChunk.Get")
 
 			snap.timer.Start("SetSnapshotChunk.Set")
-			err = txn.Set(dbEntry.Key, dbEntry.Value)
+			err := txn.Set(dbEntry.Key, dbEntry.Value)
 			if err != nil {
 				return err
 			}

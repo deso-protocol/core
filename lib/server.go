@@ -931,7 +931,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 		// Process the DBEntries from the msg
 		srv.timer.Start("Server._handleSnapshot Set")
-		err := srv.blockchain.snapshot.SetSnapshotChunk(srv.blockchain.db, msg.SnapshotChunk)
+		err := srv.blockchain.snapshot.SetSnapshotChunk(srv.blockchain.db, dbChunk)
 		if err != nil {
 			glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
 			return
