@@ -239,6 +239,7 @@ const (
 	RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled RuleError = "RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled"
 	RuleErrorDAOCoinCannotMintIfMintingIsDisabled         RuleError = "RuleErrorDAOCoinCannotMintIfMintingIsDisabled"
 	RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin     RuleError = "RuleErrorOnlyProfileOwnerCanDisableMintingDAOCoin"
+	RuleErrorDAOCoinTransferMustTransferNonZero           RuleError = "RuleErrorDAOCoinTransferMustTransferNonZero"
 	RuleErrorDAOCoinTransferProfileOwnerOnlyViolation     RuleError = "RuleErrorDAOCoinTransferProfileOwnerOnlyViolation"
 	RuleErrorDAOCoinTransferDAOMemberOnlyViolation        RuleError = "RuleErrorDAOCoinTransferDAOMemberOnlyViolation"
 
