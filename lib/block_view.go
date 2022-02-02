@@ -1217,7 +1217,6 @@ func (bav *UtxoView) _connectBasicTransfer(
 		if utxoEntry.AmountNanos > MaxNanos ||
 			totalInput >= (math.MaxUint64-utxoEntry.AmountNanos) ||
 			totalInput+utxoEntry.AmountNanos > MaxNanos {
-
 			return 0, 0, nil, RuleErrorInputSpendsOutputWithInvalidAmount
 		}
 		// Add the amount of the utxo to the total input and add the UtxoEntry to
