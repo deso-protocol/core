@@ -2310,6 +2310,7 @@ func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
 
 type MsgDeSoSnapshotData struct {
 	SnapshotHeight    uint64
+	SnapshotBlockHash *BlockHash
 
 	SnapshotChecksum  []byte
 
@@ -2324,6 +2325,7 @@ func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	data = append(data, UintToBuf(msg.SnapshotHeight)...)
+	data = append(data, msg.SnapshotBlockHash.ToBytes()...)
 
 	// Encode the snapshot checksum
 	data = append(data, UintToBuf(uint64(len(msg.SnapshotChecksum)))...)
@@ -2349,6 +2351,11 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	msg.SnapshotHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	msg.SnapshotBlockHash = &BlockHash{}
+	_, err = io.ReadFull(rr, msg.SnapshotBlockHash[:])
 	if err != nil {
 		return err
 	}

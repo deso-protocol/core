@@ -267,6 +267,9 @@ func TestChannelThingy(t *testing.T) {
 	}
 
 	fmt.Println(len(testChan))
+	bytesTest := []byte{9, 1, 8, 8, 0, 0, 0, 0, 0, 0, 1, 226}
+	snap := Snapshot{}
+	fmt.Println(snap.isState(bytesTest))
 
 	testChan <- 1
 	testChan <- 2

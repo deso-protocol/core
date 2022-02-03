@@ -54,6 +54,8 @@ type SyncPrefixProgress struct {
 type SyncProgress struct {
 	PrefixProgress []*SyncPrefixProgress
 	Completed bool
+	SnapshotBlockHeight uint64
+	SnapshotBlockHash *BlockHash
 }
 
 // Server is the core of the DeSo node. It effectively runs a single-threaded
@@ -67,7 +69,6 @@ type Server struct {
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
-	snapshot      *Snapshot
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -518,6 +519,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 			lastDBEntry = prefixProgress.LastKeyRequested
 		}
 	}
+
 	// If peer isn't assigned to any prefix, we will assign him now.
 	if lastDBEntry.IsEmpty() {
 		// We will assign the peer to a non-existing prefix.
@@ -688,7 +690,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		if (pp.serviceFlags & SFHyperSync) != 0 {
 			// Add syncing logic, make sure we're a hyper-sync node and find a hyper-sync peer.
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at " +
-				"height %v from peer %v", srv.blockchain.blockTip().Header.Height+1, pp)
+				"height %v from peer %v", srv.blockchain.headerTip().Header.Height, pp)
 			if srv.cmgr.hyperSync && !srv.blockchain.finishedSyncing {
 				srv.blockchain.syncingState = true
 				for _, prefix := range StatePrefixes.StatePrefixesList {
@@ -705,6 +707,17 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 						return nil
 					})
 				}
+				glog.Infof("Server._handleHeaderBundle: hash of the header at height 1800: (%v)",
+					srv.blockchain.bestHeaderChain[1800].Hash)
+
+				// We set the expected height and hash of the snapshot from our header chain.
+				// TODO: error handle if the hash doesn't exist for some reason.
+				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.BlockHeightModulus)
+				srv.HyperSyncProgress.SnapshotBlockHeight = expectedSnapshotHeight
+				srv.HyperSyncProgress.SnapshotBlockHash = srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash
+
+				// Initialize the snapshot checksum so that it's reset.
 				srv.blockchain.snapshot.Checksum.Initialize()
 				srv.timer.Start("Hyper sync")
 				srv.GetSnapshot(pp)
@@ -825,6 +838,7 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 
 	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
 		SnapshotHeight: srv.blockchain.snapshot.BlockHeight,
+		SnapshotBlockHash: srv.blockchain.snapshot.LastBlockHash,
 		SnapshotChecksum: snapshotChecksum,
 		SnapshotChunk: snapshotChunk,
 		SnapshotFullPrefix: full,
@@ -841,13 +855,24 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: " +
-		"%v) and checksum (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
-		len(msg.SnapshotChunk), msg.SnapshotChecksum, pp)
+		"%v) and checksum (%v) and blockheight (%v) and blockhash (%v) from Peer %v", msg.SnapshotChunk[0].Key,
+		msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk), msg.SnapshotChecksum,
+		msg.SnapshotHeight, msg.SnapshotBlockHash, pp)
 
 	srv.timer.End("Get Snapshot")
 	srv.timer.Start("Server._handleSnapshot Main")
 
 	// Validate the snapshot chunk message
+
+	// Make sure that the snapshot height and blockhash match the ones in received message.
+	if msg.SnapshotHeight != srv.HyperSyncProgress.SnapshotBlockHeight ||
+		!bytes.Equal(msg.SnapshotBlockHash[:], srv.HyperSyncProgress.SnapshotBlockHash[:]) {
+
+		glog.Errorf("srv._handleSnapshot: blockheight (%v) and blockhash (%v) in msg do not match the expected " +
+			"hyper sync height (%v) and hash (%v)", msg.SnapshotBlockHash, msg.SnapshotBlockHash,
+			srv.HyperSyncProgress.SnapshotBlockHeight, srv.HyperSyncProgress.SnapshotBlockHash)
+		return
+	}
 
 	// First find the hyper sync progress struct that matches the received message.
 	var syncPrefixProgress *SyncPrefixProgress
@@ -992,10 +1017,28 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		break
 	}
 
+	glog.Infof("Best header chain %v best block chain %v",
+		srv.blockchain.bestHeaderChain[msg.SnapshotHeight], srv.blockchain.bestChain)
+
+	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotBlockHeight; ii ++ {
+		curretNode := srv.blockchain.bestHeaderChain[ii]
+		curretNode.Status |= StatusBlockProcessed
+		curretNode.Status |= StatusBlockStored
+		curretNode.Status |= StatusBlockValidated
+		srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
+		srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
+	}
+	srv.blockchain.snapshot.Cache = lru.NewKVCache(srv.blockchain.snapshot.CacheSize)
+	_ = PutBestHash(srv.blockchain.db, srv.blockchain.snapshot, msg.SnapshotBlockHash, ChainTypeDeSoBlock)
+	//glog.Infof("Best header chain %v", srv.blockchain.bestHeaderChain)
 	// If we got here then we finished the snapshot sync
 	srv.blockchain.finishedSyncing = true
 	srv.blockchain.syncingState = false
-	srv._maybeRequestSync(pp)
+	// Now sync the remaining blocks.
+	headerTip := srv.blockchain.headerTip()
+	srv.GetBlocks(pp, int(headerTip.Height))
+
+	//srv._maybeRequestSync(pp)
 }
 
 func (srv *Server) _startSync() {

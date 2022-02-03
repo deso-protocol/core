@@ -263,6 +263,7 @@ type Snapshot struct {
 	// This is particularly useful for maintaining ancestral records, because
 	// it saves us read time when we're writing to DB during utxo_view flush.
 	Cache            lru.KVCache
+	CacheSize        uint
 
 	// BlockHeight is the height of the snapshot.
 	BlockHeight      uint64
@@ -285,6 +286,7 @@ type Snapshot struct {
 	OperationChannel chan *SnapshotOperation
 	Checksum         *StateChecksum
 	LastChecksum []byte
+	LastBlockHash *BlockHash
 
 	AncestralMemory *lane.Deque
 
@@ -308,13 +310,15 @@ const (
 	SnapshotOperationProcessBlock
 	SnapshotOperationChecksumAdd
 	SnapshotOperationChecksumRemove
+	SnapshotOperationChecksumPrint
 )
 
 type SnapshotOperation struct {
 	operationType SnapshotOperationType
 
 	checksumBytes []byte
-	blockHeight uint64
+	blockNode *BlockNode
+	text string
 }
 
 // NewSnapshot creates a new snapshot with specified cache size.
@@ -348,6 +352,7 @@ func NewSnapshot(cacheSize uint32, dataDirectory string) (*Snapshot, error) {
 	snap := &Snapshot{
 		Db:                   snapshotDb,
 		Cache:                lru.NewKVCache(uint(cacheSize)),
+		CacheSize:            uint(cacheSize),
 		BlockHeight:          uint64(0),
 		BlockHeightModulus:   uint64(900),
 		FlushCounter:         uint64(0),
@@ -377,23 +382,25 @@ out:
 			{
 				switch operation.operationType {
 					case SnapshotOperationFlush:
-						glog.Infof("Snapshot.Run: Flushing ancestral records with counter (%v)")
+						glog.Infof("Snapshot.Run: Flushing ancestral records with counter")
 						snap.FlushAncestralRecordsWithCounter()
 
 					case SnapshotOperationProcessBlock:
-						glog.Infof("Snapshot.Run: Getting into the delete channel with height (%v)", operation.blockHeight)
-						if operation.blockHeight % snap.BlockHeightModulus == 0 {
+						height := uint64(operation.blockNode.Height)
+						glog.Infof("Snapshot.Run: Getting into the delete channel with height (%v)", height)
+						if height % snap.BlockHeightModulus == 0 {
 							var err error
 							glog.Infof("Snapshot.Run: About to delete BlockHeight (%v) and set new height (%v)",
-								snap.BlockHeight, operation.blockHeight)
+								snap.BlockHeight, height)
 							snap.LastCounter = snap.FlushCounter
-							snap.BlockHeight = operation.blockHeight
+							snap.BlockHeight = height
 							snap.LastChecksum, err = snap.Checksum.ToBytes()
 							if err != nil {
 								glog.Errorf("FlushToDbWithTxn: Problem getting checksum bytes (%v)", err)
 							}
+							snap.LastBlockHash = operation.blockNode.Hash
 							glog.Infof("ProcessBlock: snapshot is (%v)", snap.LastChecksum)
-							snap.DeleteAncestralRecords(operation.blockHeight)
+							snap.DeleteAncestralRecords(height)
 						}
 
 					case SnapshotOperationChecksumAdd:
@@ -405,6 +412,13 @@ out:
 						if err := snap.Checksum.RemoveBytes(operation.checksumBytes); err != nil {
 							glog.Errorf("Snapshot.Run: Problem removing checksum bytes operation (%v)", operation)
 						}
+
+					case SnapshotOperationChecksumPrint:
+						stateChecksum, err := snap.Checksum.ToBytes()
+						if err != nil {
+							glog.Errorf("Snapshot.ChecksumPrint: Problem getting checksum bytes (%v)", err)
+						}
+						glog.Infof("Snapshot.ChecksumPrint: Text (%s) Current checksum (%v)", operation.text, stateChecksum)
 				}
 			}
 		case <- snap.ExitChannel:
@@ -413,10 +427,17 @@ out:
 	}
 }
 
-func (snap *Snapshot) FinishProcessBlock(blockHeight uint64) {
+func (snap *Snapshot) PrintChecksum(text string){
+	snap.OperationChannel <- &SnapshotOperation{
+		operationType: SnapshotOperationChecksumPrint,
+		text: text,
+	}
+}
+
+func (snap *Snapshot) FinishProcessBlock(blockNode *BlockNode) {
 	snap.OperationChannel <- &SnapshotOperation{
 		operationType: SnapshotOperationProcessBlock,
-		blockHeight: blockHeight,
+		blockNode: blockNode,
 	}
 }
 

@@ -112,11 +112,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 
 	if bav.Snapshot != nil {
 		bav.Snapshot.FlushAncestralRecords()
-		stateChecksum, err := bav.Snapshot.Checksum.ToBytes()
-		if err != nil {
-			glog.Errorf("FlushToDbWithTxn: Problem getting checksum bytes (%v)", err)
-		}
-		glog.Infof("FlushToDbWithTxn: Current checksum (%v)", stateChecksum)
+		bav.Snapshot.PrintChecksum("Checksum after flush")
 	}
 	return nil
 }

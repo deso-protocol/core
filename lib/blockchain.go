@@ -2369,10 +2369,9 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		}
 	}
 
-	glog.Infof("ProcesssBlock: current tip height after (%v)", currentTip.Height)
+	glog.Infof("ProcessBlock: current tip height after (%v)", currentTip.Height)
 	if bc.snapshot != nil {
-		currentTip = bc.blockTip()
-		bc.snapshot.FinishProcessBlock(uint64(currentTip.Height))
+		bc.snapshot.FinishProcessBlock(bc.blockTip())
 	}
 	// If we've made it this far, the block has been validated and we have either added
 	// the block to the tip, done nothing with it (because its cumwork isn't high enough)
