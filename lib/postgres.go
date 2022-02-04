@@ -605,7 +605,7 @@ type PGDAOCoinBalance struct {
 
 func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
 	var balanceNanos *uint256.Int
-	if balance.BalanceNanos == "" {
+	if balance.BalanceNanos != "" {
 		var err error
 		balanceNanos, err = uint256.FromHex(balance.BalanceNanos)
 		if err != nil {
