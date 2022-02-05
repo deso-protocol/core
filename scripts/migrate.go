@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/deso-protocol/core/migrate"
+	"github.com/deso-protocol/core/v2/migrate"
 	"github.com/go-pg/pg/v10"
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 )
