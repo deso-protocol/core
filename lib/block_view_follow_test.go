@@ -257,14 +257,14 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0 has no follows.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m0Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(followPks))
 	}
 
 	// Verify pks following and check like count m1.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m1Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(followingM1), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -274,7 +274,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m2.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m2Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(followingM2), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -284,7 +284,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m3.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m3Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(followingM3), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -312,7 +312,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m0Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(len(m0Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -322,7 +322,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m1's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m1Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(m1Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -332,7 +332,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m2's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m2Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(m2Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -342,7 +342,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m3's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m3Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(m3Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -376,7 +376,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m1.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m1Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(followingM1), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -386,7 +386,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m2.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m2Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(followingM2), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -400,14 +400,14 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0 has no follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m0Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(followPks))
 	}
 
 	// Verify m3's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m3Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(m3Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -462,14 +462,14 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m0 has no follows.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m0Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify pks following and check like count m1.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m1Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(len(followingM1), len(followPks))
 			for ii := 0; ii < len(followPks); ii++ {
@@ -479,7 +479,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify pks following and check like count m2.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m2Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(len(followingM2), len(followPks))
 			for ii := 0; ii < len(followPks); ii++ {
@@ -489,7 +489,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify pks following and check like count m3.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m3Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(len(followingM3), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -512,14 +512,14 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m0 has no follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m0Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify m1's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m1Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(len(m1Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -529,7 +529,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m2's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m2Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(len(m2Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -539,7 +539,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m3's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m3Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(len(m3Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -575,44 +575,44 @@ func TestFollowTxns(t *testing.T) {
 	testDisconnectedState := func() {
 		// Verify that all the pks following you have been deleted.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m0Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m1Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m2Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, nil, _strToPk(t, m3Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify that all the keys you followed have been deleted.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m0Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m1Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m2Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, nil, _strToPk(t, m3Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
@@ -703,7 +703,7 @@ func TestFollowTxns(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.

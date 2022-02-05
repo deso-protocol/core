@@ -134,9 +134,6 @@ type Peer struct {
 	messageQueue    []*DeSoMessageMeta
 
 	requestedBlocks map[BlockHash]bool
-
-	timeElapsed float64
-	currentTime time.Time
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
@@ -489,7 +486,6 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		MessageChan:            messageChan,
 		requestedBlocks:        make(map[BlockHash]bool),
 	}
-	pp.currentTime = time.Now()
 	if _cmgr != nil {
 		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)
 	}
@@ -1050,15 +1046,8 @@ func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
 	// Useful for debugging.
 	// TODO: This may be too verbose
 	messageSeq := atomic.AddUint64(&pp.totalMessages, 1)
-
-	if msg.GetMsgType() == MsgTypeSnapshotData {
-		snapshotData := msg.(*MsgDeSoSnapshotData).SnapshotChunk
-		glog.V(1).Infof("SENDING( seq=%d ) message of type: %v to peer %v: (First: <%v>, Last: <%v>)",
-			messageSeq, msg.GetMsgType(), pp, snapshotData[0].Key, snapshotData[len(snapshotData)-1].Key)
-	} else {
-		glog.V(1).Infof("SENDING( seq=%d ) message of type: %v to peer %v: %v",
-			messageSeq, msg.GetMsgType(), pp, msg)
-	}
+	glog.V(3).Infof("SENDING( seq=%d ) message of type: %v to peer %v: %v",
+		messageSeq, msg.GetMsgType(), pp, msg)
 
 	return nil
 }
@@ -1078,12 +1067,8 @@ func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
 
 	// Useful for debugging.
 	messageSeq := atomic.AddUint64(&pp.totalMessages, 1)
-
-	if msg.GetMsgType() == MsgTypeSnapshotData {
-		snapshotData := msg.(*MsgDeSoSnapshotData).SnapshotChunk
-		glog.V(1).Infof("RECEIVED( seq=%d ) message of type: %v from peer %v: (First: <%v>, Last: <%v>)",
-			messageSeq, msg.GetMsgType(), pp, snapshotData[0].Key, snapshotData[len(snapshotData)-1].Key)
-	}
+	glog.V(3).Infof("RECEIVED( seq=%d ) message of type: %v from peer %v: %v",
+		messageSeq, msg.GetMsgType(), pp, msg)
 
 	return msg, nil
 }

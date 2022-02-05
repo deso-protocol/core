@@ -57,6 +57,7 @@ func (node *Node) Start() {
 	if node.Config.Regtest {
 		node.Params.EnableRegtest()
 	}
+
 	// Validate params
 	validateParams(node.Params)
 
@@ -79,8 +80,8 @@ func (node *Node) Start() {
 	desoAddrMgr := addrmgr.New(node.Config.DataDirectory, net.LookupIP)
 	desoAddrMgr.Start()
 
-	// COMMENT: This just gets localhost listening addresses on port 18000
-	// like [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs
+	// This just gets localhost listening addresses on the protocol port.
+	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
 	listeningAddrs, listeners := getAddrsToListenOn(node.Config.ProtocolPort)
 
 	for _, addr := range listeningAddrs {
@@ -88,7 +89,7 @@ func (node *Node) Start() {
 		_ = desoAddrMgr.AddLocalAddress(netAddr, addrmgr.BoundPrio)
 	}
 
-	// If no --connect-ips is passed, we will connect the addresses from
+	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
 	if len(node.Config.ConnectIPs) == 0 {
 		for _, host := range node.Config.AddIPs {
@@ -99,7 +100,7 @@ func (node *Node) Start() {
 			addIPsForHost(desoAddrMgr, host, node.Params)
 		}
 
-		// This is where we seed deso-seed-*.io
+		// This is where we connect to addresses from DNSSeeds.
 		if !node.Config.PrivateMode {
 			go addSeedAddrsFromPrefixes(desoAddrMgr, node.Params)
 		}
@@ -146,14 +147,13 @@ func (node *Node) Start() {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
+	// Setup snapshot
 	var snapshot *lib.Snapshot
 	if node.Config.HyperSync {
 		snapshot, err = lib.NewSnapshot(node.Config.CacheSize, node.Config.DataDirectory)
     	if err != nil {
     		panic(err)
     	}
-	} else {
-		snapshot = nil
 	}
 
 	// Setup the server
@@ -309,6 +309,7 @@ func getAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
 		listeners = append(listeners, listener)
 		listeningAddrs = append(listeningAddrs, netAddr)
 	}
+
 	return listeningAddrs, listeners
 }
 

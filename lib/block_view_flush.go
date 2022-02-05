@@ -39,7 +39,8 @@ func (bav *UtxoView) FlushToDb() error {
 }
 
 func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
-	// Increment snapshot semaphore counter to indicate we're about to flush.
+	// We're about to flush records to the main DB, so we initiate the snapshot update.
+	// This function prepares the data structures in the snapshot.
 	if bav.Snapshot != nil {
 		bav.Snapshot.PrepareAncestralFlush()
 	}
@@ -110,6 +111,8 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		return err
 	}
 
+	// We finished flushing to the main DB, so now we're ready to also flush to ancestral records.
+	// This happens concurrently, which is why we have the 2-phase prepare-flush happening for snapshot.
 	if bav.Snapshot != nil {
 		bav.Snapshot.FlushAncestralRecords()
 		bav.Snapshot.PrintChecksum("Checksum after flush")
@@ -925,6 +928,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 		// later if isDeleted=false.
 		if err := DBDeleteDerivedKeyMappingWithTxn(txn, bav.Snapshot,
 			derivedKeyMapKey.OwnerPublicKey, derivedKeyMapKey.DerivedPublicKey); err != nil {
+
 			return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 				"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
 		}
@@ -974,6 +978,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) err
 			for _, member := range existingMessagingGroupEntry.MessagingGroupMembers {
 				if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
 					member, existingMessagingGroupEntry); err != nil {
+
 					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 						"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
 				}

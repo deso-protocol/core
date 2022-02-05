@@ -294,6 +294,7 @@ type Snapshot struct {
 	// used to mitigate DB race conditions between sync and utxo_view flush.
 	MainDBSemaphore int32
 	AncestralDBSemaphore int32
+	SemaphoreLock sync.Mutex
 
 	// brokenSnapshot indicates that we need to rebuild entire snapshot from scratch.
 	// Updates to the snapshot happen in the background, so sometimes they can be broken
@@ -558,7 +559,9 @@ func (snap *Snapshot) CheckPrefixExists (value []byte) bool {
 
 func (snap *Snapshot) PrepareAncestralFlush() {
 	// Signal that the main db update has started by incrementing the main semaphore.
-	atomic.AddInt32(&snap.MainDBSemaphore, int32(1))
+	snap.SemaphoreLock.Lock()
+	snap.MainDBSemaphore += 1
+	snap.SemaphoreLock.Unlock()
 
 	snap.FlushCounter += 1
 	index := snap.FlushCounter
@@ -588,8 +591,10 @@ func (snap *Snapshot) FlushAncestralRecords() {
 
 	// Signal that the main db update has finished by incrementing the main semaphore.
 	// Also signal that the ancestral db write started by increasing the ancestral semaphore.
-	atomic.AddInt32(&snap.AncestralDBSemaphore, int32(1))
-	atomic.AddInt32(&snap.MainDBSemaphore, int32(1))
+	snap.SemaphoreLock.Lock()
+	snap.AncestralDBSemaphore += 1
+	snap.MainDBSemaphore += 1
+	snap.SemaphoreLock.Unlock()
 	glog.Infof("Snapshot.FlushAncestralRecords: Sending counter (%v) to the CounterChannel", snap.FlushCounter)
 	// We send the flush counter to the counter to indicate that a flush should take place.
 	snap.OperationChannel <- &SnapshotOperation{
@@ -600,6 +605,25 @@ func (snap *Snapshot) FlushAncestralRecords() {
 
 func (snap *Snapshot) isState(key []byte) bool {
 	return isStateKey(key) && !snap.brokenSnapshot
+}
+
+// isFlushing checks whether a main DB flush or ancestral record flush is taking place.
+func (snap *Snapshot) isFlushing() bool {
+	// We retrieve the ancestral record and main db semaphores.
+	snap.SemaphoreLock.Lock()
+	ancestralDBSemaphore := snap.AncestralDBSemaphore
+	mainDBSemaphore := snap.MainDBSemaphore
+	snap.SemaphoreLock.Unlock()
+
+	// Flush is taking place if the semaphores have different counters or if they are odd.
+	// We increment each semaphore whenever we start the flush and when we end it so they are always
+	// even when the DB is not being updated.
+	if ancestralDBSemaphore != mainDBSemaphore ||
+		(ancestralDBSemaphore | mainDBSemaphore) % 2 == 1 {
+
+		return true
+	}
+	return false
 }
 
 // FlushAncestralRecords updates the ancestral records after a utxo_view flush.
@@ -730,10 +754,11 @@ func (snap *Snapshot) String() string {
 func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKey []byte) (
 	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _concurrencyFault bool, _err error) {
 
-	ancestralDBSemaphoreBefore := atomic.LoadInt32(&snap.AncestralDBSemaphore)
-	mainDBSemaphoreBefore := atomic.LoadInt32(&snap.MainDBSemaphore)
-	if ancestralDBSemaphoreBefore != mainDBSemaphoreBefore ||
-		(ancestralDBSemaphoreBefore | mainDBSemaphoreBefore) % 2 == 1{
+	snap.SemaphoreLock.Lock()
+	ancestralDBSemaphoreBefore := snap.AncestralDBSemaphore
+	mainDBSemaphoreBefore := snap.MainDBSemaphore
+	snap.SemaphoreLock.Unlock()
+	if snap.isFlushing() {
 		return nil, false, true, nil
 	}
 
@@ -798,8 +823,10 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		return snapshotEntriesBatch, false, false, nil
 	}
 
-	ancestralDBSemaphoreAfter := atomic.LoadInt32(&snap.AncestralDBSemaphore)
-	mainDBSemaphoreAfter := atomic.LoadInt32(&snap.MainDBSemaphore)
+	snap.SemaphoreLock.Lock()
+	ancestralDBSemaphoreAfter := snap.AncestralDBSemaphore
+	mainDBSemaphoreAfter := snap.MainDBSemaphore
+	snap.SemaphoreLock.Unlock()
 	if ancestralDBSemaphoreBefore != ancestralDBSemaphoreAfter ||
 		mainDBSemaphoreBefore != mainDBSemaphoreAfter {
 		return nil, false, true, nil

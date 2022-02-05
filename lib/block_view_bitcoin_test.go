@@ -836,7 +836,7 @@ func TestBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock4.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -849,7 +849,7 @@ func TestBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock3.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -862,7 +862,7 @@ func TestBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock2.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -875,7 +875,7 @@ func TestBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock1.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -1563,7 +1563,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock4.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -1576,7 +1576,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock3.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -1589,7 +1589,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock2.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -1602,7 +1602,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock1.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -2131,7 +2131,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock4.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -2144,7 +2144,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock3.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -2157,7 +2157,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock2.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -2170,7 +2170,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock1.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -2830,7 +2830,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock4.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -2843,7 +2843,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock3.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -2856,7 +2856,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock2.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
@@ -2869,7 +2869,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock1.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.

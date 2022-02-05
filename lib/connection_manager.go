@@ -391,7 +391,6 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.N
 		retryCount++
 
 		// If this is an outbound peer, create an outbound connection.
-		// TEMP: This blocks until it finds an outbound peer or returns nil
 		if isOutbound {
 			conn = cmgr._getOutboundConn(persistentAddr)
 		}

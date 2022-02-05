@@ -323,7 +323,7 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(testMeta.t, err)
-		utxoOps, err := GetUtxoOperationsForBlock(testMeta.db, nil, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(testMeta.db, testMeta.chain.snapshot, hash)
 		require.NoError(testMeta.t, err)
 
 		// Compute the hashes for all the transactions.
@@ -416,7 +416,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			CreateNFTFeeNanos:           uint64(newCreateNFTFeeNanos),
 			MaxCopiesPerNFT:             123,
 		}
-		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle, nil), &expectedGlobalParams)
+		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle, chain.snapshot), &expectedGlobalParams)
 
 		require.Equal(utxoView.GlobalParamsEntry, &expectedGlobalParams)
 
@@ -427,7 +427,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 	{
 
 		// Save the prev global params entry so we can check it after disconnect.
-		prevGlobalParams := DbGetGlobalParamsEntry(db, nil)
+		prevGlobalParams := DbGetGlobalParamsEntry(db, chain.snapshot)
 
 		newUSDCentsPerBitcoin := int64(270434 * 100)
 		newMinimumNetworkFeeNanosPerKB := int64(131)
@@ -456,7 +456,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			MaxCopiesPerNFT:             uint64(newMaxCopiesPerNFT),
 		}
 
-		require.Equal(DbGetGlobalParamsEntry(db, nil), expectedGlobalParams)
+		require.Equal(DbGetGlobalParamsEntry(db, chain.snapshot), expectedGlobalParams)
 
 		// Now let's do a disconnect and make sure the values reflect the previous entry.
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
@@ -467,7 +467,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		require.NoError(utxoView.FlushToDb())
 
-		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle, nil), prevGlobalParams)
+		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle, chain.snapshot), prevGlobalParams)
 		require.Equal(utxoView.GlobalParamsEntry, prevGlobalParams)
 
 		// Check the balance of the updater after this txn

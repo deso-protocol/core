@@ -61,6 +61,7 @@ type Config struct {
 
 func LoadConfig() *Config {
 	config := Config{}
+
 	// Core
 	testnet := viper.GetBool("testnet")
 	if testnet {

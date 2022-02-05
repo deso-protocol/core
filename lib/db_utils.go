@@ -2,15 +2,13 @@ package lib
 
 import (
 	"bytes"
-	"context"
-	"crypto/rand"
+		"crypto/rand"
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/dgraph-io/ristretto/z"
-	"github.com/holiman/uint256"
+		"github.com/holiman/uint256"
 	"io"
 	"log"
 	"math"
@@ -19,8 +17,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"sync/atomic"
-	"time"
+		"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
@@ -37,6 +34,10 @@ const (
 	BadgerDbFolder = "badgerdb"
 	MaxPrefixLen = 1
 )
+
+// -------------------------------------------------------------------------------------
+// DB Prefixes
+// -------------------------------------------------------------------------------------
 
 type DBPrefixes struct {
 	// The key prefixes for the key-value database. To store a particular
@@ -281,8 +282,10 @@ type DBPrefixes struct {
 	// NEXT_TAG: 59
 }
 
+// getPrefixIdValue parses the DBPrefixes struct tags to fetch the prefix_id values.
 func getPrefixIdValue (structFields reflect.StructField, fieldType reflect.Type) (prefixId reflect.Value) {
 	var ref reflect.Value
+	// Get the prefix_id tags and parse it as byte array.
 	if value := structFields.Tag.Get("prefix_id"); value != "-" {
 		ref = reflect.New(fieldType)
 		ref.Elem().Set(reflect.MakeSlice(fieldType, 0, 0))
@@ -297,9 +300,15 @@ func getPrefixIdValue (structFields reflect.StructField, fieldType reflect.Type)
 	return ref.Elem()
 }
 
+// Prefixes is a static variable that contains all the parsed prefix_id values. We use the
+// Prefixes var when fetching prefixes to avoid parsing the prefix_id tags every time.
 var Prefixes = GetPrefixes()
+
+// GetPrefixes() loads all prefix_id byte array values into a DBPrefixes struct, and returns it.
 func GetPrefixes() *DBPrefixes {
 	prefixes := &DBPrefixes{}
+
+	// Iterate over all DBPrefixes fields and parse their prefix_id tags.
 	prefixElements := reflect.ValueOf(prefixes).Elem()
 	structFields := prefixElements.Type()
 	for i := 0; i < structFields.NumField(); i++ {
@@ -310,19 +319,31 @@ func GetPrefixes() *DBPrefixes {
 	return prefixes
 }
 
+// StatePrefixes is a static variable that allows us to quickly fetch state-related prefixes. We make
+// the distinction between state and non-state prefixes for hyper sync, where the node is only syncing
+// state prefixes. This significantly speeds up the syncing process and the node will still work properly.
 var StatePrefixes = GetStatePrefixes()
+
+// DBStatePrefixes is a helper struct that stores information about state-related prefixes.
 type DBStatePrefixes struct {
 	Prefixes *DBPrefixes
 
+	// StatePrefixesMap maps prefixes to whether they are state (true) or non-state (false) prefixes.
 	StatePrefixesMap map[byte]bool
+
+	// StatePrefixesList is a list of state prefixes.
 	StatePrefixesList [][]byte
 }
 
+// GetStatePrefixes() creates a DBStatePrefixes object from the DBPrefixes struct and returns it. We
+// parse the prefix_id and is_state tags.
 func GetStatePrefixes() *DBStatePrefixes {
+	// Initialize the DBStatePrefixes struct.
 	statePrefixes := &DBStatePrefixes{}
 	statePrefixes.Prefixes = &DBPrefixes{}
 	statePrefixes.StatePrefixesMap = make(map[byte]bool)
 
+	// Iterate over all the DBPrefixes fields and parse the prefix_id and is_state tags.
 	prefixElements := reflect.ValueOf(statePrefixes.Prefixes).Elem()
 	structFields := prefixElements.Type()
 	for i := 0; i < structFields.NumField(); i++ {
@@ -344,6 +365,7 @@ func GetStatePrefixes() *DBStatePrefixes {
 	return statePrefixes
 }
 
+// isStateKey checks if a key is a state-related key.
 func isStateKey(key []byte) bool {
 	if MaxPrefixLen > 1 {
 		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
@@ -355,24 +377,29 @@ func isStateKey(key []byte) bool {
 	return false
 }
 
+// -------------------------------------------------------------------------------------
+// DB Operations
+// -------------------------------------------------------------------------------------
+
+// EncodeKeyValue encodes DB key and value similarly to how DER signatures are encoded. The format is:
+// len(key + value) || len(key) || key || len(value) || value
+// This encoding is unique meaning (key, value) and (key', value') pairs have the same encoding if and
+// only if key = key' and value = value'
 func EncodeKeyValue(key []byte, value []byte) []byte {
 	data := []byte{}
 
-	// Encode key and value similarly to how DER signatures are encoded
-	// len(key + value) || len(key) || key || len(value) || value
-	// This ensures integrity of the (key, value) pairs
-	data = append(data, UintToBuf(uint64(len(key)+len(value)))...)
-	data = append(data, UintToBuf(uint64(len(key)))...)
+	data = append(data, EncodeUint64(uint64(len(key)+len(value)))...)
+	data = append(data, EncodeUint64(uint64(len(key)))...)
 	data = append(data, key...)
-	data = append(data, UintToBuf(uint64(len(value)))...)
+	data = append(data, EncodeUint64(uint64(len(value)))...)
 	data = append(data, value...)
 
 	return data
 }
 
-// DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add
-// computation prior to DB writes. In particular, we use it to maintain a dynamic
-// LRU cache, and to build DB snapshots with ancestral records.
+// DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add computation
+// prior to DB writes. In particular, we use it to maintain a dynamic LRU cache, compute the
+// state checksum, and to build DB snapshots with ancestral records.
 func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) error {
 	// We only cache / update ancestral records when we're dealing with state prefix.
 	isState := snap != nil && snap.isState(key)
@@ -445,16 +472,15 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	}
 	itemData, err := item.ValueCopy(nil)
 
-	// If DBWriteSemaphore semaphore indicates that a flush takes place, we don't update cache.
-	if isState && atomic.LoadInt32(&snap.MainDBSemaphore) % 2 == 0 {
-		// TODO: Can this somehow f us if the flush starts after we got here?
+	// If a flush takes place, we don't update cache. It will be updated in DBSetWithTxn.
+	if isState && !snap.isFlushing() {
 		snap.Cache.Add(keyString, itemData)
 	}
 	return itemData, nil
 }
 
 // DBDeleteWithTxn is a wrapper function around BadgerDB delete function.
-// It allows us to update the snapshot LRU cache and ancestral records.
+// It allows us to update the snapshot LRU cache, checksum, and ancestral records.
 func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 	var ancestralValue []byte
 	var getError error
@@ -466,6 +492,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 		// We check if we've already read this key and stored it in the cache.
 		// Otherwise, we fetch the current value of this record from the DB.
 		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+		// If the key doesn't exist then there is no point in deleting this entry.
 		if getError == badger.ErrKeyNotFound {
 			return nil
 		}
@@ -500,26 +527,33 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 	return nil
 }
 
-func DBIteratePrefixKeys(db *badger.DB, prefix []byte, lastKey []byte, maxBytes uint32) (
-	[]*DBEntry, bool, error) {
+// DBIteratePrefixKeys fetches a chunk of records from the provided db at a provided prefix,
+// and beginning with the provided startKey. The chunk will have a total size of at least targetBytes.
+// If the startKey is a valid key in the db, it will be the first entry in the returned dbEntries.
+// If we have exhausted all entries for a prefix then _isChunkFull will be set as false, and true otherwise,
+// when there are more entries in the db at the prefix.
+func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBytes uint32) (
+	_dbEntries []*DBEntry, _isChunkFull bool, _err error) {
 	var dbEntries []*DBEntry
-	totalBytes := 0
-	full := false
+	var totalBytes int
+	var isChunkFull bool
 
 	err := db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 
+		// Iterate over the prefix as long as there are valid keys in the DB.
 		it := txn.NewIterator(opts)
 		defer it.Close()
-
-		for it.Seek(lastKey); it.ValidForPrefix(prefix) && !full; it.Next() {
+		for it.Seek(startKey); it.ValidForPrefix(prefix) && !isChunkFull; it.Next() {
 			item := it.Item()
-			k := item.Key()
-			err := item.Value(func(v []byte) error {
-				dbEntries = append(dbEntries, DBEntryFromBytes(k, v))
-				totalBytes += len(k) + len(v)
-				if totalBytes > int(maxBytes) {
-					full = true
+			key := item.Key()
+			// Add the key, value pair to our dbEntries list.
+			err := item.Value(func(value []byte) error {
+				dbEntries = append(dbEntries, DBEntryFromBytes(key, value))
+				// If total amount of bytes in the dbEntries exceeds the target bytes size, we set the chunk as full.
+				totalBytes += len(key) + len(value)
+				if totalBytes > int(targetBytes) {
+					isChunkFull = true
 				}
 				return nil
 			})
@@ -530,34 +564,57 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, lastKey []byte, maxBytes 
 		return nil
 	})
 	if err != nil {
-		return nil, true, err
+		// Return false for _isChunkFull to indicate that we shouldn't query this prefix again because
+		// something is wrong.
+		return nil, false, err
 	}
-	return dbEntries, full, nil
+	return dbEntries, isChunkFull, nil
 }
 
-func DBStreamPrefixKeys(db *badger.DB) (*map[string][]byte, error) {
-	stream := db.NewStream()
-	stream.NumGo = 4
-	stream.Prefix = Prefixes.PrefixUtxoKeyToUtxoEntry
-	stream.LogPrefix = "Badger.Streaming"
+// DBDeleteAllStateRecords is an auxiliary function that is used to clean up the state
+// before starting hyper sync.
+func DBDeleteAllStateRecords(db *badger.DB) error {
+	// Iterate over all state prefixes.
+	for _, prefix := range StatePrefixes.StatePrefixesList {
+		startKey := prefix
+		fetchingPrefix := true
 
-	output := make(map[string][]byte)
-	stream.Send = func(batch *z.Buffer) error {
-		list, err := badger.BufferToKVList(batch)
-		if err != nil {
-			return err
+		// We will delete all records for a prefix step by step. We do this in chunks of 8MB,
+		// to make sure we don't overload badger DB with the size of our queries. Whenever a
+		// chunk is not full, that is isChunkFull = false, it means that we've exhausted all
+		// entries for a prefix.
+		for ;fetchingPrefix; {
+			// Fetch a chunk of data from the DB.
+			dbEntries, isChunkFull, err := DBIteratePrefixKeys(db, prefix, startKey, 8 << 20)
+			fetchingPrefix = isChunkFull
+			if err != nil {
+				return errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at " +
+					"prefix (%v)", prefix)
+			}
+
+			glog.V(1).Infof("DeleteAllStateRecords: Deleting prefix: (%v) with total of (%v) " +
+				"entries", prefix, len(dbEntries))
+			// Now delete all these keys.
+			err = db.Update(func(txn *badger.Txn) error {
+				for _, dbEntry := range dbEntries {
+					err := txn.Delete(dbEntry.Key)
+					if err != nil {
+						return errors.Wrapf(err, "DeleteAllStateRecords: Problem deleting key (%v)", dbEntry.Key)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
 		}
-		for _, kv := range list.Kv {
-			output[hex.EncodeToString(kv.Key)] = kv.Value
-		}
-		return nil
 	}
-	// Run the stream
-	if err := stream.Orchestrate(context.Background()); err != nil {
-		return nil, err
-	}
-	return &output, nil
+	return nil
 }
+
+// -------------------------------------------------------------------------------------
+// DB Controllers
+// -------------------------------------------------------------------------------------
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte) *PKIDEntry {
 	if len(publicKey) == 0 {
@@ -572,10 +629,6 @@ func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKe
 		// then we use the public key itself as the PKID. Doing this makes
 		// it so that the PKID is generally the *first* public key that the
 		// user ever associated with a particular piece of data.
-		//glog.Errorf("DBGetPKIDEntryForPublicKeyWithTxn: Problem reading "+
-		//	"PKIDEntry for public key %s",
-		//	PkToStringMainnet(publicKey))
-
 		return &PKIDEntry{
 			PKID:      PublicKeyToPKID(publicKey),
 			PublicKey: publicKey,
@@ -910,7 +963,6 @@ func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	if err := IsByteArrayValidPublicKey(messageEntry.RecipientPublicKey[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key")
 	}
-
 	if err := ValidateGroupPublicKeyAndName(messageEntry.SenderMessagingPublicKey[:], messageEntry.SenderMessagingGroupKeyName[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key and key name")
 	}
@@ -2637,12 +2689,6 @@ func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	return DBDeleteWithTxn(txn, snap, keyToDelete)
 }
 
-func DbBufForUtxoKey(utxoKey *UtxoKey) []byte {
-	utxoKeyBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(utxoKeyBuf).Encode(utxoKey)
-	return utxoKeyBuf.Bytes()
-}
-
 func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, utxoKey *UtxoKey) error {
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("PutPubKeyUtxoKeyWithTxn: Public key has improper length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
@@ -2757,7 +2803,7 @@ func PutMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *UtxoKey
 
 func _DecodeUtxoOperations(data []byte) ([][]*UtxoOperation, error) {
 	ret := [][]*UtxoOperation{}
-	// TODO: Custom encoder here?
+	// It is fine to use gob here because UtxoOperation is not part of the state.
 	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&ret); err != nil {
 		return nil, err
 	}
@@ -2766,7 +2812,7 @@ func _DecodeUtxoOperations(data []byte) ([][]*UtxoOperation, error) {
 
 func _EncodeUtxoOperations(utxoOp [][]*UtxoOperation) []byte {
 	opBuf := bytes.NewBuffer([]byte{})
-	// TODO: Custom encoder here?
+	// It is fine to use gob here because UtxoOperation is not part of the state.
 	gob.NewEncoder(opBuf).Encode(utxoOp)
 	return opBuf.Bytes()
 }
@@ -4819,6 +4865,7 @@ func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, s
 	return key
 }
 
+// TODO: are we sure we want to pass a pointer to an array here?
 func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
 
@@ -5218,14 +5265,6 @@ func DBGetOwnerToDerivedKeyMapping(db *badger.DB, snap *Snapshot,
 
 func DBDeleteDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
-
-	// First check that a mapping exists for the passed in public keys.
-	// If one doesn't exist then there's nothing to do.
-	//derivedKeyEntry := DBGetOwnerToDerivedKeyMappingWithTxn(
-	//	txn, ownerPublicKey, derivedPublicKey)
-	//if derivedKeyEntry == nil {
-	//	return nil
-	//}
 
 	// When a mapping exists, delete it.
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)); err != nil {
@@ -6218,8 +6257,6 @@ func LogDBSummarySnapshot(db *badger.DB) {
 
 func StartDBSummarySnapshots(db *badger.DB) {
 	// Periodically count the number of keys for each prefix in the DB and log.
-	// Note: every 30 seconds? That's a looot of DB scans. Should remove
-	// This is interesting
 	go func() {
 		for {
 			// Figure out how many keys there are for each prefix and log.

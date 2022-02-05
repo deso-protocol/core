@@ -1,28 +1,25 @@
 package lib
 
 import (
-
-"bytes"
-"crypto/ecdsa"
-"crypto/rand"
-"encoding/binary"
-"encoding/json"
-"fmt"
-"github.com/davecgh/go-spew/spew"
-"github.com/golang/glog"
-"github.com/holiman/uint256"
-"io"
-"math"
-"net"
-"sort"
-"time"
-
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/rand"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/davecgh/go-spew/spew"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-
+	"github.com/golang/glog"
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"io"
+	"math"
+	"net"
+	"sort"
+	"time"
 )
 
 // network.go defines all the basic data structures that get sent over the
@@ -86,9 +83,8 @@ const (
 	// MsgTypeGetSnapshot is used to retrieve state from peers.
 	MsgTypeGetSnapshot  MsgType = 17
 	MsgTypeSnapshotData MsgType = 18
-	MsgTypeSnapshotInfo MsgType = 19
 
-	// NEXT_TAG = 20
+	// NEXT_TAG = 19
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -164,8 +160,6 @@ func (msgType MsgType) String() string {
 		return "GET_SNAPSHOT"
 	case MsgTypeSnapshotData:
 		return "SNAPSHOT_DATA"
-	case MsgTypeSnapshotInfo:
-		return "SNAPSHOT_INFO"
 	default:
 		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", msgType)
 	}
@@ -666,10 +660,6 @@ func NewMessage(msgType MsgType) DeSoMessage {
 	case MsgTypeSnapshotData:
 		{
 			return &MsgDeSoSnapshotData{}
-		}
-	case MsgTypeSnapshotInfo:
-		{
-			return &MsgDeSoSnapshotInfo{}
 		}
 	default:
 		{
@@ -1285,7 +1275,7 @@ type ServiceFlag uint64
 const (
 	// SFFullNode is a flag used to indicate a peer is a full node.
 	SFFullNode ServiceFlag = 1 << iota
-	// SFHyperSync is a flag used to indicate peer supports hyper sync.
+	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
 	SFHyperSync
 )
 
@@ -2268,9 +2258,10 @@ func (msg *MsgDeSoBlock) String() string {
 // ==================================================================
 
 type MsgDeSoGetSnapshot struct {
+	// The prefix for which we want to fetch snapshot data chunk.
 	Prefix []byte
-	// SnapshotStartKey is the first key to fetch.
-	SnapshotStartEntry  *DBEntry
+	// SnapshotStartKey is the db key from which we want to start fetching the data.
+	SnapshotStartKey  []byte
 }
 
 func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
@@ -2278,7 +2269,8 @@ func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
 
 	data = append(data, UintToBuf(uint64(len(msg.Prefix)))...)
 	data = append(data, msg.Prefix...)
-	data = append(data, msg.SnapshotStartEntry.Encode()...)
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotStartKey)))...)
+	data = append(data, msg.SnapshotStartKey...)
 
 	return data, nil
 }
@@ -2296,10 +2288,14 @@ func (msg *MsgDeSoGetSnapshot) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading prefix")
 	}
 
-	msg.SnapshotStartEntry = &DBEntry{}
-	err = msg.SnapshotStartEntry.Decode(rr)
+	keyLen, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading snapshot start entry")
+		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error raeding start key length")
+	}
+	msg.SnapshotStartKey = make([]byte, keyLen)
+	_, err = io.ReadFull(rr, msg.SnapshotStartKey)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading snapshot start key")
 	}
 	return nil
 }
@@ -2309,15 +2305,21 @@ func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
 }
 
 type MsgDeSoSnapshotData struct {
+	// SnapshotHeight is the block height of the current snapshot epoch.
 	SnapshotHeight    uint64
+	// SnapshotBlockHash is the block hash of the block at the height of the current snapshot epoch.
 	SnapshotBlockHash *BlockHash
 
+	// SnapshotChecksum is the checksum of the snapshot state.
 	SnapshotChecksum  []byte
 
-	// SnapshotChunk is the data associated with StateKeys.
+	// SnapshotChunk is the snapshot state data chunk.
 	SnapshotChunk       []*DBEntry
-	SnapshotFullPrefix bool
+	// SnapshotChunkFull indicates whether we've exhausted all entries for the given prefix.
+	// If this is true, it means that there are more entries in node's db, and false means we've fetched everything.
+	SnapshotChunkFull bool
 
+	// Prefix indicates the db prefix of the current snapshot chunk.
 	Prefix []byte
 }
 
@@ -2331,6 +2333,7 @@ func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, UintToBuf(uint64(len(msg.SnapshotChecksum)))...)
 	data = append(data, msg.SnapshotChecksum...)
 
+	// Encode the snapshot chunk data.
 	if len(msg.SnapshotChunk) == 0 {
 		return nil, fmt.Errorf("MsgDeSoSnapshotData.ToBytes: Snapshot data should not be empty")
 	}
@@ -2338,7 +2341,7 @@ func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 	for _, vv := range msg.SnapshotChunk {
 		data = append(data, vv.Encode()...)
 	}
-	data = append(data, BoolToByte(msg.SnapshotFullPrefix))
+	data = append(data, BoolToByte(msg.SnapshotChunkFull))
 	data = append(data, UintToBuf(uint64(len(msg.Prefix)))...)
 	data = append(data, msg.Prefix...)
 
@@ -2383,7 +2386,7 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 		}
 		msg.SnapshotChunk = append(msg.SnapshotChunk, dbEntry)
 	}
-	msg.SnapshotFullPrefix = ReadBoolByte(rr)
+	msg.SnapshotChunkFull = ReadBoolByte(rr)
 
 	prefixLen, err := ReadUvarint(rr)
 	if err != nil {
@@ -2400,36 +2403,6 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 
 func (msg *MsgDeSoSnapshotData) GetMsgType() MsgType {
 	return MsgTypeSnapshotData
-}
-
-type MsgDeSoSnapshotInfo struct {
-	//
-	Nonce uint64
-}
-
-func (msg *MsgDeSoSnapshotInfo) ToBytes(preSignature bool) ([]byte, error) {
-	data := []byte{}
-
-	data = append(data, UintToBuf(msg.Nonce)...)
-	return data, nil
-}
-
-func (msg *MsgDeSoSnapshotInfo) FromBytes(data []byte) error {
-	rr := bytes.NewReader(data)
-
-	nonce, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoSnapshotInfo.FromBytes: Problem reading nonce from bytes")
-	}
-
-	*msg = MsgDeSoSnapshotInfo{
-		Nonce: nonce,
-	}
-	return nil
-}
-
-func (msg *MsgDeSoSnapshotInfo) GetMsgType() MsgType {
-	return MsgTypeSnapshotInfo
 }
 
 // ==================================================================

@@ -35,9 +35,6 @@ const (
 	// MessagesToFetchPerCall is used to limit the number of messages to fetch
 	// when getting a user's inbox.
 	MessagesToFetchPerInboxCall = 10000
-
-	MaxKeysFetch = 10
-
 	MaxBlocksInView = 1
 )
 

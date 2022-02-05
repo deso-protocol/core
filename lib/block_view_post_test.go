@@ -1606,7 +1606,7 @@ func TestSubmitPost(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
@@ -1686,21 +1686,21 @@ func TestDeSoDiamonds(t *testing.T) {
 	// Get PKIDs for looking up diamond entries.
 	m0PkBytes, _, err := Base58CheckDecode(m0Pub)
 	require.NoError(err)
-	m0PKID := DBGetPKIDEntryForPublicKey(db, nil, m0PkBytes)
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes)
 
 	m1PkBytes, _, err := Base58CheckDecode(m1Pub)
 	require.NoError(err)
-	m1PKID := DBGetPKIDEntryForPublicKey(db, nil, m1PkBytes)
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes)
 
 	m2PkBytes, _, err := Base58CheckDecode(m2Pub)
 	require.NoError(err)
-	m2PKID := DBGetPKIDEntryForPublicKey(db, nil, m2PkBytes)
+	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes)
 	_ = m2PKID
 
 	validateDiamondEntry := func(
 		senderPKID *PKID, receiverPKID *PKID, diamondPostHash *BlockHash, diamondLevel int64) {
 
-		diamondEntry := DbGetDiamondMappings(db, nil, receiverPKID, senderPKID, diamondPostHash)
+		diamondEntry := DbGetDiamondMappings(db, chain.snapshot, receiverPKID, senderPKID, diamondPostHash)
 
 		if diamondEntry == nil && diamondLevel > 0 {
 			t.Errorf("validateDiamondEntry: couldn't find diamond entry for diamondLevel %d", diamondLevel)

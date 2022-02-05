@@ -1144,7 +1144,7 @@ func TestUpdateProfile(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
@@ -3348,7 +3348,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *DeSoMempool) {
 		// Verify that expiration block was persisted in the db or is in mempool utxoView
 		if mempool == nil {
-			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, nil, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
+			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, chain.snapshot, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil {
@@ -4090,7 +4090,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := blockToDisconnect.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.

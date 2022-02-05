@@ -279,7 +279,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP1, likingPks[ii])
 		}
-		post1 := DBGetPostEntryByPostHash(db, nil, &post1Hash)
+		post1 := DBGetPostEntryByPostHash(db, chain.snapshot, &post1Hash)
 		require.Equal(uint64(len(likingP1)), post1.LikeCount)
 	}
 
@@ -291,7 +291,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP2, likingPks[ii])
 		}
-		post2 := DBGetPostEntryByPostHash(db, nil, &post2Hash)
+		post2 := DBGetPostEntryByPostHash(db, chain.snapshot, &post2Hash)
 		require.Equal(uint64(len(likingP2)), post2.LikeCount)
 	}
 
@@ -303,7 +303,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP3, likingPks[ii])
 		}
-		post3 := DBGetPostEntryByPostHash(db, nil, &post3Hash)
+		post3 := DBGetPostEntryByPostHash(db, chain.snapshot, &post3Hash)
 		require.Equal(uint64(len(likingP3)), post3.LikeCount)
 	}
 
@@ -397,7 +397,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP1, likingPks[ii])
 		}
-		post1 := DBGetPostEntryByPostHash(db, nil, &post1Hash)
+		post1 := DBGetPostEntryByPostHash(db, chain.snapshot, &post1Hash)
 		require.Equal(uint64(len(likingP1)), post1.LikeCount)
 	}
 
@@ -409,7 +409,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP2, likingPks[ii])
 		}
-		post2 := DBGetPostEntryByPostHash(db, nil, &post2Hash)
+		post2 := DBGetPostEntryByPostHash(db, chain.snapshot, &post2Hash)
 		require.Equal(uint64(len(likingP2)), post2.LikeCount)
 	}
 
@@ -492,11 +492,11 @@ func TestLikeTxns(t *testing.T) {
 
 		// Here we check the like counts after all the like entries have been disconnected.
 		if backwardIter == 19 {
-			post1 := DBGetPostEntryByPostHash(db, nil, &post1Hash)
+			post1 := DBGetPostEntryByPostHash(db, chain.snapshot, &post1Hash)
 			require.Equal(uint64(0), post1.LikeCount)
-			post2 := DBGetPostEntryByPostHash(db, nil, &post2Hash)
+			post2 := DBGetPostEntryByPostHash(db, chain.snapshot, &post2Hash)
 			require.Equal(uint64(0), post2.LikeCount)
-			post3 := DBGetPostEntryByPostHash(db, nil, &post3Hash)
+			post3 := DBGetPostEntryByPostHash(db, chain.snapshot, &post3Hash)
 			require.Equal(uint64(0), post3.LikeCount)
 		}
 	}
@@ -595,7 +595,7 @@ func TestLikeTxns(t *testing.T) {
 			for ii := 0; ii < len(likingPks); ii++ {
 				require.Contains(likingP1, likingPks[ii])
 			}
-			post1 := DBGetPostEntryByPostHash(db, nil, &post1Hash)
+			post1 := DBGetPostEntryByPostHash(db, chain.snapshot, &post1Hash)
 			require.Equal(uint64(len(likingP1)), post1.LikeCount)
 		}
 
@@ -607,7 +607,7 @@ func TestLikeTxns(t *testing.T) {
 			for ii := 0; ii < len(likingPks); ii++ {
 				require.Contains(likingP2, likingPks[ii])
 			}
-			post2 := DBGetPostEntryByPostHash(db, nil, &post2Hash)
+			post2 := DBGetPostEntryByPostHash(db, chain.snapshot, &post2Hash)
 			require.Equal(uint64(len(likingP2)), post2.LikeCount)
 		}
 
@@ -619,7 +619,7 @@ func TestLikeTxns(t *testing.T) {
 			for ii := 0; ii < len(likingPks); ii++ {
 				require.Contains(likingP3, likingPks[ii])
 			}
-			post3 := DBGetPostEntryByPostHash(db, nil, &post3Hash)
+			post3 := DBGetPostEntryByPostHash(db, chain.snapshot, &post3Hash)
 			require.Equal(uint64(len(likingP3)), post3.LikeCount)
 		}
 
@@ -727,7 +727,7 @@ func TestLikeTxns(t *testing.T) {
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, nil, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
