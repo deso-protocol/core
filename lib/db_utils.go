@@ -2,13 +2,13 @@ package lib
 
 import (
 	"bytes"
-		"crypto/rand"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-		"github.com/holiman/uint256"
+	"github.com/holiman/uint256"
 	"io"
 	"log"
 	"math"
@@ -17,7 +17,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-		"time"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"

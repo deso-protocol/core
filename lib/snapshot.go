@@ -309,6 +309,7 @@ type SnapshotOperationType uint8
 const (
 	SnapshotOperationFlush SnapshotOperationType = iota
 	SnapshotOperationProcessBlock
+	SnapshotOperationProcessChunk
 	SnapshotOperationChecksumAdd
 	SnapshotOperationChecksumRemove
 	SnapshotOperationChecksumPrint
@@ -320,6 +321,9 @@ type SnapshotOperation struct {
 	checksumBytes []byte
 	blockNode *BlockNode
 	text string
+
+	badgerDb *badger.DB
+	snapshotChunk []*DBEntry
 }
 
 // NewSnapshot creates a new snapshot with specified cache size.
@@ -397,11 +401,16 @@ out:
 							snap.BlockHeight = height
 							snap.LastChecksum, err = snap.Checksum.ToBytes()
 							if err != nil {
-								glog.Errorf("FlushToDbWithTxn: Problem getting checksum bytes (%v)", err)
+								glog.Errorf("Snapshot.Run: Problem getting checksum bytes (%v)", err)
 							}
 							snap.LastBlockHash = operation.blockNode.Hash
-							glog.Infof("ProcessBlock: snapshot is (%v)", snap.LastChecksum)
+							glog.Infof("Snapshot.Run: snapshot is (%v)", snap.LastChecksum)
 							snap.DeleteAncestralRecords(height)
+						}
+
+					case SnapshotOperationProcessChunk:
+						if err := snap.SetSnapshotChunk(operation.badgerDb, operation.snapshotChunk); err != nil {
+							glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
 						}
 
 					case SnapshotOperationChecksumAdd:
@@ -439,6 +448,14 @@ func (snap *Snapshot) FinishProcessBlock(blockNode *BlockNode) {
 	snap.OperationChannel <- &SnapshotOperation{
 		operationType: SnapshotOperationProcessBlock,
 		blockNode: blockNode,
+	}
+}
+
+func (snap *Snapshot) ProcessSnapshotChunk(badgerDb *badger.DB, snapshotChunk []*DBEntry) {
+	snap.OperationChannel <- &SnapshotOperation{
+		operationType: SnapshotOperationProcessChunk,
+		badgerDb: badgerDb,
+		snapshotChunk: snapshotChunk,
 	}
 }
 
@@ -837,43 +854,37 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 }
 
 func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) error {
-	return mainDb.Update(func(txn *badger.Txn) error {
-		snap.timer.Start("SetSnapshotChunk.Total")
-		for _, dbEntry := range chunk {
-			if dbEntry.IsEmpty() {
-				glog.Infof("Server.SetSnapshotChunk: received an empty DBEntry")
-				break
-			}
-			// TODO: This check is important, should be re-implemented.
-			snap.timer.Start("SetSnapshotChunk.Get")
-			//_, err := txn.Get(dbEntry.Key)
-			//if err == nil {
-			//	continue
-			//}
-			//if err != nil && err != badger.ErrKeyNotFound {
-			//	return err
-			//}
-			snap.timer.End("SetSnapshotChunk.Get")
-
-			snap.timer.Start("SetSnapshotChunk.Set")
-			err := txn.Set(dbEntry.Key, dbEntry.Value)
-			if err != nil {
-				return err
-			}
-			snap.timer.End("SetSnapshotChunk.Set")
-
-			snap.timer.Start("SetSnapshotChunk.Checksum")
-			snap.AddChecksumBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value))
-			snap.timer.End("SetSnapshotChunk.Checksum")
+	snap.timer.Start("SetSnapshotChunk.Total")
+	wb := mainDb.NewWriteBatch()
+	defer wb.Cancel()
+	for _, dbEntry := range chunk {
+		snap.timer.Start("SetSnapshotChunk.Set")
+		err := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
+		if err != nil {
+			return err
 		}
-		snap.timer.End("SetSnapshotChunk.Total")
+		snap.timer.End("SetSnapshotChunk.Set")
 
-		snap.timer.Print("SetSnapshotChunk.Total")
-		snap.timer.Print("SetSnapshotChunk.Get")
-		snap.timer.Print("SetSnapshotChunk.Set")
-		snap.timer.Print("SetSnapshotChunk.Checksum")
-		return nil
-	})
+		// TODO: do this concurrently to the DB write and just wait at the end.
+		snap.timer.Start("SetSnapshotChunk.Checksum")
+		if err := snap.Checksum.AddBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value)); err != nil {
+			glog.Errorf("Snapshot.SetSnapshotChunk: Problem adding checksum")
+		}
+		snap.timer.End("SetSnapshotChunk.Checksum")
+	}
+
+	snap.timer.Start("SetSnapshotChunk.Set")
+	err := wb.Flush()
+	if err != nil {
+		return err
+	}
+	snap.timer.End("SetSnapshotChunk.Set")
+	snap.timer.End("SetSnapshotChunk.Total")
+
+	snap.timer.Print("SetSnapshotChunk.Total")
+	snap.timer.Print("SetSnapshotChunk.Set")
+	snap.timer.Print("SetSnapshotChunk.Checksum")
+	return nil
 }
 
 // -------------------------------------------------------------------------------------

@@ -753,7 +753,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				srv.blockchain.syncingState = true
 				// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
 				// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
-				// remove these entries from the db because we will recieve them during state sync.
+				// remove these entries from the db because we will receive them during state sync.
 				DBDeleteAllStateRecords(srv.blockchain.db)
 
 				// We set the expected height and hash of the snapshot from our header chain. The snapshots should be
@@ -875,39 +875,15 @@ func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
 // will retrieve the chunk from our main and ancestral records db and attach it to the response message.
 func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	glog.V(1).Infof("srv._handleGetSnapshot: Called with message %v from Peer %v", msg, pp)
-	// Start a timer to measure how time sending a snapshot takes.
-	srv.timer.Start("Send Snapshot")
 
-	// Ignore GetSnapshot requests if we're still syncing.
-	if srv.blockchain.isSyncing() {
-		chainState := srv.blockchain.chainState()
-		glog.V(1).Infof("Server._handleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
-			"because node is syncing with ChainState (%v)", pp, chainState)
-		return
-	}
-
-	// TODO: Any restrictions on how many snapshots a peer can request?
-	// TODO: Handle concurrency fault
-	snapshotChunk, full, _, _ := srv.blockchain.snapshot.GetSnapshotChunk(srv.blockchain.db, msg.Prefix, msg.SnapshotStartKey)
-	snapshotChecksum := srv.blockchain.snapshot.LastChecksum
-
-	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
-		SnapshotHeight: srv.blockchain.snapshot.BlockHeight,
-		SnapshotBlockHash: srv.blockchain.snapshot.LastBlockHash,
-		SnapshotChecksum: snapshotChecksum,
-		SnapshotChunk: snapshotChunk,
-		SnapshotChunkFull: full,
-		Prefix: msg.Prefix,
-	}, false)
-
-
-	srv.timer.End("Send Snapshot")
-	srv.timer.Print("Send Snapshot")
-	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) " +
-		"with SnapshotHeight (%v) and LastChecksum (%v) and Snapshotdata length (%v)", pp,
-		srv.blockchain.snapshot.BlockHeight, snapshotChecksum, len(snapshotChunk))
+	// Let the peer handle this. We will delegate this message to the peer's queue of inbound messages, because
+	// fetching a snapshot chunk is an expensive operation.
+	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
+// _handleSnapshot gets called when we receive a SnapshotData message from a peer. The message contains
+// a snapshot chunk, which is a sorted list of <key, value> pairs representing a section of the database
+// at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: " +
 		"%v) and checksum (%v) and blockheight (%v) and blockhash (%v) from Peer %v", msg.SnapshotChunk[0].Key,
@@ -919,13 +895,14 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// Validate the snapshot chunk message
 
-	// Make sure that the snapshot height and blockhash match the ones in received message.
+	// Make sure that the expected snapshot height and blockhash match the ones in received message.
 	if msg.SnapshotHeight != srv.HyperSyncProgress.SnapshotBlockHeight ||
 		!bytes.Equal(msg.SnapshotBlockHash[:], srv.HyperSyncProgress.SnapshotBlockHash[:]) {
 
 		glog.Errorf("srv._handleSnapshot: blockheight (%v) and blockhash (%v) in msg do not match the expected " +
 			"hyper sync height (%v) and hash (%v)", msg.SnapshotBlockHash, msg.SnapshotBlockHash,
 			srv.HyperSyncProgress.SnapshotBlockHeight, srv.HyperSyncProgress.SnapshotBlockHash)
+		pp.Disconnect()
 		return
 	}
 
@@ -942,6 +919,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// We should disconnect the peer because he is misbehaving
 		glog.Errorf("srv._handleSnapshot: Problem finding appropriate sync prefix progress " +
 			"disconnecting misbehaving peer (%v)", pp)
+		pp.Disconnect()
 		return
 	}
 
@@ -951,6 +929,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// We should disconnect the peer because he is misbehaving
 		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk " +
 			"disconnecting misbehaving peer (%v)", pp)
+		pp.Disconnect()
 		return
 	}
 
@@ -972,6 +951,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			// We should disconnect the peer because he is misbehaving.
 			glog.Errorf("srv._handleSnapshot: Snapshot chunk DBEntry key has mismatched prefix " +
 				"disconnecting misbehaving peer (%v)", pp)
+			pp.Disconnect()
 			return
 		}
 		dbChunk = append(dbChunk, msg.SnapshotChunk[0])
@@ -984,6 +964,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			// but we would never request the same chunk twice
 			glog.Errorf("srv._handleSnapshot: Received a snapshot chunk that's not in-line with the sync progress " +
 				"disconnecting misbehaving peer (%v)", pp)
+			pp.Disconnect()
 			return
 		}
 	}
@@ -997,6 +978,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 				// We should disconnect the peer because he is misbehaving
 				glog.Errorf("srv._handleSnapshot: DBEntry key has mismatched prefix " +
 					"disconnecting misbehaving peer (%v)", pp)
+				pp.Disconnect()
 				return
 			}
 			// Make sure that the dbChunk is sorted increasingly.
@@ -1005,20 +987,15 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 				glog.Errorf("srv._handleSnapshot: dbChunk entries are not sorted: first entry at index (%v) with " +
 					"value (%v) and second entry with index (%v) and value (%v) disconnecting misbehaving peer (%v)",
 					ii-1, dbChunk[ii-1].Key, ii, dbChunk[ii].Key, pp)
+				pp.Disconnect()
 				return
 			}
 		}
 
-		// Process the DBEntries from the msg
+		// Process the DBEntries from the msg and add them to the db.
 		srv.timer.Start("Server._handleSnapshot Set")
-		err := srv.blockchain.snapshot.SetSnapshotChunk(srv.blockchain.db, dbChunk)
-		if err != nil {
-			glog.Errorf("srv._handleSnapshot: Problem setting entries in the DB error (%v)", err)
-			return
-		}
+		srv.blockchain.snapshot.ProcessSnapshotChunk(srv.blockchain.db, dbChunk)
 		srv.timer.End("Server._handleSnapshot Set")
-		srv.timer.Start("Server._handleSnapshot Checksum")
-		srv.timer.End("Server._handleSnapshot Checksum")
 	}
 
 	srv.timer.Start("Server._handleSnapshot prefix progress")

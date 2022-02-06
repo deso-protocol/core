@@ -626,7 +626,7 @@ func TestFasterHashToCurve(t *testing.T) {
 	//bytes2 := []byte("random byte string2")
 	dst := []byte("random-dst")
 
-	fmt.Println(int(float64(runtime.GOMAXPROCS(0)) * 0.35))
+	fmt.Println(int(float64(runtime.GOMAXPROCS(0))))
 	maxWorkers := runtime.GOMAXPROCS(0)
 	sem := semaphore.NewWeighted(int64(maxWorkers))
 	ctx := context.TODO()

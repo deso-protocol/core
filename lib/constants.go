@@ -36,6 +36,9 @@ const (
 	// when getting a user's inbox.
 	MessagesToFetchPerInboxCall = 10000
 	MaxBlocksInView = 1
+
+	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
+	GetSnapshotTimeout = 100 * time.Millisecond
 )
 
 type NetworkType uint64

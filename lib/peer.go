@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/decred/dcrd/lru"
 	"math"
@@ -134,6 +135,10 @@ type Peer struct {
 	messageQueue    []*DeSoMessageMeta
 
 	requestedBlocks map[BlockHash]bool
+
+	// We will only allow peer fetch one snapshot chunk at a time so we will keep
+	// track whether this peer has a get snapshot request in flight.
+	snapshotChunkRequestInFlight bool
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
@@ -390,6 +395,97 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 	}
 }
 
+// HandleGetSnapshot gets called whenever we receive a GetSnapshot message from a peer. This means
+// a peer is asking us to send him some data from our most recent snapshot. To respond to the peer we
+// will retrieve the chunk from our main and ancestral records db and attach it to the response message.
+// This function is handled within peer's inbound message loop because retrieving a chunk is costly.
+func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
+	// Start a timer to measure how much time sending a snapshot takes.
+	pp.srv.timer.Start("Send Snapshot")
+	defer pp.srv.timer.End("Send Snapshot")
+	defer pp.srv.timer.Print("Send Snapshot")
+
+	// Make sure this peer can only request one snapshot chunk at a time.
+	if pp.snapshotChunkRequestInFlight {
+		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
+			"because he already requested a GetSnapshot", pp)
+		pp.Disconnect()
+	}
+	pp.snapshotChunkRequestInFlight = true
+
+	// Ignore GetSnapshot requests if we're still syncing. We will only serve snapshot chunk when our
+	// blockchain state is fully current.
+	if pp.srv.blockchain.isSyncing() {
+		chainState := pp.srv.blockchain.chainState()
+		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
+			"because node is syncing with ChainState (%v)", pp, chainState)
+		pp.AddDeSoMessage(&MsgDeSoSnapshotData{
+			SnapshotHeight: pp.srv.blockchain.snapshot.BlockHeight,
+			SnapshotBlockHash: pp.srv.blockchain.snapshot.LastBlockHash,
+			SnapshotChecksum: nil,
+			SnapshotChunk: nil,
+			SnapshotChunkFull: false,
+			Prefix: msg.Prefix,
+		}, false)
+		pp.snapshotChunkRequestInFlight = false
+		return
+	}
+
+	// Make sure that the start key and prefix provided in the message are valid.
+	if len(msg.SnapshotStartKey) == 0 || len(msg.Prefix) == 0 {
+		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v " +
+			"because SnapshotStartKey or Prefix are empty", pp)
+		pp.Disconnect()
+		return
+	}
+
+	// Make sure the provided start key matches the prefix.
+	if !bytes.HasPrefix(msg.SnapshotStartKey, msg.Prefix) {
+		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot because Peer %v is misbehaving. " +
+			"The provided key Prefix doesn't match the SnapshotStartKey", pp)
+		pp.Disconnect()
+		return
+	}
+
+	// TODO: Any restrictions on how many snapshots a peer can request?
+
+	// Get the snapshot chunk from the database. This operation can happen concurrently with updates
+	// to the main DB or the ancestral records DB, and we don't want to slow down any of these updates.
+	// Because of that, we will detect whenever concurrent access takes place with the concurrencyFault
+	// variable. If concurrency is detected, we will re-queue the GetSnapshot message.
+	snapshotChunk, full, concurrencyFault, err := pp.srv.blockchain.snapshot.GetSnapshotChunk(
+		pp.srv.blockchain.db, msg.Prefix, msg.SnapshotStartKey)
+	if err != nil {
+		glog.Error("Peer.HandleGetSnapshot: something went wrong during fetching " +
+			"snapshot chunk for peer (%v), error (%v)", pp, err)
+		return
+	}
+	// When concurrencyFault occurs, we will wait a bit and then enqueue the message again.
+	if concurrencyFault {
+		glog.Error("Peer.HandleGetSnapshot: concurrency fault occurred so we enqueue the msg again to peer (%v)", pp)
+		go func() {
+			time.Sleep(GetSnapshotTimeout)
+			pp.AddDeSoMessage(msg, true )
+		}()
+		return
+	}
+	// Also get the checksum corresponding to the current snapshot epoch.
+	snapshotChecksum := pp.srv.blockchain.snapshot.LastChecksum
+
+	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
+		SnapshotHeight: pp.srv.blockchain.snapshot.BlockHeight,
+		SnapshotBlockHash: pp.srv.blockchain.snapshot.LastBlockHash,
+		SnapshotChecksum: snapshotChecksum,
+		SnapshotChunk: snapshotChunk,
+		SnapshotChunkFull: full,
+		Prefix: msg.Prefix,
+	}, false)
+	pp.snapshotChunkRequestInFlight = false
+	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) " +
+		"with SnapshotHeight (%v) and LastChecksum (%v) and Snapshotdata length (%v)", pp,
+		pp.srv.blockchain.snapshot.BlockHeight, snapshotChecksum, len(snapshotChunk))
+}
+
 func (pp *Peer) cleanupMessageProcessor() {
 	pp.mtxMessageQueue.Lock()
 	defer pp.mtxMessageQueue.Unlock()
@@ -424,29 +520,35 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 
 		if msgToProcess.Inbound {
 			if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetTransactions {
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
-					len(msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions).HashList), pp)
-				pp.HandleGetTransactionsMsg(msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions))
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with " +
+					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
+				pp.HandleGetTransactionsMsg(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeTransactionBundle {
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
-					"type %v with num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
-					len(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle).Transactions), pp)
-				pp.HandleTransactionBundleMessage(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle))
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with " +
+					"num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.Transactions), pp)
+				pp.HandleTransactionBundleMessage(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeInv {
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
-					len(msgToProcess.DeSoMessage.(*MsgDeSoInv).InvList), pp)
-				pp.HandleInv(msgToProcess.DeSoMessage.(*MsgDeSoInv))
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoInv)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with " +
+					"num invs %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.InvList), pp)
+				pp.HandleInv(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetBlocks {
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
-					len(msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks).HashList), pp)
-				pp.HandleGetBlocks(msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks))
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with " +
+					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
+				pp.HandleGetBlocks(msg)
 
+			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetSnapshot {
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetSnapshot)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with start key %v " +
+					"and prefix %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), msg.SnapshotStartKey, msg.Prefix, pp)
+
+				pp.HandleGetSnapshot(msg)
 			} else {
 				glog.Errorf("StartDeSoMessageProcessor: ERROR RECEIVED message of "+
 					"type %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), pp)
