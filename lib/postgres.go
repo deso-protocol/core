@@ -499,12 +499,19 @@ func (post *PGPost) NewPostEntry() *PostEntry {
 		PostExtraData:                  post.ExtraData,
 	}
 
-	for pkid, bp := range post.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-		postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints[*NewPKID([]byte(pkid))] = bp
+	if len(post.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
+		postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints = make(map[PKID]uint64)
+		for pkid, bp := range post.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints[*NewPKID([]byte(pkid))] = bp
+		}
 	}
 
-	for pkid, bp := range post.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
-		postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints[*NewPKID([]byte(pkid))] = bp
+
+	if len(post.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
+		postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints = make(map[PKID]uint64)
+		for pkid, bp := range post.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
+			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints[*NewPKID([]byte(pkid))] = bp
+		}
 	}
 
 	if post.ParentPostHash != nil {
@@ -1452,12 +1459,14 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 		}
 
 		if len(postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
+			post.AdditionalNFTRoyaltiesToCoinsBasisPoints = make(map[string]uint64)
 			for pkid, bps := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
 				post.AdditionalNFTRoyaltiesToCoinsBasisPoints[pkid.ToString()] = bps
 			}
 		}
 
 		if len(postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
+			post.AdditionalNFTRoyaltiesToCreatorsBasisPoints = make(map[string]uint64)
 			for pkid, bps := range postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
 				post.AdditionalNFTRoyaltiesToCreatorsBasisPoints[pkid.ToString()] = bps
 			}
