@@ -1,27 +1,24 @@
 package lib
 
 import (
-
-"bytes"
-"context"
-"encoding/hex"
-"fmt"
-"github.com/cloudflare/circl/group"
-"github.com/decred/dcrd/lru"
-"github.com/dgraph-io/badger/v3"
-"github.com/golang/glog"
-"github.com/oleiade/lane"
-"github.com/pkg/errors"
-"golang.org/x/sync/semaphore"
-"io"
-"path/filepath"
-"reflect"
-"runtime"
-"sort"
-"sync"
-"sync/atomic"
-"time"
-
+	"bytes"
+	"context"
+	"encoding/hex"
+	"fmt"
+	"github.com/cloudflare/circl/group"
+	"github.com/decred/dcrd/lru"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
+	"github.com/oleiade/lane"
+	"github.com/pkg/errors"
+	"golang.org/x/sync/semaphore"
+	"io"
+	"path/filepath"
+		"runtime"
+	"sort"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // -------------------------------------------------------------------------------------
@@ -30,84 +27,130 @@ import (
 
 // StateChecksum is used to verify integrity of state data. When syncing state from
 // peers, we need to ensure that we are receiving the same copy of the database.
-// Traditionally, this has been done using Merkle Trees; however, Merkle trees incur
+// Traditionally, this has been done using Merkle trees; however, Merkle trees incur
 // O(log n) computational complexity for updates and O(n) space complexity, where n
 // is the number of leaves in the tree.
 //
-// Instead, we use a structure that allows us to have an O(1) time and space complexity,
-// and maintains a higher safety. The structure is inspired by the generalized K-Sum problem,
-// where given a set of number L, we want to find a subset of elements in L that XORs to 0.
-// However, this problem can be solved efficiently with dynamic programming based on the
-// fact that if a ^ b = 0, then any prefix of a and b also XORs to 0, that is a[:i] ^ b[:i] = 0.
-// The dynamic algorithm solves the K-Sum problem on the prefix, and keeps growing the prefix.
-// K-Sum can be generalized to any algebraic group. That is, given a group G, zero element 0,
-// operation +, and set of group elements L, find a subset of L such the +(a_i) = 0.
+// Instead, we use a structure that allows us to have an O(1) time and O(1) space complexity. We call
+// our checksum construction EllipticSum as the checksum of the data is represented by a sum of
+// elliptic curve points. To verify integrity of the data, we only need a single ec point.
+// EllipticSum is inspired by the generalized k-sum problem, where given a set of uniformly random
+// numbers L, we want to find a subset of k elements in L that XORs to 0. However, this XOR problem
+// can be solved efficiently with dynamic programming in linear time.
+//
+// k-sum can be generalized to any algebraic group. That is, given a group G, identity element 0,
+// operation +, and some set L of random group elements, find a subset (a_0, a_1, ..., a_k) such that
+// a_0 + a_1 + ... + a_k = 0
+// Turns out this problem is equivalent to the DLP in G and has a computational lower bound
+// of O(sqrt(p)) where p is the smallest prime dividing the order of G.
 // https://link.springer.com/content/pdf/10.1007%2F3-540-45708-9_19.pdf
-// TODO: I think we need to use the multiplicative group, unfortunately. Seems like the DLP
-// assumption only holds if the factorization is difficult.
+//
+// We use an elliptic curve group Ristretto255 and hash state data directly on the curve
+// using the hash_to_curve primitive based on elligator2. The hash_to_curve mapping takes a
+// byte array input and outputs a point via a mapping indistinguishable from a random function.
+// Hash_to_curve does not reveal the discrete logarithm of the output points.
+// According to the O(sqrt(p)) lower bound, Ristretto255 guarantees 126 bits of security.
 type StateChecksum struct {
+	// curve is the Ristretto255 elliptic curve group.
 	curve group.Group
+	// checksum is the ec point we use for verifying integrity of state data. It represents
+	// the sum of points associated with all individual db records.
 	checksum group.Element
-
-	Semaphore *semaphore.Weighted
-	Ctx context.Context
-	AddMutex sync.Mutex
-
-	maxWorkers int64
+	// dst string for the hash_to_curve function. This works like a seed.
 	dst []byte
+
+	// semaphore is used to manage parallelism when computing the state checksum. We use
+	// a worker pool pattern of spawning a bounded number of threads to compute the checksum
+	// in parallel. This allows us to compute it much more efficiently.
+	semaphore *semaphore.Weighted
+	// ctx is a helper variable used by the semaphore.
+	ctx context.Context
+
+	// When we want to add a database record to the state checksum, we will first have to
+	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
+	// output point to the checksum. The hash_to_curve operation is about 2-3 orders of magnitude
+	// slower than the point addition, therefore we will compute the hash_to_curve in parallel
+	// and then add the output points to the checksum sequentially while holding a mutex.
+	addMutex sync.Mutex
+
+	// maxWorkers is the maximum number of workers we can have in the worker pool.
+	maxWorkers int64
 }
 
-// Initialize starts the state checksum by initializing it to zero.
+// Initialize starts the state checksum by initializing it to the identity element.
 func (sc *StateChecksum) Initialize() {
+	// Set the elliptic curve group to Ristretto255 and initialize checksum as identity.
 	sc.curve = group.Ristretto255
 	sc.checksum = sc.curve.Identity()
+	// Set the dst string.
+	sc.dst = []byte("DESO-ELLIPTIC-SUM:Ristretto255")
+
+	// Set max workers to the number of available threads.
 	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
-	sc.Semaphore = semaphore.NewWeighted(sc.maxWorkers)
-	sc.Ctx = context.TODO()
-	sc.dst = []byte("DESO-DST-V1:Ristretto255")
+
+	// Set the worker pool semaphore and context.
+	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
+	sc.ctx = context.TODO()
+
 }
 
+// AddBytes adds record bytes to the checksum in parallel.
 func (sc *StateChecksum) AddBytes(bytes []byte) error {
-	if err := sc.Semaphore.Acquire(sc.Ctx, 1); err != nil {
+	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
+	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
 		return errors.Wrapf(err, "StateChecksum.AddBytes: problem acquiring semaphore")
 	}
 
+	// Spawn a go routine that will decrement the semaphore and add the bytes to the checksum.
 	go func(sc *StateChecksum, bytes []byte) {
-		defer sc.Semaphore.Release(1)
+		defer sc.semaphore.Release(1)
 
+		// Compute the hash_to_curve primitive and map the bytes to an elliptic curve point.
 		hashElement := sc.curve.HashToElement(bytes, sc.dst)
 
-		sc.AddMutex.Lock()
+		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
+		sc.addMutex.Lock()
 		sc.checksum.Add(sc.checksum, hashElement)
-		sc.AddMutex.Unlock()
+		sc.addMutex.Unlock()
 	}(sc, bytes)
 
 	return nil
 }
 
+// RemoveBytes works similarly to AddBytes.
 func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
-	if err := sc.Semaphore.Acquire(sc.Ctx, 1); err != nil {
+	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
+	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
 		return errors.Wrapf(err, " StateChecksum.RemoveBytes: problem acquiring semaphore")
 	}
 
+	// Spawn a go routine that will decrement the semaphore and remove the bytes from the checksum.
 	go func(sc *StateChecksum, bytes []byte) {
-		defer sc.Semaphore.Release(1)
+		defer sc.semaphore.Release(1)
 
+		// To remove bytes from the checksum, we will compute the inverse of the provided data
+		// and add it to the checksum. Since the checksum is a sum of ec points, adding an inverse
+		// of a previously added point will remove that point from the checksum. If we've previously
+		// added point (x, y) to the checksum, we will be now adding the inverse (x, -y).
 		hashElement := sc.curve.HashToElement(bytes, sc.dst)
 		hashElement = hashElement.Neg(hashElement)
 
-		sc.AddMutex.Lock()
+		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
+		sc.addMutex.Lock()
 		sc.checksum.Add(sc.checksum, hashElement)
-		sc.AddMutex.Unlock()
+		sc.addMutex.Unlock()
 	}(sc, bytes)
 	return nil
 }
 
+// GetChecksum is used to get the checksum elliptic curve element.
 func (sc *StateChecksum) GetChecksum() (group.Element, error) {
-	if err := sc.Semaphore.Acquire(sc.Ctx, sc.maxWorkers); err != nil {
+	// To get the checksum we will wait for all the current worker threads to finish.
+	// To do so, we can just try to acquire sc.maxWorkers in the semaphore.
+	if err := sc.semaphore.Acquire(sc.ctx, sc.maxWorkers); err != nil {
 		return nil, errors.Wrapf(err, "StateChecksum.GetChecksum: problem acquiring semaphore")
 	}
-	defer sc.Semaphore.Release(sc.maxWorkers)
+	defer sc.semaphore.Release(sc.maxWorkers)
 
 	// Clone the checksum by adding it to identity. That's faster than doing ToBytes / FromBytes
 	checksumCopy := group.Ristretto255.Identity()
@@ -116,22 +159,17 @@ func (sc *StateChecksum) GetChecksum() (group.Element, error) {
 	return checksumCopy, nil
 }
 
-func (sc *StateChecksum) Wait() error {
-	if err := sc.Semaphore.Acquire(sc.Ctx, sc.maxWorkers); err != nil {
-		return errors.Wrapf(err, "StateChecksum.Wait: problem acquiring semaphore")
-	}
-	defer sc.Semaphore.Release(sc.maxWorkers)
-	return nil
-}
-
-// Don't use this function to deep copy the checksum, use the copy pattern in GetChecksum instead.
-// Parsing checksum to bytes is doing an inverse square root so it is slow.
+// ToBytes gets the checksum point encoded in compressed format as a 33 byte array.
+// Note: Don't use this function to deep copy the checksum, use GetChecksum instead.
+// ToBytes is doing an inverse square root, so it is slow.
 func (sc *StateChecksum) ToBytes() ([]byte, error) {
+	// Get the checksum.
 	checksum, err := sc.GetChecksum()
 	if err != nil {
 		return nil, errors.Wrapf(err, "StateChecksum.ToBytes: problem getting checksum")
 	}
 
+	// Encode checksum to bytes.
 	checksumBytes, err := checksum.MarshalBinary()
 	if err != nil {
 		return nil, errors.Wrapf(err, "stateChecksum.ToBytes: error during MarshalBinary")
@@ -143,6 +181,8 @@ func (sc *StateChecksum) ToBytes() ([]byte, error) {
 // DBEntry
 // -------------------------------------------------------------------------------------
 
+// DBEntry is used to represent a database record. It's more convenient than passing
+// <key, value> everywhere.
 type DBEntry struct {
 	Key   []byte
 	Value []byte
@@ -162,22 +202,22 @@ func (entry *DBEntry) Decode(rr io.Reader) error {
 	var keyLen, entryLen uint64
 	var err error
 
+	// Decode key.
 	keyLen, err = ReadUvarint(rr)
 	if err != nil {
 		return err
 	}
-
 	entry.Key = make([]byte, keyLen)
 	_, err = io.ReadFull(rr, entry.Key)
 	if err != nil {
 		return err
 	}
 
+	// Decode value.
 	entryLen, err = ReadUvarint(rr)
 	if err != nil {
 		return err
 	}
-
 	entry.Value = make([]byte, entryLen)
 	_, err = io.ReadFull(rr, entry.Value)
 	if err!= nil {
@@ -187,26 +227,23 @@ func (entry *DBEntry) Decode(rr io.Reader) error {
 	return nil
 }
 
-// DBEntryKeyOnlyFromBytes is used as a dummy entry that only contains the key.
-func DBEntryKeyOnlyFromBytes(key []byte) *DBEntry {
+// KeyValueToDBEntry is used to instantiate db entry from a <key, value> pair.
+func KeyValueToDBEntry(key []byte, value []byte) *DBEntry {
 	dbEntry := &DBEntry{}
+	// Encode the key.
 	dbEntry.Key = make([]byte, len(key))
 	copy(dbEntry.Key, key)
+
+	// Encode the value.
+	dbEntry.Value = make([]byte, len(value))
+	copy(dbEntry.Value, value)
 
 	return dbEntry
 }
 
-func DBEntryFromBytes(key []byte, value []byte) *DBEntry {
-	entry := DBEntryKeyOnlyFromBytes(key)
-	entry.Value = make([]byte, len(value))
-	copy(entry.Value, value)
-
-	return entry
-}
-
-// EmptyDBEntry indicates an empty DB entry.
+// EmptyDBEntry indicates an empty DB entry. It's used for convenience.
 func EmptyDBEntry() *DBEntry {
-	// We do not use prefix 0 for state so we can use it as an empty entry for convenience.
+	// We do not use prefix 0 for state so we can use it in the empty DBEntry.
 	return &DBEntry{
 		Key: []byte{0},
 		Value: []byte{},
@@ -215,13 +252,14 @@ func EmptyDBEntry() *DBEntry {
 
 // IsEmpty return true if the DBEntry is empty, false otherwise.
 func (entry *DBEntry) IsEmpty() bool {
-	return reflect.DeepEqual(entry.Key, []byte{0})
+	return bytes.Equal(entry.Key, []byte{0})
 }
 
 // -------------------------------------------------------------------------------------
 // Snapshot
 // -------------------------------------------------------------------------------------
 
+// List of database prefixes corresponding to the snapshot database.
 var (
 	_PrefixNonExistentAncestralRecord = []byte{0}
 
@@ -507,30 +545,9 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 	return nil
 }
 
-// GetCurrentPrefixAndKey is used to get an ancestral record key from a main DB key.
-// 		<prefix, type [1]byte, blockHeight [10]byte, key> -> <>
-func (snap *Snapshot) GetCurrentPrefixAndKey (notExistsRecord bool, key []byte) []byte {
-	var prefix []byte
-
-	// Append block height, which is the current snapshot identifier.
-	prefix = append(prefix, EncodeUint64(snap.BlockHeight)...)
-
-	// Finally, append the main DB key.
-	prefix = append(prefix, key...)
-
-	// Append prefix type at the end so that checking existence of a particular record only takes 1 lookup instead of two.
-	// Append the type
-	// 		0 - non-existing main DB key
-	//		1 - existing main DB key
-	if notExistsRecord {
-		prefix = append(prefix, _PrefixNonExistentAncestralRecord...)
-	} else {
-		prefix = append(prefix, _PrefixExistentAncestralRecord...)
-	}
-	return prefix
-}
-
-func (snap *Snapshot) GetSeekPrefix (key []byte) []byte {
+// GetAncestralRecordsKey is used to get an ancestral record key from a main DB key.
+// 		<blockHeight [10]byte, key> -> <>
+func (snap *Snapshot) GetAncestralRecordsKey (key []byte) []byte {
 	var prefix []byte
 
 	// Append block height, which is the current snapshot identifier.
@@ -594,12 +611,6 @@ func (snap *Snapshot) PrepareAncestralFlush() {
 func (snap *Snapshot) FlushAncestralRecords() {
 	// If snapshot is broken then there's nothing to do.
 	glog.Infof("Snapshot.FlushAncestralRecords: Initiated the flush")
-
-	err := snap.Checksum.Wait()
-	if err != nil {
-		glog.Errorf("Snapshot.FlushAncestralRecords: Error while waiting for checksum: (%v)", err)
-		return
-	}
 
 	if snap.brokenSnapshot {
 		glog.Errorf("Snapshot.FlushAncestralRecords: Broken snapshot, aborting")
@@ -694,7 +705,7 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter() {
 
 			// We check whether this record is already present in ancestral records,
 			// if so then there's nothing to do. What we want is err == badger.ErrKeyNotFound
-			_, err = txn.Get(snap.GetSeekPrefix(keyBytes))
+			_, err = txn.Get(snap.GetAncestralRecordsKey(keyBytes))
 			if err != nil && err != badger.ErrKeyNotFound {
 				return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 					"reading exsiting record in the DB at key: %v", key)
@@ -706,13 +717,13 @@ func (snap *Snapshot) FlushAncestralRecordsWithCounter() {
 			// If we get here, it means that no record existed in ancestral records at key.
 			// The key was either added to copyAncestralMap or copyNotExistsMap during flush.
 			if value, exists := lastAncestralCache.AncestralMap[key]; exists {
-				err = txn.Set(snap.GetSeekPrefix(keyBytes), append(value, byte(1)))
+				err = txn.Set(snap.GetAncestralRecordsKey(keyBytes), append(value, byte(1)))
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 						"flushing a record from copyAncestralMap at key %v:", key)
 				}
 			} else if _, exists = lastAncestralCache.NotExistsMap[key]; exists {
-				err = txn.Set(snap.GetSeekPrefix(keyBytes), []byte{byte(0)})
+				err = txn.Set(snap.GetAncestralRecordsKey(keyBytes), []byte{byte(0)})
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem " +
 						"flushing a record from copyNotExistsMap at key %v:", key)
@@ -789,7 +800,7 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 	}
 	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
 	ancestralDbBatchEntries, ancestralDbFilled, err := DBIteratePrefixKeys(snap.Db,
-		snap.GetSeekPrefix(prefix), snap.GetSeekPrefix(startKey), snap.BatchSize)
+		snap.GetAncestralRecordsKey(prefix), snap.GetAncestralRecordsKey(startKey), snap.BatchSize)
 	if err != nil {
 		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}

@@ -993,32 +993,46 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		}
 
 		// Process the DBEntries from the msg and add them to the db.
-		srv.timer.Start("Server._handleSnapshot Set")
+		srv.timer.Start("Server._handleSnapshot Process Snapshot")
 		srv.blockchain.snapshot.ProcessSnapshotChunk(srv.blockchain.db, dbChunk)
-		srv.timer.End("Server._handleSnapshot Set")
+		srv.timer.End("Server._handleSnapshot Process Snapshot")
 	}
 
-	srv.timer.Start("Server._handleSnapshot prefix progress")
-	lastDbEntry := msg.SnapshotChunk[len(msg.SnapshotChunk)-1]
+	// We will update the hyper sync progress tracker struct to reflect the newly added snapshot chunk.
+	// In particular, we want to update the last received key to the last key in the received chunk.
 	added := false
 	for ii:=0; ii<len(srv.HyperSyncProgress.PrefixProgress); ii++ {
 		if reflect.DeepEqual(srv.HyperSyncProgress.PrefixProgress[ii].Prefix, msg.Prefix) {
-			srv.HyperSyncProgress.PrefixProgress[ii].LastReceivedKey = lastDbEntry.Key
+			// We found the hyper sync progress corresponding to this snapshot chunk so update the key.
+			lastKey := msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key
+			srv.HyperSyncProgress.PrefixProgress[ii].LastReceivedKey = lastKey
+
+			// If the snapshot chunk is not full, it means that we've completed this prefix. In such case,
+			// there is a possibility we've finished hyper sync altogether. We will break out of the loop
+			// and try to determine if we're done in the next loop.
+			// TODO: verify that the prefix checksum matches the checksum provided by the peer / header checksum.
 			if !msg.SnapshotChunkFull {
 				srv.HyperSyncProgress.PrefixProgress[ii].Completed = true
+				added = true
+				break
+			} else {
+				// If chunk is not full it means there's more work to do, so we will resume snapshot sync.
+				srv.GetSnapshot(pp)
+				return
 			}
-			added = true
-			break
 		}
 	}
 	if !added {
-		glog.Errorf("srv._handleSnapshot: Problem updating HyperSyncProgress, not found")
+		glog.Errorf("srv._handleSnapshot: Problem updating HyperSyncProgress, prefix not found. This should never happen.")
 	}
-	srv.timer.End("Server._handleSnapshot prefix progress")
 	srv.timer.End("Server._handleSnapshot Main")
+
+	// If we get here, it means we've finished syncing the prefix, so now we will go through all state prefixes
+	// and see what's left to do.
 
 	for _, prefix := range StatePrefixes.StatePrefixesList {
 		completed := false
+		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
 			if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
 				completed = prefixProgress.Completed
@@ -1032,45 +1046,59 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			return
 		}
 	}
+
+	// If we get to this point it means we synced all db prefixes, therefore finishing hyper sync.
+	// Do some logging.
 	srv.timer.End("Hyper sync")
 	srv.timer.Print("Get Snapshot")
-	srv.timer.Print("Server._handleSnapshot Set")
+	srv.timer.Print("Server._handleSnapshot Process Snapshot")
 	srv.timer.Print("Server._handleSnapshot Checksum")
 	srv.timer.Print("Server._handleSnapshot prefix progress")
 	srv.timer.Print("Server._handleSnapshot Main")
 	srv.timer.Print("Hyper sync")
-
-	for {
-		if len(srv.blockchain.snapshot.OperationChannel) > 0 {
-			continue
-		}
-		bytes, _ := srv.blockchain.snapshot.Checksum.ToBytes()
-		glog.Infof("Final checksum is (%v)", bytes)
-		break
-	}
-
+	srv.blockchain.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
 	glog.Infof("Best header chain %v best block chain %v",
 		srv.blockchain.bestHeaderChain[msg.SnapshotHeight], srv.blockchain.bestChain)
 
-	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotBlockHeight; ii ++ {
-		curretNode := srv.blockchain.bestHeaderChain[ii]
-		curretNode.Status |= StatusBlockProcessed
-		curretNode.Status |= StatusBlockStored
-		curretNode.Status |= StatusBlockValidated
-		srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
-		srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
+	// After syncing state from a snapshot, we will sync remaining blocks. To do so, we will
+	// start downloading blocks from the snapshot height up to the blockchain tip. Since we
+	// already synced all the state corresponding to the sub-blockchain ending at the snapshot
+	// height, we will now mark all these blocks as processed. To do so, we will iterate through
+	// the blockNodes in the header chain and set them in the blockchain data structures.
+	err := srv.blockchain.db.Update(func(txn *badger.Txn) error {
+		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotBlockHeight; ii ++ {
+    		curretNode := srv.blockchain.bestHeaderChain[ii]
+    		curretNode.Status |= StatusBlockProcessed
+    		curretNode.Status |= StatusBlockStored
+    		curretNode.Status |= StatusBlockValidated
+
+    		srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
+    		srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
+    		srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
+			//err := PutHeightHashToNodeInfoWithTxn(txn, srv.blockchain.snapshot, curretNode, false /*bitcoinNodes*/)
+			//if err != nil {
+			//	return err
+			//}
+    	}
+		// We will also set the hash of the block at snapshot height as the best chain hash.
+		err := PutBestHashWithTxn(txn, srv.blockchain.snapshot, msg.SnapshotBlockHash, ChainTypeDeSoBlock)
+		return err
+	})
+	if err != nil {
+		glog.Errorf("Server_handleSnapshot: Problem updating snapshot blocknodes, error: ", err)
 	}
+	// We also reset the in-memory snapshot cache, because it is populated with stale records after
+	// we've initialized the chain with seed transactions.
 	srv.blockchain.snapshot.Cache = lru.NewKVCache(srv.blockchain.snapshot.CacheSize)
-	_ = PutBestHash(srv.blockchain.db, srv.blockchain.snapshot, msg.SnapshotBlockHash, ChainTypeDeSoBlock)
-	//glog.Infof("Best header chain %v", srv.blockchain.bestHeaderChain)
-	// If we got here then we finished the snapshot sync
+
+	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.finishedSyncing = true
 	srv.blockchain.syncingState = false
+
 	// Now sync the remaining blocks.
+	// TODO: what if the snapshot height is at the blockchain tip, for instance because PoW takes a while.
 	headerTip := srv.blockchain.headerTip()
 	srv.GetBlocks(pp, int(headerTip.Height))
-
-	//srv._maybeRequestSync(pp)
 }
 
 func (srv *Server) _startSync() {
@@ -1364,6 +1392,7 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 func (srv *Server) _maybeRequestSync(pp *Peer) {
 	// Send the mempool message if DeSo and Bitcoin are fully current
 	if srv.blockchain.chainState() == SyncStateFullyCurrent {
+		// If peer is not nil and we haven't set a max sync blockheight, we will
 		if pp != nil && srv.blockchain.maxSyncBlockHeight == 0 {
 			glog.V(1).Infof("Server._maybeRequestSync: Sending mempool message: %v", pp)
 			pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
@@ -1418,6 +1447,8 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	glog.Infof("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)
+	// If we've set a maximum sync height and we've reached that height, then we will
+	// stop accepting new blocks.
 	if srv.blockchain.isTipMaxed(srv.blockchain.blockTip()) {
 		glog.Infof("Server._handleBlock: Exiting because block tip is maxed out")
 		return
@@ -1523,8 +1554,6 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	glog.V(2).Infof("Server._handleBlock: Processed all blocks and the " +
-		"chain state is SyncStateNeedBlocksss: (%v)", srv.blockchain.chainState() == SyncStateNeedBlocksss)
 	if srv.blockchain.chainState() == SyncStateNeedBlocksss {
 		// If we don't have any blocks to wait for anymore, hit the peer with
 		// a GetHeaders request to see if there are any more headers we should
@@ -1557,6 +1586,8 @@ func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
 			"ignore_outbound_peer_inv_messages=true: %v", peer)
 		return
 	}
+	// If we've set a maximum sync height and we've reached that height, then we will
+	// stop accepting inv messages.
 	if srv.blockchain.isTipMaxed(srv.blockchain.blockTip()) {
 		return
 	}
@@ -1925,6 +1956,7 @@ func (srv *Server) _startAddressRelayer() {
 }
 
 func (srv *Server) _startTransactionRelayer() {
+	// If we've set a maximum sync height, we will not relay transactions.
 	if srv.blockchain.maxSyncBlockHeight > 0 {
 		return
 	}

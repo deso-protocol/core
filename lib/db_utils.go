@@ -549,7 +549,7 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBy
 			key := item.Key()
 			// Add the key, value pair to our dbEntries list.
 			err := item.Value(func(value []byte) error {
-				dbEntries = append(dbEntries, DBEntryFromBytes(key, value))
+				dbEntries = append(dbEntries, KeyValueToDBEntry(key, value))
 				// If total amount of bytes in the dbEntries exceeds the target bytes size, we set the chunk as full.
 				totalBytes += len(key) + len(value)
 				if totalBytes > int(targetBytes) {
