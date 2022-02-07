@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
@@ -501,16 +502,24 @@ func (post *PGPost) NewPostEntry() *PostEntry {
 
 	if len(post.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
 		postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints = make(map[PKID]uint64)
-		for pkid, bp := range post.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints[*NewPKID([]byte(pkid))] = bp
+		for pkidStr, bp := range post.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+			pkidBytes, err := hex.DecodeString(pkidStr)
+			if err != nil {
+				panic(err)
+			}
+			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints[*NewPKID(pkidBytes)] = bp
 		}
 	}
 
 
 	if len(post.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
 		postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints = make(map[PKID]uint64)
-		for pkid, bp := range post.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
-			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints[*NewPKID([]byte(pkid))] = bp
+		for pkidStr, bp := range post.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
+			pkidBytes, err := hex.DecodeString(pkidStr)
+			if err != nil {
+				panic(err)
+			}
+			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints[*NewPKID(pkidBytes)] = bp
 		}
 	}
 
@@ -1461,14 +1470,16 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 		if len(postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
 			post.AdditionalNFTRoyaltiesToCoinsBasisPoints = make(map[string]uint64)
 			for pkid, bps := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-				post.AdditionalNFTRoyaltiesToCoinsBasisPoints[pkid.ToString()] = bps
+				pkidHexString := hex.EncodeToString(pkid[:])
+				post.AdditionalNFTRoyaltiesToCoinsBasisPoints[pkidHexString] = bps
 			}
 		}
 
 		if len(postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
 			post.AdditionalNFTRoyaltiesToCreatorsBasisPoints = make(map[string]uint64)
 			for pkid, bps := range postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
-				post.AdditionalNFTRoyaltiesToCreatorsBasisPoints[pkid.ToString()] = bps
+				pkidHexString := hex.EncodeToString(pkid[:])
+				post.AdditionalNFTRoyaltiesToCreatorsBasisPoints[pkidHexString] = bps
 			}
 		}
 
