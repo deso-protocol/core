@@ -4607,6 +4607,10 @@ type TransactionSpendingLimit struct {
 func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 	data := []byte{}
 
+	if tsl == nil {
+		return data, nil
+	}
+
 	// GlobalDESOLimit
 	data = append(data, UintToBuf(tsl.GlobalDESOLimit)...)
 
@@ -4644,10 +4648,6 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 			return keys[ii].CreatorPKID.ToString() < keys[jj].CreatorPKID.ToString()
 		})
 		for _, key := range keys {
-			//creatorPKIDBytes := key.CreatorPKID.ToBytes()
-			//data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
-			//data = append(data, creatorPKIDBytes...)
-			//data = append(data, UintToBuf(uint64(key.Operation))...)
 			data = append(data, key.Encode()...)
 			data = append(data, UintToBuf(tsl.CreatorCoinOperationLimitMap[key])...)
 		}
@@ -4704,6 +4704,9 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 }
 
 func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
+	if len(data) == 0 {
+	return nil
+	}
 	rr := bytes.NewReader(data)
 	globalDESOLimit, err := ReadUvarint(rr)
 	if err != nil {
