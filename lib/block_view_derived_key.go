@@ -285,7 +285,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-
 func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
@@ -347,8 +346,6 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 				"differs from that in existing derivedKeyEntry (%v %v)", prevDerivedKeyEntry.DerivedPublicKey, derivedPublicKey)
 		}
 	}
-
-
 
 	// After the derived key spending limit block height, we need to revert the basic transfer prior to
 	// reverting the DerivedKeyEntry mappings because the basic transfer connect logic modifies the

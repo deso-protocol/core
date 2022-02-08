@@ -1376,7 +1376,6 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	// Set the DeSoDiamondsBlockHeight so that it is immediately hit.
 	params.ForkHeights.DeSoDiamondsBlockHeight = uint32(0)
 
-
 	// Give paramUpdater some mony.
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, moneyPkString, paramUpdaterPub,

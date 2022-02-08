@@ -180,7 +180,7 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte) (
 	// We fetched all the entries from the UtxoView, so we move to the DB.
 	dbMessagingKeys, err := DBGetAllUserGroupEntries(bav.Handle, ownerPublicKey)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting " +
+		return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting "+
 			"messaging keys from the DB")
 	}
 	// Now go through the messaging keys in the DB and add keys we haven't seen before.
@@ -222,7 +222,7 @@ func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint
 	// First get all messaging keys for a user.
 	messagingGroupEntries, err := bav.GetMessagingGroupEntriesForUser(ownerPublicKey)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: " +
+		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: "+
 			"problem getting user messaging keys")
 	}
 
@@ -268,7 +268,7 @@ func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint
 	return messageEntries, messagingGroupEntries, nil
 }
 
-func ReadMessageVersion(txn *MsgDeSoTxn) (_version uint8, _err error){
+func ReadMessageVersion(txn *MsgDeSoTxn) (_version uint8, _err error) {
 	if txn == nil {
 		return 0, fmt.Errorf("ReadMessageVersion: Called with nil MsgDeSoTxn")
 	}
@@ -285,7 +285,7 @@ func ReadMessageVersion(txn *MsgDeSoTxn) (_version uint8, _err error){
 		}
 		if version < 0 || version > MessagesVersion3 {
 			return 0, errors.Wrapf(RuleErrorPrivateMessageInvalidVersion,
-				"ReadMessageVersion: Problem reading message version from ExtraData, expecting version " +
+				"ReadMessageVersion: Problem reading message version from ExtraData, expecting version "+
 					"between <1, 3> but got (%v)", version)
 		}
 	}
@@ -506,7 +506,6 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// <OwnerPublicKey, TstampNanos> tuple. We also know that the sender and recipient
 	// have different public keys.
 
-
 	if bav.Postgres != nil {
 		//TODO: Fix Postgres
 		message := &PGMessage{
@@ -577,14 +576,14 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 		if existsSender {
 			if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
 				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperMessagingParty,
-			"_disconnectPrivateMessage: at least one messaging party must be present")
+					"_disconnectPrivateMessage: at least one messaging party must be present")
 			}
 			senderPkBytes = senderMessagingPublicKey
 		}
 		if existsRecipient {
 			if err := IsByteArrayValidPublicKey(recipientMessagingPublicKey); err != nil {
 				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperMessagingParty,
-				"_disconnectPrivateMessage: at least one messaging party must be present")
+					"_disconnectPrivateMessage: at least one messaging party must be present")
 			}
 			recipientPkBytes = recipientMessagingPublicKey
 		}
@@ -657,7 +656,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 
 	// Make sure the sender and recipient entries are identical by comparing their byte encodings.
 	if !reflect.DeepEqual(recipientMessageEntry.Encode(), senderMessageEntry.Encode()) {
-		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for " +
+		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
 			"sender (%v) doesn't matche the entry for the recipient (%v)",
 			senderMessageEntry, recipientMessageEntry)
 	}
@@ -701,7 +700,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// Make sure DeSo V3 messages are live.
 	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingGroup: " +
+			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingGroup: "+
 				"Problem connecting messaging key, too early block height")
 	}
 	txMeta := txn.TxnMeta.(*MessagingGroupMetadata)
@@ -716,12 +715,12 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// Make sure that the messaging public key and the group key name have the correct format.
 	if err := ValidateGroupPublicKeyAndName(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
-				"Problem parsing public key: %v", txMeta.MessagingPublicKey)
+			"Problem parsing public key: %v", txMeta.MessagingPublicKey)
 	}
 
 	// Sanity-check that transaction public key is valid.
 	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: " +
+		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
 			"error %v", RuleErrorMessagingOwnerPublicKeyInvalid)
 	}
 
@@ -739,7 +738,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// All other keys can be registered by derived keys.
 		bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
 		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature); err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: " +
+			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
 				"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
 		}
 	}
@@ -765,7 +764,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	var messagingGroupKey *MessagingGroupKey
 	var messagingPublicKey *PublicKey
 	if reflect.DeepEqual(txMeta.MessagingPublicKey, GetS256BasePointCompressed()) {
-		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(GetS256BasePointCompressed()),  txMeta.MessagingGroupKeyName)
+		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(GetS256BasePointCompressed()), txMeta.MessagingGroupKeyName)
 		_, keyPublic := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(txMeta.MessagingGroupKeyName)[:])
 		messagingPublicKey = NewPublicKey(keyPublic.SerializeCompressed())
 	} else {
@@ -823,7 +822,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		for _, existingMember := range existingEntry.MessagingGroupMembers {
 			if _, exists := existingMembers[*existingMember.GroupMemberPublicKey]; exists {
 				return 0, 0, nil, errors.Wrapf(
-					RuleErrorMessagingMemberAlreadyExists, "_connectMessagingGroup: " +
+					RuleErrorMessagingMemberAlreadyExists, "_connectMessagingGroup: "+
 						"Error, member already exists (%v)", existingMember.GroupMemberPublicKey)
 			}
 
@@ -842,15 +841,15 @@ func (bav *UtxoView) _connectMessagingGroup(
 		if len(messagingMember.EncryptedKey) < btcec.PrivKeyBytesLen {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorMessagingMemberEncryptedKeyTooShort, "_connectMessagingGroup: "+
-					"Problem validating messagingMember encrypted key for messagingMember (%v): Encrypted " +
-					"key length %v less than the minimum allowed %v. If this is an unencrypted group " +
+					"Problem validating messagingMember encrypted key for messagingMember (%v): Encrypted "+
+					"key length %v less than the minimum allowed %v. If this is an unencrypted group "+
 					"member, please set %v zeros for this value", messagingMember.GroupMemberPublicKey[:],
-					len(messagingMember.EncryptedKey), btcec.PrivKeyBytesLen, btcec.PrivKeyBytesLen)
+				len(messagingMember.EncryptedKey), btcec.PrivKeyBytesLen, btcec.PrivKeyBytesLen)
 		}
 
 		// Make sure the messagingMember public key and messaging key name are valid.
 		if err := ValidateGroupPublicKeyAndName(messagingMember.GroupMemberPublicKey[:], messagingMember.GroupMemberKeyName[:]); err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: " +
+			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
 				"Problem validating public key or messaging key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
 		}
 
@@ -868,7 +867,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// The messagingMember can't be already added to the list of existing members.
 		if _, exists := existingMembers[*messagingMember.GroupMemberPublicKey]; exists {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorMessagingMemberAlreadyExists, "_connectMessagingGroup: " +
+				RuleErrorMessagingMemberAlreadyExists, "_connectMessagingGroup: "+
 					"Error, messagingMember already exists (%v)", messagingMember.GroupMemberPublicKey[:])
 		}
 		// Add the messagingMember to our helper structs.
@@ -898,7 +897,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// Construct UtxoOperation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: OperationTypeMessagingKey,
+		Type:                  OperationTypeMessagingKey,
 		PrevMessagingKeyEntry: prevMessagingKeyEntry,
 	})
 
@@ -933,7 +932,7 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 	// Get the messaging key that the transaction metadata points to.
 	var messagingKey *MessagingGroupKey
 	if reflect.DeepEqual(txMeta.MessagingPublicKey, GetS256BasePointCompressed()) {
-		messagingKey = NewMessagingGroupKey(NewPublicKey(GetS256BasePointCompressed()),  txMeta.MessagingGroupKeyName)
+		messagingKey = NewMessagingGroupKey(NewPublicKey(GetS256BasePointCompressed()), txMeta.MessagingGroupKeyName)
 	} else {
 		messagingKey = NewMessagingGroupKey(NewPublicKey(currentTxn.PublicKey), txMeta.MessagingGroupKeyName)
 	}
@@ -954,7 +953,6 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 				"messagingKey: %v", messagingKey)
 		}
 	}
-
 
 	// Delete this item from UtxoView to indicate we should remove this entry from DB.
 	bav._deleteMessagingGroupKeyToMessagingGroupEntryMapping(&messagingKey.OwnerPublicKey, messagingKeyEntry)

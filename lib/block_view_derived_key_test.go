@@ -64,7 +64,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeCreatorCoinTransfer
 	case TxnTypeDAOCoin:
 		realTxMeta := txnMeta.(*DAOCoinMetadata)
@@ -74,7 +74,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeDAOCoin
 	case TxnTypeDAOCoinTransfer:
 		realTxMeta := txnMeta.(*DAOCoinTransferMetadata)
@@ -84,7 +84,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeDAOCoinTransfer
 	case TxnTypeUpdateNFT:
 		realTxMeta := txnMeta.(*UpdateNFTMetadata)
@@ -105,7 +105,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeUpdateNFT
 	case TxnTypeCreateNFT:
 		realTxMeta := txnMeta.(*CreateNFTMetadata)
@@ -132,7 +132,7 @@ func _doTxn(
 			realTxMeta.HasUnlockable,
 			realTxMeta.IsForSale,
 			realTxMeta.MinBidAmountNanos,
-			utxoView.GlobalParamsEntry.CreateNFTFeeNanos * uint64(realTxMeta.NumCopies),
+			utxoView.GlobalParamsEntry.CreateNFTFeeNanos*uint64(realTxMeta.NumCopies),
 			realTxMeta.NFTRoyaltyToCreatorBasisPoints,
 			realTxMeta.NFTRoyaltyToCoinBasisPoints,
 			isBuyNow,
@@ -156,7 +156,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeAcceptNFTBid
 	case TxnTypeAcceptNFTTransfer:
 		realTxMeta := txnMeta.(*AcceptNFTTransferMetadata)
@@ -167,7 +167,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeAcceptNFTTransfer
 	case TxnTypeNFTBid:
 		realTxMeta := txnMeta.(*NFTBidMetadata)
@@ -179,7 +179,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeNFTBid
 	case TxnTypeNFTTransfer:
 		realTxMeta := txnMeta.(*NFTTransferMetadata)
@@ -192,7 +192,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeNFTTransfer
 	case TxnTypeBurnNFT:
 		realTxMeta := txnMeta.(*BurnNFTMetadata)
@@ -203,7 +203,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeBurnNFT
 	case TxnTypeAuthorizeDerivedKey:
 		realTxMeta := txnMeta.(*AuthorizeDerivedKeyMetadata)
@@ -231,7 +231,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeAuthorizeDerivedKey
 	case TxnTypeUpdateProfile:
 		realTxMeta := txnMeta.(*UpdateProfileMetadata)
@@ -248,7 +248,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeUpdateProfile
 	default:
 		return nil, nil, 0, fmt.Errorf("Unsupported Txn Type")
@@ -276,7 +276,7 @@ func _doTxn(
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one operation that corresponds to the txn type at the end.
 	// TODO: generalize?
-	utxoOpExpectation := len(txn.TxInputs)+len(txn.TxOutputs)+1
+	utxoOpExpectation := len(txn.TxInputs) + len(txn.TxOutputs) + 1
 	if isDerivedTransactor && testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
 		utxoOpExpectation++
 	}
@@ -2355,15 +2355,15 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			false,
 			TxnTypeUpdateProfile,
 			&UpdateProfileMetadata{
-				NewUsername: []byte("m0"),
-				NewDescription: []byte("i am the m0"),
-				NewProfilePic: []byte(shortPic),
-				NewCreatorBasisPoints: 10 * 100,
+				NewUsername:                 []byte("m0"),
+				NewDescription:              []byte("i am the m0"),
+				NewProfilePic:               []byte(shortPic),
+				NewCreatorBasisPoints:       10 * 100,
 				NewStakeMultipleBasisPoints: 1.25 * 100 * 100,
-				IsHidden: false,
+				IsHidden:                    false,
 			},
 			nil,
-			)
+		)
 
 		// Create a profile for m1
 		_doTxnWithTestMeta(
@@ -2374,12 +2374,12 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			false,
 			TxnTypeUpdateProfile,
 			&UpdateProfileMetadata{
-				NewUsername: []byte("m1"),
-				NewDescription: []byte("i am the m1"),
-				NewProfilePic: []byte(shortPic),
-				NewCreatorBasisPoints: 10 * 100,
+				NewUsername:                 []byte("m1"),
+				NewDescription:              []byte("i am the m1"),
+				NewProfilePic:               []byte(shortPic),
+				NewCreatorBasisPoints:       10 * 100,
 				NewStakeMultipleBasisPoints: 1.25 * 100 * 100,
-				IsHidden: false,
+				IsHidden:                    false,
 			},
 			nil,
 		)
@@ -2391,11 +2391,11 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	m1PrivateKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), m1PrivKeyBytes)
 	m1PKID := utxoView.GetPKIDForPublicKey(m1PkBytes).PKID
 	transactionSpendingLimit := &TransactionSpendingLimit{
-		GlobalDESOLimit: 100,
-		TransactionCountLimitMap: make(map[TxnType]uint64),
+		GlobalDESOLimit:              100,
+		TransactionCountLimitMap:     make(map[TxnType]uint64),
 		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-		DAOCoinOperationLimitMap: make(map[DAOCoinOperationLimitKey]uint64),
-		NFTOperationLimitMap: make(map[NFTOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 	}
 	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
 	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeBasicTransfer] = 1
@@ -2432,12 +2432,12 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeDAOCoin,
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
-				OperationType: DAOCoinOperationTypeMint,
+				OperationType:    DAOCoinOperationTypeMint,
 				CoinsToMintNanos: *uint256.NewInt().SetUint64(100 * NanosPerUnit),
 				CoinsToBurnNanos: *uint256.NewInt(),
 			},
 			nil,
-			)
+		)
 	}
 
 	// Derived key for M1 transfers 10 M1 DAO Coins to M0
@@ -2450,12 +2450,12 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			true,
 			TxnTypeDAOCoinTransfer,
 			&DAOCoinTransferMetadata{
-				ProfilePublicKey: m1PkBytes,
-				ReceiverPublicKey: m0PkBytes,
+				ProfilePublicKey:       m1PkBytes,
+				ReceiverPublicKey:      m0PkBytes,
 				DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(10 * NanosPerUnit),
 			},
 			nil,
-			)
+		)
 	}
 
 	// Now the derived key can't do anything else for M1 DAO coin
@@ -2468,7 +2468,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			true,
 			TxnTypeDAOCoin,
 			&DAOCoinMetadata{
-				OperationType: DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+				OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
 				TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
 			},
 			nil,
@@ -2478,11 +2478,11 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	}
 
 	newTransactionSpendingLimit := &TransactionSpendingLimit{
-		GlobalDESOLimit: 100,
-		TransactionCountLimitMap: make(map[TxnType]uint64),
+		GlobalDESOLimit:              100,
+		TransactionCountLimitMap:     make(map[TxnType]uint64),
 		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-		DAOCoinOperationLimitMap: make(map[DAOCoinOperationLimitKey]uint64),
-		NFTOperationLimitMap: make(map[NFTOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 	}
 	newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
 	newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeBasicTransfer] = 1
@@ -2519,12 +2519,12 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			true,
 			TxnTypeDAOCoin,
 			&DAOCoinMetadata{
-				ProfilePublicKey: m1PkBytes,
-				OperationType: DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+				ProfilePublicKey:          m1PkBytes,
+				OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
 				TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
 			},
 			nil,
-			)
+		)
 	}
 
 	{
@@ -2537,19 +2537,19 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeDAOCoin,
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
-				OperationType: DAOCoinOperationTypeBurn,
+				OperationType:    DAOCoinOperationTypeBurn,
 				CoinsToBurnNanos: *uint256.NewInt().SetUint64(10 * NanosPerUnit),
 			},
 			nil,
-			)
+		)
 	}
 
 	m0TransactionSpendingLimit := &TransactionSpendingLimit{
-		GlobalDESOLimit: 0,
-		TransactionCountLimitMap: make(map[TxnType]uint64),
+		GlobalDESOLimit:              0,
+		TransactionCountLimitMap:     make(map[TxnType]uint64),
 		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-		DAOCoinOperationLimitMap: make(map[DAOCoinOperationLimitKey]uint64),
-		NFTOperationLimitMap: make(map[NFTOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 	}
 
 	m0PrivKeyBytes, _, err := Base58CheckDecode(m0Priv)
@@ -2570,7 +2570,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeAuthorizeDerivedKey,
 			m0AuthTxnMeta,
 			extraData,
-			)
+		)
 	}
 
 	{
@@ -2583,11 +2583,11 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeCreatorCoin,
 			&CreatorCoinMetadataa{
 				ProfilePublicKey: m1PkBytes,
-				OperationType: CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos: 10,
+				OperationType:    CreatorCoinOperationTypeBuy,
+				DeSoToSellNanos:  10,
 			},
 			nil,
-			)
+		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
 	}
@@ -2622,8 +2622,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeCreatorCoin,
 			&CreatorCoinMetadataa{
 				ProfilePublicKey: m1PkBytes,
-				OperationType: CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos: 10,
+				OperationType:    CreatorCoinOperationTypeBuy,
+				DeSoToSellNanos:  10,
 			},
 			nil,
 		)
@@ -2661,8 +2661,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeCreatorCoin,
 			&CreatorCoinMetadataa{
 				ProfilePublicKey: m1PkBytes,
-				OperationType: CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos: 10,
+				OperationType:    CreatorCoinOperationTypeBuy,
+				DeSoToSellNanos:  10,
 			},
 			nil,
 		)
@@ -2701,8 +2701,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeCreatorCoin,
 			&CreatorCoinMetadataa{
 				ProfilePublicKey: m1PkBytes,
-				OperationType: CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos: 10,
+				OperationType:    CreatorCoinOperationTypeBuy,
+				DeSoToSellNanos:  10,
 			},
 			nil,
 		)

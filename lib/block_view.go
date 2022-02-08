@@ -1612,8 +1612,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 func _checkNFTKeyAndUpdateDerivedKeyEntry(key NFTOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
 	// If the key is present in the NFTOperationLimitMap...
 	if nftLimit, nftLimitExist :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key];
-	nftLimitExist && nftLimit > 0 {
+		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]; nftLimitExist && nftLimit > 0 {
 		// If this is the last operation allowed for this key, we delete the key from the map.
 		if nftLimit == 1 {
 			delete(derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap, key)
@@ -1682,8 +1681,7 @@ func _checkNFTLimitAndUpdateDerivedKeyEntry(
 func _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(key CreatorCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
 	// If the key is present in the CreatorCoinOperationLimitMap...
 	if ccOperationLimit, ccOperationLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key];
-	ccOperationLimitExists && ccOperationLimit > 0 {
+		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]; ccOperationLimitExists && ccOperationLimit > 0 {
 		// If this is the last operation allowed for this key, we delete the key from the map.
 		if ccOperationLimit == 1 {
 			delete(derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap, key)
@@ -1700,7 +1698,7 @@ func _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(key CreatorCoinOperationLimitK
 
 func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
 	derivedKeyEntry DerivedKeyEntry, creatorPublicKey []byte, operation CreatorCoinLimitOperation) (
-	_derivedKeyEntry DerivedKeyEntry, _err error){
+	_derivedKeyEntry DerivedKeyEntry, _err error) {
 	pkidEntry := bav.GetPKIDForPublicKey(creatorPublicKey)
 	if pkidEntry == nil || pkidEntry.isDeleted {
 		return derivedKeyEntry, fmt.Errorf(
@@ -1742,8 +1740,7 @@ func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
 func _checkDAOCoinKeyAndUpdateDerivedKeyEntry(key DAOCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
 	// If the key is present in the DAOCoinOperationLimitMap...
 	if daoCoinOperationLimit, daoCoinOperationLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key];
-	daoCoinOperationLimitExists && daoCoinOperationLimit > 0 {
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]; daoCoinOperationLimitExists && daoCoinOperationLimit > 0 {
 		// If this is the last operation allowed for this key, we delete the key from the map.
 		if daoCoinOperationLimit == 1 {
 			delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap, key)
@@ -1762,7 +1759,7 @@ func _checkDAOCoinKeyAndUpdateDerivedKeyEntry(key DAOCoinOperationLimitKey, deri
 // been authorized for this derived key.
 func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 	derivedKeyEntry DerivedKeyEntry, creatorPublicKey []byte, operation DAOCoinLimitOperation) (
-	_derivedKeyEntry DerivedKeyEntry, _err error){
+	_derivedKeyEntry DerivedKeyEntry, _err error) {
 	pkidEntry := bav.GetPKIDForPublicKey(creatorPublicKey)
 	if pkidEntry == nil || pkidEntry.isDeleted {
 		return derivedKeyEntry, fmt.Errorf("_checkDAOCoinLimitAndUpdateDerivedKeyEntry: creator pkid is deleted")

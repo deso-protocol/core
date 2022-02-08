@@ -432,10 +432,10 @@ type PGProfile struct {
 	// FIXME: Postgres will break when values exceed uint64
 	// We don't use Postgres right now so going to plow ahead and set this as-is
 	// to fix compile errors. CoinsInCirculationNanos will never exceed uint64
-	CoinsInCirculationNanos uint64
-	CoinWatermarkNanos      uint64
-	MintingDisabled         bool
-	DAOCoinNumberOfHolders  uint64 `pg:"dao_coin_number_of_holders"`
+	CoinsInCirculationNanos          uint64
+	CoinWatermarkNanos               uint64
+	MintingDisabled                  bool
+	DAOCoinNumberOfHolders           uint64                    `pg:"dao_coin_number_of_holders"`
 	DAOCoinCoinsInCirculationNanos   string                    `pg:"dao_coin_coins_in_circulation_nanos"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
@@ -616,8 +616,8 @@ func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
 	}
 
 	return &BalanceEntry{
-		HODLerPKID:  balance.HolderPKID,
-		CreatorPKID: balance.CreatorPKID,
+		HODLerPKID:   balance.HolderPKID,
+		CreatorPKID:  balance.CreatorPKID,
 		BalanceNanos: *balanceNanos,
 		HasPurchased: balance.HasPurchased,
 	}
@@ -1674,8 +1674,8 @@ func (postgres *Postgres) flushDAOCoinBalances(tx *pg.Tx, view *UtxoView) error 
 		}
 
 		balance := &PGDAOCoinBalance{
-			HolderPKID:  balanceEntry.HODLerPKID,
-			CreatorPKID: balanceEntry.CreatorPKID,
+			HolderPKID:   balanceEntry.HODLerPKID,
+			CreatorPKID:  balanceEntry.CreatorPKID,
 			BalanceNanos: balanceEntry.BalanceNanos.Hex(),
 			HasPurchased: balanceEntry.HasPurchased,
 		}
