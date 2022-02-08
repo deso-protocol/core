@@ -2395,7 +2395,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		TransactionCountLimitMap: make(map[TxnType]uint64),
 		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 		DAOCoinOperationLimitMap: make(map[DAOCoinOperationLimitKey]uint64),
-		NFTLimitOperationMap: make(map[NFTOperationLimitKey]uint64),
+		NFTOperationLimitMap: make(map[NFTOperationLimitKey]uint64),
 	}
 	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
 	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeBasicTransfer] = 1
@@ -2482,7 +2482,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		TransactionCountLimitMap: make(map[TxnType]uint64),
 		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 		DAOCoinOperationLimitMap: make(map[DAOCoinOperationLimitKey]uint64),
-		NFTLimitOperationMap: make(map[NFTOperationLimitKey]uint64),
+		NFTOperationLimitMap: make(map[NFTOperationLimitKey]uint64),
 	}
 	newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
 	newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeBasicTransfer] = 1
@@ -2549,7 +2549,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		TransactionCountLimitMap: make(map[TxnType]uint64),
 		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 		DAOCoinOperationLimitMap: make(map[DAOCoinOperationLimitKey]uint64),
-		NFTLimitOperationMap: make(map[NFTOperationLimitKey]uint64),
+		NFTOperationLimitMap: make(map[NFTOperationLimitKey]uint64),
 	}
 
 	m0PrivKeyBytes, _, err := Base58CheckDecode(m0Priv)

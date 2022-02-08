@@ -4599,9 +4599,9 @@ type TransactionSpendingLimit struct {
 	// transactions
 	DAOCoinOperationLimitMap map[DAOCoinOperationLimitKey]uint64
 
-	// NFTLimitOperationMap is a map with keys composed of PostHash - Serial Num - NFTLimitOperation to number
+	// NFTOperationLimitMap is a map with keys composed of PostHash - Serial Num - NFTLimitOperation to number
 	// of transaction
-	NFTLimitOperationMap map[NFTOperationLimitKey]uint64
+	NFTOperationLimitMap map[NFTOperationLimitKey]uint64
 }
 
 func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
@@ -4644,10 +4644,11 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 			return keys[ii].CreatorPKID.ToString() < keys[jj].CreatorPKID.ToString()
 		})
 		for _, key := range keys {
-			creatorPKIDBytes := key.CreatorPKID.ToBytes()
-			data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
-			data = append(data, creatorPKIDBytes...)
-			data = append(data, UintToBuf(uint64(key.Operation))...)
+			//creatorPKIDBytes := key.CreatorPKID.ToBytes()
+			//data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
+			//data = append(data, creatorPKIDBytes...)
+			//data = append(data, UintToBuf(uint64(key.Operation))...)
+			data = append(data, key.Encode()...)
 			data = append(data, UintToBuf(tsl.CreatorCoinOperationLimitMap[key])...)
 		}
 	}
@@ -4667,20 +4668,17 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 			return keys[ii].CreatorPKID.ToString() < keys[jj].CreatorPKID.ToString()
 		})
 		for _, key := range keys {
-			creatorPKIDBytes := key.CreatorPKID.ToBytes()
-			data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
-			data = append(data, creatorPKIDBytes...)
-			data = append(data, UintToBuf(uint64(key.Operation))...)
+			data = append(data, key.Encode()...)
 			data = append(data, UintToBuf(tsl.DAOCoinOperationLimitMap[key])...)
 		}
 	}
 
-	// NFTLimitOperationMap
-	nftOperationLimitMapLength := uint64(len(tsl.NFTLimitOperationMap))
+	// NFTOperationLimitMap
+	nftOperationLimitMapLength := uint64(len(tsl.NFTOperationLimitMap))
 	data = append(data, UintToBuf(nftOperationLimitMapLength)...)
 	if nftOperationLimitMapLength > 0 {
 		keys := make([]NFTOperationLimitKey, 0, nftOperationLimitMapLength)
-		for key := range tsl.NFTLimitOperationMap {
+		for key := range tsl.NFTOperationLimitMap {
 			keys = append(keys, key)
 		}
 		sort.Slice(keys, func(ii, jj int) bool {
@@ -4697,12 +4695,8 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 			return iiBlockHash.String() < jjBlockHash.String()
 		})
 		for _, key := range keys {
-			blockHash := key.BlockHash.ToBytes()
-			data = append(data, UintToBuf(uint64(len(blockHash)))...)
-			data = append(data, blockHash...)
-			data = append(data, UintToBuf(uint64(key.SerialNumber))...)
-			data = append(data, UintToBuf(uint64(key.Operation))...)
-			data = append(data, UintToBuf(tsl.NFTLimitOperationMap[key])...)
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.NFTOperationLimitMap[key])...)
 		}
 	}
 
@@ -4747,32 +4741,19 @@ func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
 	tsl.CreatorCoinOperationLimitMap = make(map[CreatorCoinOperationLimitKey]uint64)
 	if ccOperationLimitMapLen > 0 {
 		for ii := uint64(0); ii < ccOperationLimitMapLen; ii++ {
-			var creatorPKIDBytesLen uint64
-			creatorPKIDBytesLen, err = ReadUvarint(rr)
+			ccOperationLimitMapKey := &CreatorCoinOperationLimitKey{}
+			if err = ccOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding Creator Coin Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
 			if err != nil {
 				return err
 			}
-			// De-serialize the key
-			creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
-			_, err = io.ReadFull(rr, creatorPKIDBytes)
-			if err != nil {
-				return err
+			if _, exists := tsl.CreatorCoinOperationLimitMap[*ccOperationLimitMapKey]; exists {
+				return fmt.Errorf("Creator Coin Operation Limit Key already exists in map")
 			}
-			creatorPKID := NewPKID(creatorPKIDBytes)
-			operationKey, err := ReadUvarint(rr)
-			if err != nil {
-				return err
-			}
-			operation := CreatorCoinLimitOperation(operationKey)
-			operationCount, err := ReadUvarint(rr)
-			if err != nil {
-				return err
-			}
-			ccOperationLimitMapKey := MakeCreatorCoinOperationLimitKey(*creatorPKID, operation)
-			if _, exists := tsl.CreatorCoinOperationLimitMap[ccOperationLimitMapKey]; exists {
-				return fmt.Errorf("Key already exists in map")
-			}
-			tsl.CreatorCoinOperationLimitMap[ccOperationLimitMapKey] = operationCount
+			tsl.CreatorCoinOperationLimitMap[*ccOperationLimitMapKey] = operationCount
 		}
 	}
 
@@ -4783,32 +4764,19 @@ func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
 	tsl.DAOCoinOperationLimitMap = make(map[DAOCoinOperationLimitKey]uint64)
 	if daoCoinOperationLimitMapLen > 0 {
 		for ii := uint64(0); ii < daoCoinOperationLimitMapLen; ii++ {
-			var creatorPKIDBytesLen uint64
-			creatorPKIDBytesLen, err = ReadUvarint(rr)
+			daoCoinOperationLimitMapKey := &DAOCoinOperationLimitKey{}
+			if err = daoCoinOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding DAO Coin Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
 			if err != nil {
 				return err
 			}
-			// De-serialize the key
-			creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
-			_, err = io.ReadFull(rr, creatorPKIDBytes)
-			if err != nil {
-				return err
+			if _, exists := tsl.DAOCoinOperationLimitMap[*daoCoinOperationLimitMapKey]; exists {
+				return fmt.Errorf("DAO Coin Operation Limit Key already exists in map")
 			}
-			creatorPKID := NewPKID(creatorPKIDBytes)
-			operationKey, err := ReadUvarint(rr)
-			if err != nil {
-				return err
-			}
-			operation := DAOCoinLimitOperation(operationKey)
-			operationCount, err := ReadUvarint(rr)
-			if err != nil {
-				return err
-			}
-			daoCoinOperationLimitMapKey := MakeDAOCoinOperationLimitKey(*creatorPKID, operation)
-			if _, exists := tsl.DAOCoinOperationLimitMap[daoCoinOperationLimitMapKey]; exists {
-				return fmt.Errorf("Key already exists in map")
-			}
-			tsl.DAOCoinOperationLimitMap[daoCoinOperationLimitMapKey] = operationCount
+			tsl.DAOCoinOperationLimitMap[*daoCoinOperationLimitMapKey] = operationCount
 		}
 	}
 
@@ -4816,39 +4784,22 @@ func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
 	if err != nil {
 		return err
 	}
-	tsl.NFTLimitOperationMap = make(map[NFTOperationLimitKey]uint64)
+	tsl.NFTOperationLimitMap = make(map[NFTOperationLimitKey]uint64)
 	if nftOperationLimitMapLen > 0 {
 		for ii := uint64(0); ii < nftOperationLimitMapLen; ii++ {
-			var blockHashLen uint64
-			blockHashLen, err = ReadUvarint(rr)
+			nftOperationLimitMapKey := &NFTOperationLimitKey{}
+			if err = nftOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding NFT Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
 			if err != nil {
 				return err
 			}
-			// De-serialize the key
-			blockhashBytes := make([]byte, blockHashLen)
-			_, err = io.ReadFull(rr, blockhashBytes)
-			if err != nil {
-				return err
+			if _, exists := tsl.NFTOperationLimitMap[*nftOperationLimitMapKey]; exists {
+				return fmt.Errorf("NFT Limit Operation Key already exists in map")
 			}
-			blockHash := NewBlockHash(blockhashBytes)
-			serialNum, err := ReadUvarint(rr)
-			if err != nil {
-				return err
-			}
-			operationKey, err := ReadUvarint(rr)
-			if err != nil {
-				return err
-			}
-			operation := NFTLimitOperation(operationKey)
-			operationCount, err := ReadUvarint(rr)
-			if err != nil {
-				return err
-			}
-			nftOperationLimitMapKey := MakeNFTOperationLimitKey(*blockHash, serialNum, operation)
-			if _, exists := tsl.NFTLimitOperationMap[nftOperationLimitMapKey]; exists {
-				return fmt.Errorf("Key already exists in map")
-			}
-			tsl.NFTLimitOperationMap[nftOperationLimitMapKey] = operationCount
+			tsl.NFTOperationLimitMap[*nftOperationLimitMapKey] = operationCount
 		}
 	}
 	return nil
@@ -4860,7 +4811,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		TransactionCountLimitMap:     make(map[TxnType]uint64),
 		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-		NFTLimitOperationMap:         make(map[NFTOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 	}
 
 	for txnType, txnCount := range tsl.TransactionCountLimitMap {
@@ -4875,8 +4826,8 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.DAOCoinOperationLimitMap[daoOp] = daoOpCount
 	}
 
-	for nftOp, nftOpCount := range tsl.NFTLimitOperationMap {
-		copyTSL.NFTLimitOperationMap[nftOp] = nftOpCount
+	for nftOp, nftOpCount := range tsl.NFTOperationLimitMap {
+		copyTSL.NFTOperationLimitMap[nftOp] = nftOpCount
 	}
 
 	return copyTSL
@@ -4898,6 +4849,44 @@ type NFTOperationLimitKey struct {
 	BlockHash    BlockHash
 	SerialNumber uint64
 	Operation    NFTLimitOperation
+}
+
+func (nftOperationLimitKey NFTOperationLimitKey) Encode() []byte {
+	var data []byte
+	blockHash := nftOperationLimitKey.BlockHash.ToBytes()
+	data = append(data, UintToBuf(uint64(len(blockHash)))...)
+	data = append(data, blockHash...)
+	data = append(data, UintToBuf(nftOperationLimitKey.SerialNumber)...)
+	data = append(data, UintToBuf(uint64(nftOperationLimitKey.Operation))...)
+	return data
+}
+
+func (nftOperationLimitKey *NFTOperationLimitKey) Decode(rr *bytes.Reader) error {
+	blockHashLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	blockhashBytes := make([]byte, blockHashLen)
+	if _, err = io.ReadFull(rr, blockhashBytes); err != nil {
+		return err
+	}
+	blockHash := NewBlockHash(blockhashBytes)
+	if blockHash == nil {
+		return fmt.Errorf("Invalid block hash")
+	}
+	nftOperationLimitKey.BlockHash = *blockHash
+	serialNum, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	nftOperationLimitKey.SerialNumber = serialNum
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	nftOperationLimitKey.Operation = NFTLimitOperation(operationKey)
+	return nil
 }
 
 func MakeNFTOperationLimitKey(blockHash BlockHash, serialNumber uint64, operation NFTLimitOperation) NFTOperationLimitKey {
@@ -4922,6 +4911,38 @@ type CreatorCoinOperationLimitKey struct {
 	Operation   CreatorCoinLimitOperation
 }
 
+func (creatorCoinOperationLimitKey CreatorCoinOperationLimitKey) Encode() []byte {
+	var data []byte
+	creatorPKIDBytes := creatorCoinOperationLimitKey.CreatorPKID.ToBytes()
+	data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
+	data = append(data, creatorPKIDBytes...)
+	data = append(data, UintToBuf(uint64(creatorCoinOperationLimitKey.Operation))...)
+	return data
+}
+
+func (creatorCoinOperationLimitKey *CreatorCoinOperationLimitKey) Decode(rr *bytes.Reader) error {
+	creatorPKIDBytesLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
+	if _, err = io.ReadFull(rr, creatorPKIDBytes); err != nil {
+		return err
+	}
+	creatorPKID := NewPKID(creatorPKIDBytes)
+	if creatorPKID == nil {
+		return fmt.Errorf("Invalid PKID")
+	}
+	creatorCoinOperationLimitKey.CreatorPKID = *creatorPKID
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	creatorCoinOperationLimitKey.Operation = CreatorCoinLimitOperation(operationKey)
+	return nil
+}
+
 func MakeCreatorCoinOperationLimitKey(creatorPKID PKID, operation CreatorCoinLimitOperation) CreatorCoinOperationLimitKey {
 	return CreatorCoinOperationLimitKey{
 		creatorPKID,
@@ -4943,6 +4964,38 @@ const (
 type DAOCoinOperationLimitKey struct {
 	CreatorPKID PKID
 	Operation   DAOCoinLimitOperation
+}
+
+func (daoCoinOperationLimitKey DAOCoinOperationLimitKey) Encode() []byte {
+	var data []byte
+	creatorPKIDBytes := daoCoinOperationLimitKey.CreatorPKID.ToBytes()
+	data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
+	data = append(data, creatorPKIDBytes...)
+	data = append(data, UintToBuf(uint64(daoCoinOperationLimitKey.Operation))...)
+	return data
+}
+
+func (daoCoinOperationLimitKey *DAOCoinOperationLimitKey) Decode(rr *bytes.Reader) error {
+	creatorPKIDBytesLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
+	if _, err = io.ReadFull(rr, creatorPKIDBytes); err != nil {
+		return err
+	}
+	creatorPKID := NewPKID(creatorPKIDBytes)
+	if creatorPKID == nil {
+		return fmt.Errorf("Invalid PKID")
+	}
+	daoCoinOperationLimitKey.CreatorPKID = *creatorPKID
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	daoCoinOperationLimitKey.Operation = DAOCoinLimitOperation(operationKey)
+	return nil
 }
 
 func MakeDAOCoinOperationLimitKey(creatorPKID PKID, operation DAOCoinLimitOperation) DAOCoinOperationLimitKey {

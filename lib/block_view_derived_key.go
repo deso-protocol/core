@@ -104,10 +104,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 
 	// Validate the derived public key.
 	derivedPublicKey := txMeta.DerivedPublicKey
-	if len(derivedPublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey
-	}
-	if _, err := btcec.ParsePubKey(derivedPublicKey, btcec.S256()); err != nil {
+	if err := IsByteArrayValidPublicKey(derivedPublicKey); err != nil {
 		return 0, 0, nil, errors.Wrap(
 			RuleErrorAuthorizeDerivedKeyInvalidDerivedPublicKey, err.Error())
 	}
@@ -143,7 +140,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				TransactionCountLimitMap:     make(map[TxnType]uint64),
 				CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 				DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-				NFTLimitOperationMap:         make(map[NFTOperationLimitKey]uint64),
+				NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 			}
 		}
 		// This is the transaction spending limit object passed in the extra data field. This is required for verifying the
@@ -187,11 +184,11 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						newTransactionSpendingLimit.DAOCoinOperationLimitMap[daoCoinLimitKey] = transactionCount
 					}
 				}
-				for nftLimitKey, transactionCount := range transactionSpendingLimit.NFTLimitOperationMap {
+				for nftLimitKey, transactionCount := range transactionSpendingLimit.NFTOperationLimitMap {
 					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.NFTLimitOperationMap, nftLimitKey)
+						delete(newTransactionSpendingLimit.NFTOperationLimitMap, nftLimitKey)
 					} else {
-						newTransactionSpendingLimit.NFTLimitOperationMap[nftLimitKey] = transactionCount
+						newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
 					}
 				}
 			}
