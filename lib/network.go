@@ -4846,7 +4846,71 @@ const (
 	TransferNFTOperation       NFTLimitOperation = 4
 	BurnNFTOperation           NFTLimitOperation = 5
 	AcceptNFTTransferOperation NFTLimitOperation = 6
+	UndefinedNFTOperation      NFTLimitOperation = 7
 )
+
+type NFTLimitOperationString string
+
+const (
+	AnyNFTOperationString            NFTLimitOperationString = "any"
+	UpdateNFTOperationString         NFTLimitOperationString = "update"
+	AcceptNFTBidOperationString      NFTLimitOperationString = "accept_nft_bid"
+	NFTBidOperationString            NFTLimitOperationString = "nft_bid"
+	TransferNFTOperationString       NFTLimitOperationString = "transfer"
+	BurnNFTOperationString           NFTLimitOperationString = "burn"
+	AcceptNFTTransferOperationString NFTLimitOperationString = "accept_nft_transfer"
+	UndefinedNFTOperationString      NFTLimitOperationString = "undefined"
+)
+
+func (nftLimitOperation NFTLimitOperation) ToString() string {
+	return string(nftLimitOperation.ToNFTLimitOperationString())
+}
+
+func (nftLimitOperation NFTLimitOperation) ToNFTLimitOperationString() NFTLimitOperationString {
+	switch nftLimitOperation {
+	case AnyNFTOperation:
+		return AnyNFTOperationString
+	case UpdateNFTOperation:
+		return UpdateNFTOperationString
+	case AcceptNFTBidOperation:
+		return AcceptNFTBidOperationString
+	case NFTBidOperation:
+		return NFTBidOperationString
+	case TransferNFTOperation:
+		return TransferNFTOperationString
+	case BurnNFTOperation:
+		return BurnNFTOperationString
+	case AcceptNFTTransferOperation:
+		return AcceptNFTTransferOperationString
+	default:
+		return UndefinedNFTOperationString
+	}
+}
+
+func (nftLimitOperationString NFTLimitOperationString) ToNFTLimitOperation() NFTLimitOperation {
+	switch nftLimitOperationString {
+	case AnyNFTOperationString:
+		return AnyNFTOperation
+	case UpdateNFTOperationString:
+		return UpdateNFTOperation
+	case AcceptNFTBidOperationString:
+		return AcceptNFTBidOperation
+	case NFTBidOperationString:
+		return NFTBidOperation
+	case TransferNFTOperationString:
+		return TransferNFTOperation
+	case BurnNFTOperationString:
+		return BurnNFTOperation
+	case AcceptNFTTransferOperationString:
+		return AcceptNFTTransferOperation
+	default:
+		return UndefinedNFTOperation
+	}
+}
+
+func (nftLimitOperation NFTLimitOperation) IsUndefined() bool {
+	return nftLimitOperation == UndefinedNFTOperation
+}
 
 type NFTOperationLimitKey struct {
 	BlockHash    BlockHash
@@ -4907,7 +4971,56 @@ const (
 	BuyCreatorCoinOperation      CreatorCoinLimitOperation = 1
 	SellCreatorCoinOperation     CreatorCoinLimitOperation = 2
 	TransferCreatorCoinOperation CreatorCoinLimitOperation = 3
+	UndefinedCreatorCoinOperation CreatorCoinLimitOperation = 4
 )
+
+type CreatorCoinLimitOperationString string
+
+const (
+	AnyCreatorCoinOperationString      CreatorCoinLimitOperationString = "any"
+	BuyCreatorCoinOperationString      CreatorCoinLimitOperationString = "buy"
+	SellCreatorCoinOperationString     CreatorCoinLimitOperationString = "sell"
+	TransferCreatorCoinOperationString CreatorCoinLimitOperationString = "transfer"
+	UndefinedCreatorCoinOperationString CreatorCoinLimitOperationString = "undefined"
+)
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) ToString() string {
+	return string(creatorCoinLimitOperation.ToCreatorCoinLimitOperationString())
+}
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) ToCreatorCoinLimitOperationString() CreatorCoinLimitOperationString {
+	switch creatorCoinLimitOperation {
+	case AnyCreatorCoinOperation:
+		return AnyCreatorCoinOperationString
+	case BuyCreatorCoinOperation:
+		return BuyCreatorCoinOperationString
+	case SellCreatorCoinOperation:
+		return SellCreatorCoinOperationString
+	case TransferCreatorCoinOperation:
+		return TransferCreatorCoinOperationString
+	default:
+		return UndefinedCreatorCoinOperationString
+	}
+}
+
+func (creatorCoinLimitOperationString CreatorCoinLimitOperationString) ToCreatorCoinLimitOperation() CreatorCoinLimitOperation {
+	switch creatorCoinLimitOperationString {
+	case AnyCreatorCoinOperationString:
+		return AnyCreatorCoinOperation
+	case BuyCreatorCoinOperationString:
+		return BuyCreatorCoinOperation
+	case SellCreatorCoinOperationString:
+		return SellCreatorCoinOperation
+	case TransferCreatorCoinOperationString:
+		return TransferCreatorCoinOperation
+	default:
+		return UndefinedCreatorCoinOperation
+	}
+}
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) IsUndefined() bool {
+	return creatorCoinLimitOperation == UndefinedCreatorCoinOperation
+}
 
 type CreatorCoinOperationLimitKey struct {
 	CreatorPKID PKID
@@ -4962,7 +5075,66 @@ const (
 	DisableMintingDAOCoinOperation                  DAOCoinLimitOperation = 3
 	UpdateTransferRestrictionStatusDAOCoinOperation DAOCoinLimitOperation = 4
 	TransferDAOCoinOperation                        DAOCoinLimitOperation = 5
+	UndefinedDAOCoinOperation                       DAOCoinLimitOperation = 6
 )
+
+type DAOCoinLimitOperationString string
+
+const (
+	AnyDAOCoinOperationString                             DAOCoinLimitOperationString = "any"
+	MintDAOCoinOperationString                            DAOCoinLimitOperationString = "mint"
+	BurnDAOCoinOperationString                            DAOCoinLimitOperationString = "burn"
+	DisableMintingDAOCoinOperationString                  DAOCoinLimitOperationString = "disable_minting"
+	UpdateTransferRestrictionStatusDAOCoinOperationString DAOCoinLimitOperationString = "update_transfer_restriction_status"
+	TransferDAOCoinOperationString                        DAOCoinLimitOperationString = "transfer"
+	UndefinedDAOCoinOperationString                       DAOCoinLimitOperationString = "undefined"
+)
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) ToString() string {
+	return string(daoCoinLimitOperation.ToDAOCoinLimitOperationString())
+}
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) ToDAOCoinLimitOperationString() DAOCoinLimitOperationString {
+	switch daoCoinLimitOperation {
+	case AnyDAOCoinOperation:
+		return AnyDAOCoinOperationString
+	case MintDAOCoinOperation:
+		return MintDAOCoinOperationString
+	case BurnDAOCoinOperation:
+		return BurnDAOCoinOperationString
+	case DisableMintingDAOCoinOperation:
+		return DisableMintingDAOCoinOperationString
+	case UpdateTransferRestrictionStatusDAOCoinOperation:
+		return UpdateTransferRestrictionStatusDAOCoinOperationString
+	case TransferDAOCoinOperation:
+		return TransferDAOCoinOperationString
+	default:
+		return UndefinedDAOCoinOperationString
+	}
+}
+
+func (daoCoinLimitOperationString DAOCoinLimitOperationString) ToDAOCoinLimitOperation() DAOCoinLimitOperation {
+	switch daoCoinLimitOperationString {
+	case AnyDAOCoinOperationString:
+		return AnyDAOCoinOperation
+	case MintDAOCoinOperationString:
+		return MintDAOCoinOperation
+	case BurnDAOCoinOperationString:
+		return BurnDAOCoinOperation
+	case DisableMintingDAOCoinOperationString:
+		return DisableMintingDAOCoinOperation
+	case UpdateTransferRestrictionStatusDAOCoinOperationString:
+		return UpdateTransferRestrictionStatusDAOCoinOperation
+	case TransferDAOCoinOperationString:
+		return TransferDAOCoinOperation
+	default:
+		return UndefinedDAOCoinOperation
+	}
+}
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) IsUndefined() bool {
+	return daoCoinLimitOperation == UndefinedDAOCoinOperation
+}
 
 type DAOCoinOperationLimitKey struct {
 	CreatorPKID PKID
