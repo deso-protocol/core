@@ -37,6 +37,7 @@ func init() {
 
 	down := func(db orm.DB) error {
 		_, err := db.Exec(`
+			DROP TABLE pg_messaging_group;
 			DROP TABLE pg_metadata_messaging_group;
 		`)
 		return err
