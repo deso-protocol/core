@@ -1,6 +1,8 @@
 package lib
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -389,6 +391,7 @@ type PGMetadataDerivedKey struct {
 	AccessSignature  []byte                           `pg:",type:bytea"`
 }
 
+
 type PGNotification struct {
 	tableName struct{} `pg:"pg_notifications"`
 
@@ -589,6 +592,15 @@ type PGMessage struct {
 
 	// Used to track deletions in the UtxoView
 	isDeleted bool
+}
+
+type PGMessagingGroup struct {
+	tableName struct{} `pg:"pg_messaging_group"`
+
+	GroupOwnerPublicKey *PublicKey     `pg:",type:bytea"`
+	MessagingPublicKey *PublicKey    `pg:",type:bytea"`
+	MessagingGroupKeyName *GroupKeyName    `pg:",type:bytea"`
+	MessagingGroupMembers []byte    `pg:",type:bytea"`
 }
 
 type PGCreatorCoinBalance struct {
@@ -1122,6 +1134,11 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				DAOCoinToTransferNanos: txMeta.DAOCoinToTransferNanos.Hex(),
 				ReceiverPublicKey:      txMeta.ReceiverPublicKey,
 			})
+
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+
+			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
+
 		} else {
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 		}
@@ -1630,6 +1647,44 @@ func (postgres *Postgres) flushMessages(tx *pg.Tx, view *UtxoView) error {
 	if len(insertMessages) > 0 {
 		// TODO: There should never be a conflict here. Should we raise an error?
 		_, err := tx.Model(&insertMessages).WherePK().OnConflict("(message_hash) DO NOTHING").Returning("NULL").Insert()
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(deleteMessages) > 0 {
+		_, err := tx.Model(&deleteMessages).Returning("NULL").Delete()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error {
+	var insertMessages []*PGMessagingGroup
+	var deleteMessages []*PGMessagingGroup
+	for _, groupEntry := range view.MessagingGroupKeyToMessagingGroupEntry {
+		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
+		gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers)
+		pgGroupEntry := &PGMessagingGroup{
+			GroupOwnerPublicKey: groupEntry.GroupOwnerPublicKey,
+			MessagingPublicKey: groupEntry.MessagingPublicKey,
+			MessagingGroupKeyName: groupEntry.MessagingGroupKeyName,
+			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
+		}
+		if groupEntry.isDeleted {
+			deleteMessages = append(deleteMessages, pgGroupEntry)
+		} else {
+			insertMessages = append(insertMessages, pgGroupEntry)
+		}
+	}
+
+	if len(insertMessages) > 0 {
+		// TODO: There should never be a conflict here. Should we raise an error?
+		_, err := tx.Model(&insertMessages).WherePK().OnConflict(
+			"(group_owner_public_key, messaging_group_key_name) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
 			return err
 		}

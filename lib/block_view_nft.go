@@ -990,7 +990,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		if existingAdditionalProfileEntry == nil || existingAdditionalProfileEntry.isDeleted {
 			return 0, 0, nil, fmt.Errorf(
 				"_helpConnectNFTSold: Profile missing for additional coin royalty " +
-					"for pub key: %v %v for post hash: %v",
+					"for pkid: %v, pub key: %v %v for post hash: %v",
+					PkToStringMainnet(pkid[:]),
 				PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes),
 				hex.EncodeToString(nftPostEntry.PostHash[:]))
 		}
