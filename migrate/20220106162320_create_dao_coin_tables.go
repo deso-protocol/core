@@ -15,7 +15,7 @@ func init() {
 				operation_type              SMALLINT NOT NULL,
 				coins_to_mint_nanos         BIGINT NOT NULL,
 				coins_to_burn_nanos         BIGINT NOT NULL,
-				transfer_restriction_status SMALLINT NOT NULL
+				transfer_restriction_status SMALLINT
 			);
 		`)
 		if err != nil {
