@@ -87,8 +87,8 @@ type DBPrefixes struct {
 	// The number of nanos that has been purchased thus far.
 	PrefixNanosPurchased []byte `prefix_id:"[10]" is_state:"true"`
 	// How much Bitcoin is work in USD cents.
-	PrefixUSDCentsPerBitcoinExchangeRate []byte `prefix_id:"[27]"`
-	// <prefix_id, key> -> <GlobalParamsEntry gob serialized>
+	PrefixUSDCentsPerBitcoinExchangeRate []byte `prefix_id:"[27]" is_state:"true"`
+	// <prefix_id, key> -> <GlobalParamsEntry encoded>
 	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true"`
 
 	// The prefix for the Bitcoin TxID map. If a key is set for a TxID that means this
@@ -436,7 +436,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
-		snap.Cache.Add(keyString, value)
+		snap.DatabaseCache.Add(keyString, value)
 
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
@@ -460,7 +460,7 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if val, exists := snap.Cache.Lookup(keyString); exists {
+		if val, exists := snap.DatabaseCache.Lookup(keyString); exists {
 			return val.([]byte), nil
 		}
 	}
@@ -474,7 +474,7 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 	// If a flush takes place, we don't update cache. It will be updated in DBSetWithTxn.
 	if isState && !snap.isFlushing() {
-		snap.Cache.Add(keyString, itemData)
+		snap.DatabaseCache.Add(keyString, itemData)
 	}
 	return itemData, nil
 }
@@ -519,7 +519,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 			return errors.Wrapf(err, "DBDeleteWithTxn: Problem preparing ancestral record")
 		}
 		// Now delete the past record from the cache.
-		snap.Cache.Delete(keyString)
+		snap.DatabaseCache.Delete(keyString)
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
 		snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
@@ -3061,7 +3061,7 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 
 func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
 	if snap != nil {
-		snap.PrepareAncestralFlush()
+		snap.PrepareAncestralRecordsFlush()
 		glog.Infof("ProcessBlock: Preparing snapshot flush")
 	}
 
@@ -3117,7 +3117,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 
 	if snap != nil {
 		glog.Infof("ProcessBlock: Snapshot flushing")
-		snap.FlushAncestralRecords()
+		snap.EnqueueAncestralRecordsFlush()
 	}
 
 	return nil
@@ -3288,7 +3288,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// we're currently aware of. Set it for both the header chain and the block
 	// chain.
 	if snap != nil {
-		snap.PrepareAncestralFlush()
+		snap.PrepareAncestralRecordsFlush()
 	}
 
 	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock); err != nil {
@@ -3310,7 +3310,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	}
 
 	if snap != nil {
-		snap.FlushAncestralRecords()
+		snap.EnqueueAncestralRecordsFlush()
 	}
 
 	// We apply seed transactions here. This step is useful for setting

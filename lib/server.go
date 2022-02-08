@@ -762,7 +762,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.SnapshotBlockHeightPeriod)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotBlockHeight = expectedSnapshotHeight
 				srv.HyperSyncProgress.SnapshotBlockHash = srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash
 
@@ -1088,7 +1088,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
-	srv.blockchain.snapshot.Cache = lru.NewKVCache(srv.blockchain.snapshot.CacheSize)
+	srv.blockchain.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.finishedSyncing = true

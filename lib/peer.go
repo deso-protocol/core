@@ -421,7 +421,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 			"because node is syncing with ChainState (%v)", pp, chainState)
 		pp.AddDeSoMessage(&MsgDeSoSnapshotData{
 			SnapshotHeight: pp.srv.blockchain.snapshot.SnapshotBlockHeight,
-			SnapshotBlockHash: pp.srv.blockchain.snapshot.LastBlockHash,
+			SnapshotBlockHash: pp.srv.blockchain.snapshot.CurrentEpochBlockHash,
 			SnapshotChecksum: nil,
 			SnapshotChunk: nil,
 			SnapshotChunkFull: false,
@@ -470,11 +470,11 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		return
 	}
 	// Also get the checksum corresponding to the current snapshot epoch.
-	snapshotChecksum := pp.srv.blockchain.snapshot.LastChecksum
+	snapshotChecksum := pp.srv.blockchain.snapshot.CurrentEpochChecksumBytes
 
 	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
 		SnapshotHeight: pp.srv.blockchain.snapshot.SnapshotBlockHeight,
-		SnapshotBlockHash: pp.srv.blockchain.snapshot.LastBlockHash,
+		SnapshotBlockHash: pp.srv.blockchain.snapshot.CurrentEpochBlockHash,
 		SnapshotChecksum: snapshotChecksum,
 		SnapshotChunk: snapshotChunk,
 		SnapshotChunkFull: full,
@@ -482,7 +482,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	}, false)
 	pp.snapshotChunkRequestInFlight = false
 	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) " +
-		"with SnapshotHeight (%v) and LastChecksum (%v) and Snapshotdata length (%v)", pp,
+		"with SnapshotHeight (%v) and CurrentEpochChecksumBytes (%v) and Snapshotdata length (%v)", pp,
 		pp.srv.blockchain.snapshot.SnapshotBlockHeight, snapshotChecksum, len(snapshotChunk))
 }
 

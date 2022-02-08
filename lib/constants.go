@@ -36,9 +36,21 @@ const (
 	// when getting a user's inbox.
 	MessagesToFetchPerInboxCall = 10000
 	MaxBlocksInView = 1
+)
 
+// Snapshot constants
+const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
 	GetSnapshotTimeout = 100 * time.Millisecond
+
+	// SnapshotBlockHeightPeriod is the constant height offset between individual snapshot epochs.
+	SnapshotBlockHeightPeriod uint64 = 900
+
+	// SnapshotBatchSize is the size in bytes of the snapshot batches sent to peers
+	SnapshotBatchSize uint32 = 8 << 20
+
+	// DatabaseCacheSize is used to save read operations when fetching records from the main Db.
+	DatabaseCacheSize uint = 100000
 )
 
 type NetworkType uint64
@@ -235,9 +247,6 @@ type DeSoParams struct {
 	DefaultSocketPort uint16
 	// Port used for the limited JSON API that supports light clients.
 	DefaultJSONPort uint16
-
-	// Size of the database cache.
-	DefaultCacheSize uint32
 
 	// The amount of time we wait when connecting to a peer.
 	DialTimeout time.Duration
@@ -538,8 +547,6 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultSocketPort:             uint16(17000),
 	DefaultJSONPort:               uint16(17001),
 
-	DefaultCacheSize: uint32(100000),
-
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
 
@@ -720,8 +727,6 @@ var DeSoTestnetParams = DeSoParams{
 	// ===================================================================================
 	DefaultSocketPort: uint16(18000),
 	DefaultJSONPort:   uint16(18001),
-
-	DefaultCacheSize: uint32(100000),
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,

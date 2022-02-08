@@ -150,7 +150,7 @@ func (node *Node) Start() {
 	// Setup snapshot
 	var snapshot *lib.Snapshot
 	if node.Config.HyperSync {
-		snapshot, err = lib.NewSnapshot(node.Config.CacheSize, node.Config.DataDirectory)
+		snapshot, err = lib.NewSnapshot(node.Config.DataDirectory)
     	if err != nil {
     		panic(err)
     	}

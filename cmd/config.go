@@ -17,7 +17,6 @@ type Config struct {
 	Regtest              bool
 	PostgresURI          string
 	HyperSync            bool
-	CacheSize            uint32
 	MaxSyncBlockHeight   uint32
 
 	// Peers
@@ -88,10 +87,6 @@ func LoadConfig() *Config {
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
 	config.HyperSync = viper.GetBool("hyper-sync")
-	config.CacheSize = viper.GetUint32("cache-size")
-	if config.CacheSize == 0 {
-		config.CacheSize = config.Params.DefaultCacheSize
-	}
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 
 	// Peers
@@ -157,10 +152,6 @@ func (config *Config) Print() {
 
 	if config.MaxSyncBlockHeight > 0 {
 		glog.Infof("MaxSyncBlockHeight: %v", config.MaxSyncBlockHeight)
-	}
-
-	if config.CacheSize > 0 {
-		glog.Infof("Cache size set to: %v", config.CacheSize)
 	}
 
 	if len(config.ConnectIPs) > 0 {
