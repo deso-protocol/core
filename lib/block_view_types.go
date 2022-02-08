@@ -354,7 +354,7 @@ type UtxoOperation struct {
 }
 
 func (utxoEntry *UtxoEntry) String() string {
-	return fmt.Sprintf("< OwnerPublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
+	return fmt.Sprintf("< OwnerPublicKey: %v, SnapshotBlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
 		"isSpent: %v, utxoKey: %v>", PkToStringMainnet(utxoEntry.PublicKey),
 		utxoEntry.BlockHeight, utxoEntry.AmountNanos,
 		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)

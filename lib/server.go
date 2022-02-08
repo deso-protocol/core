@@ -757,12 +757,12 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				DBDeleteAllStateRecords(srv.blockchain.db)
 
 				// We set the expected height and hash of the snapshot from our header chain. The snapshots should be
-				// taken on a regular basis every BlockHeightModulus number of blocks. This means we can calculate the
+				// taken on a regular basis every SnapshotBlockHeightPeriod number of blocks. This means we can calculate the
 				// expected height at which the snapshot should be taking place. We do this to make sure that the
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.BlockHeightModulus)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotBlockHeight = expectedSnapshotHeight
 				srv.HyperSyncProgress.SnapshotBlockHash = srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash
 
@@ -1000,7 +1000,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// We will update the hyper sync progress tracker struct to reflect the newly added snapshot chunk.
 	// In particular, we want to update the last received key to the last key in the received chunk.
-	added := false
 	for ii:=0; ii<len(srv.HyperSyncProgress.PrefixProgress); ii++ {
 		if reflect.DeepEqual(srv.HyperSyncProgress.PrefixProgress[ii].Prefix, msg.Prefix) {
 			// We found the hyper sync progress corresponding to this snapshot chunk so update the key.
@@ -1013,17 +1012,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			// TODO: verify that the prefix checksum matches the checksum provided by the peer / header checksum.
 			if !msg.SnapshotChunkFull {
 				srv.HyperSyncProgress.PrefixProgress[ii].Completed = true
-				added = true
 				break
 			} else {
-				// If chunk is not full it means there's more work to do, so we will resume snapshot sync.
+				// If chunk is full it means there's more work to do, so we will resume snapshot sync.
 				srv.GetSnapshot(pp)
 				return
 			}
 		}
-	}
-	if !added {
-		glog.Errorf("srv._handleSnapshot: Problem updating HyperSyncProgress, prefix not found. This should never happen.")
 	}
 	srv.timer.End("Server._handleSnapshot Main")
 
@@ -1056,7 +1051,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.Print("Server._handleSnapshot prefix progress")
 	srv.timer.Print("Server._handleSnapshot Main")
 	srv.timer.Print("Hyper sync")
+
+	// Wait for the snapshot thread to process all operations and print the checksum.
+	srv.blockchain.snapshot.WaitForAllOperationsToFinish()
 	srv.blockchain.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
+
 	glog.Infof("Best header chain %v best block chain %v",
 		srv.blockchain.bestHeaderChain[msg.SnapshotHeight], srv.blockchain.bestChain)
 
@@ -1075,10 +1074,10 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
     		srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
     		srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
     		srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
-			//err := PutHeightHashToNodeInfoWithTxn(txn, srv.blockchain.snapshot, curretNode, false /*bitcoinNodes*/)
-			//if err != nil {
-			//	return err
-			//}
+			err := PutHeightHashToNodeInfoWithTxn(txn, srv.blockchain.snapshot, curretNode, false /*bitcoinNodes*/)
+			if err != nil {
+				return err
+			}
     	}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
 		err := PutBestHashWithTxn(txn, srv.blockchain.snapshot, msg.SnapshotBlockHash, ChainTypeDeSoBlock)
@@ -1097,6 +1096,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// Now sync the remaining blocks.
 	// TODO: what if the snapshot height is at the blockchain tip, for instance because PoW takes a while.
+	// Will this still work?
 	headerTip := srv.blockchain.headerTip()
 	srv.GetBlocks(pp, int(headerTip.Height))
 }
