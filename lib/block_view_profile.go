@@ -481,6 +481,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 				MintingDisabled:           profile.DAOCoinMintingDisabled,
 				TransferRestrictionStatus: profile.DAOCoinTransferRestrictionStatus,
 			},
+			ProfileExtraData: profile.ExtraData,
 		}
 
 		bav._setProfileEntryMappings(profileEntry)
@@ -714,7 +715,6 @@ func (bav *UtxoView) _connectUpdateProfile(
 				newProfileEntry.ProfileExtraData[k] = v
 			}
 		}
-
 
 	} else {
 		// When there's no pre-existing profile entry we need to do more

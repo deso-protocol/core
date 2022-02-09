@@ -97,6 +97,17 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
 	newStakeMultipleBasisPoints uint64, isHidden bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	return _updateProfileWithExtraData(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
+		updaterPrivBase58Check, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints,
+		newStakeMultipleBasisPoints, isHidden, nil)
+}
+
+func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	updaterPrivBase58Check string, profilePubKey []byte, newUsername string,
+	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
+	newStakeMultipleBasisPoints uint64, isHidden bool, extraData map[string][]byte) (
+	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -119,6 +130,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		newStakeMultipleBasisPoints,
 		isHidden,
 		0,
+		extraData,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
 		[]*DeSoOutput{})
@@ -238,7 +250,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		deleteKey,
 		false,
 		feeRateNanosPerKB,
-		nil /*mempool*/,
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -296,7 +308,6 @@ func TestUpdateProfile(t *testing.T) {
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
 	params.ForkHeights.ParamUpdaterProfileUpdateFixBlockHeight = 0
 	params.ForkHeights.UpdateProfileFixBlockHeight = 0
-
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -939,6 +950,39 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,
 			false,
 		)
+		// M4 decides to add some profile extra data to their profile
+		{
+			params.ForkHeights.ProfileExtraDataBlockHeight = uint32(0)
+			extraData := map[string][]byte{
+				"m4extradata": []byte("hello"),
+			}
+			expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m4Pub))
+			currentOps, currentTxn, _, err := _updateProfileWithExtraData(
+				t,
+				chain,
+				db,
+				params,
+				10,
+				m4Pub,
+				m4Priv,
+				m4PkBytes,
+				"",
+				"",
+				"",
+				11*100,
+				1.5*100*100,
+				false,
+				extraData,
+			)
+			require.NoError(err)
+			txns = append(txns, currentTxn)
+			txnOps = append(txnOps, currentOps)
+			utxoView, err := NewUtxoView(db, params, nil)
+			require.NoError(err)
+			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
+			require.Equal(len(m4ProfileEntry.ProfileExtraData), 1)
+			require.Equal(m4ProfileEntry.ProfileExtraData["m4extradata"], []byte("hello"))
+		}
 		// Reset the create profile fee to 0 nanos (no fee) and set network minimum back to 0.
 		updateGlobalParamsEntry(
 			100,
@@ -1192,6 +1236,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 			12500, /*StakeMultiple*/
 			false, /*isHidden*/
 			0,
+			nil,
 			feeRateNanosPerKB, /*feeRateNanosPerKB*/
 			mempool,           /*mempool*/
 			[]*DeSoOutput{})
@@ -3069,6 +3114,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3094,6 +3140,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3126,6 +3173,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3152,6 +3200,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3186,6 +3235,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3218,6 +3268,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3244,6 +3295,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -4115,5 +4167,5 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 	// After we rolled back the blocks, db should reset
 	_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
-	fmt.Println("Successfuly run TestAuthorizeDerivedKeyBasic()")
+	fmt.Println("Successfuly run TestAuthorizelDerivedKeyBasic()")
 }

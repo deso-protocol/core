@@ -2878,6 +2878,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	NewStakeMultipleBasisPoints uint64,
 	IsHidden bool,
 	AdditionalFees uint64,
+	ExtraData map[string][]byte,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -2895,6 +2896,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 			IsHidden:                    IsHidden,
 		},
 		TxOutputs: additionalOutputs,
+		ExtraData: ExtraData,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 

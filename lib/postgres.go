@@ -443,6 +443,7 @@ type PGProfile struct {
 	DAOCoinCoinsInCirculationNanos   string                    `pg:"dao_coin_coins_in_circulation_nanos"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
+	ExtraData map[string][]byte
 }
 
 func (profile *PGProfile) Empty() bool {
@@ -1422,6 +1423,7 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 			profile.DAOCoinMintingDisabled = profileEntry.DAOCoinEntry.MintingDisabled
 			profile.DAOCoinNumberOfHolders = profileEntry.DAOCoinEntry.NumberOfHolders
 			profile.DAOCoinTransferRestrictionStatus = profileEntry.DAOCoinEntry.TransferRestrictionStatus
+			profile.ExtraData = profileEntry.ProfileExtraData
 		}
 
 		if pkidEntry.isDeleted {
