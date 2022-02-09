@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
@@ -12,7 +13,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"reflect"
 	"sort"
 	"time"
 
@@ -4642,10 +4642,7 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 			keys = append(keys, key)
 		}
 		sort.Slice(keys, func(ii, jj int) bool {
-			if keys[ii].CreatorPKID.ToString() == keys[jj].CreatorPKID.ToString() {
-				return keys[ii].Operation < keys[jj].Operation
-			}
-			return keys[ii].CreatorPKID.ToString() < keys[jj].CreatorPKID.ToString()
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
 		})
 		for _, key := range keys {
 			data = append(data, key.Encode()...)
@@ -4662,10 +4659,7 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 			keys = append(keys, key)
 		}
 		sort.Slice(keys, func(ii, jj int) bool {
-			if keys[ii].CreatorPKID.ToString() == keys[jj].CreatorPKID.ToString() {
-				return keys[ii].Operation < keys[jj].Operation
-			}
-			return keys[ii].CreatorPKID.ToString() < keys[jj].CreatorPKID.ToString()
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
 		})
 		for _, key := range keys {
 			data = append(data, key.Encode()...)
@@ -4682,17 +4676,7 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 			keys = append(keys, key)
 		}
 		sort.Slice(keys, func(ii, jj int) bool {
-			iiBlockHash := keys[ii].BlockHash
-			jjBlockHash := keys[jj].BlockHash
-			iiSerialNum := keys[ii].SerialNumber
-			jjSerialNum := keys[jj].SerialNumber
-			if reflect.DeepEqual(iiBlockHash, jjBlockHash) {
-				if iiSerialNum == jjSerialNum {
-					return keys[ii].Operation < keys[jj].Operation
-				}
-				return iiSerialNum < jjSerialNum
-			}
-			return iiBlockHash.String() < jjBlockHash.String()
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
 		})
 		for _, key := range keys {
 			data = append(data, key.Encode()...)
