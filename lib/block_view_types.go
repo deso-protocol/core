@@ -1275,6 +1275,9 @@ type ProfileEntry struct {
 	// 3. CoinWaterMarkNanos
 	DAOCoinEntry CoinEntry
 
+	// ExtraData map to hold arbitrary attributes of a profile. Holds non-consensus related information about a profile.
+	ProfileExtraData map[string][]byte
+
 	// Whether or not this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if for
 	// example we update a user entry and need to delete the data associated

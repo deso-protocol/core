@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/holiman/uint256"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -170,6 +171,8 @@ type ForkHeights struct {
 	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
 	// transactions will be accepted.
 	DAOCoinBlockHeight uint32
+
+	ProfileExtraDataBlockHeight uint32
 }
 
 // DeSoParams defines the full list of possible parameters for the
@@ -398,6 +401,7 @@ func (params *DeSoParams) EnableRegtest() {
 		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
+		ProfileExtraDataBlockHeight:                          uint32(0),
 	}
 }
 
@@ -640,6 +644,9 @@ var DeSoMainnetParams = DeSoParams{
 		DeSoV3MessagesBlockHeight:                            uint32(98474),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(98474),
 		DAOCoinBlockHeight:                                   uint32(98474),
+
+		// TODO: set to real block height
+		ProfileExtraDataBlockHeight:                          math.MaxUint32,
 	},
 }
 
@@ -825,6 +832,9 @@ var DeSoTestnetParams = DeSoParams{
 		DeSoV3MessagesBlockHeight:                            uint32(97322),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(97322),
 		DAOCoinBlockHeight:                                   uint32(97322),
+
+		// TODO: set to real block height
+		ProfileExtraDataBlockHeight:                          math.MaxUint32,
 	},
 }
 

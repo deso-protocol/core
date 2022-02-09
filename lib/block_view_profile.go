@@ -668,7 +668,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// Modifying a profile is only allowed if the transaction public key equals
 		// the profile public key or if the public key belongs to a paramUpdater.
-		_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+		_, updaterIsParamUpdater = bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) &&
 			!updaterIsParamUpdater {
 
@@ -700,6 +700,21 @@ func (bav *UtxoView) _connectUpdateProfile(
 		newProfileEntry.CreatorCoinEntry.CreatorBasisPoints = txMeta.NewCreatorBasisPoints
 
 		// The StakeEntry is always left unmodified here.
+
+		// If we are passed the ProfileExtraDataBlockHeight, then we merge in the extra data from the transaction with
+		// the extra data from the existing profile entry.
+		if blockHeight > bav.Params.ForkHeights.ProfileExtraDataBlockHeight {
+			if newProfileEntry.ProfileExtraData == nil {
+				newProfileEntry.ProfileExtraData = make(map[string][]byte)
+			}
+			for k, v := range existingProfileEntry.ProfileExtraData {
+				newProfileEntry.ProfileExtraData[k] = v
+			}
+			for k, v := range txn.ExtraData {
+				newProfileEntry.ProfileExtraData[k] = v
+			}
+		}
+
 
 	} else {
 		// When there's no pre-existing profile entry we need to do more
@@ -748,6 +763,14 @@ func (bav *UtxoView) _connectUpdateProfile(
 				// The other coin fields are automatically set to zero, which is an
 				// appropriate default value for all of them.
 			},
+		}
+
+		// If we are passed the ProfileExtraDataBlockHeight, then we add the extra data from the profile to ProfileEntry.
+		if blockHeight > bav.Params.ForkHeights.ProfileExtraDataBlockHeight {
+			newProfileEntry.ProfileExtraData = make(map[string][]byte)
+			for k, v := range txn.ExtraData {
+				newProfileEntry.ProfileExtraData[k] = v
+			}
 		}
 
 	}
