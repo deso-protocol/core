@@ -4167,5 +4167,5 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 	// After we rolled back the blocks, db should reset
 	_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
-	fmt.Println("Successfuly run TestAuthorizelDerivedKeyBasic()")
+	fmt.Println("Successfuly run TestAuthorizeDerivedKeyBasic()")
 }
