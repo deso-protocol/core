@@ -105,13 +105,13 @@ type DBPrefixes struct {
 
 	// Tracks the tip of the transaction index. This is used to determine
 	// which blocks need to be processed in order to update the index.
-	PrefixTransactionIndexTip []byte `prefix_id:"[14]"`
+	PrefixTransactionIndexTip []byte `prefix_id:"[14]" is_txindex:"true"`
 	// <prefix_id, transactionID BlockHash> -> <TransactionMetadata struct>
-	PrefixTransactionIDToMetadata []byte `prefix_id:"[15]"`
+	PrefixTransactionIDToMetadata []byte `prefix_id:"[15]" is_txindex:"true"`
 	// <prefix_id, publicKey []byte, index uint32> -> <txid BlockHash>
-	PrefixPublicKeyIndexToTransactionIDs []byte `prefix_id:"[16]"`
+	PrefixPublicKeyIndexToTransactionIDs []byte `prefix_id:"[16]" is_txindex:"true"`
 	// <prefix_id, publicKey []byte> -> <index uint32>
-	PrefixPublicKeyToNextIndex []byte `prefix_id:"[42]"`
+	PrefixPublicKeyToNextIndex []byte `prefix_id:"[42]" is_txindex:"true"`
 
 	// Main post index.
 	// <prefix_id, PostHash BlockHash> -> PostEntry

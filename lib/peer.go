@@ -462,7 +462,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	}
 	// When concurrencyFault occurs, we will wait a bit and then enqueue the message again.
 	if concurrencyFault {
-		glog.Error("Peer.HandleGetSnapshot: concurrency fault occurred so we enqueue the msg again to peer (%v)", pp)
+		glog.Errorf("Peer.HandleGetSnapshot: concurrency fault occurred so we enqueue the msg again to peer (%v)", pp)
 		go func() {
 			time.Sleep(GetSnapshotTimeout)
 			pp.AddDeSoMessage(msg, true )

@@ -1084,7 +1084,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		return err
 	})
 	if err != nil {
-		glog.Errorf("Server_handleSnapshot: Problem updating snapshot blocknodes, error: ", err)
+		glog.Errorf("Server_handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
