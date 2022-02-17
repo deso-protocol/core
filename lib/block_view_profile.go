@@ -481,7 +481,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 				MintingDisabled:           profile.DAOCoinMintingDisabled,
 				TransferRestrictionStatus: profile.DAOCoinTransferRestrictionStatus,
 			},
-			ProfileExtraData: profile.ExtraData,
+			ExtraData: profile.ExtraData,
 		}
 
 		bav._setProfileEntryMappings(profileEntry)
@@ -529,6 +529,24 @@ func (bav *UtxoView) GetProfilesForUsernamePrefixByCoinValue(usernamePrefix stri
 	})
 
 	return profileEntrys
+}
+
+func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[string][]byte {
+	// Always create the map from scratch, since modifying the map on
+	// newMap could modify the map on the oldMap otherwise.
+	retMap := make(map[string][]byte)
+
+	// Add the values from the oldMap
+	for kk, vv := range oldMap {
+		retMap[kk] = vv
+	}
+	// Add the values from the newMap. Allow the newMap values to overwrite the
+	// oldMap values during the merge.
+	for kk, vv := range newMap {
+		retMap[kk] = vv
+	}
+
+	return retMap
 }
 
 func (bav *UtxoView) _connectUpdateProfile(
@@ -669,7 +687,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// Modifying a profile is only allowed if the transaction public key equals
 		// the profile public key or if the public key belongs to a paramUpdater.
-		_, updaterIsParamUpdater = bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+		_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
 		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) &&
 			!updaterIsParamUpdater {
 
@@ -700,20 +718,12 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// Just always set the creator basis points and stake multiple.
 		newProfileEntry.CreatorCoinEntry.CreatorBasisPoints = txMeta.NewCreatorBasisPoints
 
-		// The StakeEntry is always left unmodified here.
-
-		// If we are passed the ProfileExtraDataBlockHeight, then we merge in the extra data from the transaction with
-		// the extra data from the existing profile entry.
+		// If we are past the ProfileExtraDataBlockHeight, then we merge in the extra
+		// data from the transaction with the extra data from the existing profile entry.
 		if blockHeight > bav.Params.ForkHeights.ProfileExtraDataBlockHeight {
-			if newProfileEntry.ProfileExtraData == nil {
-				newProfileEntry.ProfileExtraData = make(map[string][]byte)
-			}
-			for k, v := range existingProfileEntry.ProfileExtraData {
-				newProfileEntry.ProfileExtraData[k] = v
-			}
-			for k, v := range txn.ExtraData {
-				newProfileEntry.ProfileExtraData[k] = v
-			}
+			newProfileEntry.ExtraData = mergeExtraData(
+				existingProfileEntry.ExtraData,
+				txn.ExtraData)
 		}
 
 	} else {
@@ -765,14 +775,12 @@ func (bav *UtxoView) _connectUpdateProfile(
 			},
 		}
 
-		// If we are passed the ProfileExtraDataBlockHeight, then we add the extra data from the profile to ProfileEntry.
+		// If we are passed the ProfileExtraDataBlockHeight, then we add the
+		// extra data from the profile to ProfileEntry. There is no existingProfileEntry
+		// to merge fields from in this case.
 		if blockHeight > bav.Params.ForkHeights.ProfileExtraDataBlockHeight {
-			newProfileEntry.ProfileExtraData = make(map[string][]byte)
-			for k, v := range txn.ExtraData {
-				newProfileEntry.ProfileExtraData[k] = v
-			}
+			newProfileEntry.ExtraData = mergeExtraData(nil, txn.ExtraData)
 		}
-
 	}
 	// At this point the newProfileEntry should be set to what we actually
 	// want to store in the db.

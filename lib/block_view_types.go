@@ -696,7 +696,7 @@ type MessagingGroupMember struct {
 	GroupMemberKeyName *GroupKeyName
 
 	// EncryptedKey is the encrypted messaging public key, addressed to the recipient.
-	EncryptedKey              []byte
+	EncryptedKey []byte
 }
 
 func (rec *MessagingGroupMember) Encode() []byte {
@@ -718,17 +718,17 @@ func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 
 	recipientPublicKeyBytes, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey")
 	}
 	recipientKeyName, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberKeyName")
 	}
 	err = ValidateGroupPublicKeyAndName(recipientPublicKeyBytes, recipientKeyName)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey and GroupMemberKeyName")
 	}
 
@@ -736,7 +736,7 @@ func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 	rec.GroupMemberKeyName = NewGroupKeyName(recipientKeyName)
 	rec.EncryptedKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"EncryptedKey")
 	}
 	return nil
@@ -1275,8 +1275,9 @@ type ProfileEntry struct {
 	// 3. CoinWaterMarkNanos
 	DAOCoinEntry CoinEntry
 
-	// ExtraData map to hold arbitrary attributes of a profile. Holds non-consensus related information about a profile.
-	ProfileExtraData map[string][]byte
+	// ExtraData map to hold arbitrary attributes of a profile. Holds
+	// non-consensus related information about a profile.
+	ExtraData map[string][]byte
 
 	// Whether or not this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if for

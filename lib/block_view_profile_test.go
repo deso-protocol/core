@@ -980,8 +980,8 @@ func TestUpdateProfile(t *testing.T) {
 			utxoView, err := NewUtxoView(db, params, nil)
 			require.NoError(err)
 			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
-			require.Equal(len(m4ProfileEntry.ProfileExtraData), 1)
-			require.Equal(m4ProfileEntry.ProfileExtraData["m4extradata"], []byte("hello"))
+			require.Equal(len(m4ProfileEntry.ExtraData), 1)
+			require.Equal(m4ProfileEntry.ExtraData["m4extradata"], []byte("hello"))
 		}
 		// Reset the create profile fee to 0 nanos (no fee) and set network minimum back to 0.
 		updateGlobalParamsEntry(

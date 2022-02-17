@@ -391,7 +391,6 @@ type PGMetadataDerivedKey struct {
 	AccessSignature  []byte                           `pg:",type:bytea"`
 }
 
-
 type PGNotification struct {
 	tableName struct{} `pg:"pg_notifications"`
 
@@ -436,14 +435,14 @@ type PGProfile struct {
 	// FIXME: Postgres will break when values exceed uint64
 	// We don't use Postgres right now so going to plow ahead and set this as-is
 	// to fix compile errors. CoinsInCirculationNanos will never exceed uint64
-	CoinsInCirculationNanos uint64
-	CoinWatermarkNanos      uint64
-	MintingDisabled         bool
-	DAOCoinNumberOfHolders  uint64 `pg:"dao_coin_number_of_holders"`
+	CoinsInCirculationNanos          uint64
+	CoinWatermarkNanos               uint64
+	MintingDisabled                  bool
+	DAOCoinNumberOfHolders           uint64                    `pg:"dao_coin_number_of_holders"`
 	DAOCoinCoinsInCirculationNanos   string                    `pg:"dao_coin_coins_in_circulation_nanos"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
-	ExtraData map[string][]byte
+	ExtraData                        map[string][]byte
 }
 
 func (profile *PGProfile) Empty() bool {
@@ -514,7 +513,6 @@ func (post *PGPost) NewPostEntry() *PostEntry {
 			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints[*NewPKID(pkidBytes)] = bp
 		}
 	}
-
 
 	if len(post.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
 		postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints = make(map[PKID]uint64)
@@ -598,10 +596,10 @@ type PGMessage struct {
 type PGMessagingGroup struct {
 	tableName struct{} `pg:"pg_messaging_group"`
 
-	GroupOwnerPublicKey *PublicKey     `pg:",type:bytea"`
-	MessagingPublicKey *PublicKey    `pg:",type:bytea"`
-	MessagingGroupKeyName *GroupKeyName    `pg:",type:bytea"`
-	MessagingGroupMembers []byte    `pg:",type:bytea"`
+	GroupOwnerPublicKey   *PublicKey    `pg:",type:bytea"`
+	MessagingPublicKey    *PublicKey    `pg:",type:bytea"`
+	MessagingGroupKeyName *GroupKeyName `pg:",type:bytea"`
+	MessagingGroupMembers []byte        `pg:",type:bytea"`
 }
 
 type PGCreatorCoinBalance struct {
@@ -645,8 +643,8 @@ func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
 	}
 
 	return &BalanceEntry{
-		HODLerPKID:  balance.HolderPKID,
-		CreatorPKID: balance.CreatorPKID,
+		HODLerPKID:   balance.HolderPKID,
+		CreatorPKID:  balance.CreatorPKID,
 		BalanceNanos: *balanceNanos,
 		HasPurchased: balance.HasPurchased,
 	}
@@ -1423,7 +1421,7 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 			profile.DAOCoinMintingDisabled = profileEntry.DAOCoinEntry.MintingDisabled
 			profile.DAOCoinNumberOfHolders = profileEntry.DAOCoinEntry.NumberOfHolders
 			profile.DAOCoinTransferRestrictionStatus = profileEntry.DAOCoinEntry.TransferRestrictionStatus
-			profile.ExtraData = profileEntry.ProfileExtraData
+			profile.ExtraData = profileEntry.ExtraData
 		}
 
 		if pkidEntry.isDeleted {
@@ -1671,8 +1669,8 @@ func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error 
 		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
 		gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers)
 		pgGroupEntry := &PGMessagingGroup{
-			GroupOwnerPublicKey: groupEntry.GroupOwnerPublicKey,
-			MessagingPublicKey: groupEntry.MessagingPublicKey,
+			GroupOwnerPublicKey:   groupEntry.GroupOwnerPublicKey,
+			MessagingPublicKey:    groupEntry.MessagingPublicKey,
 			MessagingGroupKeyName: groupEntry.MessagingGroupKeyName,
 			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
 		}
@@ -1751,8 +1749,8 @@ func (postgres *Postgres) flushDAOCoinBalances(tx *pg.Tx, view *UtxoView) error 
 		}
 
 		balance := &PGDAOCoinBalance{
-			HolderPKID:  balanceEntry.HODLerPKID,
-			CreatorPKID: balanceEntry.CreatorPKID,
+			HolderPKID:   balanceEntry.HODLerPKID,
+			CreatorPKID:  balanceEntry.CreatorPKID,
 			BalanceNanos: balanceEntry.BalanceNanos.Hex(),
 			HasPurchased: balanceEntry.HasPurchased,
 		}
