@@ -951,12 +951,11 @@ func TestUpdateProfile(t *testing.T) {
 			false,
 		)
 		// M4 decides to add some profile extra data to their profile
-		// FIXME: Add another test where we update the values of the ExtraData and
-		// add new fields to the extradata
 		{
 			params.ForkHeights.ProfileExtraDataBlockHeight = uint32(0)
 			extraData := map[string][]byte{
 				"m4extradata": []byte("hello"),
+				"otherfield":  []byte("other"),
 			}
 			expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m4Pub))
 			currentOps, currentTxn, _, err := _updateProfileWithExtraData(
@@ -982,9 +981,48 @@ func TestUpdateProfile(t *testing.T) {
 			utxoView, err := NewUtxoView(db, params, nil)
 			require.NoError(err)
 			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
-			require.Equal(len(m4ProfileEntry.ExtraData), 1)
+			require.Equal(len(m4ProfileEntry.ExtraData), 2)
 			require.Equal(m4ProfileEntry.ExtraData["m4extradata"], []byte("hello"))
+			require.Equal(m4ProfileEntry.ExtraData["otherfield"], []byte("other"))
 		}
+
+		// M4 decides to update one of the values in their profile extradata and add a new one. We should still
+		// have the unmodified otherfield from the original update
+		{
+			extraData := map[string][]byte{
+				"m4extradata": []byte("update!"),
+				"newfield":    []byte("new"),
+			}
+			expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m4Pub))
+			currentOps, currentTxn, _, err := _updateProfileWithExtraData(
+				t,
+				chain,
+				db,
+				params,
+				10,
+				m4Pub,
+				m4Priv,
+				m4PkBytes,
+				"",
+				"",
+				"",
+				11*100,
+				1.5*100*100,
+				false,
+				extraData,
+			)
+			require.NoError(err)
+			txns = append(txns, currentTxn)
+			txnOps = append(txnOps, currentOps)
+			utxoView, err := NewUtxoView(db, params, nil)
+			require.NoError(err)
+			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
+			require.Equal(len(m4ProfileEntry.ExtraData), 3)
+			require.Equal(m4ProfileEntry.ExtraData["m4extradata"], []byte("update!"))
+			require.Equal(m4ProfileEntry.ExtraData["otherfield"], []byte("other"))
+			require.Equal(m4ProfileEntry.ExtraData["newfield"], []byte("new"))
+		}
+
 		// Reset the create profile fee to 0 nanos (no fee) and set network minimum back to 0.
 		updateGlobalParamsEntry(
 			100,
