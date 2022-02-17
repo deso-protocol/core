@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/holiman/uint256"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -644,8 +645,7 @@ var DeSoMainnetParams = DeSoParams{
 		DeSoV3MessagesBlockHeight:                            uint32(98474),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(98474),
 		DAOCoinBlockHeight:                                   uint32(98474),
-		// TODO: set height
-		DAOCoinZeroTransferFixHeight:                         uint32(0),
+		DAOCoinZeroTransferFixHeight:                         uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height
 	},
 }
 
@@ -831,8 +831,7 @@ var DeSoTestnetParams = DeSoParams{
 		DeSoV3MessagesBlockHeight:                            uint32(97322),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(97322),
 		DAOCoinBlockHeight:                                   uint32(97322),
-		// TODO: set height
-		DAOCoinZeroTransferFixHeight:                         uint32(0),
+		DAOCoinZeroTransferFixHeight:                         uint32(math.MaxUint32 - 1), // FIXME: Set real mainnet height,
 	},
 }
 
