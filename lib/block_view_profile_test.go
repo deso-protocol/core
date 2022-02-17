@@ -951,6 +951,8 @@ func TestUpdateProfile(t *testing.T) {
 			false,
 		)
 		// M4 decides to add some profile extra data to their profile
+		// FIXME: Add another test where we update the values of the ExtraData and
+		// add new fields to the extradata
 		{
 			params.ForkHeights.ProfileExtraDataBlockHeight = uint32(0)
 			extraData := map[string][]byte{
