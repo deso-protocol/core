@@ -2246,3 +2246,21 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	}
 	return balanceNanos - immatureBlockRewards, nil
 }
+
+func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[string][]byte {
+	// Always create the map from scratch, since modifying the map on
+	// newMap could modify the map on the oldMap otherwise.
+	retMap := make(map[string][]byte)
+
+	// Add the values from the oldMap
+	for kk, vv := range oldMap {
+		retMap[kk] = vv
+	}
+	// Add the values from the newMap. Allow the newMap values to overwrite the
+	// oldMap values during the merge.
+	for kk, vv := range newMap {
+		retMap[kk] = vv
+	}
+
+	return retMap
+}

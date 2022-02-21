@@ -13,10 +13,22 @@ import (
 	"time"
 )
 
-func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
+func _privateMessage(
+	t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams, feeRateNanosPerKB uint64,
+	senderPkBase58Check string, recipientPkBase58Check string, senderPrivBase58Check string,
+	unencryptedMessageText string, tstampNanos uint64) (
+	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error,
+) {
+	return _privateMessageWithExtraData(
+		t, chain, db, params, feeRateNanosPerKB,
+		senderPkBase58Check, recipientPkBase58Check, senderPrivBase58Check, unencryptedMessageText, tstampNanos, nil,
+	)
+}
+
+func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
 	recipientPkBase58Check string,
-	senderPrivBase58Check string, unencryptedMessageText string, tstampNanos uint64) (
+	senderPrivBase58Check string, unencryptedMessageText string, tstampNanos uint64, extraData map[string][]byte) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -36,7 +48,7 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
 		[]byte{}, []byte{}, []byte{}, []byte{},
-		tstampNanos, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		tstampNanos, extraData, feeRateNanosPerKB, nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -82,6 +94,8 @@ func TestPrivateMessage(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
+	// Allow extra data
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -128,22 +142,32 @@ func TestPrivateMessage(t *testing.T) {
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m4Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m4Pub, senderPrivString)
+	registerOrTransfer("", senderPkString, m4Pub, senderPrivString)
 
-	privateMessage := func(
+	privateMessageWithExtraData := func(
 		senderPkBase58Check string, recipientPkBase58Check string,
-		senderPrivBase58Check string, unencryptedMessageText string, tstampNanos uint64,
+		senderPrivBase58Check string, unencryptedMessageText string, tstampNanos uint64, extraData map[string][]byte,
 		feeRateNanosPerKB uint64) {
 
 		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
 		expectedRecipientBalances = append(expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
 
-		currentOps, currentTxn, _, err := _privateMessage(
+		currentOps, currentTxn, _, err := _privateMessageWithExtraData(
 			t, chain, db, params, feeRateNanosPerKB, senderPkBase58Check,
-			recipientPkBase58Check, senderPrivBase58Check, unencryptedMessageText, tstampNanos)
+			recipientPkBase58Check, senderPrivBase58Check, unencryptedMessageText, tstampNanos, extraData)
 		require.NoError(err)
 
 		txnOps = append(txnOps, currentOps)
 		txns = append(txns, currentTxn)
+	}
+	privateMessage := func(
+		senderPkBase58Check string, recipientPkBase58Check string,
+		senderPrivBase58Check string, unencryptedMessageText string, tstampNanos uint64,
+		feeRateNanosPerKB uint64) {
+		privateMessageWithExtraData(senderPkBase58Check, recipientPkBase58Check, senderPrivBase58Check,
+			unencryptedMessageText, tstampNanos, nil, feeRateNanosPerKB)
 	}
 
 	// ===================================================================================
@@ -158,6 +182,7 @@ func TestPrivateMessage(t *testing.T) {
 	tstamp4 := uint64(time.Now().UnixNano())
 	message4 := string(append([]byte("message4: "), RandomBytes(100)...))
 	message5 := string(append([]byte("message5: "), RandomBytes(100)...))
+	message6 := string(append([]byte("message6: "), RandomBytes(100)...))
 	// Because M1 actually evaluates two consecutive time.Now().UnixNano() to the same number lol!
 	if tstamp1 == tstamp2 {
 		tstamp2 += uint64(1)
@@ -243,16 +268,26 @@ func TestPrivateMessage(t *testing.T) {
 	privateMessage(
 		m2Pub, m3Pub, m2Priv, message5, tstamp1, 10 /*feeRateNanosPerKB*/)
 
+	// m4 -> m5
+	m4MessageExtraData := map[string][]byte{
+		"extraextra": []byte("readallaboutit"),
+	}
+	privateMessageWithExtraData(m4Pub, m5Pub, m4Priv, message6, tstamp4, m4MessageExtraData, 10,
+		)
+
 	// Verify that the messages are as we expect them in the db.
 	// 1: m0 m1
 	// 2: m2 m1
 	// 3: m3 m1
 	// 4: m1 m2
 	// 5: m2 m3
+	// 6: m4 m5
 	// => m0: 1
 	// 	  m1: 4
 	//    m2: 3
 	//    m3: 2
+	//    m4: 1
+	//    m5: 1
 	{
 		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m0Pub))
 		require.NoError(err)
@@ -281,6 +316,18 @@ func TestPrivateMessage(t *testing.T) {
 		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(2, len(messages))
+	}
+	{
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m4Pub))
+		require.NoError(err)
+		require.Equal(1, len(messages))
+		require.Equal(messages[0].ExtraData["extraextra"], []byte("readallaboutit"))
+	}
+	{
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m5Pub))
+		require.NoError(err)
+		require.Equal(1, len(messages))
+		require.Equal(messages[0].ExtraData["extraextra"], []byte("readallaboutit"))
 	}
 
 	// ===================================================================================
@@ -355,6 +402,16 @@ func TestPrivateMessage(t *testing.T) {
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
+	{
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m4Pub))
+		require.NoError(err)
+		require.Equal(0, len(messages))
+	}
+	{
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m5Pub))
+		require.NoError(err)
+		require.Equal(0, len(messages))
+	}
 
 	// Apply all the transactions to a mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
@@ -423,6 +480,16 @@ func TestPrivateMessage(t *testing.T) {
 	}
 	{
 		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m3Pub))
+		require.NoError(err)
+		require.Equal(0, len(messages))
+	}
+	{
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m4Pub))
+		require.NoError(err)
+		require.Equal(0, len(messages))
+	}
+	{
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m5Pub))
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
@@ -502,6 +569,16 @@ func TestPrivateMessage(t *testing.T) {
 		require.NoError(err)
 		require.Equal(0, len(messages))
 	}
+	{
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m4Pub))
+		require.NoError(err)
+		require.Equal(0, len(messages))
+	}
+	{
+		messages, err := DBGetMessageEntriesForPublicKey(db, _strToPk(t, m5Pub))
+		require.NoError(err)
+		require.Equal(0, len(messages))
+	}
 }
 
 // _generateMessagingKey is used to generate a random messaging key and the signed hash(publicKey || keyName).
@@ -523,11 +600,18 @@ func _generateMessagingKey(senderPub []byte, senderPriv []byte, keyName []byte) 
 func _messagingKey(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
 	senderPk []byte, signerPriv string, messagingPublicKey []byte, messagingKeyName []byte,
 	keySignature []byte, recipients []*MessagingGroupMember) ([]*UtxoOperation, *MsgDeSoTxn, error) {
+	return _messagingKeyWithExtraData(t, chain, db, params, senderPk, signerPriv, messagingPublicKey, messagingKeyName, keySignature, recipients, nil)
+}
+
+func _messagingKeyWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
+	senderPk []byte, signerPriv string, messagingPublicKey []byte, messagingKeyName []byte,
+	keySignature []byte, recipients []*MessagingGroupMember, extraData map[string][]byte) (
+	[]*UtxoOperation, *MsgDeSoTxn, error) {
 
 	require := require.New(t)
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateMessagingKeyTxn(
 		senderPk, messagingPublicKey, messagingKeyName, keySignature,
-		recipients, 10, nil, []*DeSoOutput{})
+		recipients, extraData, 10, nil, []*DeSoOutput{})
 	require.NoError(err)
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 
@@ -555,10 +639,17 @@ func _messagingKey(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	return utxoOps, txn, err
 }
 
-// _messagingKeyWithTestMeta is used to connect and flush a messaging key to the DB.
 func _messagingKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv string,
 	messagingPublicKey []byte, messagingKeyName []byte, keySignature []byte, recipients []*MessagingGroupMember,
 	expectedError error) {
+	_messagingKeyWithExtraDataWithTestMeta(testMeta, senderPk, signerPriv, messagingPublicKey, messagingKeyName,
+		keySignature, recipients, nil, expectedError)
+}
+
+// _messagingKeyWithTestMeta is used to connect and flush a messaging key to the DB.
+func _messagingKeyWithExtraDataWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv string,
+	messagingPublicKey []byte, messagingKeyName []byte, keySignature []byte, recipients []*MessagingGroupMember,
+	extraData map[string][]byte, expectedError error) {
 
 	require := require.New(testMeta.t)
 	assert := assert.New(testMeta.t)
@@ -566,8 +657,8 @@ func _messagingKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv s
 	senderPkBase58Check := Base58CheckEncode(senderPk, false, testMeta.params)
 	balance := _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check)
 
-	utxoOps, txn, err := _messagingKey(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
-		senderPk, signerPriv, messagingPublicKey, messagingKeyName, keySignature, recipients)
+	utxoOps, txn, err := _messagingKeyWithExtraData(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		senderPk, signerPriv, messagingPublicKey, messagingKeyName, keySignature, recipients, extraData)
 
 	if expectedError != nil {
 		assert.Equal(true, strings.Contains(err.Error(), expectedError.Error()))
@@ -642,7 +733,8 @@ func TestMessagingKeys(t *testing.T) {
 
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	_ = miner
+	// Allow extra data
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 
 	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
@@ -1002,6 +1094,84 @@ func TestMessagingKeys(t *testing.T) {
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, &m3PublicKey, entry))
 		// Append the key to the entries added.
+		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
+	}
+	// Add another key for m3 with some extra data
+	extraDataKeyName := []byte("extra-data-key-m3")
+	{
+		randomKeyName := extraDataKeyName
+		_, sign, entry := _generateMessagingKey(m3PubKey, m3PrivKey, randomKeyName[:])
+		require.Equal(false, _verifyMessagingKey(testMeta, &m3PublicKey, entry))
+		extraData := map[string][]byte{
+			"extrakey": []byte("discussion"),
+			"dontchange": []byte("checkmelater"),
+		}
+		_messagingKeyWithExtraDataWithTestMeta(
+			testMeta,
+			m3PubKey,
+			m3Priv,
+			entry.MessagingPublicKey[:],
+			randomKeyName[:],
+			sign,
+			[]*MessagingGroupMember{},
+			extraData,
+			nil,
+			)
+		entry = DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, entry.MessagingGroupKeyName[:]))
+		// We get the entry from the DB so that it has the extra data
+		require.Len(entry.ExtraData, 2)
+		require.Equal(entry.ExtraData["extrakey"], []byte("discussion"))
+		require.Equal(entry.ExtraData["dontchange"], []byte("checkmelater"))
+		require.Equal(true, _verifyMessagingKey(testMeta, &m3PublicKey, entry))
+
+		// For fun, m3 adds group members to the conversation that has extra data
+		//_, sign, _ := _generateMessagingKey(m3PubKey, m3PrivKey, extraDataKeyName)
+		//entry := DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, extraDataKeyName))
+		var MessagingGroupMembers []*MessagingGroupMember
+		members := [][]byte{ m3PubKey, m1PubKey, m2PubKey }
+		for _, member := range members {
+			MessagingGroupMembers = append(MessagingGroupMembers, &MessagingGroupMember{
+				NewPublicKey(member),
+				BaseGroupKeyName(),
+				m3PrivKey,
+			})
+		}
+		extraData = map[string][]byte{
+			"extrakey": []byte("newval"),
+			"newkey": []byte("test"),
+		}
+		//entry := DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, extraDataKeyName))
+		_messagingKeyWithExtraDataWithTestMeta(
+			testMeta,
+			m3PubKey,
+			m3Priv,
+			entry.MessagingPublicKey[:],
+			randomKeyName[:],
+			sign,
+			MessagingGroupMembers,
+			extraData,
+			nil,
+		)
+		entry = DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, extraDataKeyName))
+		require.True(_verifyMessagingKey(testMeta, &m3PublicKey, entry))
+
+		require.Len(entry.ExtraData, 3)
+		require.Equal(entry.ExtraData["dontchange"], []byte("checkmelater"))
+		require.Equal(entry.ExtraData["extrakey"], []byte("newval"))
+		require.Equal(entry.ExtraData["newkey"], []byte("test"))
+
+		for idx, member := range members {
+			pubKey := *NewPublicKey(member)
+			if reflect.DeepEqual(member, m3PubKey) {
+				continue
+			}
+			keyEntriesAdded[pubKey] = append(keyEntriesAdded[pubKey], &MessagingGroupEntry{
+				GroupOwnerPublicKey: &m3PublicKey,
+				MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
+				MessagingGroupKeyName: NewGroupKeyName(randomKeyName),
+				MessagingGroupMembers: []*MessagingGroupMember{entry.MessagingGroupMembers[idx]},
+			})
+		}
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
 	}
 	// A bit of an overkill, but verify that all key entries are present in the DB.
@@ -1376,6 +1546,7 @@ func TestMessagingKeys(t *testing.T) {
 			MessagingGroupMembers: append([]*MessagingGroupMember{}, entry.MessagingGroupMembers[3]),
 		})
 	}
+
 	// Now we verify that all keys were properly added.
 	_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey])
 	_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey])
@@ -1419,11 +1590,20 @@ func TestMessagingKeys(t *testing.T) {
 	_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey])
 }
 
-
-// This helper function connects a private message transaction with the message party in ExtraData.
 func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, senderPrivBase58 string,
 	recipientPkBytes, senderMessagingPublicKey []byte, senderMessagingKeyName []byte, recipientMessagingPublicKey []byte,
-	recipientMessagingKeyName []byte, encryptedMessageText string, tstampNanos uint64, expectedError error) {
+	recipientMessagingKeyName []byte, encryptedMessageText string, tstampNanos uint64, expectedError error,
+) {
+	_connectPrivateMessageWithPartyWithExtraData(testMeta, senderPkBytes, senderPrivBase58, recipientPkBytes,
+		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey, recipientMessagingKeyName,
+		encryptedMessageText, tstampNanos, nil, expectedError)
+}
+
+// This helper function connects a private message transaction with the message party in ExtraData.
+func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBytes []byte, senderPrivBase58 string,
+	recipientPkBytes, senderMessagingPublicKey []byte, senderMessagingKeyName []byte, recipientMessagingPublicKey []byte,
+	recipientMessagingKeyName []byte, encryptedMessageText string, tstampNanos uint64, extraData map[string][]byte,
+	expectedError error) {
 
 	require := require.New(testMeta.t)
 	assert := assert.New(testMeta.t)
@@ -1435,7 +1615,7 @@ func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, s
 	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, "", encryptedMessageText,
 		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
-		recipientMessagingKeyName, tstampNanos, 10, nil, []*DeSoOutput{})
+		recipientMessagingKeyName, tstampNanos, extraData, 10, nil, []*DeSoOutput{})
 	require.NoError(err)
 
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -1671,6 +1851,7 @@ func TestGroupMessages(t *testing.T) {
 			NewGroupKeyName(keyName),
 			NewPublicKey(recipientPkBytes),
 			BaseGroupKeyName(),
+			nil,
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, RuleErrorPrivateMessageFailedToValidateMessagingKey)
 		// Verification should fail because the messaging key was never added to UtxoView.
@@ -1744,6 +1925,7 @@ func TestGroupMessages(t *testing.T) {
 			NewGroupKeyName(defaultKey),
 			NewPublicKey(recipientPkBytes),
 			BaseGroupKeyName(),
+			nil,
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
 		// Should pass, so we have:
@@ -1856,6 +2038,7 @@ func TestGroupMessages(t *testing.T) {
 			BaseGroupKeyName(),
 			entry.MessagingPublicKey,
 			NewGroupKeyName(addingMembersKey),
+			nil,
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m1Priv, messageEntry1, nil)
 		// We set groupOwner=true because of the edge-case where the user who made the group sends the message.
@@ -1905,6 +2088,7 @@ func TestGroupMessages(t *testing.T) {
 			BaseGroupKeyName(),
 			entry.MessagingPublicKey,
 			NewGroupKeyName(addingMembersKey),
+			nil,
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m1Priv, messageEntry1, nil)
 		// Should pass, we don't verify the messaging entry yet because we want to make
@@ -1947,6 +2131,7 @@ func TestGroupMessages(t *testing.T) {
 			BaseGroupKeyName(),
 			entry.MessagingPublicKey,
 			NewGroupKeyName(addingMembersKey),
+			nil,
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, messageEntry2, nil)
 		// Should pass, so we have:
@@ -1979,6 +2164,7 @@ func TestGroupMessages(t *testing.T) {
 			DefaultGroupKeyName(),
 			entry.MessagingPublicKey,
 			NewGroupKeyName(addingMembersKey),
+			nil,
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, recipientPrivString, messageEntry3, nil)
 		// Should pass, so we have:
@@ -2104,6 +2290,7 @@ func TestGroupMessages(t *testing.T) {
 			BaseGroupKeyName(),
 			entry.MessagingPublicKey,
 			NewGroupKeyName(gangKey),
+			nil,
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, messageEntry, nil)
 		// The message should be successfully added, so we have:

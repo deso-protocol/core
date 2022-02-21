@@ -425,6 +425,12 @@ func (bav *UtxoView) _connectPrivateMessage(
 		return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: ")
 	}
 
+	// If we're
+	var extraData map[string][]byte
+	if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		extraData = mergeExtraData(nil, txn.ExtraData)
+	}
+
 	// Create a MessageEntry, we do this now because we might modify some of the fields
 	// based on the version of the message.
 	messageEntry := &MessageEntry{
@@ -437,6 +443,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
 		RecipientMessagingPublicKey:    NewPublicKey(txMeta.RecipientPublicKey),
 		RecipientMessagingGroupKeyName: BaseGroupKeyName(),
+		ExtraData:                      extraData,
 	}
 
 	// If message was encrypted using DeSo V3 Messages, we will look for messaging keys in
@@ -543,6 +550,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 			RecipientPublicKey: txMeta.RecipientPublicKey,
 			EncryptedText:      txMeta.EncryptedText,
 			TimestampNanos:     txMeta.TimestampNanos,
+			ExtraData:          extraData,
 		}
 
 		bav.setMessageMappings(message)
@@ -904,6 +912,15 @@ func (bav *UtxoView) _connectMessagingGroup(
 		messagingMembers = append(messagingMembers, messagingMember)
 	}
 
+	var extraData map[string][]byte
+	if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		var existingExtraData map[string][]byte
+		if existingEntry != nil {
+			existingExtraData = existingEntry.ExtraData
+		}
+		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
+	}
+
 	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
 	// a garbage EncryptedKey. This can be filtered out at the app layer, though, and for now it leaves the
 	// app layer with more flexibility compared to if we implemented an explicit permissioning model at the
@@ -915,12 +932,16 @@ func (bav *UtxoView) _connectMessagingGroup(
 		MessagingPublicKey:    messagingPublicKey,
 		MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
 		MessagingGroupMembers: messagingMembers,
+		ExtraData:             extraData,
 	}
 	// Create a utxoOps entry, we make a copy of the existing entry.
 	var prevMessagingKeyEntry *MessagingGroupEntry
 	if existingEntry != nil && !existingEntry.isDeleted {
 		prevMessagingKeyEntry = &MessagingGroupEntry{}
-		prevMessagingKeyEntry.Decode(existingEntry.Encode())
+		if err = prevMessagingKeyEntry.Decode(existingEntry.Encode()); err != nil {
+			return 0, 0, nil, errors.Wrapf(err,
+				"_connectMessagingGroup: Error decoding previous entry")
+		}
 	}
 	bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, &messagingGroupEntry)
 

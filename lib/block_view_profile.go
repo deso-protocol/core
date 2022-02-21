@@ -531,24 +531,6 @@ func (bav *UtxoView) GetProfilesForUsernamePrefixByCoinValue(usernamePrefix stri
 	return profileEntrys
 }
 
-func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[string][]byte {
-	// Always create the map from scratch, since modifying the map on
-	// newMap could modify the map on the oldMap otherwise.
-	retMap := make(map[string][]byte)
-
-	// Add the values from the oldMap
-	for kk, vv := range oldMap {
-		retMap[kk] = vv
-	}
-	// Add the values from the newMap. Allow the newMap values to overwrite the
-	// oldMap values during the merge.
-	for kk, vv := range newMap {
-		retMap[kk] = vv
-	}
-
-	return retMap
-}
-
 func (bav *UtxoView) _connectUpdateProfile(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
 	ignoreUtxos bool) (
@@ -718,9 +700,9 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// Just always set the creator basis points and stake multiple.
 		newProfileEntry.CreatorCoinEntry.CreatorBasisPoints = txMeta.NewCreatorBasisPoints
 
-		// If we are past the ProfileExtraDataBlockHeight, then we merge in the extra
+		// If we are past the ExtraDataOnEntriesBlockHeight, then we merge in the extra
 		// data from the transaction with the extra data from the existing profile entry.
-		if blockHeight > bav.Params.ForkHeights.ProfileExtraDataBlockHeight {
+		if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
 			newProfileEntry.ExtraData = mergeExtraData(
 				existingProfileEntry.ExtraData,
 				txn.ExtraData)
@@ -775,10 +757,10 @@ func (bav *UtxoView) _connectUpdateProfile(
 			},
 		}
 
-		// If we are passed the ProfileExtraDataBlockHeight, then we add the
+		// If we are passed the ExtraDataOnEntriesBlockHeight, then we add the
 		// extra data from the profile to ProfileEntry. There is no existingProfileEntry
 		// to merge fields from in this case.
-		if blockHeight > bav.Params.ForkHeights.ProfileExtraDataBlockHeight {
+		if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
 			newProfileEntry.ExtraData = mergeExtraData(nil, txn.ExtraData)
 		}
 	}
@@ -1061,6 +1043,15 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		}
 	}
 
+	var extraData map[string][]byte
+	if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		var prevExtraData map[string][]byte
+		if prevDerivedKeyEntry != nil {
+			prevExtraData = prevDerivedKeyEntry.ExtraData
+		}
+		extraData = mergeExtraData(prevExtraData, txn.ExtraData)
+	}
+
 	// At this point we've verified the access signature, which means the derived key is authorized
 	// to sign on behalf of the owner. In particular, if this authorize transaction was signed
 	// by the derived key, we would accept it. We accommodate this by adding a temporary derived
@@ -1079,6 +1070,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		DerivedPublicKey: *NewPublicKey(derivedPublicKey),
 		ExpirationBlock:  txMeta.ExpirationBlock,
 		OperationType:    AuthorizeDerivedKeyOperationValid,
+		ExtraData:        extraData,
 		isDeleted:        false,
 	}
 	bav._setDerivedKeyMapping(&derivedKeyEntry)

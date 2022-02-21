@@ -589,6 +589,8 @@ type PGMessage struct {
 	TimestampNanos     uint64
 	// TODO: Version
 
+	ExtraData map[string][]byte
+
 	// Used to track deletions in the UtxoView
 	isDeleted bool
 }
@@ -600,6 +602,8 @@ type PGMessagingGroup struct {
 	MessagingPublicKey    *PublicKey    `pg:",type:bytea"`
 	MessagingGroupKeyName *GroupKeyName `pg:",type:bytea"`
 	MessagingGroupMembers []byte        `pg:",type:bytea"`
+
+	ExtraData map[string][]byte
 }
 
 type PGCreatorCoinBalance struct {
@@ -706,6 +710,8 @@ type PGNFT struct {
 	IsPending                  bool   `pg:",use_zero"`
 	IsBuyNow                   bool   `pg:",use_zero"`
 	BuyNowPriceNanos           uint64 `pg:",use_zero"`
+
+	ExtraData map[string][]byte
 }
 
 func (nft *PGNFT) NewNFTEntry() *NFTEntry {
@@ -721,6 +727,7 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 		IsPending:                  nft.IsPending,
 		IsBuyNow:                   nft.IsBuyNow,
 		BuyNowPriceNanos:           nft.BuyNowPriceNanos,
+		ExtraData:                  nft.ExtraData,
 	}
 }
 
@@ -752,6 +759,8 @@ type PGDerivedKey struct {
 	DerivedPublicKey PublicKey                        `pg:",pk,type:bytea"`
 	ExpirationBlock  uint64                           `pg:",use_zero"`
 	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
+
+	ExtraData map[string][]byte
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
@@ -760,6 +769,7 @@ func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
 		DerivedPublicKey: key.DerivedPublicKey,
 		ExpirationBlock:  key.ExpirationBlock,
 		OperationType:    key.OperationType,
+		ExtraData:        key.ExtraData,
 	}
 }
 
@@ -1667,12 +1677,15 @@ func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error 
 	var deleteMessages []*PGMessagingGroup
 	for _, groupEntry := range view.MessagingGroupKeyToMessagingGroupEntry {
 		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
-		gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers)
+		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers); err != nil {
+			return err
+		}
 		pgGroupEntry := &PGMessagingGroup{
 			GroupOwnerPublicKey:   groupEntry.GroupOwnerPublicKey,
 			MessagingPublicKey:    groupEntry.MessagingPublicKey,
 			MessagingGroupKeyName: groupEntry.MessagingGroupKeyName,
 			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
+			ExtraData:             groupEntry.ExtraData,
 		}
 		if groupEntry.isDeleted {
 			deleteMessages = append(deleteMessages, pgGroupEntry)
