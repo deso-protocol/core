@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"testing"
+	"time"
 )
 
 func _doTxn(
@@ -38,6 +40,7 @@ func _doTxn(
 	var changeAmountMake uint64
 	var feesMake uint64
 	var operationType OperationType
+	var isBuyNowBid bool
 	switch txnType {
 	case TxnTypeCreatorCoin:
 		realTxMeta := txnMeta.(*CreatorCoinMetadataa)
@@ -181,6 +184,11 @@ func _doTxn(
 			nil,
 		)
 		operationType = OperationTypeNFTBid
+		nftKey := MakeNFTKey(realTxMeta.NFTPostHash, realTxMeta.SerialNumber)
+		nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
+		if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= realTxMeta.BidAmountNanos {
+			isBuyNowBid = true
+		}
 	case TxnTypeNFTTransfer:
 		realTxMeta := txnMeta.(*NFTTransferMetadata)
 		txn, totalInputMake, changeAmountMake, feesMake, err = chain.CreateNFTTransferTxn(
@@ -250,6 +258,49 @@ func _doTxn(
 			nil,
 		)
 		operationType = OperationTypeUpdateProfile
+	case TxnTypeSubmitPost:
+		realTxMeta := txnMeta.(*SubmitPostMetadata)
+		// TODO: fix to support reposts / quoted reposts / extra data
+		txn, totalInputMake, changeAmountMake, feesMake, err = chain.CreateSubmitPostTxn(
+			transactorPublicKey,
+			realTxMeta.PostHashToModify,
+			realTxMeta.ParentStakeID,
+			realTxMeta.Body,
+			nil,
+			false,
+			realTxMeta.TimestampNanos,
+			nil,
+			realTxMeta.IsHidden,
+			feeRateNanosPerKB,
+			nil,
+			nil,
+			)
+		operationType = OperationTypeSubmitPost
+	case TxnTypeUpdateGlobalParams:
+		getGlobalParamValFromExtraData := func(key string) int64 {
+			if val, exists := extraData[key]; exists {
+				return val.(int64)
+			}
+			return int64(-1)
+		}
+		usdCentsPerBitcoin := getGlobalParamValFromExtraData(USDCentsPerBitcoinKey)
+		createProfileFeeNanos := getGlobalParamValFromExtraData(CreateProfileFeeNanosKey)
+		createNFTFeeNanos := getGlobalParamValFromExtraData(CreateNFTFeeNanosKey)
+		maxCopiesPerNFT := getGlobalParamValFromExtraData(MaxCopiesPerNFTKey)
+		minNetworkFeeNanosPerKB := getGlobalParamValFromExtraData(MinNetworkFeeNanosPerKBKey)
+		txn, totalInputMake, changeAmountMake, feesMake, err = chain.CreateUpdateGlobalParamsTxn(
+			transactorPublicKey,
+			usdCentsPerBitcoin,
+			createProfileFeeNanos,
+			createNFTFeeNanos,
+			maxCopiesPerNFT,
+			minNetworkFeeNanosPerKB,
+			nil,
+			feeRateNanosPerKB,
+			nil,
+			nil,
+		)
+		operationType = OperationTypeUpdateGlobalParams
 	default:
 		return nil, nil, 0, fmt.Errorf("Unsupported Txn Type")
 	}
@@ -278,6 +329,10 @@ func _doTxn(
 	// TODO: generalize?
 	utxoOpExpectation := len(txn.TxInputs) + len(txn.TxOutputs) + 1
 	if isDerivedTransactor && testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
+		utxoOpExpectation++
+	}
+	// We add one op to account for NFT bids on buy now NFT.
+	if isBuyNowBid {
 		utxoOpExpectation++
 	}
 	require.Equal(utxoOpExpectation, len(utxoOps))
@@ -2304,6 +2359,9 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
+	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+
+	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2691,7 +2749,31 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		)
 	}
 
+	// Derived Key tries to spend more than global deso limit
 	{
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeCreatorCoin,
+			&CreatorCoinMetadataa{
+				ProfilePublicKey: m1PkBytes,
+				OperationType: CreatorCoinOperationTypeBuy,
+				DeSoToSellNanos: 25,
+			},
+			nil,
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
+	}
+
+
+	{
+		derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
+		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit, uint64(15))
+		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[MakeCreatorCoinOperationLimitKey(*m1PKID, BuyCreatorCoinOperation)], uint64(1))
 		_doTxnWithTestMeta(
 			testMeta,
 			10,
@@ -2706,8 +2788,165 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			},
 			nil,
 		)
+		// Let's confirm that the global deso limit has been reduced on the tracker
+		derivedKeyEntry = DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
+		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit, uint64(4)) // 15 - (10 + 1) (CC buy + fee)
+		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[MakeCreatorCoinOperationLimitKey(*m1PKID, BuyCreatorCoinOperation)], uint64(0))
 	}
 
+	var post1Hash *BlockHash
+	// Create a buy now NFT and test that the derived key can't spend greater than their global DESO limit to buy it.
+	{
+		var bodyBytes []byte
+		bodyBytes, err = json.Marshal(&DeSoBodySchema{Body: "test NFT"})
+		require.NoError(err)
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			m1Priv,
+			false,
+			TxnTypeSubmitPost,
+			&SubmitPostMetadata{
+				Body: bodyBytes,
+				TimestampNanos: uint64(time.Now().UnixNano()),
+			},
+			nil,
+		)
+		post1Hash = testMeta.txns[len(testMeta.txns)-1].Hash()
+	}
+
+	{
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			false,
+			TxnTypeUpdateGlobalParams,
+			&UpdateGlobalParamsMetadata{},
+			map[string]interface{}{
+				MaxCopiesPerNFTKey: int64(1000),
+			},
+		)
+	}
+	{
+		require.NotNil(post1Hash)
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m1Pub,
+			m1Priv,
+			false,
+			TxnTypeCreateNFT,
+			&CreateNFTMetadata{
+				NFTPostHash: post1Hash,
+				NumCopies: 10,
+				IsForSale: true,
+			},
+			map[string]interface{}{
+				BuyNowPriceKey: uint64(5),
+			},
+		)
+	}
+
+	// M0 allows the derived key to bid and sets global DESO limit to 4 nanos
+	{
+		nftBidSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: 4,
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeNFTBid: 1,
+			},
+			NFTOperationLimitMap: map[NFTOperationLimitKey]uint64{
+				MakeNFTOperationLimitKey(*post1Hash, 1, NFTBidOperation): 1,
+			},
+		}
+		m0AuthTxnMetaWithNFTBidOpTxn, _ := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivateKey(
+			t,
+			m0PrivateKey,
+			6,
+			nftBidSpendingLimit,
+			derived0Priv,
+			false,
+			)
+
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			false,
+			TxnTypeAuthorizeDerivedKey,
+			m0AuthTxnMetaWithNFTBidOpTxn,
+			map[string]interface{}{
+				TransactionSpendingLimitKey: nftBidSpendingLimit,
+			},
+		)
+	}
+
+	// Derived key tries to buy now, but fails
+	{
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeNFTBid,
+			&NFTBidMetadata{
+				NFTPostHash: post1Hash,
+				SerialNumber: 1,
+				BidAmountNanos: 5,
+			},
+			nil,
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
+	}
+	// M0 increases the global DESO limit to 6
+	{
+		globalDESOSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: 6,
+		}
+		m0AuthTxnMetaWithGlobalDESOLimitTxn, _ := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivateKey(t, m0PrivateKey, 6, globalDESOSpendingLimit, derived0Priv, false)
+
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			false,
+			TxnTypeAuthorizeDerivedKey,
+			m0AuthTxnMetaWithGlobalDESOLimitTxn,
+			map[string]interface{}{
+				TransactionSpendingLimitKey: globalDESOSpendingLimit,
+			},
+		)
+	}
+	// Derived key can buy
+	{
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeNFTBid,
+			&NFTBidMetadata{
+				NFTPostHash: post1Hash,
+				SerialNumber: 1,
+				BidAmountNanos: 5,
+			},
+			nil,
+		)
+		// Let's confirm that the global deso limit has been reduced on the tracker
+		derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
+		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit,
+			uint64(0)) // 6 - (5 + 1) (Buy Now Price + fee)
+		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.
+			NFTOperationLimitMap[MakeNFTOperationLimitKey(*post1Hash, 1, NFTBidOperation)],
+			uint64(0))
+	}
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_executeAllTestRollbackAndFlush(testMeta)
 }
