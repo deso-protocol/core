@@ -1084,6 +1084,27 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				SerialNumber:    txMeta.SerialNumber,
 				BidAmountNanos:  txMeta.BidAmountNanos,
 			})
+
+			//get related NFT
+			pgBidNft := postgres.GetNFT(txMeta.NFTPostHash, txMeta.SerialNumber)
+
+			//check if is buy now and BidAmountNanos > then BuyNowPriceNanos
+			if pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
+
+				//get related profile
+				pgBidProfile := postgres.GetProfileForPublicKey(txn.PublicKey)
+
+				//add to accept bids as well
+				metadataAcceptNFTBids = append(metadataAcceptNFTBids, &PGMetadataAcceptNFTBid{
+					TransactionHash: txnHash,
+					NFTPostHash:     txMeta.NFTPostHash,
+					SerialNumber:    txMeta.SerialNumber,
+					BidderPKID:      pgBidProfile.PKID,
+					BidAmountNanos:  txMeta.BidAmountNanos,
+					UnlockableText:  []byte{},
+				})
+			}
+
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
 			txMeta := txn.TxnMeta.(*NFTTransferMetadata)
 			metadataNFTTransfer = append(metadataNFTTransfer, &PGMetadataNFTTransfer{
