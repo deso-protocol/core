@@ -1101,7 +1101,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 					SerialNumber:    txMeta.SerialNumber,
 					BidderPKID:      pgBidProfile.PKID,
 					BidAmountNanos:  txMeta.BidAmountNanos,
-					UnlockableText:  nil,
+					UnlockableText:  []byte{},
 				})
 			}
 
