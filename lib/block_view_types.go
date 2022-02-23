@@ -843,7 +843,9 @@ func (nftBidEntry *NFTBidEntry) Copy() *NFTBidEntry {
 	newEntry := *nftBidEntry
 	newEntry.BidderPKID = nftBidEntry.BidderPKID.NewPKID()
 	newEntry.NFTPostHash = nftBidEntry.NFTPostHash.NewBlockHash()
-	*newEntry.AcceptedBlockHeight = *nftBidEntry.AcceptedBlockHeight
+	if nftBidEntry.AcceptedBlockHeight != nil {
+		*newEntry.AcceptedBlockHeight = *nftBidEntry.AcceptedBlockHeight
+	}
 	return &newEntry
 }
 
