@@ -22,7 +22,8 @@ func NewPKID(pkidBytes []byte) *PKID {
 }
 
 var (
-	ZeroPKID = PKID{}
+	ZeroPKID      = PKID{}
+	ZeroBlockHash = BlockHash{}
 )
 
 func (pkid *PKID) ToBytes() []byte {

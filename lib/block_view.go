@@ -1677,13 +1677,13 @@ func _checkNFTLimitAndUpdateDerivedKeyEntry(
 	}
 
 	// Next, check (any post hash || any serial number (= 0 to check this) || specific operation key)
-	nilPostHashZeroSerialNumOperationKey := MakeNFTOperationLimitKey(BlockHash{}, 0, operation)
+	nilPostHashZeroSerialNumOperationKey := MakeNFTOperationLimitKey(ZeroBlockHash, 0, operation)
 	if _checkNFTKeyAndUpdateDerivedKeyEntry(nilPostHashZeroSerialNumOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
 	// Lastly, check (any post hash || any serial number (= 0 to check this) || any operation key)
-	nilPostHashZeroSerialNumAnyOperationKey := MakeNFTOperationLimitKey(BlockHash{}, 0, AnyNFTOperation)
+	nilPostHashZeroSerialNumAnyOperationKey := MakeNFTOperationLimitKey(ZeroBlockHash, 0, AnyNFTOperation)
 	if _checkNFTKeyAndUpdateDerivedKeyEntry(nilPostHashZeroSerialNumAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
@@ -1738,13 +1738,13 @@ func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
 	}
 
 	// Next check nil creator - operation key
-	nilCreatorOperationKey := MakeCreatorCoinOperationLimitKey(NewPKIDForNilCreator(), operation)
+	nilCreatorOperationKey := MakeCreatorCoinOperationLimitKey(ZeroPKID, operation)
 	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(nilCreatorOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
 	// Finally, check nil creator - any operation key
-	nilCreatorAnyOperationKey := MakeCreatorCoinOperationLimitKey(NewPKIDForNilCreator(), AnyCreatorCoinOperation)
+	nilCreatorAnyOperationKey := MakeCreatorCoinOperationLimitKey(ZeroPKID, AnyCreatorCoinOperation)
 	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(nilCreatorAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
@@ -1798,13 +1798,13 @@ func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 	}
 
 	// Next check nil creator - operation key
-	nilCreatorOperationKey := MakeDAOCoinOperationLimitKey(NewPKIDForNilCreator(), operation)
+	nilCreatorOperationKey := MakeDAOCoinOperationLimitKey(ZeroPKID, operation)
 	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(nilCreatorOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
 	// Finally, check nil creator - any operation key
-	nilCreatorAnyOperationKey := MakeDAOCoinOperationLimitKey(NewPKIDForNilCreator(), AnyDAOCoinOperation)
+	nilCreatorAnyOperationKey := MakeDAOCoinOperationLimitKey(ZeroPKID, AnyDAOCoinOperation)
 	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(nilCreatorAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
