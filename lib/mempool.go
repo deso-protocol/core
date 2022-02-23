@@ -1102,11 +1102,8 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	}
 
 	// Calculate metadata
-	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
+	mempoolTx.TxMeta = ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
 		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps)
-	if err == nil {
-		mempoolTx.TxMeta = txnMeta
-	}
 
 	glog.V(2).Infof("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
 		len(mp.poolMap))
@@ -1116,7 +1113,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
 	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation) (*TransactionMetadata, error) {
+	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation) *TransactionMetadata {
 
 	var err error
 	txnMeta := &TransactionMetadata{
@@ -1164,20 +1161,20 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			_computeBitcoinExchangeFields(utxoView.Params, txn.TxnMeta.(*BitcoinExchangeMetadata),
 				totalNanosPurchasedBefore, usdCentsPerBitcoinBefore)
 		if err != nil {
-			return nil, fmt.Errorf(
+			glog.V(2).Infof(
 				"UpdateTxindex: Error computing BitcoinExchange txn metadata: %v", err)
+		} else {
+			// Set the nanos purchased before/after.
+			txnMeta.BitcoinExchangeTxindexMetadata.TotalNanosPurchasedBefore = totalNanosPurchasedBefore
+			txnMeta.BitcoinExchangeTxindexMetadata.TotalNanosPurchasedAfter = utxoView.NanosPurchased
+
+			// Always associate BitcoinExchange txns with the burn public key. This makes it
+			//		// easy to enumerate all burn txns in the block explorer.
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: BurnPubKeyBase58Check,
+				Metadata:             "BurnPublicKey",
+			})
 		}
-
-		// Set the nanos purchased before/after.
-		txnMeta.BitcoinExchangeTxindexMetadata.TotalNanosPurchasedBefore = totalNanosPurchasedBefore
-		txnMeta.BitcoinExchangeTxindexMetadata.TotalNanosPurchasedAfter = utxoView.NanosPurchased
-
-		// Always associate BitcoinExchange txns with the burn public key. This makes it
-		//		// easy to enumerate all burn txns in the block explorer.
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: BurnPubKeyBase58Check,
-			Metadata:             "BurnPublicKey",
-		})
 	case TxnTypeCreatorCoin:
 		// Get the txn metadata
 		realTxMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
@@ -1290,9 +1287,10 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		// PosterPublicKeyBase58Check = TransactorPublicKeyBase58Check
 
 		// If ParentPostHashHex is set then get the parent posts public key and
-		// mark it as affected.
+		// mark it as affected. We only check this if PostHashToModify is not set
+		// so we only generate a notification the first time someone comments on your post.
 		// ParentPosterPublicKeyBase58Check is in AffectedPublicKeys
-		if len(realTxMeta.ParentStakeID) == HashSizeBytes {
+		if len(realTxMeta.PostHashToModify) == 0 && len(realTxMeta.ParentStakeID) == HashSizeBytes {
 			postHash := &BlockHash{}
 			copy(postHash[:], realTxMeta.ParentStakeID)
 			postEntry := utxoView.GetPostEntryForPostHash(postHash)
@@ -1711,7 +1709,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "ReceiverPublicKey",
 		})
 	}
-	return txnMeta, nil
+	return txnMeta
 }
 
 func pkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoView *UtxoView) map[string]uint64 {
@@ -1814,7 +1812,7 @@ func ConnectTxnAndComputeTransactionMetadata(
 	}
 
 	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps)
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps), nil
 }
 
 // This is the main function used for adding a new txn to the pool. It will
