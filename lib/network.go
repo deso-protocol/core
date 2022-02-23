@@ -4584,23 +4584,43 @@ type AuthorizeDerivedKeyMetadata struct {
 }
 
 type TransactionSpendingLimit struct {
-	// This is the total amount the derived key can spend
+	// This is the total amount the derived key can spend.
 	GlobalDESOLimit uint64
-	// TransactionCount
-	// If a transaction type is not specified in the map, it is not allowed. If the transaction type is in the map,
-	// the derived key is allow to perform the transaction up to the value to which it is mapped.
+	// This holds the number of times that a transaction type can be called by a
+	// derived key.
+	//
+	// If a transaction type is not specified in the map, it is not allowed. If the
+	// transaction type is in the map, the derived key is allowed to perform the
+	// transaction up to the value to which it is mapped.
 	TransactionCountLimitMap map[TxnType]uint64
 
-	// CreatorCoinOperationLimitMap is a map with keys composed of creator PKID - CreatorCoinLimitOperation to number
-	// of transactions
+	// This holds the number of times a particular creator coin txn can be
+	// executed by a derived key. It allows for more granular control than the
+	// TransactionCountLimitMap. For example, you can use this map to restrict
+	// a derived key to executing a single transfer of a specific creator coin,
+	// which can be used to implement a variety of use-cases, including a
+	// non-custodial order-book exchange smart service.
+	//
+	// CreatorCoinOperationLimitMap is a map with keys composed of creator
+	// (PKID || CreatorCoinLimitOperation) and values consisting of number
+	// of transactions this derived key is allowed to execute.
 	CreatorCoinOperationLimitMap map[CreatorCoinOperationLimitKey]uint64
 
-	// DAOCoinOperationLimitMap is a map with keys composed of creator PKID - DAOCoinLimitOperation to number of
-	// transactions
+	// See comment on CreatorCoinOperationLimitMap. This map serves the same
+	// purpose, but for DAO coins, and enables non-custodial exchange use-cases.
+	//
+	// DAOCoinOperationLimitMap is a map with keys composed of creator
+	// (PKID || DAOCoinLimitOperation) to number of transactions this derived key
+	// is allowed to execute.
 	DAOCoinOperationLimitMap map[DAOCoinOperationLimitKey]uint64
 
-	// NFTOperationLimitMap is a map with keys composed of PostHash - Serial Num - NFTLimitOperation to number
-	// of transaction
+	// NFTOperationLimitMap is a map with keys composed of
+	// (PostHash || Serial Num || NFTLimitOperation) to number of transactions this
+	// derived key is allowed to execute.
+	//
+	// This map is more granular than TransactionCountLimitMap, and it's useful for
+	// giving limited access to an NFT marketplace smart service to accept bids on
+	// behalf of users.
 	NFTOperationLimitMap map[NFTOperationLimitKey]uint64
 }
 
@@ -4689,7 +4709,7 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 
 func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
 	if len(data) == 0 {
-	return nil
+		return nil
 	}
 	rr := bytes.NewReader(data)
 	globalDESOLimit, err := ReadUvarint(rr)
@@ -4948,23 +4968,24 @@ func MakeNFTOperationLimitKey(blockHash BlockHash, serialNumber uint64, operatio
 	}
 }
 
+// The operations that are permitted to be performed by a derived key.
 type CreatorCoinLimitOperation uint8
 
 const (
-	AnyCreatorCoinOperation      CreatorCoinLimitOperation = 0
-	BuyCreatorCoinOperation      CreatorCoinLimitOperation = 1
-	SellCreatorCoinOperation     CreatorCoinLimitOperation = 2
-	TransferCreatorCoinOperation CreatorCoinLimitOperation = 3
+	AnyCreatorCoinOperation       CreatorCoinLimitOperation = 0
+	BuyCreatorCoinOperation       CreatorCoinLimitOperation = 1
+	SellCreatorCoinOperation      CreatorCoinLimitOperation = 2
+	TransferCreatorCoinOperation  CreatorCoinLimitOperation = 3
 	UndefinedCreatorCoinOperation CreatorCoinLimitOperation = 4
 )
 
 type CreatorCoinLimitOperationString string
 
 const (
-	AnyCreatorCoinOperationString      CreatorCoinLimitOperationString = "any"
-	BuyCreatorCoinOperationString      CreatorCoinLimitOperationString = "buy"
-	SellCreatorCoinOperationString     CreatorCoinLimitOperationString = "sell"
-	TransferCreatorCoinOperationString CreatorCoinLimitOperationString = "transfer"
+	AnyCreatorCoinOperationString       CreatorCoinLimitOperationString = "any"
+	BuyCreatorCoinOperationString       CreatorCoinLimitOperationString = "buy"
+	SellCreatorCoinOperationString      CreatorCoinLimitOperationString = "sell"
+	TransferCreatorCoinOperationString  CreatorCoinLimitOperationString = "transfer"
 	UndefinedCreatorCoinOperationString CreatorCoinLimitOperationString = "undefined"
 )
 

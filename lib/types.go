@@ -3,7 +3,6 @@ package lib
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"reflect"
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -22,18 +21,9 @@ func NewPKID(pkidBytes []byte) *PKID {
 	return pkid
 }
 
-var NilCreatorPKIDBytes = []byte{0}
-// TODO: this is a hacky fix... how can I represent a nil value for a creator in one of the
-// transaction spending limit keys.
-func NewPKIDForNilCreator() PKID {
-	pkid := PKID{}
-	copy(pkid[:], NilCreatorPKIDBytes)
-	return pkid
-}
-
-func (pkid PKID) IsPKIDForNilCreator() bool {
-	return reflect.DeepEqual(pkid[:], NilCreatorPKIDBytes)
-}
+var (
+	ZeroPKID = PKID{}
+)
 
 func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
@@ -83,20 +73,6 @@ func NewBlockHash(input []byte) *BlockHash {
 	blockHash := &BlockHash{}
 	copy(blockHash[:], input)
 	return blockHash
-}
-
-// TODO: this is a hacky fix... how can I represent a nil value for a blockhash in one of the
-// transaction spending limit keys.
-var NilPostHashBytes = []byte{0}
-
-func NewBlockHashForNilPostHash() BlockHash {
-	blockHash := BlockHash{}
-	copy(blockHash[:], NilPostHashBytes)
-	return blockHash
-}
-
-func (bh BlockHash) IsBlockHashForNilPostHash() bool {
-	return reflect.DeepEqual(bh[:], NilPostHashBytes)
 }
 
 func (bh *BlockHash) String() string {

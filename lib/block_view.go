@@ -656,7 +656,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	// If we are, search for a spending limit accounting operation. If one exists, we disconnect
 	// the accounting changes and decrement the operation index to move past it.
 	operationIndex := len(utxoOpsForTxn) - 1
-	if bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
+	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeSpendingLimitAccounting {
 			currentOperation := utxoOpsForTxn[operationIndex]
 			// Get the current derived key entry
@@ -1084,7 +1084,7 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 	return false
 }
 
-func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedKeyBytes []byte, _err error) {
+func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -1118,23 +1118,38 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 			return nil, nil
 		}
 	} else {
-		// Look for a derived key entry in UtxoView and DB, check if it exists nor is deleted.
+		// Look for a derived key entry in UtxoView and DB, check to make sure it exists
+		// and is not isDeleted.
 		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
 		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-			return nil, RuleErrorDerivedKeyNotAuthorized
+			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized,
+				"Derived key mapping for owner not found: Owner: %v, "+
+					"Derived key: %v", PkToStringMainnet(ownerPkBytes),
+				PkToStringMainnet(derivedPkBytes))
 		}
 
 		// Sanity-check that transaction public keys line up with looked-up derivedKeyEntry public keys.
 		if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
 			!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
-			return nil, RuleErrorDerivedKeyNotAuthorized
+			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "DB entry (OwnerPubKey, "+
+				"DerivedPubKey) = (%v, %v) does not match keys used to "+
+				"look up the entry: (%v, %v). This should never happen.",
+				PkToStringMainnet(derivedKeyEntry.OwnerPublicKey[:]),
+				PkToStringMainnet(derivedKeyEntry.DerivedPublicKey[:]),
+				PkToStringMainnet(ownerPkBytes),
+				PkToStringMainnet(derivedPkBytes))
 		}
 
 		// At this point, we know the derivedKeyEntry that we have is matching.
 		// We check if the derived key hasn't been de-authorized or hasn't expired.
 		if derivedKeyEntry.OperationType != AuthorizeDerivedKeyOperationValid ||
 			derivedKeyEntry.ExpirationBlock <= uint64(blockHeight) {
-			return nil, RuleErrorDerivedKeyNotAuthorized
+			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key EITHER "+
+				"deactivated or block height expired. Deactivation status: %v, "+
+				"Expiration block height: %v, Current block height: %v",
+				derivedKeyEntry.OperationType,
+				derivedKeyEntry.ExpirationBlock,
+				blockHeight)
 		}
 
 		// All checks passed so we try to verify the signature.
@@ -1142,7 +1157,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 			return derivedPk.SerializeCompressed(), nil
 		}
 
-		return nil, RuleErrorDerivedKeyNotAuthorized
+		return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Signature check failed: ")
 	}
 
 	return nil, RuleErrorInvalidTransactionSignature
@@ -1427,10 +1442,12 @@ func (bav *UtxoView) _connectBasicTransfer(
 				return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveSignature
 			}
 		} else {
-			if derivedPkBytes, err := bav._verifySignature(txn, blockHeight); err != nil {
+			derivedPkBytes, err := bav._verifySignature(txn, blockHeight)
+			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem verifying txn signature: ")
-			} else if bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight &&
-				derivedPkBytes != nil {
+			}
+			if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight &&
+				len(derivedPkBytes) == btcec.PubKeyBytesLenCompressed {
 				// Now we check the transaction limits on the derived key
 				if utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn); err != nil {
 					return 0, 0, nil, err
@@ -1455,8 +1472,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	}
 
 	// Create a copy of the prevDerivedKeyEntry so we can safely modify the new entry
-	derivedKeyEntry := *prevDerivedKeyEntry
-	derivedKeyEntry.TransactionSpendingLimitTracker = prevDerivedKeyEntry.TransactionSpendingLimitTracker.Copy()
+	derivedKeyEntry := *prevDerivedKeyEntry.Copy()
 
 	// Spend amount is total inputs minus sum of AddUtxo type operations with utxo type of UtxoOutputTypes
 	// going to transactor
@@ -1483,8 +1499,8 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 
 	txnType := txn.TxnMeta.GetTxnType()
 
-	// If the transaction limit is not specified or equal to 0, this derived key is not authorized to perform
-	// this transaction.
+	// If the transaction limit is not specified or equal to 0, this derived
+	// key is not authorized to perform this transaction.
 	if transactionLimit, transactionLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap[txnType]; !transactionLimitExists || transactionLimit == 0 {
 		return utxoOpsForTxn, errors.Wrapf(
@@ -1606,9 +1622,10 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 
 // _checkNFTKeyAndUpdateDerivedKeyEntry checks if the NFTOperationLimitKey is present
 // in the DerivedKeyEntry's TransactionSpendingLimitTracker's NFTOperationLimitMap.
-// If the key is present, the operation is allowed and we decrement the number of operation remaining.
-// If there are no operation remaining after this one, we delete the key.
-// Returns true if the key was found and the derived key entry was updated.
+// If the key is present, the operation is allowed and we decrement the number of
+// operations remaining. If there are no operation remaining after this one, we
+// delete the key. Returns true if the key was found and the derived key entry
+// was updated.
 func _checkNFTKeyAndUpdateDerivedKeyEntry(key NFTOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
 	// If the key is present in the NFTOperationLimitMap...
 	if nftLimit, nftLimitExist :=
@@ -1630,46 +1647,49 @@ func _checkNFTKeyAndUpdateDerivedKeyEntry(key NFTOperationLimitKey, derivedKeyEn
 func _checkNFTLimitAndUpdateDerivedKeyEntry(
 	derivedKeyEntry DerivedKeyEntry, nftPostHash *BlockHash, serialNumber uint64, operation NFTLimitOperation) (
 	_derivedKeyEntry DerivedKeyEntry, _err error) {
-	// TODO: are we allowing setting both a serial number X and a serial number 0 on the same NFT.
-	// I think this is okay. Go to more specific first then go to serial number 0.
+	// We allow you to set permissions on NFTs at multiple levels: Post hash, serial number,
+	// operation type. In checking permissions, we start by trying to use up the quota from
+	// the most specific possible combination, and then work our way up to the more general
+	// combinations. This ensures that the quota is used most efficiently.
 
-	// Start by checking post hash - serial number - operation key
+	// Start by checking (specific post hash || specific serial number || specific operation key)
 	postHashSerialNumberOperationKey := MakeNFTOperationLimitKey(*nftPostHash, serialNumber, operation)
 	if _checkNFTKeyAndUpdateDerivedKeyEntry(postHashSerialNumberOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Next check post hash - serial number - any operation key
+	// Next check (specific post hash || specific serial number || any operation key)
 	postHashSerialNumberAnyOpKey := MakeNFTOperationLimitKey(*nftPostHash, serialNumber, AnyNFTOperation)
 	if _checkNFTKeyAndUpdateDerivedKeyEntry(postHashSerialNumberAnyOpKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Next check post hash - serial number 0 - operation key
+	// Next check (specific post hash || any serial number (= 0 to check this) || specific operation key)
 	postHashZeroSerialNumOperationKey := MakeNFTOperationLimitKey(*nftPostHash, 0, operation)
 	if _checkNFTKeyAndUpdateDerivedKeyEntry(postHashZeroSerialNumOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Next check post hash - serial number 0 - any operation key
+	// Next check (specific post hash || any serial number (= 0 to check this) || any operation key)
 	postHashZeroSerialNumAnyOperationKey := MakeNFTOperationLimitKey(*nftPostHash, 0, AnyNFTOperation)
 	if _checkNFTKeyAndUpdateDerivedKeyEntry(postHashZeroSerialNumAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Next, check nil post hash - serial number 0 - operation key
-	nilPostHashZeroSerialNumOperationKey := MakeNFTOperationLimitKey(NewBlockHashForNilPostHash(), 0, operation)
+	// Next, check (any post hash || any serial number (= 0 to check this) || specific operation key)
+	nilPostHashZeroSerialNumOperationKey := MakeNFTOperationLimitKey(BlockHash{}, 0, operation)
 	if _checkNFTKeyAndUpdateDerivedKeyEntry(nilPostHashZeroSerialNumOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Lastly, check nil post hash - serial number 0 - any operation key
-	nilPostHashZeroSerialNumAnyOperationKey := MakeNFTOperationLimitKey(NewBlockHashForNilPostHash(), 0, AnyNFTOperation)
+	// Lastly, check (any post hash || any serial number (= 0 to check this) || any operation key)
+	nilPostHashZeroSerialNumAnyOperationKey := MakeNFTOperationLimitKey(BlockHash{}, 0, AnyNFTOperation)
 	if _checkNFTKeyAndUpdateDerivedKeyEntry(nilPostHashZeroSerialNumAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Note we don't check nil post hash + serial number cases, because that doesn't really make sense. Think about it.
+	// Note we don't check nil post hash + serial number cases, because that
+	// doesn't really make sense. Think about it.
 	return derivedKeyEntry, RuleErrorDerivedKeyNFTOperationNotAuthorized
 }
 

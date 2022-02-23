@@ -328,7 +328,7 @@ func _doTxn(
 	// for each output, and one operation that corresponds to the txn type at the end.
 	// TODO: generalize?
 	utxoOpExpectation := len(txn.TxInputs) + len(txn.TxOutputs) + 1
-	if isDerivedTransactor && testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
+	if isDerivedTransactor && blockHeight >= testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		utxoOpExpectation++
 	}
 	// We add one op to account for NFT bids on buy now NFT.
@@ -532,7 +532,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// for each output, (and 1 for the spending limit accounting if we're passed the block height)
 	// and one OperationTypeUpdateProfile operation at the end.
 	transactionSpendingLimitCount := 0
-	if params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
+	if blockHeight >= params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		transactionSpendingLimitCount++
 	}
 	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1+transactionSpendingLimitCount, len(utxoOps))

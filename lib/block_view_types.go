@@ -863,6 +863,15 @@ type DerivedKeyEntry struct {
 	isDeleted bool
 }
 
+func (dk *DerivedKeyEntry) Copy() *DerivedKeyEntry {
+	if dk == nil {
+		return nil
+	}
+	newEntry := *dk
+	newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	return &newEntry
+}
+
 type DerivedKeyMapKey struct {
 	// Owner public key
 	OwnerPublicKey PublicKey

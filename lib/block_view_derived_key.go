@@ -351,7 +351,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	// reverting the DerivedKeyEntry mappings because the basic transfer connect logic modifies the
 	// transaction spending limit for the derived key entry prior to it being updated in the connect logic for
 	// authorize derived key.
-	if bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight < blockHeight {
+	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		if err = bav._disconnectBasicTransfer(
 			currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight); err != nil {
 			return err
