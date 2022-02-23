@@ -1882,12 +1882,11 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	var deleteBids []*PGNFTBid
 	for _, bidEntry := range view.NFTBidKeyToNFTBidEntry {
 		nft := &PGNFTBid{
-			BidderPKID:     bidEntry.BidderPKID,
-			NFTPostHash:    bidEntry.NFTPostHash,
-			SerialNumber:   bidEntry.SerialNumber,
-			BidAmountNanos: bidEntry.BidAmountNanos,
-			// TODO: Change how accepted bid logic works in consensus
-			Accepted:            false,
+			BidderPKID:          bidEntry.BidderPKID,
+			NFTPostHash:         bidEntry.NFTPostHash,
+			SerialNumber:        bidEntry.SerialNumber,
+			BidAmountNanos:      bidEntry.BidAmountNanos,
+			Accepted:            bidEntry.AcceptedBlockHeight != nil,
 			AcceptedBlockHeight: bidEntry.AcceptedBlockHeight,
 		}
 
