@@ -892,7 +892,8 @@ func (bav *UtxoView) _connectMessagingGroup(
 	var prevMessagingKeyEntry *MessagingGroupEntry
 	if existingEntry != nil && !existingEntry.isDeleted {
 		prevMessagingKeyEntry = &MessagingGroupEntry{}
-		prevMessagingKeyEntry.Decode(existingEntry.Encode())
+		rr := bytes.NewReader(existingEntry.Encode())
+		prevMessagingKeyEntry.Decode(rr)
 	}
 	bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, &messagingGroupEntry)
 

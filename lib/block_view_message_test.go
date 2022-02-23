@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
@@ -1170,7 +1171,8 @@ func TestMessagingKeys(t *testing.T) {
 		// m1PubKey tries to add himself to the group, this will fail because only sender can add
 		// new members.
 		var entryCopy MessagingGroupEntry
-		require.NoError(entryCopy.Decode(entry.Encode()))
+		rr := bytes.NewReader(entry.Encode())
+		require.NoError(entryCopy.Decode(rr))
 		entryCopy.MessagingGroupMembers[0] = &MessagingGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
@@ -1189,7 +1191,8 @@ func TestMessagingKeys(t *testing.T) {
 
 		// Sender adds m1PubKey to the group chat, this time we will succeed.
 		var workingCopy MessagingGroupEntry
-		require.NoError(workingCopy.Decode(entry.Encode()))
+		rr = bytes.NewReader(entry.Encode())
+		require.NoError(workingCopy.Decode(rr))
 		workingCopy.MessagingGroupMembers[0] = &MessagingGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
@@ -1253,7 +1256,8 @@ func TestMessagingKeys(t *testing.T) {
 		_, groupPkBytes := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(groupKeyName)[:])
 		groupPk := NewPublicKey(groupPkBytes.SerializeCompressed())
 		expectedEntry := &MessagingGroupEntry{}
-		require.NoError(expectedEntry.Decode(entry.Encode()))
+		rr := bytes.NewReader(entry.Encode())
+		require.NoError(expectedEntry.Decode(rr))
 		expectedEntry.MessagingPublicKey = groupPk
 		expectedEntry.GroupOwnerPublicKey = basePk
 		// Should pass.
@@ -1276,7 +1280,8 @@ func TestMessagingKeys(t *testing.T) {
 			nil)
 		// Verify that the entry exists in the DB.
 		expectedEntry = &MessagingGroupEntry{}
-		require.NoError(expectedEntry.Decode(entry.Encode()))
+		rr = bytes.NewReader(entry.Encode())
+		require.NoError(expectedEntry.Decode(rr))
 		expectedEntry.MessagingPublicKey = groupPk
 		expectedEntry.GroupOwnerPublicKey = basePk
 		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))

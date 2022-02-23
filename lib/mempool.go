@@ -1291,7 +1291,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		// If ParentPostHashHex is set then get the parent posts public key and
 		// mark it as affected.
 		// ParentPosterPublicKeyBase58Check is in AffectedPublicKeys
-		if len(realTxMeta.ParentStakeID) == HashSizeBytes {
+		if len(realTxMeta.PostHashToModify) == 0 && len(realTxMeta.ParentStakeID) == HashSizeBytes {
 			postHash := &BlockHash{}
 			copy(postHash[:], realTxMeta.ParentStakeID)
 			postEntry := utxoView.GetPostEntryForPostHash(postHash)

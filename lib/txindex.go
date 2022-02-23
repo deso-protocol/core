@@ -360,7 +360,7 @@ func (txi *TXIndex) Update() error {
 	// and add their mappings to our txn index. Compute any metadata that might
 	// be useful.
 	for _, blockToAttach := range attachBlocks {
-		if blockToAttach.Height%100 == 0 {
+		if blockToAttach.Height%1 == 0 {
 			glog.Infof("Update: Txindex progress: block %d / %d",
 				blockToAttach.Height, blockTipNode.Height)
 		}

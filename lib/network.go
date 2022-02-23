@@ -2490,6 +2490,30 @@ func (desoOutput *DeSoOutput) String() string {
 		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
 }
 
+func (desoOutput *DeSoOutput) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(desoOutput.PublicKey)...)
+	data = append(data, UintToBuf(desoOutput.AmountNanos)...)
+
+	return data
+}
+
+func (desoOutput *DeSoOutput) Decode(rr *bytes.Reader) error {
+	var err error
+
+	desoOutput.PublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading PublicKey")
+	}
+
+	desoOutput.AmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading AmountNanos")
+	}
+	return nil
+}
+
 type MsgDeSoTxn struct {
 	TxInputs  []*DeSoInput
 	TxOutputs []*DeSoOutput

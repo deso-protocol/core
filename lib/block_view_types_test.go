@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -174,9 +175,10 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 		}
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, nil, utxoView)
 		for _, entry := range utxoEntries {
-			bytes := entry.Encode()
-			var newEntry UtxoEntry
-			newEntry.Decode(bytes)
+			entryBytes := entry.Encode()
+			newEntry := UtxoEntry{}
+			rr := bytes.NewReader(entryBytes)
+			newEntry.Decode(rr)
 			require.Equal(reflect.DeepEqual(entry.String(), newEntry.String()), true)
 		}
 

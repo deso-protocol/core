@@ -14,18 +14,19 @@ func TestRun(t *testing.T) {
 	config := Config{}
 	config.Params = &lib.DeSoMainnetParams
 	config.ProtocolPort = uint16(19000)
-	config.DataDirectory = "/Users/piotr/data_dirs/n4_29"
+	config.DataDirectory = "/Users/piotr/data_dirs/n98_1"
 	if err := os.MkdirAll(config.DataDirectory, os.ModePerm); err != nil {
 		t.Fatalf("Could not create data directories (%s): %v", config.DataDirectory, err)
 	}
-	config.HyperSync = true
-	config.MaxSyncBlockHeight = 5000
-	config.ConnectIPs = []string{"localhost:18000"}
+	config.TXIndex = true
+	config.HyperSync = false
+	config.MaxSyncBlockHeight = 0
+	config.ConnectIPs = []string{}
 	config.LogDirectory = "/Users/piotr/Desktop/Code/DeSo/logs/n1/test23"
 	config.GlogV = 1
-	config.GlogVmodule = "*bitcoin_manager*=2,*balance*=2,*view*=2,*frontend*=2,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=2,*mempool*=2,*miner*=2,*blockchain*=2"
-	config.MaxInboundPeers = 125
-	config.TargetOutboundPeers = 8
+	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
+	config.MaxInboundPeers = 0
+	config.TargetOutboundPeers = 0
 	config.StallTimeoutSeconds = 900
 	config.MinFeerate = 1000
 	config.OneInboundPerIp = true

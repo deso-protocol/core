@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -80,7 +79,7 @@ type DBPrefixes struct {
 	// that were applied by this block. To roll back the block, one must loop through
 	// the UtxoOperations for a particular block backwards and invert them.
 	//
-	// <prefix_id, hash *BlockHash > -> < serialized []UtxoOperation using gob encoding >
+	// <prefix_id, hash *BlockHash > -> < serialized []UtxoOperation using custom encoding >
 	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]"`
 	// The below are mappings related to the validation of BitcoinExchange transactions.
 	//
@@ -1228,7 +1227,8 @@ func DBGetMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 		return nil
 	}
 	messagingGroupEntry := &MessagingGroupEntry{}
-	messagingGroupEntry.Decode(messagingGroupBytes)
+	rr := bytes.NewReader(messagingGroupBytes)
+	messagingGroupEntry.Decode(rr)
 	return messagingGroupEntry
 }
 
@@ -1283,7 +1283,8 @@ func DBGetMessagingGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *
 	messagingKeyEntries := []*MessagingGroupEntry{}
 	for _, valBytes := range valuesFound {
 		messagingKeyEntry := &MessagingGroupEntry{}
-		err = messagingKeyEntry.Decode(valBytes)
+		rr := bytes.NewReader(valBytes)
+		err = messagingKeyEntry.Decode(rr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: " +
 				"problem decoding messaging key entry for public key (%v)", ownerPublicKey)
@@ -1409,7 +1410,8 @@ func DBGetMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, messaging
 		return nil
 	}
 	messagingGroupMemberEntry := &MessagingGroupEntry{}
-	messagingGroupMemberEntry.Decode(messagingGroupMemberEntryBytes)
+	rr := bytes.NewReader(messagingGroupMemberEntryBytes)
+	messagingGroupMemberEntry.Decode(rr)
 
 	return messagingGroupMemberEntry
 }
@@ -1439,7 +1441,8 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicK
 
 	for _, valBytes := range valuesFound {
 		messagingGroupEntry := MessagingGroupEntry{}
-		err = messagingGroupEntry.Decode(valBytes)
+		rr := bytes.NewReader(valBytes)
+		err = messagingGroupEntry.Decode(rr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: problem reading " +
 				"an entry from DB")
@@ -1803,7 +1806,8 @@ func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(txn *badger.Txn,
 	}
 
 	repostEntryObj := &RepostEntry{}
-	repostEntryObj.Decode(repostEntryBytes)
+	rr := bytes.NewReader(repostEntryBytes)
+	repostEntryObj.Decode(rr)
 	return repostEntryObj
 }
 
@@ -2202,7 +2206,8 @@ func DbGetDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, diamondReceive
 	// hold one uint8 with a value between 1 and 5 but the caller is responsible for sanity
 	// checking in order to maintain consistency with other DB functions that do not error.
 	diamondEntry := &DiamondEntry{}
-	diamondEntry.Decode(diamondEntryBytes)
+	rr := bytes.NewReader(diamondEntryBytes)
+	diamondEntry.Decode(rr)
 	return diamondEntry
 }
 
@@ -2288,7 +2293,8 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
 		diamondEntry := &DiamondEntry{}
-		diamondEntry.Decode(valsFound[ii])
+		rr := bytes.NewReader(valsFound[ii])
+		diamondEntry.Decode(rr)
 		if diamondEntry == nil {
 			return nil, fmt.Errorf(
 				"DbGetPKIDsThatDiamondedYouMap: Found nil DiamondEntry for public key %v "+
@@ -2360,7 +2366,8 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
 		diamondEntry := &DiamondEntry{}
-		diamondEntry.Decode(valsFound[ii])
+		rr := bytes.NewReader(valsFound[ii])
+		diamondEntry.Decode(rr)
 		if diamondEntry == nil {
 			return nil, fmt.Errorf(
 				"DbGetDiamondEntriesForGiverToReceiver: Found nil DiamondEntry for receiver key %v "+
@@ -2554,7 +2561,8 @@ func DbGetGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot) *GlobalParam
 		return &InitialGlobalParamsEntry
 	}
 	globalParamsEntryObj := &GlobalParamsEntry{}
-	globalParamsEntryObj.Decode(globalParamsEntryBytes)
+	rr := bytes.NewReader(globalParamsEntryBytes)
+	globalParamsEntryObj.Decode(rr)
 
 	return globalParamsEntryObj
 }
@@ -2659,7 +2667,8 @@ func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *U
 	}
 
 	utxoEntry := &UtxoEntry{}
-	utxoEntry.Decode(utxoEntryBytes)
+	rr := bytes.NewReader(utxoEntryBytes)
+	utxoEntry.Decode(rr)
 	return utxoEntry
 }
 
@@ -2802,19 +2811,46 @@ func PutMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *UtxoKey
 }
 
 func _DecodeUtxoOperations(data []byte) ([][]*UtxoOperation, error) {
-	ret := [][]*UtxoOperation{}
-	// It is fine to use gob here because UtxoOperation is not part of the state.
-	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&ret); err != nil {
+	var ret [][]*UtxoOperation
+
+	rr := bytes.NewReader(data)
+	opListLen, err := ReadUvarint(rr)
+	if err != nil {
 		return nil, err
 	}
+
+	for ;opListLen > 0; opListLen-- {
+		opLen, err := ReadUvarint(rr)
+		if err != nil {
+			return nil, err
+		}
+
+		var opList []*UtxoOperation
+		for ;opLen > 0; opLen-- {
+			op := &UtxoOperation{}
+			err = op.Decode(rr)
+			if err != nil {
+				return nil, err
+			}
+			opList = append(opList, op)
+		}
+		ret = append(ret, opList)
+	}
+
 	return ret, nil
 }
 
 func _EncodeUtxoOperations(utxoOp [][]*UtxoOperation) []byte {
-	opBuf := bytes.NewBuffer([]byte{})
-	// It is fine to use gob here because UtxoOperation is not part of the state.
-	gob.NewEncoder(opBuf).Encode(utxoOp)
-	return opBuf.Bytes()
+	var data []byte
+
+	data = append(data, UintToBuf(uint64(len(utxoOp)))...)
+	for _, opList := range utxoOp {
+		data = append(data, UintToBuf(uint64(len(opList)))...)
+		for _, op := range opList {
+			data = append(data, op.Encode()...)
+		}
+	}
+	return data
 }
 
 func _DbKeyForUtxoOps(blockHash *BlockHash) []byte {
@@ -3763,6 +3799,31 @@ type AffectedPublicKey struct {
 	Metadata string
 }
 
+func (pk *AffectedPublicKey) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(pk.PublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(pk.Metadata))...)
+	return data
+}
+
+func (pk *AffectedPublicKey) Decode(rr *bytes.Reader) error {
+
+	publicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AffectedPublicKey.Decode: problem reading PublicKeyBase58Check")
+	}
+	pk.PublicKeyBase58Check = string(publicKeyBase58CheckBytes)
+
+	metadataBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AffectedPublicKey.Decode: problem reading Metadata")
+	}
+	pk.Metadata = string(metadataBytes)
+
+	return nil
+}
+
 type BasicTransferTxindexMetadata struct {
 	TotalInputNanos  uint64
 	TotalOutputNanos uint64
@@ -3772,6 +3833,71 @@ type BasicTransferTxindexMetadata struct {
 	DiamondLevel     int64
 	PostHashHex      string
 }
+
+func (txnMeta *BasicTransferTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(txnMeta.TotalInputNanos)...)
+	data = append(data, UintToBuf(txnMeta.TotalOutputNanos)...)
+	data = append(data, UintToBuf(txnMeta.FeeNanos)...)
+	data = append(data, UintToBuf(uint64(len(txnMeta.UtxoOpsDump)))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.UtxoOpsDump))...)
+
+	data = append(data, UintToBuf(uint64(len(txnMeta.UtxoOps)))...)
+	for _, utxoOp := range txnMeta.UtxoOps {
+		data = append(data, utxoOp.Encode()...)
+	}
+	data = append(data, UintToBuf(uint64(txnMeta.DiamondLevel))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.PostHashHex))...)
+	return data
+}
+
+func (txnMeta *BasicTransferTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	txnMeta.TotalInputNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading TotalInputNanos")
+	}
+
+	txnMeta.TotalOutputNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading TotalOutputNanos")
+	}
+
+	txnMeta.FeeNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading FeeNanos")
+	}
+
+	lenUtxoOpsDump, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading len of UtxoOps")
+	}
+	for ;lenUtxoOpsDump > 0; lenUtxoOpsDump-- {
+		utxoOp := &UtxoOperation{}
+		err = utxoOp.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading UtxoOpsDump")
+		}
+		txnMeta.UtxoOps = append(txnMeta.UtxoOps, utxoOp)
+	}
+
+	uint64DiamondLevel, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading DiamondLevel")
+	}
+	txnMeta.DiamondLevel = int64(uint64DiamondLevel)
+
+	postHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading PostHashHex")
+	}
+	txnMeta.PostHashHex = string(postHashBytes)
+
+	return nil
+}
+
 type BitcoinExchangeTxindexMetadata struct {
 	BitcoinSpendAddress string
 	// DeSoOutputPubKeyBase58Check = TransactorPublicKeyBase58Check
@@ -3783,6 +3909,56 @@ type BitcoinExchangeTxindexMetadata struct {
 	TotalNanosPurchasedAfter  uint64
 	BitcoinTxnHash            string
 }
+
+func (txnMeta *BitcoinExchangeTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.BitcoinSpendAddress))...)
+	data = append(data, UintToBuf(txnMeta.SatoshisBurned)...)
+	data = append(data, UintToBuf(txnMeta.NanosCreated)...)
+	data = append(data, UintToBuf(txnMeta.TotalNanosPurchasedBefore)...)
+	data = append(data, UintToBuf(txnMeta.TotalNanosPurchasedAfter)...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.BitcoinTxnHash))...)
+	return data
+}
+
+func (txnMeta *BitcoinExchangeTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	bitcoinSpendAddressBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BitcoinExchangeTxindexMetadata.Decode: problem decoding BitcoinSpendAddress")
+	}
+	txnMeta.BitcoinSpendAddress = string(bitcoinSpendAddressBytes)
+
+	txnMeta.SatoshisBurned, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BitcoinExchangeTxindexMetadata.Decode: problem decoding SatoshisBurned")
+	}
+
+	txnMeta.NanosCreated, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BitcoinExchangeTxindexMetadata.Decode: problem decoding NanosCreated")
+	}
+
+	txnMeta.TotalNanosPurchasedBefore, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BitcoinExchangeTxindexMetadata.Decode: problem decoding TotalNanosPurchasedBefore")
+	}
+	txnMeta.TotalNanosPurchasedAfter, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BitcoinExchangeTxindexMetadata.Decode: problem decoding TotalNanosPurchasedAfter")
+	}
+
+	bitcoinTxnHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BitcoinExchangeTxindexMetadata.Decode: problem decoding BitcoinTxnHash")
+	}
+	txnMeta.BitcoinTxnHash = string(bitcoinTxnHashBytes)
+
+	return nil
+}
+
 type CreatorCoinTxindexMetadata struct {
 	OperationType string
 	// TransactorPublicKeyBase58Check = TransactorPublicKeyBase58Check
@@ -3798,6 +3974,50 @@ type CreatorCoinTxindexMetadata struct {
 	DESOLockedNanosDiff int64
 }
 
+func (txnMeta *CreatorCoinTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.OperationType))...)
+	data = append(data, UintToBuf(txnMeta.DeSoToSellNanos)...)
+	data = append(data, UintToBuf(txnMeta.CreatorCoinToSellNanos)...)
+	data = append(data, UintToBuf(txnMeta.DeSoToAddNanos)...)
+	data = append(data, UintToBuf(uint64(txnMeta.DESOLockedNanosDiff))...)
+	return data
+}
+
+func (txnMeta *CreatorCoinTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	operationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTxindexMetadata.Decode: Problem reading OperationType")
+	}
+	txnMeta.OperationType = string(operationTypeBytes)
+
+	txnMeta.DeSoToSellNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTxindexMetadata.Decode: Problem reading DeSoToSellNanos")
+	}
+
+	txnMeta.CreatorCoinToSellNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTxindexMetadata.Decode: Problem reading CreatorCoinToSellNanos")
+	}
+
+	txnMeta.DeSoToAddNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTxindexMetadata.Decode: Problem reading DeSoToAddNanos")
+	}
+
+	uint64DESOLockedNanosDiff, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTxindexMetadata.Decode: Problem reading uint64DESOLockedNanosDiff")
+	}
+	txnMeta.DESOLockedNanosDiff = int64(uint64DESOLockedNanosDiff)
+
+	return nil
+}
+
 type CreatorCoinTransferTxindexMetadata struct {
 	CreatorUsername            string
 	CreatorCoinToTransferNanos uint64
@@ -3805,9 +4025,73 @@ type CreatorCoinTransferTxindexMetadata struct {
 	PostHashHex                string
 }
 
+func (txnMeta *CreatorCoinTransferTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
+	data = append(data, UintToBuf(txnMeta.CreatorCoinToTransferNanos)...)
+	data = append(data, UintToBuf(uint64(txnMeta.DiamondLevel))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.PostHashHex))...)
+	return data
+}
+
+func (txnMeta *CreatorCoinTransferTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	creatorUsernameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTransferTxindexMetadata.Decode: problem reading CreatorUsername")
+	}
+	txnMeta.CreatorUsername = string(creatorUsernameBytes)
+
+	txnMeta.CreatorCoinToTransferNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTransferTxindexMetadata.Decode: problem reading CreatorCoinToTransferNanos")
+	}
+
+	uint64DiamondLevel, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTransferTxindexMetadata.Decode: problem reading DiamondLevel")
+	}
+	txnMeta.DiamondLevel = int64(uint64DiamondLevel)
+
+	postHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinTransferTxindexMetadata.Decode: problem reading PostHashHex")
+	}
+	txnMeta.PostHashHex = string(postHashHexBytes)
+
+	return nil
+}
+
 type DAOCoinTransferTxindexMetadata struct {
 	CreatorUsername        string
 	DAOCoinToTransferNanos uint256.Int
+}
+
+func (txnMeta *DAOCoinTransferTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
+	data = append(data, EncodeUint256(&txnMeta.DAOCoinToTransferNanos)...)
+	return data
+}
+
+func (txnMeta *DAOCoinTransferTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	creatorUsernameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinTransferTxindexMetadata.Decode: Problem reading CreatorUsername")
+	}
+	txnMeta.CreatorUsername = string(creatorUsernameBytes)
+
+	DAOCoinToTransferNanos, err := DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinTransferTxindexMetadata.Decode: Problem reading DAOCoinToTransferNanos")
+	}
+	txnMeta.DAOCoinToTransferNanos = *DAOCoinToTransferNanos
+	return nil
 }
 
 type DAOCoinTxindexMetadata struct {
@@ -3816,6 +4100,58 @@ type DAOCoinTxindexMetadata struct {
 	CoinsToMintNanos          uint256.Int
 	CoinsToBurnNanos          uint256.Int
 	TransferRestrictionStatus string
+}
+
+func (txnMeta *DAOCoinTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.OperationType))...)
+
+	coinsToMintNanosBytes := txnMeta.CoinsToMintNanos.Bytes()
+	data = append(data, EncodeByteArray(coinsToMintNanosBytes)...)
+
+	coinsToBurnNanosBytes := txnMeta.CoinsToBurnNanos.Bytes()
+	data = append(data, EncodeByteArray(coinsToBurnNanosBytes)...)
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.TransferRestrictionStatus))...)
+	return data
+}
+
+func (txnMeta *DAOCoinTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	creatorUsernameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CreatorUsername")
+	}
+	txnMeta.CreatorUsername = string(creatorUsernameBytes)
+
+	operationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading OperationType")
+	}
+	txnMeta.OperationType = string(operationTypeBytes)
+
+	coinsToMintNanos, err := DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CoinsToMintNanos")
+	}
+	txnMeta.CoinsToMintNanos = *coinsToMintNanos
+
+	coinsToBurnNanos, err := DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CoinsToBurnNanos")
+	}
+	txnMeta.CoinsToBurnNanos = *coinsToBurnNanos
+
+	transferRestrictionStatusBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading TransferRestrictionStatus")
+	}
+	txnMeta.TransferRestrictionStatus = string(transferRestrictionStatusBytes)
+
+	return nil
 }
 
 type UpdateProfileTxindexMetadata struct {
@@ -3831,6 +4167,62 @@ type UpdateProfileTxindexMetadata struct {
 
 	IsHidden bool
 }
+
+func (txnMeta *UpdateProfileTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.ProfilePublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.NewUsername))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.NewDescription))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.NewProfilePic))...)
+	data = append(data, UintToBuf(txnMeta.NewCreatorBasisPoints)...)
+	data = append(data, UintToBuf(txnMeta.NewStakeMultipleBasisPoints)...)
+	data = append(data, BoolToByte(txnMeta.IsHidden))
+
+	return data
+}
+
+func (txnMeta *UpdateProfileTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	profilePublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileTxindexMetadata.Decode: problem reading ProfilePublicKeyBase58Check")
+	}
+	txnMeta.ProfilePublicKeyBase58Check = string(profilePublicKeyBase58CheckBytes)
+
+	newUsernameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileTxindexMetadata.Decode: problem reading NewUsername")
+	}
+	txnMeta.NewUsername = string(newUsernameBytes)
+
+	newDescriptionBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileTxindexMetadata.Decode: problem reading NewDescription")
+	}
+	txnMeta.NewDescription = string(newDescriptionBytes)
+
+	newProfilePicBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileTxindexMetadata.Decode: problem reading NewProfilePic")
+	}
+	txnMeta.NewProfilePic = string(newProfilePicBytes)
+
+	txnMeta.NewCreatorBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileTxindexMetadata.Decode: problem reading NewCreatorBasisPoints")
+	}
+
+	txnMeta.NewStakeMultipleBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileTxindexMetadata.Decode: problem reading NewStakeMultipleBasisPoints")
+	}
+
+	txnMeta.IsHidden = ReadBoolByte(rr)
+	return nil
+}
+
 type SubmitPostTxindexMetadata struct {
 	PostHashBeingModifiedHex string
 	// PosterPublicKeyBase58Check = TransactorPublicKeyBase58Check
@@ -3842,6 +4234,31 @@ type SubmitPostTxindexMetadata struct {
 	// The profiles that are mentioned are in the AffectedPublicKeys
 	// MentionedPublicKeyBase58Check in AffectedPublicKeys
 }
+
+func (txnMeta *SubmitPostTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.PostHashBeingModifiedHex))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.ParentPostHashHex))...)
+	return data
+}
+
+func (txnMeta *SubmitPostTxindexMetadata) Decode(rr *bytes.Reader) error {
+	postHashBeingModifiedHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SubmitPostTxindexMetadata.Decode: problem reading PostHashBeingModifiedHex")
+	}
+	txnMeta.PostHashBeingModifiedHex = string(postHashBeingModifiedHexBytes)
+
+	parentPostHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SubmitPostTxindexMetadata.Decode: problem reading ParentPostHashHex")
+	}
+	txnMeta.ParentPostHashHex = string(parentPostHashHexBytes)
+
+	return nil
+}
+
 type LikeTxindexMetadata struct {
 	// LikerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	IsUnlike bool
@@ -3849,18 +4266,69 @@ type LikeTxindexMetadata struct {
 	PostHashHex string
 	// PosterPublicKeyBase58Check in AffectedPublicKeys
 }
+
+func (txnMeta *LikeTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, BoolToByte(txnMeta.IsUnlike))
+	data = append(data, EncodeByteArray([]byte(txnMeta.PostHashHex))...)
+	return data
+}
+
+func (txnMeta *LikeTxindexMetadata) Decode(rr *bytes.Reader) error {
+	txnMeta.IsUnlike = ReadBoolByte(rr)
+	postHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "LikeTxindexMetadata.Decode: problem reading PostHashHex")
+	}
+	txnMeta.PostHashHex = string(postHashHexBytes)
+
+	return nil
+}
+
 type FollowTxindexMetadata struct {
 	// FollowerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	// FollowedPublicKeyBase58Check in AffectedPublicKeys
 
 	IsUnfollow bool
 }
+
+func (txnMeta *FollowTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, BoolToByte(txnMeta.IsUnfollow))
+	return data
+}
+
+func (txnMeta *FollowTxindexMetadata) Decode(rr *bytes.Reader) error {
+	txnMeta.IsUnfollow = ReadBoolByte(rr)
+	return nil
+}
+
 type PrivateMessageTxindexMetadata struct {
 	// SenderPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	// RecipientPublicKeyBase58Check in AffectedPublicKeys
 
 	TimestampNanos uint64
 }
+
+func (txnMeta *PrivateMessageTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(txnMeta.TimestampNanos)...)
+	return data
+}
+
+func (txnMeta *PrivateMessageTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	txnMeta.TimestampNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PrivateMessageTxindexMetadata.Decode: Problem reading TimestampNanos")
+	}
+	return nil
+}
+
 type SwapIdentityTxindexMetadata struct {
 	// ParamUpdater = TransactorPublicKeyBase58Check
 
@@ -3872,6 +4340,42 @@ type SwapIdentityTxindexMetadata struct {
 	ToDeSoLockedNanos   uint64
 }
 
+func (txnMeta *SwapIdentityTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.FromPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.ToPublicKeyBase58Check))...)
+	data = append(data, UintToBuf(txnMeta.FromDeSoLockedNanos)...)
+	data = append(data, UintToBuf(txnMeta.ToDeSoLockedNanos)...)
+	return data
+}
+
+func (txnMeta *SwapIdentityTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	fromPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SwapIdentityTxindexMetadata.Decode: Problem reading FromPublicKeyBase58Check")
+	}
+	txnMeta.FromPublicKeyBase58Check = string(fromPublicKeyBase58CheckBytes)
+
+	toPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SwapIdentityTxindexMetadata.Decode: Problem reading ToPublicKeyBase58Check")
+	}
+	txnMeta.ToPublicKeyBase58Check = string(toPublicKeyBase58CheckBytes)
+
+	txnMeta.FromDeSoLockedNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SwapIdentityTxindexMetadata.Decode: Problem reading FromDeSoLockedNanos")
+	}
+	txnMeta.ToDeSoLockedNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SwapIdentityTxindexMetadata.Decode: Problem reading ToDeSoLockedNanos")
+	}
+	return nil
+}
+
 type NFTRoyaltiesMetadata struct {
 	CreatorCoinRoyaltyNanos     uint64
 	CreatorRoyaltyNanos         uint64
@@ -3879,6 +4383,45 @@ type NFTRoyaltiesMetadata struct {
 	// We omit the maps when empty to save some space.
 	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
 	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
+}
+
+func (txnMeta *NFTRoyaltiesMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(txnMeta.CreatorRoyaltyNanos)...)
+	data = append(data, UintToBuf(txnMeta.CreatorRoyaltyNanos)...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorPublicKeyBase58Check))...)
+	data = append(data, EncodeMapStringUint64(txnMeta.AdditionalCoinRoyaltiesMap)...)
+	data = append(data, EncodeMapStringUint64(txnMeta.AdditionalDESORoyaltiesMap)...)
+	return data
+}
+
+func (txnMeta *NFTRoyaltiesMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	txnMeta.CreatorCoinRoyaltyNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTRoyaltiesMetadata.Decode: Problem reading CreatorCoinRoyaltyNanos")
+	}
+	txnMeta.CreatorRoyaltyNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTRoyaltiesMetadata.Decode: Problem reading CreatorRoyaltyNanos")
+	}
+	creatorPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTRoyaltiesMetadata.Decode: Problem reading CreatorPublicKeyBase58Check")
+	}
+	txnMeta.CreatorPublicKeyBase58Check = string(creatorPublicKeyBase58CheckBytes)
+
+	txnMeta.AdditionalCoinRoyaltiesMap, err = DecodeMapStringUint64(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTRoyaltiesMetadata.Decode: Problem reading AdditionalCoinRoyaltiesMap")
+	}
+	txnMeta.AdditionalDESORoyaltiesMap, err = DecodeMapStringUint64(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTRoyaltiesMetadata.Decode: Problem reading AdditionalDESORoyaltiesMap")
+	}
+	return nil
 }
 
 type NFTBidTxindexMetadata struct {
@@ -3891,6 +4434,53 @@ type NFTBidTxindexMetadata struct {
 	NFTRoyaltiesMetadata `json:",omitempty"`
 }
 
+// TODO: Understand the omitempty thing
+func (txnMeta *NFTBidTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
+	data = append(data, UintToBuf(txnMeta.SerialNumber)...)
+	data = append(data, UintToBuf(txnMeta.BidAmountNanos)...)
+	data = append(data, BoolToByte(txnMeta.IsBuyNowBid))
+	data = append(data, EncodeByteArray([]byte(txnMeta.OwnerPublicKeyBase58Check))...)
+	data = append(data, txnMeta.NFTRoyaltiesMetadata.Encode()...)
+	return data
+}
+
+func (txnMeta *NFTBidTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	NFTPostHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTBidTxindexMetadata.Decode: Problem reading NFTPostHashHex")
+	}
+	txnMeta.NFTPostHashHex = string(NFTPostHashHexBytes)
+
+	txnMeta.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTBidTxindexMetadata.Decode: Problem reading SerialNumber")
+	}
+	txnMeta.BidAmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTBidTxindexMetadata.Decode: Problem reading BidAmountNanos")
+	}
+	txnMeta.IsBuyNowBid = ReadBoolByte(rr)
+
+	ownerPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTBidTxindexMetadata.Decode: Problem reading OwnerPublicKeyBase58Check")
+	}
+	txnMeta.OwnerPublicKeyBase58Check = string(ownerPublicKeyBase58CheckBytes)
+
+	txnMeta.NFTRoyaltiesMetadata = NFTRoyaltiesMetadata{}
+	err = txnMeta.NFTRoyaltiesMetadata.Decode(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTBidTxindexMetadata.Decode: Problem reading NFTRoyaltiesMetadata")
+	}
+
+	return nil
+}
+
 type AcceptNFTBidTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
@@ -3898,9 +4488,71 @@ type AcceptNFTBidTxindexMetadata struct {
 	NFTRoyaltiesMetadata
 }
 
+func (txnMeta *AcceptNFTBidTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
+	data = append(data, UintToBuf(txnMeta.SerialNumber)...)
+	data = append(data, UintToBuf(txnMeta.BidAmountNanos)...)
+	data = append(data, txnMeta.NFTRoyaltiesMetadata.Encode()...)
+
+	return data
+}
+
+func (txnMeta *AcceptNFTBidTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	NFTPostHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTBidTxindexMetadata.Decode: problem reading NFTPostHashHex")
+	}
+	txnMeta.NFTPostHashHex = string(NFTPostHashHexBytes)
+
+	txnMeta.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTBidTxindexMetadata.Decode: problem reading SerialNumber")
+	}
+	txnMeta.BidAmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTBidTxindexMetadata.Decode: problem reading BidAmountNanos")
+	}
+	txnMeta.NFTRoyaltiesMetadata = NFTRoyaltiesMetadata{}
+	err = txnMeta.NFTRoyaltiesMetadata.Decode(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTBidTxindexMetadata.Decode: problem reading NFTRoyaltiesMetadata")
+	}
+	return nil
+}
+
 type NFTTransferTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
+}
+
+func (txnMeta *NFTTransferTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
+	data = append(data, UintToBuf(txnMeta.SerialNumber)...)
+
+	return data
+}
+
+func (txnMeta *NFTTransferTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	NFTPostHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTTransferTxindexMetadata.Decode: problem reading NFTPostHashHex")
+	}
+	txnMeta.NFTPostHashHex = string(NFTPostHashHexBytes)
+
+	txnMeta.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTTransferTxindexMetadata.Decode: problem reading SerialNumber")
+	}
+
+	return nil
 }
 
 type CreateNFTTxindexMetadata struct {
@@ -3909,9 +4561,62 @@ type CreateNFTTxindexMetadata struct {
 	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
 }
 
+func (txnMeta *CreateNFTTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
+	data = append(data, EncodeMapStringUint64(txnMeta.AdditionalCoinRoyaltiesMap)...)
+	data = append(data, EncodeMapStringUint64(txnMeta.AdditionalDESORoyaltiesMap)...)
+
+	return data
+}
+
+func (txnMeta *CreateNFTTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	NFTPostHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTTxindexMetadata.Decode: problem reading NFTPostHashHex")
+	}
+	txnMeta.NFTPostHashHex = string(NFTPostHashHexBytes)
+
+	txnMeta.AdditionalCoinRoyaltiesMap, err = DecodeMapStringUint64(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTTxindexMetadata.Decode: problem reading AdditionalCoinRoyaltiesMap")
+	}
+	txnMeta.AdditionalDESORoyaltiesMap, err = DecodeMapStringUint64(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTTxindexMetadata.Decode: problem reading AdditionalDESORoyaltiesMap")
+	}
+
+	return nil
+}
+
 type UpdateNFTTxindexMetadata struct {
 	NFTPostHashHex string
 	IsForSale      bool
+}
+
+func (txnMeta *UpdateNFTTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
+	data = append(data, BoolToByte(txnMeta.IsForSale))
+
+	return data
+}
+
+func (txnMeta *UpdateNFTTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	NFTPostHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateNFTTxindexMetadata.Decode: Problem reading NFTPostHashHex")
+	}
+	txnMeta.NFTPostHashHex = string(NFTPostHashHexBytes)
+	txnMeta.IsForSale = ReadBoolByte(rr)
+
+	return nil
 }
 
 type TransactionMetadata struct {
@@ -3948,6 +4653,357 @@ type TransactionMetadata struct {
 	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
 }
 
+func (txnMeta *TransactionMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.BlockHashHex))...)
+	data = append(data, UintToBuf(txnMeta.TxnIndexInBlock)...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.TxnType))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.TransactorPublicKeyBase58Check))...)
+
+	data = append(data, UintToBuf(uint64(len(txnMeta.AffectedPublicKeys)))...)
+	for _, affectedKey := range txnMeta.AffectedPublicKeys {
+		data = append(data, affectedKey.Encode()...)
+	}
+
+	data = append(data, UintToBuf(uint64(len(txnMeta.TxnOutputs)))...)
+	for _, output := range txnMeta.TxnOutputs {
+		data = append(data, output.Encode()...)
+	}
+
+	// encoding BasicTransferTxindexMetadata
+	if txnMeta.BasicTransferTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.BasicTransferTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding BitcoinExchangeTxindexMetadata
+	if txnMeta.BitcoinExchangeTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.BitcoinExchangeTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding CreatorCoinTxindexMetadata
+	if txnMeta.CreatorCoinTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.CreatorCoinTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding CreatorCoinTransferTxindexMetadata
+	if txnMeta.CreatorCoinTransferTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.CreatorCoinTransferTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding UpdateProfileTxindexMetadata
+	if txnMeta.UpdateProfileTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.UpdateProfileTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding SubmitPostTxindexMetadata
+	if txnMeta.SubmitPostTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.SubmitPostTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding LikeTxindexMetadata
+	if txnMeta.LikeTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.LikeTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding FollowTxindexMetadata
+	if txnMeta.FollowTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.FollowTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding PrivateMessageTxindexMetadata
+	if txnMeta.PrivateMessageTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.PrivateMessageTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding SwapIdentityTxindexMetadata
+	if txnMeta.SwapIdentityTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.SwapIdentityTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding NFTBidTxindexMetadata
+	if txnMeta.NFTBidTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.NFTBidTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding AcceptNFTBidTxindexMetadata
+	if txnMeta.AcceptNFTBidTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.AcceptNFTBidTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding NFTTransferTxindexMetadata
+	if txnMeta.NFTTransferTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.NFTTransferTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding DAOCoinTxindexMetadata
+	if txnMeta.DAOCoinTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.DAOCoinTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding DAOCoinTransferTxindexMetadata
+	if txnMeta.DAOCoinTransferTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.DAOCoinTransferTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding CreateNFTTxindexMetadata
+	if txnMeta.CreateNFTTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.CreateNFTTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+    // encoding UpdateNFTTxindexMetadata
+	if txnMeta.UpdateNFTTxindexMetadata != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnMeta.UpdateNFTTxindexMetadata.Encode()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+
+	return data
+}
+
+func (txnMeta *TransactionMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+	var existByte bool
+
+	blockHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading BlockHashHexBytes")
+	}
+	txnMeta.BlockHashHex = string(blockHashHexBytes)
+
+	txnMeta.TxnIndexInBlock, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading TxnIndexInBlock")
+	}
+
+	txnTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading TxnType")
+	}
+	txnMeta.TxnType = string(txnTypeBytes)
+
+	transactorPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading TransactorPublicKeyBase58Check")
+	}
+	txnMeta.TransactorPublicKeyBase58Check = string(transactorPublicKeyBase58CheckBytes)
+
+	lenAffectedPublicKeys, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading len AffectedPublicKeys")
+	}
+	for ;lenAffectedPublicKeys > 0; lenAffectedPublicKeys-- {
+		affectedPublicKey := &AffectedPublicKey{}
+		err = affectedPublicKey.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading AffectedPublicKey")
+		}
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKey)
+	}
+
+	lenTxnOutputs, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading len TxnOutputs")
+	}
+	for ;lenTxnOutputs > 0; lenTxnOutputs-- {
+		txnOutput := &DeSoOutput{}
+		err = txnOutput.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading TxnOutput")
+		}
+		txnMeta.TxnOutputs = append(txnMeta.TxnOutputs, txnOutput)
+	}
+
+	// decoding BasicTransferTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.BasicTransferTxindexMetadata = &BasicTransferTxindexMetadata{}
+		err = txnMeta.BasicTransferTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading BasicTransferTxindexMetadata")
+		}
+	}
+    // decoding BitcoinExchangeTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.BitcoinExchangeTxindexMetadata = &BitcoinExchangeTxindexMetadata{}
+		err = txnMeta.BitcoinExchangeTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading BitcoinExchangeTxindexMetadata")
+		}
+	}
+    // decoding CreatorCoinTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.CreatorCoinTxindexMetadata = &CreatorCoinTxindexMetadata{}
+		err = txnMeta.CreatorCoinTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatorCoinTxindexMetadata")
+		}
+	}
+    // decoding CreatorCoinTransferTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.CreatorCoinTransferTxindexMetadata = &CreatorCoinTransferTxindexMetadata{}
+		err = txnMeta.CreatorCoinTransferTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatorCoinTransferTxindexMetadata")
+		}
+	}
+    // decoding UpdateProfileTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.UpdateProfileTxindexMetadata = &UpdateProfileTxindexMetadata{}
+		err = txnMeta.UpdateProfileTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UpdateProfileTxindexMetadata")
+		}
+	}
+    // decoding SubmitPostTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.SubmitPostTxindexMetadata = &SubmitPostTxindexMetadata{}
+		err = txnMeta.SubmitPostTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading SubmitPostTxindexMetadata")
+		}
+	}
+    // decoding LikeTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.LikeTxindexMetadata = &LikeTxindexMetadata{}
+		err = txnMeta.LikeTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading LikeTxindexMetadata")
+		}
+	}
+    // decoding FollowTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.FollowTxindexMetadata = &FollowTxindexMetadata{}
+		err = txnMeta.FollowTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading FollowTxindexMetadata")
+		}
+	}
+    // decoding PrivateMessageTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.PrivateMessageTxindexMetadata = &PrivateMessageTxindexMetadata{}
+		err = txnMeta.PrivateMessageTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading PrivateMessageTxindexMetadata")
+		}
+	}
+    // decoding SwapIdentityTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.SwapIdentityTxindexMetadata = &SwapIdentityTxindexMetadata{}
+		err = txnMeta.SwapIdentityTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading SwapIdentityTxindexMetadata")
+		}
+	}
+    // decoding NFTBidTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.NFTBidTxindexMetadata = &NFTBidTxindexMetadata{}
+		err = txnMeta.NFTBidTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NFTBidTxindexMetadata")
+		}
+	}
+    // decoding AcceptNFTBidTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.AcceptNFTBidTxindexMetadata = &AcceptNFTBidTxindexMetadata{}
+		err = txnMeta.AcceptNFTBidTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AcceptNFTBidTxindexMetadata")
+		}
+	}
+    // decoding NFTTransferTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.NFTTransferTxindexMetadata = &NFTTransferTxindexMetadata{}
+		err = txnMeta.NFTTransferTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NFTTransferTxindexMetadata")
+		}
+	}
+    // decoding DAOCoinTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.DAOCoinTxindexMetadata = &DAOCoinTxindexMetadata{}
+		err = txnMeta.DAOCoinTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinTxindexMetadata")
+		}
+	}
+    // decoding DAOCoinTransferTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.DAOCoinTransferTxindexMetadata = &DAOCoinTransferTxindexMetadata{}
+		err = txnMeta.DAOCoinTransferTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinTransferTxindexMetadata")
+		}
+	}
+    // decoding CreateNFTTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.CreateNFTTxindexMetadata = &CreateNFTTxindexMetadata{}
+		err = txnMeta.CreateNFTTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateNFTTxindexMetadata")
+		}
+	}
+    // decoding UpdateNFTTxindexMetadata
+	existByte = ReadBoolByte(rr)
+	if existByte {
+		txnMeta.UpdateNFTTxindexMetadata = &UpdateNFTTxindexMetadata{}
+		err = txnMeta.UpdateNFTTxindexMetadata.Decode(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UpdateNFTTxindexMetadata")
+		}
+	}
+
+	return nil
+}
+
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, snap *Snapshot, txID *BlockHash) bool {
 	key := DbTxindexTxIDKey(txID)
 	_, err := DBGetWithTxn(txn, snap, key)
@@ -3974,7 +5030,9 @@ func DbGetTxindexTransactionRefByTxIDWithTxn(txn *badger.Txn, snap *Snapshot, tx
 	if err != nil {
 		return nil
 	}
-	if err := gob.NewDecoder(bytes.NewReader(valBytes)).Decode(&valObj); err != nil {
+	rr := bytes.NewReader(valBytes)
+	err = valObj.Decode(rr)
+	if err != nil {
 		return nil
 	}
 	return &valObj
@@ -3992,10 +5050,7 @@ func DbPutTxindexTransactionWithTxn(txn *badger.Txn, snap *Snapshot,
 	txID *BlockHash, txnMeta *TransactionMetadata) error {
 
 	key := append(append([]byte{}, Prefixes.PrefixTransactionIDToMetadata...), txID[:]...)
-	valBuf := bytes.NewBuffer([]byte{})
-	gob.NewEncoder(valBuf).Encode(txnMeta)
-
-	return DBSetWithTxn(txn, snap, key, valBuf.Bytes())
+	return DBSetWithTxn(txn, snap, key, txnMeta.Encode())
 }
 
 func DbPutTxindexTransaction(handle *badger.DB, snap *Snapshot,
@@ -4220,7 +5275,8 @@ func DBGetPostEntryByPostHashWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	postEntryObj := &PostEntry{}
-	postEntryObj.Decode(postEntryBytes)
+	rr := bytes.NewReader(postEntryBytes)
+	postEntryObj.Decode(rr)
 	return postEntryObj
 }
 
@@ -4685,7 +5741,8 @@ func DBGetNFTEntryByPostHashSerialNumberWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	nftEntryObj := &NFTEntry{}
-	nftEntryObj.Decode(nftEntryBytes)
+	rr := bytes.NewReader(nftEntryBytes)
+	nftEntryObj.Decode(rr)
 	return nftEntryObj
 }
 
@@ -4770,7 +5827,8 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
-		currentEntry.Decode(byteString)
+		rr := bytes.NewReader(byteString)
+		currentEntry.Decode(rr)
 		nftEntries = append(nftEntries, currentEntry)
 	}
 	return nftEntries
@@ -4792,7 +5850,8 @@ func DBGetNFTEntryByNFTOwnershipDetailsWithTxn(txn *badger.Txn, snap *Snapshot, 
 	}
 
 	nftEntryObj := &NFTEntry{}
-	nftEntryObj.Decode(nftEntryBytes)
+	rr := bytes.NewReader(nftEntryBytes)
+	nftEntryObj.Decode(rr)
 	return nftEntryObj
 }
 
@@ -4815,7 +5874,8 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
-		currentEntry.Decode(byteString)
+		rr := bytes.NewReader(byteString)
+		currentEntry.Decode(rr)
 		nftEntries = append(nftEntries, currentEntry)
 	}
 	return nftEntries
@@ -4851,7 +5911,7 @@ func DecodeAcceptedNFTBidEntries(data []byte) *[]*NFTBidEntry {
 	numEntries, _ := ReadUvarint(rr)
 	for ii := uint64(0); ii < numEntries; ii++ {
 		bidEntry := &NFTBidEntry{}
-		bidEntry.DecodeWithReader(rr)
+		bidEntry.Decode(rr)
 		bidEntries = append(bidEntries, bidEntry)
 	}
 
@@ -5248,7 +6308,8 @@ func DBGetOwnerToDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	derivedKeyEntry := &DerivedKeyEntry{}
-	derivedKeyEntry.Decode(derivedKeyBytes)
+	rr := bytes.NewReader(derivedKeyBytes)
+	derivedKeyEntry.Decode(rr)
 	return derivedKeyEntry
 }
 
@@ -5292,7 +6353,8 @@ func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicK
 	var derivedEntries []*DerivedKeyEntry
 	for _, keyBytes := range valsFound {
 		derivedKeyEntry := &DerivedKeyEntry{}
-		derivedKeyEntry.Decode(keyBytes)
+		rr := bytes.NewReader(keyBytes)
+		derivedKeyEntry.Decode(rr)
 		derivedEntries = append(derivedEntries, derivedKeyEntry)
 	}
 
@@ -5380,7 +6442,8 @@ func DBGetProfileEntryForPKIDWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	profileEntryObj := &ProfileEntry{}
-	profileEntryObj.Decode(profileEntryBytes)
+	rr := bytes.NewReader(profileEntryBytes)
+	profileEntryObj.Decode(rr)
 	return profileEntryObj
 }
 
@@ -5584,7 +6647,8 @@ func DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(txn *badger.Txn, snap *Sna
 		return nil
 	}
 	balanceEntryObj := &BalanceEntry{}
-	balanceEntryObj.Decode(balanceEntryBytes)
+	rr := bytes.NewReader(balanceEntryBytes)
+	balanceEntryObj.Decode(rr)
 	return balanceEntryObj
 }
 
@@ -5609,7 +6673,8 @@ func DBGetBalanceEntryForCreatorPKIDAndHODLerPubKeyWithTxn(txn *badger.Txn, snap
 		return nil
 	}
 	balanceEntryObj := &BalanceEntry{}
-	balanceEntryObj.Decode(balanceEntryBytes)
+	rr := bytes.NewReader(balanceEntryBytes)
+	balanceEntryObj.Decode(rr)
 
 	return balanceEntryObj
 }
@@ -5739,7 +6804,8 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, snap *Snap
 	}
 
 	balanceEntryObj := &BalanceEntry{}
-	balanceEntryObj.Decode(balanceEntryBytes)
+	rr := bytes.NewReader(balanceEntryBytes)
+	balanceEntryObj.Decode(rr)
 	return balanceEntryObj
 }
 
@@ -5753,7 +6819,8 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, snap *Snapshot, pkid *PKID, filte
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
-			currentEntry.Decode(byteString)
+			rr := bytes.NewReader(byteString)
+			currentEntry.Decode(rr)
 			if filterOutZeroBalances && currentEntry.BalanceNanos.IsZero() {
 				continue
 			}
@@ -5774,7 +6841,8 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, snap *Snapshot, pkid *PKID, fi
 		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
-			currentEntry.Decode(byteString)
+			rr := bytes.NewReader(byteString)
+			currentEntry.Decode(rr)
 			if filterOutZeroBalances && currentEntry.BalanceNanos.IsZero() {
 				continue
 			}
@@ -6129,9 +7197,8 @@ func DbGetMempoolTxnWithTxn(txn *badger.Txn, snap *Snapshot, mempoolTx *MempoolT
 		return nil
 	}
 
-	if err = gob.NewDecoder(bytes.NewReader(mempoolTxnBytes)).Decode(mempoolTxnObj); err != nil {
-		glog.Errorf("DbGetMempoolTxnWithTxn: Problem reading "+
-			"Tx for tx hash %s: %v", mempoolTx.Hash.String(), err)
+	err = mempoolTxnObj.FromBytes(mempoolTxnBytes)
+	if err != nil {
 		return nil
 	}
 	return mempoolTxnObj
