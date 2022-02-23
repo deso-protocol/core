@@ -1158,7 +1158,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		})
 	}
 
-	if txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
+	switch txn.TxnMeta.GetTxnType() {
+	case TxnTypeBitcoinExchange:
 		txnMeta.BitcoinExchangeTxindexMetadata, txnMeta.TransactorPublicKeyBase58Check, err =
 			_computeBitcoinExchangeFields(utxoView.Params, txn.TxnMeta.(*BitcoinExchangeMetadata),
 				totalNanosPurchasedBefore, usdCentsPerBitcoinBefore)
@@ -1177,8 +1178,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: BurnPubKeyBase58Check,
 			Metadata:             "BurnPublicKey",
 		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+	case TxnTypeCreatorCoin:
 		// Get the txn metadata
 		realTxMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 
@@ -1224,8 +1224,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ProfilePublicKey, utxoView.Params),
 			Metadata:             "CreatorPublicKey",
 		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
+	case TxnTypeCreatorCoinTransfer:
 		realTxMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
 		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 		txnMeta.CreatorCoinTransferTxindexMetadata = &CreatorCoinTransferTxindexMetadata{
@@ -1249,8 +1248,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "ReceiverPublicKey",
 		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
+	case TxnTypeUpdateProfile:
 		realTxMeta := txn.TxnMeta.(*UpdateProfileMetadata)
 
 		txnMeta.UpdateProfileTxindexMetadata = &UpdateProfileTxindexMetadata{}
@@ -1270,8 +1268,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ProfilePublicKey, utxoView.Params),
 			Metadata:             "ProfilePublicKeyBase58Check",
 		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
+	case TxnTypeSubmitPost:
 		realTxMeta := txn.TxnMeta.(*SubmitPostMetadata)
 
 		txnMeta.SubmitPostTxindexMetadata = &SubmitPostTxindexMetadata{}
@@ -1300,15 +1297,15 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			copy(postHash[:], realTxMeta.ParentStakeID)
 			postEntry := utxoView.GetPostEntryForPostHash(postHash)
 			if postEntry == nil {
-				return nil, fmt.Errorf(
+				glog.V(2).Infof(
 					"UpdateTxindex: Error creating SubmitPostTxindexMetadata; "+
 						"missing parent post for hash %v: %v", postHash, err)
+			} else {
+				txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+					PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+					Metadata:             "ParentPosterPublicKeyBase58Check",
+				})
 			}
-
-			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-				PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
-				Metadata:             "ParentPosterPublicKeyBase58Check",
-			})
 		}
 
 		// The profiles that are mentioned are in the AffectedPublicKeys
@@ -1317,7 +1314,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		//
 		// Start by trying to parse the body JSON
 		bodyObj := &DeSoBodySchema{}
-		if err := json.Unmarshal(realTxMeta.Body, &bodyObj); err != nil {
+		if err = json.Unmarshal(realTxMeta.Body, &bodyObj); err != nil {
 			// Don't worry about bad posts unless we're debugging with high verbosity.
 			glog.V(2).Infof("UpdateTxindex: Error parsing post body for @ mentions: "+
 				"%v %v", string(realTxMeta.Body), err)
@@ -1359,8 +1356,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				}
 			}
 		}
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeLike {
+	case TxnTypeLike:
 		realTxMeta := txn.TxnMeta.(*LikeMetadata)
 
 		// LikerPublicKeyBase58Check = TransactorPublicKeyBase58Check
@@ -1378,17 +1374,16 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		copy(postHash[:], realTxMeta.LikedPostHash[:])
 		postEntry := utxoView.GetPostEntryForPostHash(postHash)
 		if postEntry == nil {
-			return nil, fmt.Errorf(
+			glog.V(2).Infof(
 				"UpdateTxindex: Error creating LikeTxindexMetadata; "+
 					"missing post for hash %v: %v", postHash, err)
+		} else {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+				Metadata:             "PosterPublicKeyBase58Check",
+			})
 		}
-
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
-			Metadata:             "PosterPublicKeyBase58Check",
-		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
+	case TxnTypeFollow:
 		realTxMeta := txn.TxnMeta.(*FollowMetadata)
 
 		txnMeta.FollowTxindexMetadata = &FollowTxindexMetadata{
@@ -1402,8 +1397,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.FollowedPublicKey, utxoView.Params),
 			Metadata:             "FollowedPublicKeyBase58Check",
 		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
+	case TxnTypePrivateMessage:
 		realTxMeta := txn.TxnMeta.(*PrivateMessageMetadata)
 
 		txnMeta.PrivateMessageTxindexMetadata = &PrivateMessageTxindexMetadata{
@@ -1417,8 +1411,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.RecipientPublicKey, utxoView.Params),
 			Metadata:             "RecipientPublicKeyBase58Check",
 		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
+	case TxnTypeSwapIdentity:
 		realTxMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 
 		// Rosetta needs to know the current locked deso in each profile so it can model the swap of
@@ -1453,8 +1446,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ToPublicKey, utxoView.Params),
 			Metadata:             "ToPublicKeyBase58Check",
 		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+	case TxnTypeNFTBid:
 		realTxMeta := txn.TxnMeta.(*NFTBidMetadata)
 
 		isBuyNow := false
@@ -1509,7 +1501,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		if isBuyNow {
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: creatorPublicKeyBase58Check,
-				Metadata: "NFTCreatorPublicKeyBase58Check",
+				Metadata:             "NFTCreatorPublicKeyBase58Check",
 			})
 
 			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
@@ -1536,8 +1528,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				})
 			}
 		}
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+	case TxnTypeAcceptNFTBid:
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 
 		utxoOp := utxoOps[len(utxoOps)-1]
@@ -1591,8 +1582,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
 			})
 		}
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+	case TxnTypeCreateNFT:
 		realTxMeta := txn.TxnMeta.(*CreateNFTMetadata)
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
@@ -1620,8 +1610,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
 			})
 		}
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+	case TxnTypeUpdateNFT:
 		realTxMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
@@ -1652,8 +1641,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
 			})
 		}
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+	case TxnTypeNFTTransfer:
 		realTxMeta := txn.TxnMeta.(*NFTTransferMetadata)
 
 		txnMeta.NFTTransferTxindexMetadata = &NFTTransferTxindexMetadata{
@@ -1665,9 +1653,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "NFTTransferRecipientPublicKeyBase58Check",
 		})
-
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+	case TxnTypeBasicTransfer:
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 		diamondPostHash, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
 		if hasDiamondLevel && hasDiamondPostHash {
@@ -1679,8 +1665,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				txnMeta.BasicTransferTxindexMetadata.PostHashHex = hex.EncodeToString(diamondPostHash)
 			}
 		}
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+	case TxnTypeDAOCoin:
 		realTxMeta := txn.TxnMeta.(*DAOCoinMetadata)
 		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 
@@ -1713,8 +1698,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(creatorProfileEntry.PublicKey, utxoView.Params),
 			Metadata:             metadata,
 		})
-	}
-	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
+	case TxnTypeDAOCoinTransfer:
 		realTxMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
 		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 		txnMeta.DAOCoinTransferTxindexMetadata = &DAOCoinTransferTxindexMetadata{
@@ -1727,7 +1711,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "ReceiverPublicKey",
 		})
 	}
-
 	return txnMeta, nil
 }
 
