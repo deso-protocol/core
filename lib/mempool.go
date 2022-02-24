@@ -380,7 +380,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "")
+		""     /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -1651,6 +1651,20 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "NFTTransferRecipientPublicKeyBase58Check",
 		})
+	case TxnTypeAcceptNFTTransfer:
+		realTxMeta := txn.TxnMeta.(*AcceptNFTTransferMetadata)
+
+		txnMeta.AcceptNFTTransferTxindexMetadata = &AcceptNFTTransferTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:   realTxMeta.SerialNumber,
+		}
+	case TxnTypeBurnNFT:
+		realTxMeta := txn.TxnMeta.(*BurnNFTMetadata)
+
+		txnMeta.BurnNFTTxindexMetadata = &BurnNFTTxindexMetadata{
+			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
+			SerialNumber:   realTxMeta.SerialNumber,
+		}
 	case TxnTypeBasicTransfer:
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 		diamondPostHash, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
