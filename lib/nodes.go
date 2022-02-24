@@ -150,9 +150,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://inci.app",
 		Owner: "inci",
 	},
-  26: {
-    Name:  "Overclout",
+	26: {
+		Name:  "Overclout",
 		URL:   "https://overclout.com",
 		Owner: "Overclout",
-  },
+	},
 }
