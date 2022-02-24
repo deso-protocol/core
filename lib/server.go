@@ -1066,14 +1066,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// the blockNodes in the header chain and set them in the blockchain data structures.
 	err := srv.blockchain.db.Update(func(txn *badger.Txn) error {
 		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotBlockHeight; ii ++ {
-    		curretNode := srv.blockchain.bestHeaderChain[ii]
-    		curretNode.Status |= StatusBlockProcessed
-    		curretNode.Status |= StatusBlockStored
-    		curretNode.Status |= StatusBlockValidated
-
-    		srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
-    		srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
-    		srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
+			curretNode := srv.blockchain.bestHeaderChain[ii]
+			curretNode.Status |= StatusBlockProcessed
+			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
+			curretNode.Status |= StatusBlockValidated
+			srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
+			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
+			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
 			err := PutHeightHashToNodeInfoWithTxn(txn, srv.blockchain.snapshot, curretNode, false /*bitcoinNodes*/)
 			if err != nil {
 				return err

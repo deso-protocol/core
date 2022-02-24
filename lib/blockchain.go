@@ -1101,6 +1101,15 @@ func (bc *Blockchain) isSyncing() bool {
 		syncState == SyncStateSyncingSnapshot
 }
 
+func (bc *Blockchain) ChainFullyStored() bool {
+	for _, blockNode := range bc.bestChain {
+		if (blockNode.Status&StatusBlockStored) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // headerTip returns the tip of the header chain. Because we fetch headers
 // before we fetch blocks, we track a chain for headers as separate from the
 // main chain for blocks, which is why separate functions are required for
