@@ -696,7 +696,7 @@ type MessagingGroupMember struct {
 	GroupMemberKeyName *GroupKeyName
 
 	// EncryptedKey is the encrypted messaging public key, addressed to the recipient.
-	EncryptedKey              []byte
+	EncryptedKey []byte
 }
 
 func (rec *MessagingGroupMember) Encode() []byte {
@@ -718,17 +718,17 @@ func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 
 	recipientPublicKeyBytes, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey")
 	}
 	recipientKeyName, err := ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberKeyName")
 	}
 	err = ValidateGroupPublicKeyAndName(recipientPublicKeyBytes, recipientKeyName)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey and GroupMemberKeyName")
 	}
 
@@ -736,7 +736,7 @@ func (rec *MessagingGroupMember) Decode(rr io.Reader) error {
 	rec.GroupMemberKeyName = NewGroupKeyName(recipientKeyName)
 	rec.EncryptedKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"EncryptedKey")
 	}
 	return nil
@@ -830,8 +830,23 @@ type NFTBidEntry struct {
 	SerialNumber   uint64
 	BidAmountNanos uint64
 
+	AcceptedBlockHeight *uint32
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+func (nftBidEntry *NFTBidEntry) Copy() *NFTBidEntry {
+	if nftBidEntry == nil {
+		return nil
+	}
+	newEntry := *nftBidEntry
+	newEntry.BidderPKID = nftBidEntry.BidderPKID.NewPKID()
+	newEntry.NFTPostHash = nftBidEntry.NFTPostHash.NewBlockHash()
+	if nftBidEntry.AcceptedBlockHeight != nil {
+		*newEntry.AcceptedBlockHeight = *nftBidEntry.AcceptedBlockHeight
+	}
+	return &newEntry
 }
 
 type DerivedKeyEntry struct {
