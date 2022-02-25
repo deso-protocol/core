@@ -9,6 +9,36 @@ import (
 	"testing"
 )
 
+func TestEmptyTypeEncoders(t *testing.T) {
+	require := require.New(t)
+	testCases := []DeSoEncoder{
+		&BalanceEntry{},
+		&CoinEntry{},
+		&DerivedKeyEntry{},
+		&DiamondEntry{},
+		&ForbiddenPubKeyEntry{},
+		&GlobalParamsEntry{},
+		&LikeEntry{},
+		&MessageEntry{},
+		&MessagingGroupEntry{},
+		&MessagingGroupMember{},
+		&NFTBidEntry{},
+		&NFTEntry{},
+		&PKIDEntry{},
+		&PostEntry{},
+		&ProfileEntry{},
+		&PublicKeyRoyaltyPair{},
+		&RepostEntry{},
+		&UtxoEntry{},
+		&UtxoOperation{},
+	}
+	for _, testType := range testCases {
+		testBytes := testType.Encode()
+		rr := bytes.NewReader(testBytes)
+		require.NoError(testType.Decode(rr))
+	}
+}
+
 // A lazy test based on TestBitcoinExchange to check utxo encoding/decoding.
 func TestUtxoEntryEncodeDecode(t *testing.T) {
 	assert := assert.New(t)

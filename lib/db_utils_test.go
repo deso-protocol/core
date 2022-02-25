@@ -1,7 +1,8 @@
 package lib
 
 import (
-	"io/ioutil"
+	"bytes"
+"io/ioutil"
 	"log"
 	"math/big"
 	"os"
@@ -13,6 +14,37 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestEmptyMetadataEncoders(t *testing.T) {
+	require := require.New(t)
+	testCases := []DeSoEncoder{
+		&AcceptNFTBidTxindexMetadata{},
+		&AffectedPublicKey{},
+		&BasicTransferTxindexMetadata{},
+		&BitcoinExchangeTxindexMetadata{},
+		&CreateNFTTxindexMetadata{},
+		&CreatorCoinTransferTxindexMetadata{},
+		&CreatorCoinTxindexMetadata{},
+		&DAOCoinTransferTxindexMetadata{},
+		&DAOCoinTxindexMetadata{},
+		&FollowTxindexMetadata{},
+		&LikeTxindexMetadata{},
+		&NFTBidTxindexMetadata{},
+		&NFTRoyaltiesMetadata{},
+		&PrivateMessageTxindexMetadata{},
+		&SubmitPostTxindexMetadata{},
+		&PublicKeyRoyaltyPair{},
+		&SwapIdentityTxindexMetadata{},
+		&TransactionMetadata{},
+		&UpdateNFTTxindexMetadata{},
+		&UpdateProfileTxindexMetadata{},
+	}
+	for _, testType := range testCases {
+		testBytes := testType.Encode()
+		rr := bytes.NewReader(testBytes)
+		require.NoError(testType.Decode(rr))
+	}
+}
 
 func _GetTestBlockNode() *BlockNode {
 	bs := BlockNode{}

@@ -1,8 +1,12 @@
 package lib
 
 import (
-	"fmt"
-	"github.com/btcsuite/btcd/btcec"
+
+"bytes"
+"fmt"
+"github.com/btcsuite/btcd/btcec"
+"github.com/pkg/errors"
+
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -19,6 +23,19 @@ func NewPKID(pkidBytes []byte) *PKID {
 	pkid := &PKID{}
 	copy(pkid[:], pkidBytes)
 	return pkid
+}
+
+func (pkid *PKID) Encode() []byte {
+	return EncodeByteArray(pkid[:])
+}
+
+func (pkid *PKID) Decode(rr *bytes.Reader) error {
+	pkidBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PKID.Decode: Problem reading PKID")
+	}
+	copy(pkid[:], pkidBytes)
+	return nil
 }
 
 func (pkid *PKID) ToBytes() []byte {
@@ -48,6 +65,19 @@ func (publicKey *PublicKey) ToBytes() []byte {
 	return publicKey[:]
 }
 
+func (publicKey *PublicKey) Encode() []byte {
+	return EncodeByteArray(publicKey[:])
+}
+
+func (publicKey *PublicKey) Decode(rr *bytes.Reader) error {
+	publicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PublicKey.Decode: Problem reading publicKey")
+	}
+	copy(publicKey[:], publicKeyBytes)
+	return nil
+}
+
 func PublicKeyToPKID(publicKey []byte) *PKID {
 	if len(publicKey) == 0 {
 		return nil
@@ -73,6 +103,19 @@ func NewBlockHash(input []byte) *BlockHash {
 	blockHash := &BlockHash{}
 	copy(blockHash[:], input)
 	return blockHash
+}
+
+func (bh *BlockHash) Encode() []byte {
+	return EncodeByteArray(bh[:])
+}
+
+func (bh *BlockHash) Decode(rr *bytes.Reader) error {
+	blockHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BlockHash.Decode: Problem reading BlockHash")
+	}
+	copy(bh[:], blockHashBytes)
+	return nil
 }
 
 func (bh *BlockHash) String() string {

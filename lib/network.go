@@ -12,7 +12,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
@@ -1206,7 +1205,10 @@ func (msg *MsgDeSoInv) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoInv: ")
 	}
-	isSyncResponse := ReadBoolByte(rr)
+	isSyncResponse, err := ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoInv: ")
+	}
 
 	*msg = MsgDeSoInv{
 		InvList:        invList,
@@ -2386,7 +2388,10 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 		}
 		msg.SnapshotChunk = append(msg.SnapshotChunk, dbEntry)
 	}
-	msg.SnapshotChunkFull = ReadBoolByte(rr)
+	msg.SnapshotChunkFull, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunkFull")
+	}
 
 	prefixLen, err := ReadUvarint(rr)
 	if err != nil {
@@ -2432,22 +2437,22 @@ func (utxoKey *UtxoKey) Encode() []byte {
 	return data
 }
 
-func (utxoKey *UtxoKey) Decode(rr *bytes.Reader) {
+func (utxoKey *UtxoKey) Decode(rr *bytes.Reader) error {
 	// Read TxIndex
 	txIdBytes := make([]byte, HashSizeBytes)
 	_, err := io.ReadFull(rr, txIdBytes)
 	if err != nil {
-		glog.Errorf("UtxoKey.Decode: ReadFull: %v", err)
-		return
+		return errors.Wrapf(err, "UtxoKey.Decode: Problem reading TxID")
 	}
 	utxoKey.TxID = *NewBlockHash(txIdBytes)
 
 	index, err := ReadUvarint(rr)
 	if err != nil {
-		glog.Errorf("UtxoKey.Decode: ReadUvarint: %v", err)
-		return
+		return errors.Wrapf(err, "UtxoKey.Decode: Problem reading Index")
 	}
 	utxoKey.Index = uint32(index)
+
+	return nil
 }
 
 const (
@@ -3370,7 +3375,10 @@ func (txnData *LikeMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnlike
-	ret.IsUnlike = ReadBoolByte(rr)
+	ret.IsUnlike, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "LikeMetadata.FromBytes: Problem reading IsUnlike")
+	}
 
 	*txnData = ret
 
@@ -3442,7 +3450,10 @@ func (txnData *FollowMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnfollow
-	ret.IsUnfollow = ReadBoolByte(rr)
+	ret.IsUnfollow, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FollowMetadata.FromBytes: Problem reading IsUnfollow")
+	}
 
 	*txnData = ret
 
@@ -3461,15 +3472,15 @@ func (txnData *FollowMetadata) New() DeSoTxnMetadata {
 // SubmitPostMetadata
 // ==================================================================
 
-func ReadBoolByte(rr *bytes.Reader) bool {
+func ReadBoolByte(rr *bytes.Reader) (bool, error) {
 	boolByte, err := rr.ReadByte()
 	if err != nil {
-		return false
+		return false, err
 	}
 	if boolByte != 0 {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 func BoolToByte(val bool) byte {
@@ -3617,10 +3628,12 @@ func (txnData *SubmitPostMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = ReadBoolByte(rr)
+	ret.IsHidden, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SubmitPostMetadata.FromBytes: Problem reading IsHidden")
+	}
 
 	*txnData = ret
-
 	return nil
 }
 
@@ -3752,7 +3765,10 @@ func (txnData *UpdateProfileMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = ReadBoolByte(rr)
+	ret.IsHidden, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileMetadata.FromBytes: Problem reading IsHidden")
+	}
 
 	*txnData = ret
 
@@ -4100,10 +4116,16 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// HasUnlockable
-	ret.HasUnlockable = ReadBoolByte(rr)
+	ret.HasUnlockable, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTMetadata.FromBytes: Problem reading HasUnlockable")
+	}
 
 	// IsForSale
-	ret.IsForSale = ReadBoolByte(rr)
+	ret.IsForSale, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTMetadata.FromBytes: Problem reading IsForSale")
+	}
 
 	// MinBidAmountNanos uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)
@@ -4191,7 +4213,10 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// IsForSale
-	ret.IsForSale = ReadBoolByte(rr)
+	ret.IsForSale, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateNFTMetadata.FromBytes: Problem reading IsForSale")
+	}
 
 	// SerialNumber uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)

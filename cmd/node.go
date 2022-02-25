@@ -121,9 +121,10 @@ func (node *Node) Start() {
 		lib.StartDBSummarySnapshots(node.chainDB)
 	}
 
-	// Setup postgres using a remote URI
+	// Setup postgres using a remote URI.
+	// If we're also a HyperSync node, then we will ignore postgres.
 	var db *pg.DB
-	if node.Config.PostgresURI != "" {
+	if !node.Config.HyperSync && node.Config.PostgresURI != "" {
 		options, err := pg.ParseURL(node.Config.PostgresURI)
 		if err != nil {
 			panic(err)
@@ -142,6 +143,8 @@ func (node *Node) Start() {
 		if err != nil {
 			panic(err)
 		}
+	} else if node.Config.HyperSync {
+		glog.Errorf("Start: Ignoring postgres because node is using HyperSync")
 	}
 
 	// Setup eventManager
