@@ -191,7 +191,7 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte) (
 		// from the DB. For now we also omit the base key, we will add it later when querying the DB.
 
 		// Check if the messaging key corresponds to our public key.
-		if reflect.DeepEqual(messagingKey.OwnerPublicKey, ownerPublicKey) {
+		if reflect.DeepEqual(messagingKey.OwnerPublicKey[:], ownerPublicKey) {
 			messagingKeysMap[messagingKey] = messagingKeyEntry
 			continue
 		}
