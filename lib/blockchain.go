@@ -3672,7 +3672,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 
 	blockHeight := bc.blockTip().Height + 1
 
-	if bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight < blockHeight {
+	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		if err := _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey, derivedPublicKey,
 			expirationBlock, transactionSpendingLimit, accessSignature); err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
@@ -3707,8 +3707,8 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		extraData[DerivedPublicKey] = derivedPublicKey
 	}
 
-	if blockHeight > bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
-		if memo != nil {
+	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
+		if len(memo) != 0 {
 			extraData[DerivedKeyMemoKey] = memo
 		}
 		if transactionSpendingLimit != nil {

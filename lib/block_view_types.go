@@ -34,17 +34,30 @@ const (
 )
 
 func (mm UtxoType) String() string {
-	if mm == UtxoTypeOutput {
+	switch mm {
+	case UtxoTypeOutput:
 		return "UtxoTypeOutput"
-	} else if mm == UtxoTypeBlockReward {
+	case UtxoTypeBlockReward:
 		return "UtxoTypeBlockReward"
-	} else if mm == UtxoTypeBitcoinBurn {
+	case UtxoTypeBitcoinBurn:
 		return "UtxoTypeBitcoinBurn"
-	} else if mm == UtxoTypeStakeReward {
+	case UtxoTypeStakeReward:
 		return "UtxoTypeStakeReward"
+	case UtxoTypeCreatorCoinSale:
+		return "UtxoTypeCreatorCoinSale"
+	case UtxoTypeCreatorCoinFounderReward:
+		return "UtxoTypeCreatorCoinFounderReward"
+	case UtxoTypeNFTSeller:
+		return "UtxoTypeNFTSeller"
+	case UtxoTypeNFTBidderChange:
+		return "UtxoTypeNFTBidderChange"
+	case UtxoTypeNFTCreatorRoyalty:
+		return "UtxoTypeNFTCreatorRoyalty"
+	case UtxoTypeNFTAdditionalDESORoyalty:
+		return "UtxoTypeNFTAdditionalDESORoyalty"
+	default:
+		return "UtxoTypeUnknown"
 	}
-
-	return "UtxoTypeUnknown"
 }
 
 // UtxoEntry identifies the data associated with a UTXO.
@@ -835,8 +848,23 @@ type NFTBidEntry struct {
 	SerialNumber   uint64
 	BidAmountNanos uint64
 
+	AcceptedBlockHeight *uint32
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+func (nftBidEntry *NFTBidEntry) Copy() *NFTBidEntry {
+	if nftBidEntry == nil {
+		return nil
+	}
+	newEntry := *nftBidEntry
+	newEntry.BidderPKID = nftBidEntry.BidderPKID.NewPKID()
+	newEntry.NFTPostHash = nftBidEntry.NFTPostHash.NewBlockHash()
+	if nftBidEntry.AcceptedBlockHeight != nil {
+		*newEntry.AcceptedBlockHeight = *nftBidEntry.AcceptedBlockHeight
+	}
+	return &newEntry
 }
 
 type DerivedKeyEntry struct {
@@ -856,7 +884,9 @@ type DerivedKeyEntry struct {
 	// Transaction Spending limit Tracker
 	TransactionSpendingLimitTracker *TransactionSpendingLimit
 
-	// Memo that tells you what this derived key is for
+	// Memo that tells you what this derived key is for. Should
+	// include the name or domain of the app that asked for these
+	// permissions so the user can manage it from a centralized UI.
 	Memo []byte
 
 	// Whether or not this entry is deleted in the view.

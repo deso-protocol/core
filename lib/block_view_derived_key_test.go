@@ -274,7 +274,7 @@ func _doTxn(
 			feeRateNanosPerKB,
 			nil,
 			nil,
-			)
+		)
 		operationType = OperationTypeSubmitPost
 	case TxnTypeUpdateGlobalParams:
 		getGlobalParamValFromExtraData := func(key string) int64 {
@@ -635,6 +635,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
+			// FIXME: Should we be checking isDeleted here?
 			if derivedKeyEntry == nil {
 				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
 			}
@@ -646,6 +647,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			derivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
+			// FIXME: Should we be checking isDeleted here?
 			if derivedKeyEntry == nil {
 				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
 			}
@@ -1461,7 +1463,8 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		GlobalDESOLimit:          NanosPerUnit, // 1 DESO limit
 		TransactionCountLimitMap: transactionCountLimitMap,
 	}
-	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(t, senderPriv, 6, transactionSpendingLimit, false)
+	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
+		t, senderPriv, 6, transactionSpendingLimit, false)
 	derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
 	derivedPkBytes := derivedPriv.PubKey().SerializeCompressed()
 	fmt.Println("Derived public key:", hex.EncodeToString(derivedPkBytes))
@@ -1525,6 +1528,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
+			// FIXME: Should we be checking isDeleted here?
 			if derivedKeyEntry == nil {
 				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
 			}
@@ -1536,6 +1540,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			derivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
+			// FIXME: Should we be checking isDeleted here?
 			if derivedKeyEntry == nil {
 				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
 			}
@@ -2458,11 +2463,15 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
 	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeBasicTransfer] = 1
 	// Mint and update transfer restriction status
-	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoin] = 1
-	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoinTransfer] = 1
+	//
+	// We don't need to set TxnType-level quota for DAOCoin txns. Only
+	// the granular quota matters.
+	//transactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoin] = 1
+	//transactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoinTransfer] = 1
 	transactionSpendingLimit.DAOCoinOperationLimitMap[MakeDAOCoinOperationLimitKey(*m1PKID, MintDAOCoinOperation)] = 1
 	transactionSpendingLimit.DAOCoinOperationLimitMap[MakeDAOCoinOperationLimitKey(*m1PKID, TransferDAOCoinOperation)] = 1
-	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(t, m1PrivateKey, 6, transactionSpendingLimit, false)
+	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
+		t, m1PrivateKey, 6, transactionSpendingLimit, false)
 	derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
 	{
 		extraData := make(map[string]interface{})
@@ -2526,13 +2535,14 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			true,
 			TxnTypeDAOCoin,
 			&DAOCoinMetadata{
+				ProfilePublicKey:          m1PkBytes,
 				OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
 				TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
 			},
 			nil,
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDerivedKeyTxnTypeNotAuthorized)
+		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
 	}
 
 	newTransactionSpendingLimit := &TransactionSpendingLimit{
@@ -2545,8 +2555,10 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
 	newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeBasicTransfer] = 1
 	// Mint and update transfer restriction status
-	newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoin] = 10
-	newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoinTransfer] = 10
+	// TxnType-level limits are not needed for DAOCoin operations because we defer to
+	// granular limits.
+	//newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoin] = 10
+	//newTransactionSpendingLimit.TransactionCountLimitMap[TxnTypeDAOCoinTransfer] = 10
 	// This time we allow any operation 10x
 	newTransactionSpendingLimit.DAOCoinOperationLimitMap[MakeDAOCoinOperationLimitKey(*m1PKID, AnyDAOCoinOperation)] = 10
 	newTransactionSpendingLimit.DAOCoinOperationLimitMap[MakeDAOCoinOperationLimitKey(*m1PKID, UpdateTransferRestrictionStatusDAOCoinOperation)] = 0
@@ -2568,6 +2580,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		)
 	}
 
+	// Updating the transfer restriction status should work
 	{
 		_doTxnWithTestMeta(
 			testMeta,
@@ -2585,6 +2598,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		)
 	}
 
+	// Burning some DAO coins should work
 	{
 		_doTxnWithTestMeta(
 			testMeta,
@@ -2653,7 +2667,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	// Okay so now we update the derived key to have enough DESO to do this, but don't give it the ability to perform
 	// any creator coin transactions
 	m0TransactionSpendingLimit.GlobalDESOLimit = 15
-	m0AuthTxnMetaWithSpendingLimitTxn, _ := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivateKey(t, m0PrivateKey, 6, m0TransactionSpendingLimit, derived0Priv, false)
+	m0AuthTxnMetaWithSpendingLimitTxn, _ := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivateKey(
+		t, m0PrivateKey, 6, m0TransactionSpendingLimit, derived0Priv, false)
 
 	{
 		extraData := make(map[string]interface{})
@@ -2686,7 +2701,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			nil,
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDerivedKeyTxnTypeNotAuthorized)
+		require.Contains(err.Error(), RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized)
 	}
 
 	// Okay so now we update the derived key to have enough DESO to do this, but don't give it the ability to perform
@@ -2760,15 +2775,14 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeCreatorCoin,
 			&CreatorCoinMetadataa{
 				ProfilePublicKey: m1PkBytes,
-				OperationType: CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos: 25,
+				OperationType:    CreatorCoinOperationTypeBuy,
+				DeSoToSellNanos:  25,
 			},
 			nil,
 		)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
 	}
-
 
 	{
 		derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
@@ -2808,7 +2822,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			false,
 			TxnTypeSubmitPost,
 			&SubmitPostMetadata{
-				Body: bodyBytes,
+				Body:           bodyBytes,
 				TimestampNanos: uint64(time.Now().UnixNano()),
 			},
 			nil,
@@ -2841,8 +2855,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			TxnTypeCreateNFT,
 			&CreateNFTMetadata{
 				NFTPostHash: post1Hash,
-				NumCopies: 10,
-				IsForSale: true,
+				NumCopies:   10,
+				IsForSale:   true,
 			},
 			map[string]interface{}{
 				BuyNowPriceKey: uint64(5),
@@ -2868,7 +2882,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			nftBidSpendingLimit,
 			derived0Priv,
 			false,
-			)
+		)
 
 		_doTxnWithTestMeta(
 			testMeta,
@@ -2894,8 +2908,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			true,
 			TxnTypeNFTBid,
 			&NFTBidMetadata{
-				NFTPostHash: post1Hash,
-				SerialNumber: 1,
+				NFTPostHash:    post1Hash,
+				SerialNumber:   1,
 				BidAmountNanos: 5,
 			},
 			nil,
@@ -2933,8 +2947,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			true,
 			TxnTypeNFTBid,
 			&NFTBidMetadata{
-				NFTPostHash: post1Hash,
-				SerialNumber: 1,
+				NFTPostHash:    post1Hash,
+				SerialNumber:   1,
 				BidAmountNanos: 5,
 			},
 			nil,
