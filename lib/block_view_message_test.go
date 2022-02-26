@@ -56,10 +56,15 @@ func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
 		[]byte{}, []byte{}, []byte{}, []byte{},
-		tstampNanos, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		tstampNanos, &standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1454,11 +1459,16 @@ func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, s
 	senderPkBase58Check := Base58CheckEncode(senderPkBytes, false, testMeta.params)
 	balance := _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = 10
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	// Create a private message transaction with the sender and recipient messaging keys.
 	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, "", encryptedMessageText,
 		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
-		recipientMessagingKeyName, tstampNanos, 10, nil, []*DeSoOutput{})
+		recipientMessagingKeyName, tstampNanos, &standardTxnFields)
 	require.NoError(err)
 
 	require.Equal(totalInputMake, changeAmountMake+feesMake)

@@ -27,6 +27,11 @@ func _createNFTWithAdditionalRoyalties(t *testing.T, chain *Blockchain, db *badg
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreateNFTTxn(
 		updaterPkBytes,
 		nftPostHash,
@@ -41,8 +46,7 @@ func _createNFTWithAdditionalRoyalties(t *testing.T, chain *Blockchain, db *badg
 		buyNowPriceNanos,
 		additionalDESORoyaltiesMap,
 		additionalCoinRoyaltiesMap,
-		feeRateNanosPerKB,
-		nil, []*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -208,14 +212,17 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, _, _, err := chain.CreateNFTBidTxn(
 		updaterPkBytes,
 		nftPostHash,
 		serialNumber,
 		bidAmountNanos,
-		feeRateNanosPerKB,
-		nil,
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -293,6 +300,12 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	bidderPKID := utxoView.GetPKIDForPublicKey(bidderPkBytes)
 	require.NotNil(bidderPKID)
 	require.False(bidderPKID.isDeleted)
+
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAcceptNFTBidTxn(
 		updaterPkBytes,
 		nftPostHash,
@@ -300,9 +313,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 		bidderPKID.PKID,
 		bidAmountNanos,
 		[]byte(unencryptedUnlockableText),
-		feeRateNanosPerKB,
-		nil,
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -396,6 +407,11 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateNFTTxn(
 		updaterPkBytes,
 		nftPostHash,
@@ -404,9 +420,7 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 		minBidAmountNanos,
 		isBuyNow,
 		buyNowPriceNanos,
-		feeRateNanosPerKB,
-		nil,
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -490,15 +504,18 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateNFTTransferTxn(
 		senderPkBytes,
 		receiverPkBytes,
 		nftPostHash,
 		serialNumber,
 		[]byte(unlockableText),
-		feeRateNanosPerKB,
-		nil,
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -575,13 +592,16 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAcceptNFTTransferTxn(
 		updaterPkBytes,
 		nftPostHash,
 		serialNumber,
-		feeRateNanosPerKB,
-		nil,
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -654,13 +674,16 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateBurnNFTTxn(
 		updaterPkBytes,
 		nftPostHash,
 		serialNumber,
-		feeRateNanosPerKB,
-		nil,
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}

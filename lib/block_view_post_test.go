@@ -43,6 +43,12 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 		isQuotedRepost = true
 	}
 	postExtraData := make(map[string][]byte)
+
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateSubmitPostTxn(
 		updaterPkBytes,
 		postHashToModify,
@@ -53,9 +59,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 		tstampNanos,
 		postExtraData,
 		isHidden,
-		feeRateNanosPerKB,
-		nil,
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -135,13 +139,16 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(t, err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, spendAmount, changeAmountMake, feesMake, err := chain.CreateBasicTransferTxnWithDiamonds(
 		senderPkBytes,
 		diamondPostHash,
 		diamondLevel,
-		feeRateNanosPerKB,
-		nil,
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -227,6 +234,11 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, nil)
 	require.NoError(err)
 
+	standardTxnFields := StandardTxnFields{}
+	standardTxnFields.MinFeeRateNanosPerKB = feeRateNanosPerKB
+	standardTxnFields.Mempool = nil
+	standardTxnFields.AdditionalOutputs = []*DeSoOutput{}
+
 	txn, totalInputMake, _, _, err := chain.CreateSubmitPostTxn(
 		updaterPkBytes,
 		postHashToModify,
@@ -237,9 +249,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		uint64(time.Now().UnixNano()),
 		extraData,
 		isHidden,
-		feeRateNanosPerKB,
-		nil, /*mempool*/
-		[]*DeSoOutput{})
+		&standardTxnFields)
 	if err != nil {
 		return nil, nil, 0, err
 	}
