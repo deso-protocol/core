@@ -409,8 +409,8 @@ func (params *DeSoParams) EnableRegtest() {
 		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
-		DerivedKeySetSpendingLimitsBlockHeight:               math.MaxUint32,
-		DerivedKeyTrackSpendingLimitsBlockHeight:             math.MaxUint32,
+		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
+		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	}
 }
 
