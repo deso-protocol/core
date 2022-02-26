@@ -409,8 +409,9 @@ func (params *DeSoParams) EnableRegtest() {
 		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
-		DerivedKeySetSpendingLimitsBlockHeight:               math.MaxUint32,
-		DerivedKeyTrackSpendingLimitsBlockHeight:             math.MaxUint32,
+		// FIXME: Set these values when we're ready for the next fork
+		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
+		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	}
 }
 
@@ -650,9 +651,11 @@ var DeSoMainnetParams = DeSoParams{
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
 
 		// Mon Jan 24 @ 12pm PST
-		DeSoV3MessagesBlockHeight:                uint32(98474),
-		BuyNowAndNFTSplitsBlockHeight:            uint32(98474),
-		DAOCoinBlockHeight:                       uint32(98474),
+		DeSoV3MessagesBlockHeight:     uint32(98474),
+		BuyNowAndNFTSplitsBlockHeight: uint32(98474),
+		DAOCoinBlockHeight:            uint32(98474),
+
+		// FIXME: Set these values when we're ready for the next fork.
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
@@ -841,6 +844,7 @@ var DeSoTestnetParams = DeSoParams{
 		BuyNowAndNFTSplitsBlockHeight: uint32(97322),
 		DAOCoinBlockHeight:            uint32(97322),
 
+		// FIXME: Set these values when we're ready for the next fork.
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
@@ -910,7 +914,7 @@ const (
 
 	// TransactionSpendingLimit
 	TransactionSpendingLimitKey = "TransactionSpendingLimit"
-	DerivedKeyMemoKey           = "Memo"
+	DerivedKeyMemoKey           = "DerivedKeyMemo"
 )
 
 // Defines values that may exist in a transaction's ExtraData map

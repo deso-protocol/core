@@ -127,21 +127,21 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// defined in extra data
 	var newTransactionSpendingLimit *TransactionSpendingLimit
 	var memo []byte
-	if bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight < blockHeight {
+	if blockHeight >= bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		// Extract TransactionSpendingLimit from extra data
 		// We need to merge the new transaction spending limit struct into the old one
-		if prevDerivedKeyEntry != nil {
+		//
+		// This will get overwritten if there's an existing spending limit struct.
+		newTransactionSpendingLimit = &TransactionSpendingLimit{
+			TransactionCountLimitMap:     make(map[TxnType]uint64),
+			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+		}
+		// FIXME: Should we be checking isDeleted here?
+		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			newTransactionSpendingLimit = prevDerivedKeyEntry.TransactionSpendingLimitTracker
 			memo = prevDerivedKeyEntry.Memo
-		}
-		if newTransactionSpendingLimit == nil {
-			// If we don't have a new transaction spending limit, initialize an empty one
-			newTransactionSpendingLimit = &TransactionSpendingLimit{
-				TransactionCountLimitMap:     make(map[TxnType]uint64),
-				CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-				DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-				NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
-			}
 		}
 		// This is the transaction spending limit object passed in the extra data field. This is required for verifying the
 		// signature later.
@@ -228,9 +228,10 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// transactions. It also resolves issues in situations where the owner account has insufficient
 	// balance to submit an authorize transaction.
 	derivedKeyEntry := DerivedKeyEntry{
-		OwnerPublicKey:                  *NewPublicKey(ownerPublicKey),
-		DerivedPublicKey:                *NewPublicKey(derivedPublicKey),
-		ExpirationBlock:                 txMeta.ExpirationBlock,
+		OwnerPublicKey:   *NewPublicKey(ownerPublicKey),
+		DerivedPublicKey: *NewPublicKey(derivedPublicKey),
+		ExpirationBlock:  txMeta.ExpirationBlock,
+		// See comment above for why we're hardcoding OperationValid here.
 		OperationType:                   AuthorizeDerivedKeyOperationValid,
 		TransactionSpendingLimitTracker: newTransactionSpendingLimit,
 		Memo:                            memo,
@@ -258,9 +259,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput
 	}
 
-	// If we're passed the derived key spending limit block height, we actually need to fetch the derived key
+	// If we're past the derived key spending limit block height, we actually need to fetch the derived key
 	// entry again since the basic transfer reduced the txn count on the derived key txn
-	if bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight < blockHeight {
+	if blockHeight >= bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		derivedKeyEntry = *bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
 	}
 
@@ -335,7 +336,8 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	}
 
 	// If we had a previous derivedKeyEntry set then compare it with the current entry.
-	if prevDerivedKeyEntry != nil {
+	// FIXME: Should we be checking isDeleted here?
+	if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 		// Sanity check public keys. This should never fail.
 		if !reflect.DeepEqual(ownerPublicKey, prevDerivedKeyEntry.OwnerPublicKey[:]) {
 			return fmt.Errorf("_disconnectAuthorizeDerivedKey: Owner public key in txn "+

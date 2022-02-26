@@ -1449,7 +1449,8 @@ func (bav *UtxoView) _connectBasicTransfer(
 			if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight &&
 				len(derivedPkBytes) == btcec.PubKeyBytesLenCompressed {
 				// Now we check the transaction limits on the derived key
-				if utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn); err != nil {
+				utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
+				if err != nil {
 					return 0, 0, nil, err
 				}
 			}
@@ -1474,8 +1475,22 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	// Create a copy of the prevDerivedKeyEntry so we can safely modify the new entry
 	derivedKeyEntry := *prevDerivedKeyEntry.Copy()
 
-	// Spend amount is total inputs minus sum of AddUtxo type operations with utxo type of UtxoOutputTypes
-	// going to transactor
+	// Spend amount is total inputs minus sum of AddUtxo type operations
+	// going to transactor (i.e. change).
+	//
+	// Note the following edge cases whereby this check will potentially not protect
+	// the user:
+	// - For TxnTypeNFTBid, a bid can be placed on someone's NFT without triggering this
+	//   check. The user should be extra careful when approving an NFT bid, making sure
+	//   that the amount being bid *and* the NFT being bid on are accurate.
+	// - For TxnTypeCreatorCoinTransfer, the app can transfer as much creator coin as it
+	//   wants without hitting this check.
+	// - For TxnTypeDAOCoinTransfer, same as the TxnTypeCreatorCoinTransfer.
+	// - For TxnTypeCreatorCoin, a SELL operation could liquidate someone's creator
+	//   coin without triggering this check.
+	//
+	// These are all acceptable, as the main point of this check is to prevent someone's
+	// money being spent when attempting non-monetary txns like SubmitPost or Follow.
 	spendAmount := totalInput
 	for _, utxoOp := range utxoOpsForTxn {
 		if utxoOp.Type == OperationTypeAddUtxo && utxoOp.Entry.UtxoType == UtxoTypeOutput &&
@@ -1498,24 +1513,6 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit -= spendAmount
 
 	txnType := txn.TxnMeta.GetTxnType()
-
-	// If the transaction limit is not specified or equal to 0, this derived
-	// key is not authorized to perform this transaction.
-	if transactionLimit, transactionLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap[txnType]; !transactionLimitExists || transactionLimit == 0 {
-		return utxoOpsForTxn, errors.Wrapf(
-			RuleErrorDerivedKeyTxnTypeNotAuthorized,
-			"_checkDerivedKeySpendingLimit: No more transactions of type %v are allowed on this Derived Key",
-			txnType.String())
-	} else {
-		// Otherwise, this derived key is authorized to perform this operation. Delete the key if this is the last
-		// time this derived key can perform this operation, otherwise decrement the counter.
-		if transactionLimit == 1 {
-			delete(derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap, txnType)
-		} else {
-			derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap[txnType]--
-		}
-	}
 
 	var err error
 	// Okay now we've validated that we can do the op. Decrement the special counters if applicable
@@ -1607,6 +1604,29 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		if derivedKeyEntry, err = _checkNFTLimitAndUpdateDerivedKeyEntry(
 			derivedKeyEntry, txnMeta.NFTPostHash, txnMeta.SerialNumber, BurnNFTOperation); err != nil {
 			return utxoOpsForTxn, err
+		}
+	default:
+		// If we get here, it means we're dealing with a txn that doesn't have any special
+		// granular limits to deal with. This means we just check whether or not we have
+		// quota to execute this particular TxnType.
+
+		// If the transaction limit is not specified or equal to 0, this derived
+		// key is not authorized to perform this transaction.
+		transactionLimit, transactionLimitExists :=
+			derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap[txnType]
+		if !transactionLimitExists || transactionLimit == 0 {
+			return utxoOpsForTxn, errors.Wrapf(
+				RuleErrorDerivedKeyTxnTypeNotAuthorized,
+				"_checkDerivedKeySpendingLimit: No more transactions of type %v are allowed on this Derived Key",
+				txnType.String())
+		} else {
+			// Otherwise, this derived key is authorized to perform this operation. Delete the key if this is the last
+			// time this derived key can perform this operation, otherwise decrement the counter.
+			if transactionLimit == 1 {
+				delete(derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap, txnType)
+			} else {
+				derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap[txnType]--
+			}
 		}
 	}
 	// Set derived key entry mapping
@@ -1700,8 +1720,9 @@ func _checkNFTLimitAndUpdateDerivedKeyEntry(
 // Returns true if the key was found and the derived key entry was updated.
 func _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(key CreatorCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
 	// If the key is present in the CreatorCoinOperationLimitMap...
-	if ccOperationLimit, ccOperationLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]; ccOperationLimitExists && ccOperationLimit > 0 {
+	ccOperationLimit, ccOperationLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]
+	if ccOperationLimitExists && ccOperationLimit > 0 {
 		// If this is the last operation allowed for this key, we delete the key from the map.
 		if ccOperationLimit == 1 {
 			delete(derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap, key)
@@ -1725,25 +1746,25 @@ func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
 			"_checkCreatorCoinLimitAndUpdateDerivedKeyEntry: creator pkid is deleted")
 	}
 
-	// First check creator - operation key
+	// First check (creator pkid || operation) key
 	creatorOperationKey := MakeCreatorCoinOperationLimitKey(*pkidEntry.PKID, operation)
 	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(creatorOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Next check creator - any operation key
+	// Next check (creator pkid || any operation) key
 	creatorAnyOperationKey := MakeCreatorCoinOperationLimitKey(*pkidEntry.PKID, AnyCreatorCoinOperation)
 	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(creatorAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Next check nil creator - operation key
+	// Next check (any creator pkid || operation) key
 	nilCreatorOperationKey := MakeCreatorCoinOperationLimitKey(ZeroPKID, operation)
 	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(nilCreatorOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Finally, check nil creator - any operation key
+	// Finally, check (any creator pkid || any operation) key
 	nilCreatorAnyOperationKey := MakeCreatorCoinOperationLimitKey(ZeroPKID, AnyCreatorCoinOperation)
 	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(nilCreatorAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
@@ -1759,8 +1780,9 @@ func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
 // Returns true if the key was found and the derived key entry was updated.
 func _checkDAOCoinKeyAndUpdateDerivedKeyEntry(key DAOCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
 	// If the key is present in the DAOCoinOperationLimitMap...
-	if daoCoinOperationLimit, daoCoinOperationLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]; daoCoinOperationLimitExists && daoCoinOperationLimit > 0 {
+	daoCoinOperationLimit, daoCoinOperationLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]
+	if daoCoinOperationLimitExists && daoCoinOperationLimit > 0 {
 		// If this is the last operation allowed for this key, we delete the key from the map.
 		if daoCoinOperationLimit == 1 {
 			delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap, key)
@@ -1785,25 +1807,25 @@ func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 		return derivedKeyEntry, fmt.Errorf("_checkDAOCoinLimitAndUpdateDerivedKeyEntry: creator pkid is deleted")
 	}
 
-	// First check creator - operation key
+	// First check (creator pkid || operation) key
 	creatorOperationKey := MakeDAOCoinOperationLimitKey(*pkidEntry.PKID, operation)
 	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(creatorOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Next check creator - any operation key
+	// Next check (creator pkid || any operation) key
 	creatorAnyOperationKey := MakeDAOCoinOperationLimitKey(*pkidEntry.PKID, AnyDAOCoinOperation)
 	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(creatorAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Next check nil creator - operation key
+	// Next check (any creator pkid || operation) key
 	nilCreatorOperationKey := MakeDAOCoinOperationLimitKey(ZeroPKID, operation)
 	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(nilCreatorOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
-	// Finally, check nil creator - any operation key
+	// Finally, check (any creator pkid || any operation) key
 	nilCreatorAnyOperationKey := MakeDAOCoinOperationLimitKey(ZeroPKID, AnyDAOCoinOperation)
 	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(nilCreatorAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil

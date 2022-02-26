@@ -884,7 +884,9 @@ type DerivedKeyEntry struct {
 	// Transaction Spending limit Tracker
 	TransactionSpendingLimitTracker *TransactionSpendingLimit
 
-	// Memo that tells you what this derived key is for
+	// Memo that tells you what this derived key is for. Should
+	// include the name or domain of the app that asked for these
+	// permissions so the user can manage it from a centralized UI.
 	Memo []byte
 
 	// Whether or not this entry is deleted in the view.
