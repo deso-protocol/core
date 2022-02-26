@@ -334,7 +334,11 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	// For CreatorCoins, we must check that the amount of creator coin being
 	// transferred is not less than the min threshold. For DAO coins, this constraint
 	// doesn't matter because there is no bonding curve.
-	if !isDAOCoin {
+	if isDAOCoin {
+		if coinToTransferNanos.IsZero() && blockHeight > bav.Params.ForkHeights.DAOCoinZeroTransferFixHeight {
+			return 0, 0, nil, RuleErrorDAOCoinTransferMustTransferNonZero
+		}
+	} else {
 		// CreatorCoins can't exceed a uint64
 		if coinToTransferNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
 			return 0, 0, nil, RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold
