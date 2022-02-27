@@ -158,11 +158,11 @@ type Server struct {
 	addrsToBroadcastt    map[string][]*SingleAddr
 
 	// When set to true, we disable the ConnectionManager
-	disableNetworking bool
+	DisableNetworking bool
 
 	// When set to true, transactions created on this node will be ignored.
-	readOnlyMode                 bool
-	ignoreInboundPeerInvMessages bool
+	ReadOnlyMode                 bool
+	IgnoreInboundPeerInvMessages bool
 
 	// Becomes true after the node has processed its first transaction bundle from
 	// any peer. This is useful in a deployment setting because it makes it so that
@@ -354,9 +354,9 @@ func NewServer(
 	// Create an empty Server object here so we can pass a reference to it to the
 	// ConnectionManager.
 	srv := &Server{
-		disableNetworking:            _disableNetworking,
-		readOnlyMode:                 _readOnlyMode,
-		ignoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
+		DisableNetworking:            _disableNetworking,
+		ReadOnlyMode:                 _readOnlyMode,
+		IgnoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -749,7 +749,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// and it has been re-run with a new snapshot epoch.
 
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
-			if srv.cmgr.hyperSync && !srv.blockchain.finishedSyncing {
+			if srv.cmgr.HyperSync && !srv.blockchain.finishedSyncing {
 				srv.blockchain.syncingState = true
 				// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
 				// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
@@ -1302,9 +1302,9 @@ func (srv *Server) _relayTransactions() {
 func (srv *Server) _addNewTxn(
 	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MempoolTx, error) {
 
-	if srv.readOnlyMode {
+	if srv.ReadOnlyMode {
 		err := fmt.Errorf("Server._addNewTxnAndRelay: Not processing txn from peer %v "+
-			"because peer is in read-only mode: %v", pp, srv.readOnlyMode)
+			"because peer is in read-only mode: %v", pp, srv.ReadOnlyMode)
 		glog.V(1).Infof(err.Error())
 		return nil, err
 	}
@@ -1580,7 +1580,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 }
 
 func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
-	if !peer.isOutbound && srv.ignoreInboundPeerInvMessages {
+	if !peer.isOutbound && srv.IgnoreInboundPeerInvMessages {
 		glog.Infof("_handleInv: Ignoring inv message from inbound peer because "+
 			"ignore_outbound_peer_inv_messages=true: %v", peer)
 		return
@@ -2033,7 +2033,7 @@ func (srv *Server) Start() {
 
 	// Once the ConnectionManager is started, peers will be found and connected to and
 	// messages will begin to flow in to be processed.
-	if !srv.disableNetworking {
+	if !srv.DisableNetworking {
 		go srv.cmgr.Start()
 	}
 

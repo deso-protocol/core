@@ -55,7 +55,7 @@ type ConnectionManager struct {
 	limitOneInboundConnectionPerIP bool
 
 	// When --hyper-sync is set to true we will attempt fast block synchronization
-	hyperSync bool
+	HyperSync bool
 
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
@@ -156,7 +156,7 @@ func NewConnectionManager(
 		targetOutboundPeers:            _targetOutboundPeers,
 		maxInboundPeers:                _maxInboundPeers,
 		limitOneInboundConnectionPerIP: _limitOneInboundConnectionPerIP,
-		hyperSync:                      _hyperSync,
+		HyperSync:                      _hyperSync,
 		serverMessageQueue:             _serverMessageQueue,
 		stallTimeoutSeconds:            _stallTimeoutSeconds,
 		minFeeRateNanosPerKB:           _minFeeRateNanosPerKB,
@@ -280,6 +280,10 @@ func (cmgr *ConnectionManager) _getOutboundConn(persistentAddr *wire.NetAddress)
 	isPersistent := (persistentAddr != nil)
 	retryCount := 0
 	for {
+		if atomic.LoadInt32(&cmgr.shutdown) != 0 {
+			glog.Info("_getOutboundConn: Ignoring connection due to shutdown")
+			return nil
+		}
 		// We want to start backing off exponentially once we've gone through enough
 		// unsuccessful retries. However, we want to give more slack to non-persistent
 		// peers before we start backing off, which is why it's not as cut and dry as
@@ -408,6 +412,8 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.N
 
 		// At this point conn is set so create a peer object to do
 		// a version negotiation.
+		x := conn.RemoteAddr().String()
+		_ = x
 		na, err := IPToNetAddr(conn.RemoteAddr().String(), cmgr.addrMgr, cmgr.params)
 		if err != nil {
 			glog.Errorf("ConnectPeer: Problem calling ipToNetAddr for addr: (%s) err: (%v)", conn.RemoteAddr().String(), err)
@@ -546,6 +552,8 @@ func (cmgr *ConnectionManager) _handleInboundConnections() {
 		go func(ll net.Listener) {
 			for {
 				conn, err := ll.Accept()
+				glog.V(2).Infof("_handleInboundConnections: received connection from: local %v, remote %v",
+					conn.LocalAddr().String(), conn.RemoteAddr().String())
 				if atomic.LoadInt32(&cmgr.shutdown) != 0 {
 					glog.Info("_handleInboundConnections: Ignoring connection due to shutdown")
 					return

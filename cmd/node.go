@@ -82,20 +82,23 @@ func (node *Node) Start() {
 
 	// This just gets localhost listening addresses on the protocol port.
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
-	listeningAddrs, listeners := getAddrsToListenOn(node.Config.ProtocolPort)
-
-	for _, addr := range listeningAddrs {
-		netAddr := wire.NewNetAddress(&addr, 0)
-		_ = desoAddrMgr.AddLocalAddress(netAddr, addrmgr.BoundPrio)
-	}
+	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
+	_ = listeningAddrs
+	// TODO: This is redundant. AddLocalAddress returns an error on every iteration of this loop.
+	//for _, addr := range listeningAddrs {
+	//	netAddr := wire.NewNetAddress(&addr, 0)
+	//	_ = desoAddrMgr.AddLocalAddress(netAddr, addrmgr.BoundPrio)
+	//}
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
 	if len(node.Config.ConnectIPs) == 0 {
+		glog.Infof("Looking for AddIPs: %v", len(node.Config.AddIPs))
 		for _, host := range node.Config.AddIPs {
 			addIPsForHost(desoAddrMgr, host, node.Params)
 		}
 
+		glog.Infof("Looking for DNSSeeds: %v", len(node.Params.DNSSeeds))
 		for _, host := range node.Params.DNSSeeds {
 			addIPsForHost(desoAddrMgr, host, node.Params)
 		}
@@ -213,6 +216,10 @@ func (node *Node) Start() {
 func (node *Node) Stop() {
 	node.Server.Stop()
 
+	if node.Server.GetBlockchain().Snapshot() != nil {
+		node.Server.GetBlockchain().Snapshot().Stop()
+	}
+
 	if node.TXIndex != nil {
 		node.TXIndex.Stop()
 	}
@@ -281,7 +288,7 @@ func validateParams(params *lib.DeSoParams) {
 	}
 }
 
-func getAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
+func GetAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
 	listeningAddrs := []net.TCPAddr{}
 	listeners := []net.Listener{}
 	ifaceAddrs, err := net.InterfaceAddrs()

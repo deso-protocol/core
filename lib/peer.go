@@ -47,8 +47,8 @@ type Peer struct {
 
 	// Stats that should be accessed using the mutex below.
 	StatsMtx       deadlock.RWMutex
-	timeOffsetSecs int64
-	timeConnected  time.Time
+	TimeOffsetSecs int64
+	TimeConnected  time.Time
 	startingHeight uint32
 	ID             uint64
 	// Ping-related fields.
@@ -78,8 +78,8 @@ type Peer struct {
 	//
 	// TODO: The way we synchronize the version nonce is currently a bit
 	// messy; ideally we could do it without keeping global state.
-	versionNonceSent     uint64
-	versionNonceReceived uint64
+	VersionNonceSent     uint64
+	VersionNonceReceived uint64
 
 	// A pointer to the Server
 	srv *Server
@@ -92,7 +92,7 @@ type Peer struct {
 	userAgent                 string
 	advertisedProtocolVersion uint64
 	negotiatedProtocolVersion uint64
-	versionNegotiated         bool
+	VersionNegotiated         bool
 	minTxFeeRateNanosPerKB    uint64
 	// Messages for which we are expecting a reply within a fixed
 	// amount of time. This list is always sorted by ExpectedTime,
@@ -653,18 +653,18 @@ const (
 	idleTimeout = 5 * time.Minute
 )
 
-// handlePingMsg is invoked when a peer receives a ping message. It replies with a pong
+// HandlePingMsg is invoked when a peer receives a ping message. It replies with a pong
 // message.
-func (pp *Peer) handlePingMsg(msg *MsgDeSoPing) {
+func (pp *Peer) HandlePingMsg(msg *MsgDeSoPing) {
 	// Include nonce from ping so pong can be identified.
-	glog.V(2).Infof("Peer.handlePingMsg: Received ping from peer %v: %v", pp, msg)
+	glog.V(2).Infof("Peer.HandlePingMsg: Received ping from peer %v: %v", pp, msg)
 	// Queue up a pong message.
 	pp.QueueMessage(&MsgDeSoPong{Nonce: msg.Nonce})
 }
 
-// handlePongMsg is invoked when a peer receives a pong message.  It
+// HandlePongMsg is invoked when a peer receives a pong message.  It
 // updates the ping statistics.
-func (pp *Peer) handlePongMsg(msg *MsgDeSoPong) {
+func (pp *Peer) HandlePongMsg(msg *MsgDeSoPong) {
 	// Arguably we could use a buffered channel here sending data
 	// in a fifo manner whenever we send a ping, or a list keeping track of
 	// the times of each ping. For now we just make a best effort and
@@ -672,19 +672,19 @@ func (pp *Peer) handlePongMsg(msg *MsgDeSoPong) {
 	// and overlapping pings will be ignored. It is unlikely to occur
 	// without large usage of the ping call since we ping infrequently
 	// enough that if they overlap we would have timed out the peer.
-	glog.V(2).Infof("Peer.handlePongMsg: Received pong from peer %v: %v", msg, pp)
+	glog.V(2).Infof("Peer.HandlePongMsg: Received pong from peer %v: %v", msg, pp)
 	pp.StatsMtx.Lock()
 	defer pp.StatsMtx.Unlock()
 	if pp.LastPingNonce != 0 && msg.Nonce == pp.LastPingNonce {
 		pp.LastPingMicros = time.Since(pp.LastPingTime).Nanoseconds()
 		pp.LastPingMicros /= 1000 // convert to usec.
 		pp.LastPingNonce = 0
-		glog.V(2).Infof("Peer.handlePongMsg: LastPingMicros(%d) from Peer %v", pp.LastPingMicros, pp)
+		glog.V(2).Infof("Peer.HandlePongMsg: LastPingMicros(%d) from Peer %v", pp.LastPingMicros, pp)
 	}
 }
 
-func (pp *Peer) pingHandler() {
-	glog.V(1).Infof("Peer.pingHandler: Starting ping handler for Peer %v", pp)
+func (pp *Peer) PingHandler() {
+	glog.V(1).Infof("Peer.PingHandler: Starting ping handler for Peer %v", pp)
 	pingTicker := time.NewTicker(pingInterval)
 	defer pingTicker.Stop()
 
@@ -692,7 +692,7 @@ out:
 	for {
 		select {
 		case <-pingTicker.C:
-			glog.V(2).Infof("Peer.pingHandler: Initiating ping for Peer %v", pp)
+			glog.V(2).Infof("Peer.PingHandler: Initiating ping for Peer %v", pp)
 			nonce, err := wire.RandomUint64()
 			if err != nil {
 				glog.Errorf("Not sending ping to Peer %v: %v", pp, err)
@@ -794,6 +794,15 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 			MessageType:  MsgTypeTransactionBundle,
 			// The Server handles situations in which the Peer doesn't send us all of
 			// the hashes we were expecting using timeouts on requested hashes.
+		})
+	}
+
+	// If we're sending a GetSnapshot message, the peer should respond within
+	// a few seconds with a SnapshotData.
+	if msg.GetMsgType() == MsgTypeGetSnapshot {
+		pp._addExpectedResponse(&ExpectedResponse{
+			TimeExpected:  time.Now().Add(stallTimeout),
+			MessageType: MsgTypeSnapshotData,
 		})
 	}
 }
@@ -1073,11 +1082,11 @@ out:
 
 		case *MsgDeSoPing:
 			// Respond to a ping with a pong.
-			pp.handlePingMsg(msg)
+			pp.HandlePingMsg(msg)
 
 		case *MsgDeSoPong:
 			// Measure the ping time when we receive a pong.
-			pp.handlePongMsg(msg)
+			pp.HandlePongMsg(msg)
 
 		case *MsgDeSoNewPeer, *MsgDeSoDonePeer, *MsgDeSoQuit:
 
@@ -1112,7 +1121,7 @@ func (pp *Peer) Start() {
 	glog.Infof("Peer.Start: Starting peer %v", pp)
 	// The protocol has been negotiated successfully so start processing input
 	// and output messages.
-	go pp.pingHandler()
+	go pp.PingHandler()
 	go pp.outHandler()
 	go pp.inHandler()
 	go pp.StartDeSoMessageProcessor()
@@ -1132,6 +1141,8 @@ func (pp *Peer) Start() {
 
 func (pp *Peer) IsSyncCandidate() bool {
 	flagsAreCorrect := (pp.serviceFlags & SFFullNode) != 0
+	glog.Infof("IsSyncCandidate: localAddr (%v), flags (%v), is outbound (%v)",
+		pp.conn.LocalAddr().String(), flagsAreCorrect, pp.isOutbound)
 	return flagsAreCorrect && pp.isOutbound
 }
 
@@ -1188,7 +1199,7 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	// TODO: Right now all peers are full nodes. Later on we'll want to change this,
 	// at which point we'll need to do a little refactoring.
 	ver.Services = SFFullNode
-	if pp.cmgr.hyperSync {
+	if pp.cmgr != nil && pp.cmgr.HyperSync {
 		ver.Services |= SFHyperSync
 	}
 
@@ -1215,7 +1226,7 @@ func (pp *Peer) sendVerack() error {
 	verackMsg := NewMessage(MsgTypeVerack)
 	// Include the nonce we received in the peer's version message so
 	// we can validate that we actually control our IP address.
-	verackMsg.(*MsgDeSoVerack).Nonce = pp.versionNonceReceived
+	verackMsg.(*MsgDeSoVerack).Nonce = pp.VersionNonceReceived
 	if err := pp.WriteDeSoMessage(verackMsg); err != nil {
 		return errors.Wrap(err, "sendVerack: ")
 	}
@@ -1234,10 +1245,10 @@ func (pp *Peer) readVerack() error {
 			msg.GetMsgType().String())
 	}
 	verackMsg := msg.(*MsgDeSoVerack)
-	if verackMsg.Nonce != pp.versionNonceSent {
+	if verackMsg.Nonce != pp.VersionNonceSent {
 		return fmt.Errorf(
 			"readVerack: Received VERACK message with nonce %d but expected nonce %d",
-			verackMsg.Nonce, pp.versionNonceSent)
+			verackMsg.Nonce, pp.VersionNonceSent)
 	}
 
 	return nil
@@ -1251,9 +1262,9 @@ func (pp *Peer) sendVersion() error {
 	// Record the nonce of this version message before we send it so we can
 	// detect self connections and so we can validate that the peer actually
 	// controls the IP she's supposedly communicating to us from.
-	pp.versionNonceSent = verMsg.Nonce
+	pp.VersionNonceSent = verMsg.Nonce
 	if pp.cmgr != nil {
-		pp.cmgr.sentNonces.Add(pp.versionNonceSent)
+		pp.cmgr.sentNonces.Add(pp.VersionNonceSent)
 	}
 
 	if err := pp.WriteDeSoMessage(verMsg); err != nil {
@@ -1290,7 +1301,7 @@ func (pp *Peer) readVersion() error {
 		}
 	}
 	// Save the version nonce so we can include it in our verack message.
-	pp.versionNonceReceived = msgNonce
+	pp.VersionNonceReceived = msgNonce
 
 	// Set the peer info-related fields.
 	pp.PeerInfoMtx.Lock()
@@ -1308,20 +1319,20 @@ func (pp *Peer) readVersion() error {
 	pp.StatsMtx.Lock()
 	pp.startingHeight = verMsg.StartBlockHeight
 	pp.minTxFeeRateNanosPerKB = verMsg.MinFeeRateNanosPerKB
-	pp.timeConnected = time.Unix(verMsg.TstampSecs, 0)
-	pp.timeOffsetSecs = verMsg.TstampSecs - time.Now().Unix()
+	pp.TimeConnected = time.Unix(verMsg.TstampSecs, 0)
+	pp.TimeOffsetSecs = verMsg.TstampSecs - time.Now().Unix()
 	pp.StatsMtx.Unlock()
 
 	// Update the timeSource now that we've gotten a version message from the
 	// peer.
 	if pp.cmgr != nil {
-		pp.cmgr.timeSource.AddTimeSample(pp.addrStr, pp.timeConnected)
+		pp.cmgr.timeSource.AddTimeSample(pp.addrStr, pp.TimeConnected)
 	}
 
 	return nil
 }
 
-func (pp *Peer) readWithTimeout(readFunc func() error, readTimeout time.Duration) error {
+func (pp *Peer) ReadWithTimeout(readFunc func() error, readTimeout time.Duration) error {
 	errChan := make(chan error)
 	go func() {
 		errChan <- readFunc()
@@ -1333,7 +1344,7 @@ func (pp *Peer) readWithTimeout(readFunc func() error, readTimeout time.Duration
 		}
 	case <-time.After(readTimeout):
 		{
-			return fmt.Errorf("readWithTimeout: Timed out reading message from peer: (%v)", pp)
+			return fmt.Errorf("ReadWithTimeout: Timed out reading message from peer: (%v)", pp)
 		}
 	}
 }
@@ -1345,7 +1356,7 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 			return errors.Wrapf(err, "negotiateVersion: Problem sending version to Peer %v", pp)
 		}
 		// Read the peer's version.
-		if err := pp.readWithTimeout(
+		if err := pp.ReadWithTimeout(
 			pp.readVersion,
 			versionNegotiationTimeout); err != nil {
 
@@ -1353,7 +1364,7 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 		}
 	} else {
 		// Read the version first since this is an inbound peer.
-		if err := pp.readWithTimeout(
+		if err := pp.ReadWithTimeout(
 			pp.readVersion,
 			versionNegotiationTimeout); err != nil {
 
@@ -1369,13 +1380,13 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 	if err := pp.sendVerack(); err != nil {
 		return errors.Wrapf(err, "negotiateVersion: Problem sending verack to Peer %v", pp)
 	}
-	if err := pp.readWithTimeout(
+	if err := pp.ReadWithTimeout(
 		pp.readVerack,
 		versionNegotiationTimeout); err != nil {
 
 		return errors.Wrapf(err, "negotiateVersion: Problem reading VERACK message from Peer %v", pp)
 	}
-	pp.versionNegotiated = true
+	pp.VersionNegotiated = true
 
 	// At this point we have sent a version and validated our peer's
 	// version. So the negotiation should be complete.

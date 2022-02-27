@@ -4694,39 +4694,39 @@ func (txnMeta *TransactionMetadata) Encode() []byte {
 	}
 
 	// encoding BasicTransferTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.BasicTransferTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.BasicTransferTxindexMetadata)...)
     // encoding BitcoinExchangeTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.BitcoinExchangeTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.BitcoinExchangeTxindexMetadata)...)
     // encoding CreatorCoinTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.CreatorCoinTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.CreatorCoinTxindexMetadata)...)
     // encoding CreatorCoinTransferTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.CreatorCoinTransferTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.CreatorCoinTransferTxindexMetadata)...)
     // encoding UpdateProfileTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.UpdateProfileTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.UpdateProfileTxindexMetadata)...)
     // encoding SubmitPostTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.SubmitPostTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.SubmitPostTxindexMetadata)...)
     // encoding LikeTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.LikeTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.LikeTxindexMetadata)...)
     // encoding FollowTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.FollowTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.FollowTxindexMetadata)...)
     // encoding PrivateMessageTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.PrivateMessageTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.PrivateMessageTxindexMetadata)...)
     // encoding SwapIdentityTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.SwapIdentityTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.SwapIdentityTxindexMetadata)...)
     // encoding NFTBidTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.NFTBidTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.NFTBidTxindexMetadata)...)
     // encoding AcceptNFTBidTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.AcceptNFTBidTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.AcceptNFTBidTxindexMetadata)...)
     // encoding NFTTransferTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.NFTTransferTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.NFTTransferTxindexMetadata)...)
     // encoding DAOCoinTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.DAOCoinTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.DAOCoinTxindexMetadata)...)
     // encoding DAOCoinTransferTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.DAOCoinTransferTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.DAOCoinTransferTxindexMetadata)...)
     // encoding CreateNFTTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.CreateNFTTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.CreateNFTTxindexMetadata)...)
     // encoding UpdateNFTTxindexMetadata
-	data = append(data, DeSoEncoderToBytesPointer(txnMeta.UpdateNFTTxindexMetadata)...)
+	data = append(data, DeSoEncoderToBytes(txnMeta.UpdateNFTTxindexMetadata)...)
 
 	return data
 }
@@ -4785,119 +4785,119 @@ func (txnMeta *TransactionMetadata) Decode(rr *bytes.Reader) error {
 
 	// decoding BasicTransferTxindexMetadata
 	CopyBasicTransferTxindexMetadata := &BasicTransferTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyBasicTransferTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyBasicTransferTxindexMetadata, rr); exist && err == nil {
 		txnMeta.BasicTransferTxindexMetadata = CopyBasicTransferTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading BasicTransferTxindexMetadata")
 	}
 	// decoding BitcoinExchangeTxindexMetadata
 	CopyBitcoinExchangeTxindexMetadata := &BitcoinExchangeTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyBitcoinExchangeTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyBitcoinExchangeTxindexMetadata, rr); exist && err == nil {
 		txnMeta.BitcoinExchangeTxindexMetadata = CopyBitcoinExchangeTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading BitcoinExchangeTxindexMetadata")
 	}
 	// decoding CreatorCoinTxindexMetadata
 	CopyCreatorCoinTxindexMetadata := &CreatorCoinTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyCreatorCoinTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyCreatorCoinTxindexMetadata, rr); exist && err == nil {
 		txnMeta.CreatorCoinTxindexMetadata = CopyCreatorCoinTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatorCoinTxindexMetadata")
 	}
 	// decoding CreatorCoinTransferTxindexMetadata
 	CopyCreatorCoinTransferTxindexMetadata := &CreatorCoinTransferTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyCreatorCoinTransferTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyCreatorCoinTransferTxindexMetadata, rr); exist && err == nil {
 		txnMeta.CreatorCoinTransferTxindexMetadata = CopyCreatorCoinTransferTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatorCoinTransferTxindexMetadata")
 	}
 	// decoding UpdateProfileTxindexMetadata
 	CopyUpdateProfileTxindexMetadata := &UpdateProfileTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyUpdateProfileTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyUpdateProfileTxindexMetadata, rr); exist && err == nil {
 		txnMeta.UpdateProfileTxindexMetadata = CopyUpdateProfileTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UpdateProfileTxindexMetadata")
 	}
 	// decoding SubmitPostTxindexMetadata
 	CopySubmitPostTxindexMetadata := &SubmitPostTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopySubmitPostTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopySubmitPostTxindexMetadata, rr); exist && err == nil {
 		txnMeta.SubmitPostTxindexMetadata = CopySubmitPostTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading SubmitPostTxindexMetadata")
 	}
 	// decoding LikeTxindexMetadata
 	CopyLikeTxindexMetadata := &LikeTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyLikeTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyLikeTxindexMetadata, rr); exist && err == nil {
 		txnMeta.LikeTxindexMetadata = CopyLikeTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading LikeTxindexMetadata")
 	}
 	// decoding FollowTxindexMetadata
 	CopyFollowTxindexMetadata := &FollowTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyFollowTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyFollowTxindexMetadata, rr); exist && err == nil {
 		txnMeta.FollowTxindexMetadata = CopyFollowTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading FollowTxindexMetadata")
 	}
 	// decoding PrivateMessageTxindexMetadata
 	CopyPrivateMessageTxindexMetadata := &PrivateMessageTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyPrivateMessageTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyPrivateMessageTxindexMetadata, rr); exist && err == nil {
 		txnMeta.PrivateMessageTxindexMetadata = CopyPrivateMessageTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading PrivateMessageTxindexMetadata")
 	}
 	// decoding SwapIdentityTxindexMetadata
 	CopySwapIdentityTxindexMetadata := &SwapIdentityTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopySwapIdentityTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopySwapIdentityTxindexMetadata, rr); exist && err == nil {
 		txnMeta.SwapIdentityTxindexMetadata = CopySwapIdentityTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading SwapIdentityTxindexMetadata")
 	}
 	// decoding NFTBidTxindexMetadata
 	CopyNFTBidTxindexMetadata := &NFTBidTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyNFTBidTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyNFTBidTxindexMetadata, rr); exist && err == nil {
 		txnMeta.NFTBidTxindexMetadata = CopyNFTBidTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NFTBidTxindexMetadata")
 	}
 	// decoding AcceptNFTBidTxindexMetadata
 	CopyAcceptNFTBidTxindexMetadata := &AcceptNFTBidTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyAcceptNFTBidTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyAcceptNFTBidTxindexMetadata, rr); exist && err == nil {
 		txnMeta.AcceptNFTBidTxindexMetadata = CopyAcceptNFTBidTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AcceptNFTBidTxindexMetadata")
 	}
 	// decoding NFTTransferTxindexMetadata
 	CopyNFTTransferTxindexMetadata := &NFTTransferTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyNFTTransferTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyNFTTransferTxindexMetadata, rr); exist && err == nil {
 		txnMeta.NFTTransferTxindexMetadata = CopyNFTTransferTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NFTTransferTxindexMetadata")
 	}
 	// decoding DAOCoinTxindexMetadata
 	CopyDAOCoinTxindexMetadata := &DAOCoinTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyDAOCoinTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyDAOCoinTxindexMetadata, rr); exist && err == nil {
 		txnMeta.DAOCoinTxindexMetadata = CopyDAOCoinTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinTxindexMetadata")
 	}
 	// decoding DAOCoinTransferTxindexMetadata
 	CopyDAOCoinTransferTxindexMetadata := &DAOCoinTransferTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyDAOCoinTransferTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyDAOCoinTransferTxindexMetadata, rr); exist && err == nil {
 		txnMeta.DAOCoinTransferTxindexMetadata = CopyDAOCoinTransferTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinTransferTxindexMetadata")
 	}
 	// decoding CreateNFTTxindexMetadata
 	CopyCreateNFTTxindexMetadata := &CreateNFTTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyCreateNFTTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyCreateNFTTxindexMetadata, rr); exist && err == nil {
 		txnMeta.CreateNFTTxindexMetadata = CopyCreateNFTTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateNFTTxindexMetadata")
 	}
 	// decoding UpdateNFTTxindexMetadata
 	CopyUpdateNFTTxindexMetadata := &UpdateNFTTxindexMetadata{}
-	if exist, err := DeSoEncoderFromBytesPointer(CopyUpdateNFTTxindexMetadata, rr); exist && err == nil {
+	if exist, err := DeSoEncoderFromBytes(CopyUpdateNFTTxindexMetadata, rr); exist && err == nil {
 		txnMeta.UpdateNFTTxindexMetadata = CopyUpdateNFTTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UpdateNFTTxindexMetadata")
