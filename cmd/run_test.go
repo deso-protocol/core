@@ -35,8 +35,8 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MaxSyncBlockHeight = 0
 	config.ConnectIPs = []string{}
 	config.PrivateMode = true
-	config.GlogV = 2
-	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=2,*addr*=2,*network*=2,*utils*=0,*connection*=2,*main*=0,*server*=2,*mempool*=0,*miner*=0,*blockchain*=0"
+	config.GlogV = 1
+	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
 	config.MaxInboundPeers = maxPeers
 	config.TargetOutboundPeers = maxPeers
 	config.StallTimeoutSeconds = 900
@@ -55,15 +55,19 @@ type ConnectionRouter struct {
 
 type ConnectionBridge struct {
 	nodeA *Node
-	connectionA *lib.Peer
+	connectionInboundA *lib.Peer
+	connectionOutboundA *lib.Peer
+	outboundListenerA net.Listener
 
 	nodeB *Node
-	connectionB *lib.Peer
+	connectionInboundB *lib.Peer
+	connectionOutboundB *lib.Peer
+	outboundListenerB net.Listener
 
 	disabled bool
 }
 
-func connectToNode(node *Node) *lib.Peer {
+func connectInboundToNode(node *Node) *lib.Peer {
 	port := node.Config.ProtocolPort
 	addr := "127.0.0.1:"+strconv.Itoa(int(port))
 	netAddress, err := lib.IPToNetAddr(addr, addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
@@ -86,13 +90,63 @@ func connectToNode(node *Node) *lib.Peer {
 	return peer
 }
 
+func (bridge *ConnectionBridge) connectOutboundToNode(node *Node, connectionOutBound *lib.Peer,
+	otherNode *Node, otherNodeInboundConnection *lib.Peer, ll net.Listener) {
+
+	go func(ll net.Listener) {
+		for {
+			conn, err := ll.Accept()
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println("connectOutboundToNode: Got a connection from remote:", conn.RemoteAddr().String(),
+				"on listener:", ll.Addr().String())
+
+			na, err := lib.IPToNetAddr(conn.RemoteAddr().String(), otherNode.Server.GetConnectionManager().AddrMgr,
+				otherNode.Params)
+			messagesFromPeer := make(chan *lib.ServerMessage)
+			peer := lib.NewPeer(conn, false, na, false,
+				10000, 0, bridge.nodeB.Params,
+				messagesFromPeer, nil, nil)
+			peer.ID = uint64(lib.RandInt64(math.MaxInt64))
+			err = bridge.InitSide(peer, otherNode)
+			if err != nil {
+				panic(err)
+			}
+			connectionOutBound = peer
+			fmt.Println("ConnectionOutBoundA, local address:", peer.Conn.LocalAddr().String())
+			fmt.Println("ConnectionOutBoundA, remote address:", peer.Conn.RemoteAddr().String())
+			fmt.Println("otherNodeInboundConnection, local address:", otherNodeInboundConnection.Conn.LocalAddr().String())
+			fmt.Println("otherNodeInboundConnection, remote address:", otherNodeInboundConnection.Conn.RemoteAddr().String())
+			go bridge.SetupOneWayLink(connectionOutBound, otherNodeInboundConnection)
+			go bridge.SetupOneWayLink(otherNodeInboundConnection, connectionOutBound)
+		}
+	}(ll)
+
+	netAddress, _ := lib.IPToNetAddr(ll.Addr().String(), addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
+	fmt.Println("IP:", netAddress.IP, "Port:", netAddress.Port)
+	go node.Server.GetConnectionManager().ConnectPeer(nil, netAddress)
+}
+
 func NewConnectionBridge(nodeA *Node, nodeB *Node) *ConnectionBridge {
+
+	//addresses, listeners := GetAddrsToListenOn(19000)
+	listenerA, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	listenerB, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
 
 	bridge := &ConnectionBridge{
 		nodeA:       nodeA,
-		connectionA: connectToNode(nodeA),
+		connectionInboundA: connectInboundToNode(nodeA),
+		outboundListenerA: listenerA,
 		nodeB:       nodeB,
-		connectionB: connectToNode(nodeB),
+		connectionInboundB: connectInboundToNode(nodeB),
+		outboundListenerB: listenerB,
 		disabled:    false,
 	}
 	return bridge
@@ -187,21 +241,25 @@ func (bridge *ConnectionBridge) SetupOneWayLink(source *lib.Peer, destination *l
 			panic(err)
 		}
 		outMsg := inMsg
-		fmt.Printf("Reading message: (%v) type: (%v) at source with id: (%v)\n",
-			inMsg, inMsg.GetMsgType(), source.ID)
+		fmt.Printf("Reading message: (%v) type: (%v) at source with local addr: (%v) and remote addr: (%v)\n",
+			inMsg, inMsg.GetMsgType(), source.Conn.LocalAddr().String(), source.Conn.RemoteAddr().String())
 		switch inMsg.(type) {
 			case *lib.MsgDeSoAddr:
 				continue
 			case *lib.MsgDeSoGetAddr:
 				outMsg = lib.NewMessage(lib.MsgTypeAddr).(*lib.MsgDeSoAddr)
+				//addr := "127.0.0.1:"+strconv.Itoa(19000)
+				//netAddress, _ := lib.IPToNetAddr(addr, addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
 				//outMsg.(*lib.MsgDeSoAddr).AddrList = append(outMsg.(*lib.MsgDeSoAddr).AddrList,
 				//	&lib.SingleAddr{
 				//		Timestamp: time.Now(),
-				//		IP:
+				//		IP: netAddress.IP,
+				//		Port: netAddress.Port,
+				//		Services: lib.SFFullNode,
 				//	})
 		}
-		fmt.Printf("Redirecting the message: (%v) type: (%v) to destination with id: (%v)\n",
-			 outMsg, outMsg.GetMsgType(), destination.ID)
+		fmt.Printf("Redirecting the message: (%v) type: (%v) to destination with local addr: (%v) and remote addr: (%v)\n",
+			 outMsg, outMsg.GetMsgType(), destination.Conn.LocalAddr().String(), destination.Conn.RemoteAddr().String())
 		 if err := destination.WriteDeSoMessage(outMsg); err != nil {
 			panic(err)
 		 }
@@ -209,66 +267,25 @@ func (bridge *ConnectionBridge) SetupOneWayLink(source *lib.Peer, destination *l
 }
 
 func (bridge *ConnectionBridge) Connect() error {
-	if err := bridge.InitSide(bridge.connectionA, bridge.nodeB); err != nil {
+	fmt.Println("ConnectionInboundA, local address:", bridge.connectionInboundA.Conn.LocalAddr().String())
+	fmt.Println("ConnectionInboundA, remote address:", bridge.connectionInboundA.Conn.RemoteAddr().String())
+	fmt.Println("ConnectionInboundB, local address:", bridge.connectionInboundB.Conn.LocalAddr().String())
+	fmt.Println("ConnectionInboundB, remote address:", bridge.connectionInboundB.Conn.RemoteAddr().String())
+	if err := bridge.InitSide(bridge.connectionInboundA, bridge.nodeB); err != nil {
 		return err
 	}
-	if err := bridge.InitSide(bridge.connectionB, bridge.nodeA); err != nil {
+	if err := bridge.InitSide(bridge.connectionInboundB, bridge.nodeA); err != nil {
 		return err
 	}
 
-	go bridge.SetupOneWayLink(bridge.connectionA, bridge.connectionB)
-	go bridge.SetupOneWayLink(bridge.connectionB, bridge.connectionA)
+	bridge.connectOutboundToNode(bridge.nodeA, bridge.connectionOutboundA,
+		bridge.nodeB, bridge.connectionInboundB, bridge.outboundListenerA)
+	bridge.connectOutboundToNode(bridge.nodeB, bridge.connectionOutboundB,
+		bridge.nodeA, bridge.connectionInboundA, bridge.outboundListenerB)
 
-	//pingTicker := time.NewTicker(30 * time.Second)
-	//go func(done *bool) {
-	//	for {
-	//		if *done {
-	//			break
-	//		}
-	//
-	//		select {
-	//		case <-pingTicker.C:
-	//			nonce, err := wire.RandomUint64()
-	//			if err != nil {
-	//				panic(err)
-	//			}
-	//			fmt.Println("Sending a ping to peer nonce:", nonce)
-	//			bridge.connectionA.StatsMtx.Lock()
-	//			bridge.connectionA.LastPingNonce = nonce
-	//			bridge.connectionA.LastPingTime = time.Now()
-	//			bridge.connectionA.StatsMtx.Unlock()
-	//			ping := &lib.MsgDeSoPing{Nonce: nonce}
-	//			if err := bridge.connectionA.WriteDeSoMessage(ping); err != nil {
-	//				panic(err)
-	//			}
-	//		}
-	//	}
-	//}(&bridgeDone)
-	//
-	//go func(done *bool) {
-	//	for {
-	//		if *done {
-	//			break
-	//		}
-	//		rmsg, err := bridge.connectionA.ReadDeSoMessage()
-	//		if err != nil {
-	//			panic(err)
-	//		}
-	//
-	//		fmt.Println("rmsg:", rmsg)
-	//		switch msg := rmsg.(type) {
-	//		case *lib.MsgDeSoPing:
-	//			fmt.Println("ping happening:")
-	//			pong := &lib.MsgDeSoPong{Nonce: msg.Nonce}
-	//			if err := bridge.connectionA.WriteDeSoMessage(pong); err != nil {
-	//				panic(err)
-	//			}
-	//		case *lib.MsgDeSoPong:
-	//			fmt.Println("Got pong nonce:", msg.Nonce)
-	//			bridge.connectionA.HandlePongMsg(msg)
-	//		}
-	//	}
-	//}(&bridgeDone)
+	//go bridge.SetupOneWayLink(bridge.connectionInboundA, bridge.connectionInboundB)
+	//go bridge.SetupOneWayLink(bridge.connectionInboundB, bridge.connectionInboundA)
+
 	return nil
 }
 
@@ -300,6 +317,7 @@ func TestRouter(t *testing.T) {
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 	config3 := generateConfig(t, 18003, dbDir3, 10)
 
+	config2.MaxSyncBlockHeight = 50
 	config3.MaxSyncBlockHeight = 50
 	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
@@ -314,7 +332,7 @@ func TestRouter(t *testing.T) {
 	go node3.Start()
 
 
-	time.Sleep(15 * time.Second)
+	time.Sleep(10 * time.Second)
 	fmt.Println("Waited 15 seconds")
 
 	shutdownListener := make(chan os.Signal)
@@ -328,8 +346,7 @@ func TestRouter(t *testing.T) {
 	bridge := NewConnectionBridge(node2, node3)
 	require.NoError(bridge.Connect())
 
-	time.Sleep(15 * time.Second)
-	fmt.Println("got here")
+	time.Sleep(5 * time.Second)
 	//netAddrss, err := lib.IPToNetAddr("127.0.0.1:18000", addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
 	//if err != nil {
 	//	panic(err)

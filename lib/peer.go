@@ -58,7 +58,7 @@ type Peer struct {
 
 	// Connection info.
 	cmgr                *ConnectionManager
-	conn                net.Conn
+	Conn                net.Conn
 	isOutbound          bool
 	isPersistent        bool
 	stallTimeoutSeconds uint64
@@ -500,7 +500,7 @@ func (pp *Peer) cleanupMessageProcessor() {
 	pp.cmgr = nil
 	pp.srv = nil
 	pp.MessageChan = nil
-	//pp.conn = nil
+	//pp.Conn = nil
 }
 
 func (pp *Peer) StartDeSoMessageProcessor() {
@@ -572,7 +572,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 	pp := Peer{
 		cmgr:                   _cmgr,
 		srv:                    _srv,
-		conn:                   _conn,
+		Conn:                   _conn,
 		addrStr:                _conn.RemoteAddr().String(),
 		netAddr:                _netAddr,
 		isOutbound:             _isOutbound,
@@ -747,6 +747,7 @@ func (pp *Peer) IsOutbound() bool {
 
 func (pp *Peer) QueueMessage(desoMessage DeSoMessage) {
 	// If the peer is disconnected, don't queue anything.
+	glog.Infof("QueueMessage: connected (%v)", pp.Connected())
 	if !pp.Connected() {
 		return
 	}
@@ -879,6 +880,7 @@ out:
 			}
 
 			// If we have a problem sending a message to a peer then disconnect them.
+			glog.Infof("Writing Message: (%v)", msg)
 			if err := pp.WriteDeSoMessage(msg); err != nil {
 				glog.Errorf("Peer.outHandler: Problem sending message to peer: %v: %v", pp, err)
 				pp.Disconnect()
@@ -1129,7 +1131,7 @@ func (pp *Peer) Start() {
 	// If the address manager needs more addresses, then send a GetAddr message
 	// to the peer. This is best-effort.
 	if pp.cmgr != nil {
-		if pp.cmgr.addrMgr.NeedMoreAddresses() {
+		if pp.cmgr.AddrMgr.NeedMoreAddresses() {
 			go func() {
 				pp.QueueMessage(&MsgDeSoGetAddr{})
 			}()
@@ -1142,12 +1144,12 @@ func (pp *Peer) Start() {
 func (pp *Peer) IsSyncCandidate() bool {
 	flagsAreCorrect := (pp.serviceFlags & SFFullNode) != 0
 	glog.Infof("IsSyncCandidate: localAddr (%v), flags (%v), is outbound (%v)",
-		pp.conn.LocalAddr().String(), flagsAreCorrect, pp.isOutbound)
+		pp.Conn.LocalAddr().String(), flagsAreCorrect, pp.isOutbound)
 	return flagsAreCorrect && pp.isOutbound
 }
 
 func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
-	payload, err := WriteMessage(pp.conn, msg, pp.Params.NetworkType)
+	payload, err := WriteMessage(pp.Conn, msg, pp.Params.NetworkType)
 	if err != nil {
 		return errors.Wrapf(err, "WriteDeSoMessage: ")
 	}
@@ -1166,7 +1168,7 @@ func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
 }
 
 func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
-	msg, payload, err := ReadMessage(pp.conn, pp.Params.NetworkType)
+	msg, payload, err := ReadMessage(pp.Conn, pp.Params.NetworkType)
 	if err != nil {
 		err := errors.Wrapf(err, "ReadDeSoMessage: ")
 		glog.Error(err)
@@ -1404,7 +1406,7 @@ func (pp *Peer) Disconnect() {
 	glog.V(1).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
 
 	// Close the connection object.
-	pp.conn.Close()
+	pp.Conn.Close()
 
 	// Signaling the quit channel allows all the other goroutines to stop running.
 	close(pp.quit)

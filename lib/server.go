@@ -422,7 +422,7 @@ func NewServer(
 					counter++
 				}
 				glog.V(2).Infof("Current addrs: ")
-				for ii, na := range srv.cmgr.addrMgr.GetAllAddrs() {
+				for ii, na := range srv.cmgr.AddrMgr.GetAllAddrs() {
 					glog.V(2).Infof("Addr %d: <%s:%d>", ii, na.IP.String(), na.Port)
 				}
 				time.Sleep(1 * time.Second)
@@ -1731,7 +1731,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 		netAddrsReceived = append(
 			netAddrsReceived, addrAsNetAddr)
 	}
-	srv.cmgr.addrMgr.AddAddresses(netAddrsReceived, pp.netAddr)
+	srv.cmgr.AddrMgr.AddAddresses(netAddrsReceived, pp.netAddr)
 
 	// If the message had <= 10 addrs in it, then queue all the addresses for relaying
 	// on the next cycle.
@@ -1762,7 +1762,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 	glog.V(1).Infof("Server._handleGetAddrMessage: Received GetAddr from peer %v", pp)
 	// When we get a GetAddr message, choose MaxAddrsPerMsg from the AddrMgr
 	// and send them back to the peer.
-	netAddrsFound := srv.cmgr.addrMgr.AddressCache()
+	netAddrsFound := srv.cmgr.AddrMgr.AddressCache()
 	if len(netAddrsFound) > MaxAddrsPerAddrMsg {
 		netAddrsFound = netAddrsFound[:MaxAddrsPerAddrMsg]
 	}
@@ -1914,7 +1914,7 @@ func (srv *Server) _startAddressRelayer() {
 		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
 		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
 			for _, pp := range srv.cmgr.GetAllPeers() {
-				bestAddress := srv.cmgr.addrMgr.GetBestLocalAddress(pp.netAddr)
+				bestAddress := srv.cmgr.AddrMgr.GetBestLocalAddress(pp.netAddr)
 				if bestAddress != nil {
 					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
 						"peer %v", bestAddress.IP.String(), pp)
