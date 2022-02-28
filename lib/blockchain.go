@@ -2608,6 +2608,9 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	}
 
 	// Delete protected keys
+	//
+	// FIXME: I think you can get rid of this because messageExtraData will overwrite
+	// anything in the extraData struct anyway?
 	if extraData != nil {
 		delete(extraData, MessagesVersionString)
 		delete(extraData, SenderMessagingPublicKey)
@@ -2616,7 +2619,8 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		delete(extraData, RecipientMessagingGroupKeyName)
 	}
 
-	// TODO: block height?
+	// Going to allow this to merge without a block height check because
+	// it seems safe, and threading the block height check into here is pretty annoying.
 	finalExtraData := mergeExtraData(extraData, messageExtraData)
 
 	// Don't allow encryptedMessageBytes to be nil.
@@ -3197,6 +3201,8 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	}
 
 	// Delete the protected keys from the ExtraData map
+	// FIXME: I think you can delete this because nftExtraData is going to overwrite
+	// what's in here anyway.
 	if ExtraData != nil {
 		delete(ExtraData, BuyNowPriceKey)
 		delete(ExtraData, DESORoyaltiesMapKey)
@@ -3721,6 +3727,8 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		derivedKeyExtraData[DerivedPublicKey] = derivedPublicKey
 	}
 
+	// FIXME: I think you can delete this check because it'll get overwritten
+	// automatically.
 	if extraData != nil {
 		delete(extraData, DerivedPublicKey)
 	}
@@ -3767,7 +3775,7 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	members []*MessagingGroupMember,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
-    	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// We don't need to validate info here, so just construct the transaction instead.
 	txn := &MsgDeSoTxn{

@@ -702,7 +702,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// If we are past the ExtraDataOnEntriesBlockHeight, then we merge in the extra
 		// data from the transaction with the extra data from the existing profile entry.
-		if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
 			newProfileEntry.ExtraData = mergeExtraData(
 				existingProfileEntry.ExtraData,
 				txn.ExtraData)
@@ -760,7 +760,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// If we are passed the ExtraDataOnEntriesBlockHeight, then we add the
 		// extra data from the profile to ProfileEntry. There is no existingProfileEntry
 		// to merge fields from in this case.
-		if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
 			newProfileEntry.ExtraData = mergeExtraData(nil, txn.ExtraData)
 		}
 	}
@@ -1044,7 +1044,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	}
 
 	var extraData map[string][]byte
-	if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
 		var prevExtraData map[string][]byte
 		if prevDerivedKeyEntry != nil {
 			prevExtraData = prevDerivedKeyEntry.ExtraData

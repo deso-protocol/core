@@ -725,6 +725,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 		assert.Equal(len(entries), len(expectedEntries))
 		// Verify entries one by one.
 		for _, expectedEntry := range expectedEntries {
+			expectedEntry.MessagingGroupMembers = sortMessagingGroupMembers(expectedEntry.MessagingGroupMembers)
 			ok := false
 			for _, entry := range entries {
 				if reflect.DeepEqual(expectedEntry.Encode(), entry.Encode()) {
@@ -1182,16 +1183,16 @@ func TestMessagingKeys(t *testing.T) {
 		require.Equal(entry.ExtraData["extrakey"], []byte("newval"))
 		require.Equal(entry.ExtraData["newkey"], []byte("test"))
 
-		for idx, member := range members {
-			pubKey := *NewPublicKey(member)
-			if reflect.DeepEqual(member, m3PubKey) {
+		for _, member := range MessagingGroupMembers {
+			pubKey := *member.GroupMemberPublicKey
+			if reflect.DeepEqual(pubKey[:], m3PubKey) {
 				continue
 			}
 			keyEntriesAdded[pubKey] = append(keyEntriesAdded[pubKey], &MessagingGroupEntry{
 				GroupOwnerPublicKey:   &m3PublicKey,
 				MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
 				MessagingGroupKeyName: NewGroupKeyName(randomKeyName),
-				MessagingGroupMembers: []*MessagingGroupMember{entry.MessagingGroupMembers[idx]},
+				MessagingGroupMembers: []*MessagingGroupMember{member},
 			})
 		}
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
@@ -1505,26 +1506,30 @@ func TestMessagingKeys(t *testing.T) {
 		randomGroupKeyName := []byte("final-group-key")
 		_, _, entry := _generateMessagingKey(m1PubKey, m1PrivKey, randomGroupKeyName)
 		// Now add a lot of people
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		senderMember := &MessagingGroupMember{
 			NewPublicKey(senderPkBytes),
 			DefaultGroupKeyName(),
 			senderPrivBytes,
-		})
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		}
+		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, senderMember)
+		m0Member := &MessagingGroupMember{
 			NewPublicKey(m0PubKey),
 			NewGroupKeyName([]byte("totally-random-key2")),
 			senderPrivBytes,
-		})
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		}
+		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, m0Member)
+		m2Member := &MessagingGroupMember{
 			NewPublicKey(m2PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes,
-		})
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		}
+		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, m2Member)
+		m3Member := &MessagingGroupMember{
 			NewPublicKey(m3PubKey),
 			DefaultGroupKeyName(),
 			senderPrivBytes,
-		})
+		}
+		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, m3Member)
 		// And finally create the group chat.
 		require.Equal(false, _verifyMessagingKey(testMeta, &m1PublicKey, entry))
 		_messagingKeyWithTestMeta(
@@ -1547,25 +1552,25 @@ func TestMessagingKeys(t *testing.T) {
 			GroupOwnerPublicKey:   &m1PublicKey,
 			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, entry.MessagingGroupMembers[0]),
+			MessagingGroupMembers: append([]*MessagingGroupMember{}, senderMember),
 		})
 		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &MessagingGroupEntry{
 			GroupOwnerPublicKey:   &m1PublicKey,
 			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, entry.MessagingGroupMembers[1]),
+			MessagingGroupMembers: append([]*MessagingGroupMember{}, m0Member),
 		})
 		keyEntriesAdded[m2PublicKey] = append(keyEntriesAdded[m2PublicKey], &MessagingGroupEntry{
 			GroupOwnerPublicKey:   &m1PublicKey,
 			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, entry.MessagingGroupMembers[2]),
+			MessagingGroupMembers: append([]*MessagingGroupMember{}, m2Member),
 		})
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], &MessagingGroupEntry{
 			GroupOwnerPublicKey:   &m1PublicKey,
 			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
 			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, entry.MessagingGroupMembers[3]),
+			MessagingGroupMembers: append([]*MessagingGroupMember{}, m3Member),
 		})
 	}
 

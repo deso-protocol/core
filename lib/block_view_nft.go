@@ -690,7 +690,9 @@ func (bav *UtxoView) _connectCreateNFT(
 	bav._setPostEntryMappings(postEntry)
 
 	var extraData map[string][]byte
-	if blockHeight > bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		// We don't have a previous entry here because we're creating the
+		// entry from scratch.
 		extraData = txn.ExtraData
 	}
 
@@ -829,7 +831,9 @@ func (bav *UtxoView) _connectUpdateNFT(
 		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
 
 		// Just copy the extra data from the previous entry when updating an NFT.
-		ExtraData:        prevNFTEntry.ExtraData,
+		// We do this because you're not allowed to update the ExtraData on an
+		// NFTEntry.
+		ExtraData: prevNFTEntry.ExtraData,
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 

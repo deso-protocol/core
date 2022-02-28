@@ -189,41 +189,31 @@ type DeSoMessage interface {
 type TxnType uint8
 
 const (
-	TxnTypeUnset TxnType = 0
-	// FIXME: I don't think we want this, but we could allow ExtraData when
-	// there's a DiamondEntry...
-	TxnTypeBlockReward     TxnType = 1
-	TxnTypeBasicTransfer   TxnType = 2
-	TxnTypeBitcoinExchange TxnType = 3
-	// FIXME: Add ExtraData
-	TxnTypePrivateMessage TxnType = 4
-	// FIXME: Add ExtraData. Consider adding on RepostEntry?
+	TxnTypeUnset                        TxnType = 0
+	TxnTypeBlockReward                  TxnType = 1
+	TxnTypeBasicTransfer                TxnType = 2
+	TxnTypeBitcoinExchange              TxnType = 3
+	TxnTypePrivateMessage               TxnType = 4
 	TxnTypeSubmitPost                   TxnType = 5
 	TxnTypeUpdateProfile                TxnType = 6
 	TxnTypeUpdateBitcoinUSDExchangeRate TxnType = 8
-	// FIXME: Add ExtraData
-	TxnTypeFollow TxnType = 9
-	// FIXME: Add ExtraData
-	TxnTypeLike                TxnType = 10
-	TxnTypeCreatorCoin         TxnType = 11
-	TxnTypeSwapIdentity        TxnType = 12
-	TxnTypeUpdateGlobalParams  TxnType = 13
-	TxnTypeCreatorCoinTransfer TxnType = 14
-	// FIXME: Add ExtraData
-	TxnTypeCreateNFT TxnType = 15
-	// FIXME: Add ExtraData
-	TxnTypeUpdateNFT         TxnType = 16
-	TxnTypeAcceptNFTBid      TxnType = 17
-	TxnTypeNFTBid            TxnType = 18
-	TxnTypeNFTTransfer       TxnType = 19
-	TxnTypeAcceptNFTTransfer TxnType = 20
-	TxnTypeBurnNFT           TxnType = 21
-	// FIXME: Add ExtraData
-	TxnTypeAuthorizeDerivedKey TxnType = 22
-	// FIXME: Add ExtraData
-	TxnTypeMessagingGroup  TxnType = 23
-	TxnTypeDAOCoin         TxnType = 24
-	TxnTypeDAOCoinTransfer TxnType = 25
+	TxnTypeFollow                       TxnType = 9
+	TxnTypeLike                         TxnType = 10
+	TxnTypeCreatorCoin                  TxnType = 11
+	TxnTypeSwapIdentity                 TxnType = 12
+	TxnTypeUpdateGlobalParams           TxnType = 13
+	TxnTypeCreatorCoinTransfer          TxnType = 14
+	TxnTypeCreateNFT                    TxnType = 15
+	TxnTypeUpdateNFT                    TxnType = 16
+	TxnTypeAcceptNFTBid                 TxnType = 17
+	TxnTypeNFTBid                       TxnType = 18
+	TxnTypeNFTTransfer                  TxnType = 19
+	TxnTypeAcceptNFTTransfer            TxnType = 20
+	TxnTypeBurnNFT                      TxnType = 21
+	TxnTypeAuthorizeDerivedKey          TxnType = 22
+	TxnTypeMessagingGroup               TxnType = 23
+	TxnTypeDAOCoin                      TxnType = 24
+	TxnTypeDAOCoinTransfer              TxnType = 25
 
 	// NEXT_ID = 26
 )
@@ -2613,7 +2603,6 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	return ret, nil
 }
 
-// TODO: backwards compatibility
 func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 	// De-serialize the ExtraData
 	extraDataLen, err := ReadUvarint(rr)

@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -538,10 +540,20 @@ func (message *MessageEntry) Decode(data []byte) error {
 	message.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
 
 	extraData, err := DecodeExtraData(rr)
-	if err != nil {
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		//
+		// FIXME: @LazyNina, please check this for backwards-compatibility. Maybe write
+		// a quick test that properly decodes something with missing ExtraData?
+		glog.Warning(err, "MesssageEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
 		return errors.Wrapf(err, "MesssageEntry.Decode: problem decoding extra data")
 	}
 	message.ExtraData = extraData
+
 	return nil
 }
 
@@ -656,6 +668,20 @@ func (entry *MessagingGroupEntry) String() string {
 		entry.GroupOwnerPublicKey, entry.MessagingPublicKey, entry.MessagingGroupKeyName, entry.isDeleted)
 }
 
+func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingGroupMember {
+	// Make a deep copy of the members to avoid messing up the slice the caller
+	// used. Not doing this could cause downstream effects, mainly in tests where
+	// the same slice is re-used in txns and in expectations later on.
+	members := make([]*MessagingGroupMember, len(membersArg))
+	copy(members, membersArg)
+	sort.Slice(members, func(ii, jj int) bool {
+		iiStr := PkToStringMainnet(members[ii].GroupMemberPublicKey[:]) + string(members[ii].GroupMemberKeyName[:]) + string(members[ii].EncryptedKey)
+		jjStr := PkToStringMainnet(members[jj].GroupMemberPublicKey[:]) + string(members[jj].GroupMemberKeyName[:]) + string(members[jj].EncryptedKey)
+		return iiStr < jjStr
+	})
+	return members
+}
+
 func (entry *MessagingGroupEntry) Encode() []byte {
 	var entryBytes []byte
 
@@ -663,13 +689,11 @@ func (entry *MessagingGroupEntry) Encode() []byte {
 	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingPublicKey[:])...)
 	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingGroupKeyName[:])...)
 	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MessagingGroupMembers)))...)
-	// TODO: Should we order the Messaging Group Members?
-	//members := entry.MessagingGroupMembers
-	//sort.Slice(members, func(ii, jj int) bool {
-	//	members[ii].GroupMemberKeyName
-	//})
-	for ii := 0; ii < len(entry.MessagingGroupMembers); ii++ {
-		entryBytes = append(entryBytes, entry.MessagingGroupMembers[ii].Encode()...)
+	// We sort the MessagingGroupMembers because they can be added while iterating over
+	// a map, which could lead to inconsistent orderings across nodes when encoding.
+	members := sortMessagingGroupMembers(entry.MessagingGroupMembers)
+	for ii := 0; ii < len(members); ii++ {
+		entryBytes = append(entryBytes, members[ii].Encode()...)
 	}
 	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
@@ -711,7 +735,16 @@ func (entry *MessagingGroupEntry) Decode(data []byte) error {
 	}
 
 	extraData, err := DecodeExtraData(rr)
-	if err != nil {
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		//
+		// FIXME: @LazyNina, please check this for backwards-compatibility. Maybe write
+		// a quick test that properly decodes something with missing ExtraData?
+		glog.Warning(err, "MessagingGroupEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
 	}
 	entry.ExtraData = extraData
@@ -1132,6 +1165,9 @@ type PostEntry struct {
 	AdditionalNFTRoyaltiesToCoinsBasisPoints map[PKID]uint64
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
+	// TODO: Change to just ExtraData. Will be easy to do once we have hypersync
+	// encoders/decoders, but for now doing so would mess up GOB encoding so we'll
+	// wait.
 	PostExtraData map[string][]byte
 }
 
