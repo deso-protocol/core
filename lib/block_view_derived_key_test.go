@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+const (
+	BasicTransferRecipient = "RECIPIENT"
+	BasicTransferAmount    = "AMOUNT"
+)
+
 func _doTxn(
 	testMeta *TestMeta,
 	feeRateNanosPerKB uint64,
@@ -301,6 +306,33 @@ func _doTxn(
 			nil,
 		)
 		operationType = OperationTypeUpdateGlobalParams
+	case TxnTypeBasicTransfer:
+
+		recipientPublicKey := extraData[BasicTransferRecipient].([]byte)
+		amountNanos := extraData[BasicTransferAmount].(uint64)
+
+		// Assemble the transaction so that inputs can be found and fees can
+		// be computed.
+		txn = &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{},
+			TxOutputs: []*DeSoOutput{
+				&DeSoOutput{
+					PublicKey:   recipientPublicKey,
+					AmountNanos: amountNanos,
+				},
+			},
+			PublicKey: transactorPublicKey,
+			TxnMeta:   &BasicTransferMetadata{},
+			// We wait to compute the signature until we've added all the
+			// inputs and change.
+		}
+
+		// Add inputs to the transaction and do signing, validation, and broadcast
+		// depending on what the user requested.
+		totalInputMake, _, changeAmountMake, feesMake, err = chain.AddInputsAndChangeToTransaction(
+			txn, feeRateNanosPerKB, nil)
+		operationType = OperationTypeSpendUtxo
 	default:
 		return nil, nil, 0, fmt.Errorf("Unsupported Txn Type")
 	}
@@ -331,6 +363,9 @@ func _doTxn(
 	if isDerivedTransactor && blockHeight >= testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		utxoOpExpectation++
 	}
+	if txnType == TxnTypeBasicTransfer {
+		utxoOpExpectation--
+	}
 	// We add one op to account for NFT bids on buy now NFT.
 	if isBuyNowBid {
 		utxoOpExpectation++
@@ -339,7 +374,9 @@ func _doTxn(
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
-	require.Equal(operationType, utxoOps[len(utxoOps)-1].Type)
+	if txnType != TxnTypeBasicTransfer {
+		require.Equal(operationType, utxoOps[len(utxoOps)-1].Type)
+	}
 
 	require.NoError(utxoView.FlushToDb())
 
@@ -2628,7 +2665,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	m0PrivateKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), m0PrivKeyBytes)
 	m0AuthTxnMeta, derived0Priv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(t, m0PrivateKey, 6, m0TransactionSpendingLimit, false)
 	derived0PrivBase58Check := Base58CheckEncode(derived0Priv.Serialize(), true, params)
-	_ = derived0PrivBase58Check
+	derived0PublicKeyBase58Check := Base58CheckEncode(m0AuthTxnMeta.DerivedPublicKey, false, params)
 	// Okay let's have M0 authorize a derived key that doesn't allow anything to show errors
 	{
 		extraData := make(map[string]interface{})
@@ -2960,6 +2997,27 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.
 			NFTOperationLimitMap[MakeNFTOperationLimitKey(*post1Hash, 1, NFTBidOperation)],
 			uint64(0))
+	}
+
+	// Send the derived key some money
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, derived0PublicKeyBase58Check, senderPrivString, 100)
+	// Derived key can spend its own money
+	{
+		derivedKeyEntryBefore := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			derived0PublicKeyBase58Check,
+			derived0PrivBase58Check,
+			false,
+			TxnTypeBasicTransfer,
+			&BasicTransferMetadata{},
+			map[string]interface{}{
+				BasicTransferAmount:    uint64(10),
+				BasicTransferRecipient: m0PkBytes,
+			})
+		derivedKeyEntryAfter := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
+		require.Equal(derivedKeyEntryBefore.TransactionSpendingLimitTracker.GlobalDESOLimit, derivedKeyEntryAfter.TransactionSpendingLimitTracker.GlobalDESOLimit)
 	}
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_executeAllTestRollbackAndFlush(testMeta)
