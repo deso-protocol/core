@@ -1,24 +1,375 @@
 package cmd
 
 import (
-
-"fmt"
-"github.com/btcsuite/btcd/addrmgr"
-"github.com/deso-protocol/core/lib"
-"github.com/golang/glog"
-"github.com/stretchr/testify/require"
-"io/ioutil"
-"math"
-"net"
-"os"
-"os/signal"
-"strconv"
-"syscall"
-"testing"
-"time"
+	"encoding/hex"
+	"fmt"
+	"github.com/btcsuite/btcd/addrmgr"
+	"github.com/deso-protocol/core/lib"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+	"io/ioutil"
+	"math"
+	"net"
+	"os"
+	"os/signal"
+	"reflect"
+	"strconv"
+	"syscall"
+	"testing"
+	"time"
 )
 
-func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) *Config{
+// ConnectionBridge is a bidirectional communication channel between two nodes.
+// A bridge creates a pair of inbound and outbound peers for each of the nodes to handle communication.
+// An inbound Peer represents incoming communication to a node, and an outbound Peer represents outgoing communication.
+// To disambiguate, a "Peer" in this context is basically a wrapper around inter-node communication that allows
+// receiving and sending messages between the two nodes. Importantly, a Peer supports bidirectional communication.
+// As mentioned, our bridge creates an inbound and outbound Peers for both nodes A and B. Now, you might be perplexed
+// as to why we would need both of these Peers, as opposed to just one. The reason is that inbound and outbound peers
+// differ in a crucial aspect, which is who creates them. Inbound Peers are created whenever any node on the network
+// initiates a communication with our node - meaning a node has no control over the communication partner. On the other
+// hand, outbound Peers are created by the node itself, so they can be considered more trusted than inbound peers.
+// As a result, certain communication is only sent to outbound peers. To give a more concrete example, a node will,
+// for instance, never ask an inbound Peer for headers or blocks, it can ask an outbound Peer though. At the same time,
+// a node will respond with headers/blocks if asked by an inbound Peer. Finally, whenever node 1 creates an outbound
+// peer and communicates with another node 2, the node 2 will add node 1 as an inbound peer.
+//
+// A bridge then will simulate the creation of two outbound node connections:
+//	nodeA : connectionOutboundA -> connectionInboundB : nodeB
+//	nodeB : connectionOutboundB -> connectionInboundA : nodeA
+// For example, let's say nodeA wants to send a GET_HEADERS message to nodeB, the traffic will look like this:
+// 	GET_HEADERS: nodeA -> connectionOutboundA -> connectionInboundB -> nodeB
+//  HEADER_BUNDLE: nodeB -> connectionInboundB -> connectionOutboundA -> nodeA
+//
+// This middleware design of our the ConnectionBridge allows us to have much higher control over the communication
+// between the two nodes. In particular, we have full control over the `connectionOutboundA -> connectionInboundB`
+// steps, which allows us to make sure nodes act predictably and deterministically in our tests. Moreover, we can
+// simulate real-world network links by doing things like faking delays, dropping messages, partitioning networks, etc.
+// Nodes will be disallowed from connecting to other nodes outside of bridges.
+type ConnectionBridge struct {
+	// nodeA is one end of the bridge.
+	nodeA *Node
+	// connectionInboundA is a peer representing an incoming connection from nodeB.
+	// Any traffic sent to connectionInboundA by nodeA will be routed to connectionOutboundB.
+	connectionInboundA *lib.Peer
+	// connectionOutboundA is a peer representing an outgoing connection to nodeB.
+	// Any traffic sent to connectionOutboundA by nodeA will be routed to connectionInboundB.
+	connectionOutboundA *lib.Peer
+	// outboundListenerA is a listener that waits for outgoing connections from nodeA.
+	outboundListenerA net.Listener
+
+	// nodeB is the other end of the bridge.
+	nodeB *Node
+	// connectionInboundB is a peer representing an incoming connection from nodeA.
+	// Any traffic sent to connectionInboundB by nodeB will be routed to connectionOutboundA.
+	connectionInboundB *lib.Peer
+	// connectionOutboundB is a peer representing an outgoing connection to nodeA.
+	// Any traffic sent to connectionOutboundB by nodeB will be routed to connectionInboundA.
+	connectionOutboundB *lib.Peer
+	// outboundListenerB is a listener that waits for outgoing connections from nodeB.
+	outboundListenerB net.Listener
+
+	paused   bool
+	disabled bool
+
+	newPeerChan chan *lib.Peer
+}
+
+// NewConnectionBridge creates an instance of ConnectionBridge that's ready to be connected.
+// This function is usually followed by ConnectionBridge.Connect()
+func NewConnectionBridge(nodeA *Node, nodeB *Node) *ConnectionBridge {
+
+	// Start the outbound listener for A.
+	listenerA, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	// Start the outbound listener for B.
+	listenerB, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+
+	bridge := &ConnectionBridge{
+		nodeA:             nodeA,
+		outboundListenerA: listenerA,
+		nodeB:             nodeB,
+		outboundListenerB: listenerB,
+		disabled:          false,
+		newPeerChan:       make(chan *lib.Peer),
+	}
+	return bridge
+}
+
+// createInboundConnection will initialize the inbound connection (inbound peer) to the provided node.
+// It doesn't initiate a version/verack exchange yet, just creates the connection object.
+func (bridge *ConnectionBridge) createInboundConnection(node *Node) *lib.Peer {
+	// Get the localhost network address of to the provided node.
+	port := node.Config.ProtocolPort
+	addr := "127.0.0.1:" + strconv.Itoa(int(port))
+	netAddress, err := lib.IPToNetAddr(addr, addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
+	if err != nil {
+		panic(err)
+	}
+	netAddress2 := net.TCPAddr{
+		IP:   netAddress.IP,
+		Port: int(netAddress.Port),
+	}
+	// Dial/connect to the node.
+	conn, err := net.DialTimeout(netAddress2.Network(), netAddress2.String(), lib.DeSoMainnetParams.DialTimeout)
+	if err != nil {
+		panic(err)
+	}
+
+	// This channel is redundant in our setting.
+	messagesFromPeer := make(chan *lib.ServerMessage)
+	// Because it is an inbound Peer of the node, it is simultaneously a "fake" outbound Peer of the bridge.
+	// Hence, we will mark the _isOutbound parameter as "true" in NewPeer.
+	peer := lib.NewPeer(conn, true, netAddress, true,
+		10000, 0, &lib.DeSoMainnetParams,
+		messagesFromPeer, nil, nil)
+	peer.ID = uint64(lib.RandInt64(math.MaxInt64))
+	return peer
+}
+
+// createOutboundConnection will initialize an outbound connection from the provided node.
+// To do this, we setup an auxiliary listener and make the provided node connect to that listener.
+// We will then wrap this connection in a Peer object and return it in the newPeerChan channel.
+// The peer is returned through the channel due to the concurrency. This function doesn't initiate
+// the version exchange, this should be handled through ConnectionBridge.StartConnection()
+func (bridge *ConnectionBridge) createOutboundConnection(node *Node, otherNode *Node, ll net.Listener) {
+
+	// Setup a listener to intercept the traffic from the node.
+	go func(ll net.Listener) {
+		//for {
+		conn, err := ll.Accept()
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("createOutboundConnection: Got a connection from remote:", conn.RemoteAddr().String(),
+			"on listener:", ll.Addr().String())
+
+		na, err := lib.IPToNetAddr(conn.RemoteAddr().String(), otherNode.Server.GetConnectionManager().AddrMgr,
+			otherNode.Params)
+		messagesFromPeer := make(chan *lib.ServerMessage)
+		peer := lib.NewPeer(conn, false, na, false,
+			10000, 0, bridge.nodeB.Params,
+			messagesFromPeer, nil, nil)
+		peer.ID = uint64(lib.RandInt64(math.MaxInt64))
+		bridge.newPeerChan <- peer
+		//}
+	}(ll)
+
+	// Make the provided node to make an outbound connection to our listener.
+	netAddress, _ := lib.IPToNetAddr(ll.Addr().String(), addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
+	fmt.Println("createOutboundConnection: IP:", netAddress.IP, "Port:", netAddress.Port)
+	go node.Server.GetConnectionManager().ConnectPeer(nil, netAddress)
+}
+
+// getVersionMessage simulates a version message that the provided node would have sent.
+func (bridge *ConnectionBridge) getVersionMessage(node *Node) *lib.MsgDeSoVersion {
+	ver := lib.NewMessage(lib.MsgTypeVersion).(*lib.MsgDeSoVersion)
+	ver.Version = node.Params.ProtocolVersion
+	ver.TstampSecs = time.Now().Unix()
+	ver.Nonce = uint64(lib.RandInt64(math.MaxInt64))
+	ver.UserAgent = node.Params.UserAgent
+	ver.Services = lib.SFFullNode
+	if node.Config.HyperSync {
+		ver.Services |= lib.SFHyperSync
+	}
+	if node.Server != nil {
+		ver.StartBlockHeight = uint32(node.Server.GetBlockchain().BlockTip().Header.Height)
+	}
+	ver.MinFeeRateNanosPerKB = node.Config.MinFeerate
+	return ver
+}
+
+// StartConnection starts the connection by performing version and verack exchange with
+// the provided connection, pretending to be the otherNode.
+func (bridge *ConnectionBridge) StartConnection(connection *lib.Peer, otherNode *Node) error {
+	// Prepare the version message.
+	versionMessage := bridge.getVersionMessage(otherNode)
+	connection.VersionNonceSent = versionMessage.Nonce
+
+	// Send the version message.
+	fmt.Println("Sending version message:", versionMessage, versionMessage.StartBlockHeight)
+	if err := connection.WriteDeSoMessage(versionMessage); err != nil {
+		return err
+	}
+
+	// Wait for a response to the version message.
+	if err := connection.ReadWithTimeout(
+		func() error {
+			msg, err := connection.ReadDeSoMessage()
+			if err != nil {
+				return err
+			}
+
+			verMsg, ok := msg.(*lib.MsgDeSoVersion)
+			if !ok {
+				return err
+			}
+
+			connection.VersionNonceReceived = verMsg.Nonce
+			connection.TimeConnected = time.Unix(verMsg.TstampSecs, 0)
+			connection.TimeOffsetSecs = verMsg.TstampSecs - time.Now().Unix()
+			return nil
+		}, lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
+
+		return err
+	}
+
+	// Now prepare the verack message.
+	verackMsg := lib.NewMessage(lib.MsgTypeVerack)
+	verackMsg.(*lib.MsgDeSoVerack).Nonce = connection.VersionNonceReceived
+
+	// And send it to the connection.
+	if err := connection.WriteDeSoMessage(verackMsg); err != nil {
+		return err
+	}
+
+	// And finally wait for connection's response to the verack message.
+	if err := connection.ReadWithTimeout(
+		func() error {
+			msg, err := connection.ReadDeSoMessage()
+			if err != nil {
+				return err
+			}
+
+			if msg.GetMsgType() != lib.MsgTypeVerack {
+				return fmt.Errorf("message is not verack! Type: %v", msg.GetMsgType())
+			}
+			verackMsg := msg.(*lib.MsgDeSoVerack)
+			if verackMsg.Nonce != connection.VersionNonceSent {
+				return fmt.Errorf("verack message nonce doesn't match (received: %v, sent: %v)",
+					verackMsg.Nonce, connection.VersionNonceSent)
+			}
+			return nil
+		}, lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
+
+		return err
+	}
+	connection.VersionNegotiated = true
+
+	return nil
+}
+
+// RouteTraffic routes all messages sent to the source connection and redirects it to the destination connection.
+// This communication tunnel is one-directional, so normally we would also call RouteTraffic(destination, source)
+// to make it bidirectional.
+func (bridge *ConnectionBridge) RouteTraffic(source *lib.Peer, destination *lib.Peer) {
+	for {
+		if bridge.disabled {
+			break
+		}
+		if bridge.paused {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		// Retrieve a message from the source connection.
+		inMsg, err := source.ReadDeSoMessage()
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("Reading message: (%v) type: (%v) at source with local addr: (%v) and remote addr: (%v)\n",
+			inMsg, inMsg.GetMsgType(), source.Conn.LocalAddr().String(), source.Conn.RemoteAddr().String())
+		switch inMsg.(type) {
+		case *lib.MsgDeSoAddr:
+		case *lib.MsgDeSoGetAddr:
+			continue
+		default:
+			// Send the message to the destination connection.
+			fmt.Printf("Redirecting the message: (%v) type: (%v) to destination with local addr: (%v) and remote addr: (%v)\n",
+				inMsg, inMsg.GetMsgType(), destination.Conn.LocalAddr().String(), destination.Conn.RemoteAddr().String())
+			if err := destination.WriteDeSoMessage(inMsg); err != nil {
+				panic(err)
+			}
+		}
+	}
+}
+
+func (bridge *ConnectionBridge) waitForConnection() (*lib.Peer, error) {
+	timeoutTicker := time.NewTicker(30 * time.Second)
+	select {
+	case <-timeoutTicker.C:
+		return nil, fmt.Errorf("Timed out")
+	case peer := <-bridge.newPeerChan:
+		return peer, nil
+	}
+}
+
+func (bridge *ConnectionBridge) Connect() error {
+	var err error
+
+	// Initialize inbound connections to nodes.
+	bridge.connectionInboundA = bridge.createInboundConnection(bridge.nodeA)
+	bridge.connectionInboundB = bridge.createInboundConnection(bridge.nodeB)
+
+	// Start the inbound connections.
+	if err := bridge.StartConnection(bridge.connectionInboundA, bridge.nodeB); err != nil {
+		return err
+	}
+	if err := bridge.StartConnection(bridge.connectionInboundB, bridge.nodeA); err != nil {
+		return err
+	}
+
+	// Initialize outbound connections from nodes.
+	bridge.createOutboundConnection(bridge.nodeA, bridge.nodeB, bridge.outboundListenerA)
+	if bridge.connectionOutboundA, err = bridge.waitForConnection(); err != nil {
+		return err
+	}
+	bridge.createOutboundConnection(bridge.nodeB, bridge.nodeA, bridge.outboundListenerB)
+	if bridge.connectionOutboundB, err = bridge.waitForConnection(); err != nil {
+		return err
+	}
+
+	// Start the outbound connections from nodes.
+	if err := bridge.StartConnection(bridge.connectionOutboundA, bridge.nodeB); err != nil {
+		return err
+	}
+	if err := bridge.StartConnection(bridge.connectionOutboundB, bridge.nodeB); err != nil {
+		return err
+	}
+
+	// Get information about the connections
+	fmt.Println("ConnectionOutBoundA, local address:", bridge.connectionOutboundA.Conn.LocalAddr().String())
+	fmt.Println("ConnectionOutBoundA, remote address:", bridge.connectionOutboundA.Conn.RemoteAddr().String())
+	fmt.Println("ConnectionOutBoundB, local address:", bridge.connectionOutboundB.Conn.LocalAddr().String())
+	fmt.Println("ConnectionOutBoundB, remote address:", bridge.connectionOutboundB.Conn.RemoteAddr().String())
+	fmt.Println("ConnectionInboundA, local address:", bridge.connectionInboundA.Conn.LocalAddr().String())
+	fmt.Println("ConnectionInboundA, remote address:", bridge.connectionInboundA.Conn.RemoteAddr().String())
+	fmt.Println("ConnectionInboundB, local address:", bridge.connectionInboundB.Conn.LocalAddr().String())
+	fmt.Println("ConnectionInboundB, remote address:", bridge.connectionInboundB.Conn.RemoteAddr().String())
+
+	// Start the communication routing between the two nodes. Basically we tunnel all the
+	// node communication to happen through the bridge.
+	go bridge.RouteTraffic(bridge.connectionOutboundA, bridge.connectionInboundB)
+	go bridge.RouteTraffic(bridge.connectionInboundB, bridge.connectionOutboundA)
+	go bridge.RouteTraffic(bridge.connectionOutboundB, bridge.connectionInboundA)
+	go bridge.RouteTraffic(bridge.connectionInboundA, bridge.connectionOutboundB)
+
+	return nil
+}
+
+type ConnectionRouter struct {
+	nodes []*Node
+}
+
+// get a random temporary directory.
+func getDirectory(t *testing.T) string {
+	require := require.New(t)
+	dbDir, err := ioutil.TempDir("", "badgerdb")
+	if err != nil {
+		require.NoError(err)
+	}
+	return dbDir
+}
+
+// generateConfig creates a default config for a node, with provided port, db directory, and number of max peers.
+// It's usually the first step to starting a node.
+func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) *Config {
 	config := &Config{}
 	params := lib.DeSoMainnetParams
 
@@ -49,264 +400,142 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	return config
 }
 
-type ConnectionRouter struct {
-	nodes []*Node
-}
-
-type ConnectionBridge struct {
-	nodeA *Node
-	connectionInboundA *lib.Peer
-	connectionOutboundA *lib.Peer
-	outboundListenerA net.Listener
-
-	nodeB *Node
-	connectionInboundB *lib.Peer
-	connectionOutboundB *lib.Peer
-	outboundListenerB net.Listener
-
-	disabled bool
-}
-
-func connectInboundToNode(node *Node) *lib.Peer {
-	port := node.Config.ProtocolPort
-	addr := "127.0.0.1:"+strconv.Itoa(int(port))
-	netAddress, err := lib.IPToNetAddr(addr, addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
-	if err != nil {
-		panic(err)
-	}
-	netAddress2 := net.TCPAddr{
-		IP:   netAddress.IP,
-		Port: int(netAddress.Port),
-	}
-	conn, err := net.DialTimeout(netAddress2.Network(), netAddress2.String(), lib.DeSoMainnetParams.DialTimeout)
-	if err != nil {
-		panic(err)
-	}
-	messagesFromPeer := make(chan *lib.ServerMessage)
-	peer := lib.NewPeer(conn, true, netAddress, true,
-		10000, 0, &lib.DeSoMainnetParams,
-		messagesFromPeer, nil, nil)
-	peer.ID = uint64(lib.RandInt64(math.MaxInt64))
-	return peer
-}
-
-func (bridge *ConnectionBridge) connectOutboundToNode(node *Node, connectionOutBound *lib.Peer,
-	otherNode *Node, otherNodeInboundConnection *lib.Peer, ll net.Listener) {
-
-	go func(ll net.Listener) {
-		for {
-			conn, err := ll.Accept()
-			if err != nil {
-				panic(err)
-			}
-			fmt.Println("connectOutboundToNode: Got a connection from remote:", conn.RemoteAddr().String(),
-				"on listener:", ll.Addr().String())
-
-			na, err := lib.IPToNetAddr(conn.RemoteAddr().String(), otherNode.Server.GetConnectionManager().AddrMgr,
-				otherNode.Params)
-			messagesFromPeer := make(chan *lib.ServerMessage)
-			peer := lib.NewPeer(conn, false, na, false,
-				10000, 0, bridge.nodeB.Params,
-				messagesFromPeer, nil, nil)
-			peer.ID = uint64(lib.RandInt64(math.MaxInt64))
-			err = bridge.InitSide(peer, otherNode)
-			if err != nil {
-				panic(err)
-			}
-			connectionOutBound = peer
-			fmt.Println("ConnectionOutBoundA, local address:", peer.Conn.LocalAddr().String())
-			fmt.Println("ConnectionOutBoundA, remote address:", peer.Conn.RemoteAddr().String())
-			fmt.Println("otherNodeInboundConnection, local address:", otherNodeInboundConnection.Conn.LocalAddr().String())
-			fmt.Println("otherNodeInboundConnection, remote address:", otherNodeInboundConnection.Conn.RemoteAddr().String())
-			go bridge.SetupOneWayLink(connectionOutBound, otherNodeInboundConnection)
-			go bridge.SetupOneWayLink(otherNodeInboundConnection, connectionOutBound)
-		}
-	}(ll)
-
-	netAddress, _ := lib.IPToNetAddr(ll.Addr().String(), addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
-	fmt.Println("IP:", netAddress.IP, "Port:", netAddress.Port)
-	go node.Server.GetConnectionManager().ConnectPeer(nil, netAddress)
-}
-
-func NewConnectionBridge(nodeA *Node, nodeB *Node) *ConnectionBridge {
-
-	//addresses, listeners := GetAddrsToListenOn(19000)
-	listenerA, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		panic(err)
-	}
-	listenerB, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		panic(err)
-	}
-
-	bridge := &ConnectionBridge{
-		nodeA:       nodeA,
-		connectionInboundA: connectInboundToNode(nodeA),
-		outboundListenerA: listenerA,
-		nodeB:       nodeB,
-		connectionInboundB: connectInboundToNode(nodeB),
-		outboundListenerB: listenerB,
-		disabled:    false,
-	}
-	return bridge
-}
-
-func (bridge *ConnectionBridge) GetVersionMessage(node *Node) *lib.MsgDeSoVersion {
-	ver := lib.NewMessage(lib.MsgTypeVersion).(*lib.MsgDeSoVersion)
-	ver.Version = node.Params.ProtocolVersion
-	ver.TstampSecs = time.Now().Unix()
-	ver.Nonce = uint64(lib.RandInt64(math.MaxInt64))
-	ver.UserAgent = node.Params.UserAgent
-	ver.Services = lib.SFFullNode
-	if node.Config.HyperSync {
-		ver.Services |= lib.SFHyperSync
-	}
-	if node.Server != nil {
-		ver.StartBlockHeight = uint32(node.Server.GetBlockchain().BlockTip().Header.Height)
-	}
-	ver.MinFeeRateNanosPerKB = node.Config.MinFeerate
-	return ver
-}
-
-func (bridge *ConnectionBridge) InitSide(connection *lib.Peer, otherNode *Node) error {
-	versionMessage := bridge.GetVersionMessage(otherNode)
-	connection.VersionNonceSent = versionMessage.Nonce
-	fmt.Println("Sending version message:", versionMessage, versionMessage.StartBlockHeight)
-	if err := connection.WriteDeSoMessage(versionMessage); err != nil {
-		return err
-	}
-
-	if err := connection.ReadWithTimeout(
-		func() error {
-			msg, err := connection.ReadDeSoMessage()
-			if err != nil {
-				return err
-			}
-
-			verMsg, ok := msg.(*lib.MsgDeSoVersion)
-			if !ok {
-				return err
-			}
-
-			connection.VersionNonceReceived = verMsg.Nonce
-			connection.TimeConnected = time.Unix(verMsg.TstampSecs, 0)
-			connection.TimeOffsetSecs = verMsg.TstampSecs - time.Now().Unix()
-			return nil
-		}, lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
-
-		return err
-	}
-
-	verackMsg := lib.NewMessage(lib.MsgTypeVerack)
-	verackMsg.(*lib.MsgDeSoVerack).Nonce = connection.VersionNonceReceived
-	if err := connection.WriteDeSoMessage(verackMsg); err != nil {
-		return err
-	}
-
-	if err := connection.ReadWithTimeout(
-		func() error {
-			msg, err := connection.ReadDeSoMessage()
-			if err != nil {
-				return err
-			}
-
-			if msg.GetMsgType() != lib.MsgTypeVerack {
-				return fmt.Errorf("message is not verack! Type: %v", msg.GetMsgType())
-			}
-			verackMsg := msg.(*lib.MsgDeSoVerack)
-			if verackMsg.Nonce != connection.VersionNonceSent {
-				return fmt.Errorf("verack message nonce doesn't match (received: %v, sent: %v)",
-					verackMsg.Nonce, connection.VersionNonceSent)
-			}
-			return nil
-		}, lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
-
-		return err
-	}
-	connection.VersionNegotiated = true
-
-	return nil
-}
-
-func (bridge *ConnectionBridge) SetupOneWayLink(source *lib.Peer, destination *lib.Peer) {
+// waitForNodeToFullySync will busy-wait until provided node is fully current.
+func waitForNodeToFullySync(node *Node) {
+	ticker := time.NewTicker(100 * time.Millisecond)
 	for {
-		if bridge.disabled {
-			time.Sleep(1 * time.Second)
-			continue
-		}
+		<-ticker.C
 
-		inMsg, err := source.ReadDeSoMessage()
-		if err != nil {
-			panic(err)
+		if node.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent {
+			return
 		}
-		outMsg := inMsg
-		fmt.Printf("Reading message: (%v) type: (%v) at source with local addr: (%v) and remote addr: (%v)\n",
-			inMsg, inMsg.GetMsgType(), source.Conn.LocalAddr().String(), source.Conn.RemoteAddr().String())
-		switch inMsg.(type) {
-			case *lib.MsgDeSoAddr:
-				continue
-			case *lib.MsgDeSoGetAddr:
-				outMsg = lib.NewMessage(lib.MsgTypeAddr).(*lib.MsgDeSoAddr)
-				//addr := "127.0.0.1:"+strconv.Itoa(19000)
-				//netAddress, _ := lib.IPToNetAddr(addr, addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
-				//outMsg.(*lib.MsgDeSoAddr).AddrList = append(outMsg.(*lib.MsgDeSoAddr).AddrList,
-				//	&lib.SingleAddr{
-				//		Timestamp: time.Now(),
-				//		IP: netAddress.IP,
-				//		Port: netAddress.Port,
-				//		Services: lib.SFFullNode,
-				//	})
-		}
-		fmt.Printf("Redirecting the message: (%v) type: (%v) to destination with local addr: (%v) and remote addr: (%v)\n",
-			 outMsg, outMsg.GetMsgType(), destination.Conn.LocalAddr().String(), destination.Conn.RemoteAddr().String())
-		 if err := destination.WriteDeSoMessage(outMsg); err != nil {
-			panic(err)
-		 }
 	}
 }
 
-func (bridge *ConnectionBridge) Connect() error {
-	fmt.Println("ConnectionInboundA, local address:", bridge.connectionInboundA.Conn.LocalAddr().String())
-	fmt.Println("ConnectionInboundA, remote address:", bridge.connectionInboundA.Conn.RemoteAddr().String())
-	fmt.Println("ConnectionInboundB, local address:", bridge.connectionInboundB.Conn.LocalAddr().String())
-	fmt.Println("ConnectionInboundB, remote address:", bridge.connectionInboundB.Conn.RemoteAddr().String())
-	if err := bridge.InitSide(bridge.connectionInboundA, bridge.nodeB); err != nil {
-		return err
+// compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
+// The nodes pass this comparison iff they have identical states.
+func compareNodesByState(nodeA *Node, nodeB *Node) error {
+	maxBytes := uint32(8 << 20)
+	for _, prefix := range lib.StatePrefixes.StatePrefixesList {
+		lastPrefix := prefix
+		for {
+			existingValuesA := make(map[string]string)
+			existingValuesB := make(map[string]string)
+
+			// Fetch a state chunk from nodeA database.
+			dbEntriesA, isChunkFullA, err := lib.DBIteratePrefixKeys(nodeA.chainDB, prefix, lastPrefix, maxBytes)
+			if err != nil {
+				return errors.Wrapf(err, "problem reading nodeA database for prefix (%v) last prefix (%v)",
+					prefix, lastPrefix)
+			}
+			for _, entry := range dbEntriesA {
+				keyHex := hex.EncodeToString(entry.Key)
+				valueHex := hex.EncodeToString(entry.Value)
+				existingValuesA[keyHex] = valueHex
+			}
+
+			// Fetch a state chunk from nodeB database.
+			dbEntriesB, isChunkFullB, err := lib.DBIteratePrefixKeys(nodeB.chainDB, prefix, lastPrefix, maxBytes)
+			if err != nil {
+				return errors.Wrapf(err, "problem reading nodeB database for prefix (%v) last prefix (%v",
+					prefix, lastPrefix)
+			}
+			for _, entry := range dbEntriesB {
+				keyHex := hex.EncodeToString(entry.Key)
+				valueHex := hex.EncodeToString(entry.Value)
+				existingValuesB[keyHex] = valueHex
+			}
+
+			// Make sure we've fetched the same number of entries for nodeA and nodeB.
+			if len(dbEntriesA) != len(dbEntriesB) {
+				return fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
+					"varying lengths (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, len(dbEntriesA), len(dbEntriesB))
+			}
+
+			// It doesn't matter which map we iterate through, since if we got here it means they have
+			// an identical number of unique keys. So we will choose dbEntriesA for convenience.
+			for ii, entry := range dbEntriesA {
+				if !reflect.DeepEqual(entry.Key, dbEntriesB[ii].Key) {
+					return fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal keys "+
+						"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Key, dbEntriesB[ii].Key)
+				}
+			}
+			for ii, entry := range dbEntriesA {
+				if !reflect.DeepEqual(entry.Value, dbEntriesB[ii].Value) {
+					return fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal values "+
+						"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Value, dbEntriesB[ii].Value)
+				}
+			}
+
+			// Make sure the isChunkFull match for both chunks.
+			if isChunkFullA != isChunkFullB {
+				return fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
+					"unequal fulls (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, isChunkFullA, isChunkFullB)
+			}
+
+			if len(dbEntriesA) > 0 {
+				lastPrefix = dbEntriesA[len(dbEntriesA)-1].Key
+			} else {
+				break
+			}
+
+			if !isChunkFullA {
+				break
+			}
+		}
 	}
-	if err := bridge.InitSide(bridge.connectionInboundB, bridge.nodeA); err != nil {
-		return err
-	}
-
-	bridge.connectOutboundToNode(bridge.nodeA, bridge.connectionOutboundA,
-		bridge.nodeB, bridge.connectionInboundB, bridge.outboundListenerA)
-	bridge.connectOutboundToNode(bridge.nodeB, bridge.connectionOutboundB,
-		bridge.nodeA, bridge.connectionInboundA, bridge.outboundListenerB)
-
-	//go bridge.SetupOneWayLink(bridge.connectionInboundA, bridge.connectionInboundB)
-	//go bridge.SetupOneWayLink(bridge.connectionInboundB, bridge.connectionInboundA)
-
 	return nil
 }
 
-func getDirectory(t *testing.T) string {
+// TestSimpleBlockSync test if a node can successfully sync from another node:
+//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
+//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+//  3. bridge node1 and node2
+//  4. compare node1 state matches node2 state.
+func TestSimpleBlockSync(t *testing.T) {
 	require := require.New(t)
-	dbDir, err := ioutil.TempDir("", "badgerdb")
-	if err != nil {
-		require.NoError(err)
-	}
-	return dbDir
+	_ = require
+
+	router := &ConnectionRouter{}
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config2 := generateConfig(t, 18001, dbDir2, 10)
+
+	config1.MaxSyncBlockHeight = 50
+	config2.MaxSyncBlockHeight = 50
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node1 := NewNode(config1)
+	node2 := NewNode(config2)
+	router.nodes = append(router.nodes, node1)
+	router.nodes = append(router.nodes, node2)
+
+	go node1.Start()
+	go node2.Start()
+
+	// Wait for the nodes to initialize.
+	time.Sleep(3 * time.Second)
+
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
+
+	// bridge the nodes together.
+	bridge := NewConnectionBridge(node1, node2)
+	require.NoError(bridge.Connect())
+
+	// wait for node2 to sync blocks.
+	waitForNodeToFullySync(node2)
+
+	require.NoError(compareNodesByState(node1, node2))
+	node1.Stop()
+	node2.Stop()
 }
 
 func TestRouter(t *testing.T) {
 	require := require.New(t)
 	_ = require
-
-	// Instead of having nodes exchange network messages, RPC trigger node's message handlers according to
-	// manager's internal queues. This ensures tests are deterministic.
-	//targetOutboundPeers := 10
-	//maxInboundPeers := 5
-	//incomingMessages := make(chan *lib.ServerMessage, (targetOutboundPeers + maxInboundPeers) * 3)
 
 	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
@@ -317,8 +546,10 @@ func TestRouter(t *testing.T) {
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 	config3 := generateConfig(t, 18003, dbDir3, 10)
 
+	config1.MaxSyncBlockHeight = 100
 	config2.MaxSyncBlockHeight = 50
 	config3.MaxSyncBlockHeight = 50
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
@@ -328,16 +559,17 @@ func TestRouter(t *testing.T) {
 
 	router.nodes = append(router.nodes, node2)
 	router.nodes = append(router.nodes, node3)
+	go node1.Start()
 	go node2.Start()
 	go node3.Start()
 
-
-	time.Sleep(10 * time.Second)
+	time.Sleep(15 * time.Second)
 	fmt.Println("Waited 15 seconds")
 
 	shutdownListener := make(chan os.Signal)
 	signal.Notify(shutdownListener, syscall.SIGINT, syscall.SIGTERM)
 	defer func() {
+		node1.Stop()
 		node2.Stop()
 		node3.Stop()
 		glog.Info("Shutdown complete")
@@ -346,113 +578,14 @@ func TestRouter(t *testing.T) {
 	bridge := NewConnectionBridge(node2, node3)
 	require.NoError(bridge.Connect())
 
-	time.Sleep(5 * time.Second)
-	//netAddrss, err := lib.IPToNetAddr("127.0.0.1:18000", addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//netAddr2 := net.TCPAddr{
-	//	IP:   netAddrss.IP,
-	//	Port: int(netAddrss.Port),
-	//}
-	//conn, err := net.DialTimeout(netAddr2.Network(), netAddr2.String(), lib.DeSoMainnetParams.DialTimeout)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//messagesFromPeer := make(chan *lib.ServerMessage)
-	//peer := lib.NewPeer(conn, true, netAddrss, true,
-	//	10000, 0, &lib.DeSoMainnetParams,
-	//	messagesFromPeer, nil, nil)
-	//time.Sleep(1 * time.Second)
-	//if err := peer.NegotiateVersion(lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
-	//	panic(err)
-	//}
-	////go peer.PingHandler()
-	//// outHandler - this should handle all messages received from the other end of the bridge
-	//bridgeDone := false
-	//pingTicker := time.NewTicker(30 * time.Second)
-	//go func(done *bool) {
-	//	for {
-	//		if *done {
-	//			break
-	//		}
-	//
-	//		select {
-	//		case <-pingTicker.C:
-	//			nonce, err := wire.RandomUint64()
-	//			require.NoError(err)
-	//			fmt.Println("Sending a ping to peer nonce:", nonce)
-	//			peer.StatsMtx.Lock()
-	//			peer.LastPingNonce = nonce
-	//			peer.LastPingTime = time.Now()
-	//			peer.StatsMtx.Unlock()
-	//			ping := &lib.MsgDeSoPing{Nonce: nonce}
-	//			require.NoError(peer.WriteDeSoMessage(ping))
-	//		}
-	//	}
-	//}(&bridgeDone)
-	//
-	//go func(done *bool) {
-	//	for {
-	//		if *done {
-	//			break
-	//		}
-	//		rmsg, err := peer.ReadDeSoMessage()
-	//		require.NoError(err)
-	//
-	//		fmt.Println("rmsg:", rmsg)
-	//		switch msg := rmsg.(type) {
-	//		case *lib.MsgDeSoPing:
-	//			fmt.Println("ping happening:")
-	//			pong := &lib.MsgDeSoPong{Nonce: msg.Nonce}
-	//			require.NoError(peer.WriteDeSoMessage(pong))
-	//		case *lib.MsgDeSoPong:
-	//			fmt.Println("Got pong nonce:", msg.Nonce)
-	//			peer.HandlePongMsg(msg)
-	//		}
-	//	}
-	//}(&bridgeDone)
+	time.Sleep(15 * time.Second)
+	node2.Server.GetBlockchain().MaxSyncBlockHeight = 100
+	node3.Server.GetBlockchain().MaxSyncBlockHeight = 100
+	// Pause the bridge between n2 and n3
+	bridge.paused = true
 
-	//dbDirAddr, err := ioutil.TempDir("", "badgerdb")
-	//if err != nil {
-	//	t.Fatal(err)
-	//}
-	//addrMgr := addrmgr.New(dbDirAddr, net.LookupIP)
-	//addrMgr.Start()
-	//
-	//protocolPort := uint16(18011)
-	//listeningAddrs, listeners := GetAddrsToListenOn(protocolPort)
-	//_ = listeningAddrs
-	////for _, addr := range listeningAddrs {
-	////	err := addrMgr.AddLocalAddress(wire.NewNetAddress(&addr, 0), addrmgr.BoundPrio)
-	////	require.NoError(err)
-	////}
-	//
-	//srv := &lib.Server{
-	//	DisableNetworking:            false,
-	//	ReadOnlyMode:                 true,
-	//	IgnoreInboundPeerInvMessages: false,
-	//}
-	//
-	//incomingMessages := make(chan *lib.ServerMessage)
-	//cmgr := lib.NewConnectionManager(
-	//	config1.Params,
-	//	addrMgr,
-	//	listeners,
-	//	[]string{"127.0.0.1:18000"} /*_connectIps*/,
-	//	chainlib.NewMedianTime(),
-	//	10 /*_targetOutboundPeers*/,
-	//	10 /*_maxInboundPeers*/,
-	//	true /*_limitOneInboundConnectionPerIP*/,
-	//	false /*_hyperSync*/,
-	//	config1.StallTimeoutSeconds,
-	//	config1.MinFeerate,
-	//	incomingMessages,
-	//	srv)
-	//cmgr.Start()
-	//srv.
+	bridge2 := NewConnectionBridge(node1, node2)
+	require.NoError(bridge2.Connect())
 
 	<-shutdownListener
 }

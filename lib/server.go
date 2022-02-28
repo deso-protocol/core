@@ -50,9 +50,9 @@ type ServerReply struct {
 // need to tell the peer the starting key for the chunk we want to retrieve.
 type SyncPrefixProgress struct {
 	// Peer assigned for retrieving this particular prefix.
-	PrefixSyncPeer   *Peer
+	PrefixSyncPeer *Peer
 	// DB prefix corresponding to this particular sync progress.
-	Prefix           []byte
+	Prefix []byte
 	// LastReceivedKey is the last key that we've received from this peer.
 	// We store it as *DBEntry because it's more convenient to use it to determine
 	// whether LastReceivedKey is an empty array. We distinguish whether a
@@ -62,7 +62,7 @@ type SyncPrefixProgress struct {
 	LastReceivedKey []byte
 
 	// Completed indicates whether we've finished syncing this prefix.
-	Completed        bool
+	Completed bool
 }
 
 // SyncProgress is used to keep track of hyper sync progress. It stores a list of SyncPrefixProgress
@@ -580,10 +580,10 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 			// and assign it to the current peer.
 			if !exists {
 				srv.HyperSyncProgress.PrefixProgress = append(srv.HyperSyncProgress.PrefixProgress, &SyncPrefixProgress{
-					PrefixSyncPeer: pp,
-					Prefix: prefix,
+					PrefixSyncPeer:  pp,
+					Prefix:          prefix,
 					LastReceivedKey: prefix,
-					Completed: false,
+					Completed:       false,
 				})
 				lastReceivedKey = prefix
 				syncingPrefix = true
@@ -592,7 +592,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 		}
 		// If no prefix was found, we error and return because the state is already synced.
 		if !syncingPrefix {
-			glog.Errorf("Server.GetSnapshot: Error selecting a prefix for peer %v " +
+			glog.Errorf("Server.GetSnapshot: Error selecting a prefix for peer %v "+
 				"all prefixes are synced", pp)
 			return
 		}
@@ -600,11 +600,11 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	// Now send a message to the peer to fetch the snapshot chunk.
 	pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
-		Prefix: prefix,
+		Prefix:           prefix,
 		SnapshotStartKey: lastReceivedKey,
 	}, false)
 
-	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) " +
+	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
 }
 
@@ -743,7 +743,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// syncing state either through hyper sync or block sync. First let's check if the peer
 		// supports hyper sync.
 		if (pp.serviceFlags & SFHyperSync) != 0 {
-			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at " +
+			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at "+
 				"height %v from peer %v", srv.blockchain.headerTip().Header.Height, pp)
 			// TODO: Handle a case where the node has synced during some previous snapshot epoch,
 			// and it has been re-run with a new snapshot epoch.
@@ -885,7 +885,7 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 // a snapshot chunk, which is a sorted list of <key, value> pairs representing a section of the database
 // at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
-	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: " +
+	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: "+
 		"%v) and checksum (%v) and blockheight (%v) and blockhash (%v) from Peer %v", msg.SnapshotChunk[0].Key,
 		msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk), msg.SnapshotChecksum,
 		msg.SnapshotHeight, msg.SnapshotBlockHash, pp)
@@ -899,7 +899,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if msg.SnapshotHeight != srv.HyperSyncProgress.SnapshotBlockHeight ||
 		!bytes.Equal(msg.SnapshotBlockHash[:], srv.HyperSyncProgress.SnapshotBlockHash[:]) {
 
-		glog.Errorf("srv._handleSnapshot: blockheight (%v) and blockhash (%v) in msg do not match the expected " +
+		glog.Errorf("srv._handleSnapshot: blockheight (%v) and blockhash (%v) in msg do not match the expected "+
 			"hyper sync height (%v) and hash (%v)", msg.SnapshotBlockHash, msg.SnapshotBlockHash,
 			srv.HyperSyncProgress.SnapshotBlockHeight, srv.HyperSyncProgress.SnapshotBlockHash)
 		pp.Disconnect()
@@ -917,7 +917,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// If peer sent a message with an incorrect prefix, we should disconnect them.
 	if syncPrefixProgress == nil {
 		// We should disconnect the peer because he is misbehaving
-		glog.Errorf("srv._handleSnapshot: Problem finding appropriate sync prefix progress " +
+		glog.Errorf("srv._handleSnapshot: Problem finding appropriate sync prefix progress "+
 			"disconnecting misbehaving peer (%v)", pp)
 		pp.Disconnect()
 		return
@@ -927,7 +927,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
 	if len(msg.SnapshotChunk) == 0 {
 		// We should disconnect the peer because he is misbehaving
-		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk " +
+		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk "+
 			"disconnecting misbehaving peer (%v)", pp)
 		pp.Disconnect()
 		return
@@ -949,7 +949,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// is going to be equal to the prefix.
 		if !bytes.HasPrefix(msg.SnapshotChunk[0].Key, msg.Prefix) {
 			// We should disconnect the peer because he is misbehaving.
-			glog.Errorf("srv._handleSnapshot: Snapshot chunk DBEntry key has mismatched prefix " +
+			glog.Errorf("srv._handleSnapshot: Snapshot chunk DBEntry key has mismatched prefix "+
 				"disconnecting misbehaving peer (%v)", pp)
 			pp.Disconnect()
 			return
@@ -962,7 +962,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		if !bytes.Equal(syncPrefixProgress.LastReceivedKey, msg.SnapshotChunk[0].Key) {
 			// TODO: Do we want to disconnect the peer in here? It's technically not misbehaving
 			// but we would never request the same chunk twice
-			glog.Errorf("srv._handleSnapshot: Received a snapshot chunk that's not in-line with the sync progress " +
+			glog.Errorf("srv._handleSnapshot: Received a snapshot chunk that's not in-line with the sync progress "+
 				"disconnecting misbehaving peer (%v)", pp)
 			pp.Disconnect()
 			return
@@ -972,11 +972,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	dbChunk = append(dbChunk, msg.SnapshotChunk[1:]...)
 
 	if !chunkEmpty {
-		for ii := 1; ii < len(dbChunk); ii ++ {
+		for ii := 1; ii < len(dbChunk); ii++ {
 			// Make sure that all dbChunk entries have the same prefix as in the message.
 			if !bytes.HasPrefix(dbChunk[ii].Key, msg.Prefix) {
 				// We should disconnect the peer because he is misbehaving
-				glog.Errorf("srv._handleSnapshot: DBEntry key has mismatched prefix " +
+				glog.Errorf("srv._handleSnapshot: DBEntry key has mismatched prefix "+
 					"disconnecting misbehaving peer (%v)", pp)
 				pp.Disconnect()
 				return
@@ -984,7 +984,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			// Make sure that the dbChunk is sorted increasingly.
 			if bytes.Compare(dbChunk[ii-1].Key, dbChunk[ii].Key) != -1 {
 				// We should disconnect the peer because he is misbehaving
-				glog.Errorf("srv._handleSnapshot: dbChunk entries are not sorted: first entry at index (%v) with " +
+				glog.Errorf("srv._handleSnapshot: dbChunk entries are not sorted: first entry at index (%v) with "+
 					"value (%v) and second entry with index (%v) and value (%v) disconnecting misbehaving peer (%v)",
 					ii-1, dbChunk[ii-1].Key, ii, dbChunk[ii].Key, pp)
 				pp.Disconnect()
@@ -1000,7 +1000,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// We will update the hyper sync progress tracker struct to reflect the newly added snapshot chunk.
 	// In particular, we want to update the last received key to the last key in the received chunk.
-	for ii:=0; ii<len(srv.HyperSyncProgress.PrefixProgress); ii++ {
+	for ii := 0; ii < len(srv.HyperSyncProgress.PrefixProgress); ii++ {
 		if reflect.DeepEqual(srv.HyperSyncProgress.PrefixProgress[ii].Prefix, msg.Prefix) {
 			// We found the hyper sync progress corresponding to this snapshot chunk so update the key.
 			lastKey := msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key
@@ -1065,7 +1065,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// height, we will now mark all these blocks as processed. To do so, we will iterate through
 	// the blockNodes in the header chain and set them in the blockchain data structures.
 	err := srv.blockchain.db.Update(func(txn *badger.Txn) error {
-		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotBlockHeight; ii ++ {
+		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotBlockHeight; ii++ {
 			curretNode := srv.blockchain.bestHeaderChain[ii]
 			curretNode.Status |= StatusBlockProcessed
 			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
@@ -1077,7 +1077,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			if err != nil {
 				return err
 			}
-    	}
+		}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
 		err := PutBestHashWithTxn(txn, srv.blockchain.snapshot, msg.SnapshotBlockHash, ChainTypeDeSoBlock)
 		return err
@@ -1392,7 +1392,7 @@ func (srv *Server) _maybeRequestSync(pp *Peer) {
 	// Send the mempool message if DeSo and Bitcoin are fully current
 	if srv.blockchain.chainState() == SyncStateFullyCurrent {
 		// If peer is not nil and we haven't set a max sync blockheight, we will
-		if pp != nil && srv.blockchain.maxSyncBlockHeight == 0 {
+		if pp != nil && srv.blockchain.MaxSyncBlockHeight == 0 {
 			glog.V(1).Infof("Server._maybeRequestSync: Sending mempool message: %v", pp)
 			pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
 		} else {
@@ -1409,7 +1409,7 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 	blk := event.Block
 
 	// Don't relay blocks until our best block chain is done syncing.
-	if srv.blockchain.isSyncing() || srv.blockchain.maxSyncBlockHeight > 0 {
+	if srv.blockchain.isSyncing() || srv.blockchain.MaxSyncBlockHeight > 0 {
 		return
 	}
 
@@ -1956,7 +1956,7 @@ func (srv *Server) _startAddressRelayer() {
 
 func (srv *Server) _startTransactionRelayer() {
 	// If we've set a maximum sync height, we will not relay transactions.
-	if srv.blockchain.maxSyncBlockHeight > 0 {
+	if srv.blockchain.MaxSyncBlockHeight > 0 {
 		return
 	}
 
@@ -1994,7 +1994,9 @@ func (srv *Server) Stop() {
 
 	// Stop the block producer
 	if srv.blockProducer != nil {
-		srv.blockProducer.Stop()
+		if srv.blockchain.MaxSyncBlockHeight == 0 {
+			srv.blockProducer.Stop()
+		}
 	}
 
 	// This will signal any goroutines to quit. Note that enqueing this after stopping

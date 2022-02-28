@@ -530,9 +530,9 @@ func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) 
 
 func (desoBlockProducer *DeSoBlockProducer) Start() {
 	// If we set up the max sync block height, we will not be running the block producer.
-	if desoBlockProducer.chain.maxSyncBlockHeight > 0 {
-		glog.V(2).Infof("DeSoBlockProducer.Start() exiting because " +
-			"maxSyncBlockHeight: %v is greater than 0", desoBlockProducer.chain.maxSyncBlockHeight)
+	if desoBlockProducer.chain.MaxSyncBlockHeight > 0 {
+		glog.V(2).Infof("DeSoBlockProducer.Start() exiting because "+
+			"MaxSyncBlockHeight: %v is greater than 0", desoBlockProducer.chain.MaxSyncBlockHeight)
 		return
 	}
 

@@ -399,7 +399,7 @@ type Blockchain struct {
 	timeSource                      chainlib.MedianTimeSource
 	trustedBlockProducerPublicKeys  map[PkMapKey]bool
 	trustedBlockProducerStartHeight uint64
-	maxSyncBlockHeight              uint32
+	MaxSyncBlockHeight              uint32
 	params                          *DeSoParams
 	eventManager                    *EventManager
 	// Returns true once all of the housekeeping in creating the
@@ -433,8 +433,8 @@ type Blockchain struct {
 
 	// State checksum is used to verify integrity of state data and when
 	// syncing from snapshot in the hyper sync protocol.
-	syncingState      bool
-	finishedSyncing   bool
+	syncingState    bool
+	finishedSyncing bool
 }
 
 func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
@@ -604,7 +604,7 @@ func NewBlockchain(
 		timeSource:                      timeSource,
 		trustedBlockProducerPublicKeys:  trustedBlockProducerPublicKeys,
 		trustedBlockProducerStartHeight: trustedBlockProducerStartHeight,
-		maxSyncBlockHeight:              maxSyncBlockHeight,
+		MaxSyncBlockHeight:              maxSyncBlockHeight,
 		params:                          params,
 		eventManager:                    eventManager,
 
@@ -979,17 +979,17 @@ func (bc *Blockchain) GetBlockAtHeight(height uint32) *MsgDeSoBlock {
 	return bc.GetBlock(bc.bestChain[height].Hash)
 }
 
-// isTipMaxed compares the tip height to the maxSyncBlockHeight height.
+// isTipMaxed compares the tip height to the MaxSyncBlockHeight height.
 func (bc *Blockchain) isTipMaxed(tip *BlockNode) bool {
-	if bc.maxSyncBlockHeight > 0 {
-		return tip.Height >= bc.maxSyncBlockHeight
+	if bc.MaxSyncBlockHeight > 0 {
+		return tip.Height >= bc.MaxSyncBlockHeight
 	}
 	return false
 }
 
 func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
-	if bc.maxSyncBlockHeight > 0 {
-		return tip.Height >= bc.maxSyncBlockHeight
+	if bc.MaxSyncBlockHeight > 0 {
+		return tip.Height >= bc.MaxSyncBlockHeight
 	}
 
 	minChainWorkBytes, _ := hex.DecodeString(bc.params.MinChainWorkHex)
@@ -1103,7 +1103,7 @@ func (bc *Blockchain) isSyncing() bool {
 
 func (bc *Blockchain) ChainFullyStored() bool {
 	for _, blockNode := range bc.bestChain {
-		if (blockNode.Status&StatusBlockStored) == 0 {
+		if (blockNode.Status & StatusBlockStored) == 0 {
 			return false
 		}
 	}
@@ -1799,7 +1799,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				"ProcessBlock: Problem saving block with StatusBlockProcessed")
 		}
 	} else {
-		if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, nodeToValidate,false /*bitcoinNodes*/); err != nil {
+		if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
 			return false, false, errors.Wrapf(
 				err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo with StatusBlockProcessed")
 		}
@@ -2015,7 +2015,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				}
 
 				// Write the modified utxo set to the view.
-				if bc.blocksInView % MaxBlocksInView == 0 {
+				if bc.blocksInView%MaxBlocksInView == 0 {
 					if err := bc.blockView.FlushToDbWithTxn(txn); err != nil {
 						return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 					}
@@ -2083,7 +2083,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			})
 		}
 
-		if bc.blocksInView % MaxBlocksInView == 0 {
+		if bc.blocksInView%MaxBlocksInView == 0 {
 			bc.blockView = nil
 		}
 
@@ -3805,7 +3805,7 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	messagingOwnerKeySignature []byte,
 	members []*MessagingGroupMember,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
-    	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// We don't need to validate info here, so just construct the transaction instead.
 	txn := &MsgDeSoTxn{

@@ -552,6 +552,9 @@ func (cmgr *ConnectionManager) _handleInboundConnections() {
 		go func(ll net.Listener) {
 			for {
 				conn, err := ll.Accept()
+				if conn == nil {
+					return
+				}
 				glog.V(2).Infof("_handleInboundConnections: received connection from: local %v, remote %v",
 					conn.LocalAddr().String(), conn.RemoteAddr().String())
 				if atomic.LoadInt32(&cmgr.shutdown) != 0 {
