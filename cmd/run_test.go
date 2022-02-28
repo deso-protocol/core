@@ -491,7 +491,8 @@ func compareNodesByState(nodeA *Node, nodeB *Node) error {
 //	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
 //	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
 //  3. bridge node1 and node2
-//  4. compare node1 state matches node2 state.
+//  4. node2 syncs 50 blocks from node1.
+//  5. compare node1 state matches node2 state.
 func TestSimpleBlockSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -529,6 +530,59 @@ func TestSimpleBlockSync(t *testing.T) {
 	waitForNodeToFullySync(node2)
 
 	require.NoError(compareNodesByState(node1, node2))
+	fmt.Println("Databases match!")
+	node1.Stop()
+	node2.Stop()
+}
+
+// TestSimpleHyperSync test if a node can successfully hyper sync from another node:
+//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
+//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//  3. bridge node1 and node2.
+//  4. node2 hyper syncs [0,40] blocks from node1, and block syncs [41, 50] remaining blocks.
+//  5. compare node1 state matches node2 state.
+func TestSimpleHyperSync(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	router := &ConnectionRouter{}
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config2 := generateConfig(t, 18001, dbDir2, 10)
+
+	config1.MaxSyncBlockHeight = 50
+	config2.MaxSyncBlockHeight = 50
+	config1.HyperSync = true
+	config2.HyperSync = true
+	config1.SnapshotBlockHeightPeriod = 40
+	config2.SnapshotBlockHeightPeriod = 40
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node1 := NewNode(config1)
+	node2 := NewNode(config2)
+	router.nodes = append(router.nodes, node1)
+	router.nodes = append(router.nodes, node2)
+
+	go node1.Start()
+	go node2.Start()
+
+	// Wait for the nodes to initialize.
+	time.Sleep(3 * time.Second)
+
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
+
+	// bridge the nodes together.
+	bridge := NewConnectionBridge(node1, node2)
+	require.NoError(bridge.Connect())
+
+	// wait for node2 to sync blocks.
+	waitForNodeToFullySync(node2)
+
+	require.NoError(compareNodesByState(node1, node2))
+	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
 }

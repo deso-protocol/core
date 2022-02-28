@@ -156,10 +156,10 @@ func (node *Node) Start() {
 	// Setup snapshot
 	var snapshot *lib.Snapshot
 	if node.Config.HyperSync {
-		snapshot, err = lib.NewSnapshot(node.Config.DataDirectory)
-    	if err != nil {
-    		panic(err)
-    	}
+		snapshot, err = lib.NewSnapshot(node.Config.DataDirectory, node.Config.SnapshotBlockHeightPeriod)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// Setup the server

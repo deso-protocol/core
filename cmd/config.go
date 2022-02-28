@@ -9,15 +9,16 @@ import (
 
 type Config struct {
 	// Core
-	Params               *lib.DeSoParams
-	ProtocolPort         uint16
-	DataDirectory        string
-	MempoolDumpDirectory string
-	TXIndex              bool
-	Regtest              bool
-	PostgresURI          string
-	HyperSync            bool
-	MaxSyncBlockHeight   uint32
+	Params                    *lib.DeSoParams
+	ProtocolPort              uint16
+	DataDirectory             string
+	MempoolDumpDirectory      string
+	TXIndex                   bool
+	Regtest                   bool
+	PostgresURI               string
+	HyperSync                 bool
+	MaxSyncBlockHeight        uint32
+	SnapshotBlockHeightPeriod uint64
 
 	// Peers
 	ConnectIPs          []string

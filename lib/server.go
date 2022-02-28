@@ -762,7 +762,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % SnapshotBlockHeightPeriod)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotBlockHeight = expectedSnapshotHeight
 				srv.HyperSyncProgress.SnapshotBlockHash = srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash
 
