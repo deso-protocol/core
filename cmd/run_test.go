@@ -490,9 +490,9 @@ func compareNodesByState(nodeA *Node, nodeB *Node) error {
 // TestSimpleBlockSync test if a node can successfully sync from another node:
 //	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
 //	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
-//  3. bridge node1 and node2
-//  4. node2 syncs 50 blocks from node1.
-//  5. compare node1 state matches node2 state.
+//	3. bridge node1 and node2
+//	4. node2 syncs 50 blocks from node1.
+//	5. compare node1 state matches node2 state.
 func TestSimpleBlockSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -538,9 +538,9 @@ func TestSimpleBlockSync(t *testing.T) {
 // TestSimpleHyperSync test if a node can successfully hyper sync from another node:
 //	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
 //	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator and builds ancestral records.
-//  3. bridge node1 and node2.
-//  4. node2 hyper syncs [0,40] blocks from node1, and block syncs [41, 50] remaining blocks.
-//  5. compare node1 state matches node2 state.
+//	3. bridge node1 and node2.
+//	4. node2 hyper syncs [0,40] blocks from node1, and block syncs [41, 50] remaining blocks.
+//	5. compare node1 state matches node2 state.
 func TestSimpleHyperSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
