@@ -85,6 +85,29 @@ func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB
 	return utxoOps, txn, blockHeight, nil
 }
 
+func TestBasePointSignature(t *testing.T) {
+	require := require.New(t)
+	// Retrieve the base point bytes and parse them to a public key.
+	basePointBytes := GetS256BasePointCompressed()
+	basePoint, err := btcec.ParsePubKey(basePointBytes, btcec.S256())
+	require.NoError(err)
+
+	// Verify that k = 1 is the correct private key for the secp256k1 base point
+	priveKeyBytes := []byte{1}
+	priveKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), priveKeyBytes)
+	require.Equal(basePointBytes, publicKey.SerializeCompressed())
+	require.Equal(basePoint.SerializeCompressed(), publicKey.SerializeCompressed())
+
+	// Now test signing messages with the private key of the base point k = 1.
+	message := []byte("Test message")
+	messageHash := Sha256DoubleHash(message)
+	messageSignature, err := priveKey.Sign(messageHash[:])
+	require.NoError(err)
+
+	// Now make sure the base point passes signature verification.
+	require.Equal(true, messageSignature.Verify(messageHash[:], basePoint))
+}
+
 func TestPrivateMessage(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -272,8 +295,7 @@ func TestPrivateMessage(t *testing.T) {
 	m4MessageExtraData := map[string][]byte{
 		"extraextra": []byte("readallaboutit"),
 	}
-	privateMessageWithExtraData(m4Pub, m5Pub, m4Priv, message6, tstamp4, m4MessageExtraData, 10,
-		)
+	privateMessageWithExtraData(m4Pub, m5Pub, m4Priv, message6, tstamp4, m4MessageExtraData, 10)
 
 	// Verify that the messages are as we expect them in the db.
 	// 1: m0 m1
@@ -1103,7 +1125,7 @@ func TestMessagingKeys(t *testing.T) {
 		_, sign, entry := _generateMessagingKey(m3PubKey, m3PrivKey, randomKeyName[:])
 		require.Equal(false, _verifyMessagingKey(testMeta, &m3PublicKey, entry))
 		extraData := map[string][]byte{
-			"extrakey": []byte("discussion"),
+			"extrakey":   []byte("discussion"),
 			"dontchange": []byte("checkmelater"),
 		}
 		_messagingKeyWithExtraDataWithTestMeta(
@@ -1116,7 +1138,7 @@ func TestMessagingKeys(t *testing.T) {
 			[]*MessagingGroupMember{},
 			extraData,
 			nil,
-			)
+		)
 		entry = DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, entry.MessagingGroupKeyName[:]))
 		// We get the entry from the DB so that it has the extra data
 		require.Len(entry.ExtraData, 2)
@@ -1128,7 +1150,7 @@ func TestMessagingKeys(t *testing.T) {
 		//_, sign, _ := _generateMessagingKey(m3PubKey, m3PrivKey, extraDataKeyName)
 		//entry := DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, extraDataKeyName))
 		var MessagingGroupMembers []*MessagingGroupMember
-		members := [][]byte{ m3PubKey, m1PubKey, m2PubKey }
+		members := [][]byte{m3PubKey, m1PubKey, m2PubKey}
 		for _, member := range members {
 			MessagingGroupMembers = append(MessagingGroupMembers, &MessagingGroupMember{
 				NewPublicKey(member),
@@ -1138,7 +1160,7 @@ func TestMessagingKeys(t *testing.T) {
 		}
 		extraData = map[string][]byte{
 			"extrakey": []byte("newval"),
-			"newkey": []byte("test"),
+			"newkey":   []byte("test"),
 		}
 		//entry := DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, extraDataKeyName))
 		_messagingKeyWithExtraDataWithTestMeta(
@@ -1166,8 +1188,8 @@ func TestMessagingKeys(t *testing.T) {
 				continue
 			}
 			keyEntriesAdded[pubKey] = append(keyEntriesAdded[pubKey], &MessagingGroupEntry{
-				GroupOwnerPublicKey: &m3PublicKey,
-				MessagingPublicKey: NewPublicKey(entry.MessagingPublicKey[:]),
+				GroupOwnerPublicKey:   &m3PublicKey,
+				MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
 				MessagingGroupKeyName: NewGroupKeyName(randomKeyName),
 				MessagingGroupMembers: []*MessagingGroupMember{entry.MessagingGroupMembers[idx]},
 			})
