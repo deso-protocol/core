@@ -2608,9 +2608,6 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	}
 
 	// Delete protected keys
-	//
-	// FIXME: I think you can get rid of this because messageExtraData will overwrite
-	// anything in the extraData struct anyway?
 	if extraData != nil {
 		delete(extraData, MessagesVersionString)
 		delete(extraData, SenderMessagingPublicKey)
@@ -3201,8 +3198,6 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	}
 
 	// Delete the protected keys from the ExtraData map
-	// FIXME: I think you can delete this because nftExtraData is going to overwrite
-	// what's in here anyway.
 	if ExtraData != nil {
 		delete(ExtraData, BuyNowPriceKey)
 		delete(ExtraData, DESORoyaltiesMapKey)
@@ -3727,8 +3722,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		derivedKeyExtraData[DerivedPublicKey] = derivedPublicKey
 	}
 
-	// FIXME: I think you can delete this check because it'll get overwritten
-	// automatically.
+	//
 	if extraData != nil {
 		delete(extraData, DerivedPublicKey)
 	}
