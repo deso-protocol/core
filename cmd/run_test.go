@@ -403,7 +403,7 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MaxSyncBlockHeight = 0
 	config.ConnectIPs = []string{}
 	config.PrivateMode = true
-	config.GlogV = 1
+	config.GlogV = 0
 	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
 	config.MaxInboundPeers = maxPeers
 	config.TargetOutboundPeers = maxPeers
@@ -577,14 +577,18 @@ func listenForSyncPrefix(t *testing.T, node *Node, syncPrefix []byte, signal cha
 	}()
 }
 
+func disconnectAtBlockHeight(t *testing.T, syncingNode *Node, bridge *ConnectionBridge, height uint32) {
+	listener := make(chan bool)
+	listenForBlockHeight(t, syncingNode, height, listener)
+	<-listener
+	bridge.Disconnect()
+}
+
 func restartAtHeightAndReconnectNode(t *testing.T, node *Node, source *Node, currentBridge *ConnectionBridge,
 	height uint32) (_node *Node, _bridge *ConnectionBridge) {
 
 	require := require.New(t)
-	listener := make(chan bool)
-	listenForBlockHeight(t, node, height, listener)
-	<-listener
-	currentBridge.Disconnect()
+	disconnectAtBlockHeight(t, node, currentBridge, height)
 	newNode := restartNode(t, node)
 	// Wait after the restart.
 	time.Sleep(1 * time.Second)
@@ -595,14 +599,18 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *Node, source *Node, cur
 	return newNode, bridge
 }
 
+func disconnectAtSyncPrefix(t *testing.T, syncingNode *Node, bridge *ConnectionBridge, syncPrefix []byte) {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, syncingNode, syncPrefix, listener)
+	<-listener
+	bridge.Disconnect()
+}
+
 func restartAtSyncPrefixAndReconnectNode(t *testing.T, node *Node, source *Node, currentBridge *ConnectionBridge,
 	syncPrefix []byte) (_node *Node, _bridge *ConnectionBridge) {
 
 	require := require.New(t)
-	listener := make(chan bool)
-	listenForSyncPrefix(t, node, syncPrefix, listener)
-	<-listener
-	currentBridge.Disconnect()
+	disconnectAtSyncPrefix(t, node, currentBridge, syncPrefix)
 	newNode := restartNode(t, node)
 
 	// bridge the nodes together.
@@ -671,7 +679,7 @@ func TestSimpleBlockSync(t *testing.T) {
 //	4. node2 syncs between 10 and 50 blocks from node1.
 //  5. node2 disconnects from node1 and reboots.
 //  6. node2 reconnects with node1 and syncs remaining blocks.
-//	5. compare node1 state matches node2 state.
+//	7. compare node1 state matches node2 state.
 func TestSimpleSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -713,6 +721,73 @@ func TestSimpleSyncRestart(t *testing.T) {
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
+}
+
+// TestSimpleSyncRestart tests if a node can successfully restart while syncing blocks.
+//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
+//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+//	3. bridge node1 and node2
+//	4. node2 syncs between 10 and 50 blocks from node1.
+//  5. node2 disconnects from node1 and reboots.
+//  6. node2 reconnects with node1 and syncs remaining blocks.
+//	5. compare node1 state matches node2 state.
+func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	router := &ConnectionRouter{}
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+	dbDir3 := getDirectory(t)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config3 := generateConfig(t, 18002, dbDir3, 10)
+
+	config1.MaxSyncBlockHeight = 500
+	config2.MaxSyncBlockHeight = 500
+	config3.MaxSyncBlockHeight = 500
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node1 := NewNode(config1)
+	node2 := NewNode(config2)
+	node3 := NewNode(config3)
+	router.nodes = append(router.nodes, node1)
+	router.nodes = append(router.nodes, node2)
+	router.nodes = append(router.nodes, node3)
+
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
+	node3 = startNode(t, node3)
+
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
+	// wait for node3 to sync blocks
+	waitForNodeToFullySync(node3)
+
+	// bridge the nodes together.
+	bridge12 := NewConnectionBridge(node1, node2)
+	require.NoError(bridge12.Connect())
+
+	randomHeight := randomUint32Between(t, 10, config2.MaxSyncBlockHeight)
+	fmt.Println("Random height for a restart (re-use if test failed):", randomHeight)
+	disconnectAtBlockHeight(t, node2, bridge12, randomHeight)
+
+	// bridge the nodes together.
+	bridge23 := NewConnectionBridge(node2, node3)
+	require.NoError(bridge23.Connect())
+
+	// Reboot node2 at a specific height and reconnect it with node1
+	//node2, bridge12 = restartAtHeightAndReconnectNode(t, node2, node1, bridge12, randomHeight)
+	waitForNodeToFullySync(node2)
+
+	compareNodesByState(t, node1, node2)
+	fmt.Println("Random restart successful! Random height was", randomHeight)
+	fmt.Println("Databases match!")
+	node1.Stop()
+	node2.Stop()
+	node3.Stop()
 }
 
 // TestSimpleHyperSync test if a node can successfully hyper sync from another node:
@@ -820,4 +895,78 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
+}
+
+// TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while syncing blocks.
+//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
+//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+//	3. bridge node1 and node2
+//	4. node2 syncs between 10 and 50 blocks from node1.
+//  5. node2 disconnects from node1 and reboots.
+//  6. node2 reconnects with node1 and syncs remaining blocks.
+//	5. compare node1 state matches node2 state.
+func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	router := &ConnectionRouter{}
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+	dbDir3 := getDirectory(t)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config3 := generateConfig(t, 18002, dbDir3, 10)
+
+	config1.MaxSyncBlockHeight = 500
+	config2.MaxSyncBlockHeight = 500
+	config3.MaxSyncBlockHeight = 500
+	config1.HyperSync = true
+	config2.HyperSync = true
+	config3.HyperSync = true
+	config1.SnapshotBlockHeightPeriod = 90
+	config2.SnapshotBlockHeightPeriod = 90
+	config3.SnapshotBlockHeightPeriod = 90
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node1 := NewNode(config1)
+	node2 := NewNode(config2)
+	node3 := NewNode(config3)
+	router.nodes = append(router.nodes, node1)
+	router.nodes = append(router.nodes, node2)
+	router.nodes = append(router.nodes, node3)
+
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
+	node3 = startNode(t, node3)
+
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
+	// wait for node3 to sync blocks
+	waitForNodeToFullySync(node3)
+
+	// bridge the nodes together.
+	bridge12 := NewConnectionBridge(node1, node2)
+	require.NoError(bridge12.Connect())
+
+	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
+	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
+	fmt.Println("Random prefix for a restart (re-use if test failed):", syncPrefix)
+	disconnectAtSyncPrefix(t, node2, bridge12, syncPrefix)
+
+	// bridge the nodes together.
+	bridge23 := NewConnectionBridge(node2, node3)
+	require.NoError(bridge23.Connect())
+
+	// Reboot node2 at a specific height and reconnect it with node1
+	//node2, bridge12 = restartAtHeightAndReconnectNode(t, node2, node1, bridge12, randomHeight)
+	waitForNodeToFullySync(node2)
+
+	compareNodesByState(t, node1, node2)
+	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
+	fmt.Println("Databases match!")
+	node1.Stop()
+	node2.Stop()
+	node3.Stop()
 }
