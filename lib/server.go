@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/decred/dcrd/lru"
@@ -173,6 +174,7 @@ type Server struct {
 
 	Notifier *Notifier
 
+	shutdown int32
 	// timer is a helper variable that allows timing events for development purposes.
 	// It can be used to find computational bottlenecks.
 	timer *Timer
@@ -1025,21 +1027,23 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// If we get here, it means we've finished syncing the prefix, so now we will go through all state prefixes
 	// and see what's left to do.
 
+	var completedPrefixes [][]byte
 	for _, prefix := range StatePrefixes.StatePrefixesList {
 		completed := false
 		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
 			if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
 				completed = prefixProgress.Completed
-				glog.Infof("Server._handleSnapshot: prefix (%v), completed (%v)", prefix, completed)
 				break
 			}
 		}
 		if !completed {
-			glog.Infof("srv._handleSnapshot: Prefix (%v) not completed, calling GetSnapshot", prefix)
+			glog.Infof("Server._handleSnapshot: completed: prefixes (%v)", completedPrefixes)
+			glog.Infof("srv._handleSnapshot: not completed, calling GetSnapshot, prefix (%v)", prefix)
 			srv.GetSnapshot(pp)
 			return
 		}
+		completedPrefixes = append(completedPrefixes, prefix)
 	}
 
 	// If we get to this point it means we synced all db prefixes, therefore finishing hyper sync.
@@ -1827,6 +1831,12 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 // issues.
 func (srv *Server) messageHandler() {
 	for {
+		// TODO: This is used instead of the shouldQuit control message exist mechanism below.
+		// 	shouldQuit will be true only when all incoming messages have been processed, on
+		// 	the other hand this shutdown will quit immediately.
+		if atomic.LoadInt32(&srv.shutdown) == 1 {
+			break
+		}
 		serverMessage := <-srv.incomingMessages
 		glog.V(2).Infof("Server.messageHandler: Handling message of type %v from Peer %v",
 			serverMessage.Msg.GetMsgType(), serverMessage.Peer)
@@ -1852,12 +1862,6 @@ func (srv *Server) messageHandler() {
 		shouldQuit := srv._handleControlMessages(serverMessage)
 		if shouldQuit {
 			break
-		}
-
-		// Signal to whatever sent us this message that we're done processing
-		// the block.
-		if serverMessage.ReplyChan != nil {
-			serverMessage.ReplyChan <- &ServerReply{}
 		}
 	}
 
@@ -1971,6 +1975,7 @@ func (srv *Server) Stop() {
 
 	// Iterate through all the peers and flush their logs before we quit.
 	glog.Info("Server.Stop: Flushing logs for all peers")
+	atomic.AddInt32(&srv.shutdown, 1)
 
 	// Stop the ConnectionManager
 	srv.cmgr.Stop()
@@ -2011,6 +2016,7 @@ func (srv *Server) Stop() {
 	}()
 
 	// Wait for the server to fully shut down.
+	// TODO: shouldn't we wait for all modules to shutdown?
 	srv.waitGroup.Wait()
 	glog.Info("Server.Stop: Successfully shut down Server")
 }

@@ -12,7 +12,7 @@ import (
 /*
 	TODO: Maybe we add generic encoder tests that create DeSoEncoder structs with
 		some random data and try to encode/decode
- */
+*/
 func TestEmptyTypeEncoders(t *testing.T) {
 	require := require.New(t)
 	testCases := []DeSoEncoder{

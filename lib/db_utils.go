@@ -31,7 +31,7 @@ const (
 	// BadgerDbFolder is the subfolder in the config dir where we
 	// store the badgerdb database by default.
 	BadgerDbFolder = "badgerdb"
-	MaxPrefixLen = 1
+	MaxPrefixLen   = 1
 )
 
 // -------------------------------------------------------------------------------------
@@ -57,7 +57,7 @@ type DBPrefixes struct {
 	//
 	// Key format: <prefix_id, height uint32 (big-endian), hash BlockHash>
 	// Value format: serialized BlockNode
-	PrefixHeightHashToNodeInfo []byte `prefix_id:"[1]"`
+	PrefixHeightHashToNodeInfo        []byte `prefix_id:"[1]"`
 	PrefixBitcoinHeightHashToNodeInfo []byte `prefix_id:"[2]"`
 
 	// We store the hash of the node that is the current tip of the main chain.
@@ -193,9 +193,9 @@ type DBPrefixes struct {
 	// 		Reposts: <prefix_id, RepostedPostHash, ReposterPubKey> -> <>
 	// 		Quote Reposts: <prefix_id, RepostedPostHash, ReposterPubKey, RepostPostHash> -> <>
 	// 		Diamonds: <prefix_id, DiamondedPostHash, DiamonderPubKey [33]byte> -> <DiamondLevel (uint64)>
-	PrefixRepostedPostHashReposterPubKey []byte `prefix_id:"[45]" is_state:"true"`
+	PrefixRepostedPostHashReposterPubKey               []byte `prefix_id:"[45]" is_state:"true"`
 	PrefixRepostedPostHashReposterPubKeyRepostPostHash []byte `prefix_id:"[46]" is_state:"true"`
-	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel []byte `prefix_id:"[47]" is_state:"true"`
+	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   []byte `prefix_id:"[47]" is_state:"true"`
 	// Prefixes for NFT ownership:
 	// 	<prefix_id, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
 	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[8]" is_state:"true"`
@@ -213,7 +213,7 @@ type DBPrefixes struct {
 	PrefixPostHashSerialNumberToAcceptedBidEntries []byte `prefix_id:"[54]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
-	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"`	// Block reward prefix:
+	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"` // Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
 	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
@@ -282,7 +282,7 @@ type DBPrefixes struct {
 }
 
 // getPrefixIdValue parses the DBPrefixes struct tags to fetch the prefix_id values.
-func getPrefixIdValue (structFields reflect.StructField, fieldType reflect.Type) (prefixId reflect.Value) {
+func getPrefixIdValue(structFields reflect.StructField, fieldType reflect.Type) (prefixId reflect.Value) {
 	var ref reflect.Value
 	// Get the prefix_id tags and parse it as byte array.
 	if value := structFields.Tag.Get("prefix_id"); value != "-" {
@@ -414,7 +414,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 
 		// If there is some error with the DB read, other than non-existent key, we return.
 		if getError != nil && getError != badger.ErrKeyNotFound {
-			return errors.Wrapf(getError, "DBSetWithTxn: problem reading record " +
+			return errors.Wrapf(getError, "DBSetWithTxn: problem reading record "+
 				"from DB with key: %v", key)
 		}
 	}
@@ -422,7 +422,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 	// We update the DB record with the intended value.
 	err := txn.Set(key, value)
 	if err != nil {
-		return errors.Wrapf(err, "DBSetWithTxn: Problem setting record " +
+		return errors.Wrapf(err, "DBSetWithTxn: Problem setting record "+
 			"in DB with key: %v, value: %v", key, value)
 	}
 
@@ -498,14 +498,14 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 
 		// If there is some error with the DB read, other than non-existent key, we return.
 		if getError != nil {
-			return errors.Wrapf(getError, "DBDeleteWithTxn: problem checking for DB record " +
+			return errors.Wrapf(getError, "DBDeleteWithTxn: problem checking for DB record "+
 				"with key: %v", key)
 		}
 	}
 
 	err := txn.Delete(key)
 	if err != nil {
-		return errors.Wrapf(err, "DBDeleteWithTxn: Problem deleting record " +
+		return errors.Wrapf(err, "DBDeleteWithTxn: Problem deleting record "+
 			"from DB with key: %v", key)
 	}
 
@@ -582,16 +582,16 @@ func DBDeleteAllStateRecords(db *badger.DB) error {
 		// to make sure we don't overload badger DB with the size of our queries. Whenever a
 		// chunk is not full, that is isChunkFull = false, it means that we've exhausted all
 		// entries for a prefix.
-		for ;fetchingPrefix; {
+		for fetchingPrefix {
 			// Fetch a chunk of data from the DB.
-			dbEntries, isChunkFull, err := DBIteratePrefixKeys(db, prefix, startKey, 8 << 20)
+			dbEntries, isChunkFull, err := DBIteratePrefixKeys(db, prefix, startKey, 8<<20)
 			fetchingPrefix = isChunkFull
 			if err != nil {
-				return errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at " +
+				return errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at "+
 					"prefix (%v)", prefix)
 			}
 
-			glog.V(1).Infof("DeleteAllStateRecords: Deleting prefix: (%v) with total of (%v) " +
+			glog.V(1).Infof("DeleteAllStateRecords: Deleting prefix: (%v) with total of (%v) "+
 				"entries", prefix, len(dbEntries))
 			// Now delete all these keys.
 			err = db.Update(func(txn *badger.Txn) error {
@@ -1117,7 +1117,7 @@ func _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(
 			rr := bytes.NewReader(key[len(prefixes[ii]):])
 			timestamp, err := ReadUvarint(rr)
 			if err != nil {
-				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: problem reading timestamp " +
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: problem reading timestamp "+
 					"for messaging iterator from prefix (%v) at key (%v)", prefixes[ii], messagingIterators[ii].Item().Key())
 			}
 
@@ -1134,14 +1134,14 @@ func _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(
 			// Get the message bytes and decode the message.
 			messageBytes, err := messagingIterators[latestTimestampIndex].Item().ValueCopy(nil)
 			if err != nil {
-				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem copying " +
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem copying "+
 					"value from messaging iterator from prefix (%v) at key (%v)",
 					prefixes[latestTimestampIndex], messagingIterators[latestTimestampIndex].Item().Key())
 			}
 			message := &MessageEntry{}
 			rr := bytes.NewReader(messageBytes)
 			if err := message.Decode(rr); err != nil {
-				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem decoding message " +
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem decoding message "+
 					"from messaging iterator from prefix (%v) at key (%v)",
 					prefixes[latestTimestampIndex], messagingIterators[latestTimestampIndex].Item().Key())
 			}
@@ -1164,7 +1164,6 @@ func DBGetLimitedMessageForMessagingKeys(handle *badger.DB, messagingKeys []*Mes
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
 	// Get all user messaging keys.
-
 
 	err := handle.Update(func(txn *badger.Txn) error {
 		var err error
@@ -1279,7 +1278,7 @@ func DBGetMessagingGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *
 	prefix := _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey)
 	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: " +
+		return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: "+
 			"problem enumerating messaging key entries for prefix (%v)", prefix)
 	}
 
@@ -1290,7 +1289,7 @@ func DBGetMessagingGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *
 		rr := bytes.NewReader(valBytes)
 		err = messagingKeyEntry.Decode(rr)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: " +
+			return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: "+
 				"problem decoding messaging key entry for public key (%v)", ownerPublicKey)
 		}
 
@@ -1367,7 +1366,7 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, messaging
 	// Sanity-check that public keys have the correct length.
 
 	if len(messagingGroupMember.EncryptedKey) < btcec.PrivKeyBytesLen {
-		return fmt.Errorf("DBPutMessagingGroupMemberWithTxn: Problem getting recipient " +
+		return fmt.Errorf("DBPutMessagingGroupMemberWithTxn: Problem getting recipient "+
 			"entry for public key (%v)", messagingGroupMember.GroupMemberPublicKey)
 	}
 
@@ -1386,7 +1385,7 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, messaging
 	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
 		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey), memberGroupEntry.Encode()); err != nil {
 
-		return errors.Wrapf(err, "DBPutMessagingGroupMemberWithTxn: Problem setting messaging recipient with key (%v) " +
+		return errors.Wrapf(err, "DBPutMessagingGroupMemberWithTxn: Problem setting messaging recipient with key (%v) "+
 			"and entry (%v) in the db", _dbKeyForMessagingGroupMember(
 			messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey), memberGroupEntry.Encode())
 	}
@@ -1439,7 +1438,7 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicK
 	prefix := _dbSeekPrefixForMessagingGroupMember(ownerPublicKey)
 	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: " +
+		return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: "+
 			"problem enumerating messaging key entries for prefix (%v)", prefix)
 	}
 
@@ -1448,7 +1447,7 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicK
 		rr := bytes.NewReader(valBytes)
 		err = messagingGroupEntry.Decode(rr)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: problem reading " +
+			return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: problem reading "+
 				"an entry from DB")
 		}
 
@@ -1474,7 +1473,7 @@ func DBDeleteMessagingGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
 		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey)); err != nil {
 
-		return errors.Wrapf(err, "DBDeleteMessagingGroupMemberMappingWithTxn: Deleting mapping for public key %v " +
+		return errors.Wrapf(err, "DBDeleteMessagingGroupMemberMappingWithTxn: Deleting mapping for public key %v "+
 			"and messaging public key %v failed", messagingGroupMember.GroupMemberPublicKey[:],
 			messagingGroupEntry.MessagingPublicKey[:])
 	}
@@ -2823,14 +2822,14 @@ func _DecodeUtxoOperations(data []byte) ([][]*UtxoOperation, error) {
 		return nil, err
 	}
 
-	for ;opListLen > 0; opListLen-- {
+	for ; opListLen > 0; opListLen-- {
 		opLen, err := ReadUvarint(rr)
 		if err != nil {
 			return nil, err
 		}
 
 		var opList []*UtxoOperation
-		for ;opLen > 0; opLen-- {
+		for ; opLen > 0; opLen-- {
 			op := &UtxoOperation{}
 			err = op.Decode(rr)
 			if err != nil {
@@ -3157,7 +3156,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 
 	if snap != nil {
 		glog.Infof("ProcessBlock: Snapshot flushing")
-		snap.EnqueueAncestralRecordsFlush()
+		snap.StartAncestralRecordsFlush()
 	}
 
 	return nil
@@ -3317,8 +3316,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -3350,7 +3349,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	}
 
 	if snap != nil {
-		snap.EnqueueAncestralRecordsFlush()
+		snap.StartAncestralRecordsFlush()
 	}
 
 	// We apply seed transactions here. This step is useful for setting
@@ -3878,7 +3877,7 @@ func (txnMeta *BasicTransferTxindexMetadata) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading len of UtxoOps")
 	}
-	for ;lenUtxoOpsDump > 0; lenUtxoOpsDump-- {
+	for ; lenUtxoOpsDump > 0; lenUtxoOpsDump-- {
 		utxoOp := &UtxoOperation{}
 		err = utxoOp.Decode(rr)
 		if err != nil {
@@ -4695,37 +4694,37 @@ func (txnMeta *TransactionMetadata) Encode() []byte {
 
 	// encoding BasicTransferTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.BasicTransferTxindexMetadata)...)
-    // encoding BitcoinExchangeTxindexMetadata
+	// encoding BitcoinExchangeTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.BitcoinExchangeTxindexMetadata)...)
-    // encoding CreatorCoinTxindexMetadata
+	// encoding CreatorCoinTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.CreatorCoinTxindexMetadata)...)
-    // encoding CreatorCoinTransferTxindexMetadata
+	// encoding CreatorCoinTransferTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.CreatorCoinTransferTxindexMetadata)...)
-    // encoding UpdateProfileTxindexMetadata
+	// encoding UpdateProfileTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.UpdateProfileTxindexMetadata)...)
-    // encoding SubmitPostTxindexMetadata
+	// encoding SubmitPostTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.SubmitPostTxindexMetadata)...)
-    // encoding LikeTxindexMetadata
+	// encoding LikeTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.LikeTxindexMetadata)...)
-    // encoding FollowTxindexMetadata
+	// encoding FollowTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.FollowTxindexMetadata)...)
-    // encoding PrivateMessageTxindexMetadata
+	// encoding PrivateMessageTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.PrivateMessageTxindexMetadata)...)
-    // encoding SwapIdentityTxindexMetadata
+	// encoding SwapIdentityTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.SwapIdentityTxindexMetadata)...)
-    // encoding NFTBidTxindexMetadata
+	// encoding NFTBidTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.NFTBidTxindexMetadata)...)
-    // encoding AcceptNFTBidTxindexMetadata
+	// encoding AcceptNFTBidTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.AcceptNFTBidTxindexMetadata)...)
-    // encoding NFTTransferTxindexMetadata
+	// encoding NFTTransferTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.NFTTransferTxindexMetadata)...)
-    // encoding DAOCoinTxindexMetadata
+	// encoding DAOCoinTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.DAOCoinTxindexMetadata)...)
-    // encoding DAOCoinTransferTxindexMetadata
+	// encoding DAOCoinTransferTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.DAOCoinTransferTxindexMetadata)...)
-    // encoding CreateNFTTxindexMetadata
+	// encoding CreateNFTTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.CreateNFTTxindexMetadata)...)
-    // encoding UpdateNFTTxindexMetadata
+	// encoding UpdateNFTTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.UpdateNFTTxindexMetadata)...)
 
 	return data
@@ -4761,7 +4760,7 @@ func (txnMeta *TransactionMetadata) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading len AffectedPublicKeys")
 	}
-	for ;lenAffectedPublicKeys > 0; lenAffectedPublicKeys-- {
+	for ; lenAffectedPublicKeys > 0; lenAffectedPublicKeys-- {
 		affectedPublicKey := &AffectedPublicKey{}
 		err = affectedPublicKey.Decode(rr)
 		if err != nil {
@@ -4774,7 +4773,7 @@ func (txnMeta *TransactionMetadata) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: problem reading len TxnOutputs")
 	}
-	for ;lenTxnOutputs > 0; lenTxnOutputs-- {
+	for ; lenTxnOutputs > 0; lenTxnOutputs-- {
 		txnOutput := &DeSoOutput{}
 		err = txnOutput.Decode(rr)
 		if err != nil {
@@ -7011,7 +7010,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

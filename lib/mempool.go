@@ -1505,7 +1505,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		if isBuyNow {
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: creatorPublicKeyBase58Check,
-				Metadata: "NFTCreatorPublicKeyBase58Check",
+				Metadata:             "NFTCreatorPublicKeyBase58Check",
 			})
 
 			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {

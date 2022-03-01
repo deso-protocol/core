@@ -420,12 +420,12 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
 			"because node is syncing with ChainState (%v)", pp, chainState)
 		pp.AddDeSoMessage(&MsgDeSoSnapshotData{
-			SnapshotHeight: pp.srv.blockchain.snapshot.SnapshotBlockHeight,
+			SnapshotHeight:    pp.srv.blockchain.snapshot.SnapshotBlockHeight,
 			SnapshotBlockHash: pp.srv.blockchain.snapshot.CurrentEpochBlockHash,
-			SnapshotChecksum: nil,
-			SnapshotChunk: nil,
+			SnapshotChecksum:  nil,
+			SnapshotChunk:     nil,
 			SnapshotChunkFull: false,
-			Prefix: msg.Prefix,
+			Prefix:            msg.Prefix,
 		}, false)
 		pp.snapshotChunkRequestInFlight = false
 		return
@@ -433,7 +433,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 
 	// Make sure that the start key and prefix provided in the message are valid.
 	if len(msg.SnapshotStartKey) == 0 || len(msg.Prefix) == 0 {
-		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v " +
+		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"because SnapshotStartKey or Prefix are empty", pp)
 		pp.Disconnect()
 		return
@@ -441,7 +441,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 
 	// Make sure the provided start key matches the prefix.
 	if !bytes.HasPrefix(msg.SnapshotStartKey, msg.Prefix) {
-		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot because Peer %v is misbehaving. " +
+		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot because Peer %v is misbehaving. "+
 			"The provided key Prefix doesn't match the SnapshotStartKey", pp)
 		pp.Disconnect()
 		return
@@ -456,7 +456,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	snapshotChunk, full, concurrencyFault, err := pp.srv.blockchain.snapshot.GetSnapshotChunk(
 		pp.srv.blockchain.db, msg.Prefix, msg.SnapshotStartKey)
 	if err != nil {
-		glog.Error("Peer.HandleGetSnapshot: something went wrong during fetching " +
+		glog.Error("Peer.HandleGetSnapshot: something went wrong during fetching "+
 			"snapshot chunk for peer (%v), error (%v)", pp, err)
 		return
 	}
@@ -465,7 +465,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		glog.Errorf("Peer.HandleGetSnapshot: concurrency fault occurred so we enqueue the msg again to peer (%v)", pp)
 		go func() {
 			time.Sleep(GetSnapshotTimeout)
-			pp.AddDeSoMessage(msg, true )
+			pp.AddDeSoMessage(msg, true)
 		}()
 		return
 	}
@@ -473,15 +473,15 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	snapshotChecksum := pp.srv.blockchain.snapshot.CurrentEpochChecksumBytes
 
 	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
-		SnapshotHeight: pp.srv.blockchain.snapshot.SnapshotBlockHeight,
+		SnapshotHeight:    pp.srv.blockchain.snapshot.SnapshotBlockHeight,
 		SnapshotBlockHash: pp.srv.blockchain.snapshot.CurrentEpochBlockHash,
-		SnapshotChecksum: snapshotChecksum,
-		SnapshotChunk: snapshotChunk,
+		SnapshotChecksum:  snapshotChecksum,
+		SnapshotChunk:     snapshotChunk,
 		SnapshotChunkFull: full,
-		Prefix: msg.Prefix,
+		Prefix:            msg.Prefix,
 	}, false)
 	pp.snapshotChunkRequestInFlight = false
-	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) " +
+	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) "+
 		"with SnapshotHeight (%v) and CurrentEpochChecksumBytes (%v) and Snapshotdata length (%v)", pp,
 		pp.srv.blockchain.snapshot.SnapshotBlockHeight, snapshotChecksum, len(snapshotChunk))
 }
@@ -521,31 +521,31 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 		if msgToProcess.Inbound {
 			if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetTransactions {
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions)
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with " +
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
 				pp.HandleGetTransactionsMsg(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeTransactionBundle {
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle)
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with " +
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.Transactions), pp)
 				pp.HandleTransactionBundleMessage(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeInv {
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoInv)
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with " +
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num invs %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.InvList), pp)
 				pp.HandleInv(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetBlocks {
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks)
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with " +
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
 				pp.HandleGetBlocks(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetSnapshot {
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetSnapshot)
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with start key %v " +
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with start key %v "+
 					"and prefix %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), msg.SnapshotStartKey, msg.Prefix, pp)
 
 				pp.HandleGetSnapshot(msg)
@@ -802,8 +802,8 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	// a few seconds with a SnapshotData.
 	if msg.GetMsgType() == MsgTypeGetSnapshot {
 		pp._addExpectedResponse(&ExpectedResponse{
-			TimeExpected:  time.Now().Add(stallTimeout),
-			MessageType: MsgTypeSnapshotData,
+			TimeExpected: time.Now().Add(stallTimeout),
+			MessageType:  MsgTypeSnapshotData,
 		})
 	}
 }

@@ -568,14 +568,14 @@ func (snap *Snapshot) Stop() {
 	snap.AncestralRecordsDb.Close()
 }
 
-// EnqueueAncestralRecordsFlush updates the ancestral records after a utxo_view flush.
+// StartAncestralRecordsFlush updates the ancestral records after a utxo_view flush.
 // This function should be called in a go-routine after all utxo_view flushes.
-func (snap *Snapshot) EnqueueAncestralRecordsFlush() {
+func (snap *Snapshot) StartAncestralRecordsFlush() {
 	// If snapshot is broken then there's nothing to do.
-	glog.Infof("Snapshot.EnqueueAncestralRecordsFlush: Initiated the flush")
+	glog.Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
 
 	if snap.brokenSnapshot {
-		glog.Errorf("Snapshot.EnqueueAncestralRecordsFlush: Broken snapshot, aborting")
+		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Broken snapshot, aborting")
 		return
 	}
 
@@ -585,7 +585,7 @@ func (snap *Snapshot) EnqueueAncestralRecordsFlush() {
 	snap.MainDBSemaphore += 1
 	snap.AncestralDBSemaphore += 1
 	snap.SemaphoreLock.Unlock()
-	glog.Infof("Snapshot.EnqueueAncestralRecordsFlush: Sending counter (%v) to the CounterChannel", snap.AncestralFlushCounter)
+	glog.Infof("Snapshot.StartAncestralRecordsFlush: Sending counter (%v) to the CounterChannel", snap.AncestralFlushCounter)
 	// We send the flush counter to the counter to indicate that a flush should take place.
 	snap.OperationChannel <- &SnapshotOperation{
 		operationType: SnapshotOperationFlush,
@@ -641,7 +641,7 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 }
 
 // PrepareAncestralRecordsFlush adds a new instance of ancestral cache to the AncestralMemory deque.
-// It must be called prior to calling EnqueueAncestralRecordsFlush.
+// It must be called prior to calling StartAncestralRecordsFlush.
 func (snap *Snapshot) PrepareAncestralRecordsFlush() {
 	// Signal that the main db update has started by incrementing the main semaphore.
 	snap.SemaphoreLock.Lock()
@@ -770,11 +770,11 @@ func (snap *Snapshot) isFlushing() bool {
 // FlushAncestralRecords updates the ancestral records after a utxo_view flush.
 // This function should be called in a go-routine after all utxo_view flushes.
 func (snap *Snapshot) FlushAncestralRecords() {
-	glog.Infof("Snapshot.EnqueueAncestralRecordsFlush: Initiated the flush")
+	glog.Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
 
 	// If snapshot is broken then there's nothing to do.
 	if snap.brokenSnapshot {
-		glog.Errorf("Snapshot.EnqueueAncestralRecordsFlush: Broken snapshot, aborting")
+		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Broken snapshot, aborting")
 		return
 	}
 
@@ -784,14 +784,14 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	// snapshot worker threads running so we want to wait until they're done.
 	err := snap.Checksum.Wait()
 	if err != nil {
-		glog.Errorf("Snapshot.EnqueueAncestralRecordsFlush: Error while waiting for checksum: (%v)", err)
+		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Error while waiting for checksum: (%v)", err)
 		return
 	}
 
 	lastAncestralCache := snap.AncestralMemory.First().(*AncestralCache)
 	// First sort the copyMapKeyList so that we write to BadgerDB in order.
 	sort.Strings(lastAncestralCache.RecordsKeyList)
-	glog.V(2).Infof("Snapshot.EnqueueAncestralRecordsFlush: Finished sorting map keys")
+	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Finished sorting map keys")
 
 	// We launch a new read-write transaction to set the records.
 
@@ -799,18 +799,18 @@ func (snap *Snapshot) FlushAncestralRecords() {
 		// In case we kill the node in the middle of this update.
 		err := txn.Set(_prefixSnapshotHealth, []byte{0})
 		if err != nil {
-			return errors.Wrapf(err, "Snapshot.EnqueueAncestralRecordsFlush: Problem flushing "+
+			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem flushing "+
 				"snapshot health")
 		}
 		// Iterate through all now-sorted keys.
-		glog.V(2).Infof("Snapshot.EnqueueAncestralRecordsFlush: Adding (%v) new records", len(lastAncestralCache.RecordsKeyList))
-		glog.V(2).Infof("Snapshot.EnqueueAncestralRecordsFlush: Adding (%v) ExistingRecordsMap records", len(lastAncestralCache.ExistingRecordsMap))
-		glog.V(2).Infof("Snapshot.EnqueueAncestralRecordsFlush: Adding (%v) NonExistingRecordsMap records", len(lastAncestralCache.NonExistingRecordsMap))
+		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) new records", len(lastAncestralCache.RecordsKeyList))
+		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) ExistingRecordsMap records", len(lastAncestralCache.ExistingRecordsMap))
+		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) NonExistingRecordsMap records", len(lastAncestralCache.NonExistingRecordsMap))
 		for _, key := range lastAncestralCache.RecordsKeyList {
 			// We store keys as strings because they're easier to store and sort this way.
 			keyBytes, err := hex.DecodeString(key)
 			if err != nil {
-				return errors.Wrapf(err, "Snapshot.EnqueueAncestralRecordsFlush: Problem "+
+				return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
 					"decoding copyMapKeyList key: %v", key)
 			}
 
@@ -818,7 +818,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 			// if so then there's nothing to do. What we want is err == badger.ErrKeyNotFound
 			_, err = txn.Get(snap.GetAncestralRecordsKey(keyBytes))
 			if err != nil && err != badger.ErrKeyNotFound {
-				return errors.Wrapf(err, "Snapshot.EnqueueAncestralRecordsFlush: Problem "+
+				return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
 					"reading exsiting record in the DB at key: %v", key)
 			}
 			if err == nil {
@@ -830,23 +830,23 @@ func (snap *Snapshot) FlushAncestralRecords() {
 			if value, exists := lastAncestralCache.ExistingRecordsMap[key]; exists {
 				err = txn.Set(snap.GetAncestralRecordsKey(keyBytes), append(value, byte(1)))
 				if err != nil {
-					return errors.Wrapf(err, "Snapshot.EnqueueAncestralRecordsFlush: Problem "+
+					return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
 						"flushing a record from copyAncestralMap at key %v:", key)
 				}
 			} else if _, exists = lastAncestralCache.NonExistingRecordsMap[key]; exists {
 				err = txn.Set(snap.GetAncestralRecordsKey(keyBytes), []byte{byte(0)})
 				if err != nil {
-					return errors.Wrapf(err, "Snapshot.EnqueueAncestralRecordsFlush: Problem "+
+					return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
 						"flushing a record from copyNotExistsMap at key %v:", key)
 				}
 			} else {
-				return fmt.Errorf("Snapshot.EnqueueAncestralRecordsFlush: Error, key is not " +
+				return fmt.Errorf("Snapshot.StartAncestralRecordsFlush: Error, key is not " +
 					"in copyAncestralMap nor copyNotExistsMap. This should never happen")
 			}
 		}
 		err = txn.Set(_prefixSnapshotHealth, []byte{1})
 		if err != nil {
-			return errors.Wrapf(err, "Snapshot.EnqueueAncestralRecordsFlush: Problem flushing "+
+			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem flushing "+
 				"snapshot health")
 		}
 		return nil
@@ -854,7 +854,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	if err != nil {
 		// If any error occurred, then the snapshot is potentially broken.
 		snap.brokenSnapshot = true
-		glog.Errorf("Snapshot.EnqueueAncestralRecordsFlush: Problem flushing snapshot %v, Error %v", snap, err)
+		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Problem flushing snapshot %v, Error %v", snap, err)
 	}
 
 	// Signal that the ancestral db write has finished by incrementing the semaphore.
@@ -862,7 +862,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	snap.AncestralDBSemaphore += 1
 	snap.SemaphoreLock.Unlock()
 	snap.AncestralMemory.Shift()
-	glog.Infof("Snapshot.EnqueueAncestralRecordsFlush: finished flushing ancestral records. Snapshot "+
+	glog.Infof("Snapshot.StartAncestralRecordsFlush: finished flushing ancestral records. Snapshot "+
 		"status, brokenSnapshot: (%v)", snap.brokenSnapshot)
 }
 

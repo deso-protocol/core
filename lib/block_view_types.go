@@ -56,7 +56,7 @@ type DeSoEncoder interface {
 
 // DeSoEncoderToBytes encodes a DeSoEncoder type to bytes, including
 // existence bytes. This byte is used to check if the pointer was nil.
-func DeSoEncoderToBytes (encoder DeSoEncoder) []byte {
+func DeSoEncoderToBytes(encoder DeSoEncoder) []byte {
 	var data []byte
 
 	if encoder != nil && !reflect.ValueOf(encoder).IsNil() {
@@ -71,7 +71,7 @@ func DeSoEncoderToBytes (encoder DeSoEncoder) []byte {
 
 // DeSoEncoderFromBytes decodes a DeSoEncoder type from bytes. We check
 // for the existence byte, which tells us whether actual data was encoded, or a nil pointer.
-func DeSoEncoderFromBytes (encoder DeSoEncoder, rr *bytes.Reader) (bool, error) {
+func DeSoEncoderFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (bool, error) {
 	if existByte, err := ReadBoolByte(rr); existByte && err == nil {
 		err = encoder.Decode(rr)
 		if err != nil {
@@ -502,8 +502,8 @@ func (op *UtxoOperation) Encode() []byte {
 	data = append(data, DeSoEncoderToBytes(op.PrevCoinEntry)...)
 	// Encode the PrevCoinRoyaltyCoinEntries map. We define a helper struct to store the <PKID, CoinEntry>
 	// objects as byte arrays. For coin entry, we first encode the struct, and then encode it as byte array.
-	type royaltyEntry struct{
-		pkid []byte
+	type royaltyEntry struct {
+		pkid      []byte
 		coinEntry []byte
 	}
 	encodeRoyaltyEntry := func(entry *royaltyEntry) []byte {
@@ -518,12 +518,12 @@ func (op *UtxoOperation) Encode() []byte {
 		data = append(data, UintToBuf(uint64(len(op.PrevCoinRoyaltyCoinEntries)))...)
 		for pkid, coinEntry := range op.PrevCoinRoyaltyCoinEntries {
 			royaltyCoinEntries = append(royaltyCoinEntries, royaltyEntry{
-				pkid: pkid.ToBytes(),
+				pkid:      pkid.ToBytes(),
 				coinEntry: coinEntry.Encode(),
 			})
 		}
 		sort.Slice(royaltyCoinEntries, func(i int, j int) bool {
-			switch bytes.Compare(royaltyCoinEntries[i].pkid, royaltyCoinEntries[j].pkid){
+			switch bytes.Compare(royaltyCoinEntries[i].pkid, royaltyCoinEntries[j].pkid) {
 			case 0:
 				return true
 			case -1:
@@ -690,7 +690,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of DeletedNFTBidEntries")
 	}
-	for ;lenDeletedNFTBidEntries > 0; lenDeletedNFTBidEntries-- {
+	for ; lenDeletedNFTBidEntries > 0; lenDeletedNFTBidEntries-- {
 		deletedNFTBidEntry := &NFTBidEntry{}
 		if exist, err := DeSoEncoderFromBytes(deletedNFTBidEntry, rr); exist && err == nil {
 			op.DeletedNFTBidEntries = append(op.DeletedNFTBidEntries, deletedNFTBidEntry)
@@ -703,7 +703,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of NFTPaymentUtxoKeys")
 	}
-	for ;lenNFTPaymentUtxoKeys > 0; lenNFTPaymentUtxoKeys-- {
+	for ; lenNFTPaymentUtxoKeys > 0; lenNFTPaymentUtxoKeys-- {
 		NFTPaymentUtxoKey := &UtxoKey{}
 		if exist, err := DeSoEncoderFromBytes(NFTPaymentUtxoKey, rr); exist && err == nil {
 			op.NFTPaymentUtxoKeys = append(op.NFTPaymentUtxoKeys, NFTPaymentUtxoKey)
@@ -716,7 +716,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of NFTSpentUtxoEntries")
 	}
-	for ;lenNFTSpentUtxoEntries > 0; lenNFTSpentUtxoEntries-- {
+	for ; lenNFTSpentUtxoEntries > 0; lenNFTSpentUtxoEntries-- {
 		NFTSpentUtxoEntry := &UtxoEntry{}
 		if exist, err := DeSoEncoderFromBytes(NFTSpentUtxoEntry, rr); exist && err == nil {
 			op.NFTSpentUtxoEntries = append(op.NFTSpentUtxoEntries, NFTSpentUtxoEntry)
@@ -731,7 +731,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of PrevAcceptedNFTBidEntries")
 		}
 		var prevAcceptedNFTBidEntries []*NFTBidEntry
-		for ;lenPrevAcceptedNFTBidEntries > 0; lenPrevAcceptedNFTBidEntries-- {
+		for ; lenPrevAcceptedNFTBidEntries > 0; lenPrevAcceptedNFTBidEntries-- {
 			PrevAcceptedNFTBidEntry := &NFTBidEntry{}
 			if exist, err := DeSoEncoderFromBytes(PrevAcceptedNFTBidEntry, rr); exist && err == nil {
 				prevAcceptedNFTBidEntries = append(prevAcceptedNFTBidEntries, PrevAcceptedNFTBidEntry)
@@ -743,7 +743,6 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAcceptedNFTBidEntries")
 	}
-
 
 	prevDerivedKeyEntry := &DerivedKeyEntry{}
 	if exist, err := DeSoEncoderFromBytes(prevDerivedKeyEntry, rr); exist && err == nil {
@@ -778,8 +777,8 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCoinEntry")
 	}
 
-	type royaltyEntry struct{
-		pkid []byte
+	type royaltyEntry struct {
+		pkid      []byte
 		coinEntry []byte
 	}
 	decodeRoyaltyEntry := func(rr *bytes.Reader) (*royaltyEntry, error) {
@@ -801,7 +800,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCoinRoyaltyCoinEntries")
 		}
-		for ;lenPrevCoinRoyaltyCoinEntries > 0; lenPrevCoinRoyaltyCoinEntries-- {
+		for ; lenPrevCoinRoyaltyCoinEntries > 0; lenPrevCoinRoyaltyCoinEntries-- {
 			// Decode the byte arrays for <pkid, coinEntry> pairs.
 			entry, err := decodeRoyaltyEntry(rr)
 			if err != nil {
@@ -904,7 +903,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalCoinRoyalties")
 	}
-	for ;lenAcceptNFTBidAdditionalCoinRoyalties > 0; lenAcceptNFTBidAdditionalCoinRoyalties-- {
+	for ; lenAcceptNFTBidAdditionalCoinRoyalties > 0; lenAcceptNFTBidAdditionalCoinRoyalties-- {
 		pair := &PublicKeyRoyaltyPair{}
 		if exist, err := DeSoEncoderFromBytes(pair, rr); exist && err == nil {
 			op.AcceptNFTBidAdditionalCoinRoyalties = append(op.AcceptNFTBidAdditionalCoinRoyalties, pair)
@@ -917,7 +916,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalDESORoyalties")
 	}
-	for ;lenAcceptNFTBidAdditionalDESORoyalties > 0; lenAcceptNFTBidAdditionalDESORoyalties-- {
+	for ; lenAcceptNFTBidAdditionalDESORoyalties > 0; lenAcceptNFTBidAdditionalDESORoyalties-- {
 		pair := &PublicKeyRoyaltyPair{}
 		if exist, err := DeSoEncoderFromBytes(pair, rr); exist && err == nil {
 			op.AcceptNFTBidAdditionalDESORoyalties = append(op.AcceptNFTBidAdditionalDESORoyalties, pair)
@@ -947,7 +946,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalCoinRoyalties")
 	}
-	for ;lenNFTBidAdditionalCoinRoyalties > 0; lenNFTBidAdditionalCoinRoyalties-- {
+	for ; lenNFTBidAdditionalCoinRoyalties > 0; lenNFTBidAdditionalCoinRoyalties-- {
 		pair := &PublicKeyRoyaltyPair{}
 		if exist, err := DeSoEncoderFromBytes(pair, rr); exist && err == nil {
 			op.NFTBidAdditionalCoinRoyalties = append(op.NFTBidAdditionalCoinRoyalties, pair)
@@ -961,7 +960,7 @@ func (op *UtxoOperation) Decode(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalDESORoyalties")
 	}
-	for ;lenNFTBidAdditionalDESORoyalties > 0; lenNFTBidAdditionalDESORoyalties-- {
+	for ; lenNFTBidAdditionalDESORoyalties > 0; lenNFTBidAdditionalDESORoyalties-- {
 		pair := &PublicKeyRoyaltyPair{}
 		if exist, err := DeSoEncoderFromBytes(pair, rr); exist && err == nil {
 			op.NFTBidAdditionalDESORoyalties = append(op.NFTBidAdditionalDESORoyalties, pair)
@@ -1330,7 +1329,7 @@ type MessagingGroupMember struct {
 	GroupMemberKeyName *GroupKeyName
 
 	// EncryptedKey is the encrypted messaging public key, addressed to the recipient.
-	EncryptedKey              []byte
+	EncryptedKey []byte
 }
 
 func (rec *MessagingGroupMember) Encode() []byte {
@@ -1350,21 +1349,21 @@ func (rec *MessagingGroupMember) Decode(rr *bytes.Reader) error {
 	if exist, err := DeSoEncoderFromBytes(groupMemberPublicKey, rr); exist && err == nil {
 		rec.GroupMemberPublicKey = groupMemberPublicKey
 	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
-				"GroupMemberPublicKey")
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
+			"GroupMemberPublicKey")
 	}
 
 	groupMemberKeyName := &GroupKeyName{}
 	if exist, err := DeSoEncoderFromBytes(groupMemberKeyName, rr); exist && err == nil {
 		rec.GroupMemberKeyName = groupMemberKeyName
 	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
-				"GroupMemberKeyName")
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
+			"GroupMemberKeyName")
 	}
 
 	rec.EncryptedKey, err = DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading " +
+		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"EncryptedKey")
 	}
 	return nil
@@ -2622,7 +2621,7 @@ func EncodePKIDuint64Map(pkidMap map[PKID]uint64) []byte {
 			keys = append(keys, pkidBytes)
 		}
 		sort.SliceStable(keys, func(i, j int) bool {
-			switch bytes.Compare(keys[i][:], keys[j][:]){
+			switch bytes.Compare(keys[i][:], keys[j][:]) {
 			case 0:
 				return true
 			case -1:

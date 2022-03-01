@@ -99,8 +99,6 @@ const (
 	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
 	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
 
-
-
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
 	RuleErrorFollowEntryAlreadyExists                RuleError = "RuleErrorFollowEntryAlreadyExists"

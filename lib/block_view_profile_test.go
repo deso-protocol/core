@@ -238,7 +238,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		deleteKey,
 		false,
 		feeRateNanosPerKB,
-		nil /*mempool*/,
+		nil, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -296,7 +296,6 @@ func TestUpdateProfile(t *testing.T) {
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
 	params.ForkHeights.ParamUpdaterProfileUpdateFixBlockHeight = 0
 	params.ForkHeights.UpdateProfileFixBlockHeight = 0
-
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

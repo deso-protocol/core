@@ -1165,7 +1165,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		if !reflect.DeepEqual(utxoEntry.PublicKey, txn.PublicKey) {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey,
-				"utxoEntry.PublicKey: %v, txn.PublicKey: %v, " +
+				"utxoEntry.PublicKey: %v, txn.PublicKey: %v, "+
 					"utxoEntry.UtxoKey: %v:%v, AmountNanos: %v",
 				PkToStringTestnet(utxoEntry.PublicKey),
 				PkToStringTestnet(txn.PublicKey),

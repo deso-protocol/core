@@ -30,6 +30,8 @@ type Node struct {
 	Params   *lib.DeSoParams
 	Config   *Config
 	Postgres *lib.Postgres
+
+	isRunning bool
 }
 
 func NewNode(config *Config) *Node {
@@ -211,6 +213,8 @@ func (node *Node) Start() {
 
 		node.TXIndex.Start()
 	}
+
+	node.isRunning = true
 }
 
 func (node *Node) Stop() {
@@ -225,6 +229,7 @@ func (node *Node) Stop() {
 	}
 
 	node.chainDB.Close()
+	node.isRunning = false
 }
 
 func validateParams(params *lib.DeSoParams) {

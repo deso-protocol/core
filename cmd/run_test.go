@@ -4,18 +4,17 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/addrmgr"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/lib"
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"math"
 	"net"
 	"os"
-	"os/signal"
 	"reflect"
 	"strconv"
-	"syscall"
+	"sync"
 	"testing"
 	"time"
 )
@@ -27,7 +26,7 @@ import (
 // receiving and sending messages between the two nodes. Importantly, a Peer supports bidirectional communication.
 // As mentioned, our bridge creates an inbound and outbound Peers for both nodes A and B. Now, you might be perplexed
 // as to why we would need both of these Peers, as opposed to just one. The reason is that inbound and outbound peers
-// differ in a crucial aspect, which is who creates them. Inbound Peers are created whenever any node on the network
+// differ in a crucial aspect, which is, who creates them. Inbound Peers are created whenever any node on the network
 // initiates a communication with our node - meaning a node has no control over the communication partner. On the other
 // hand, outbound Peers are created by the node itself, so they can be considered more trusted than inbound peers.
 // As a result, certain communication is only sent to outbound peers. To give a more concrete example, a node will,
@@ -73,6 +72,7 @@ type ConnectionBridge struct {
 	paused   bool
 	disabled bool
 
+	waitGroup   sync.WaitGroup
 	newPeerChan chan *lib.Peer
 }
 
@@ -259,6 +259,7 @@ func (bridge *ConnectionBridge) StartConnection(connection *lib.Peer, otherNode 
 // This communication tunnel is one-directional, so normally we would also call RouteTraffic(destination, source)
 // to make it bidirectional.
 func (bridge *ConnectionBridge) RouteTraffic(source *lib.Peer, destination *lib.Peer) {
+	bridge.waitGroup.Add(1)
 	for {
 		if bridge.disabled {
 			break
@@ -270,24 +271,30 @@ func (bridge *ConnectionBridge) RouteTraffic(source *lib.Peer, destination *lib.
 
 		// Retrieve a message from the source connection.
 		inMsg, err := source.ReadDeSoMessage()
+		if bridge.disabled {
+			break
+		}
 		if err != nil {
+			fmt.Printf("Peer disconencted with source: (%v), destination: (%v)",
+				source.Conn.LocalAddr().String(), destination.Conn.LocalAddr().String())
 			panic(err)
 		}
-		fmt.Printf("Reading message: (%v) type: (%v) at source with local addr: (%v) and remote addr: (%v)\n",
-			inMsg, inMsg.GetMsgType(), source.Conn.LocalAddr().String(), source.Conn.RemoteAddr().String())
+		fmt.Printf("Reading message: type: (%v) at source with local addr: (%v) and remote addr: (%v)\n",
+			/*inMsg, */ inMsg.GetMsgType(), source.Conn.LocalAddr().String(), source.Conn.RemoteAddr().String())
 		switch inMsg.(type) {
 		case *lib.MsgDeSoAddr:
 		case *lib.MsgDeSoGetAddr:
 			continue
 		default:
 			// Send the message to the destination connection.
-			fmt.Printf("Redirecting the message: (%v) type: (%v) to destination with local addr: (%v) and remote addr: (%v)\n",
-				inMsg, inMsg.GetMsgType(), destination.Conn.LocalAddr().String(), destination.Conn.RemoteAddr().String())
+			fmt.Printf("Redirecting the message: type: (%v) to destination with local addr: (%v) and remote addr: (%v)\n",
+				/*inMsg, */ inMsg.GetMsgType(), destination.Conn.LocalAddr().String(), destination.Conn.RemoteAddr().String())
 			if err := destination.WriteDeSoMessage(inMsg); err != nil {
 				panic(err)
 			}
 		}
 	}
+	bridge.waitGroup.Done()
 }
 
 func (bridge *ConnectionBridge) waitForConnection() (*lib.Peer, error) {
@@ -353,6 +360,16 @@ func (bridge *ConnectionBridge) Connect() error {
 	return nil
 }
 
+func (bridge *ConnectionBridge) Disconnect() {
+	bridge.disabled = true
+	bridge.connectionInboundA.Disconnect()
+	bridge.connectionInboundB.Disconnect()
+	bridge.connectionOutboundA.Disconnect()
+	bridge.connectionOutboundB.Disconnect()
+
+	bridge.waitGroup.Wait()
+}
+
 type ConnectionRouter struct {
 	nodes []*Node
 }
@@ -412,11 +429,28 @@ func waitForNodeToFullySync(node *Node) {
 	}
 }
 
+// compareNodesByChecksum checks if the two provided nodes have identical checksums.
+func compareNodesByChecksum(t *testing.T, nodeA *Node, nodeB *Node) {
+	require := require.New(t)
+	checksumA, err := nodeA.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
+	require.NoError(err)
+	checksumB, err := nodeB.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
+	require.NoError(err)
+
+	if !reflect.DeepEqual(checksumA, checksumB) {
+		t.Fatalf("compareNodesByChecksum: error checksums not equal checksumA (%v), "+
+			"checksumB (%v)", checksumA, checksumB)
+	}
+	fmt.Printf("Identical checksums: nodeA (%v)\n nodeB (%v)\n", checksumA, checksumB)
+}
+
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
-func compareNodesByState(nodeA *Node, nodeB *Node) error {
+func compareNodesByState(t *testing.T, nodeA *Node, nodeB *Node) {
 	maxBytes := uint32(8 << 20)
+	var allPrefixes [][]byte
 	for _, prefix := range lib.StatePrefixes.StatePrefixesList {
+		allPrefixes = append(allPrefixes, prefix)
 		lastPrefix := prefix
 		for {
 			existingValuesA := make(map[string]string)
@@ -425,8 +459,8 @@ func compareNodesByState(nodeA *Node, nodeB *Node) error {
 			// Fetch a state chunk from nodeA database.
 			dbEntriesA, isChunkFullA, err := lib.DBIteratePrefixKeys(nodeA.chainDB, prefix, lastPrefix, maxBytes)
 			if err != nil {
-				return errors.Wrapf(err, "problem reading nodeA database for prefix (%v) last prefix (%v)",
-					prefix, lastPrefix)
+				t.Fatal(errors.Wrapf(err, "problem reading nodeA database for prefix (%v) last prefix (%v)",
+					prefix, lastPrefix))
 			}
 			for _, entry := range dbEntriesA {
 				keyHex := hex.EncodeToString(entry.Key)
@@ -437,8 +471,8 @@ func compareNodesByState(nodeA *Node, nodeB *Node) error {
 			// Fetch a state chunk from nodeB database.
 			dbEntriesB, isChunkFullB, err := lib.DBIteratePrefixKeys(nodeB.chainDB, prefix, lastPrefix, maxBytes)
 			if err != nil {
-				return errors.Wrapf(err, "problem reading nodeB database for prefix (%v) last prefix (%v",
-					prefix, lastPrefix)
+				t.Fatal(errors.Wrapf(err, "problem reading nodeB database for prefix (%v) last prefix (%v",
+					prefix, lastPrefix))
 			}
 			for _, entry := range dbEntriesB {
 				keyHex := hex.EncodeToString(entry.Key)
@@ -448,29 +482,29 @@ func compareNodesByState(nodeA *Node, nodeB *Node) error {
 
 			// Make sure we've fetched the same number of entries for nodeA and nodeB.
 			if len(dbEntriesA) != len(dbEntriesB) {
-				return fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
-					"varying lengths (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, len(dbEntriesA), len(dbEntriesB))
+				t.Fatal(fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
+					"varying lengths (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, len(dbEntriesA), len(dbEntriesB)))
 			}
 
 			// It doesn't matter which map we iterate through, since if we got here it means they have
 			// an identical number of unique keys. So we will choose dbEntriesA for convenience.
 			for ii, entry := range dbEntriesA {
 				if !reflect.DeepEqual(entry.Key, dbEntriesB[ii].Key) {
-					return fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal keys "+
-						"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Key, dbEntriesB[ii].Key)
+					t.Fatal(fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal keys "+
+						"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Key, dbEntriesB[ii].Key))
 				}
 			}
 			for ii, entry := range dbEntriesA {
 				if !reflect.DeepEqual(entry.Value, dbEntriesB[ii].Value) {
-					return fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal values "+
-						"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Value, dbEntriesB[ii].Value)
+					t.Fatal(fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal values "+
+						"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Value, dbEntriesB[ii].Value))
 				}
 			}
 
 			// Make sure the isChunkFull match for both chunks.
 			if isChunkFullA != isChunkFullB {
-				return fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
-					"unequal fulls (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, isChunkFullA, isChunkFullB)
+				t.Fatal(fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
+					"unequal fulls (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, isChunkFullA, isChunkFullB))
 			}
 
 			if len(dbEntriesA) > 0 {
@@ -483,8 +517,106 @@ func compareNodesByState(nodeA *Node, nodeB *Node) error {
 				break
 			}
 		}
+		fmt.Printf("MATCH: Prefix (%v)\n", allPrefixes)
 	}
-	return nil
+}
+
+func shutdownNode(t *testing.T, node *Node) *Node {
+	if !node.isRunning {
+		t.Fatalf("shutdownNode: can't shutdown, node is already down")
+	}
+
+	node.Stop()
+	config := node.Config
+	return NewNode(config)
+}
+
+func startNode(t *testing.T, node *Node) *Node {
+	if node.isRunning {
+		t.Fatalf("startNode: node is already running")
+	}
+	// Start the node.
+	node.Start()
+	return node
+}
+
+func restartNode(t *testing.T, node *Node) *Node {
+	if !node.isRunning {
+		t.Fatalf("shutdownNode: can't restart, node already down")
+	}
+
+	newNode := shutdownNode(t, node)
+	return startNode(t, newNode)
+}
+
+func listenForBlockHeight(t *testing.T, node *Node, height uint32, signal chan<- bool) {
+	ticker := time.NewTicker(1 * time.Millisecond)
+	go func() {
+		for {
+			<-ticker.C
+			if node.Server.GetBlockchain().BlockTip().Height >= height {
+				signal <- true
+				break
+			}
+		}
+	}()
+}
+
+func listenForSyncPrefix(t *testing.T, node *Node, syncPrefix []byte, signal chan<- bool) {
+	ticker := time.NewTicker(1 * time.Millisecond)
+	go func() {
+		for {
+			<-ticker.C
+			for _, prefix := range node.Server.HyperSyncProgress.PrefixProgress {
+				if reflect.DeepEqual(prefix.Prefix, syncPrefix) {
+					signal <- true
+					return
+				}
+			}
+		}
+	}()
+}
+
+func restartAtHeightAndReconnectNode(t *testing.T, node *Node, source *Node, currentBridge *ConnectionBridge,
+	height uint32) (_node *Node, _bridge *ConnectionBridge) {
+
+	require := require.New(t)
+	listener := make(chan bool)
+	listenForBlockHeight(t, node, height, listener)
+	<-listener
+	currentBridge.Disconnect()
+	newNode := restartNode(t, node)
+	// Wait after the restart.
+	time.Sleep(1 * time.Second)
+
+	// bridge the nodes together.
+	bridge := NewConnectionBridge(newNode, source)
+	require.NoError(bridge.Connect())
+	return newNode, bridge
+}
+
+func restartAtSyncPrefixAndReconnectNode(t *testing.T, node *Node, source *Node, currentBridge *ConnectionBridge,
+	syncPrefix []byte) (_node *Node, _bridge *ConnectionBridge) {
+
+	require := require.New(t)
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	currentBridge.Disconnect()
+	newNode := restartNode(t, node)
+
+	// bridge the nodes together.
+	bridge := NewConnectionBridge(newNode, source)
+	require.NoError(bridge.Connect())
+	return newNode, bridge
+}
+
+func randomUint32Between(t *testing.T, min, max uint32) uint32 {
+	require := require.New(t)
+	randomNumber, err := wire.RandomUint64()
+	require.NoError(err)
+	randomHeight := uint32(randomNumber) % (max - min)
+	return randomHeight + min
 }
 
 // TestSimpleBlockSync test if a node can successfully sync from another node:
@@ -513,11 +645,8 @@ func TestSimpleBlockSync(t *testing.T) {
 	router.nodes = append(router.nodes, node1)
 	router.nodes = append(router.nodes, node2)
 
-	go node1.Start()
-	go node2.Start()
-
-	// Wait for the nodes to initialize.
-	time.Sleep(3 * time.Second)
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
 
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
@@ -529,7 +658,58 @@ func TestSimpleBlockSync(t *testing.T) {
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
-	require.NoError(compareNodesByState(node1, node2))
+	compareNodesByState(t, node1, node2)
+	fmt.Println("Databases match!")
+	node1.Stop()
+	node2.Stop()
+}
+
+// TestSimpleSyncRestart tests if a node can successfully restart while syncing blocks.
+//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
+//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+//	3. bridge node1 and node2
+//	4. node2 syncs between 10 and 50 blocks from node1.
+//  5. node2 disconnects from node1 and reboots.
+//  6. node2 reconnects with node1 and syncs remaining blocks.
+//	5. compare node1 state matches node2 state.
+func TestSimpleSyncRestart(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	router := &ConnectionRouter{}
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config2 := generateConfig(t, 18001, dbDir2, 10)
+
+	config1.MaxSyncBlockHeight = 50
+	config2.MaxSyncBlockHeight = 50
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node1 := NewNode(config1)
+	node2 := NewNode(config2)
+	router.nodes = append(router.nodes, node1)
+	router.nodes = append(router.nodes, node2)
+
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
+
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
+
+	// bridge the nodes together.
+	bridge := NewConnectionBridge(node1, node2)
+	require.NoError(bridge.Connect())
+
+	randomHeight := randomUint32Between(t, 10, config2.MaxSyncBlockHeight)
+	fmt.Println("Random height for a restart (re-use if test failed):", randomHeight)
+	// Reboot node2 at a specific height and reconnect it with node1
+	node2, bridge = restartAtHeightAndReconnectNode(t, node2, node1, bridge, randomHeight)
+	waitForNodeToFullySync(node2)
+
+	compareNodesByState(t, node1, node2)
+	fmt.Println("Random restart successful! Random height was", randomHeight)
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
@@ -565,11 +745,8 @@ func TestSimpleHyperSync(t *testing.T) {
 	router.nodes = append(router.nodes, node1)
 	router.nodes = append(router.nodes, node2)
 
-	go node1.Start()
-	go node2.Start()
-
-	// Wait for the nodes to initialize.
-	time.Sleep(3 * time.Second)
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
 
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
@@ -581,65 +758,66 @@ func TestSimpleHyperSync(t *testing.T) {
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
-	require.NoError(compareNodesByState(node1, node2))
+	compareNodesByState(t, node1, node2)
+	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
 }
 
-func TestRouter(t *testing.T) {
+// TestSimpleHyperSyncRestart tests if a node can successfully restart while syncing blocks.
+//	1. Spawn two nodes node1, node2 with max block height of 50 blocks, hyper sync on, with snapshot period 40 blocks.
+//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator, it will also be building ancestral records.
+//	3. bridge node1 and node2.
+//	4. node2 syncs state from node1, until it reaches a certain random sync prefix.
+//  5. node2 disconnects from node1 and reboots.
+//  6. node2 reconnects with node1 and syncs remaining state & blocks.
+//	5. compare node1 state matches node2 state.
+func TestSimpleHyperSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
 	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
-	config3 := generateConfig(t, 18003, dbDir3, 10)
 
-	config1.MaxSyncBlockHeight = 100
+	config1.MaxSyncBlockHeight = 50
 	config2.MaxSyncBlockHeight = 50
-	config3.MaxSyncBlockHeight = 50
+	config1.HyperSync = true
+	config2.HyperSync = true
+	config1.SnapshotBlockHeightPeriod = 40
+	config2.SnapshotBlockHeightPeriod = 40
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
-	node3 := NewNode(config3)
-	_ = node1
-
+	router.nodes = append(router.nodes, node1)
 	router.nodes = append(router.nodes, node2)
-	router.nodes = append(router.nodes, node3)
-	go node1.Start()
-	go node2.Start()
-	go node3.Start()
 
-	time.Sleep(15 * time.Second)
-	fmt.Println("Waited 15 seconds")
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
 
-	shutdownListener := make(chan os.Signal)
-	signal.Notify(shutdownListener, syscall.SIGINT, syscall.SIGTERM)
-	defer func() {
-		node1.Stop()
-		node2.Stop()
-		node3.Stop()
-		glog.Info("Shutdown complete")
-	}()
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
 
-	bridge := NewConnectionBridge(node2, node3)
+	// bridge the nodes together.
+	bridge := NewConnectionBridge(node1, node2)
 	require.NoError(bridge.Connect())
 
-	time.Sleep(15 * time.Second)
-	node2.Server.GetBlockchain().MaxSyncBlockHeight = 100
-	node3.Server.GetBlockchain().MaxSyncBlockHeight = 100
-	// Pause the bridge between n2 and n3
-	bridge.paused = true
+	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
+	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
+	fmt.Println("Random sync prefix for a restart (re-use if test failed):", syncPrefix)
+	// Reboot node2 at a specific sync prefix and reconnect it with node1
+	node2, bridge = restartAtSyncPrefixAndReconnectNode(t, node2, node1, bridge, syncPrefix)
+	waitForNodeToFullySync(node2)
 
-	bridge2 := NewConnectionBridge(node1, node2)
-	require.NoError(bridge2.Connect())
-
-	<-shutdownListener
+	compareNodesByState(t, node1, node2)
+	compareNodesByChecksum(t, node1, node2)
+	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
+	fmt.Println("Databases match!")
+	node1.Stop()
+	node2.Stop()
 }

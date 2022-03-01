@@ -124,17 +124,16 @@ func (msg *enhancedHeader) ToBytes(preSignature bool) ([]byte, error) {
 	return retBytes, nil
 }
 
-
 func TestTypes(t *testing.T) {
 	r := Prefixes
 	fmt.Println(r)
 
 	fmt.Println(Prefixes.PrefixBlockHashToBlock)
-    v := reflect.ValueOf(*r)
+	v := reflect.ValueOf(*r)
 	fmt.Println("ITERATING OVER ALL FIELDS")
-    for i := 0; i < v.NumField(); i++ {
+	for i := 0; i < v.NumField(); i++ {
 		fmt.Println("PREFIX:", v.Field(i).Interface())
-    }
+	}
 
 	//for i := 0; i < v.NumField(); i++ {
 	//	if v.Field(i).Interface().(PrefixType).IsState() {
@@ -181,7 +180,7 @@ func TestFromBytes(t *testing.T) {
 	}
 
 	enhancedHeader := &enhancedHeader{
-		Version: expectedHeader.Version,
+		Version:       expectedHeader.Version,
 		PrevBlockHash: expectedHeader.PrevBlockHash,
 		TransactionMerkleRoot: &BlockHash{
 			0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
@@ -190,9 +189,9 @@ func TestFromBytes(t *testing.T) {
 			0x64, 0x65,
 		},
 		TstampSecs: expectedHeader.TstampSecs,
-		Height: expectedHeader.Height,
-		Nonce: expectedHeader.Nonce,
-    }
+		Height:     expectedHeader.Height,
+		Nonce:      expectedHeader.Nonce,
+	}
 
 	expectedHeaderBytes, err := expectedHeader.ToBytes(false)
 	enhancedHeaderBytes, err := enhancedHeader.ToBytes(false)
@@ -205,15 +204,13 @@ func TestFromBytes(t *testing.T) {
 	fmt.Println(testHeaderBytes)
 }
 
-
-
 func TestDeque(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
 	deque := lane.NewDeque()
 	fmt.Println(deque.Capacity(), deque.Empty())
-	for ii := 0; ii < 5; ii ++ {
+	for ii := 0; ii < 5; ii++ {
 		fmt.Println(deque.Append(ii))
 	}
 
@@ -275,7 +272,7 @@ func TestChannelThingy(t *testing.T) {
 	testChan <- 2
 	testChan <- 3
 
-	go func(){
+	go func() {
 		for {
 			if len(testChan) > 0 {
 				continue
@@ -288,7 +285,7 @@ func TestChannelThingy(t *testing.T) {
 
 out:
 	for {
-		ii := <- testChan
+		ii := <-testChan
 		delay(ii)
 		if ii == 3 {
 			break out
@@ -308,7 +305,7 @@ func TestBadgerConcurrentWrite(t *testing.T) {
 
 	var keys [][keySize]byte
 	var vals [][valSize]byte
-	for ii := 0; ii < sequentialWrites + concurrentWrites; ii++ {
+	for ii := 0; ii < sequentialWrites+concurrentWrites; ii++ {
 		var key [keySize]byte
 		var val [valSize]byte
 		copy(key[:], RandomBytes(keySize))
@@ -338,7 +335,7 @@ func TestBadgerConcurrentWrite(t *testing.T) {
 
 		go func(db *badger.DB, wait *sync.WaitGroup) {
 			err := db.Update(func(txn *badger.Txn) error {
-				for jj := sequentialWrites; jj < sequentialWrites + concurrentWrites; jj++ {
+				for jj := sequentialWrites; jj < sequentialWrites+concurrentWrites; jj++ {
 					err := txn.Set(keys[jj][:], vals[jj][:])
 					if err != nil {
 						fmt.Printf("Error in concurrent write: %v", err)
@@ -365,7 +362,7 @@ func TestBadgerConcurrentWrite(t *testing.T) {
 	fmt.Println("Finished everything")
 
 	err = db.View(func(txn *badger.Txn) error {
-		for ii := 0; ii < sequentialWrites + concurrentWrites; ii++ {
+		for ii := 0; ii < sequentialWrites+concurrentWrites; ii++ {
 			item, err := txn.Get(keys[ii][:])
 			if err != nil {
 				fmt.Printf("Error: %v, at index %v\n", err, ii)
@@ -436,7 +433,7 @@ func TestSortedMap(t *testing.T) {
 	valueSize := int32(256)
 
 	var kList, vList []string
-	for ii:=0; ii<size; ii++{
+	for ii := 0; ii < size; ii++ {
 		key := hex.EncodeToString(RandomBytes(keySize))
 		if _, ok := nodup[key]; ok {
 			continue
@@ -501,8 +498,8 @@ func TestSortedMap(t *testing.T) {
 	fmt.Printf("Total time to fetch keys in LLRB %v\n", timeLLRBGetKeys)
 	fmt.Printf("Total time to fetch keys in Sorted Map %v\n", timeSMapGetKeys)
 	fmt.Println("--------------")
-	fmt.Printf("Total time to add and fetch keys in LLRB %v\n", timeLLRBAddKeys + timeLLRBGetKeys)
-	fmt.Printf("Total time to add and fetch keys in Sorted Map %v\n", timeSMapAddKeys + timeSMapGetKeys)
+	fmt.Printf("Total time to add and fetch keys in LLRB %v\n", timeLLRBAddKeys+timeLLRBGetKeys)
+	fmt.Printf("Total time to add and fetch keys in Sorted Map %v\n", timeSMapAddKeys+timeSMapGetKeys)
 }
 
 func TestStateChecksumBasicAddRemove(t *testing.T) {
@@ -528,14 +525,14 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	check1.Add(group.Ristretto255.Identity(), vv)
 	fmt.Println("check1", check1)
 	require.NoError(err)
- 	//err = check1.UnmarshalBinary(check1Bytes)
- 	require.NoError(err)
- 	fmt.Println("check1", check1)
+	//err = check1.UnmarshalBinary(check1Bytes)
+	require.NoError(err)
+	fmt.Println("check1", check1)
 	require.NoError(z.AddBytes(bytesB))
- 	fmt.Println("check1", check1)
- 	fmt.Println(z.GetChecksum())
- 	check2Bytes, err := z.ToBytes()
- 	require.NoError(err)
+	fmt.Println("check1", check1)
+	fmt.Println(z.GetChecksum())
+	check2Bytes, err := z.ToBytes()
+	require.NoError(err)
 	err = check2.UnmarshalBinary(check2Bytes)
 	require.NoError(err)
 	require.NoError(z.RemoveBytes(bytesB))
@@ -616,7 +613,6 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	require.Equal(checksum.IsEqual(identity), true)
 }
 
-
 func TestFasterHashToCurve(t *testing.T) {
 	//require := require.New(t)
 
@@ -644,7 +640,6 @@ func TestFasterHashToCurve(t *testing.T) {
 	//}
 	//fmt.Println("Acquired sir")
 	//sem.Release(int64(maxWorkers))
-
 
 	testCounter := uint64(1 << 19)
 	var muter sync.Mutex

@@ -114,14 +114,14 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	// We finished flushing to the main DB, so now we're ready to also flush to ancestral records.
 	// This happens concurrently, which is why we have the 2-phase prepare-flush happening for snapshot.
 	if bav.Snapshot != nil {
-		bav.Snapshot.EnqueueAncestralRecordsFlush()
+		bav.Snapshot.StartAncestralRecordsFlush()
 		bav.Snapshot.PrintChecksum("Checksum after flush")
 	}
 	return nil
 }
 
 func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
+	glog.V(2).Infof("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
 
 	for utxoKeyIter, utxoEntry := range bav.UtxoKeyToUtxoEntry {
 		// Make a copy of the iterator since it might change from under us.
@@ -161,7 +161,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	glog.V(1).Infof("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(2).Infof("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// Now update the number of entries in the db with confidence.
 	if err := PutUtxoNumEntriesWithTxn(txn, bav.Snapshot, bav.NumUtxoEntries); err != nil {
@@ -176,7 +176,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
+	glog.V(2).Infof("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
 		len(bav.PublicKeyToDeSoBalanceNanos))
 
 	for pubKeyIter := range bav.PublicKeyToDeSoBalanceNanos {
@@ -634,7 +634,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
-	glog.V(1).Infof("_flushPostEntriesToDbWithTxn: flushing %d mappings", len(bav.PostHashToPostEntry))
+	glog.V(2).Infof("_flushPostEntriesToDbWithTxn: flushing %d mappings", len(bav.PostHashToPostEntry))
 
 	// Go through all the entries in the PostHashToPostEntry map.
 	for postHashIter, postEntry := range bav.PostHashToPostEntry {
@@ -680,7 +680,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 	}
 
 	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
-	glog.V(1).Infof("_flushPostEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(2).Infof("_flushPostEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the PostEntry mappings in the db should be up-to-date.
 
@@ -744,7 +744,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushProfilesToDbWithTxn: flushing %d mappings", len(bav.ProfilePKIDToProfileEntry))
+	glog.V(2).Infof("_flushProfilesToDbWithTxn: flushing %d mappings", len(bav.ProfilePKIDToProfileEntry))
 
 	// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
 	for profilePKIDIter, profileEntry := range bav.ProfilePKIDToProfileEntry {
@@ -794,7 +794,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	glog.V(1).Infof("_flushProfilesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(2).Infof("_flushProfilesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the PostEntry mappings in the db should be up-to-date.
 
@@ -805,7 +805,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 // distinguish them from DAOCoinBalanceEntry, which is a different but similar index
 // that got introduced later.
 func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
+	glog.V(2).Infof("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 
 	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
 	for balanceKeyIter, balanceEntry := range bav.HODLerPKIDCreatorPKIDToBalanceEntry {
@@ -854,7 +854,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	glog.V(1).Infof("_flushBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(2).Infof("_flushBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the creator coin mappings in the db should be up-to-date.
 
@@ -863,7 +863,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 
 // TODO: This could theoretically be consolidated with the other BalanceEntry flusher.
 func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry))
+	glog.V(2).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry))
 
 	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
 	for balanceKeyIter, balanceEntry := range bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry {
@@ -912,7 +912,7 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) err
 		}
 	}
 
-	glog.V(1).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(2).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the DAO coin mappings in the db should be up-to-date.
 
@@ -920,7 +920,7 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) err
 }
 
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
+	glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
 
 	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the DB.
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
@@ -948,14 +948,14 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 			}
 			numPut++
 		}
-		glog.V(1).Infof("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+		glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
 
 	return nil
 }
 
 func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) error {
-	glog.V(1).Infof("_flushMessagingGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.MessagingGroupKeyToMessagingGroupEntry))
+	glog.V(2).Infof("_flushMessagingGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.MessagingGroupKeyToMessagingGroupEntry))
 	numDeleted := 0
 	numPut := 0
 
@@ -1017,6 +1017,6 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) err
 		}
 	}
 
-	glog.V(1).Infof("_flushMessagingGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(2).Infof("_flushMessagingGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	return nil
 }

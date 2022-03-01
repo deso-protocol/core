@@ -2263,7 +2263,7 @@ type MsgDeSoGetSnapshot struct {
 	// The prefix for which we want to fetch snapshot data chunk.
 	Prefix []byte
 	// SnapshotStartKey is the db key from which we want to start fetching the data.
-	SnapshotStartKey  []byte
+	SnapshotStartKey []byte
 }
 
 func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
@@ -2308,15 +2308,15 @@ func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
 
 type MsgDeSoSnapshotData struct {
 	// SnapshotHeight is the block height of the current snapshot epoch.
-	SnapshotHeight    uint64
+	SnapshotHeight uint64
 	// SnapshotBlockHash is the block hash of the block at the height of the current snapshot epoch.
 	SnapshotBlockHash *BlockHash
 
 	// SnapshotChecksum is the checksum of the snapshot state.
-	SnapshotChecksum  []byte
+	SnapshotChecksum []byte
 
 	// SnapshotChunk is the snapshot state data chunk.
-	SnapshotChunk       []*DBEntry
+	SnapshotChunk []*DBEntry
 	// SnapshotChunkFull indicates whether we've exhausted all entries for the given prefix.
 	// If this is true, it means that there are more entries in node's db, and false means we've fetched everything.
 	SnapshotChunkFull bool
@@ -2380,7 +2380,7 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotChunk")
 	}
-	for ;dataLen > 0; dataLen-- {
+	for ; dataLen > 0; dataLen-- {
 		dbEntry := &DBEntry{}
 		err = dbEntry.Decode(rr)
 		if err != nil {
@@ -5130,7 +5130,7 @@ type MessagingGroupMetadata struct {
 	// anymore.
 	//
 	// This field is not critical and can be removed in the future.
-	GroupOwnerSignature   []byte
+	GroupOwnerSignature []byte
 
 	MessagingGroupMembers []*MessagingGroupMember
 }
@@ -5166,19 +5166,19 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 	var err error
 	ret.MessagingPublicKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading MessagingPublicKey")
 	}
 
 	ret.MessagingGroupKeyName, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading MessagingGroupKey")
 	}
 
 	ret.GroupOwnerSignature, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err,"MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading GroupOwnerSignature")
 	}
 
@@ -5187,7 +5187,7 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 		recipient := MessagingGroupMember{}
 		err = recipient.Decode(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
 		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)
