@@ -138,7 +138,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 		}
-		// FIXME: Should we be checking isDeleted here?
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			newTransactionSpendingLimit = prevDerivedKeyEntry.TransactionSpendingLimitTracker
 			memo = prevDerivedKeyEntry.Memo
@@ -336,7 +335,6 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	}
 
 	// If we had a previous derivedKeyEntry set then compare it with the current entry.
-	// FIXME: Should we be checking isDeleted here?
 	if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 		// Sanity check public keys. This should never fail.
 		if !reflect.DeepEqual(ownerPublicKey, prevDerivedKeyEntry.OwnerPublicKey[:]) {

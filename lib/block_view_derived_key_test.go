@@ -672,8 +672,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
-			// FIXME: Should we be checking isDeleted here?
-			if derivedKeyEntry == nil {
+			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
@@ -684,8 +683,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			derivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
-			// FIXME: Should we be checking isDeleted here?
-			if derivedKeyEntry == nil {
+			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
@@ -1565,8 +1563,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
-			// FIXME: Should we be checking isDeleted here?
-			if derivedKeyEntry == nil {
+			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
@@ -1577,8 +1574,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			derivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
-			// FIXME: Should we be checking isDeleted here?
-			if derivedKeyEntry == nil {
+			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
@@ -3004,6 +3000,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	// Derived key can spend its own money
 	{
 		derivedKeyEntryBefore := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
+		require.Equal(derivedKeyEntryBefore.TransactionSpendingLimitTracker.TransactionCountLimitMap[TxnTypeBasicTransfer], uint64(0))
 		_doTxnWithTestMeta(
 			testMeta,
 			10,
