@@ -727,19 +727,21 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 type PGNFTBid struct {
 	tableName struct{} `pg:"pg_nft_bids"`
 
-	BidderPKID     *PKID      `pg:",pk,type:bytea"`
-	NFTPostHash    *BlockHash `pg:",pk,type:bytea"`
-	SerialNumber   uint64     `pg:",pk,use_zero"`
-	BidAmountNanos uint64     `pg:",use_zero"`
-	Accepted       bool       `pg:",use_zero"`
+	BidderPKID          *PKID      `pg:",pk,type:bytea"`
+	NFTPostHash         *BlockHash `pg:",pk,type:bytea"`
+	SerialNumber        uint64     `pg:",pk,use_zero"`
+	BidAmountNanos      uint64     `pg:",use_zero"`
+	Accepted            bool       `pg:",use_zero"`
+	AcceptedBlockHeight *uint32    `pg:",use_zero"`
 }
 
 func (bid *PGNFTBid) NewNFTBidEntry() *NFTBidEntry {
 	return &NFTBidEntry{
-		BidderPKID:     bid.BidderPKID,
-		NFTPostHash:    bid.NFTPostHash,
-		SerialNumber:   bid.SerialNumber,
-		BidAmountNanos: bid.BidAmountNanos,
+		BidderPKID:          bid.BidderPKID,
+		NFTPostHash:         bid.NFTPostHash,
+		SerialNumber:        bid.SerialNumber,
+		BidAmountNanos:      bid.BidAmountNanos,
+		AcceptedBlockHeight: bid.AcceptedBlockHeight,
 	}
 }
 
@@ -1082,6 +1084,27 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				SerialNumber:    txMeta.SerialNumber,
 				BidAmountNanos:  txMeta.BidAmountNanos,
 			})
+
+			//get related NFT
+			pgBidNft := postgres.GetNFT(txMeta.NFTPostHash, txMeta.SerialNumber)
+
+			//check if is buy now and BidAmountNanos > then BuyNowPriceNanos
+			if pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
+
+				//get related profile
+				pgBidProfile := postgres.GetProfileForPublicKey(txn.PublicKey)
+
+				//add to accept bids as well
+				metadataAcceptNFTBids = append(metadataAcceptNFTBids, &PGMetadataAcceptNFTBid{
+					TransactionHash: txnHash,
+					NFTPostHash:     txMeta.NFTPostHash,
+					SerialNumber:    txMeta.SerialNumber,
+					BidderPKID:      pgBidProfile.PKID,
+					BidAmountNanos:  txMeta.BidAmountNanos,
+					UnlockableText:  []byte{},
+				})
+			}
+
 		case TxnTypeNFTTransfer:
 			txMeta := txn.TxnMeta.(*NFTTransferMetadata)
 			metadataNFTTransfer = append(metadataNFTTransfer, &PGMetadataNFTTransfer{
@@ -1880,12 +1903,12 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	var deleteBids []*PGNFTBid
 	for _, bidEntry := range view.NFTBidKeyToNFTBidEntry {
 		nft := &PGNFTBid{
-			BidderPKID:     bidEntry.BidderPKID,
-			NFTPostHash:    bidEntry.NFTPostHash,
-			SerialNumber:   bidEntry.SerialNumber,
-			BidAmountNanos: bidEntry.BidAmountNanos,
-			// TODO: Change how accepted bid logic works in consensus
-			Accepted: false,
+			BidderPKID:          bidEntry.BidderPKID,
+			NFTPostHash:         bidEntry.NFTPostHash,
+			SerialNumber:        bidEntry.SerialNumber,
+			BidAmountNanos:      bidEntry.BidAmountNanos,
+			Accepted:            bidEntry.AcceptedBlockHeight != nil,
+			AcceptedBlockHeight: bidEntry.AcceptedBlockHeight,
 		}
 
 		if bidEntry.isDeleted {
