@@ -2995,6 +2995,63 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			uint64(0))
 	}
 
+	// Derived Key can mint NFT - authorize NFT minting
+	{
+		globalDESOSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: 6,
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeSubmitPost: 1,
+				TxnTypeCreateNFT:  1,
+			},
+		}
+		m0AuthTxnMetaWithGlobalDESOLimitTxn, _ := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivateKey(t, m0PrivateKey, 6, globalDESOSpendingLimit, derived0Priv, false)
+
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			false,
+			TxnTypeAuthorizeDerivedKey,
+			m0AuthTxnMetaWithGlobalDESOLimitTxn,
+			map[string]interface{}{
+				TransactionSpendingLimitKey: globalDESOSpendingLimit,
+			},
+		)
+	}
+
+	// Derived Key can mint NFT
+	{
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeSubmitPost,
+			&SubmitPostMetadata{
+				Body:           []byte("abbc"),
+				TimestampNanos: uint64(time.Now().UnixNano()),
+			},
+			nil,
+		)
+		nftPostHash := testMeta.txns[len(testMeta.txns)-1].Hash()
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeCreateNFT,
+			&CreateNFTMetadata{
+				NFTPostHash: nftPostHash,
+				NumCopies:   10,
+				IsForSale:   true,
+			},
+			nil,
+		)
+	}
+
 	// Send the derived key some money
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, derived0PublicKeyBase58Check, senderPrivString, 100)
 	// Derived key can spend its own money
