@@ -80,7 +80,7 @@ type DBPrefixes struct {
 	// the UtxoOperations for a particular block backwards and invert them.
 	//
 	// <prefix_id, hash *BlockHash > -> < serialized []UtxoOperation using custom encoding >
-	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]"`
+	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]" is_state:"true"`
 	// The below are mappings related to the validation of BitcoinExchange transactions.
 	//
 	// The number of nanos that has been purchased thus far.

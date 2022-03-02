@@ -330,8 +330,15 @@ func (txi *TXIndex) Update() error {
 				"%v: %v", blockToDetach, err)
 		}
 		err = txi.TXIndexChain.DB().Update(func(txn *badger.Txn) error {
+			if txi.TXIndexChain.snapshot != nil {
+				txi.TXIndexChain.snapshot.PrepareAncestralRecordsFlush()
+			}
 			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, blockToDetach.Hash); err != nil {
 				return fmt.Errorf("Update: Error deleting UtxoOperations 1 for block %v, %v", blockToDetach.Hash, err)
+			}
+			if txi.TXIndexChain.snapshot != nil {
+				txi.TXIndexChain.snapshot.StartAncestralRecordsFlush()
+				txi.TXIndexChain.snapshot.PrintChecksum("Checksum after flush")
 			}
 			if err := txn.Delete(BlockHashToBlockKey(blockToDetach.Hash)); err != nil {
 				return fmt.Errorf("Update: Error deleting UtxoOperations 2 for block %v %v", blockToDetach.Hash, err)

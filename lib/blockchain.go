@@ -73,6 +73,13 @@ const (
 	StatusBitcoinHeaderValidateFailed // Deprecated
 )
 
+func (blockStatus BlockStatus) IsFullyProcessed() bool {
+	return blockStatus&StatusHeaderValidated != 0 &&
+		blockStatus&StatusBlockStored != 0 &&
+		blockStatus&StatusBlockProcessed != 0 &&
+		blockStatus&StatusBlockValidated != 0
+}
+
 func (blockStatus BlockStatus) String() string {
 	if blockStatus == 0 {
 		return "NONE"
@@ -465,6 +472,18 @@ func (bc *Blockchain) CopyBestHeaderChain() ([]*BlockNode, map[BlockHash]*BlockN
 	}
 
 	return newBestChain, newBestChainMap
+}
+
+func (bc *Blockchain) IsFullyStored() bool {
+	if bc.ChainState() == SyncStateFullyCurrent {
+		for _, blockNode := range bc.bestChain {
+			if !blockNode.Status.IsFullyProcessed() {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // _initChain initializes the in-memory data structures for the Blockchain object
@@ -1786,6 +1805,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, true, nil
 	}
 
+	if nodeToValidate.Status.IsFullyProcessed() {
+		return false, false, RuleErrorBlockAlreadyExists
+	}
+
 	// At this point, because we know the block isn't an orphan, go ahead and mark
 	// it as processed. This flag is basically used to avoid situations in which we
 	// continuously try to fetch and reprocess a block because we forgot to mark
@@ -1914,6 +1937,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, false, errors.Wrapf(err, "ProcessBlock: Problem storing block after basic validation")
 	}
 
+	if nodeToValidate.Status&StatusBlockValidated != 0 {
+		return true, false, nil
+	}
+
 	// Now we try and add the block to the main block chain (note that it should
 	// already be on the main header chain if we've made it this far).
 
@@ -2023,8 +2050,15 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 				// Write the utxo operations for this block to the db so we can have the
 				// ability to roll it back in the future.
+				if bc.snapshot != nil {
+					bc.snapshot.PrepareAncestralRecordsFlush()
+				}
 				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHash, utxoOpsForBlock); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				}
+				if bc.snapshot != nil {
+					bc.snapshot.StartAncestralRecordsFlush()
+					bc.snapshot.PrintChecksum("Checksum after flush")
 				}
 
 				return nil
@@ -2275,6 +2309,9 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				return err
 			}
 
+			if bc.snapshot != nil {
+				bc.snapshot.PrepareAncestralRecordsFlush()
+			}
 			for _, detachNode := range detachBlocks {
 				// Delete the utxo operations for the blocks we're detaching since we don't need
 				// them anymore.
@@ -2294,6 +2331,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem putting utxo operations for block")
 				}
+			}
+			if bc.snapshot != nil {
+				bc.snapshot.StartAncestralRecordsFlush()
+				bc.snapshot.PrintChecksum("Checksum after flush")
 			}
 
 			// Write the modified utxo set to the view.

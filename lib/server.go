@@ -619,6 +619,49 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
 }
 
+func (srv *Server) GetBlockToStore(pp *Peer) {
+	for _, blockNode := range srv.blockchain.bestChain {
+		if blockNode.Status&StatusBlockStored == 0 {
+			numBlocksToFetch := MaxBlocksInFlight - len(pp.requestedBlocks)
+			currentHeight := int(blockNode.Height)
+			blockNodesToFetch := []*BlockNode{}
+			var heightLimit int
+			for heightLimit = len(srv.blockchain.bestChain) - 1; heightLimit >= 0; heightLimit-- {
+				if !srv.blockchain.bestChain[heightLimit].Status.IsFullyProcessed() {
+					break
+				}
+			}
+
+			for currentHeight <= heightLimit &&
+				len(blockNodesToFetch) < numBlocksToFetch {
+
+				// Get the current hash and increment the height.
+				currentNode := srv.blockchain.bestChain[currentHeight]
+				currentHeight++
+
+				if _, exists := pp.requestedBlocks[*currentNode.Hash]; exists {
+					continue
+				}
+
+				blockNodesToFetch = append(blockNodesToFetch, currentNode)
+			}
+
+			var hashList []*BlockHash
+			for _, node := range blockNodesToFetch {
+				hashList = append(hashList, node.Hash)
+				pp.requestedBlocks[*node.Hash] = true
+			}
+			pp.AddDeSoMessage(&MsgDeSoGetBlocks{
+				HashList: hashList,
+			}, false)
+
+			glog.V(1).Infof("GetBlockToStore: Downloading %d blocks to store for header %v from peer %v",
+				blockNode.Header, pp)
+			return
+		}
+	}
+}
+
 // GetBlocks computes what blocks we need to fetch and asks for them from the
 // corresponding peer. It is typically called after we have exited
 // SyncStateSyncingHeaders.
@@ -1118,6 +1161,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// TODO: what if the snapshot height is at the blockchain tip, for instance because PoW takes a while.
 	// Will this still work?
 	headerTip := srv.blockchain.headerTip()
+	if srv.blockchain.chainState() == SyncStateFullyCurrent {
+		srv.GetBlockToStore(pp)
+	}
 	srv.GetBlocks(pp, int(headerTip.Height))
 }
 
@@ -1467,12 +1513,6 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	glog.Infof("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)
-	// If we've set a maximum sync height and we've reached that height, then we will
-	// stop accepting new blocks.
-	if srv.blockchain.isTipMaxed(srv.blockchain.blockTip()) {
-		glog.Infof("Server._handleBlock: Exiting because block tip is maxed out")
-		return
-	}
 
 	// Pull out the header for easy access.
 	blockHeader := blk.Header
@@ -1481,6 +1521,16 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		srv._logAndDisconnectPeer(pp, blk, "Header was nil")
 		return
 	}
+
+	// If we've set a maximum sync height and we've reached that height, then we will
+	// stop accepting new blocks.
+	if srv.blockchain.isTipMaxed(srv.blockchain.blockTip()) &&
+		blockHeader.Height > uint64(srv.blockchain.blockTip().Height) {
+
+		glog.Infof("Server._handleBlock: Exiting because block tip is maxed out")
+		return
+	}
+
 	// Compute the hash of the block.
 	blockHash, err := blk.Header.Hash()
 	if err != nil {
@@ -1492,7 +1542,13 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	}
 
 	if pp != nil {
+		if _, exists := pp.requestedBlocks[*blockHash]; !exists {
+			glog.Errorf("_handleBlock: Getting a block that we haven't requested before, "+
+				"block hash (%v)", *blockHash)
+		}
 		delete(pp.requestedBlocks, *blockHash)
+	} else {
+		glog.Errorf("_handleBlock: Called with nil peer, this should never happen.")
 	}
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
@@ -1593,6 +1649,10 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			BlockLocator: locator,
 		}, false)
 		return
+	}
+
+	if srv.cmgr.HyperSync && srv.blockchain.finishedSyncing {
+		srv.GetBlockToStore(pp)
 	}
 
 	// If we get here, it means we're in SyncStateFullySynced, which is great.

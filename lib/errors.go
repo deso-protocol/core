@@ -63,6 +63,7 @@ const (
 	RuleErrorForbiddenBlockProducerPublicKey                    RuleError = "RuleErrorForbiddenBlockProducerPublicKey"
 	RuleErrorInvalidBlockProducerSIgnature                      RuleError = "RuleErrorInvalidBlockProducerSIgnature"
 	RuleErrorInvalidBlockHeader                                 RuleError = "RuleErrorInvalidBlockHeader"
+	RuleErrorBlockAlreadyExists                                 RuleError = "RuleErrorBlockAlreadyExists"
 	RuleErrorOrphanBlock                                        RuleError = "RuleErrorOrphanBlock"
 	RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey        RuleError = "RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey"
 	RuleErrorBlockRewardTxnNotAllowedToHaveInputs               RuleError = "RuleErrorBlockRewardTxnNotAllowedToHaveInputs"

@@ -422,11 +422,22 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 
 // waitForNodeToFullySync will busy-wait until provided node is fully current.
 func waitForNodeToFullySync(node *Node) {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(5 * time.Millisecond)
 	for {
 		<-ticker.C
 
 		if node.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent {
+			return
+		}
+	}
+}
+
+func waitForNodeToFullySyncAndStoreAllBlocks(node *Node) {
+	ticker := time.NewTicker(5 * time.Millisecond)
+	for {
+		<-ticker.C
+
+		if node.Server.GetBlockchain().IsFullyStored() {
 			return
 		}
 	}
@@ -450,9 +461,19 @@ func compareNodesByChecksum(t *testing.T, nodeA *Node, nodeB *Node) {
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByState(t *testing.T, nodeA *Node, nodeB *Node) {
-	maxBytes := uint32(8 << 20)
+	compareNodesByStateWithPrefixList(t, nodeA, nodeB, lib.StatePrefixes.StatePrefixesList)
+}
+func compareNodesByDB(t *testing.T, nodeA *Node, nodeB *Node) {
+	var prefixList [][]byte
+	for prefix := range lib.StatePrefixes.StatePrefixesMap {
+		prefixList = append(prefixList, []byte{prefix})
+	}
+	compareNodesByStateWithPrefixList(t, nodeA, nodeB, prefixList)
+}
+func compareNodesByStateWithPrefixList(t *testing.T, nodeA *Node, nodeB *Node, prefixList [][]byte) {
+	maxBytes := lib.SnapshotBatchSize
 	var allPrefixes [][]byte
-	for _, prefix := range lib.StatePrefixes.StatePrefixesList {
+	for _, prefix := range prefixList {
 		allPrefixes = append(allPrefixes, prefix)
 		lastPrefix := prefix
 		for {
@@ -835,9 +856,10 @@ func TestSimpleHyperSync(t *testing.T) {
 	require.NoError(bridge.Connect())
 
 	// wait for node2 to sync blocks.
-	waitForNodeToFullySync(node2)
+	waitForNodeToFullySyncAndStoreAllBlocks(node2)
 
 	compareNodesByState(t, node1, node2)
+	compareNodesByDB(t, node1, node2)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Databases match!")
 	node1.Stop()
@@ -889,9 +911,11 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	fmt.Println("Random sync prefix for a restart (re-use if test failed):", syncPrefix)
 	// Reboot node2 at a specific sync prefix and reconnect it with node1
 	node2, bridge = restartAtSyncPrefixAndReconnectNode(t, node2, node1, bridge, syncPrefix)
-	waitForNodeToFullySync(node2)
+	// wait for node2 to sync blocks.
+	waitForNodeToFullySyncAndStoreAllBlocks(node2)
 
 	compareNodesByState(t, node1, node2)
+	compareNodesByDB(t, node1, node2)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
 	fmt.Println("Databases match!")
@@ -960,13 +984,60 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 
 	// Reboot node2 at a specific height and reconnect it with node1
 	//node2, bridge12 = restartAtHeightAndReconnectNode(t, node2, node1, bridge12, randomHeight)
-	waitForNodeToFullySync(node2)
+	// wait for node2 to sync blocks.
+	waitForNodeToFullySyncAndStoreAllBlocks(node2)
 
 	compareNodesByState(t, node1, node2)
+	compareNodesByDB(t, node1, node2)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
 	node3.Stop()
+}
+
+// TestSimpleBlockSync test if a node can successfully sync from another node:
+//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
+//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+//	3. bridge node1 and node2
+//	4. node2 syncs 50 blocks from node1.
+//	5. compare node1 state matches node2 state.
+func TestSimpleTxIndexSync(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	router := &ConnectionRouter{}
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config2 := generateConfig(t, 18001, dbDir2, 10)
+
+	config1.MaxSyncBlockHeight = 50
+	config2.MaxSyncBlockHeight = 50
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node1 := NewNode(config1)
+	node2 := NewNode(config2)
+	router.nodes = append(router.nodes, node1)
+	router.nodes = append(router.nodes, node2)
+
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
+
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
+
+	// bridge the nodes together.
+	bridge := NewConnectionBridge(node1, node2)
+	require.NoError(bridge.Connect())
+
+	// wait for node2 to sync blocks.
+	waitForNodeToFullySync(node2)
+
+	compareNodesByState(t, node1, node2)
+	fmt.Println("Databases match!")
+	node1.Stop()
+	node2.Stop()
 }
