@@ -543,9 +543,6 @@ func (message *MessageEntry) Decode(data []byte) error {
 	if err != nil && strings.Contains(err.Error(), "EOF") {
 		// To preserve backwards-compatibility, we set an empty map and return if we
 		// encounter an EOF error decoding ExtraData.
-		//
-		// FIXME: @LazyNina, please check this for backwards-compatibility. Maybe write
-		// a quick test that properly decodes something with missing ExtraData?
 		glog.Warning(err, "MesssageEntry.Decode: problem decoding extra data. "+
 			"Please resync your node to upgrade your datadir before the next hard fork.")
 		return nil

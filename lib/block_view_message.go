@@ -916,7 +916,6 @@ func (bav *UtxoView) _connectMessagingGroup(
 	var extraData map[string][]byte
 	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
 		var existingExtraData map[string][]byte
-		// FIXME: Is checking isDeleted what we want here?
 		if existingEntry != nil && !existingEntry.isDeleted {
 			existingExtraData = existingEntry.ExtraData
 		}
