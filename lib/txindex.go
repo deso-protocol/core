@@ -164,6 +164,10 @@ func (txi *TXIndex) Start() {
 				return
 			default:
 				if txi.CoreChain.ChainState() == SyncStateFullyCurrent {
+					if !txi.CoreChain.IsFullyStored() {
+						glog.V(1).Infof("TXIndex: Waiting, blockchain is not fully stored")
+						break
+					}
 					// If the node is fully synced, then try an update.
 					err := txi.Update()
 					if err != nil {
