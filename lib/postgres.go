@@ -1089,7 +1089,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			pgBidNft := postgres.GetNFT(txMeta.NFTPostHash, txMeta.SerialNumber)
 
 			//check if is buy now and BidAmountNanos > then BuyNowPriceNanos
-			if pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
+			if pgBidNft != nil && pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
 
 				//get related profile
 				pgBidProfile := postgres.GetProfileForPublicKey(txn.PublicKey)
