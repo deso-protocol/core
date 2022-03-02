@@ -189,41 +189,31 @@ type DeSoMessage interface {
 type TxnType uint8
 
 const (
-	TxnTypeUnset TxnType = 0
-	// FIXME: I don't think we want this, but we could allow ExtraData when
-	// there's a DiamondEntry...
-	TxnTypeBlockReward     TxnType = 1
-	TxnTypeBasicTransfer   TxnType = 2
-	TxnTypeBitcoinExchange TxnType = 3
-	// FIXME: Add ExtraData
-	TxnTypePrivateMessage TxnType = 4
-	// FIXME: Add ExtraData. Consider adding on RepostEntry?
+	TxnTypeUnset                        TxnType = 0
+	TxnTypeBlockReward                  TxnType = 1
+	TxnTypeBasicTransfer                TxnType = 2
+	TxnTypeBitcoinExchange              TxnType = 3
+	TxnTypePrivateMessage               TxnType = 4
 	TxnTypeSubmitPost                   TxnType = 5
 	TxnTypeUpdateProfile                TxnType = 6
 	TxnTypeUpdateBitcoinUSDExchangeRate TxnType = 8
-	// FIXME: Add ExtraData
-	TxnTypeFollow TxnType = 9
-	// FIXME: Add ExtraData
-	TxnTypeLike                TxnType = 10
-	TxnTypeCreatorCoin         TxnType = 11
-	TxnTypeSwapIdentity        TxnType = 12
-	TxnTypeUpdateGlobalParams  TxnType = 13
-	TxnTypeCreatorCoinTransfer TxnType = 14
-	// FIXME: Add ExtraData
-	TxnTypeCreateNFT TxnType = 15
-	// FIXME: Add ExtraData
-	TxnTypeUpdateNFT         TxnType = 16
-	TxnTypeAcceptNFTBid      TxnType = 17
-	TxnTypeNFTBid            TxnType = 18
-	TxnTypeNFTTransfer       TxnType = 19
-	TxnTypeAcceptNFTTransfer TxnType = 20
-	TxnTypeBurnNFT           TxnType = 21
-	// FIXME: Add ExtraData
-	TxnTypeAuthorizeDerivedKey TxnType = 22
-	// FIXME: Add ExtraData
-	TxnTypeMessagingGroup  TxnType = 23
-	TxnTypeDAOCoin         TxnType = 24
-	TxnTypeDAOCoinTransfer TxnType = 25
+	TxnTypeFollow                       TxnType = 9
+	TxnTypeLike                         TxnType = 10
+	TxnTypeCreatorCoin                  TxnType = 11
+	TxnTypeSwapIdentity                 TxnType = 12
+	TxnTypeUpdateGlobalParams           TxnType = 13
+	TxnTypeCreatorCoinTransfer          TxnType = 14
+	TxnTypeCreateNFT                    TxnType = 15
+	TxnTypeUpdateNFT                    TxnType = 16
+	TxnTypeAcceptNFTBid                 TxnType = 17
+	TxnTypeNFTBid                       TxnType = 18
+	TxnTypeNFTTransfer                  TxnType = 19
+	TxnTypeAcceptNFTTransfer            TxnType = 20
+	TxnTypeBurnNFT                      TxnType = 21
+	TxnTypeAuthorizeDerivedKey          TxnType = 22
+	TxnTypeMessagingGroup               TxnType = 23
+	TxnTypeDAOCoin                      TxnType = 24
+	TxnTypeDAOCoinTransfer              TxnType = 25
 
 	// NEXT_ID = 26
 )
@@ -2436,25 +2426,7 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, msg.PublicKey...)
 
 	// ExtraData
-	extraDataLength := uint64(len(msg.ExtraData))
-	data = append(data, UintToBuf(extraDataLength)...)
-	if extraDataLength > 0 {
-		// Sort the keys of the map
-		keys := make([]string, 0, len(msg.ExtraData))
-		for key := range msg.ExtraData {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		// Encode the length of the key, the key itself
-		// then the length of the value, then the value itself.
-		for _, key := range keys {
-			data = append(data, UintToBuf(uint64(len(key)))...)
-			data = append(data, []byte(key)...)
-			value := msg.ExtraData[key]
-			data = append(data, UintToBuf(uint64(len(value)))...)
-			data = append(data, value...)
-		}
-	}
+	data = append(data, EncodeExtraData(msg.ExtraData)...)
 
 	// Serialize the signature. Since this can be variable length, encode
 	// the length first and then the signature. If there is no signature, then
@@ -2473,6 +2445,30 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, sigBytes...)
 
 	return data, nil
+}
+
+func EncodeExtraData(extraData map[string][]byte) []byte {
+	var data []byte
+	extraDataLength := uint64(len(extraData))
+	data = append(data, UintToBuf(extraDataLength)...)
+	if extraDataLength > 0 {
+		// Sort the keys of the map
+		keys := make([]string, 0, len(extraData))
+		for key := range extraData {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		// Encode the length of the key, the key itself
+		// then the length of the value, then the value itself.
+		for _, key := range keys {
+			data = append(data, UintToBuf(uint64(len(key)))...)
+			data = append(data, []byte(key)...)
+			value := extraData[key]
+			data = append(data, UintToBuf(uint64(len(value)))...)
+			data = append(data, value...)
+		}
+	}
+	return data
 }
 
 func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
@@ -2572,52 +2568,11 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	// De-serialize the ExtraData
-	extraDataLen, err := ReadUvarint(rr)
+	extraData, err := DecodeExtraData(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.ExtraData)")
+		return nil, fmt.Errorf("_readTransaction: Error decoding extra data: %v", err)
 	}
-	if extraDataLen > MaxMessagePayload {
-		return nil, fmt.Errorf("_readTransaction.FromBytes: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
-	}
-	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
-	if extraDataLen != 0 {
-		ret.ExtraData = make(map[string][]byte, extraDataLen)
-		// Loop over each key
-		for ii := uint64(0); ii < extraDataLen; ii++ {
-			// De-serialize the length of the key
-			var keyLen uint64
-			keyLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
-			}
-			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
-			_, err = io.ReadFull(rr, keyBytes)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading key #{ii}")
-			}
-			// Convert the key to a string and check if it already exists in the map.
-			// If it already exists in the map, this is an error as a map cannot have duplicate keys.
-			key := string(keyBytes)
-			if _, keyExists := ret.ExtraData[key]; keyExists {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Key [#{ii}] ({key}) already exists in ExtraData")
-			}
-			// De-serialize the length of the value
-			var valueLen uint64
-			valueLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
-			}
-			// De-serialize the value
-			value := make([]byte, valueLen)
-			_, err = io.ReadFull(rr, value)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem read value #{ii}")
-			}
-			// Map the key to the value
-			ret.ExtraData[key] = value
-		}
-	}
+	ret.ExtraData = extraData
 
 	// De-serialize the signature if there is one.
 	sigLen, err := ReadUvarint(rr)
@@ -2646,6 +2601,58 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	return ret, nil
+}
+
+func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
+	// De-serialize the ExtraData
+	extraDataLen, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeExtraData: Problem reading len(DeSoTxn.ExtraData)")
+	}
+	if extraDataLen > MaxMessagePayload {
+		return nil, fmt.Errorf("DecodeExtraData: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
+	}
+	var extraData map[string][]byte
+	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
+	if extraDataLen != 0 {
+		extraData = make(map[string][]byte, extraDataLen)
+		// Loop over each key
+		for ii := uint64(0); ii < extraDataLen; ii++ {
+			// De-serialize the length of the key
+			var keyLen uint64
+			keyLen, err = ReadUvarint(rr)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
+			}
+			// De-serialize the key
+			keyBytes := make([]byte, keyLen)
+			_, err = io.ReadFull(rr, keyBytes)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
+			}
+			// Convert the key to a string and check if it already exists in the map.
+			// If it already exists in the map, this is an error as a map cannot have duplicate keys.
+			key := string(keyBytes)
+			if _, keyExists := extraData[key]; keyExists {
+				return nil, fmt.Errorf("DecodeExtraData: Key [#{ii}] ({key}) already exists in ExtraData")
+			}
+			// De-serialize the length of the value
+			var valueLen uint64
+			valueLen, err = ReadUvarint(rr)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
+			}
+			// De-serialize the value
+			value := make([]byte, valueLen)
+			_, err = io.ReadFull(rr, value)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem read value #{ii}")
+			}
+			// Map the key to the value
+			extraData[key] = value
+		}
+	}
+	return extraData, nil
 }
 
 func (msg *MsgDeSoTxn) FromBytes(data []byte) error {

@@ -9,25 +9,21 @@ func init() {
 	up := func(db orm.DB) error {
 
 		_, err := db.Exec(`
-			ALTER TABLE pg_profiles
-				ADD COLUMN extra_data JSONB; 
-			`)
-		if err != nil {
-			return err
-		}
-
-		return nil
+			ALTER TABLE pg_nft_bids
+				ADD COLUMN accepted_block_height BIGINT;
+		`)
+		return err
 	}
 
 	down := func(db orm.DB) error {
 		_, err := db.Exec(`
-			ALTER TABLE pg_profiles
-				DROP COLUMN extra_data;
+			ALTER TABLE pg_nft_bids
+				DROP COLUMN accepted_block_height;
 		`)
 		return err
 	}
 
 	opts := migrations.MigrationOptions{}
 
-	migrations.Register("20220209105715_profile_extra_data", up, down, opts)
+	migrations.Register("20220223112847_add_accepted_block_height", up, down, opts)
 }

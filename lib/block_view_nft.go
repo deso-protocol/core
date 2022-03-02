@@ -451,7 +451,7 @@ func (bav *UtxoView) _getBuyNowExtraData(txn *MsgDeSoTxn, blockHeight uint32) (
 
 	isBuyNow := false
 	buyNowPrice := uint64(0)
-  
+
 	// Only extract the BuyNowPriceKey value if we are past the BuyNowAndNFTSplitsBlockHeight
 	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists &&
 		blockHeight >= bav.Params.ForkHeights.BuyNowAndNFTSplitsBlockHeight {
@@ -689,6 +689,13 @@ func (bav *UtxoView) _connectCreateNFT(
 	postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints = additionalCoinNFTRoyalties
 	bav._setPostEntryMappings(postEntry)
 
+	var extraData map[string][]byte
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		// We don't have a previous entry here because we're creating the
+		// entry from scratch.
+		extraData = txn.ExtraData
+	}
+
 	// Add the appropriate NFT entries.
 	for ii := uint64(1); ii <= txMeta.NumCopies; ii++ {
 		nftEntry := &NFTEntry{
@@ -699,6 +706,7 @@ func (bav *UtxoView) _connectCreateNFT(
 			MinBidAmountNanos: txMeta.MinBidAmountNanos,
 			IsBuyNow:          isBuyNow,
 			BuyNowPriceNanos:  buyNowPrice,
+			ExtraData:         extraData,
 		}
 		bav._setNFTEntryMappings(nftEntry)
 	}
@@ -821,6 +829,11 @@ func (bav *UtxoView) _connectUpdateNFT(
 		// Keep the last accepted bid amount nanos from the previous entry since this
 		// value is only updated when a new bid is accepted.
 		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
+
+		// Just copy the extra data from the previous entry when updating an NFT.
+		// We do this because you're not allowed to update the ExtraData on an
+		// NFTEntry.
+		ExtraData: prevNFTEntry.ExtraData,
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 
@@ -989,9 +1002,9 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		existingAdditionalProfileEntry := bav.GetProfileEntryForPublicKey(pkBytes)
 		if existingAdditionalProfileEntry == nil || existingAdditionalProfileEntry.isDeleted {
 			return 0, 0, nil, fmt.Errorf(
-				"_helpConnectNFTSold: Profile missing for additional coin royalty " +
+				"_helpConnectNFTSold: Profile missing for additional coin royalty "+
 					"for pkid: %v, pub key: %v %v for post hash: %v",
-					PkToStringMainnet(pkid[:]),
+				PkToStringMainnet(pkid[:]),
 				PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes),
 				hex.EncodeToString(nftPostEntry.PostHash[:]))
 		}
@@ -1218,7 +1231,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		// generate for the royalties will have a random order. This would cause one node
 		// to believe UTXO zero is some value, while another node believes it to be a
 		// different value because it put a different UTXO in that index.
-		sort.Slice(additionalRoyalties,  func(ii, jj int) bool {
+		sort.Slice(additionalRoyalties, func(ii, jj int) bool {
 			iiPkStr := PkToString(additionalRoyalties[ii].PublicKey, bav.Params)
 			jjPkStr := PkToString(additionalRoyalties[jj].PublicKey, bav.Params)
 			// Generally, we should never have to break a tie because a public key
@@ -1291,7 +1304,9 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 	// append the accepted bid entry to the list of accepted bid entries
 	prevAcceptedBidHistory := bav.GetAcceptNFTBidHistoryForNFTKey(&nftKey)
-	newAcceptedBidHistory := append(*prevAcceptedBidHistory, nftBidEntry)
+	acceptedNFTBidEntry := nftBidEntry.Copy()
+	acceptedNFTBidEntry.AcceptedBlockHeight = &blockHeight
+	newAcceptedBidHistory := append(*prevAcceptedBidHistory, acceptedNFTBidEntry)
 	bav._setAcceptNFTBidHistoryMappings(nftKey, &newAcceptedBidHistory)
 
 	// (2) Iterate over all the NFTBidEntries for this NFT and delete them.

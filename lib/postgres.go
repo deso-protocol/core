@@ -589,6 +589,8 @@ type PGMessage struct {
 	TimestampNanos     uint64
 	// TODO: Version
 
+	ExtraData map[string][]byte
+
 	// Used to track deletions in the UtxoView
 	isDeleted bool
 }
@@ -600,6 +602,8 @@ type PGMessagingGroup struct {
 	MessagingPublicKey    *PublicKey    `pg:",type:bytea"`
 	MessagingGroupKeyName *GroupKeyName `pg:",type:bytea"`
 	MessagingGroupMembers []byte        `pg:",type:bytea"`
+
+	ExtraData map[string][]byte
 }
 
 type PGCreatorCoinBalance struct {
@@ -706,6 +710,8 @@ type PGNFT struct {
 	IsPending                  bool   `pg:",use_zero"`
 	IsBuyNow                   bool   `pg:",use_zero"`
 	BuyNowPriceNanos           uint64 `pg:",use_zero"`
+
+	ExtraData map[string][]byte
 }
 
 func (nft *PGNFT) NewNFTEntry() *NFTEntry {
@@ -721,6 +727,7 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 		IsPending:                  nft.IsPending,
 		IsBuyNow:                   nft.IsBuyNow,
 		BuyNowPriceNanos:           nft.BuyNowPriceNanos,
+		ExtraData:                  nft.ExtraData,
 	}
 }
 
@@ -728,19 +735,21 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 type PGNFTBid struct {
 	tableName struct{} `pg:"pg_nft_bids"`
 
-	BidderPKID     *PKID      `pg:",pk,type:bytea"`
-	NFTPostHash    *BlockHash `pg:",pk,type:bytea"`
-	SerialNumber   uint64     `pg:",pk,use_zero"`
-	BidAmountNanos uint64     `pg:",use_zero"`
-	Accepted       bool       `pg:",use_zero"`
+	BidderPKID          *PKID      `pg:",pk,type:bytea"`
+	NFTPostHash         *BlockHash `pg:",pk,type:bytea"`
+	SerialNumber        uint64     `pg:",pk,use_zero"`
+	BidAmountNanos      uint64     `pg:",use_zero"`
+	Accepted            bool       `pg:",use_zero"`
+	AcceptedBlockHeight *uint32    `pg:",use_zero"`
 }
 
 func (bid *PGNFTBid) NewNFTBidEntry() *NFTBidEntry {
 	return &NFTBidEntry{
-		BidderPKID:     bid.BidderPKID,
-		NFTPostHash:    bid.NFTPostHash,
-		SerialNumber:   bid.SerialNumber,
-		BidAmountNanos: bid.BidAmountNanos,
+		BidderPKID:          bid.BidderPKID,
+		NFTPostHash:         bid.NFTPostHash,
+		SerialNumber:        bid.SerialNumber,
+		BidAmountNanos:      bid.BidAmountNanos,
+		AcceptedBlockHeight: bid.AcceptedBlockHeight,
 	}
 }
 
@@ -752,6 +761,8 @@ type PGDerivedKey struct {
 	DerivedPublicKey PublicKey                        `pg:",pk,type:bytea"`
 	ExpirationBlock  uint64                           `pg:",use_zero"`
 	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
+
+	ExtraData map[string][]byte
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
@@ -760,6 +771,7 @@ func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
 		DerivedPublicKey: key.DerivedPublicKey,
 		ExpirationBlock:  key.ExpirationBlock,
 		OperationType:    key.OperationType,
+		ExtraData:        key.ExtraData,
 	}
 }
 
@@ -1083,6 +1095,27 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				SerialNumber:    txMeta.SerialNumber,
 				BidAmountNanos:  txMeta.BidAmountNanos,
 			})
+
+			//get related NFT
+			pgBidNft := postgres.GetNFT(txMeta.NFTPostHash, txMeta.SerialNumber)
+
+			//check if is buy now and BidAmountNanos > then BuyNowPriceNanos
+			if pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
+
+				//get related profile
+				pgBidProfile := postgres.GetProfileForPublicKey(txn.PublicKey)
+
+				//add to accept bids as well
+				metadataAcceptNFTBids = append(metadataAcceptNFTBids, &PGMetadataAcceptNFTBid{
+					TransactionHash: txnHash,
+					NFTPostHash:     txMeta.NFTPostHash,
+					SerialNumber:    txMeta.SerialNumber,
+					BidderPKID:      pgBidProfile.PKID,
+					BidAmountNanos:  txMeta.BidAmountNanos,
+					UnlockableText:  []byte{},
+				})
+			}
+
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
 			txMeta := txn.TxnMeta.(*NFTTransferMetadata)
 			metadataNFTTransfer = append(metadataNFTTransfer, &PGMetadataNFTTransfer{
@@ -1667,12 +1700,15 @@ func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error 
 	var deleteMessages []*PGMessagingGroup
 	for _, groupEntry := range view.MessagingGroupKeyToMessagingGroupEntry {
 		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
-		gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers)
+		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers); err != nil {
+			return err
+		}
 		pgGroupEntry := &PGMessagingGroup{
 			GroupOwnerPublicKey:   groupEntry.GroupOwnerPublicKey,
 			MessagingPublicKey:    groupEntry.MessagingPublicKey,
 			MessagingGroupKeyName: groupEntry.MessagingGroupKeyName,
 			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
+			ExtraData:             groupEntry.ExtraData,
 		}
 		if groupEntry.isDeleted {
 			deleteMessages = append(deleteMessages, pgGroupEntry)
@@ -1882,12 +1918,12 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	var deleteBids []*PGNFTBid
 	for _, bidEntry := range view.NFTBidKeyToNFTBidEntry {
 		nft := &PGNFTBid{
-			BidderPKID:     bidEntry.BidderPKID,
-			NFTPostHash:    bidEntry.NFTPostHash,
-			SerialNumber:   bidEntry.SerialNumber,
-			BidAmountNanos: bidEntry.BidAmountNanos,
-			// TODO: Change how accepted bid logic works in consensus
-			Accepted: false,
+			BidderPKID:          bidEntry.BidderPKID,
+			NFTPostHash:         bidEntry.NFTPostHash,
+			SerialNumber:        bidEntry.SerialNumber,
+			BidAmountNanos:      bidEntry.BidAmountNanos,
+			Accepted:            bidEntry.AcceptedBlockHeight != nil,
+			AcceptedBlockHeight: bidEntry.AcceptedBlockHeight,
 		}
 
 		if bidEntry.isDeleted {
