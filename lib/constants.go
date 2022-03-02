@@ -172,7 +172,7 @@ type ForkHeights struct {
 	// transactions will be accepted.
 	DAOCoinBlockHeight uint32
 
-	ProfileExtraDataBlockHeight uint32
+	ExtraDataOnEntriesBlockHeight uint32
 }
 
 // DeSoParams defines the full list of possible parameters for the
@@ -401,7 +401,7 @@ func (params *DeSoParams) EnableRegtest() {
 		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
-		ProfileExtraDataBlockHeight:                          uint32(0),
+		ExtraDataOnEntriesBlockHeight:                        uint32(0),
 	}
 }
 
@@ -646,7 +646,7 @@ var DeSoMainnetParams = DeSoParams{
 		DAOCoinBlockHeight:            uint32(98474),
 
 		// FIXME: set to real block height
-		ProfileExtraDataBlockHeight: math.MaxUint32,
+		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
 	},
 }
 
@@ -834,7 +834,7 @@ var DeSoTestnetParams = DeSoParams{
 		DAOCoinBlockHeight:            uint32(97322),
 
 		// FIXME: set to real block height
-		ProfileExtraDataBlockHeight: math.MaxUint32,
+		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
 	},
 }
 

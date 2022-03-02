@@ -689,6 +689,13 @@ func (bav *UtxoView) _connectCreateNFT(
 	postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints = additionalCoinNFTRoyalties
 	bav._setPostEntryMappings(postEntry)
 
+	var extraData map[string][]byte
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		// We don't have a previous entry here because we're creating the
+		// entry from scratch.
+		extraData = txn.ExtraData
+	}
+
 	// Add the appropriate NFT entries.
 	for ii := uint64(1); ii <= txMeta.NumCopies; ii++ {
 		nftEntry := &NFTEntry{
@@ -699,6 +706,7 @@ func (bav *UtxoView) _connectCreateNFT(
 			MinBidAmountNanos: txMeta.MinBidAmountNanos,
 			IsBuyNow:          isBuyNow,
 			BuyNowPriceNanos:  buyNowPrice,
+			ExtraData:         extraData,
 		}
 		bav._setNFTEntryMappings(nftEntry)
 	}
@@ -821,6 +829,11 @@ func (bav *UtxoView) _connectUpdateNFT(
 		// Keep the last accepted bid amount nanos from the previous entry since this
 		// value is only updated when a new bid is accepted.
 		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
+
+		// Just copy the extra data from the previous entry when updating an NFT.
+		// We do this because you're not allowed to update the ExtraData on an
+		// NFTEntry.
+		ExtraData: prevNFTEntry.ExtraData,
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 

@@ -230,11 +230,20 @@ func _getAuthorizeDerivedKeyMetadata(t *testing.T, ownerPrivateKey *btcec.Privat
 	}, derivedPrivateKey
 }
 
-// Create a new AuthorizeDerivedKey txn and connect it to the utxoView
 func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
 	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
 	accessSignature []byte, deleteKey bool) (_utxoOps []*UtxoOperation,
+	_txn *MsgDeSoTxn, _height uint32, _err error) {
+	return _doAuthorizeTxnWithExtraData(t, chain, db, params, utxoView, feeRateNanosPerKB, ownerPublicKey,
+		derivedPublicKey, derivedPrivBase58Check, expirationBlock, accessSignature, deleteKey, nil)
+}
+
+// Create a new AuthorizeDerivedKey txn and connect it to the utxoView
+func _doAuthorizeTxnWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
+	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
+	accessSignature []byte, deleteKey bool, extraData map[string][]byte) (_utxoOps []*UtxoOperation,
 	_txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -249,6 +258,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		accessSignature,
 		deleteKey,
 		false,
+		extraData,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
 		[]*DeSoOutput{})
@@ -952,7 +962,7 @@ func TestUpdateProfile(t *testing.T) {
 		)
 		// M4 decides to add some profile extra data to their profile
 		{
-			params.ForkHeights.ProfileExtraDataBlockHeight = uint32(0)
+			params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 			extraData := map[string][]byte{
 				"m4extradata": []byte("hello"),
 				"otherfield":  []byte("other"),
@@ -3353,6 +3363,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 	}
 }
 
+
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3363,6 +3374,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -3436,15 +3448,16 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	}
 
 	// Verify that the balance and expiration block in the db match expectation.
-	_verifyTest := func(derivedPublicKey []byte, expirationBlockExpected uint64,
-		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *DeSoMempool) {
+	_verifyTestWithExtraData := func(derivedPublicKey []byte, expirationBlockExpected uint64,
+		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, extraData map[string][]byte,
+		mempool *DeSoMempool) {
 		// Verify that expiration block was persisted in the db or is in mempool utxoView
 		if mempool == nil {
 			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil {
-				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, false}
+				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, extraData, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
@@ -3455,7 +3468,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil {
-				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, false}
+				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, extraData, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
@@ -3463,6 +3476,12 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 		// Verify that the balance of recipient is equal to expected balance
 		assert.Equal(_getBalance(t, chain, mempool, recipientPkString), balanceExpected)
+	}
+
+	_verifyTest := func(derivedPublicKey []byte, expirationBlockExpected uint64,
+		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *DeSoMempool) {
+		_verifyTestWithExtraData(derivedPublicKey, expirationBlockExpected, balanceExpected,
+			operationTypeExpected, nil, mempool)
 	}
 
 	// We will use these to keep track of added utxo ops and txns
@@ -3550,10 +3569,14 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	}
 	// Now attempt to send the same transaction but signed with the correct derived key.
 	// This must pass. The new derived key will be flushed to the db here.
+	// We add some extra data here to test extra data on derived key entries
 	{
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
-		utxoOps, txn, _, err := _doAuthorizeTxn(
+		extraData := map[string][]byte{
+			"test": []byte("result"),
+		}
+		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraData(
 			t,
 			chain,
 			db,
@@ -3565,7 +3588,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			derivedPrivBase58Check,
 			authTxnMeta.ExpirationBlock,
 			authTxnMeta.AccessSignature,
-			false)
+			false,
+			extraData,
+		)
 		require.NoError(err)
 		require.NoError(utxoView.FlushToDb())
 
@@ -3573,7 +3598,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testTxns = append(testTxns, txn)
 
 		// Verify that expiration block was persisted in the db
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTestWithExtraData(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 0, AuthorizeDerivedKeyOperationValid, extraData, nil)
+		derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(authTxnMeta.DerivedPublicKey))
+		require.Equal(derivedKeyEntry.ExtraData["test"], []byte("result"))
 		fmt.Println("Passed connecting AuthorizeDerivedKey txn signed with an authorized private key. Flushed to Db.")
 	}
 	// Check basic transfer signed by the owner key.
