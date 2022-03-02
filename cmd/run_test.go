@@ -19,6 +19,8 @@ import (
 	"time"
 )
 
+const HyperSyncSnapshotPeriod = 90
+
 // ConnectionBridge is a bidirectional communication channel between two nodes.
 // A bridge creates a pair of inbound and outbound peers for each of the nodes to handle communication.
 // An inbound Peer represents incoming communication to a node, and an outbound Peer represents outgoing communication.
@@ -413,6 +415,7 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MaxBlockTemplatesCache = 100
 	config.MaxSyncBlockHeight = 100
 	config.MinBlockUpdateInterval = 10
+	config.SnapshotBlockHeightPeriod = HyperSyncSnapshotPeriod
 
 	return config
 }
@@ -562,21 +565,6 @@ func listenForBlockHeight(t *testing.T, node *Node, height uint32, signal chan<-
 	}()
 }
 
-func listenForSyncPrefix(t *testing.T, node *Node, syncPrefix []byte, signal chan<- bool) {
-	ticker := time.NewTicker(1 * time.Millisecond)
-	go func() {
-		for {
-			<-ticker.C
-			for _, prefix := range node.Server.HyperSyncProgress.PrefixProgress {
-				if reflect.DeepEqual(prefix.Prefix, syncPrefix) {
-					signal <- true
-					return
-				}
-			}
-		}
-	}()
-}
-
 func disconnectAtBlockHeight(t *testing.T, syncingNode *Node, bridge *ConnectionBridge, height uint32) {
 	listener := make(chan bool)
 	listenForBlockHeight(t, syncingNode, height, listener)
@@ -597,6 +585,24 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *Node, source *Node, cur
 	bridge := NewConnectionBridge(newNode, source)
 	require.NoError(bridge.Connect())
 	return newNode, bridge
+}
+
+func listenForSyncPrefix(t *testing.T, node *Node, syncPrefix []byte, signal chan<- bool) {
+	ticker := time.NewTicker(1 * time.Millisecond)
+	go func() {
+		for {
+			<-ticker.C
+			for _, prefix := range node.Server.HyperSyncProgress.PrefixProgress {
+				if reflect.DeepEqual(prefix.Prefix, syncPrefix) {
+					//if reflect.DeepEqual(prefix.LastReceivedKey, syncPrefix) {
+					//	break
+					//}
+					signal <- true
+					return
+				}
+			}
+		}
+	}()
 }
 
 func disconnectAtSyncPrefix(t *testing.T, syncingNode *Node, bridge *ConnectionBridge, syncPrefix []byte) {
@@ -807,12 +813,10 @@ func TestSimpleHyperSync(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 50
-	config2.MaxSyncBlockHeight = 50
+	config1.MaxSyncBlockHeight = 1500
+	config2.MaxSyncBlockHeight = 1500
 	config1.HyperSync = true
 	config2.HyperSync = true
-	config1.SnapshotBlockHeightPeriod = 40
-	config2.SnapshotBlockHeightPeriod = 40
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
@@ -859,12 +863,10 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 50
-	config2.MaxSyncBlockHeight = 50
+	config1.MaxSyncBlockHeight = 1500
+	config2.MaxSyncBlockHeight = 1500
 	config1.HyperSync = true
 	config2.HyperSync = true
-	config1.SnapshotBlockHeightPeriod = 40
-	config2.SnapshotBlockHeightPeriod = 40
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
@@ -918,15 +920,12 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 	config3 := generateConfig(t, 18002, dbDir3, 10)
 
-	config1.MaxSyncBlockHeight = 500
-	config2.MaxSyncBlockHeight = 500
-	config3.MaxSyncBlockHeight = 500
+	config1.MaxSyncBlockHeight = 1500
+	config2.MaxSyncBlockHeight = 1500
+	config3.MaxSyncBlockHeight = 1500
 	config1.HyperSync = true
 	config2.HyperSync = true
 	config3.HyperSync = true
-	config1.SnapshotBlockHeightPeriod = 90
-	config2.SnapshotBlockHeightPeriod = 90
-	config3.SnapshotBlockHeightPeriod = 90
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
@@ -964,6 +963,7 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	waitForNodeToFullySync(node2)
 
 	compareNodesByState(t, node1, node2)
+	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
 	fmt.Println("Databases match!")
 	node1.Stop()

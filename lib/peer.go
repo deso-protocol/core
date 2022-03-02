@@ -880,7 +880,7 @@ out:
 			}
 
 			// If we have a problem sending a message to a peer then disconnect them.
-			glog.Infof("Writing Message: (%v)", msg)
+			glog.V(3).Infof("Writing Message: (%v)", msg)
 			if err := pp.WriteDeSoMessage(msg); err != nil {
 				glog.Errorf("Peer.outHandler: Problem sending message to peer: %v: %v", pp, err)
 				pp.Disconnect()

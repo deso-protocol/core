@@ -559,11 +559,20 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 		if prefixProgress.Completed {
 			continue
 		}
+		prefix = prefixProgress.Prefix
+		lastReceivedKey = prefixProgress.LastReceivedKey
+		syncingPrefix = true
 		if prefixProgress.PrefixSyncPeer.ID == pp.ID {
 			prefix = prefixProgress.Prefix
 			lastReceivedKey = prefixProgress.LastReceivedKey
 			syncingPrefix = true
 			break
+		} else {
+			glog.V(1).Infof("GetSnapshot: switching peers on prefix (%v), previous peer ID (%v) "+
+				"current peer ID (%v)", prefixProgress.Prefix, prefixProgress.PrefixSyncPeer.ID, pp.ID)
+			// TODO: Should disable the previous sync peer here somehow
+
+			prefixProgress.PrefixSyncPeer.ID = pp.ID
 		}
 	}
 
@@ -753,9 +762,15 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
 			if srv.cmgr.HyperSync && !srv.blockchain.finishedSyncing {
 				srv.blockchain.syncingState = true
+				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
+					srv.GetSnapshot(pp)
+					return
+				}
+
 				// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
 				// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
 				// remove these entries from the db because we will receive them during state sync.
+				glog.V(1).Infof("Server._handleHeaderBundle: Starting hyper sync, deleting all state records")
 				DBDeleteAllStateRecords(srv.blockchain.db)
 
 				// We set the expected height and hash of the snapshot from our header chain. The snapshots should be
@@ -767,6 +782,8 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotBlockHeight = expectedSnapshotHeight
 				srv.HyperSyncProgress.SnapshotBlockHash = srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash
+				srv.HyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
+				srv.HyperSyncProgress.Completed = false
 
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.

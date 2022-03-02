@@ -960,8 +960,16 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 
 	// If no records are present in the db for the provided prefix and startKey, return an empty db entry.
 	if len(snapshotEntriesBatch) == 0 {
-		snapshotEntriesBatch = append(snapshotEntriesBatch, EmptyDBEntry())
-		return snapshotEntriesBatch, false, false, nil
+		if ancestralDbFilled {
+			// This can happen in a rare case where all ancestral records were non-existent records and
+			// no record from the main DB was added.
+			lastAncestralEntry := ancestralDbBatchEntries[len(ancestralDbBatchEntries)-1]
+			dbEntry := snap.AncestralRecordToDBEntry(lastAncestralEntry)
+			return snap.GetSnapshotChunk(mainDb, prefix, dbEntry.Key)
+		} else {
+			snapshotEntriesBatch = append(snapshotEntriesBatch, EmptyDBEntry())
+			return snapshotEntriesBatch, false, false, nil
+		}
 	}
 
 	// Check if the semaphores have changed as we were fetching the snapshot chunk. It could happen
