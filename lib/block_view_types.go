@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -466,6 +468,9 @@ type MessageEntry struct {
 
 	// RecipientMessagingGroupKeyName is the recipient's key name of RecipientMessagingPublicKey
 	RecipientMessagingGroupKeyName *GroupKeyName
+
+	// Extra data
+	ExtraData map[string][]byte
 }
 
 func (message *MessageEntry) Encode() []byte {
@@ -480,6 +485,7 @@ func (message *MessageEntry) Encode() []byte {
 	data = append(data, EncodeByteArray(message.SenderMessagingGroupKeyName[:])...)
 	data = append(data, EncodeByteArray(message.RecipientMessagingPublicKey[:])...)
 	data = append(data, EncodeByteArray(message.RecipientMessagingGroupKeyName[:])...)
+	data = append(data, EncodeExtraData(message.ExtraData)...)
 	return data
 }
 
@@ -537,6 +543,19 @@ func (message *MessageEntry) Decode(data []byte) error {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding recipient messaging key name")
 	}
 	message.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
+
+	extraData, err := DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "MesssageEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "MesssageEntry.Decode: problem decoding extra data")
+	}
+	message.ExtraData = extraData
+
 	return nil
 }
 
@@ -637,6 +656,9 @@ type MessagingGroupEntry struct {
 	// is given to all group members.
 	MessagingGroupMembers []*MessagingGroupMember
 
+	// ExtraData is an arbitrary key value map
+	ExtraData map[string][]byte
+
 	// Whether this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if
 	// we disconnect the messaging key from UtxoView
@@ -648,6 +670,20 @@ func (entry *MessagingGroupEntry) String() string {
 		entry.GroupOwnerPublicKey, entry.MessagingPublicKey, entry.MessagingGroupKeyName, entry.isDeleted)
 }
 
+func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingGroupMember {
+	// Make a deep copy of the members to avoid messing up the slice the caller
+	// used. Not doing this could cause downstream effects, mainly in tests where
+	// the same slice is re-used in txns and in expectations later on.
+	members := make([]*MessagingGroupMember, len(membersArg))
+	copy(members, membersArg)
+	sort.Slice(members, func(ii, jj int) bool {
+		iiStr := PkToStringMainnet(members[ii].GroupMemberPublicKey[:]) + string(members[ii].GroupMemberKeyName[:]) + string(members[ii].EncryptedKey)
+		jjStr := PkToStringMainnet(members[jj].GroupMemberPublicKey[:]) + string(members[jj].GroupMemberKeyName[:]) + string(members[jj].EncryptedKey)
+		return iiStr < jjStr
+	})
+	return members
+}
+
 func (entry *MessagingGroupEntry) Encode() []byte {
 	var entryBytes []byte
 
@@ -655,9 +691,13 @@ func (entry *MessagingGroupEntry) Encode() []byte {
 	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingPublicKey[:])...)
 	entryBytes = append(entryBytes, EncodeByteArray(entry.MessagingGroupKeyName[:])...)
 	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MessagingGroupMembers)))...)
-	for ii := 0; ii < len(entry.MessagingGroupMembers); ii++ {
-		entryBytes = append(entryBytes, entry.MessagingGroupMembers[ii].Encode()...)
+	// We sort the MessagingGroupMembers because they can be added while iterating over
+	// a map, which could lead to inconsistent orderings across nodes when encoding.
+	members := sortMessagingGroupMembers(entry.MessagingGroupMembers)
+	for ii := 0; ii < len(members); ii++ {
+		entryBytes = append(entryBytes, members[ii].Encode()...)
 	}
+	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
 }
 
@@ -695,6 +735,18 @@ func (entry *MessagingGroupEntry) Decode(data []byte) error {
 
 		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &recipient)
 	}
+
+	extraData, err := DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "MessagingGroupEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
+	}
+	entry.ExtraData = extraData
 
 	return nil
 }
@@ -823,6 +875,8 @@ type NFTEntry struct {
 	// If an NFT is a Buy Now NFT, it can be purchased for this price.
 	BuyNowPriceNanos uint64
 
+	ExtraData map[string][]byte
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
@@ -880,6 +934,8 @@ type DerivedKeyEntry struct {
 	// Operation type determines if the derived key is
 	// authorized or de-authorized.
 	OperationType AuthorizeDerivedKeyOperationType
+
+	ExtraData map[string][]byte
 
 	// Transaction Spending limit Tracker
 	TransactionSpendingLimitTracker *TransactionSpendingLimit
@@ -1125,6 +1181,9 @@ type PostEntry struct {
 	AdditionalNFTRoyaltiesToCoinsBasisPoints map[PKID]uint64
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
+	// TODO: Change to just ExtraData. Will be easy to do once we have hypersync
+	// encoders/decoders, but for now doing so would mess up GOB encoding so we'll
+	// wait.
 	PostExtraData map[string][]byte
 }
 
@@ -1324,6 +1383,10 @@ type ProfileEntry struct {
 	// 2. DeSoLockedNanos
 	// 3. CoinWaterMarkNanos
 	DAOCoinEntry CoinEntry
+
+	// ExtraData map to hold arbitrary attributes of a profile. Holds
+	// non-consensus related information about a profile.
+	ExtraData map[string][]byte
 
 	// Whether or not this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if for

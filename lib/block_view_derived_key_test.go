@@ -147,6 +147,7 @@ func _doTxn(
 			buyNowPriceNanos,
 			additionalDESORoyaltyMap,
 			additionalCoinRoyaltyMap,
+			nil,
 			feeRateNanosPerKB,
 			nil,
 			nil,
@@ -239,6 +240,7 @@ func _doTxn(
 			realTxMeta.AccessSignature,
 			deleteKey,
 			false,
+			nil,
 			memo,
 			transactionSpendingLimit,
 			feeRateNanosPerKB,
@@ -258,6 +260,7 @@ func _doTxn(
 			realTxMeta.NewStakeMultipleBasisPoints,
 			realTxMeta.IsHidden,
 			0,
+			nil,
 			feeRateNanosPerKB,
 			nil,
 			nil,
@@ -516,11 +519,23 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivat
 	}, derivedPrivateKey
 }
 
-// Create a new AuthorizeDerivedKey txn and connect it to the utxoView
 func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
 	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
-	accessSignature []byte, deleteKey bool, memo []byte, transactionSpendingLimit *TransactionSpendingLimit) (_utxoOps []*UtxoOperation,
+	accessSignature []byte, deleteKey bool,
+	memo []byte, transactionSpendingLimit *TransactionSpendingLimit) (_utxoOps []*UtxoOperation,
+	_txn *MsgDeSoTxn, _height uint32, _err error) {
+	return _doAuthorizeTxnWithExtraDataAndSpendingLimits(t, chain, db, params, utxoView, feeRateNanosPerKB, ownerPublicKey,
+		derivedPublicKey, derivedPrivBase58Check, expirationBlock, accessSignature, deleteKey,
+		nil, memo, transactionSpendingLimit)
+}
+
+// Create a new AuthorizeDerivedKey txn and connect it to the utxoView
+func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
+	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
+	accessSignature []byte, deleteKey bool, extraData map[string][]byte,
+	memo []byte, transactionSpendingLimit *TransactionSpendingLimit) (_utxoOps []*UtxoOperation,
 	_txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -535,6 +550,7 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		accessSignature,
 		deleteKey,
 		false,
+		extraData,
 		memo,
 		transactionSpendingLimit,
 		feeRateNanosPerKB,
@@ -572,7 +588,9 @@ func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	if blockHeight >= params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		transactionSpendingLimitCount++
 	}
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1+transactionSpendingLimitCount, len(utxoOps))
+	// We should have one SPEND UtxoOperation for each input, one ADD operation
+	// for each output, and one OperationTypeUpdateProfile operation at the end.
+	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+transactionSpendingLimitCount+1, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
@@ -591,6 +609,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -665,15 +684,16 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	}
 
 	// Verify that the balance and expiration block in the db match expectation.
-	_verifyTest := func(derivedPublicKey []byte, expirationBlockExpected uint64,
-		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *DeSoMempool) {
+	_verifyTestWithExtraData := func(derivedPublicKey []byte, expirationBlockExpected uint64,
+		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, extraData map[string][]byte,
+		mempool *DeSoMempool) {
 		// Verify that expiration block was persisted in the db or is in mempool utxoView
 		if mempool == nil {
 			derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
+				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, nil, transactionSpendingLimit, nil, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
@@ -684,7 +704,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
+				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, nil, transactionSpendingLimit, nil, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
@@ -692,6 +712,12 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 		// Verify that the balance of recipient is equal to expected balance
 		assert.Equal(_getBalance(t, chain, mempool, recipientPkString), balanceExpected)
+	}
+
+	_verifyTest := func(derivedPublicKey []byte, expirationBlockExpected uint64,
+		balanceExpected uint64, operationTypeExpected AuthorizeDerivedKeyOperationType, mempool *DeSoMempool) {
+		_verifyTestWithExtraData(derivedPublicKey, expirationBlockExpected, balanceExpected,
+			operationTypeExpected, nil, mempool)
 	}
 
 	// We will use these to keep track of added utxo ops and txns
@@ -788,7 +814,11 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	{
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
-		utxoOps, txn, _, err := _doAuthorizeTxn(
+
+		extraData := map[string][]byte{
+			"test": []byte("result"),
+		}
+		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
 			t,
 			chain,
 			db,
@@ -801,6 +831,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			authTxnMeta.ExpirationBlock,
 			authTxnMeta.AccessSignature,
 			false,
+			extraData,
 			nil,
 			transactionSpendingLimit,
 		)
@@ -811,7 +842,9 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		testTxns = append(testTxns, txn)
 
 		// Verify that expiration block was persisted in the db
-		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 0, AuthorizeDerivedKeyOperationValid, nil)
+		_verifyTestWithExtraData(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 0, AuthorizeDerivedKeyOperationValid, extraData, nil)
+		derivedKeyEntry := DBGetOwnerToDerivedKeyMapping(db, *NewPublicKey(senderPkBytes), *NewPublicKey(authTxnMeta.DerivedPublicKey))
+		require.Equal(derivedKeyEntry.ExtraData["test"], []byte("result"))
 		fmt.Println("Passed connecting AuthorizeDerivedKey txn signed with an authorized private key. Flushed to Db.")
 	}
 	// Check basic transfer signed by the owner key.
@@ -1564,7 +1597,8 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
+				derivedKeyEntry = &DerivedKeyEntry{
+					*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, nil, transactionSpendingLimit, nil, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)
@@ -1575,7 +1609,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, transactionSpendingLimit, nil, false}
+				derivedKeyEntry = &DerivedKeyEntry{*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey), 0, AuthorizeDerivedKeyOperationValid, nil, transactionSpendingLimit, nil, false}
 			}
 			assert.Equal(derivedKeyEntry.ExpirationBlock, expirationBlockExpected)
 			assert.Equal(derivedKeyEntry.OperationType, operationTypeExpected)

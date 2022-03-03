@@ -481,6 +481,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 				MintingDisabled:           profile.DAOCoinMintingDisabled,
 				TransferRestrictionStatus: profile.DAOCoinTransferRestrictionStatus,
 			},
+			ExtraData: profile.ExtraData,
 		}
 
 		bav._setProfileEntryMappings(profileEntry)
@@ -699,7 +700,13 @@ func (bav *UtxoView) _connectUpdateProfile(
 		// Just always set the creator basis points and stake multiple.
 		newProfileEntry.CreatorCoinEntry.CreatorBasisPoints = txMeta.NewCreatorBasisPoints
 
-		// The StakeEntry is always left unmodified here.
+		// If we are past the ExtraDataOnEntriesBlockHeight, then we merge in the extra
+		// data from the transaction with the extra data from the existing profile entry.
+		if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+			newProfileEntry.ExtraData = mergeExtraData(
+				existingProfileEntry.ExtraData,
+				txn.ExtraData)
+		}
 
 	} else {
 		// When there's no pre-existing profile entry we need to do more
@@ -750,6 +757,12 @@ func (bav *UtxoView) _connectUpdateProfile(
 			},
 		}
 
+		// If we are passed the ExtraDataOnEntriesBlockHeight, then we add the
+		// extra data from the profile to ProfileEntry. There is no existingProfileEntry
+		// to merge fields from in this case.
+		if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+			newProfileEntry.ExtraData = mergeExtraData(nil, txn.ExtraData)
+		}
 	}
 	// At this point the newProfileEntry should be set to what we actually
 	// want to store in the db.

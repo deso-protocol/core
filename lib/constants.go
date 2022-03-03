@@ -172,6 +172,8 @@ type ForkHeights struct {
 	// transactions will be accepted.
 	DAOCoinBlockHeight uint32
 
+	ExtraDataOnEntriesBlockHeight uint32
+
 	// DerivedKeySetSpendingLimitsBlockHeight defines the height at which derived key transactions will have their
 	// transaction spending limits in the extra data field parsed.
 	DerivedKeySetSpendingLimitsBlockHeight uint32
@@ -409,6 +411,7 @@ func (params *DeSoParams) EnableRegtest() {
 		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
+		ExtraDataOnEntriesBlockHeight:                        uint32(0),
 		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
 		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	}
@@ -654,6 +657,9 @@ var DeSoMainnetParams = DeSoParams{
 		BuyNowAndNFTSplitsBlockHeight: uint32(98474),
 		DAOCoinBlockHeight:            uint32(98474),
 
+		// FIXME: set to real block height
+		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
+
 		// FIXME: Set these values when we're ready for the next fork.
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
@@ -842,6 +848,9 @@ var DeSoTestnetParams = DeSoParams{
 		DeSoV3MessagesBlockHeight:     uint32(97322),
 		BuyNowAndNFTSplitsBlockHeight: uint32(97322),
 		DAOCoinBlockHeight:            uint32(97322),
+
+		// FIXME: set to real block height
+		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
 
 		// FIXME: Set these values when we're ready for the next fork.
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,

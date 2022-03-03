@@ -123,6 +123,15 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		}
 	}
 
+	var extraData map[string][]byte
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		var prevExtraData map[string][]byte
+		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
+			prevExtraData = prevDerivedKeyEntry.ExtraData
+		}
+		extraData = mergeExtraData(prevExtraData, txn.ExtraData)
+	}
+
 	// This is the new state of transaction spending limits after merging in the transaction spending limit object
 	// defined in extra data
 	var newTransactionSpendingLimit *TransactionSpendingLimit
@@ -234,6 +243,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		OperationType:                   AuthorizeDerivedKeyOperationValid,
 		TransactionSpendingLimitTracker: newTransactionSpendingLimit,
 		Memo:                            memo,
+		ExtraData:                       extraData,
 		isDeleted:                       false,
 	}
 	bav._setDerivedKeyMapping(&derivedKeyEntry)

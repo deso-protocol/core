@@ -95,6 +95,17 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
 	newStakeMultipleBasisPoints uint64, isHidden bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	return _updateProfileWithExtraData(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
+		updaterPrivBase58Check, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints,
+		newStakeMultipleBasisPoints, isHidden, nil)
+}
+
+func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	updaterPrivBase58Check string, profilePubKey []byte, newUsername string,
+	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
+	newStakeMultipleBasisPoints uint64, isHidden bool, extraData map[string][]byte) (
+	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -117,6 +128,7 @@ func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
 		newStakeMultipleBasisPoints,
 		isHidden,
 		0,
+		extraData,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
 		[]*DeSoOutput{})
@@ -846,6 +858,79 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,
 			false,
 		)
+		// M4 decides to add some profile extra data to their profile
+		{
+			params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
+			extraData := map[string][]byte{
+				"m4extradata": []byte("hello"),
+				"otherfield":  []byte("other"),
+			}
+			expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m4Pub))
+			currentOps, currentTxn, _, err := _updateProfileWithExtraData(
+				t,
+				chain,
+				db,
+				params,
+				10,
+				m4Pub,
+				m4Priv,
+				m4PkBytes,
+				"",
+				"",
+				"",
+				11*100,
+				1.5*100*100,
+				false,
+				extraData,
+			)
+			require.NoError(err)
+			txns = append(txns, currentTxn)
+			txnOps = append(txnOps, currentOps)
+			utxoView, err := NewUtxoView(db, params, nil)
+			require.NoError(err)
+			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
+			require.Equal(len(m4ProfileEntry.ExtraData), 2)
+			require.Equal(m4ProfileEntry.ExtraData["m4extradata"], []byte("hello"))
+			require.Equal(m4ProfileEntry.ExtraData["otherfield"], []byte("other"))
+		}
+
+		// M4 decides to update one of the values in their profile extradata and add a new one. We should still
+		// have the unmodified otherfield from the original update
+		{
+			extraData := map[string][]byte{
+				"m4extradata": []byte("update!"),
+				"newfield":    []byte("new"),
+			}
+			expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m4Pub))
+			currentOps, currentTxn, _, err := _updateProfileWithExtraData(
+				t,
+				chain,
+				db,
+				params,
+				10,
+				m4Pub,
+				m4Priv,
+				m4PkBytes,
+				"",
+				"",
+				"",
+				11*100,
+				1.5*100*100,
+				false,
+				extraData,
+			)
+			require.NoError(err)
+			txns = append(txns, currentTxn)
+			txnOps = append(txnOps, currentOps)
+			utxoView, err := NewUtxoView(db, params, nil)
+			require.NoError(err)
+			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
+			require.Equal(len(m4ProfileEntry.ExtraData), 3)
+			require.Equal(m4ProfileEntry.ExtraData["m4extradata"], []byte("update!"))
+			require.Equal(m4ProfileEntry.ExtraData["otherfield"], []byte("other"))
+			require.Equal(m4ProfileEntry.ExtraData["newfield"], []byte("new"))
+		}
+
 		// Reset the create profile fee to 0 nanos (no fee) and set network minimum back to 0.
 		updateGlobalParamsEntry(
 			100,
@@ -1099,6 +1184,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 			12500, /*StakeMultiple*/
 			false, /*isHidden*/
 			0,
+			nil,
 			feeRateNanosPerKB, /*feeRateNanosPerKB*/
 			mempool,           /*mempool*/
 			[]*DeSoOutput{})
@@ -2976,6 +3062,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3001,6 +3088,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3033,6 +3121,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3059,6 +3148,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3093,6 +3183,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3125,6 +3216,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -3151,6 +3243,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 				20000,
 				false,
 				0,
+				nil,
 				100,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
