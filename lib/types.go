@@ -97,3 +97,28 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	copy(newBlockhash[:], bh[:])
 	return newBlockhash
 }
+
+//var _ sql.Scanner = (*BlockHash)(nil)
+//
+//// Scan scans the time parsing it if necessary using timeFormat.
+//func (bb *BlockHash) Scan(src interface{}) (err error) {
+//	switch src := src.(type) {
+//	case []byte:
+//		copy(bb[:], src)
+//		return err
+//	case nil:
+//		return nil
+//	default:
+//		return fmt.Errorf("unsupported data type: %T", src)
+//	}
+//}
+//
+//var _ driver.Valuer = (*BlockHash)(nil)
+//
+//// Scan scans the time parsing it if necessary using timeFormat.
+//func (bb *BlockHash) Value() (driver.Value, error) {
+//	if bb == nil {
+//		bb = &BlockHash{}
+//	}
+//	return bb[:], nil
+//}
