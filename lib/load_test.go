@@ -68,6 +68,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				12500,
 				false,
 				0,
+				nil,
 				10,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})

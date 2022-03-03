@@ -15,6 +15,31 @@ func _createNFTWithAdditionalRoyalties(t *testing.T, chain *Blockchain, db *badg
 	nftFee uint64, nftRoyaltyToCreatorBasisPoints uint64, nftRoyaltyToCoinBasisPoints uint64, isBuyNow bool,
 	buyNowPriceNanos uint64, additionalDESORoyaltiesMap map[PublicKey]uint64, additionalCoinRoyaltiesMap map[PublicKey]uint64,
 ) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	return _createNFTWithExtraData(t, chain, db, params, feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		nftPostHash,
+		numCopies,
+		hasUnlockable,
+		isForSale,
+		minBidAmountNanos,
+		nftFee,
+		nftRoyaltyToCreatorBasisPoints,
+		nftRoyaltyToCoinBasisPoints,
+		isBuyNow,
+		buyNowPriceNanos,
+		additionalDESORoyaltiesMap,
+		additionalCoinRoyaltiesMap,
+		nil)
+}
+
+func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
+	feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string,
+	nftPostHash *BlockHash, numCopies uint64, hasUnlockable bool, isForSale bool, minBidAmountNanos uint64,
+	nftFee uint64, nftRoyaltyToCreatorBasisPoints uint64, nftRoyaltyToCoinBasisPoints uint64, isBuyNow bool,
+	buyNowPriceNanos uint64, additionalDESORoyaltiesMap map[PublicKey]uint64, additionalCoinRoyaltiesMap map[PublicKey]uint64,
+	extraData map[string][]byte,
+) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -41,6 +66,7 @@ func _createNFTWithAdditionalRoyalties(t *testing.T, chain *Blockchain, db *badg
 		buyNowPriceNanos,
 		additionalDESORoyaltiesMap,
 		additionalCoinRoyaltiesMap,
+		extraData,
 		feeRateNanosPerKB,
 		nil, []*DeSoOutput{})
 	if err != nil {
@@ -120,13 +146,53 @@ func _createNFTWithAdditionalRoyaltiesWithTestMeta(
 	additionalDESORoyaltiesMap map[PublicKey]uint64,
 	additionalCoinRoyaltiesMap map[PublicKey]uint64,
 ) {
+	_createNFTWithAdditionalRoyaltiesAndExtraDataWithTestMeta(
+		testMeta,
+		feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		postHashToModify,
+		numCopies,
+		hasUnlockable,
+		isForSale,
+		minBidAmountNanos,
+		nftFee,
+		nftRoyaltyToCreatorBasisPoints,
+		nftRoyaltyToCoinBasisPoints,
+		isBuyNow,
+		buyNowPriceNanos,
+		additionalDESORoyaltiesMap,
+		additionalCoinRoyaltiesMap,
+		nil,
+	)
+}
+
+func _createNFTWithAdditionalRoyaltiesAndExtraDataWithTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	postHashToModify *BlockHash,
+	numCopies uint64,
+	hasUnlockable bool,
+	isForSale bool,
+	minBidAmountNanos uint64,
+	nftFee uint64,
+	nftRoyaltyToCreatorBasisPoints uint64,
+	nftRoyaltyToCoinBasisPoints uint64,
+	isBuyNow bool,
+	buyNowPriceNanos uint64,
+	additionalDESORoyaltiesMap map[PublicKey]uint64,
+	additionalCoinRoyaltiesMap map[PublicKey]uint64,
+	extraData map[string][]byte,
+) {
 	// Sanity check: the number of NFT entries before should be 0.
 	dbNFTEntries := DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
 	require.Equal(testMeta.t, 0, len(dbNFTEntries))
 
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
-	currentOps, currentTxn, _, err := _createNFTWithAdditionalRoyalties(
+	currentOps, currentTxn, _, err := _createNFTWithExtraData(
 		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
@@ -142,6 +208,7 @@ func _createNFTWithAdditionalRoyaltiesWithTestMeta(
 		buyNowPriceNanos,
 		additionalDESORoyaltiesMap,
 		additionalCoinRoyaltiesMap,
+		extraData,
 	)
 	require.NoError(testMeta.t, err)
 
@@ -731,6 +798,7 @@ func TestNFTBasic(t *testing.T) {
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1097,6 +1165,7 @@ func TestNFTBasic(t *testing.T) {
 
 	// Creating an NFT with the correct NFT fee should succeed.
 	// This time set HasUnlockable to 'true'.
+	// Add some extra data to the NFT entries
 	{
 		utxoView, err := NewUtxoView(db, params, nil)
 		require.NoError(err)
@@ -1107,7 +1176,10 @@ func TestNFTBasic(t *testing.T) {
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
 		require.Equal(uint64(26), m0BalBeforeNFT)
 
-		_createNFTWithTestMeta(
+		extraData := map[string][]byte{
+			"rarity": []byte("high"),
+		}
+		_createNFTWithAdditionalRoyaltiesAndExtraDataWithTestMeta(
 			testMeta,
 			10, /*FeeRateNanosPerKB*/
 			m0Pub,
@@ -1122,11 +1194,18 @@ func TestNFTBasic(t *testing.T) {
 			0,      /*nftRoyaltyToCoinBasisPoints*/
 			false,
 			0,
+			nil,
+			nil,
+			extraData,
 		)
 
 		// Check that m0 was charged the correct nftFee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
 		require.Equal(uint64(25)-nftFee, m0BalAfterNFT)
+
+		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, post2Hash, 1)
+		require.Len(nftEntry.ExtraData, 1)
+		require.Equal(nftEntry.ExtraData["rarity"], []byte("high"))
 	}
 
 	//
@@ -7433,7 +7512,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			0,
 			true,
 			200,
-			)
+		)
 	}
 
 	// M0 buys their NFT back
@@ -7445,7 +7524,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			200,
-			)
+		)
 	}
 
 	// M0 puts it on sale again
@@ -7460,7 +7539,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			10,
 			true,
 			200,
-			)
+		)
 	}
 
 	// M3 buys it back again
@@ -7472,7 +7551,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			200,
-			)
+		)
 	}
 
 	// M3 puts it on sale and m2 buys it this time
@@ -7487,7 +7566,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			0,
 			true,
 			150,
-			)
+		)
 
 		_createNFTBidWithTestMeta(testMeta,
 			10,
@@ -7496,7 +7575,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			150,
-			)
+		)
 	}
 
 	// M2 transfers it to M1 and m1 Accepts
@@ -7509,7 +7588,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			"",
-			)
+		)
 
 		_acceptNFTTransferWithTestMeta(testMeta,
 			10,
@@ -7517,7 +7596,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			m1Priv,
 			post1Hash,
 			1,
-			)
+		)
 	}
 
 	// M1 puts it on sale as an auction
@@ -7532,7 +7611,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			100,
 			false,
 			0,
-			)
+		)
 	}
 
 	// M4, M5, and M6 submit bids
@@ -7544,7 +7623,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			100,
-			)
+		)
 
 		_createNFTBidWithTestMeta(testMeta,
 			10,
@@ -7600,7 +7679,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			100,
-			)
+		)
 	}
 
 	_rollBackTestMetaTxnsAndFlush(testMeta)
@@ -7609,4 +7688,3 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
-

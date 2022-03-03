@@ -380,7 +380,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		""     /*dataDir*/, "")
+		"" /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -1594,14 +1594,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			AdditionalDESORoyaltiesMap: additionalDESORoyaltiesMap,
 			AdditionalCoinRoyaltiesMap: additionalCoinRoyaltiesMap,
 		}
-		for pubKeyIter, _ := range additionalDESORoyaltiesMap {
+		for pubKeyIter := range additionalDESORoyaltiesMap {
 			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
 			})
 		}
-		for pubKeyIter, _ := range additionalCoinRoyaltiesMap {
+		for pubKeyIter := range additionalCoinRoyaltiesMap {
 			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
@@ -1625,14 +1625,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
 			Metadata:             "NFTCreatorPublicKeyBase58Check",
 		})
-		for pubKeyIter, _ := range additionalDESORoyaltiesMap {
+		for pubKeyIter := range additionalDESORoyaltiesMap {
 			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
 			})
 		}
-		for pubKeyIter, _ := range additionalCoinRoyaltiesMap {
+		for pubKeyIter := range additionalCoinRoyaltiesMap {
 			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,

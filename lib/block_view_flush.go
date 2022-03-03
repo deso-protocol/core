@@ -486,7 +486,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
 	// Go through and delete all the entries so they can be added back fresh.
-	for nftKeyIter, _ := range bav.NFTKeyToAcceptedNFTBidHistory {
+	for nftKeyIter := range bav.NFTKeyToAcceptedNFTBidHistory {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
 

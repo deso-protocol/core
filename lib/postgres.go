@@ -442,6 +442,7 @@ type PGProfile struct {
 	DAOCoinCoinsInCirculationNanos   string                    `pg:"dao_coin_coins_in_circulation_nanos"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
+	ExtraData                        map[string][]byte
 }
 
 func (profile *PGProfile) Empty() bool {
@@ -588,6 +589,8 @@ type PGMessage struct {
 	TimestampNanos     uint64
 	// TODO: Version
 
+	ExtraData map[string][]byte
+
 	// Used to track deletions in the UtxoView
 	isDeleted bool
 }
@@ -599,6 +602,8 @@ type PGMessagingGroup struct {
 	MessagingPublicKey    *PublicKey    `pg:",type:bytea"`
 	MessagingGroupKeyName *GroupKeyName `pg:",type:bytea"`
 	MessagingGroupMembers []byte        `pg:",type:bytea"`
+
+	ExtraData map[string][]byte
 }
 
 type PGCreatorCoinBalance struct {
@@ -705,6 +710,8 @@ type PGNFT struct {
 	IsPending                  bool   `pg:",use_zero"`
 	IsBuyNow                   bool   `pg:",use_zero"`
 	BuyNowPriceNanos           uint64 `pg:",use_zero"`
+
+	ExtraData map[string][]byte
 }
 
 func (nft *PGNFT) NewNFTEntry() *NFTEntry {
@@ -720,6 +727,7 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 		IsPending:                  nft.IsPending,
 		IsBuyNow:                   nft.IsBuyNow,
 		BuyNowPriceNanos:           nft.BuyNowPriceNanos,
+		ExtraData:                  nft.ExtraData,
 	}
 }
 
@@ -753,14 +761,23 @@ type PGDerivedKey struct {
 	DerivedPublicKey PublicKey                        `pg:",pk,type:bytea"`
 	ExpirationBlock  uint64                           `pg:",use_zero"`
 	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
+
+	ExtraData map[string][]byte
+
+	// TransactionSpendingLimit fields
+	TransactionSpendingLimitTracker *TransactionSpendingLimit `pg:",type:bytea"`
+	Memo                            []byte                    `pg:",type:bytea"`
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
 	return &DerivedKeyEntry{
-		OwnerPublicKey:   key.OwnerPublicKey,
-		DerivedPublicKey: key.DerivedPublicKey,
-		ExpirationBlock:  key.ExpirationBlock,
-		OperationType:    key.OperationType,
+		OwnerPublicKey:                  key.OwnerPublicKey,
+		DerivedPublicKey:                key.DerivedPublicKey,
+		ExpirationBlock:                 key.ExpirationBlock,
+		OperationType:                   key.OperationType,
+		ExtraData:                       key.ExtraData,
+		TransactionSpendingLimitTracker: key.TransactionSpendingLimitTracker,
+		Memo:                            key.Memo,
 	}
 }
 
@@ -1089,7 +1106,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			pgBidNft := postgres.GetNFT(txMeta.NFTPostHash, txMeta.SerialNumber)
 
 			//check if is buy now and BidAmountNanos > then BuyNowPriceNanos
-			if pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
+			if pgBidNft != nil && pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
 
 				//get related profile
 				pgBidProfile := postgres.GetProfileForPublicKey(txn.PublicKey)
@@ -1443,6 +1460,7 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 			profile.DAOCoinMintingDisabled = profileEntry.DAOCoinEntry.MintingDisabled
 			profile.DAOCoinNumberOfHolders = profileEntry.DAOCoinEntry.NumberOfHolders
 			profile.DAOCoinTransferRestrictionStatus = profileEntry.DAOCoinEntry.TransferRestrictionStatus
+			profile.ExtraData = profileEntry.ExtraData
 		}
 
 		if pkidEntry.isDeleted {
@@ -1688,12 +1706,15 @@ func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error 
 	var deleteMessages []*PGMessagingGroup
 	for _, groupEntry := range view.MessagingGroupKeyToMessagingGroupEntry {
 		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
-		gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers)
+		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers); err != nil {
+			return err
+		}
 		pgGroupEntry := &PGMessagingGroup{
 			GroupOwnerPublicKey:   groupEntry.GroupOwnerPublicKey,
 			MessagingPublicKey:    groupEntry.MessagingPublicKey,
 			MessagingGroupKeyName: groupEntry.MessagingGroupKeyName,
 			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
+			ExtraData:             groupEntry.ExtraData,
 		}
 		if groupEntry.isDeleted {
 			deleteMessages = append(deleteMessages, pgGroupEntry)
@@ -1940,10 +1961,12 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 	var deleteKeys []*PGDerivedKey
 	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
 		key := &PGDerivedKey{
-			OwnerPublicKey:   keyEntry.OwnerPublicKey,
-			DerivedPublicKey: keyEntry.DerivedPublicKey,
-			ExpirationBlock:  keyEntry.ExpirationBlock,
-			OperationType:    keyEntry.OperationType,
+			OwnerPublicKey:                  keyEntry.OwnerPublicKey,
+			DerivedPublicKey:                keyEntry.DerivedPublicKey,
+			ExpirationBlock:                 keyEntry.ExpirationBlock,
+			OperationType:                   keyEntry.OperationType,
+			TransactionSpendingLimitTracker: keyEntry.TransactionSpendingLimitTracker,
+			Memo:                            keyEntry.Memo,
 		}
 
 		if keyEntry.isDeleted {

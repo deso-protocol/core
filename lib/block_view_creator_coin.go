@@ -915,7 +915,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Check that if the buyer is receiving nanos for the first time, it's enough
 	// to push them above the CreatorCoinAutoSellThresholdNanos threshold. This helps
 	// prevent tiny amounts of nanos from drifting the ratio of creator coins to DeSo locked.
-  if blockHeight > bav.Params.ForkHeights.SalomonFixBlockHeight {
+	if blockHeight > bav.Params.ForkHeights.SalomonFixBlockHeight {
 		// CreatorCoin balances can't exceed uint64
 		if buyerBalanceEntry.BalanceNanos.Uint64() == 0 && coinsBuyerGetsNanos != 0 &&
 			coinsBuyerGetsNanos < bav.Params.CreatorCoinAutoSellThresholdNanos {

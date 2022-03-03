@@ -2544,7 +2544,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	unencryptedMessageText string, encryptedMessageText string,
 	senderMessagingPublicKey []byte, senderMessagingKeyName []byte,
 	recipientMessagingPublicKey []byte, recipientMessagingKeyName []byte,
-	tstampNanos uint64,
+	tstampNanos uint64, extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -2607,6 +2607,19 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		}
 	}
 
+	// Delete protected keys
+	if extraData != nil {
+		delete(extraData, MessagesVersionString)
+		delete(extraData, SenderMessagingPublicKey)
+		delete(extraData, SenderMessagingGroupKeyName)
+		delete(extraData, RecipientMessagingPublicKey)
+		delete(extraData, RecipientMessagingGroupKeyName)
+	}
+
+	// Going to allow this to merge without a block height check because
+	// it seems safe, and threading the block height check into here is pretty annoying.
+	finalExtraData := mergeExtraData(extraData, messageExtraData)
+
 	// Don't allow encryptedMessageBytes to be nil.
 	if len(encryptedMessageBytes) == 0 {
 		encryptedMessageBytes = []byte{}
@@ -2621,7 +2634,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 			EncryptedText:      encryptedMessageBytes,
 			TimestampNanos:     tstampNanos,
 		},
-		ExtraData: messageExtraData,
+		ExtraData: finalExtraData,
 		TxOutputs: additionalOutputs,
 
 		// We wait to compute the signature until we've added all the
@@ -2878,6 +2891,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	NewStakeMultipleBasisPoints uint64,
 	IsHidden bool,
 	AdditionalFees uint64,
+	ExtraData map[string][]byte,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -2895,6 +2909,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 			IsHidden:                    IsHidden,
 		},
 		TxOutputs: additionalOutputs,
+		ExtraData: ExtraData,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 
@@ -3134,6 +3149,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	BuyNowPriceNanos uint64,
 	AdditionalDESORoyalties map[PublicKey]uint64,
 	AdditionalCoinRoyalties map[PublicKey]uint64,
+	ExtraData map[string][]byte,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3155,10 +3171,10 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 		// inputs and change.
 	}
 
-	extraData := make(map[string][]byte)
+	nftExtraData := make(map[string][]byte)
 	// If this transactions creates a Buy Now NFT, set the extra data appropriately.
 	if IsBuyNow {
-		extraData[BuyNowPriceKey] = UintToBuf(BuyNowPriceNanos)
+		nftExtraData[BuyNowPriceKey] = UintToBuf(BuyNowPriceNanos)
 	}
 
 	// If this NFT has royalties that go to other users coins, set the extra data appropriately
@@ -3168,7 +3184,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"CreateCreateNFTTxn: Problem encoding additional DESO Royalties map: ")
 		}
-		extraData[DESORoyaltiesMapKey] = additionalDESORoyaltiesBuf
+		nftExtraData[DESORoyaltiesMapKey] = additionalDESORoyaltiesBuf
 	}
 
 	// If this NFT has royalties that go to other users coins, set the extra data appropriately
@@ -3178,11 +3194,20 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"CreateCreateNFTTxn: Problem encoding additional Coin Royalties map: ")
 		}
-		extraData[CoinRoyaltiesMapKey] = additionalCoinRoyaltiesBuf
+		nftExtraData[CoinRoyaltiesMapKey] = additionalCoinRoyaltiesBuf
 	}
 
-	if len(extraData) > 0 {
-		txn.ExtraData = extraData
+	// Delete the protected keys from the ExtraData map
+	if ExtraData != nil {
+		delete(ExtraData, BuyNowPriceKey)
+		delete(ExtraData, DESORoyaltiesMapKey)
+		delete(ExtraData, CoinRoyaltiesMapKey)
+	}
+
+	finalExtraData := mergeExtraData(ExtraData, nftExtraData)
+
+	if len(finalExtraData) > 0 {
+		txn.ExtraData = finalExtraData
 	}
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
@@ -3664,20 +3689,32 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	accessSignature []byte,
 	deleteKey bool,
 	derivedKeySignature bool,
+	extraData map[string][]byte,
+	memo []byte,
+	transactionSpendingLimit *TransactionSpendingLimit,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Verify that the signature is valid.
-	err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
-		expirationBlock, accessSignature)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
+	blockHeight := bc.blockTip().Height + 1
+
+	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
+		if err := _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey, derivedPublicKey,
+			expirationBlock, transactionSpendingLimit, accessSignature); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature with transaction"+
+					" spending limit")
+		}
+	} else {
+		// Verify that the signature is valid.
+		if err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
+			expirationBlock, accessSignature); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
+		}
 	}
 
 	// Check that the expiration block is valid.
-	blockHeight := bc.blockTip().Height + 1
 	if expirationBlock <= uint64(blockHeight) {
 		return nil, 0, 0, 0, fmt.Errorf(
 			"Blockchain.CreateAuthorizeDerivedKeyTxn: Expired access signature")
@@ -3691,10 +3728,34 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		operationType = AuthorizeDerivedKeyOperationValid
 	}
 
-	extraData := make(map[string][]byte)
+	derivedKeyExtraData := make(map[string][]byte)
 	if derivedKeySignature {
-		extraData[DerivedPublicKey] = derivedPublicKey
+		derivedKeyExtraData[DerivedPublicKey] = derivedPublicKey
 	}
+
+	spendingLimitsExtraData := make(map[string][]byte)
+	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
+		if len(memo) != 0 {
+			spendingLimitsExtraData[DerivedKeyMemoKey] = memo
+		}
+		if transactionSpendingLimit != nil {
+			transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+			if err != nil {
+				return nil, 0, 0, 0, err
+			}
+			spendingLimitsExtraData[TransactionSpendingLimitKey] = transactionSpendingLimitBytes
+		}
+	}
+
+	// Delete protected keys
+	if extraData != nil {
+		delete(extraData, DerivedPublicKey)
+		delete(extraData, DerivedKeyMemoKey)
+		delete(extraData, TransactionSpendingLimitKey)
+	}
+
+	finalExtraData := mergeExtraData(extraData, derivedKeyExtraData)
+	finalExtraData = mergeExtraData(finalExtraData, spendingLimitsExtraData)
 
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgDeSoTxn{
@@ -3706,7 +3767,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 			accessSignature,
 		},
 		TxOutputs: additionalOutputs,
-		ExtraData: extraData,
+		ExtraData: finalExtraData,
 		// We wait to compute the signature until we've added all the
 		// inputs and change.
 	}
@@ -3734,8 +3795,9 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	messagingGroupKeyName []byte,
 	messagingOwnerKeySignature []byte,
 	members []*MessagingGroupMember,
+	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
-    	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// We don't need to validate info here, so just construct the transaction instead.
 	txn := &MsgDeSoTxn{
@@ -3746,6 +3808,7 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 			GroupOwnerSignature:   messagingOwnerKeySignature,
 			MessagingGroupMembers: members,
 		},
+		ExtraData: extraData,
 		TxOutputs: additionalOutputs,
 	}
 

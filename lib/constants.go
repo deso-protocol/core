@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/holiman/uint256"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -170,6 +171,18 @@ type ForkHeights struct {
 	// DAOCoinBlockHeight defines the height at which DAO Coin and DAO Coin Transfer
 	// transactions will be accepted.
 	DAOCoinBlockHeight uint32
+
+	ExtraDataOnEntriesBlockHeight uint32
+
+	// DerivedKeySetSpendingLimitsBlockHeight defines the height at which derived key transactions will have their
+	// transaction spending limits in the extra data field parsed.
+	DerivedKeySetSpendingLimitsBlockHeight uint32
+
+	// DerivedKeyTrackSpendingLimitsBlockHeight defines the height at which derived key's transaction spending limits
+	// will come in effect - accounting of DESO spent and transaction counts will begin at this height. These heights
+	// are separated to allow developers time to generate new derived keys for their users. NOTE: this must always
+	// be greater than or equal to DerivedKeySetSpendingLimitsBlockHeight.
+	DerivedKeyTrackSpendingLimitsBlockHeight uint32
 }
 
 // DeSoParams defines the full list of possible parameters for the
@@ -398,10 +411,13 @@ func (params *DeSoParams) EnableRegtest() {
 		DeSoV3MessagesBlockHeight:                            uint32(0),
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
+		ExtraDataOnEntriesBlockHeight:                        uint32(0),
+		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
+		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	}
 }
 
-// GenesisBlock defines the genesis block used for the DeSo maainnet and testnet
+// GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
 var (
 	ArchitectPubKeyBase58Check = "BC1YLg3oh6Boj8e2boCo1vQCYHLk1rjsHF6jthBdvSw79bixQvKK6Qa"
 	// This is the public key corresponding to the BitcoinBurnAddress on mainnet.
@@ -637,9 +653,16 @@ var DeSoMainnetParams = DeSoParams{
 		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
 
 		// Mon Jan 24 @ 12pm PST
-		DeSoV3MessagesBlockHeight:                            uint32(98474),
-		BuyNowAndNFTSplitsBlockHeight:                        uint32(98474),
-		DAOCoinBlockHeight:                                   uint32(98474),
+		DeSoV3MessagesBlockHeight:     uint32(98474),
+		BuyNowAndNFTSplitsBlockHeight: uint32(98474),
+		DAOCoinBlockHeight:            uint32(98474),
+
+		// FIXME: set to real block height
+		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
+
+		// FIXME: Set these values when we're ready for the next fork.
+		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
+		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
 }
 
@@ -822,9 +845,16 @@ var DeSoTestnetParams = DeSoParams{
 		// Flags after this point can differ from mainnet
 
 		// Thu Jan 20 @ 12pm PST
-		DeSoV3MessagesBlockHeight:                            uint32(97322),
-		BuyNowAndNFTSplitsBlockHeight:                        uint32(97322),
-		DAOCoinBlockHeight:                                   uint32(97322),
+		DeSoV3MessagesBlockHeight:     uint32(97322),
+		BuyNowAndNFTSplitsBlockHeight: uint32(97322),
+		DAOCoinBlockHeight:            uint32(97322),
+
+		// FIXME: set to real block height
+		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
+
+		// FIXME: Set these values when we're ready for the next fork.
+		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
+		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
 }
 
@@ -882,13 +912,17 @@ const (
 
 	// Used to distinguish v3 messages from previous iterations
 	MessagesVersionString = "V"
-	MessagesVersion1 = 1
-	MessagesVersion2 = 2
-	MessagesVersion3 = 3
+	MessagesVersion1      = 1
+	MessagesVersion2      = 2
+	MessagesVersion3      = 3
 
 	// Key in transaction's extra data map. If present, this value represents the Node ID of the running node. This maps
 	// to the map of nodes in ./lib/nodes.go
 	NodeSourceMapKey = "NodeSource"
+
+	// TransactionSpendingLimit
+	TransactionSpendingLimitKey = "TransactionSpendingLimit"
+	DerivedKeyMemoKey           = "DerivedKeyMemo"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
