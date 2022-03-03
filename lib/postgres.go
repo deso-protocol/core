@@ -956,23 +956,23 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				AmountNanos: output.AmountNanos,
 			})
 		}
-
-		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+		switch txn.TxnMeta.GetTxnType() {
+		case TxnTypeBlockReward:
 			txMeta := txn.TxnMeta.(*BlockRewardMetadataa)
 			metadataBlockRewards = append(metadataBlockRewards, &PGMetadataBlockReward{
 				TransactionHash: txnHash,
 				ExtraData:       txMeta.ExtraData,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+		case TxnTypeBasicTransfer:
 			// No extra metadata needed
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
+		case TxnTypeBitcoinExchange:
 			txMeta := txn.TxnMeta.(*BitcoinExchangeMetadata)
 			metadataBitcoinExchanges = append(metadataBitcoinExchanges, &PGMetadataBitcoinExchange{
 				TransactionHash:   txnHash,
 				BitcoinBlockHash:  txMeta.BitcoinBlockHash,
 				BitcoinMerkleRoot: txMeta.BitcoinMerkleRoot,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
+		case TxnTypePrivateMessage:
 			txMeta := txn.TxnMeta.(*PrivateMessageMetadata)
 			metadataPrivateMessages = append(metadataPrivateMessages, &PGMetadataPrivateMessage{
 				TransactionHash:    txnHash,
@@ -980,7 +980,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				EncryptedText:      txMeta.EncryptedText,
 				TimestampNanos:     txMeta.TimestampNanos,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
+		case TxnTypeSubmitPost:
 			txMeta := txn.TxnMeta.(*SubmitPostMetadata)
 
 			postHashToModify := &BlockHash{}
@@ -996,7 +996,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				TimestampNanos:   txMeta.TimestampNanos,
 				IsHidden:         txMeta.IsHidden,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
+		case TxnTypeUpdateProfile:
 			txMeta := txn.TxnMeta.(*UpdateProfileMetadata)
 			metadataUpdateProfiles = append(metadataUpdateProfiles, &PGMetadataUpdateProfile{
 				TransactionHash:       txnHash,
@@ -1005,27 +1005,27 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				NewProfilePic:         txMeta.NewProfilePic,
 				NewCreatorBasisPoints: txMeta.NewCreatorBasisPoints,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateBitcoinUSDExchangeRate {
+		case TxnTypeUpdateBitcoinUSDExchangeRate:
 			txMeta := txn.TxnMeta.(*UpdateBitcoinUSDExchangeRateMetadataa)
 			metadataExchangeRates = append(metadataExchangeRates, &PGMetadataUpdateExchangeRate{
 				TransactionHash:    txnHash,
 				USDCentsPerBitcoin: txMeta.USDCentsPerBitcoin,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
+		case TxnTypeFollow:
 			txMeta := txn.TxnMeta.(*FollowMetadata)
 			metadataFollows = append(metadataFollows, &PGMetadataFollow{
 				TransactionHash:   txnHash,
 				FollowedPublicKey: txMeta.FollowedPublicKey,
 				IsUnfollow:        txMeta.IsUnfollow,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
+		case TxnTypeLike:
 			txMeta := txn.TxnMeta.(*LikeMetadata)
 			metadataLikes = append(metadataLikes, &PGMetadataLike{
 				TransactionHash: txnHash,
 				LikedPostHash:   txMeta.LikedPostHash,
 				IsUnlike:        txMeta.IsUnlike,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+		case TxnTypeCreatorCoin:
 			txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 			metadataCreatorCoins = append(metadataCreatorCoins, &PGMetadataCreatorCoin{
 				TransactionHash:             txnHash,
@@ -1037,16 +1037,16 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				MinDeSoExpectedNanos:        txMeta.MinDeSoExpectedNanos,
 				MinCreatorCoinExpectedNanos: txMeta.MinCreatorCoinExpectedNanos,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
+		case TxnTypeSwapIdentity:
 			txMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 			metadataSwapIdentities = append(metadataSwapIdentities, &PGMetadataSwapIdentity{
 				TransactionHash: txnHash,
 				FromPublicKey:   txMeta.FromPublicKey,
 				ToPublicKey:     txMeta.ToPublicKey,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateGlobalParams {
+		case TxnTypeUpdateGlobalParams:
 			// No extra metadata needed, it's all in ExtraData
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
+		case TxnTypeCreatorCoinTransfer:
 			txMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
 			metadataCreatorCoinTransfers = append(metadataCreatorCoinTransfers, &PGMetadataCreatorCoinTransfer{
 				TransactionHash:            txnHash,
@@ -1054,7 +1054,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				CreatorCoinToTransferNanos: txMeta.CreatorCoinToTransferNanos,
 				ReceiverPublicKey:          txMeta.ReceiverPublicKey,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+		case TxnTypeCreateNFT:
 			txMeta := txn.TxnMeta.(*CreateNFTMetadata)
 			metadataCreateNFTs = append(metadataCreateNFTs, &PGMetadataCreateNFT{
 				TransactionHash:           txnHash,
@@ -1066,7 +1066,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				CreatorRoyaltyBasisPoints: txMeta.NFTRoyaltyToCreatorBasisPoints,
 				CoinRoyaltyBasisPoints:    txMeta.NFTRoyaltyToCoinBasisPoints,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+		case TxnTypeUpdateNFT:
 			txMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 			metadataUpdateNFTs = append(metadataUpdateNFTs, &PGMetadataUpdateNFT{
 				TransactionHash:   txnHash,
@@ -1075,7 +1075,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				IsForSale:         txMeta.IsForSale,
 				MinBidAmountNanos: txMeta.MinBidAmountNanos,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+		case TxnTypeAcceptNFTBid:
 			txMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 			metadataAcceptNFTBids = append(metadataAcceptNFTBids, &PGMetadataAcceptNFTBid{
 				TransactionHash: txnHash,
@@ -1093,7 +1093,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 					InputIndex:      input.Index,
 				})
 			}
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+		case TxnTypeNFTBid:
 			txMeta := txn.TxnMeta.(*NFTBidMetadata)
 			metadataNFTBids = append(metadataNFTBids, &PGMetadataNFTBid{
 				TransactionHash: txnHash,
@@ -1122,7 +1122,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				})
 			}
 
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+		case TxnTypeNFTTransfer:
 			txMeta := txn.TxnMeta.(*NFTTransferMetadata)
 			metadataNFTTransfer = append(metadataNFTTransfer, &PGMetadataNFTTransfer{
 				TransactionHash:   txnHash,
@@ -1131,21 +1131,21 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				ReceiverPublicKey: txMeta.ReceiverPublicKey,
 				UnlockableText:    txMeta.UnlockableText,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
+		case TxnTypeAcceptNFTTransfer:
 			txMeta := txn.TxnMeta.(*AcceptNFTTransferMetadata)
 			metadataAcceptNFTTransfer = append(metadataAcceptNFTTransfer, &PGMetadataAcceptNFTTransfer{
 				TransactionHash: txnHash,
 				NFTPostHash:     txMeta.NFTPostHash,
 				SerialNumber:    txMeta.SerialNumber,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
+		case TxnTypeBurnNFT:
 			txMeta := txn.TxnMeta.(*BurnNFTMetadata)
 			metadataBurnNFT = append(metadataBurnNFT, &PGMetadataBurnNFT{
 				TransactionHash: txnHash,
 				NFTPostHash:     txMeta.NFTPostHash,
 				SerialNumber:    txMeta.SerialNumber,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
+		case TxnTypeAuthorizeDerivedKey:
 			txMeta := txn.TxnMeta.(*AuthorizeDerivedKeyMetadata)
 			metadataDerivedKey = append(metadataDerivedKey, &PGMetadataDerivedKey{
 				TransactionHash:  txnHash,
@@ -1154,7 +1154,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				OperationType:    txMeta.OperationType,
 				AccessSignature:  txMeta.AccessSignature,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+		case TxnTypeDAOCoin:
 			txMeta := txn.TxnMeta.(*DAOCoinMetadata)
 			metadataDAOCoin = append(metadataDAOCoin, &PGMetadataDAOCoin{
 				TransactionHash:           txnHash,
@@ -1164,7 +1164,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				CoinsToBurnNanos:          txMeta.CoinsToBurnNanos.Hex(),
 				TransferRestrictionStatus: txMeta.TransferRestrictionStatus,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
+		case TxnTypeDAOCoinTransfer:
 			txMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
 			metadataDAOCoinTransfer = append(metadataDAOCoinTransfer, &PGMetadataDAOCoinTransfer{
 				TransactionHash:        txnHash,
@@ -1173,11 +1173,11 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				ReceiverPublicKey:      txMeta.ReceiverPublicKey,
 			})
 
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+		case TxnTypeMessagingGroup:
 
-			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
+		// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
 
-		} else {
+		default:
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 		}
 	}

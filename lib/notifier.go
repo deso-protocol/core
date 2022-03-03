@@ -56,7 +56,8 @@ func (notifier *Notifier) Update() error {
 		glog.Infof("Notifier: Found %d transactions in block %v at height %d", len(transactions), block.Hash, block.Height)
 
 		for _, transaction := range transactions {
-			if transaction.Type == TxnTypeBasicTransfer {
+			switch transaction.Type {
+			case TxnTypeBasicTransfer:
 				extraData := transaction.ExtraData
 				for _, output := range transaction.Outputs {
 					if !reflect.DeepEqual(output.PublicKey, transaction.PublicKey) {
@@ -83,7 +84,7 @@ func (notifier *Notifier) Update() error {
 						notifications = append(notifications, notification)
 					}
 				}
-			} else if transaction.Type == TxnTypeLike {
+			case TxnTypeLike:
 				postHash := transaction.MetadataLike.LikedPostHash
 				post := DBGetPostEntryByPostHash(notifier.badger, postHash)
 				if post != nil {
@@ -97,7 +98,7 @@ func (notifier *Notifier) Update() error {
 						Timestamp:       block.Timestamp,
 					})
 				}
-			} else if transaction.Type == TxnTypeFollow {
+			case TxnTypeFollow:
 				if !transaction.MetadataFollow.IsUnfollow {
 					notifications = append(notifications, &PGNotification{
 						TransactionHash: transaction.Hash,
@@ -108,7 +109,7 @@ func (notifier *Notifier) Update() error {
 						Timestamp:       block.Timestamp,
 					})
 				}
-			} else if transaction.Type == TxnTypeCreatorCoin {
+			case TxnTypeCreatorCoin:
 				meta := transaction.MetadataCreatorCoin
 				if meta.OperationType == CreatorCoinOperationTypeBuy {
 					notifications = append(notifications, &PGNotification{
@@ -121,7 +122,7 @@ func (notifier *Notifier) Update() error {
 						Timestamp:       block.Timestamp,
 					})
 				}
-			} else if transaction.Type == TxnTypeCreatorCoinTransfer {
+			case TxnTypeCreatorCoinTransfer:
 				meta := transaction.MetadataCreatorCoinTransfer
 				extraData := transaction.ExtraData
 				notification := &PGNotification{
@@ -152,7 +153,7 @@ func (notifier *Notifier) Update() error {
 				}
 
 				notifications = append(notifications, notification)
-			} else if transaction.Type == TxnTypeSubmitPost {
+			case TxnTypeSubmitPost:
 				meta := transaction.MetadataSubmitPost
 
 				// Process replies
