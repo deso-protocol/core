@@ -17,7 +17,7 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:   "core",
 	Short: "DeSo node",
-	Long: `...`,
+	Long:  `...`,
 }
 
 func Execute() {

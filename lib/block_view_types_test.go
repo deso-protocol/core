@@ -65,7 +65,7 @@ func TestMessageEntryDecoding(t *testing.T) {
 	require.True(t, reflect.DeepEqual(messageEntryWithExtraDataRemoved, decodedMessageEntryWithExtraData))
 
 	// The bytes should be the same up until the extra data segment of the bytes
-	require.Equal(t, len(encodedIncludingExtraData), len(messageEntryWithExtraDataRemovedBytes) + len(encodedExtraData)-1)
+	require.Equal(t, len(encodedIncludingExtraData), len(messageEntryWithExtraDataRemovedBytes)+len(encodedExtraData)-1)
 	reflect.DeepEqual(encodedIncludingExtraData, append(messageEntryWithExtraDataRemovedBytes[:len(messageEntryWithExtraDataRemovedBytes)-1], encodedExtraData...))
 }
 
@@ -119,6 +119,6 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 	require.True(t, reflect.DeepEqual(messagingGroupEntryWithExtraDataRemoved, decodedMessagingGroupEntryWithExtraData))
 
 	// The bytes should be the same up until the extra data segment of the bytes
-	require.Equal(t, len(encodedIncludingExtraData), len(messagingGroupEntryWithExtraDataRemovedBytes) + len(encodedExtraData)-1)
+	require.Equal(t, len(encodedIncludingExtraData), len(messagingGroupEntryWithExtraDataRemovedBytes)+len(encodedExtraData)-1)
 	reflect.DeepEqual(encodedIncludingExtraData, append(messagingGroupEntryWithExtraDataRemovedBytes[:len(messagingGroupEntryWithExtraDataRemovedBytes)-1], encodedExtraData...))
 }

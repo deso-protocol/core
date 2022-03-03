@@ -1607,7 +1607,7 @@ func (srv *Server) _startAddressRelayer() {
 						"peer %v", bestAddress.IP.String(), pp)
 					pp.AddDeSoMessage(&MsgDeSoAddr{
 						AddrList: []*SingleAddr{
-							&SingleAddr{
+							{
 								Timestamp: time.Now(),
 								IP:        bestAddress.IP,
 								Port:      bestAddress.Port,

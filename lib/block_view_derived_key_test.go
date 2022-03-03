@@ -320,7 +320,7 @@ func _doTxn(
 			// The inputs will be set below.
 			TxInputs: []*DeSoInput{},
 			TxOutputs: []*DeSoOutput{
-				&DeSoOutput{
+				{
 					PublicKey:   recipientPublicKey,
 					AmountNanos: amountNanos,
 				},
