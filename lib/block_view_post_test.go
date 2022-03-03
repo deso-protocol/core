@@ -1656,7 +1656,6 @@ func TestDeSoDiamonds(t *testing.T) {
 	params.ForkHeights.DeSoDiamondsBlockHeight = 0
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
-
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -1864,7 +1863,6 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.DeSoDiamondsBlockHeight = 0
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
-
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

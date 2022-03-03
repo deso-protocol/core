@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
@@ -4582,6 +4583,593 @@ type AuthorizeDerivedKeyMetadata struct {
 	AccessSignature []byte
 }
 
+type TransactionSpendingLimit struct {
+	// This is the total amount the derived key can spend.
+	GlobalDESOLimit uint64
+
+	// TransactionCount
+	// If a transaction type is not specified in the map, it is not allowed.
+	// If the transaction type is in the map, the derived key is allowed to
+	// perform the transaction up to the value to which it is mapped.
+	TransactionCountLimitMap map[TxnType]uint64
+
+	// CreatorCoinOperationLimitMap is a map with keys composed of
+	// creator PKID || CreatorCoinLimitOperation to number
+	// of transactions
+	CreatorCoinOperationLimitMap map[CreatorCoinOperationLimitKey]uint64
+
+	// DAOCoinOperationLimitMap is a map with keys composed of
+	// creator PKID || DAOCoinLimitOperation to number of
+	// transactions
+	DAOCoinOperationLimitMap map[DAOCoinOperationLimitKey]uint64
+
+	// NFTOperationLimitMap is a map with keys composed of
+	// PostHash || Serial Num || NFTLimitOperation to number
+	// of transaction
+	NFTOperationLimitMap map[NFTOperationLimitKey]uint64
+}
+
+func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
+	data := []byte{}
+
+	if tsl == nil {
+		return data, nil
+	}
+
+	// GlobalDESOLimit
+	data = append(data, UintToBuf(tsl.GlobalDESOLimit)...)
+
+	// TransactionCountLimitMap
+	transactionCountLimitMapLength := uint64(len(tsl.TransactionCountLimitMap))
+	data = append(data, UintToBuf(transactionCountLimitMapLength)...)
+	if transactionCountLimitMapLength > 0 {
+		// Sort the keys
+		keys := make([]TxnType, 0, transactionCountLimitMapLength)
+		for key := range tsl.TransactionCountLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return keys[ii] < keys[jj]
+		})
+		for _, key := range keys {
+			data = append(data, UintToBuf(uint64(key))...)
+			value := tsl.TransactionCountLimitMap[key]
+			data = append(data, UintToBuf(value)...)
+		}
+	}
+
+	// CreatorCoinOperationLimitMap
+	ccOperationLimitMapLength := uint64(len(tsl.CreatorCoinOperationLimitMap))
+	data = append(data, UintToBuf(ccOperationLimitMapLength)...)
+	if ccOperationLimitMapLength > 0 {
+		keys := make([]CreatorCoinOperationLimitKey, 0, ccOperationLimitMapLength)
+		for key := range tsl.CreatorCoinOperationLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.CreatorCoinOperationLimitMap[key])...)
+		}
+	}
+
+	// DAOCoinOperationLimitMap
+	daoCoinOperationLimitMapLength := uint64(len(tsl.DAOCoinOperationLimitMap))
+	data = append(data, UintToBuf(daoCoinOperationLimitMapLength)...)
+	if daoCoinOperationLimitMapLength > 0 {
+		keys := make([]DAOCoinOperationLimitKey, 0, daoCoinOperationLimitMapLength)
+		for key := range tsl.DAOCoinOperationLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.DAOCoinOperationLimitMap[key])...)
+		}
+	}
+
+	// NFTOperationLimitMap
+	nftOperationLimitMapLength := uint64(len(tsl.NFTOperationLimitMap))
+	data = append(data, UintToBuf(nftOperationLimitMapLength)...)
+	if nftOperationLimitMapLength > 0 {
+		keys := make([]NFTOperationLimitKey, 0, nftOperationLimitMapLength)
+		for key := range tsl.NFTOperationLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.NFTOperationLimitMap[key])...)
+		}
+	}
+
+	return data, nil
+}
+
+func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	rr := bytes.NewReader(data)
+	globalDESOLimit, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.GlobalDESOLimit = globalDESOLimit
+
+	transactionSpendingLimitLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.TransactionCountLimitMap = make(map[TxnType]uint64)
+	if transactionSpendingLimitLen > 0 {
+		for ii := uint64(0); ii < transactionSpendingLimitLen; ii++ {
+			key, err := ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			val, err := ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			// Make sure it doesn't already exist in the map
+			if _, exists := tsl.TransactionCountLimitMap[TxnType(key)]; exists {
+				return fmt.Errorf("Key already exists in map")
+			}
+			tsl.TransactionCountLimitMap[TxnType(key)] = val
+		}
+	}
+
+	ccOperationLimitMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.CreatorCoinOperationLimitMap = make(map[CreatorCoinOperationLimitKey]uint64)
+	if ccOperationLimitMapLen > 0 {
+		for ii := uint64(0); ii < ccOperationLimitMapLen; ii++ {
+			ccOperationLimitMapKey := &CreatorCoinOperationLimitKey{}
+			if err = ccOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding Creator Coin Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.CreatorCoinOperationLimitMap[*ccOperationLimitMapKey]; exists {
+				return fmt.Errorf("Creator Coin Operation Limit Key already exists in map")
+			}
+			tsl.CreatorCoinOperationLimitMap[*ccOperationLimitMapKey] = operationCount
+		}
+	}
+
+	daoCoinOperationLimitMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.DAOCoinOperationLimitMap = make(map[DAOCoinOperationLimitKey]uint64)
+	if daoCoinOperationLimitMapLen > 0 {
+		for ii := uint64(0); ii < daoCoinOperationLimitMapLen; ii++ {
+			daoCoinOperationLimitMapKey := &DAOCoinOperationLimitKey{}
+			if err = daoCoinOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding DAO Coin Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.DAOCoinOperationLimitMap[*daoCoinOperationLimitMapKey]; exists {
+				return fmt.Errorf("DAO Coin Operation Limit Key already exists in map")
+			}
+			tsl.DAOCoinOperationLimitMap[*daoCoinOperationLimitMapKey] = operationCount
+		}
+	}
+
+	nftOperationLimitMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.NFTOperationLimitMap = make(map[NFTOperationLimitKey]uint64)
+	if nftOperationLimitMapLen > 0 {
+		for ii := uint64(0); ii < nftOperationLimitMapLen; ii++ {
+			nftOperationLimitMapKey := &NFTOperationLimitKey{}
+			if err = nftOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding NFT Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.NFTOperationLimitMap[*nftOperationLimitMapKey]; exists {
+				return fmt.Errorf("NFT Limit Operation Key already exists in map")
+			}
+			tsl.NFTOperationLimitMap[*nftOperationLimitMapKey] = operationCount
+		}
+	}
+	return nil
+}
+
+func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
+	copyTSL := &TransactionSpendingLimit{
+		GlobalDESOLimit:              tsl.GlobalDESOLimit,
+		TransactionCountLimitMap:     make(map[TxnType]uint64),
+		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+	}
+
+	for txnType, txnCount := range tsl.TransactionCountLimitMap {
+		copyTSL.TransactionCountLimitMap[txnType] = txnCount
+	}
+
+	for ccOp, ccOpCount := range tsl.CreatorCoinOperationLimitMap {
+		copyTSL.CreatorCoinOperationLimitMap[ccOp] = ccOpCount
+	}
+
+	for daoOp, daoOpCount := range tsl.DAOCoinOperationLimitMap {
+		copyTSL.DAOCoinOperationLimitMap[daoOp] = daoOpCount
+	}
+
+	for nftOp, nftOpCount := range tsl.NFTOperationLimitMap {
+		copyTSL.NFTOperationLimitMap[nftOp] = nftOpCount
+	}
+
+	return copyTSL
+}
+
+type NFTLimitOperation uint8
+
+const (
+	AnyNFTOperation            NFTLimitOperation = 0
+	UpdateNFTOperation         NFTLimitOperation = 1
+	AcceptNFTBidOperation      NFTLimitOperation = 2
+	NFTBidOperation            NFTLimitOperation = 3
+	TransferNFTOperation       NFTLimitOperation = 4
+	BurnNFTOperation           NFTLimitOperation = 5
+	AcceptNFTTransferOperation NFTLimitOperation = 6
+	UndefinedNFTOperation      NFTLimitOperation = 7
+)
+
+type NFTLimitOperationString string
+
+const (
+	AnyNFTOperationString            NFTLimitOperationString = "any"
+	UpdateNFTOperationString         NFTLimitOperationString = "update"
+	AcceptNFTBidOperationString      NFTLimitOperationString = "accept_nft_bid"
+	NFTBidOperationString            NFTLimitOperationString = "nft_bid"
+	TransferNFTOperationString       NFTLimitOperationString = "transfer"
+	BurnNFTOperationString           NFTLimitOperationString = "burn"
+	AcceptNFTTransferOperationString NFTLimitOperationString = "accept_nft_transfer"
+	UndefinedNFTOperationString      NFTLimitOperationString = "undefined"
+)
+
+func (nftLimitOperation NFTLimitOperation) ToString() string {
+	return string(nftLimitOperation.ToNFTLimitOperationString())
+}
+
+func (nftLimitOperation NFTLimitOperation) ToNFTLimitOperationString() NFTLimitOperationString {
+	switch nftLimitOperation {
+	case AnyNFTOperation:
+		return AnyNFTOperationString
+	case UpdateNFTOperation:
+		return UpdateNFTOperationString
+	case AcceptNFTBidOperation:
+		return AcceptNFTBidOperationString
+	case NFTBidOperation:
+		return NFTBidOperationString
+	case TransferNFTOperation:
+		return TransferNFTOperationString
+	case BurnNFTOperation:
+		return BurnNFTOperationString
+	case AcceptNFTTransferOperation:
+		return AcceptNFTTransferOperationString
+	default:
+		return UndefinedNFTOperationString
+	}
+}
+
+func (nftLimitOperationString NFTLimitOperationString) ToNFTLimitOperation() NFTLimitOperation {
+	switch nftLimitOperationString {
+	case AnyNFTOperationString:
+		return AnyNFTOperation
+	case UpdateNFTOperationString:
+		return UpdateNFTOperation
+	case AcceptNFTBidOperationString:
+		return AcceptNFTBidOperation
+	case NFTBidOperationString:
+		return NFTBidOperation
+	case TransferNFTOperationString:
+		return TransferNFTOperation
+	case BurnNFTOperationString:
+		return BurnNFTOperation
+	case AcceptNFTTransferOperationString:
+		return AcceptNFTTransferOperation
+	default:
+		return UndefinedNFTOperation
+	}
+}
+
+func (nftLimitOperation NFTLimitOperation) IsUndefined() bool {
+	return nftLimitOperation == UndefinedNFTOperation
+}
+
+type NFTOperationLimitKey struct {
+	BlockHash    BlockHash
+	SerialNumber uint64
+	Operation    NFTLimitOperation
+}
+
+func (nftOperationLimitKey NFTOperationLimitKey) Encode() []byte {
+	var data []byte
+	blockHash := nftOperationLimitKey.BlockHash.ToBytes()
+	data = append(data, UintToBuf(uint64(len(blockHash)))...)
+	data = append(data, blockHash...)
+	data = append(data, UintToBuf(nftOperationLimitKey.SerialNumber)...)
+	data = append(data, UintToBuf(uint64(nftOperationLimitKey.Operation))...)
+	return data
+}
+
+func (nftOperationLimitKey *NFTOperationLimitKey) Decode(rr *bytes.Reader) error {
+	blockHashLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	blockhashBytes := make([]byte, blockHashLen)
+	if _, err = io.ReadFull(rr, blockhashBytes); err != nil {
+		return err
+	}
+	blockHash := NewBlockHash(blockhashBytes)
+	if blockHash == nil {
+		return fmt.Errorf("Invalid block hash")
+	}
+	nftOperationLimitKey.BlockHash = *blockHash
+	serialNum, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	nftOperationLimitKey.SerialNumber = serialNum
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	nftOperationLimitKey.Operation = NFTLimitOperation(operationKey)
+	return nil
+}
+
+func MakeNFTOperationLimitKey(blockHash BlockHash, serialNumber uint64, operation NFTLimitOperation) NFTOperationLimitKey {
+	return NFTOperationLimitKey{
+		blockHash,
+		serialNumber,
+		operation,
+	}
+}
+
+// The operations that are permitted to be performed by a derived key.
+type CreatorCoinLimitOperation uint8
+
+const (
+	AnyCreatorCoinOperation       CreatorCoinLimitOperation = 0
+	BuyCreatorCoinOperation       CreatorCoinLimitOperation = 1
+	SellCreatorCoinOperation      CreatorCoinLimitOperation = 2
+	TransferCreatorCoinOperation  CreatorCoinLimitOperation = 3
+	UndefinedCreatorCoinOperation CreatorCoinLimitOperation = 4
+)
+
+type CreatorCoinLimitOperationString string
+
+const (
+	AnyCreatorCoinOperationString       CreatorCoinLimitOperationString = "any"
+	BuyCreatorCoinOperationString       CreatorCoinLimitOperationString = "buy"
+	SellCreatorCoinOperationString      CreatorCoinLimitOperationString = "sell"
+	TransferCreatorCoinOperationString  CreatorCoinLimitOperationString = "transfer"
+	UndefinedCreatorCoinOperationString CreatorCoinLimitOperationString = "undefined"
+)
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) ToString() string {
+	return string(creatorCoinLimitOperation.ToCreatorCoinLimitOperationString())
+}
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) ToCreatorCoinLimitOperationString() CreatorCoinLimitOperationString {
+	switch creatorCoinLimitOperation {
+	case AnyCreatorCoinOperation:
+		return AnyCreatorCoinOperationString
+	case BuyCreatorCoinOperation:
+		return BuyCreatorCoinOperationString
+	case SellCreatorCoinOperation:
+		return SellCreatorCoinOperationString
+	case TransferCreatorCoinOperation:
+		return TransferCreatorCoinOperationString
+	default:
+		return UndefinedCreatorCoinOperationString
+	}
+}
+
+func (creatorCoinLimitOperationString CreatorCoinLimitOperationString) ToCreatorCoinLimitOperation() CreatorCoinLimitOperation {
+	switch creatorCoinLimitOperationString {
+	case AnyCreatorCoinOperationString:
+		return AnyCreatorCoinOperation
+	case BuyCreatorCoinOperationString:
+		return BuyCreatorCoinOperation
+	case SellCreatorCoinOperationString:
+		return SellCreatorCoinOperation
+	case TransferCreatorCoinOperationString:
+		return TransferCreatorCoinOperation
+	default:
+		return UndefinedCreatorCoinOperation
+	}
+}
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) IsUndefined() bool {
+	return creatorCoinLimitOperation == UndefinedCreatorCoinOperation
+}
+
+type CreatorCoinOperationLimitKey struct {
+	CreatorPKID PKID
+	Operation   CreatorCoinLimitOperation
+}
+
+func (creatorCoinOperationLimitKey CreatorCoinOperationLimitKey) Encode() []byte {
+	var data []byte
+	creatorPKIDBytes := creatorCoinOperationLimitKey.CreatorPKID.ToBytes()
+	data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
+	data = append(data, creatorPKIDBytes...)
+	data = append(data, UintToBuf(uint64(creatorCoinOperationLimitKey.Operation))...)
+	return data
+}
+
+func (creatorCoinOperationLimitKey *CreatorCoinOperationLimitKey) Decode(rr *bytes.Reader) error {
+	creatorPKIDBytesLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
+	if _, err = io.ReadFull(rr, creatorPKIDBytes); err != nil {
+		return err
+	}
+	creatorPKID := NewPKID(creatorPKIDBytes)
+	if creatorPKID == nil {
+		return fmt.Errorf("Invalid PKID")
+	}
+	creatorCoinOperationLimitKey.CreatorPKID = *creatorPKID
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	creatorCoinOperationLimitKey.Operation = CreatorCoinLimitOperation(operationKey)
+	return nil
+}
+
+func MakeCreatorCoinOperationLimitKey(creatorPKID PKID, operation CreatorCoinLimitOperation) CreatorCoinOperationLimitKey {
+	return CreatorCoinOperationLimitKey{
+		creatorPKID,
+		operation,
+	}
+}
+
+type DAOCoinLimitOperation uint8
+
+const (
+	AnyDAOCoinOperation                             DAOCoinLimitOperation = 0
+	MintDAOCoinOperation                            DAOCoinLimitOperation = 1
+	BurnDAOCoinOperation                            DAOCoinLimitOperation = 2
+	DisableMintingDAOCoinOperation                  DAOCoinLimitOperation = 3
+	UpdateTransferRestrictionStatusDAOCoinOperation DAOCoinLimitOperation = 4
+	TransferDAOCoinOperation                        DAOCoinLimitOperation = 5
+	UndefinedDAOCoinOperation                       DAOCoinLimitOperation = 6
+)
+
+type DAOCoinLimitOperationString string
+
+const (
+	AnyDAOCoinOperationString                             DAOCoinLimitOperationString = "any"
+	MintDAOCoinOperationString                            DAOCoinLimitOperationString = "mint"
+	BurnDAOCoinOperationString                            DAOCoinLimitOperationString = "burn"
+	DisableMintingDAOCoinOperationString                  DAOCoinLimitOperationString = "disable_minting"
+	UpdateTransferRestrictionStatusDAOCoinOperationString DAOCoinLimitOperationString = "update_transfer_restriction_status"
+	TransferDAOCoinOperationString                        DAOCoinLimitOperationString = "transfer"
+	UndefinedDAOCoinOperationString                       DAOCoinLimitOperationString = "undefined"
+)
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) ToString() string {
+	return string(daoCoinLimitOperation.ToDAOCoinLimitOperationString())
+}
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) ToDAOCoinLimitOperationString() DAOCoinLimitOperationString {
+	switch daoCoinLimitOperation {
+	case AnyDAOCoinOperation:
+		return AnyDAOCoinOperationString
+	case MintDAOCoinOperation:
+		return MintDAOCoinOperationString
+	case BurnDAOCoinOperation:
+		return BurnDAOCoinOperationString
+	case DisableMintingDAOCoinOperation:
+		return DisableMintingDAOCoinOperationString
+	case UpdateTransferRestrictionStatusDAOCoinOperation:
+		return UpdateTransferRestrictionStatusDAOCoinOperationString
+	case TransferDAOCoinOperation:
+		return TransferDAOCoinOperationString
+	default:
+		return UndefinedDAOCoinOperationString
+	}
+}
+
+func (daoCoinLimitOperationString DAOCoinLimitOperationString) ToDAOCoinLimitOperation() DAOCoinLimitOperation {
+	switch daoCoinLimitOperationString {
+	case AnyDAOCoinOperationString:
+		return AnyDAOCoinOperation
+	case MintDAOCoinOperationString:
+		return MintDAOCoinOperation
+	case BurnDAOCoinOperationString:
+		return BurnDAOCoinOperation
+	case DisableMintingDAOCoinOperationString:
+		return DisableMintingDAOCoinOperation
+	case UpdateTransferRestrictionStatusDAOCoinOperationString:
+		return UpdateTransferRestrictionStatusDAOCoinOperation
+	case TransferDAOCoinOperationString:
+		return TransferDAOCoinOperation
+	default:
+		return UndefinedDAOCoinOperation
+	}
+}
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) IsUndefined() bool {
+	return daoCoinLimitOperation == UndefinedDAOCoinOperation
+}
+
+type DAOCoinOperationLimitKey struct {
+	CreatorPKID PKID
+	Operation   DAOCoinLimitOperation
+}
+
+func (daoCoinOperationLimitKey DAOCoinOperationLimitKey) Encode() []byte {
+	var data []byte
+	creatorPKIDBytes := daoCoinOperationLimitKey.CreatorPKID.ToBytes()
+	data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
+	data = append(data, creatorPKIDBytes...)
+	data = append(data, UintToBuf(uint64(daoCoinOperationLimitKey.Operation))...)
+	return data
+}
+
+func (daoCoinOperationLimitKey *DAOCoinOperationLimitKey) Decode(rr *bytes.Reader) error {
+	creatorPKIDBytesLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
+	if _, err = io.ReadFull(rr, creatorPKIDBytes); err != nil {
+		return err
+	}
+	creatorPKID := NewPKID(creatorPKIDBytes)
+	if creatorPKID == nil {
+		return fmt.Errorf("Invalid PKID")
+	}
+	daoCoinOperationLimitKey.CreatorPKID = *creatorPKID
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	daoCoinOperationLimitKey.Operation = DAOCoinLimitOperation(operationKey)
+	return nil
+}
+
+func MakeDAOCoinOperationLimitKey(creatorPKID PKID, operation DAOCoinLimitOperation) DAOCoinOperationLimitKey {
+	return DAOCoinOperationLimitKey{
+		creatorPKID,
+		operation,
+	}
+}
+
 func (txnData *AuthorizeDerivedKeyMetadata) GetTxnType() TxnType {
 	return TxnTypeAuthorizeDerivedKey
 }
@@ -4678,7 +5266,7 @@ type DAOCoinMetadata struct {
 	// Burn Fields
 	CoinsToBurnNanos uint256.Int
 
-	// TransferRestrictionStatus to set if OperationType == DAOCoinOperatoinTypeUpdateTransferRestrictionStatus
+	// TransferRestrictionStatus to set if OperationType == DAOCoinOperationTypeUpdateTransferRestrictionStatus
 	TransferRestrictionStatus
 }
 
@@ -4966,7 +5554,7 @@ type MessagingGroupMetadata struct {
 	// anymore.
 	//
 	// This field is not critical and can be removed in the future.
-	GroupOwnerSignature   []byte
+	GroupOwnerSignature []byte
 
 	MessagingGroupMembers []*MessagingGroupMember
 }
@@ -5002,19 +5590,19 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 	var err error
 	ret.MessagingPublicKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading MessagingPublicKey")
 	}
 
 	ret.MessagingGroupKeyName, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading MessagingGroupKey")
 	}
 
 	ret.GroupOwnerSignature, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err,"MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading GroupOwnerSignature")
 	}
 
@@ -5023,7 +5611,7 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 		recipient := MessagingGroupMember{}
 		err = recipient.Decode(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
 		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)

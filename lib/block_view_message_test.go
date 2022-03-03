@@ -1442,7 +1442,6 @@ func TestMessagingKeys(t *testing.T) {
 	_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey])
 }
 
-
 // This helper function connects a private message transaction with the message party in ExtraData.
 func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, senderPrivBase58 string,
 	recipientPkBytes, senderMessagingPublicKey []byte, senderMessagingKeyName []byte, recipientMessagingPublicKey []byte,

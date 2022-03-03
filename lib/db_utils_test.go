@@ -293,65 +293,65 @@ func TestPrivateMessages(t *testing.T) {
 	// pk1 -> pk2: message1Str, tstamp1
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk1),
+			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp1,
 		}, message1))
 	// same message but also store for pk2
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk2),
+			PublicKey:   *NewPublicKey(pk2),
 			TstampNanos: tstamp1,
 		}, message1))
 
 	// pk2 -> pk1: message2Str, tstamp2
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk2),
+			PublicKey:   *NewPublicKey(pk2),
 			TstampNanos: tstamp2,
 		}, message2))
 	// same message but also store for pk1
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk1),
+			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp2,
 		}, message2))
 
 	// pk3 -> pk1: message3Str, tstamp3
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk3),
+			PublicKey:   *NewPublicKey(pk3),
 			TstampNanos: tstamp3,
 		}, message3))
 	// same message but also store for pk1
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk1),
+			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp3,
 		}, message3))
 
 	// pk2 -> pk1: message4Str, tstamp4
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk2),
+			PublicKey:   *NewPublicKey(pk2),
 			TstampNanos: tstamp4,
 		}, message4))
 	// same message but also store for pk1
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk1),
+			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp4,
 		}, message4))
 
 	// pk1 -> pk3: message5Str, tstamp5
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk1),
+			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp5,
 		}, message5))
 	// same message but also store for pk3
 	require.NoError(DBPutMessageEntry(
 		db, MessageKey{
-			PublicKey: *NewPublicKey(pk3),
+			PublicKey:   *NewPublicKey(pk3),
 			TstampNanos: tstamp5,
 		}, message5))
 
