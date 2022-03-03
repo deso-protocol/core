@@ -3722,7 +3722,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		derivedKeyExtraData[DerivedPublicKey] = derivedPublicKey
 	}
 
-	//
+	// Delete protected keys
 	if extraData != nil {
 		delete(extraData, DerivedPublicKey)
 	}
