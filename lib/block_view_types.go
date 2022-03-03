@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
@@ -35,17 +36,30 @@ const (
 )
 
 func (mm UtxoType) String() string {
-	if mm == UtxoTypeOutput {
+	switch mm {
+	case UtxoTypeOutput:
 		return "UtxoTypeOutput"
-	} else if mm == UtxoTypeBlockReward {
+	case UtxoTypeBlockReward:
 		return "UtxoTypeBlockReward"
-	} else if mm == UtxoTypeBitcoinBurn {
+	case UtxoTypeBitcoinBurn:
 		return "UtxoTypeBitcoinBurn"
-	} else if mm == UtxoTypeStakeReward {
+	case UtxoTypeStakeReward:
 		return "UtxoTypeStakeReward"
+	case UtxoTypeCreatorCoinSale:
+		return "UtxoTypeCreatorCoinSale"
+	case UtxoTypeCreatorCoinFounderReward:
+		return "UtxoTypeCreatorCoinFounderReward"
+	case UtxoTypeNFTSeller:
+		return "UtxoTypeNFTSeller"
+	case UtxoTypeNFTBidderChange:
+		return "UtxoTypeNFTBidderChange"
+	case UtxoTypeNFTCreatorRoyalty:
+		return "UtxoTypeNFTCreatorRoyalty"
+	case UtxoTypeNFTAdditionalDESORoyalty:
+		return "UtxoTypeNFTAdditionalDESORoyalty"
+	default:
+		return "UtxoTypeUnknown"
 	}
-
-	return "UtxoTypeUnknown"
 }
 
 // DeSoEncoder represents types that implement custom to/from bytes encoding.
@@ -197,8 +211,9 @@ const (
 	OperationTypeMessagingKey                 OperationType = 24
 	OperationTypeDAOCoin                      OperationType = 25
 	OperationTypeDAOCoinTransfer              OperationType = 26
+	OperationTypeSpendingLimitAccounting      OperationType = 27
 
-	// NEXT_TAG = 27
+	// NEXT_TAG = 28
 )
 
 func (op OperationType) String() string {
@@ -306,6 +321,10 @@ func (op OperationType) String() string {
 	case OperationTypeDAOCoinTransfer:
 		{
 			return "OperationTypeDAOCoinTransfer"
+		}
+	case OperationTypeSpendingLimitAccounting:
+		{
+			return "OperationTypeSpendingLimitAccounting"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -1060,6 +1079,9 @@ type MessageEntry struct {
 
 	// RecipientMessagingGroupKeyName is the recipient's key name of RecipientMessagingPublicKey
 	RecipientMessagingGroupKeyName *GroupKeyName
+
+	// Extra data
+	ExtraData map[string][]byte
 }
 
 func (message *MessageEntry) Encode() []byte {
@@ -1074,6 +1096,7 @@ func (message *MessageEntry) Encode() []byte {
 	data = append(data, DeSoEncoderToBytes(message.SenderMessagingGroupKeyName)...)
 	data = append(data, DeSoEncoderToBytes(message.RecipientMessagingPublicKey)...)
 	data = append(data, DeSoEncoderToBytes(message.RecipientMessagingGroupKeyName)...)
+	data = append(data, EncodeExtraData(message.ExtraData)...)
 	return data
 }
 
@@ -1136,6 +1159,18 @@ func (message *MessageEntry) Decode(rr *bytes.Reader) error {
 		message.RecipientMessagingGroupKeyName = recipientMessagingKeyName
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
+	}
+	message.RecipientMessagingGroupKeyName = recipientMessagingKeyName
+
+	message.ExtraData, err = DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "MesssageEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "MesssageEntry.Decode: problem decoding extra data")
 	}
 
 	return nil
@@ -1251,6 +1286,9 @@ type MessagingGroupEntry struct {
 	// is given to all group members.
 	MessagingGroupMembers []*MessagingGroupMember
 
+	// ExtraData is an arbitrary key value map
+	ExtraData map[string][]byte
+
 	// Whether this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if
 	// we disconnect the messaging key from UtxoView
@@ -1262,17 +1300,34 @@ func (entry *MessagingGroupEntry) String() string {
 		entry.GroupOwnerPublicKey, entry.MessagingPublicKey, entry.MessagingGroupKeyName, entry.isDeleted)
 }
 
+func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingGroupMember {
+	// Make a deep copy of the members to avoid messing up the slice the caller
+	// used. Not doing this could cause downstream effects, mainly in tests where
+	// the same slice is re-used in txns and in expectations later on.
+	members := make([]*MessagingGroupMember, len(membersArg))
+	copy(members, membersArg)
+	sort.Slice(members, func(ii, jj int) bool {
+		iiStr := PkToStringMainnet(members[ii].GroupMemberPublicKey[:]) + string(members[ii].GroupMemberKeyName[:]) + string(members[ii].EncryptedKey)
+		jjStr := PkToStringMainnet(members[jj].GroupMemberPublicKey[:]) + string(members[jj].GroupMemberKeyName[:]) + string(members[jj].EncryptedKey)
+		return iiStr < jjStr
+	})
+	return members
+}
+
 func (entry *MessagingGroupEntry) Encode() []byte {
 	var entryBytes []byte
 
 	entryBytes = append(entryBytes, DeSoEncoderToBytes(entry.GroupOwnerPublicKey)...)
 	entryBytes = append(entryBytes, DeSoEncoderToBytes(entry.MessagingPublicKey)...)
 	entryBytes = append(entryBytes, DeSoEncoderToBytes(entry.MessagingGroupKeyName)...)
-
 	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MessagingGroupMembers)))...)
-	for ii := 0; ii < len(entry.MessagingGroupMembers); ii++ {
-		entryBytes = append(entryBytes, DeSoEncoderToBytes(entry.MessagingGroupMembers[ii])...)
+	// We sort the MessagingGroupMembers because they can be added while iterating over
+	// a map, which could lead to inconsistent orderings across nodes when encoding.
+	members := sortMessagingGroupMembers(entry.MessagingGroupMembers)
+	for ii := 0; ii < len(members); ii++ {
+		entryBytes = append(entryBytes, DeSoEncoderToBytes(members[ii])...)
 	}
+	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
 }
 
@@ -1309,6 +1364,17 @@ func (entry *MessagingGroupEntry) Decode(rr *bytes.Reader) error {
 		} else if err != nil {
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
 		}
+	}
+
+	entry.ExtraData, err = DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "MessagingGroupEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
 	}
 
 	return nil
@@ -1471,6 +1537,8 @@ type NFTEntry struct {
 	// If an NFT is a Buy Now NFT, it can be purchased for this price.
 	BuyNowPriceNanos uint64
 
+	ExtraData map[string][]byte
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
@@ -1489,7 +1557,7 @@ func (nft *NFTEntry) Encode() []byte {
 	data = append(data, BoolToByte(nft.IsPending))
 	data = append(data, BoolToByte(nft.IsBuyNow))
 	data = append(data, UintToBuf(nft.BuyNowPriceNanos)...)
-
+	data = append(data, EncodeExtraData(nft.ExtraData)...)
 	return data
 }
 
@@ -1551,6 +1619,17 @@ func (nft *NFTEntry) Decode(rr *bytes.Reader) error {
 		return errors.Wrapf(err, "NFTEntry.Decode: Problem reading BuyNowPriceNanos")
 	}
 
+	nft.ExtraData, err = DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "NFTEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "NFTEntry.Decode: Problem decoding extra data")
+	}
+
 	return nil
 }
 
@@ -1575,6 +1654,8 @@ type NFTBidEntry struct {
 	SerialNumber   uint64
 	BidAmountNanos uint64
 
+	AcceptedBlockHeight *uint32
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
@@ -1587,6 +1668,12 @@ func (be *NFTBidEntry) Encode() []byte {
 	data = append(data, UintToBuf(be.SerialNumber)...)
 	data = append(data, UintToBuf(be.BidAmountNanos)...)
 
+	if be.AcceptedBlockHeight != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, UintToBuf(uint64(*be.AcceptedBlockHeight))...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
 	return data
 }
 
@@ -1614,7 +1701,28 @@ func (be *NFTBidEntry) Decode(rr *bytes.Reader) error {
 		return errors.Wrapf(err, "NFTBidEntry.Decode: Problem reading BidAmountNanos")
 	}
 
+	if existByte, err := ReadBoolByte(rr); existByte && err == nil {
+		acceptedBlockHeight, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "NFTBidEntry.Decode: Problem reading AcceptedBlockHeight")
+		}
+		acceptedBlockHeight32 := uint32(acceptedBlockHeight)
+		be.AcceptedBlockHeight = &acceptedBlockHeight32
+	}
 	return nil
+}
+
+func (nftBidEntry *NFTBidEntry) Copy() *NFTBidEntry {
+	if nftBidEntry == nil {
+		return nil
+	}
+	newEntry := *nftBidEntry
+	newEntry.BidderPKID = nftBidEntry.BidderPKID.NewPKID()
+	newEntry.NFTPostHash = nftBidEntry.NFTPostHash.NewBlockHash()
+	if nftBidEntry.AcceptedBlockHeight != nil {
+		*newEntry.AcceptedBlockHeight = *nftBidEntry.AcceptedBlockHeight
+	}
+	return &newEntry
 }
 
 type DerivedKeyEntry struct {
@@ -1631,6 +1739,16 @@ type DerivedKeyEntry struct {
 	// authorized or de-authorized.
 	OperationType AuthorizeDerivedKeyOperationType
 
+	ExtraData map[string][]byte
+
+	// Transaction Spending limit Tracker
+	TransactionSpendingLimitTracker *TransactionSpendingLimit
+
+	// Memo that tells you what this derived key is for. Should
+	// include the name or domain of the app that asked for these
+	// permissions so the user can manage it from a centralized UI.
+	Memo []byte
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
 }
@@ -1642,6 +1760,15 @@ func (key *DerivedKeyEntry) Encode() []byte {
 	data = append(data, EncodeByteArray(key.DerivedPublicKey.ToBytes())...)
 	data = append(data, UintToBuf(key.ExpirationBlock)...)
 	data = append(data, byte(key.OperationType))
+	data = append(data, EncodeExtraData(key.ExtraData)...)
+	if key.TransactionSpendingLimitTracker != nil {
+		data = append(data, BoolToByte(true))
+		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes()
+		data = append(data, tslBytes...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+	data = append(data, EncodeByteArray(key.Memo)...)
 
 	return data
 }
@@ -1668,7 +1795,43 @@ func (key *DerivedKeyEntry) Decode(rr *bytes.Reader) error {
 		return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem reading OperationType")
 	}
 	key.OperationType = AuthorizeDerivedKeyOperationType(operationType)
+
+	key.ExtraData, err = DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "DerivedKeyEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem decoding extra data")
+	}
+
+	if exists, err := ReadBoolByte(rr); exists && err == nil {
+		key.TransactionSpendingLimitTracker = &TransactionSpendingLimit{}
+		err := key.TransactionSpendingLimitTracker.FromBytes(rr)
+		if err != nil {
+			return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem decoding TransactionSpendingLimitTracker")
+		}
+	} else if err != nil {
+		return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem decoding TransactionSpendingLimitTracker existence byte")
+	}
+
+	key.Memo, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem decoding Memo")
+	}
+
 	return nil
+}
+
+func (dk *DerivedKeyEntry) Copy() *DerivedKeyEntry {
+	if dk == nil {
+		return nil
+	}
+	newEntry := *dk
+	newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	return &newEntry
 }
 
 type DerivedKeyMapKey struct {
@@ -2012,6 +2175,9 @@ type PostEntry struct {
 	AdditionalNFTRoyaltiesToCoinsBasisPoints map[PKID]uint64
 
 	// ExtraData map to hold arbitrary attributes of a post. Holds non-consensus related information about a post.
+	// TODO: Change to just ExtraData. Will be easy to do once we have hypersync
+	// encoders/decoders, but for now doing so would mess up GOB encoding so we'll
+	// wait.
 	PostExtraData map[string][]byte
 }
 
@@ -2515,6 +2681,10 @@ type ProfileEntry struct {
 	// 3. CoinWaterMarkNanos
 	DAOCoinEntry CoinEntry
 
+	// ExtraData map to hold arbitrary attributes of a profile. Holds
+	// non-consensus related information about a profile.
+	ExtraData map[string][]byte
+
 	// Whether or not this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if for
 	// example we update a user entry and need to delete the data associated
@@ -2538,6 +2708,8 @@ func (pe *ProfileEntry) Encode() []byte {
 	// CoinEntry
 	data = append(data, pe.CreatorCoinEntry.Encode()...)
 	data = append(data, pe.DAOCoinEntry.Encode()...)
+
+	data = append(data, EncodeExtraData(pe.ExtraData)...)
 
 	return data
 }
@@ -2573,6 +2745,17 @@ func (pe *ProfileEntry) Decode(rr *bytes.Reader) error {
 	pe.DAOCoinEntry = CoinEntry{}
 	if err := pe.DAOCoinEntry.Decode(rr); err != nil {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading DAOCoinEntry")
+	}
+
+	pe.ExtraData, err = DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "ProfileEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "ProfileEntry.Decode: problem decoding extra data")
 	}
 
 	return nil

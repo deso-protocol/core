@@ -690,8 +690,8 @@ func TestSimpleBlockSync(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 50
-	config2.MaxSyncBlockHeight = 50
+	config1.MaxSyncBlockHeight = 1500
+	config2.MaxSyncBlockHeight = 1500
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
@@ -737,8 +737,8 @@ func TestSimpleSyncRestart(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 50
-	config2.MaxSyncBlockHeight = 50
+	config1.MaxSyncBlockHeight = 1500
+	config2.MaxSyncBlockHeight = 1500
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
@@ -790,9 +790,9 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 	config3 := generateConfig(t, 18002, dbDir3, 10)
 
-	config1.MaxSyncBlockHeight = 500
-	config2.MaxSyncBlockHeight = 500
-	config3.MaxSyncBlockHeight = 500
+	config1.MaxSyncBlockHeight = 1500
+	config2.MaxSyncBlockHeight = 1500
+	config3.MaxSyncBlockHeight = 1500
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
 

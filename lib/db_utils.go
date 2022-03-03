@@ -4597,6 +4597,65 @@ func (txnMeta *NFTTransferTxindexMetadata) Decode(rr *bytes.Reader) error {
 	return nil
 }
 
+type AcceptNFTTransferTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber   uint64
+}
+
+func (txnMeta *AcceptNFTTransferTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
+	data = append(data, UintToBuf(txnMeta.SerialNumber)...)
+	return data
+}
+
+func (txnMeta *AcceptNFTTransferTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	NFTPostHashHex, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTTransferTxindexMetadata.Decode: problem reading NFTPostHashHex")
+	}
+	txnMeta.NFTPostHashHex = string(NFTPostHashHex)
+
+	txnMeta.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AcceptNFTTransferTxindexMetadata.Decode: problem reading SerialNumber")
+	}
+	return nil
+}
+
+type BurnNFTTxindexMetadata struct {
+	NFTPostHashHex string
+	SerialNumber   uint64
+}
+
+func (txnMeta *BurnNFTTxindexMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
+	data = append(data, UintToBuf(txnMeta.SerialNumber)...)
+
+	return data
+}
+
+func (txnMeta *BurnNFTTxindexMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	NFTPostHashHex, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BurnNFTTxindexMetadata.Decode: problem reading NFTPostHashHex")
+	}
+	txnMeta.NFTPostHashHex = string(NFTPostHashHex)
+
+	txnMeta.SerialNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BurnNFTTxindexMetadata.Decode: problem reading SerialNumber")
+	}
+	return nil
+}
+
 type CreateNFTTxindexMetadata struct {
 	NFTPostHashHex             string
 	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
@@ -4692,6 +4751,8 @@ type TransactionMetadata struct {
 	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
 	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
 	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
+	AcceptNFTTransferTxindexMetadata   *AcceptNFTTransferTxindexMetadata   `json:",omitempty"`
+	BurnNFTTxindexMetadata             *BurnNFTTxindexMetadata             `json:",omitempty"`
 	DAOCoinTxindexMetadata             *DAOCoinTxindexMetadata             `json:",omitempty"`
 	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
 	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
@@ -4742,6 +4803,10 @@ func (txnMeta *TransactionMetadata) Encode() []byte {
 	data = append(data, DeSoEncoderToBytes(txnMeta.AcceptNFTBidTxindexMetadata)...)
 	// encoding NFTTransferTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.NFTTransferTxindexMetadata)...)
+	// encoding AcceptNFTTransferTxindexMetadata
+	data = append(data, DeSoEncoderToBytes(txnMeta.AcceptNFTTransferTxindexMetadata)...)
+	// encoding BurnNFTTxindexMetadata
+	data = append(data, DeSoEncoderToBytes(txnMeta.BurnNFTTxindexMetadata)...)
 	// encoding DAOCoinTxindexMetadata
 	data = append(data, DeSoEncoderToBytes(txnMeta.DAOCoinTxindexMetadata)...)
 	// encoding DAOCoinTransferTxindexMetadata
@@ -4896,6 +4961,20 @@ func (txnMeta *TransactionMetadata) Decode(rr *bytes.Reader) error {
 		txnMeta.NFTTransferTxindexMetadata = CopyNFTTransferTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NFTTransferTxindexMetadata")
+	}
+	// decoding AcceptNFTTransferTxindexMetadata
+	CopyAcceptNFTTransferTxindexMetadata := &AcceptNFTTransferTxindexMetadata{}
+	if exist, err := DeSoEncoderFromBytes(CopyAcceptNFTTransferTxindexMetadata, rr); exist && err == nil {
+		txnMeta.AcceptNFTTransferTxindexMetadata = CopyAcceptNFTTransferTxindexMetadata
+	} else if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AcceptNFTTransferTxindexMetadata")
+	}
+	// decoding BurnNFTTxindexMetadata
+	CopyBurnNFTTxindexMetadata := &BurnNFTTxindexMetadata{}
+	if exist, err := DeSoEncoderFromBytes(CopyBurnNFTTxindexMetadata, rr); exist && err == nil {
+		txnMeta.BurnNFTTxindexMetadata = CopyBurnNFTTxindexMetadata
+	} else if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading BurnNFTTxindexMetadata")
 	}
 	// decoding DAOCoinTxindexMetadata
 	CopyDAOCoinTxindexMetadata := &DAOCoinTxindexMetadata{}

@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
@@ -81,14 +82,41 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 		return mapValue
 	}
 
-	// If we get here it means no value exists in our in-memory map. In this case,
-	// defer to the db. If a mapping exists in the db, return it. If not, return
-	// nil. Either way, save the value to the in-memory UtxoView mapping.
-	messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, bav.Snapshot, messagingGroupKey)
-	if messagingGroupEntry != nil {
+	if bav.Postgres != nil {
+		var pgMessagingGroup PGMessagingGroup
+		err := bav.Postgres.db.Model(&pgMessagingGroup).Where("group_owner_public_key = ? and messaging_group_key_name = ?",
+			messagingGroupKey.OwnerPublicKey, messagingGroupKey.GroupKeyName).First()
+		if err != nil {
+			return nil
+		}
+
+		memberEntries := []*MessagingGroupMember{}
+		if err := gob.NewDecoder(
+			bytes.NewReader(pgMessagingGroup.MessagingGroupMembers)).Decode(&memberEntries); err != nil {
+			glog.Errorf("Error decoding MessagingGroupMembers from DB: %v", err)
+			return nil
+		}
+
+		messagingGroupEntry := &MessagingGroupEntry{
+			GroupOwnerPublicKey:   pgMessagingGroup.GroupOwnerPublicKey,
+			MessagingPublicKey:    pgMessagingGroup.MessagingPublicKey,
+			MessagingGroupKeyName: pgMessagingGroup.MessagingGroupKeyName,
+			MessagingGroupMembers: memberEntries,
+		}
 		bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
+		return messagingGroupEntry
+
+	} else {
+		// If we get here it means no value exists in our in-memory map. In this case,
+		// defer to the db. If a mapping exists in the db, return it. If not, return
+		// nil. Either way, save the value to the in-memory UtxoView mapping.
+		messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, bav.Snapshot, messagingGroupKey)
+		if messagingGroupEntry != nil {
+			bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
+		}
+		return messagingGroupEntry
+
 	}
-	return messagingGroupEntry
 }
 
 func (bav *UtxoView) _setMessagingGroupKeyToMessagingGroupEntryMapping(ownerPublicKey *PublicKey,
@@ -163,7 +191,7 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte) (
 		// from the DB. For now we also omit the base key, we will add it later when querying the DB.
 
 		// Check if the messaging key corresponds to our public key.
-		if reflect.DeepEqual(messagingKey.OwnerPublicKey, ownerPublicKey) {
+		if reflect.DeepEqual(messagingKey.OwnerPublicKey[:], ownerPublicKey) {
 			messagingKeysMap[messagingKey] = messagingKeyEntry
 			continue
 		}
@@ -397,6 +425,14 @@ func (bav *UtxoView) _connectPrivateMessage(
 		return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: ")
 	}
 
+	// If we're past the ExtraData block height then merge the extraData in from the
+	// txn ExtraData.
+	var extraData map[string][]byte
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		// There's no previous entry to look up for messages
+		extraData = mergeExtraData(nil, txn.ExtraData)
+	}
+
 	// Create a MessageEntry, we do this now because we might modify some of the fields
 	// based on the version of the message.
 	messageEntry := &MessageEntry{
@@ -409,6 +445,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
 		RecipientMessagingPublicKey:    NewPublicKey(txMeta.RecipientPublicKey),
 		RecipientMessagingGroupKeyName: BaseGroupKeyName(),
+		ExtraData:                      extraData,
 	}
 
 	// If message was encrypted using DeSo V3 Messages, we will look for messaging keys in
@@ -514,6 +551,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 			RecipientPublicKey: txMeta.RecipientPublicKey,
 			EncryptedText:      txMeta.EncryptedText,
 			TimestampNanos:     txMeta.TimestampNanos,
+			ExtraData:          extraData,
 		}
 
 		bav.setMessageMappings(message)
@@ -875,6 +913,15 @@ func (bav *UtxoView) _connectMessagingGroup(
 		messagingMembers = append(messagingMembers, messagingMember)
 	}
 
+	var extraData map[string][]byte
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		var existingExtraData map[string][]byte
+		if existingEntry != nil && !existingEntry.isDeleted {
+			existingExtraData = existingEntry.ExtraData
+		}
+		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
+	}
+
 	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
 	// a garbage EncryptedKey. This can be filtered out at the app layer, though, and for now it leaves the
 	// app layer with more flexibility compared to if we implemented an explicit permissioning model at the
@@ -886,13 +933,17 @@ func (bav *UtxoView) _connectMessagingGroup(
 		MessagingPublicKey:    messagingPublicKey,
 		MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
 		MessagingGroupMembers: messagingMembers,
+		ExtraData:             extraData,
 	}
 	// Create a utxoOps entry, we make a copy of the existing entry.
 	var prevMessagingKeyEntry *MessagingGroupEntry
 	if existingEntry != nil && !existingEntry.isDeleted {
 		prevMessagingKeyEntry = &MessagingGroupEntry{}
 		rr := bytes.NewReader(existingEntry.Encode())
-		prevMessagingKeyEntry.Decode(rr)
+		if err = prevMessagingKeyEntry.Decode(rr); err != nil {
+			return 0, 0, nil, errors.Wrapf(err,
+				"_connectMessagingGroup: Error decoding previous entry")
+		}
 	}
 	bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, &messagingGroupEntry)
 
