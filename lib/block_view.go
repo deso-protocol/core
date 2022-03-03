@@ -1619,14 +1619,13 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 				RuleErrorDerivedKeyTxnTypeNotAuthorized,
 				"_checkDerivedKeySpendingLimit: No more transactions of type %v are allowed on this Derived Key",
 				txnType.String())
+		}
+		// Otherwise, this derived key is authorized to perform this operation. Delete the key if this is the last
+		// time this derived key can perform this operation, otherwise decrement the counter.
+		if transactionLimit == 1 {
+			delete(derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap, txnType)
 		} else {
-			// Otherwise, this derived key is authorized to perform this operation. Delete the key if this is the last
-			// time this derived key can perform this operation, otherwise decrement the counter.
-			if transactionLimit == 1 {
-				delete(derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap, txnType)
-			} else {
-				derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap[txnType]--
-			}
+			derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap[txnType]--
 		}
 	}
 	// Set derived key entry mapping
@@ -1648,20 +1647,20 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 // was updated.
 func _checkNFTKeyAndUpdateDerivedKeyEntry(key NFTOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
 	// If the key is present in the NFTOperationLimitMap...
-	if nftLimit, nftLimitExist :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]; nftLimitExist && nftLimit > 0 {
-		// If this is the last operation allowed for this key, we delete the key from the map.
-		if nftLimit == 1 {
-			delete(derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap, key)
-		} else {
-			// Otherwise, we decrement the number of operations remaining for this key
-			derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]--
-		}
-		// Return true because we found the key and decremented the remaining operations
-		return true
-	}
+	nftLimit, nftLimitExist := derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]
 	// Return false because we didn't find the key
-	return false
+	if !nftLimitExist || nftLimit <= 0 {
+		return false
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if nftLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap, key)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key
+		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]--
+	}
+	// Return true because we found the key and decremented the remaining operations
+	return true
 }
 
 func _checkNFTLimitAndUpdateDerivedKeyEntry(
@@ -1722,19 +1721,19 @@ func _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(key CreatorCoinOperationLimitK
 	// If the key is present in the CreatorCoinOperationLimitMap...
 	ccOperationLimit, ccOperationLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]
-	if ccOperationLimitExists && ccOperationLimit > 0 {
-		// If this is the last operation allowed for this key, we delete the key from the map.
-		if ccOperationLimit == 1 {
-			delete(derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap, key)
-		} else {
-			// Otherwise, we decrement the number of operations remaining for this key
-			derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]--
-		}
-		// Return true because we found the key and decremented the remaining operations
-		return true
-	}
 	// Return false because we didn't find the key
-	return false
+	if !ccOperationLimitExists || ccOperationLimit <= 0 {
+		return false
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if ccOperationLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap, key)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key
+		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]--
+	}
+	// Return true because we found the key and decremented the remaining operations
+	return true
 }
 
 func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
@@ -1782,19 +1781,19 @@ func _checkDAOCoinKeyAndUpdateDerivedKeyEntry(key DAOCoinOperationLimitKey, deri
 	// If the key is present in the DAOCoinOperationLimitMap...
 	daoCoinOperationLimit, daoCoinOperationLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]
-	if daoCoinOperationLimitExists && daoCoinOperationLimit > 0 {
-		// If this is the last operation allowed for this key, we delete the key from the map.
-		if daoCoinOperationLimit == 1 {
-			delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap, key)
-		} else {
-			// Otherwise, we decrement the number of operations remaining for this key
-			derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]--
-		}
-		// Return true because we found the key and decremented the remaining operations
-		return true
-	}
 	// Return false because we didn't find the key
-	return false
+	if !daoCoinOperationLimitExists || daoCoinOperationLimit <= 0 {
+		return false
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if daoCoinOperationLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap, key)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]--
+	}
+	// Return true because we found the key and decremented the remaining operations
+	return true
 }
 
 // _checkDAOCoinLimitAndUpdateDerivedKeyEntry checks that the DAO coin operation being performed has
