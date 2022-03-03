@@ -763,15 +763,21 @@ type PGDerivedKey struct {
 	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
 
 	ExtraData map[string][]byte
+
+	// TransactionSpendingLimit fields
+	TransactionSpendingLimitTracker *TransactionSpendingLimit `pg:",type:bytea"`
+	Memo                            []byte                    `pg:",type:bytea"`
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
 	return &DerivedKeyEntry{
-		OwnerPublicKey:   key.OwnerPublicKey,
-		DerivedPublicKey: key.DerivedPublicKey,
-		ExpirationBlock:  key.ExpirationBlock,
-		OperationType:    key.OperationType,
-		ExtraData:        key.ExtraData,
+		OwnerPublicKey:                  key.OwnerPublicKey,
+		DerivedPublicKey:                key.DerivedPublicKey,
+		ExpirationBlock:                 key.ExpirationBlock,
+		OperationType:                   key.OperationType,
+		ExtraData:                       key.ExtraData,
+		TransactionSpendingLimitTracker: key.TransactionSpendingLimitTracker,
+		Memo:                            key.Memo,
 	}
 }
 
@@ -1955,10 +1961,12 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 	var deleteKeys []*PGDerivedKey
 	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
 		key := &PGDerivedKey{
-			OwnerPublicKey:   keyEntry.OwnerPublicKey,
-			DerivedPublicKey: keyEntry.DerivedPublicKey,
-			ExpirationBlock:  keyEntry.ExpirationBlock,
-			OperationType:    keyEntry.OperationType,
+			OwnerPublicKey:                  keyEntry.OwnerPublicKey,
+			DerivedPublicKey:                keyEntry.DerivedPublicKey,
+			ExpirationBlock:                 keyEntry.ExpirationBlock,
+			OperationType:                   keyEntry.OperationType,
+			TransactionSpendingLimitTracker: keyEntry.TransactionSpendingLimitTracker,
+			Memo:                            keyEntry.Memo,
 		}
 
 		if keyEntry.isDeleted {

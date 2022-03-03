@@ -3690,20 +3690,31 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	deleteKey bool,
 	derivedKeySignature bool,
 	extraData map[string][]byte,
+	memo []byte,
+	transactionSpendingLimit *TransactionSpendingLimit,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
-	// Verify that the signature is valid.
-	err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
-		expirationBlock, accessSignature)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
+	blockHeight := bc.blockTip().Height + 1
+
+	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
+		if err := _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey, derivedPublicKey,
+			expirationBlock, transactionSpendingLimit, accessSignature); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature with transaction"+
+					" spending limit")
+		}
+	} else {
+		// Verify that the signature is valid.
+		if err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
+			expirationBlock, accessSignature); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
+		}
 	}
 
 	// Check that the expiration block is valid.
-	blockHeight := bc.blockTip().Height + 1
 	if expirationBlock <= uint64(blockHeight) {
 		return nil, 0, 0, 0, fmt.Errorf(
 			"Blockchain.CreateAuthorizeDerivedKeyTxn: Expired access signature")
@@ -3722,12 +3733,29 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		derivedKeyExtraData[DerivedPublicKey] = derivedPublicKey
 	}
 
+	spendingLimitsExtraData := make(map[string][]byte)
+	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
+		if len(memo) != 0 {
+			spendingLimitsExtraData[DerivedKeyMemoKey] = memo
+		}
+		if transactionSpendingLimit != nil {
+			transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+			if err != nil {
+				return nil, 0, 0, 0, err
+			}
+			spendingLimitsExtraData[TransactionSpendingLimitKey] = transactionSpendingLimitBytes
+		}
+	}
+
 	// Delete protected keys
 	if extraData != nil {
 		delete(extraData, DerivedPublicKey)
+		delete(extraData, DerivedKeyMemoKey)
+		delete(extraData, TransactionSpendingLimitKey)
 	}
 
 	finalExtraData := mergeExtraData(extraData, derivedKeyExtraData)
+	finalExtraData = mergeExtraData(finalExtraData, spendingLimitsExtraData)
 
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgDeSoTxn{

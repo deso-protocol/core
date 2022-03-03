@@ -7512,7 +7512,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			0,
 			true,
 			200,
-			)
+		)
 	}
 
 	// M0 buys their NFT back
@@ -7524,7 +7524,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			200,
-			)
+		)
 	}
 
 	// M0 puts it on sale again
@@ -7539,7 +7539,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			10,
 			true,
 			200,
-			)
+		)
 	}
 
 	// M3 buys it back again
@@ -7551,7 +7551,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			200,
-			)
+		)
 	}
 
 	// M3 puts it on sale and m2 buys it this time
@@ -7566,7 +7566,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			0,
 			true,
 			150,
-			)
+		)
 
 		_createNFTBidWithTestMeta(testMeta,
 			10,
@@ -7575,7 +7575,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			150,
-			)
+		)
 	}
 
 	// M2 transfers it to M1 and m1 Accepts
@@ -7588,7 +7588,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			"",
-			)
+		)
 
 		_acceptNFTTransferWithTestMeta(testMeta,
 			10,
@@ -7596,7 +7596,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			m1Priv,
 			post1Hash,
 			1,
-			)
+		)
 	}
 
 	// M1 puts it on sale as an auction
@@ -7611,7 +7611,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			100,
 			false,
 			0,
-			)
+		)
 	}
 
 	// M4, M5, and M6 submit bids
@@ -7623,7 +7623,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			100,
-			)
+		)
 
 		_createNFTBidWithTestMeta(testMeta,
 			10,
@@ -7679,7 +7679,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			post1Hash,
 			1,
 			100,
-			)
+		)
 	}
 
 	_rollBackTestMetaTxnsAndFlush(testMeta)
@@ -7688,4 +7688,3 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
-

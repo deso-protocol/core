@@ -173,6 +173,16 @@ type ForkHeights struct {
 	DAOCoinBlockHeight uint32
 
 	ExtraDataOnEntriesBlockHeight uint32
+
+	// DerivedKeySetSpendingLimitsBlockHeight defines the height at which derived key transactions will have their
+	// transaction spending limits in the extra data field parsed.
+	DerivedKeySetSpendingLimitsBlockHeight uint32
+
+	// DerivedKeyTrackSpendingLimitsBlockHeight defines the height at which derived key's transaction spending limits
+	// will come in effect - accounting of DESO spent and transaction counts will begin at this height. These heights
+	// are separated to allow developers time to generate new derived keys for their users. NOTE: this must always
+	// be greater than or equal to DerivedKeySetSpendingLimitsBlockHeight.
+	DerivedKeyTrackSpendingLimitsBlockHeight uint32
 }
 
 // DeSoParams defines the full list of possible parameters for the
@@ -402,10 +412,12 @@ func (params *DeSoParams) EnableRegtest() {
 		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
 		DAOCoinBlockHeight:                                   uint32(0),
 		ExtraDataOnEntriesBlockHeight:                        uint32(0),
+		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
+		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	}
 }
 
-// GenesisBlock defines the genesis block used for the DeSo maainnet and testnet
+// GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
 var (
 	ArchitectPubKeyBase58Check = "BC1YLg3oh6Boj8e2boCo1vQCYHLk1rjsHF6jthBdvSw79bixQvKK6Qa"
 	// This is the public key corresponding to the BitcoinBurnAddress on mainnet.
@@ -647,6 +659,10 @@ var DeSoMainnetParams = DeSoParams{
 
 		// FIXME: set to real block height
 		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
+
+		// FIXME: Set these values when we're ready for the next fork.
+		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
+		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
 }
 
@@ -835,6 +851,10 @@ var DeSoTestnetParams = DeSoParams{
 
 		// FIXME: set to real block height
 		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
+
+		// FIXME: Set these values when we're ready for the next fork.
+		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
+		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
 }
 
@@ -899,6 +919,10 @@ const (
 	// Key in transaction's extra data map. If present, this value represents the Node ID of the running node. This maps
 	// to the map of nodes in ./lib/nodes.go
 	NodeSourceMapKey = "NodeSource"
+
+	// TransactionSpendingLimit
+	TransactionSpendingLimitKey = "TransactionSpendingLimit"
+	DerivedKeyMemoKey           = "DerivedKeyMemo"
 )
 
 // Defines values that may exist in a transaction's ExtraData map

@@ -122,8 +122,9 @@ const (
 	OperationTypeMessagingKey                 OperationType = 24
 	OperationTypeDAOCoin                      OperationType = 25
 	OperationTypeDAOCoinTransfer              OperationType = 26
+	OperationTypeSpendingLimitAccounting      OperationType = 27
 
-	// NEXT_TAG = 27
+	// NEXT_TAG = 28
 )
 
 func (op OperationType) String() string {
@@ -231,6 +232,10 @@ func (op OperationType) String() string {
 	case OperationTypeDAOCoinTransfer:
 		{
 			return "OperationTypeDAOCoinTransfer"
+		}
+	case OperationTypeSpendingLimitAccounting:
+		{
+			return "OperationTypeSpendingLimitAccounting"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -932,8 +937,25 @@ type DerivedKeyEntry struct {
 
 	ExtraData map[string][]byte
 
+	// Transaction Spending limit Tracker
+	TransactionSpendingLimitTracker *TransactionSpendingLimit
+
+	// Memo that tells you what this derived key is for. Should
+	// include the name or domain of the app that asked for these
+	// permissions so the user can manage it from a centralized UI.
+	Memo []byte
+
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+func (dk *DerivedKeyEntry) Copy() *DerivedKeyEntry {
+	if dk == nil {
+		return nil
+	}
+	newEntry := *dk
+	newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	return &newEntry
 }
 
 type DerivedKeyMapKey struct {
