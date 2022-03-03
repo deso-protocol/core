@@ -1,9 +1,6 @@
 package lib
 
 import (
-	"bytes"
-	"encoding/gob"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
@@ -128,8 +125,6 @@ type PGTransaction struct {
 	MetadataAcceptNFTTransfer   *PGMetadataAcceptNFTTransfer   `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataBurnNFT             *PGMetadataBurnNFT             `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDerivedKey          *PGMetadataDerivedKey          `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDAOCoin             *PGMetadataDAOCoin             `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDAOCoinTransfer     *PGMetadataDAOCoinTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents DeSoOutput, DeSoInput, and UtxoEntry
@@ -271,8 +266,8 @@ type PGMetadataDAOCoin struct {
 	TransactionHash           *BlockHash           `pg:",pk,type:bytea"`
 	ProfilePublicKey          []byte               `pg:",type:bytea"`
 	OperationType             DAOCoinOperationType `pg:",use_zero"`
-	CoinsToMintNanos          string
-	CoinsToBurnNanos          string
+	CoinsToMintNanos          uint64               `pg:",use_zero"`
+	CoinsToBurnNanos          uint64               `pg:",use_zero"`
 	TransferRestrictionStatus `pg:",use_zero"`
 }
 
@@ -282,7 +277,7 @@ type PGMetadataDAOCoinTransfer struct {
 
 	TransactionHash        *BlockHash `pg:",pk,type:bytea"`
 	ProfilePublicKey       []byte     `pg:",type:bytea"`
-	DAOCoinToTransferNanos string     `pg:"dao_coin_to_transfer_nanos,use_zero"`
+	DAOCoinToTransferNanos uint64     `pg:"dao_coin_to_transfer_nanos,use_zero"`
 	ReceiverPublicKey      []byte     `pg:",type:bytea"`
 }
 
@@ -434,12 +429,15 @@ type PGProfile struct {
 	NumberOfHolders    uint64
 	// FIXME: Postgres will break when values exceed uint64
 	// We don't use Postgres right now so going to plow ahead and set this as-is
-	// to fix compile errors. CoinsInCirculationNanos will never exceed uint64
-	CoinsInCirculationNanos          uint64
-	CoinWatermarkNanos               uint64
-	MintingDisabled                  bool
-	DAOCoinNumberOfHolders           uint64                    `pg:"dao_coin_number_of_holders"`
-	DAOCoinCoinsInCirculationNanos   string                    `pg:"dao_coin_coins_in_circulation_nanos"`
+	// to fix compile errors.
+	CoinsInCirculationNanos uint256.Int
+	CoinWatermarkNanos      uint64
+	MintingDisabled         bool
+	DAOCoinNumberOfHolders  uint64 `pg:"dao_coin_number_of_holders"`
+	// FIXME: Postgres will break when values exceed uint64
+	// We don't use Postgres right now so going to plow ahead and set this as-is
+	// to fix compile errors.
+	DAOCoinCoinsInCirculationNanos   uint256.Int               `pg:"dao_coin_coins_in_circulation"`
 	DAOCoinMintingDisabled           bool                      `pg:"dao_coin_minting_disabled"`
 	DAOCoinTransferRestrictionStatus TransferRestrictionStatus `pg:"dao_coin_transfer_restriction_status"`
 }
@@ -451,30 +449,28 @@ func (profile *PGProfile) Empty() bool {
 type PGPost struct {
 	tableName struct{} `pg:"pg_posts"`
 
-	PostHash                                    *BlockHash `pg:",pk,type:bytea"`
-	PosterPublicKey                             []byte
-	ParentPostHash                              *BlockHash `pg:",type:bytea"`
-	Body                                        string
-	RepostedPostHash                            *BlockHash        `pg:",type:bytea"`
-	QuotedRepost                                bool              `pg:",use_zero"`
-	Timestamp                                   uint64            `pg:",use_zero"`
-	Hidden                                      bool              `pg:",use_zero"`
-	LikeCount                                   uint64            `pg:",use_zero"`
-	RepostCount                                 uint64            `pg:",use_zero"`
-	QuoteRepostCount                            uint64            `pg:",use_zero"`
-	DiamondCount                                uint64            `pg:",use_zero"`
-	CommentCount                                uint64            `pg:",use_zero"`
-	Pinned                                      bool              `pg:",use_zero"`
-	NFT                                         bool              `pg:",use_zero"`
-	NumNFTCopies                                uint64            `pg:",use_zero"`
-	NumNFTCopiesForSale                         uint64            `pg:",use_zero"`
-	NumNFTCopiesBurned                          uint64            `pg:",use_zero"`
-	Unlockable                                  bool              `pg:",use_zero"`
-	CreatorRoyaltyBasisPoints                   uint64            `pg:",use_zero"`
-	CoinRoyaltyBasisPoints                      uint64            `pg:",use_zero"`
-	AdditionalNFTRoyaltiesToCoinsBasisPoints    map[string]uint64 `pg:"additional_nft_royalties_to_coins_basis_points"`
-	AdditionalNFTRoyaltiesToCreatorsBasisPoints map[string]uint64 `pg:"additional_nft_royalties_to_creators_basis_points"`
-	ExtraData                                   map[string][]byte
+	PostHash                  *BlockHash `pg:",pk,type:bytea"`
+	PosterPublicKey           []byte
+	ParentPostHash            *BlockHash `pg:",type:bytea"`
+	Body                      string
+	RepostedPostHash          *BlockHash `pg:",type:bytea"`
+	QuotedRepost              bool       `pg:",use_zero"`
+	Timestamp                 uint64     `pg:",use_zero"`
+	Hidden                    bool       `pg:",use_zero"`
+	LikeCount                 uint64     `pg:",use_zero"`
+	RepostCount               uint64     `pg:",use_zero"`
+	QuoteRepostCount          uint64     `pg:",use_zero"`
+	DiamondCount              uint64     `pg:",use_zero"`
+	CommentCount              uint64     `pg:",use_zero"`
+	Pinned                    bool       `pg:",use_zero"`
+	NFT                       bool       `pg:",use_zero"`
+	NumNFTCopies              uint64     `pg:",use_zero"`
+	NumNFTCopiesForSale       uint64     `pg:",use_zero"`
+	NumNFTCopiesBurned        uint64     `pg:",use_zero"`
+	Unlockable                bool       `pg:",use_zero"`
+	CreatorRoyaltyBasisPoints uint64     `pg:",use_zero"`
+	CoinRoyaltyBasisPoints    uint64     `pg:",use_zero"`
+	ExtraData                 map[string][]byte
 }
 
 func (post *PGPost) NewPostEntry() *PostEntry {
@@ -500,28 +496,6 @@ func (post *PGPost) NewPostEntry() *PostEntry {
 		NFTRoyaltyToCoinBasisPoints:    post.CoinRoyaltyBasisPoints,
 		NFTRoyaltyToCreatorBasisPoints: post.CreatorRoyaltyBasisPoints,
 		PostExtraData:                  post.ExtraData,
-	}
-
-	if len(post.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
-		postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints = make(map[PKID]uint64)
-		for pkidStr, bp := range post.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-			pkidBytes, err := hex.DecodeString(pkidStr)
-			if err != nil {
-				panic(err)
-			}
-			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints[*NewPKID(pkidBytes)] = bp
-		}
-	}
-
-	if len(post.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
-		postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints = make(map[PKID]uint64)
-		for pkidStr, bp := range post.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
-			pkidBytes, err := hex.DecodeString(pkidStr)
-			if err != nil {
-				panic(err)
-			}
-			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints[*NewPKID(pkidBytes)] = bp
-		}
 	}
 
 	if post.ParentPostHash != nil {
@@ -592,15 +566,6 @@ type PGMessage struct {
 	isDeleted bool
 }
 
-type PGMessagingGroup struct {
-	tableName struct{} `pg:"pg_messaging_group"`
-
-	GroupOwnerPublicKey   *PublicKey    `pg:",type:bytea"`
-	MessagingPublicKey    *PublicKey    `pg:",type:bytea"`
-	MessagingGroupKeyName *GroupKeyName `pg:",type:bytea"`
-	MessagingGroupMembers []byte        `pg:",type:bytea"`
-}
-
 type PGCreatorCoinBalance struct {
 	tableName struct{} `pg:"pg_creator_coin_balances"`
 
@@ -625,26 +590,16 @@ type PGDAOCoinBalance struct {
 
 	HolderPKID   *PKID `pg:",pk,type:bytea"`
 	CreatorPKID  *PKID `pg:",pk,type:bytea"`
-	BalanceNanos string
+	BalanceNanos uint64
 	HasPurchased bool
 }
 
 func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
-	var balanceNanos *uint256.Int
-	if balance.BalanceNanos != "" {
-		var err error
-		balanceNanos, err = uint256.FromHex(balance.BalanceNanos)
-		if err != nil {
-			balanceNanos = uint256.NewInt()
-		}
-	} else {
-		balanceNanos = uint256.NewInt()
-	}
-
 	return &BalanceEntry{
-		HODLerPKID:   balance.HolderPKID,
-		CreatorPKID:  balance.CreatorPKID,
-		BalanceNanos: *balanceNanos,
+		HODLerPKID:  balance.HolderPKID,
+		CreatorPKID: balance.CreatorPKID,
+		// FIXME: This will break if the value exceeds uint256
+		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -703,8 +658,6 @@ type PGNFT struct {
 	UnlockableText             string
 	LastAcceptedBidAmountNanos uint64 `pg:",use_zero"`
 	IsPending                  bool   `pg:",use_zero"`
-	IsBuyNow                   bool   `pg:",use_zero"`
-	BuyNowPriceNanos           uint64 `pg:",use_zero"`
 }
 
 func (nft *PGNFT) NewNFTEntry() *NFTEntry {
@@ -718,8 +671,6 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 		UnlockableText:             []byte(nft.UnlockableText),
 		LastAcceptedBidAmountNanos: nft.LastAcceptedBidAmountNanos,
 		IsPending:                  nft.IsPending,
-		IsBuyNow:                   nft.IsBuyNow,
-		BuyNowPriceNanos:           nft.BuyNowPriceNanos,
 	}
 }
 
@@ -727,21 +678,19 @@ func (nft *PGNFT) NewNFTEntry() *NFTEntry {
 type PGNFTBid struct {
 	tableName struct{} `pg:"pg_nft_bids"`
 
-	BidderPKID          *PKID      `pg:",pk,type:bytea"`
-	NFTPostHash         *BlockHash `pg:",pk,type:bytea"`
-	SerialNumber        uint64     `pg:",pk,use_zero"`
-	BidAmountNanos      uint64     `pg:",use_zero"`
-	Accepted            bool       `pg:",use_zero"`
-	AcceptedBlockHeight *uint32    `pg:",use_zero"`
+	BidderPKID     *PKID      `pg:",pk,type:bytea"`
+	NFTPostHash    *BlockHash `pg:",pk,type:bytea"`
+	SerialNumber   uint64     `pg:",pk,use_zero"`
+	BidAmountNanos uint64     `pg:",use_zero"`
+	Accepted       bool       `pg:",use_zero"`
 }
 
 func (bid *PGNFTBid) NewNFTBidEntry() *NFTBidEntry {
 	return &NFTBidEntry{
-		BidderPKID:          bid.BidderPKID,
-		NFTPostHash:         bid.NFTPostHash,
-		SerialNumber:        bid.SerialNumber,
-		BidAmountNanos:      bid.BidAmountNanos,
-		AcceptedBlockHeight: bid.AcceptedBlockHeight,
+		BidderPKID:     bid.BidderPKID,
+		NFTPostHash:    bid.NFTPostHash,
+		SerialNumber:   bid.SerialNumber,
+		BidAmountNanos: bid.BidAmountNanos,
 	}
 }
 
@@ -896,8 +845,6 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataAcceptNFTTransfer []*PGMetadataAcceptNFTTransfer
 	var metadataBurnNFT []*PGMetadataBurnNFT
 	var metadataDerivedKey []*PGMetadataDerivedKey
-	var metadataDAOCoin []*PGMetadataDAOCoin
-	var metadataDAOCoinTransfer []*PGMetadataDAOCoinTransfer
 
 	blockHash := blockNode.Hash
 
@@ -1084,27 +1031,6 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				SerialNumber:    txMeta.SerialNumber,
 				BidAmountNanos:  txMeta.BidAmountNanos,
 			})
-
-			//get related NFT
-			pgBidNft := postgres.GetNFT(txMeta.NFTPostHash, txMeta.SerialNumber)
-
-			//check if is buy now and BidAmountNanos > then BuyNowPriceNanos
-			if pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
-
-				//get related profile
-				pgBidProfile := postgres.GetProfileForPublicKey(txn.PublicKey)
-
-				//add to accept bids as well
-				metadataAcceptNFTBids = append(metadataAcceptNFTBids, &PGMetadataAcceptNFTBid{
-					TransactionHash: txnHash,
-					NFTPostHash:     txMeta.NFTPostHash,
-					SerialNumber:    txMeta.SerialNumber,
-					BidderPKID:      pgBidProfile.PKID,
-					BidAmountNanos:  txMeta.BidAmountNanos,
-					UnlockableText:  []byte{},
-				})
-			}
-
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
 			txMeta := txn.TxnMeta.(*NFTTransferMetadata)
 			metadataNFTTransfer = append(metadataNFTTransfer, &PGMetadataNFTTransfer{
@@ -1137,29 +1063,6 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				OperationType:    txMeta.OperationType,
 				AccessSignature:  txMeta.AccessSignature,
 			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
-			txMeta := txn.TxnMeta.(*DAOCoinMetadata)
-			metadataDAOCoin = append(metadataDAOCoin, &PGMetadataDAOCoin{
-				TransactionHash:           txnHash,
-				ProfilePublicKey:          txMeta.ProfilePublicKey,
-				OperationType:             txMeta.OperationType,
-				CoinsToMintNanos:          txMeta.CoinsToMintNanos.Hex(),
-				CoinsToBurnNanos:          txMeta.CoinsToBurnNanos.Hex(),
-				TransferRestrictionStatus: txMeta.TransferRestrictionStatus,
-			})
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
-			txMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
-			metadataDAOCoinTransfer = append(metadataDAOCoinTransfer, &PGMetadataDAOCoinTransfer{
-				TransactionHash:        txnHash,
-				ProfilePublicKey:       txMeta.ProfilePublicKey,
-				DAOCoinToTransferNanos: txMeta.DAOCoinToTransferNanos.Hex(),
-				ReceiverPublicKey:      txMeta.ReceiverPublicKey,
-			})
-
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
-
-			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
-
 		} else {
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 		}
@@ -1305,18 +1208,6 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 	}
 
-	if len(metadataDAOCoin) > 0 {
-		if _, err := tx.Model(&metadataDAOCoin).Returning("NULL").Insert(); err != nil {
-			return err
-		}
-	}
-
-	if len(metadataDAOCoinTransfer) > 0 {
-		if _, err := tx.Model(&metadataDAOCoinTransfer).Returning("NULL").Insert(); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -1437,9 +1328,9 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 			profile.CreatorBasisPoints = profileEntry.CreatorCoinEntry.CreatorBasisPoints
 			profile.DeSoLockedNanos = profileEntry.CreatorCoinEntry.DeSoLockedNanos
 			profile.NumberOfHolders = profileEntry.CreatorCoinEntry.NumberOfHolders
-			profile.CoinsInCirculationNanos = profileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()
+			profile.CoinsInCirculationNanos = profileEntry.CreatorCoinEntry.CoinsInCirculationNanos
 			profile.CoinWatermarkNanos = profileEntry.CreatorCoinEntry.CoinWatermarkNanos
-			profile.DAOCoinCoinsInCirculationNanos = profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Hex()
+			profile.DAOCoinCoinsInCirculationNanos = profileEntry.DAOCoinEntry.CoinsInCirculationNanos
 			profile.DAOCoinMintingDisabled = profileEntry.DAOCoinEntry.MintingDisabled
 			profile.DAOCoinNumberOfHolders = profileEntry.DAOCoinEntry.NumberOfHolders
 			profile.DAOCoinTransferRestrictionStatus = profileEntry.DAOCoinEntry.TransferRestrictionStatus
@@ -1503,22 +1394,6 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 
 		if len(postEntry.ParentStakeID) > 0 {
 			post.ParentPostHash = NewBlockHash(postEntry.ParentStakeID)
-		}
-
-		if len(postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
-			post.AdditionalNFTRoyaltiesToCoinsBasisPoints = make(map[string]uint64)
-			for pkid, bps := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-				pkidHexString := hex.EncodeToString(pkid[:])
-				post.AdditionalNFTRoyaltiesToCoinsBasisPoints[pkidHexString] = bps
-			}
-		}
-
-		if len(postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
-			post.AdditionalNFTRoyaltiesToCreatorsBasisPoints = make(map[string]uint64)
-			for pkid, bps := range postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
-				pkidHexString := hex.EncodeToString(pkid[:])
-				post.AdditionalNFTRoyaltiesToCreatorsBasisPoints[pkidHexString] = bps
-			}
 		}
 
 		if postEntry.isDeleted {
@@ -1683,44 +1558,6 @@ func (postgres *Postgres) flushMessages(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error {
-	var insertMessages []*PGMessagingGroup
-	var deleteMessages []*PGMessagingGroup
-	for _, groupEntry := range view.MessagingGroupKeyToMessagingGroupEntry {
-		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
-		gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers)
-		pgGroupEntry := &PGMessagingGroup{
-			GroupOwnerPublicKey:   groupEntry.GroupOwnerPublicKey,
-			MessagingPublicKey:    groupEntry.MessagingPublicKey,
-			MessagingGroupKeyName: groupEntry.MessagingGroupKeyName,
-			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
-		}
-		if groupEntry.isDeleted {
-			deleteMessages = append(deleteMessages, pgGroupEntry)
-		} else {
-			insertMessages = append(insertMessages, pgGroupEntry)
-		}
-	}
-
-	if len(insertMessages) > 0 {
-		// TODO: There should never be a conflict here. Should we raise an error?
-		_, err := tx.Model(&insertMessages).WherePK().OnConflict(
-			"(group_owner_public_key, messaging_group_key_name) DO UPDATE").Returning("NULL").Insert()
-		if err != nil {
-			return err
-		}
-	}
-
-	if len(deleteMessages) > 0 {
-		_, err := tx.Model(&deleteMessages).Returning("NULL").Delete()
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (postgres *Postgres) flushCreatorCoinBalances(tx *pg.Tx, view *UtxoView) error {
 	var insertBalances []*PGCreatorCoinBalance
 	var deleteBalances []*PGCreatorCoinBalance
@@ -1770,9 +1607,10 @@ func (postgres *Postgres) flushDAOCoinBalances(tx *pg.Tx, view *UtxoView) error 
 		}
 
 		balance := &PGDAOCoinBalance{
-			HolderPKID:   balanceEntry.HODLerPKID,
-			CreatorPKID:  balanceEntry.CreatorPKID,
-			BalanceNanos: balanceEntry.BalanceNanos.Hex(),
+			HolderPKID:  balanceEntry.HODLerPKID,
+			CreatorPKID: balanceEntry.CreatorPKID,
+			// FIXME: This will break if the value exceeds uint256
+			BalanceNanos: balanceEntry.BalanceNanos.Uint64(),
 			HasPurchased: balanceEntry.HasPurchased,
 		}
 
@@ -1870,8 +1708,6 @@ func (postgres *Postgres) flushNFTs(tx *pg.Tx, view *UtxoView) error {
 			UnlockableText:             string(nftEntry.UnlockableText),
 			LastAcceptedBidAmountNanos: nftEntry.LastAcceptedBidAmountNanos,
 			IsPending:                  nftEntry.IsPending,
-			IsBuyNow:                   nftEntry.IsBuyNow,
-			BuyNowPriceNanos:           nftEntry.BuyNowPriceNanos,
 		}
 
 		if nftEntry.isDeleted {
@@ -1903,12 +1739,12 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	var deleteBids []*PGNFTBid
 	for _, bidEntry := range view.NFTBidKeyToNFTBidEntry {
 		nft := &PGNFTBid{
-			BidderPKID:          bidEntry.BidderPKID,
-			NFTPostHash:         bidEntry.NFTPostHash,
-			SerialNumber:        bidEntry.SerialNumber,
-			BidAmountNanos:      bidEntry.BidAmountNanos,
-			Accepted:            bidEntry.AcceptedBlockHeight != nil,
-			AcceptedBlockHeight: bidEntry.AcceptedBlockHeight,
+			BidderPKID:     bidEntry.BidderPKID,
+			NFTPostHash:    bidEntry.NFTPostHash,
+			SerialNumber:   bidEntry.SerialNumber,
+			BidAmountNanos: bidEntry.BidAmountNanos,
+			// TODO: Change how accepted bid logic works in consensus
+			Accepted: false,
 		}
 
 		if bidEntry.isDeleted {

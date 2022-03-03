@@ -385,7 +385,7 @@ func (txi *TXIndex) Update() error {
 
 		// Do each block update in a single transaction so we're safe in case the node
 		// restarts.
-		if err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
+		txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 
 			// Iterate through each transaction in the block and do the following:
 			// - Connect it to the view
@@ -407,9 +407,7 @@ func (txi *TXIndex) Update() error {
 			}
 
 			return nil
-		}); err != nil {
-			return err
-		}
+		})
 
 		// Now that we have added all the txns to our TxIndex db, attach the block
 		// to update our chain.

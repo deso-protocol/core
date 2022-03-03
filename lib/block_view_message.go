@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
@@ -82,41 +81,14 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 		return mapValue
 	}
 
-	if bav.Postgres != nil {
-		var pgMessagingGroup PGMessagingGroup
-		err := bav.Postgres.db.Model(&pgMessagingGroup).Where("group_owner_public_key = ? and messaging_group_key_name = ?",
-			messagingGroupKey.OwnerPublicKey, messagingGroupKey.GroupKeyName).First()
-		if err != nil {
-			return nil
-		}
-
-		memberEntries := []*MessagingGroupMember{}
-		if err := gob.NewDecoder(
-			bytes.NewReader(pgMessagingGroup.MessagingGroupMembers)).Decode(&memberEntries); err != nil {
-			glog.Errorf("Error decoding MessagingGroupMembers from DB: %v", err)
-			return nil
-		}
-
-		messagingGroupEntry := &MessagingGroupEntry{
-			GroupOwnerPublicKey: pgMessagingGroup.GroupOwnerPublicKey,
-			MessagingPublicKey: pgMessagingGroup.MessagingPublicKey,
-			MessagingGroupKeyName: pgMessagingGroup.MessagingGroupKeyName,
-			MessagingGroupMembers: memberEntries,
-		}
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil. Either way, save the value to the in-memory UtxoView mapping.
+	messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, messagingGroupKey)
+	if messagingGroupEntry != nil {
 		bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
-		return messagingGroupEntry
-
-	} else {
-		// If we get here it means no value exists in our in-memory map. In this case,
-		// defer to the db. If a mapping exists in the db, return it. If not, return
-		// nil. Either way, save the value to the in-memory UtxoView mapping.
-		messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, messagingGroupKey)
-		if messagingGroupEntry != nil {
-			bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
-		}
-		return messagingGroupEntry
-
 	}
+	return messagingGroupEntry
 }
 
 func (bav *UtxoView) _setMessagingGroupKeyToMessagingGroupEntryMapping(ownerPublicKey *PublicKey,
@@ -191,7 +163,7 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte) (
 		// from the DB. For now we also omit the base key, we will add it later when querying the DB.
 
 		// Check if the messaging key corresponds to our public key.
-		if reflect.DeepEqual(messagingKey.OwnerPublicKey[:], ownerPublicKey) {
+		if reflect.DeepEqual(messagingKey.OwnerPublicKey, ownerPublicKey) {
 			messagingKeysMap[messagingKey] = messagingKeyEntry
 			continue
 		}

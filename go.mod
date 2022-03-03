@@ -21,7 +21,6 @@ require (
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-pg/pg/v10 v10.10.0
-	github.com/gobuffalo/packr v1.30.1
 	github.com/golang/glog v1.0.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -39,7 +38,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/robinjoseph08/go-pg-migrations/v3 v3.0.0
-	github.com/sasha-s/go-deadlock v0.3.1
 	github.com/shibukawa/configdir v0.0.0-20170330084843-e180dbdc8da0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5

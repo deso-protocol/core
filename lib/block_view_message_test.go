@@ -13,29 +13,6 @@ import (
 	"time"
 )
 
-func TestBasePointSignature(t *testing.T) {
-	require := require.New(t)
-	// Retrieve the base point bytes and parse them to a public key.
-	basePointBytes := GetS256BasePointCompressed()
-	basePoint, err := btcec.ParsePubKey(basePointBytes, btcec.S256())
-	require.NoError(err)
-
-	// Verify that k = 1 is the correct private key for the secp256k1 base point
-	priveKeyBytes := []byte{1}
-	priveKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), priveKeyBytes)
-	require.Equal(basePointBytes, publicKey.SerializeCompressed())
-	require.Equal(basePoint.SerializeCompressed(), publicKey.SerializeCompressed())
-
-	// Now test signing messages with the private key of the base point k = 1.
-	message := []byte("Test message")
-	messageHash := Sha256DoubleHash(message)
-	messageSignature, err := priveKey.Sign(messageHash[:])
-	require.NoError(err)
-
-	// Now make sure the base point passes signature verification.
-	require.Equal(true, messageSignature.Verify(messageHash[:], basePoint))
-}
-
 func _privateMessage(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, senderPkBase58Check string,
 	recipientPkBase58Check string,

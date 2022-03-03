@@ -140,19 +140,4 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://joinentre.com",
 		Owner: "entre",
 	},
-	24: {
-		Name:  "Elmas",
-		URL:   "https://elmas.app",
-		Owner: "elmas",
-	},
-	25: {
-		Name:  "İnci",
-		URL:   "https://inci.app",
-		Owner: "inci",
-	},
-	26: {
-		Name:  "Overclout",
-		URL:   "https://overclout.com",
-		Owner: "Overclout",
-	},
 }

@@ -380,7 +380,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		""     /*dataDir*/, "")
+		"" /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -1102,7 +1102,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	}
 
 	// Calculate metadata
-	mempoolTx.TxMeta = ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
+	txnMeta, err := ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
 		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps)
 	if err == nil {
 		mempoolTx.TxMeta = txnMeta
@@ -1116,7 +1116,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
 	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation) *TransactionMetadata {
+	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation) (*TransactionMetadata, error) {
 
 	var err error
 	txnMeta := &TransactionMetadata{
@@ -1158,27 +1158,27 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		})
 	}
 
-	switch txn.TxnMeta.GetTxnType() {
-	case TxnTypeBitcoinExchange:
+	if txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
 		txnMeta.BitcoinExchangeTxindexMetadata, txnMeta.TransactorPublicKeyBase58Check, err =
 			_computeBitcoinExchangeFields(utxoView.Params, txn.TxnMeta.(*BitcoinExchangeMetadata),
 				totalNanosPurchasedBefore, usdCentsPerBitcoinBefore)
 		if err != nil {
-			glog.V(2).Infof(
+			return nil, fmt.Errorf(
 				"UpdateTxindex: Error computing BitcoinExchange txn metadata: %v", err)
-		} else {
-			// Set the nanos purchased before/after.
-			txnMeta.BitcoinExchangeTxindexMetadata.TotalNanosPurchasedBefore = totalNanosPurchasedBefore
-			txnMeta.BitcoinExchangeTxindexMetadata.TotalNanosPurchasedAfter = utxoView.NanosPurchased
-
-			// Always associate BitcoinExchange txns with the burn public key. This makes it
-			//		// easy to enumerate all burn txns in the block explorer.
-			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-				PublicKeyBase58Check: BurnPubKeyBase58Check,
-				Metadata:             "BurnPublicKey",
-			})
 		}
-	case TxnTypeCreatorCoin:
+
+		// Set the nanos purchased before/after.
+		txnMeta.BitcoinExchangeTxindexMetadata.TotalNanosPurchasedBefore = totalNanosPurchasedBefore
+		txnMeta.BitcoinExchangeTxindexMetadata.TotalNanosPurchasedAfter = utxoView.NanosPurchased
+
+		// Always associate BitcoinExchange txns with the burn public key. This makes it
+		//		// easy to enumerate all burn txns in the block explorer.
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: BurnPubKeyBase58Check,
+			Metadata:             "BurnPublicKey",
+		})
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
 		// Get the txn metadata
 		realTxMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 
@@ -1224,7 +1224,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ProfilePublicKey, utxoView.Params),
 			Metadata:             "CreatorPublicKey",
 		})
-	case TxnTypeCreatorCoinTransfer:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
 		realTxMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
 		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 		txnMeta.CreatorCoinTransferTxindexMetadata = &CreatorCoinTransferTxindexMetadata{
@@ -1248,7 +1249,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "ReceiverPublicKey",
 		})
-	case TxnTypeUpdateProfile:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
 		realTxMeta := txn.TxnMeta.(*UpdateProfileMetadata)
 
 		txnMeta.UpdateProfileTxindexMetadata = &UpdateProfileTxindexMetadata{}
@@ -1268,7 +1270,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ProfilePublicKey, utxoView.Params),
 			Metadata:             "ProfilePublicKeyBase58Check",
 		})
-	case TxnTypeSubmitPost:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		realTxMeta := txn.TxnMeta.(*SubmitPostMetadata)
 
 		txnMeta.SubmitPostTxindexMetadata = &SubmitPostTxindexMetadata{}
@@ -1290,23 +1293,22 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		// PosterPublicKeyBase58Check = TransactorPublicKeyBase58Check
 
 		// If ParentPostHashHex is set then get the parent posts public key and
-		// mark it as affected. We only check this if PostHashToModify is not set
-		// so we only generate a notification the first time someone comments on your post.
+		// mark it as affected.
 		// ParentPosterPublicKeyBase58Check is in AffectedPublicKeys
-		if len(realTxMeta.PostHashToModify) == 0 && len(realTxMeta.ParentStakeID) == HashSizeBytes {
+		if len(realTxMeta.ParentStakeID) == HashSizeBytes {
 			postHash := &BlockHash{}
 			copy(postHash[:], realTxMeta.ParentStakeID)
 			postEntry := utxoView.GetPostEntryForPostHash(postHash)
 			if postEntry == nil {
-				glog.V(2).Infof(
+				return nil, fmt.Errorf(
 					"UpdateTxindex: Error creating SubmitPostTxindexMetadata; "+
 						"missing parent post for hash %v: %v", postHash, err)
-			} else {
-				txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-					PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
-					Metadata:             "ParentPosterPublicKeyBase58Check",
-				})
 			}
+
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+				Metadata:             "ParentPosterPublicKeyBase58Check",
+			})
 		}
 
 		// The profiles that are mentioned are in the AffectedPublicKeys
@@ -1315,7 +1317,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		//
 		// Start by trying to parse the body JSON
 		bodyObj := &DeSoBodySchema{}
-		if err = json.Unmarshal(realTxMeta.Body, &bodyObj); err != nil {
+		if err := json.Unmarshal(realTxMeta.Body, &bodyObj); err != nil {
 			// Don't worry about bad posts unless we're debugging with high verbosity.
 			glog.V(2).Infof("UpdateTxindex: Error parsing post body for @ mentions: "+
 				"%v %v", string(realTxMeta.Body), err)
@@ -1357,7 +1359,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				}
 			}
 		}
-	case TxnTypeLike:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeLike {
 		realTxMeta := txn.TxnMeta.(*LikeMetadata)
 
 		// LikerPublicKeyBase58Check = TransactorPublicKeyBase58Check
@@ -1375,16 +1378,17 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		copy(postHash[:], realTxMeta.LikedPostHash[:])
 		postEntry := utxoView.GetPostEntryForPostHash(postHash)
 		if postEntry == nil {
-			glog.V(2).Infof(
+			return nil, fmt.Errorf(
 				"UpdateTxindex: Error creating LikeTxindexMetadata; "+
 					"missing post for hash %v: %v", postHash, err)
-		} else {
-			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-				PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
-				Metadata:             "PosterPublicKeyBase58Check",
-			})
 		}
-	case TxnTypeFollow:
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+			Metadata:             "PosterPublicKeyBase58Check",
+		})
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
 		realTxMeta := txn.TxnMeta.(*FollowMetadata)
 
 		txnMeta.FollowTxindexMetadata = &FollowTxindexMetadata{
@@ -1398,7 +1402,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.FollowedPublicKey, utxoView.Params),
 			Metadata:             "FollowedPublicKeyBase58Check",
 		})
-	case TxnTypePrivateMessage:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
 		realTxMeta := txn.TxnMeta.(*PrivateMessageMetadata)
 
 		txnMeta.PrivateMessageTxindexMetadata = &PrivateMessageTxindexMetadata{
@@ -1412,7 +1417,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.RecipientPublicKey, utxoView.Params),
 			Metadata:             "RecipientPublicKeyBase58Check",
 		})
-	case TxnTypeSwapIdentity:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
 		realTxMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 
 		// Rosetta needs to know the current locked deso in each profile so it can model the swap of
@@ -1447,7 +1453,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ToPublicKey, utxoView.Params),
 			Metadata:             "ToPublicKeyBase58Check",
 		})
-	case TxnTypeNFTBid:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
 		realTxMeta := txn.TxnMeta.(*NFTBidMetadata)
 
 		isBuyNow := false
@@ -1529,7 +1536,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				})
 			}
 		}
-	case TxnTypeAcceptNFTBid:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		realTxMeta := txn.TxnMeta.(*AcceptNFTBidMetadata)
 
 		utxoOp := utxoOps[len(utxoOps)-1]
@@ -1583,7 +1591,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
 			})
 		}
-	case TxnTypeCreateNFT:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
 		realTxMeta := txn.TxnMeta.(*CreateNFTMetadata)
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
@@ -1611,7 +1620,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
 			})
 		}
-	case TxnTypeUpdateNFT:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
 		realTxMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
@@ -1642,7 +1652,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "AdditionalNFTRoyaltyToCoinPublicKeyBase58Check",
 			})
 		}
-	case TxnTypeNFTTransfer:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
 		realTxMeta := txn.TxnMeta.(*NFTTransferMetadata)
 
 		txnMeta.NFTTransferTxindexMetadata = &NFTTransferTxindexMetadata{
@@ -1654,21 +1665,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "NFTTransferRecipientPublicKeyBase58Check",
 		})
-	case TxnTypeAcceptNFTTransfer:
-		realTxMeta := txn.TxnMeta.(*AcceptNFTTransferMetadata)
 
-		txnMeta.AcceptNFTTransferTxindexMetadata = &AcceptNFTTransferTxindexMetadata{
-			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber:   realTxMeta.SerialNumber,
-		}
-	case TxnTypeBurnNFT:
-		realTxMeta := txn.TxnMeta.(*BurnNFTMetadata)
-
-		txnMeta.BurnNFTTxindexMetadata = &BurnNFTTxindexMetadata{
-			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
-			SerialNumber:   realTxMeta.SerialNumber,
-		}
-	case TxnTypeBasicTransfer:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		diamondLevelBytes, hasDiamondLevel := txn.ExtraData[DiamondLevelKey]
 		diamondPostHash, hasDiamondPostHash := txn.ExtraData[DiamondPostHashKey]
 		if hasDiamondLevel && hasDiamondPostHash {
@@ -1680,7 +1679,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				txnMeta.BasicTransferTxindexMetadata.PostHashHex = hex.EncodeToString(diamondPostHash)
 			}
 		}
-	case TxnTypeDAOCoin:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
 		realTxMeta := txn.TxnMeta.(*DAOCoinMetadata)
 		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 
@@ -1713,7 +1713,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(creatorProfileEntry.PublicKey, utxoView.Params),
 			Metadata:             metadata,
 		})
-	case TxnTypeDAOCoinTransfer:
+	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
 		realTxMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
 		creatorProfileEntry := utxoView.GetProfileEntryForPublicKey(realTxMeta.ProfilePublicKey)
 		txnMeta.DAOCoinTransferTxindexMetadata = &DAOCoinTransferTxindexMetadata{
@@ -1726,7 +1727,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "ReceiverPublicKey",
 		})
 	}
-	return txnMeta
+
+	return txnMeta, nil
 }
 
 func pkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoView *UtxoView) map[string]uint64 {
@@ -1829,7 +1831,7 @@ func ConnectTxnAndComputeTransactionMetadata(
 	}
 
 	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps), nil
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps)
 }
 
 // This is the main function used for adding a new txn to the pool. It will

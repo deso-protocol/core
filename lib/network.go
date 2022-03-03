@@ -4966,7 +4966,7 @@ type MessagingGroupMetadata struct {
 	// anymore.
 	//
 	// This field is not critical and can be removed in the future.
-	GroupOwnerSignature   []byte
+	GroupOwnerSignature []byte
 
 	MessagingGroupMembers []*MessagingGroupMember
 }
@@ -5002,19 +5002,19 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 	var err error
 	ret.MessagingPublicKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading MessagingPublicKey")
 	}
 
 	ret.MessagingGroupKeyName, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading MessagingGroupKey")
 	}
 
 	ret.GroupOwnerSignature, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err,"MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading GroupOwnerSignature")
 	}
 
@@ -5023,7 +5023,7 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 		recipient := MessagingGroupMember{}
 		err = recipient.Decode(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
 		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)

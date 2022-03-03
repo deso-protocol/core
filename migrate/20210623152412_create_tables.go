@@ -298,7 +298,7 @@ func init() {
 				description                TEXT,
 				profile_pic                BYTEA,
 				creator_basis_points       BIGINT,
-				de_so_locked_nanos         BIGINT,
+				de_so_locked_nanos     BIGINT,
 				number_of_holders          BIGINT,
 				coins_in_circulation_nanos BIGINT,
 				coin_watermark_nanos       BIGINT

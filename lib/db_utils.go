@@ -3690,16 +3690,6 @@ type NFTTransferTxindexMetadata struct {
 	SerialNumber   uint64
 }
 
-type AcceptNFTTransferTxindexMetadata struct {
-	NFTPostHashHex string
-	SerialNumber   uint64
-}
-
-type BurnNFTTxindexMetadata struct {
-	NFTPostHashHex string
-	SerialNumber   uint64
-}
-
 type CreateNFTTxindexMetadata struct {
 	NFTPostHashHex             string
 	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
@@ -3739,8 +3729,6 @@ type TransactionMetadata struct {
 	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
 	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
 	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
-	AcceptNFTTransferTxindexMetadata   *AcceptNFTTransferTxindexMetadata   `json:",omitempty"`
-	BurnNFTTxindexMetadata             *BurnNFTTxindexMetadata             `json:",omitempty"`
 	DAOCoinTxindexMetadata             *DAOCoinTxindexMetadata             `json:",omitempty"`
 	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
 	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
