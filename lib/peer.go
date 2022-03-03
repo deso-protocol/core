@@ -381,6 +381,9 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 	// Note that the requester should generally ask for the blocks in the
 	// order they'd like to receive them as we will typically honor this
 	// ordering.
+	// TODO: with HyperSync there is a potential that a node will request blocks that we haven't
+	// 	yet stored, although we're fully synced. This should rarely happen and won't break anything,
+	// 	except disconnecting the syncing peer.
 	for _, hashToSend := range msg.HashList {
 		blockToSend := pp.srv.blockchain.GetBlock(hashToSend)
 		if blockToSend == nil {
@@ -412,9 +415,16 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		pp.Disconnect()
 	}
 	pp.snapshotChunkRequestInFlight = true
+	defer func(pp *Peer) { pp.snapshotChunkRequestInFlight = false }(pp)
 
 	// Ignore GetSnapshot requests if we're still syncing. We will only serve snapshot chunk when our
 	// blockchain state is fully current.
+	if pp.srv.blockchain.snapshot == nil {
+		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
+			"and disconnecting because node doesn't support HyperSync", pp)
+		pp.Disconnect()
+	}
+
 	if pp.srv.blockchain.isSyncing() {
 		chainState := pp.srv.blockchain.chainState()
 		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
@@ -427,7 +437,6 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 			SnapshotChunkFull: false,
 			Prefix:            msg.Prefix,
 		}, false)
-		pp.snapshotChunkRequestInFlight = false
 		return
 	}
 
@@ -453,8 +462,41 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	// to the main DB or the ancestral records DB, and we don't want to slow down any of these updates.
 	// Because of that, we will detect whenever concurrent access takes place with the concurrencyFault
 	// variable. If concurrency is detected, we will re-queue the GetSnapshot message.
-	snapshotChunk, full, concurrencyFault, err := pp.srv.blockchain.snapshot.GetSnapshotChunk(
-		pp.srv.blockchain.db, msg.Prefix, msg.SnapshotStartKey)
+	var concurrencyFault bool
+	var err error
+
+	snapshotDataMsg := &MsgDeSoSnapshotData{
+		Prefix: msg.Prefix,
+	}
+	if isStateKey(msg.Prefix) {
+		snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
+			pp.srv.blockchain.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.Prefix, msg.SnapshotStartKey)
+
+		snapshotDataMsg.SnapshotHeight = pp.srv.blockchain.snapshot.SnapshotBlockHeight
+		snapshotDataMsg.SnapshotBlockHash = pp.srv.blockchain.snapshot.CurrentEpochBlockHash
+		snapshotDataMsg.SnapshotChecksum = pp.srv.blockchain.snapshot.CurrentEpochChecksumBytes
+	} else if isTxIndexKey(msg.Prefix) {
+		if pp.srv.TxIndex != nil && pp.srv.TxIndex.FinishedSyncing() {
+			snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
+				pp.srv.TxIndex.TXIndexChain.snapshot.GetSnapshotChunk(pp.srv.TxIndex.TXIndexChain.db, msg.Prefix, msg.SnapshotStartKey)
+
+			snapshotDataMsg.SnapshotHeight = pp.srv.TxIndex.TXIndexChain.snapshot.SnapshotBlockHeight
+			snapshotDataMsg.SnapshotBlockHash = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochBlockHash
+			snapshotDataMsg.SnapshotChecksum = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochChecksumBytes
+		} else {
+			glog.V(1).Infof("Peer.HandleGetSnapshot: Received a TxIndex prefix but ignoring "+
+				"GetSnapshot from Peer %v because node is still syncing or doesn't support TxIndex", pp)
+			pp.AddDeSoMessage(&MsgDeSoSnapshotData{
+				SnapshotHeight:    pp.srv.TxIndex.TXIndexChain.snapshot.SnapshotBlockHeight,
+				SnapshotBlockHash: pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochBlockHash,
+				SnapshotChecksum:  nil,
+				SnapshotChunk:     nil,
+				SnapshotChunkFull: false,
+				Prefix:            msg.Prefix,
+			}, false)
+			return
+		}
+	}
 	if err != nil {
 		glog.Error("Peer.HandleGetSnapshot: something went wrong during fetching "+
 			"snapshot chunk for peer (%v), error (%v)", pp, err)
@@ -469,21 +511,12 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		}()
 		return
 	}
-	// Also get the checksum corresponding to the current snapshot epoch.
-	snapshotChecksum := pp.srv.blockchain.snapshot.CurrentEpochChecksumBytes
 
-	pp.AddDeSoMessage(&MsgDeSoSnapshotData{
-		SnapshotHeight:    pp.srv.blockchain.snapshot.SnapshotBlockHeight,
-		SnapshotBlockHash: pp.srv.blockchain.snapshot.CurrentEpochBlockHash,
-		SnapshotChecksum:  snapshotChecksum,
-		SnapshotChunk:     snapshotChunk,
-		SnapshotChunkFull: full,
-		Prefix:            msg.Prefix,
-	}, false)
-	pp.snapshotChunkRequestInFlight = false
+	pp.AddDeSoMessage(snapshotDataMsg, false)
+
 	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) "+
 		"with SnapshotHeight (%v) and CurrentEpochChecksumBytes (%v) and Snapshotdata length (%v)", pp,
-		pp.srv.blockchain.snapshot.SnapshotBlockHeight, snapshotChecksum, len(snapshotChunk))
+		pp.srv.blockchain.snapshot.SnapshotBlockHeight, snapshotDataMsg.SnapshotChecksum, len(snapshotDataMsg.SnapshotChunk))
 }
 
 func (pp *Peer) cleanupMessageProcessor() {

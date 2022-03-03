@@ -158,7 +158,7 @@ func (node *Node) Start() {
 	// Setup snapshot
 	var snapshot *lib.Snapshot
 	if node.Config.HyperSync {
-		snapshot, err = lib.NewSnapshot(node.Config.DataDirectory, node.Config.SnapshotBlockHeightPeriod)
+		snapshot, err = lib.NewSnapshot(node.Config.DataDirectory, node.Config.SnapshotBlockHeightPeriod, false, false)
 		if err != nil {
 			panic(err)
 		}
@@ -210,7 +210,7 @@ func (node *Node) Start() {
 		if err != nil {
 			glog.Fatal(err)
 		}
-
+		node.Server.TxIndex = node.TXIndex
 		node.TXIndex.Start()
 	}
 

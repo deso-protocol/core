@@ -442,6 +442,9 @@ type Snapshot struct {
 	// if node stops unexpectedly. Health checks will detect these and set brokenSnapshot.
 	brokenSnapshot bool
 
+	isTxIndex       bool
+	disableChecksum bool
+
 	// ExitChannel is used to stop the snapshot when shutting down the node.
 	ExitChannel chan bool
 	// updateWaitGroup is used to wait for snapshot loop to finish.
@@ -451,7 +454,8 @@ type Snapshot struct {
 }
 
 // NewSnapshot creates a new snapshot instance.
-func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64) (*Snapshot, error) {
+func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxIndex bool,
+	disableChecksum bool) (*Snapshot, error) {
 	// TODO: make sure we don't snapshot when using PG
 	// Initialize the ancestral records database
 	snapshotDir := filepath.Join(GetBadgerDbPath(dataDirectory), "snapshot")
@@ -490,6 +494,8 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64) (*Snaps
 		MainDBSemaphore:           int32(0),
 		AncestralDBSemaphore:      int32(0),
 		brokenSnapshot:            false,
+		isTxIndex:                 isTxIndex,
+		disableChecksum:           disableChecksum,
 		timer:                     timer,
 		ExitChannel:               make(chan bool),
 	}
@@ -745,7 +751,11 @@ func (snap *Snapshot) CheckAnceststralRecordExistenceByte(value []byte) bool {
 
 // isState determines if a key is a state-related record.
 func (snap *Snapshot) isState(key []byte) bool {
-	return isStateKey(key) && !snap.brokenSnapshot
+	if !snap.isTxIndex {
+		return isStateKey(key) && !snap.brokenSnapshot
+	} else {
+		return (isStateKey(key) || isTxIndexKey(key)) && !snap.brokenSnapshot
+	}
 }
 
 // isFlushing checks whether a main DB flush or ancestral record flush is taking place.

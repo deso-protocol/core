@@ -215,7 +215,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 
 	// Temporarily modify the seed balances to make a specific public
 	// key have some DeSo
-	snap, err := NewSnapshot(dbDir, SnapshotBlockHeightPeriod)
+	snap, err := NewSnapshot(dbDir, SnapshotBlockHeightPeriod, false, false)
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
 		&paramsCopy, timesource, db, nil, nil, snap)
 	if err != nil {

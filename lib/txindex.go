@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -52,12 +53,24 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	// See if we have a best chain hash stored in the txindex db.
 	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, nil, ChainTypeDeSoBlock)
 
+	// Setup snapshot
+	var snapshot *Snapshot
+	if coreChain.Snapshot() != nil {
+		snapshot, err = NewSnapshot(txIndexDir, coreChain.Snapshot().SnapshotBlockHeightPeriod, true, true)
+		if err != nil {
+			return nil, errors.Wrapf(err, "NewTXIndex: Problem creating snapshot")
+		}
+	}
+
 	// If we haven't initialized the txIndexChain before, set up the
 	// seed mappings.
 	if bestBlockHashBeforeInit == nil {
 
 		// Add the seed balances. Originate them from the architect public key and
 		// set their block as the genesis block.
+		if snapshot != nil {
+			snapshot.PrepareAncestralRecordsFlush()
+		}
 		{
 			dummyPk := ArchitectPubKeyBase58Check
 			dummyTxn := &MsgDeSoTxn{
@@ -75,7 +88,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				})
 				totalOutput += seedBal.AmountNanos
 			}
-			err := DbPutTxindexTransactionMappings(txIndexDb, nil, dummyTxn, params, &TransactionMetadata{
+			err := DbPutTxindexTransactionMappings(txIndexDb, snapshot, dummyTxn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: dummyPk,
 				AffectedPublicKeys:             affectedPublicKeys,
 				BlockHashHex:                   GenesisBlockHashHex,
@@ -102,7 +115,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 			if err := txn.FromBytes(txnBytes); err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
-			err = DbPutTxindexTransactionMappings(txIndexDb, nil, txn, params, &TransactionMetadata{
+			err = DbPutTxindexTransactionMappings(txIndexDb, snapshot, txn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: PkToString(txn.PublicKey, params),
 				// Note that we don't set AffectedPublicKeys for the SeedTxns
 				BlockHashHex:    GenesisBlockHashHex,
@@ -118,6 +131,10 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				return nil, fmt.Errorf("NewTXIndex: Error initializing seed txn %v in txindex: %v", txn, err)
 			}
 		}
+		if snapshot != nil {
+			snapshot.StartAncestralRecordsFlush()
+			snapshot.PrintChecksum("Checksum after flush")
+		}
 	}
 
 	// Ignore all the notifications from the txindex blockchain object
@@ -131,7 +148,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	// Note that we *DONT* pass server here because it is already tied to the main blockchain.
 	txIndexChain, err := NewBlockchain(
 		[]string{}, 0, coreChain.MaxSyncBlockHeight, params, chainlib.NewMedianTime(),
-		txIndexDb, nil, nil, nil)
+		txIndexDb, nil, nil, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err)
 	}
@@ -147,6 +164,10 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		Params:            params,
 		stopUpdateChannel: make(chan struct{}),
 	}, nil
+}
+
+func (txi *TXIndex) FinishedSyncing() bool {
+	return txi.TXIndexChain.BlockTip().Height == txi.CoreChain.BlockTip().Height
 }
 
 func (txi *TXIndex) Start() {
@@ -291,13 +312,26 @@ func (txi *TXIndex) Update() error {
 		// Iterate through each transaction in the block and delete all its
 		// mappings from the db. Note the txindex has its own db that is
 		// distinct and isolated from our core blockchain db.
-		for _, txn := range blockMsg.Txns {
-			if err := DbDeleteTxindexTransactionMappings(
-				txi.TXIndexChain.DB(), nil, txn, txi.Params); err != nil {
+		if txi.TXIndexChain.snapshot != nil {
+			txi.TXIndexChain.snapshot.PrepareAncestralRecordsFlush()
+		}
+		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
+			for _, txn := range blockMsg.Txns {
+				if err := DbDeleteTxindexTransactionMappingsWithTxn(dbTxn,
+					txi.TXIndexChain.snapshot, txn, txi.Params); err != nil {
 
-				return fmt.Errorf("Update: Problem deleting "+
-					"transaction mappings for transaction %v: %v", txn.Hash(), err)
+					return fmt.Errorf("Update: Problem deleting "+
+						"transaction mappings for transaction %v: %v", txn.Hash(), err)
+				}
 			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if txi.TXIndexChain.snapshot != nil {
+			txi.TXIndexChain.snapshot.StartAncestralRecordsFlush()
+			txi.TXIndexChain.snapshot.PrintChecksum("Checksum after flush")
 		}
 
 		// Now that all the transactions have been deleted from our txindex,
@@ -308,7 +342,7 @@ func (txi *TXIndex) Update() error {
 				"Update: Error initializing UtxoView: %v", err)
 		}
 		utxoOps, err := GetUtxoOperationsForBlock(
-			txi.TXIndexChain.DB(), nil, blockToDetach.Hash)
+			txi.TXIndexChain.DB(), txi.TXIndexChain.snapshot, blockToDetach.Hash)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error getting UtxoOps for block %v: %v", blockToDetach, err)
@@ -337,7 +371,7 @@ func (txi *TXIndex) Update() error {
 			if txi.TXIndexChain.snapshot != nil {
 				txi.TXIndexChain.snapshot.PrepareAncestralRecordsFlush()
 			}
-			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, blockToDetach.Hash); err != nil {
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, txi.TXIndexChain.snapshot, blockToDetach.Hash); err != nil {
 				return fmt.Errorf("Update: Error deleting UtxoOperations 1 for block %v, %v", blockToDetach.Hash, err)
 			}
 			if txi.TXIndexChain.snapshot != nil {
@@ -378,7 +412,7 @@ func (txi *TXIndex) Update() error {
 		glog.V(2).Infof("Update: Attaching block (height: %d, hash: %v)",
 			blockToAttach.Height, blockToAttach.Hash)
 
-		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB(), nil)
+		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB(), txi.TXIndexChain.snapshot)
 		if err != nil {
 			return fmt.Errorf("Update: Problem fetching attach block "+
 				"with hash %v: %v", blockToAttach.Hash, err)
@@ -396,8 +430,11 @@ func (txi *TXIndex) Update() error {
 
 		// Do each block update in a single transaction so we're safe in case the node
 		// restarts.
-		txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
+		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 
+			if txi.TXIndexChain.snapshot != nil {
+				txi.TXIndexChain.snapshot.PrepareAncestralRecordsFlush()
+			}
 			// Iterate through each transaction in the block and do the following:
 			// - Connect it to the view
 			// - Compute its mapping values, which may include custom metadata fields
@@ -410,15 +447,22 @@ func (txi *TXIndex) Update() error {
 						txn, err)
 				}
 
-				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, txn, txi.Params, txnMeta)
+				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, txi.TXIndexChain.snapshot, txn, txi.Params, txnMeta)
 				if err != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
 						txn, err)
 				}
 			}
+			if txi.TXIndexChain.snapshot != nil {
+				txi.TXIndexChain.snapshot.StartAncestralRecordsFlush()
+				txi.TXIndexChain.snapshot.PrintChecksum("Checksum after flush")
+			}
 
 			return nil
 		})
+		if err != nil {
+			return err
+		}
 
 		// Now that we have added all the txns to our TxIndex db, attach the block
 		// to update our chain.

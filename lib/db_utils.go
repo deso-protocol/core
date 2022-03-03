@@ -332,6 +332,9 @@ type DBStatePrefixes struct {
 
 	// StatePrefixesList is a list of state prefixes.
 	StatePrefixesList [][]byte
+
+	// TxIndexPrefixes is a list of TxIndex prefixes
+	TxIndexPrefixes [][]byte
 }
 
 // GetStatePrefixes() creates a DBStatePrefixes object from the DBPrefixes struct and returns it. We
@@ -357,6 +360,9 @@ func GetStatePrefixes() *DBStatePrefixes {
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
 			statePrefixes.StatePrefixesMap[prefix] = true
 			statePrefixes.StatePrefixesList = append(statePrefixes.StatePrefixesList, []byte{prefix})
+		} else if structFields.Field(i).Tag.Get("is_txindex") == "true" {
+			statePrefixes.TxIndexPrefixes = append(statePrefixes.TxIndexPrefixes, []byte{prefix})
+			statePrefixes.StatePrefixesMap[prefix] = false
 		} else {
 			statePrefixes.StatePrefixesMap[prefix] = false
 		}
@@ -372,6 +378,20 @@ func isStateKey(key []byte) bool {
 	prefix := key[0]
 	if isState, exists := StatePrefixes.StatePrefixesMap[prefix]; exists && isState {
 		return true
+	}
+	return false
+}
+
+// isTxIndexKey checks if a key is a txindex-related key.
+func isTxIndexKey(key []byte) bool {
+	if MaxPrefixLen > 1 {
+		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+	}
+	prefix := key[0]
+	for _, txIndexPrefix := range StatePrefixes.TxIndexPrefixes {
+		if prefix == txIndexPrefix[0] {
+			return true
+		}
 	}
 	return false
 }
@@ -437,13 +457,15 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 		// Now save the newest record to cache.
 		snap.DatabaseCache.Add(keyString, value)
 
-		// We have to remove the previous value from the state checksum.
-		// Because checksum is commutative, we can safely remove the past value here.
-		if getError == nil {
-			snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
+		if !snap.disableChecksum {
+			// We have to remove the previous value from the state checksum.
+			// Because checksum is commutative, we can safely remove the past value here.
+			if getError == nil {
+				snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
+			}
+			// We also add the new record to the checksum.
+			snap.AddChecksumBytes(EncodeKeyValue(key, value))
 		}
-		// We also add the new record to the checksum.
-		snap.AddChecksumBytes(EncodeKeyValue(key, value))
 	}
 	return nil
 }
@@ -521,7 +543,9 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 		snap.DatabaseCache.Delete(keyString)
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
-		snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
+		if !snap.disableChecksum {
+			snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
+		}
 	}
 	return nil
 }

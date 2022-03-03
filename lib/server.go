@@ -93,6 +93,7 @@ type Server struct {
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
+	TxIndex       *TXIndex
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -655,7 +656,7 @@ func (srv *Server) GetBlockToStore(pp *Peer) {
 				HashList: hashList,
 			}, false)
 
-			glog.V(1).Infof("GetBlockToStore: Downloading %d blocks to store for header %v from peer %v",
+			glog.V(1).Infof("GetBlockToStore: Downloading blocks to store for header %v from peer %v",
 				blockNode.Header, pp)
 			return
 		}
@@ -1147,7 +1148,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		return err
 	})
 	if err != nil {
-		glog.Errorf("Server_handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
+		glog.Errorf("Server._handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
@@ -1156,6 +1157,12 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.finishedSyncing = true
 	srv.blockchain.syncingState = false
+	srv.blockchain.snapshot.SnapshotBlockHeight = srv.HyperSyncProgress.SnapshotBlockHeight
+	srv.blockchain.snapshot.CurrentEpochChecksumBytes, err = srv.blockchain.snapshot.Checksum.ToBytes()
+	if err != nil {
+		glog.Errorf("Server._handleSnapshot: Problem calling ToBytes on snapshot checksum, error: (%v)", err)
+	}
+	srv.blockchain.snapshot.CurrentEpochBlockHash = srv.HyperSyncProgress.SnapshotBlockHash.NewBlockHash()
 
 	// Now sync the remaining blocks.
 	// TODO: what if the snapshot height is at the blockchain tip, for instance because PoW takes a while.

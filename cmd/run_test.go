@@ -449,10 +449,8 @@ func waitForNodeToFullySyncTxIndex(node *Node) {
 	for {
 		<-ticker.C
 
-		if node.TXIndex.TXIndexChain.BlockTip().Height == node.Server.GetBlockchain().BlockTip().Height {
-			if node.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent {
-				return
-			}
+		if node.TXIndex.FinishedSyncing() && node.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent {
+			return
 		}
 	}
 }
@@ -887,6 +885,69 @@ func TestSimpleHyperSync(t *testing.T) {
 	node2.Stop()
 }
 
+func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	router := &ConnectionRouter{}
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+	dbDir3 := getDirectory(t)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config3 := generateConfig(t, 18002, dbDir3, 10)
+
+	config1.MaxSyncBlockHeight = 1500
+	config2.MaxSyncBlockHeight = 1500
+	config3.MaxSyncBlockHeight = 1500
+	config1.HyperSync = true
+	config2.HyperSync = true
+	config3.HyperSync = true
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node1 := NewNode(config1)
+	node2 := NewNode(config2)
+	node3 := NewNode(config3)
+	router.nodes = append(router.nodes, node1)
+	router.nodes = append(router.nodes, node2)
+	router.nodes = append(router.nodes, node3)
+
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
+	node3 = startNode(t, node3)
+
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
+
+	// bridge the nodes together.
+	bridge12 := NewConnectionBridge(node1, node2)
+	require.NoError(bridge12.Connect())
+
+	// wait for node2 to sync blocks.
+	waitForNodeToFullySyncAndStoreAllBlocks(node2)
+
+	// bridge node3 to node2 to kick off hyper sync from a hyper synced node
+	bridge23 := NewConnectionBridge(node2, node3)
+	require.NoError(bridge23.Connect())
+
+	// wait for node2 to sync blocks.
+	waitForNodeToFullySyncAndStoreAllBlocks(node3)
+
+	// Make sure node1 has the same database as node2
+	compareNodesByState(t, node1, node2)
+	compareNodesByDB(t, node1, node2)
+	compareNodesByChecksum(t, node1, node2)
+	// Make sure node2 has the same database as node3
+	compareNodesByDB(t, node2, node3)
+	compareNodesByChecksum(t, node2, node3)
+
+	fmt.Println("Databases match!")
+	node1.Stop()
+	node2.Stop()
+	node3.Stop()
+}
+
 // TestSimpleHyperSyncRestart tests if a node can successfully restart while syncing blocks.
 //	1. Spawn two nodes node1, node2 with max block height of 50 blocks, hyper sync on, with snapshot period 40 blocks.
 //	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator, it will also be building ancestral records.
@@ -1117,6 +1178,7 @@ func TestSimpleHyperSyncTxIndex(t *testing.T) {
 
 	compareNodesByDB(t, node1, node2)
 	compareNodesByTxIndex(t, node1, node2)
+	compareNodesByStateWithPrefixList(t, node2.chainDB, node2.TXIndex.TXIndexChain.DB(), lib.StatePrefixes.StatePrefixesList)
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
