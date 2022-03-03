@@ -122,7 +122,7 @@ const (
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
 
-	// NEXT_TAG = 27
+	// NEXT_TAG = 28
 )
 
 func (op OperationType) String() string {
