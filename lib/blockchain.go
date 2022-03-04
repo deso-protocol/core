@@ -3733,17 +3733,16 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		derivedKeyExtraData[DerivedPublicKey] = derivedPublicKey
 	}
 
-	spendingLimitsExtraData := make(map[string][]byte)
 	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		if len(memo) != 0 {
-			spendingLimitsExtraData[DerivedKeyMemoKey] = memo
+			derivedKeyExtraData[DerivedKeyMemoKey] = memo
 		}
 		if transactionSpendingLimit != nil {
 			transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
 			if err != nil {
 				return nil, 0, 0, 0, err
 			}
-			spendingLimitsExtraData[TransactionSpendingLimitKey] = transactionSpendingLimitBytes
+			derivedKeyExtraData[TransactionSpendingLimitKey] = transactionSpendingLimitBytes
 		}
 	}
 
@@ -3755,7 +3754,6 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	}
 
 	finalExtraData := mergeExtraData(extraData, derivedKeyExtraData)
-	finalExtraData = mergeExtraData(finalExtraData, spendingLimitsExtraData)
 
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgDeSoTxn{
