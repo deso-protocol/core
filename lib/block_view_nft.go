@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
@@ -988,8 +989,11 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		existingAdditionalProfileEntry := bav.GetProfileEntryForPublicKey(pkBytes)
 		if existingAdditionalProfileEntry == nil || existingAdditionalProfileEntry.isDeleted {
 			return 0, 0, nil, fmt.Errorf(
-				"_helpConnectNFTSold: Profile missing for additional coin royalty for pub key: %v %v",
-				PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes))
+				"_helpConnectNFTSold: Profile missing for additional coin royalty "+
+					"for pkid: %v, pub key: %v %v for post hash: %v",
+				PkToStringMainnet(pkid[:]),
+				PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes),
+				hex.EncodeToString(nftPostEntry.PostHash[:]))
 		}
 		prevAdditionalCoinEntries[pkid] = existingAdditionalProfileEntry.CreatorCoinEntry
 		profileEntriesMap[pkid] = *existingAdditionalProfileEntry
@@ -1287,7 +1291,9 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 	// append the accepted bid entry to the list of accepted bid entries
 	prevAcceptedBidHistory := bav.GetAcceptNFTBidHistoryForNFTKey(&nftKey)
-	newAcceptedBidHistory := append(*prevAcceptedBidHistory, nftBidEntry)
+	acceptedNFTBidEntry := nftBidEntry.Copy()
+	acceptedNFTBidEntry.AcceptedBlockHeight = &blockHeight
+	newAcceptedBidHistory := append(*prevAcceptedBidHistory, acceptedNFTBidEntry)
 	bav._setAcceptNFTBidHistoryMappings(nftKey, &newAcceptedBidHistory)
 
 	// (2) Iterate over all the NFTBidEntries for this NFT and delete them.
