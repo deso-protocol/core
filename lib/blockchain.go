@@ -2171,6 +2171,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// Go through and detach all of the blocks down to the common ancestor. We
 		// shouldn't encounter any errors but if we do, return without marking the
 		// block as invalid.
+		var blocksToDetach []*MsgDeSoBlock
 		for _, nodeToDetach := range detachBlocks {
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
@@ -2184,6 +2185,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// Fetch the block itself since we need some info from it to roll
 			// it back.
 			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db, bc.snapshot)
+			blocksToDetach = append(blocksToDetach, blockToDetach)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during detach in reorg", nodeToDetach)
@@ -2227,11 +2229,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		ruleErrorsFound := []RuleError{}
 		// The first element will be the node right after the common ancestor and
 		// the last element will be the new node we need to attach.
+		var blocksToAttach []*MsgDeSoBlock
 		for _, attachNode := range attachBlocks {
 
 			// Fetch the block itself since we need some info from it to try and
 			// connect it.
 			blockToAttach, err := GetBlock(attachNode.Hash, bc.db, bc.snapshot)
+			blocksToAttach = append(blocksToAttach, blockToAttach)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during attach in reorg", attachNode)
@@ -2362,12 +2366,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// connected as a result of this operation. Do this in a goroutine so that
 		// if ProcessBlock is called by a consumer of incomingMessages we don't
 		// have any risk of deadlocking.
-		for _, nodeToDetach := range detachBlocks {
+		for ii, nodeToDetach := range detachBlocks {
 
-			// TODO: We could just cache this block from when we were detaching blocks
 			// Fetch the block itself since we need some info from it to roll
 			// it back.
-			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db, bc.snapshot)
+			blockToDetach := blocksToDetach[ii]
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during detach in server signal", nodeToDetach)
@@ -2380,12 +2383,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
 			}
 		}
-		for _, attachNode := range attachBlocks {
+		for ii, attachNode := range attachBlocks {
 
-			// TODO: We could just cache this block from when we were adding blocks
 			// Fetch the block itself since we need some info from it to try and
 			// connect it.
-			blockToAttach, err := GetBlock(attachNode.Hash, bc.db, bc.snapshot)
+			blockToAttach := blocksToAttach[ii]
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during attach in server signal", attachNode)

@@ -596,7 +596,6 @@ func (snap *Snapshot) StartAncestralRecordsFlush() {
 	snap.OperationChannel <- &SnapshotOperation{
 		operationType: SnapshotOperationFlush,
 	}
-	return
 }
 
 func (snap *Snapshot) PrintChecksum(text string) {
@@ -674,7 +673,7 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 			"Did you forget to call Snapshot.PrepareAncestralRecordsFlush?")
 	}
 
-	// Get the last ancestral cache. This is where we'll add the new record to.
+	// Get the last ancestral cache. This is where we'll add the new record.
 	lastAncestralCache := snap.AncestralMemory.Last().(*AncestralCache)
 	if lastAncestralCache.id != index {
 		return fmt.Errorf("Snapshot.PrepareAncestralRecords: last ancestral cache index (%v) is "+
@@ -769,12 +768,8 @@ func (snap *Snapshot) isFlushing() bool {
 	// Flush is taking place if the semaphores have different counters or if they are odd.
 	// We increment each semaphore whenever we start the flush and when we end it so they are always
 	// even when the DB is not being updated.
-	if ancestralDBSemaphore != mainDBSemaphore ||
-		(ancestralDBSemaphore|mainDBSemaphore)%2 == 1 {
-
-		return true
-	}
-	return false
+	return ancestralDBSemaphore != mainDBSemaphore ||
+		(ancestralDBSemaphore|mainDBSemaphore)%2 == 1
 }
 
 // FlushAncestralRecords updates the ancestral records after a utxo_view flush.
@@ -939,9 +934,10 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		dbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
 
 		for jj := indexChunk; jj < len(mainDbBatchEntries); {
-			if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == -1 {
+			comparison := bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key)
+			if comparison == -1 {
 				snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
-			} else if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == 1 {
+			} else if comparison == 1 {
 				break
 			}
 			// if keys are equal we just skip
@@ -1050,7 +1046,7 @@ func (t *Timer) Initialize() {
 	t.totalElapsedTimes = make(map[string]float64)
 	t.lastTimes = make(map[string]time.Time)
 	// Change this to true to stop timing
-	t.productionMode = false
+	t.productionMode = DisableTimer
 }
 
 func (t *Timer) Start(eventName string) {

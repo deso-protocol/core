@@ -45,13 +45,16 @@ const (
 	GetSnapshotTimeout = 100 * time.Millisecond
 
 	// SnapshotBlockHeightPeriod is the constant height offset between individual snapshot epochs.
-	SnapshotBlockHeightPeriod uint64 = 900
+	SnapshotBlockHeightPeriod uint64 = 1000
 
 	// SnapshotBatchSize is the size in bytes of the snapshot batches sent to peers
 	SnapshotBatchSize uint32 = 8 << 20
 
 	// DatabaseCacheSize is used to save read operations when fetching records from the main Db.
 	DatabaseCacheSize uint = 100000
+
+	// DisableTimer
+	DisableTimer = false
 )
 
 type NetworkType uint64

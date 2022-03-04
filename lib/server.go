@@ -55,11 +55,6 @@ type SyncPrefixProgress struct {
 	// DB prefix corresponding to this particular sync progress.
 	Prefix []byte
 	// LastReceivedKey is the last key that we've received from this peer.
-	// We store it as *DBEntry because it's more convenient to use it to determine
-	// whether LastReceivedKey is an empty array. We distinguish whether a
-	// DBEntry is empty when the key is [0] and it's just easier to handle this
-	// case with DBEntry rather than []byte. Also, this DBEntry really only ever
-	// has the key, and the value is left empty.
 	LastReceivedKey []byte
 
 	// Completed indicates whether we've finished syncing this prefix.
@@ -958,6 +953,16 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// Validate the snapshot chunk message
 
+	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
+	// at least one entry sent, which is either the empty entry or the last key we've requested.
+	if len(msg.SnapshotChunk) == 0 {
+		// We should disconnect the peer because he is misbehaving or doesn't have the snapshot.
+		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk "+
+			"disconnecting misbehaving peer (%v)", pp)
+		pp.Disconnect()
+		return
+	}
+
 	// Make sure that the expected snapshot height and blockhash match the ones in received message.
 	if msg.SnapshotHeight != srv.HyperSyncProgress.SnapshotBlockHeight ||
 		!bytes.Equal(msg.SnapshotBlockHash[:], srv.HyperSyncProgress.SnapshotBlockHash[:]) {
@@ -981,16 +986,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if syncPrefixProgress == nil {
 		// We should disconnect the peer because he is misbehaving
 		glog.Errorf("srv._handleSnapshot: Problem finding appropriate sync prefix progress "+
-			"disconnecting misbehaving peer (%v)", pp)
-		pp.Disconnect()
-		return
-	}
-
-	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
-	// at least one entry sent, which is either the empty entry or the last key we've requested.
-	if len(msg.SnapshotChunk) == 0 {
-		// We should disconnect the peer because he is misbehaving
-		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk "+
 			"disconnecting misbehaving peer (%v)", pp)
 		pp.Disconnect()
 		return
@@ -1432,7 +1427,7 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	// need each mempool update to happen in the same order as that in which
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
-	_ = srv.mempool.UpdateAfterConnectBlock(blk)
+	srv.mempool.UpdateAfterConnectBlock(blk)
 
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainConnected: Block %s height %d connected to "+

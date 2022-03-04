@@ -14,5 +14,5 @@ rm /tmp/main.*.log
 )
 
 # These are nodes that can be relied upon if the decentralized seed
-# node discovery mechanism fails.git
+# node discovery mechanism fails.
 # --connect-ips=35.232.92.5:17000

@@ -53,7 +53,6 @@ func (node *Node) Start() {
 
 	// Print config
 	node.Config.Print()
-	glog.Errorf("Start() | After node config")
 
 	// Check for regtest mode
 	if node.Config.Regtest {
