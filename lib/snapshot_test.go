@@ -414,7 +414,7 @@ func TestBadgerEmptyWrite(t *testing.T) {
 }
 
 // Part of the process of maintaining state snapshot involves writing
-// to so-called Ancestral Records after a DB flush in utxo_view.
+// to so-called Ancestral Records after a DB flush in UtxoView.
 // To optimize the process, we will write to BadgerDB with ordered
 // (key, value) pairs, which should theoretically be faster considering
 // Badger's LSM tree design. In this test we benchmark the data structure
@@ -423,7 +423,7 @@ func TestBadgerEmptyWrite(t *testing.T) {
 // 2. A naive approach with a map and a sorted list of keys.
 // Result:
 // LLRB is about 2x slower than the map approach, but don't require
-// storing 2x keys, which could be useful when utxo_view becomes large.
+// storing 2x keys, which could be useful when UtxoView becomes large.
 func TestSortedMap(t *testing.T) {
 	LLRB := sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
 

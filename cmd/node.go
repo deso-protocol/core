@@ -31,6 +31,8 @@ type Node struct {
 	Config   *Config
 	Postgres *lib.Postgres
 
+	// False when a NewNode is created, set to true on Start(), set to false
+	// after Stop() is called. Mainly used in testing.
 	isRunning bool
 }
 
@@ -53,7 +55,7 @@ func (node *Node) Start() {
 
 	// Print config
 	node.Config.Print()
-	glog.Errorf("Start() | After node config")
+	glog.Infof("Start() | After node config")
 
 	// Check for regtest mode
 	if node.Config.Regtest {
@@ -86,11 +88,6 @@ func (node *Node) Start() {
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
 	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
 	_ = listeningAddrs
-	// TODO: This is redundant. AddLocalAddress returns an error on every iteration of this loop.
-	//for _, addr := range listeningAddrs {
-	//	netAddr := wire.NewNetAddress(&addr, 0)
-	//	_ = desoAddrMgr.AddLocalAddress(netAddr, addrmgr.BoundPrio)
-	//}
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
@@ -126,10 +123,14 @@ func (node *Node) Start() {
 		lib.StartDBSummarySnapshots(node.chainDB)
 	}
 
-	// Setup postgres using a remote URI.
-	// If we're also a HyperSync node, then we will ignore postgres.
+	// Setup postgres using a remote URI. Postgres is not currently supported
+	// when we're in hypersync mode.
+	if node.Config.HyperSync && node.Config.PostgresURI != "" {
+		glog.Fatal("--postgres-uri is not supported when --hypersync=true. We're " +
+			"working on Hypersync support for Postgres though!")
+	}
 	var db *pg.DB
-	if !node.Config.HyperSync && node.Config.PostgresURI != "" {
+	if node.Config.PostgresURI != "" {
 		options, err := pg.ParseURL(node.Config.PostgresURI)
 		if err != nil {
 			panic(err)
@@ -148,8 +149,6 @@ func (node *Node) Start() {
 		if err != nil {
 			panic(err)
 		}
-	} else if node.Config.HyperSync {
-		glog.Errorf("Start: Ignoring postgres because node is using HyperSync")
 	}
 
 	// Setup eventManager

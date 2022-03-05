@@ -31,16 +31,30 @@ import (
 // is the number of leaves in the tree.
 //
 // Instead, we use a structure that allows us to have an O(1) time and O(1) space complexity. We call
-// our checksum construction EllipticSum as the checksum of the data is represented by a sum of
+// our checksum construction EllipticSum, as the checksum of the data is represented by a sum of
 // elliptic curve points. To verify integrity of the data, we only need a single ec point.
-// EllipticSum is inspired by the generalized k-sum problem, where given a set of uniformly random
-// numbers L, we want to find a subset of k elements in L that XORs to 0. However, this XOR problem
-// can be solved efficiently with dynamic programming in linear time.
 //
-// k-sum can be generalized to any algebraic group. That is, given a group G, identity element 0,
-// operation +, and some set L of random group elements, find a subset (a_0, a_1, ..., a_k) such that
-// a_0 + a_1 + ... + a_k = 0
-// Turns out this problem is equivalent to the DLP in G and has a computational lower bound
+// To put in layman's terms, the EllipticSum checksum works as follows:
+// - Checksum = hash_to_curve(chunk_0) + hash_to_curve(chunk_1) + ... + hash_to_curve(chunk_n)
+// where chunk_i is a chunk of bytes, and hash_to_curve(chunk_i) generates an elliptic curve point
+// from the bytes deterministically, similar to hashing the bytes. The reason we sum elliptic curve
+// points rather than hashes of the bytes is because summing hashes of the bytes would result in
+// the checksum being vulnerable to attack, as discussed below.
+//
+// EllipticSum is inspired by the generalized k-sum problem, where given a set of uniformly random
+// numbers L, we want to find a subset of k elements in L that XORs to 0. This XOR problem
+// can actually be solved efficiently with dynamic programming, so it's not
+// useful to us as a checksum if we use the naive XOR version. However, if we extend it to
+// using elliptic curve points, as we explain below, it becomes computationally infeasible
+// to solve, which is what we need.
+//
+// The reason this works is that k-sum can be generalized to any algebraic group. That is,
+// given a group G, identity element 0, operation +, and some set L of random group elements, find a
+// subset (a_0, a_1, ..., a_k) such that a_0 + a_1 + ... + a_k = 0.
+//
+// It turns out that if this is a cyclic group, such as the group formed by elliptic curve points,
+// then this problem is equivalent to the DLP in G, which is computationally infeasible for a
+// sufficiently large group, and which has a computational lower bound
 // of O(sqrt(p)) where p is the smallest prime dividing the order of G.
 // https://link.springer.com/content/pdf/10.1007%2F3-540-45708-9_19.pdf
 //
@@ -49,6 +63,9 @@ import (
 // byte array input and outputs a point via a mapping indistinguishable from a random function.
 // Hash_to_curve does not reveal the discrete logarithm of the output points.
 // According to the O(sqrt(p)) lower bound, Ristretto255 guarantees 126 bits of security.
+//
+// To learn more about hash_to_curve, see this article:
+// https://tools.ietf.org/id/draft-irtf-cfrg-hash-to-curve-06.html
 type StateChecksum struct {
 	// curve is the Ristretto255 elliptic curve group.
 	curve group.Group
@@ -69,7 +86,7 @@ type StateChecksum struct {
 	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
 	// output point to the checksum. The hash_to_curve operation is about 2-3 orders of magnitude
 	// slower than the point addition, therefore we will compute the hash_to_curve in parallel
-	// and then add the output points to the checksum sequentially while holding a mutex.
+	// and then add the output points to the checksum serially while holding a mutex.
 	addMutex sync.Mutex
 
 	// maxWorkers is the maximum number of workers we can have in the worker pool.
@@ -89,8 +106,14 @@ func (sc *StateChecksum) Initialize() {
 
 	// Set the worker pool semaphore and context.
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
-	sc.ctx = context.TODO()
+	sc.ctx = context.Background()
+}
 
+func (sc *StateChecksum) AddToChecksum(elem group.Element) {
+	sc.addMutex.Lock()
+	defer sc.addMutex.Unlock()
+
+	sc.checksum.Add(sc.checksum, elem)
 }
 
 // AddBytes adds record bytes to the checksum in parallel.
@@ -100,7 +123,8 @@ func (sc *StateChecksum) AddBytes(bytes []byte) error {
 		return errors.Wrapf(err, "StateChecksum.AddBytes: problem acquiring semaphore")
 	}
 
-	// Spawn a go routine that will decrement the semaphore and add the bytes to the checksum.
+	// Spawn a go routine that will add the bytes to the checksum and then
+	// decrement the semaphore.
 	go func(sc *StateChecksum, bytes []byte) {
 		defer sc.semaphore.Release(1)
 
@@ -108,9 +132,7 @@ func (sc *StateChecksum) AddBytes(bytes []byte) error {
 		hashElement := sc.curve.HashToElement(bytes, sc.dst)
 
 		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
-		sc.addMutex.Lock()
-		sc.checksum.Add(sc.checksum, hashElement)
-		sc.addMutex.Unlock()
+		sc.AddToChecksum(hashElement)
 	}(sc, bytes)
 
 	return nil
@@ -123,7 +145,8 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 		return errors.Wrapf(err, " StateChecksum.RemoveBytes: problem acquiring semaphore")
 	}
 
-	// Spawn a go routine that will decrement the semaphore and remove the bytes from the checksum.
+	// Spawn a go routine that will remove the bytes from the checksum
+	// and decrement the semaphore.
 	go func(sc *StateChecksum, bytes []byte) {
 		defer sc.semaphore.Release(1)
 
@@ -135,23 +158,17 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 		hashElement = hashElement.Neg(hashElement)
 
 		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
-		sc.addMutex.Lock()
-		sc.checksum.Add(sc.checksum, hashElement)
-		sc.addMutex.Unlock()
+		sc.AddToChecksum(hashElement)
 	}(sc, bytes)
 	return nil
 }
 
 // GetChecksum is used to get the checksum elliptic curve element.
 func (sc *StateChecksum) GetChecksum() (group.Element, error) {
-	// To get the checksum we will wait for all the current worker threads to finish.
-	// To do so, we can just try to acquire sc.maxWorkers in the semaphore.
-	if err := sc.semaphore.Acquire(sc.ctx, sc.maxWorkers); err != nil {
-		return nil, errors.Wrapf(err, "StateChecksum.GetChecksum: problem acquiring semaphore")
-	}
-	defer sc.semaphore.Release(sc.maxWorkers)
-
 	// Clone the checksum by adding it to identity. That's faster than doing ToBytes / FromBytes
+	sc.addMutex.Lock()
+	defer sc.addMutex.Unlock()
+
 	checksumCopy := group.Ristretto255.Identity()
 	checksumCopy.Add(checksumCopy, sc.checksum)
 
@@ -280,12 +297,6 @@ var (
 	// that a given key has already been saved to the ancestral records by performing
 	// just a single lookup. If it was part of the key, we would have needed two.
 	_prefixAncestralRecord = []byte{0}
-
-	// Snapshot health is used to indicate if the snapshot was properly saved in
-	// the database. In case something went wrong with the snapshot and we rebooted
-	// the node, we would need to save health information about the snapshot in the db.
-	//  <prefix> -> <health byte [1]byte>
-	_prefixSnapshotHealth = []byte{1}
 )
 
 // AncestralCache is an in-memory structure that helps manage concurrency between node's
@@ -299,7 +310,7 @@ var (
 // The AncestralCache is stored in the Snapshot struct in a concurrency-safe deque (bi-directional
 // queue). This deque follows a pub-sub pattern where the main db thread pushes ancestral
 // caches onto the deque. The snapshot thread then consumes these objects and writes to the
-// ancestral records. We decided for this pattern because it doesn't slow down the main
+// ancestral records. We decided to use this pattern because it doesn't slow down the main
 // block processing thread. However, to make this fully work, we also need some bookkeeping
 // to ensure the ancestral record flushes are up-to-date with the main db flushes. We
 // solve this with non-blocking counters (MainDBSemaphore, AncestralDBSemaphore) that count
@@ -309,15 +320,13 @@ type AncestralCache struct {
 	id uint64
 
 	// ExistingRecordsMap keeps track of original main db of records that we modified during
-	// utxo_view flush, which is where we're modifying state data.
+	// UtxoView flush, which is where we're modifying state data.
+	// We store keys as strings because they're easier to store and sort this way.
 	ExistingRecordsMap map[string][]byte
 
-	// NonExistingRecordsMap keeps track of records that didn't exist prior to utxo_view flush.
+	// NonExistingRecordsMap keeps track of records that didn't exist prior to UtxoView flush.
+	// We store keys as strings because they're easier to store and sort this way.
 	NonExistingRecordsMap map[string]bool
-
-	// RecordsKeyList is a list of keys in ExistingRecordsMap and NonExistingRecordsMap. We will sort
-	// it so that LSM tree lookups in BadgerDB are faster
-	RecordsKeyList []string
 }
 
 func NewAncestralCache(id uint64) *AncestralCache {
@@ -325,7 +334,6 @@ func NewAncestralCache(id uint64) *AncestralCache {
 		id:                    id,
 		ExistingRecordsMap:    make(map[string][]byte),
 		NonExistingRecordsMap: make(map[string]bool),
-		RecordsKeyList:        make([]string, 0),
 	}
 }
 
@@ -378,19 +386,27 @@ type SnapshotOperation struct {
 // The blocks between the snapshot heights are referred to as a snapshot epoch.
 //
 // Cloning the database for infinite-state blockchains like DeSo would be extremely costly,
-// incurring minutes of downtime. Instead, we use a structure called ancestral records, which
-// is constructed on-the-go and only stores records modified during a snapshot epoch. This allows
+// incurring minutes of downtime. Using merkle trees is also out of the question because
+// Merkle trees incur O(log n) computational complexity for updates and O(n) space complexity,
+// where n is the number of leaves in the tree.
+//
+// Instead, we use a structure called ancestral records, combined with a breakthrough checksum
+// mechanism called EllipticSum. Ancestral records are constructed on-the-go and only store
+// records modified during a snapshot epoch. This allows
 // us to reconstruct the database at the last snapshot height by combining the ancestral record
 // entries with the main db entries. This process has a significantly smaller computational and
-// storage overhead. The ancestral records are stored in a separate database, that's modified
+// storage overhead.
+//
+// The ancestral records are stored in a separate database that's modified
 // asynchronously to the main db. This means that the main node thread is minimally affected by
 // the snapshot computation. It also means that we need to manage the concurrency between these two
 // databases. We will achieve this without locking through Snapshot's OperationChannel, to which
-// the main thread will enqueue asynchronous operations such as ancestral records updates, checksum
-// computation, snapshot operations, etc. In addition, Snapshot is used to serve state chunks
-// to nodes that are booting using hyper sync. In such case, the Snapshot will fetch a portion
+// the main thread will enqueue asynchronous operations such as ancestral record updates, checksum
+// computations, snapshot operations, etc. In addition, Snapshot is used to serve state chunks
+// to nodes that are booting using hyper sync. In such cases, the Snapshot will fetch a portion
 // of the snapshot database by scanning a section of the main db as well as relevant ancestral
-// records, to combine them into a chunk representing the database at past snapshot height.
+// records, to combine them into a chunk representing the database at a past snapshot heights.
+//
 // Summarizing, Snapshot serves three main purposes:
 // 	- maintaining ancestral records
 // 	- managing the state checksum
@@ -404,9 +420,9 @@ type Snapshot struct {
 	// concurrency issues. The objects that we push to the queue will be instances of AncestralCache.
 	AncestralMemory *lane.Deque
 
-	// DatabaseCache is used to store most recent DB records that we've read/wrote.
-	// This is particularly useful for maintaining ancestral records, because
-	// it saves us read time when we're writing to DB during utxo_view flush.
+	// DatabaseCache is used to store most recent DB records that we've read/written.
+	// This is a low-level optimization for ancestral records that
+	// saves us read time when we're writing to the DB during UtxoView flush.
 	DatabaseCache lru.KVCache
 
 	// SnapshotBlockHeight is the height of the last snapshot.
@@ -427,7 +443,8 @@ type Snapshot struct {
 	Checksum *StateChecksum
 	// CurrentEpochChecksumBytes is the bytes of the state checksum for the snapshot at the current epoch.
 	CurrentEpochChecksumBytes []byte
-	// CurrentEpochBlockHash is the hash of the first block of the current epoch. It's used to identify the snapshot.
+	// CurrentEpochBlockHash is the hash of the first block of the current epoch. It's used to identify
+	// the snapshot.
 	CurrentEpochBlockHash *BlockHash
 
 	// MainDBSemaphore and AncestralDBSemaphore are atomically accessed counter semaphores that will be
@@ -439,7 +456,7 @@ type Snapshot struct {
 
 	// brokenSnapshot indicates that we need to rebuild entire snapshot from scratch.
 	// Updates to the snapshot happen in the background, so sometimes they can be broken
-	// if node stops unexpectedly. Health checks will detect these and set brokenSnapshot.
+	// if a node stops unexpectedly. Health checks will detect these and set brokenSnapshot.
 	brokenSnapshot bool
 
 	isTxIndex       bool
@@ -461,7 +478,7 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	snapshotDir := filepath.Join(GetBadgerDbPath(dataDirectory), "snapshot")
 	snapshotOpts := badger.DefaultOptions(snapshotDir)
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDir)
-	snapshotOpts.MemTableSize = 1024 << 20
+	snapshotOpts.MemTableSize = 2000 << 20
 	snapshotDb, err := badger.Open(snapshotOpts)
 	if err != nil {
 		glog.Fatal(err)
@@ -487,7 +504,7 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 		SnapshotBlockHeight:       uint64(0),
 		AncestralFlushCounter:     uint64(0),
 		SnapshotBlockHeightPeriod: snapshotBlockHeightPeriod,
-		OperationChannel:          make(chan *SnapshotOperation, 10000),
+		OperationChannel:          make(chan *SnapshotOperation, 100000),
 		Checksum:                  checksum,
 		CurrentEpochChecksumBytes: []byte{},
 		AncestralMemory:           lane.NewDeque(),
@@ -574,8 +591,8 @@ func (snap *Snapshot) Stop() {
 	snap.AncestralRecordsDb.Close()
 }
 
-// StartAncestralRecordsFlush updates the ancestral records after a utxo_view flush.
-// This function should be called in a go-routine after all utxo_view flushes.
+// StartAncestralRecordsFlush updates the ancestral records after a UtxoView flush.
+// This function should be called in a go-routine after all UtxoView flushes.
 func (snap *Snapshot) StartAncestralRecordsFlush() {
 	// If snapshot is broken then there's nothing to do.
 	glog.Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
@@ -666,7 +683,6 @@ func (snap *Snapshot) PrepareAncestralRecordsFlush() {
 // It will add the record to ExistingRecordsMap or NonExistingRecordsMap adequately.
 func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed bool) error {
 	// If the record was not found, we add it to the NonExistingRecordsMap, otherwise to ExistingRecordsMap.
-	// We record the key in RecordsKeyList.
 	index := snap.AncestralFlushCounter
 
 	if snap.AncestralMemory.Empty() {
@@ -692,7 +708,6 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 	}
 
 	// Add the record to the records key list and the adequate records list.
-	lastAncestralCache.RecordsKeyList = append(lastAncestralCache.RecordsKeyList, key)
 	if existed {
 		lastAncestralCache.ExistingRecordsMap[key] = value
 	} else {
@@ -777,8 +792,8 @@ func (snap *Snapshot) isFlushing() bool {
 	return false
 }
 
-// FlushAncestralRecords updates the ancestral records after a utxo_view flush.
-// This function should be called in a go-routine after all utxo_view flushes.
+// FlushAncestralRecords updates the ancestral records after a UtxoView flush.
+// This function should be called in a go-routine after all UtxoView flushes.
 func (snap *Snapshot) FlushAncestralRecords() {
 	glog.Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
 
@@ -789,7 +804,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	}
 
 	// Make sure we've finished all checksum computation before we proceed with the flush.
-	// Since this gets called after all snapshot operations is enqueued after the main db
+	// Since this gets called after all snapshot operations are enqueued after the main db
 	// flush, the order of operations is preserved; however, there could still be some
 	// snapshot worker threads running so we want to wait until they're done.
 	err := snap.Checksum.Wait()
@@ -798,25 +813,28 @@ func (snap *Snapshot) FlushAncestralRecords() {
 		return
 	}
 
+	// Pull items off of the deque for writing.
 	lastAncestralCache := snap.AncestralMemory.First().(*AncestralCache)
-	// First sort the copyMapKeyList so that we write to BadgerDB in order.
-	sort.Strings(lastAncestralCache.RecordsKeyList)
+	// First sort the keys so that we write to BadgerDB in order.
+	recordsKeyList := make(
+		[]string, 0, len(lastAncestralCache.ExistingRecordsMap)+len(lastAncestralCache.NonExistingRecordsMap))
+	for kk, _ := range lastAncestralCache.ExistingRecordsMap {
+		recordsKeyList = append(recordsKeyList, kk)
+	}
+	for kk, _ := range lastAncestralCache.NonExistingRecordsMap {
+		recordsKeyList = append(recordsKeyList, kk)
+	}
+	sort.Strings(recordsKeyList)
 	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Finished sorting map keys")
 
 	// We launch a new read-write transaction to set the records.
 
 	err = snap.AncestralRecordsDb.Update(func(txn *badger.Txn) error {
-		// In case we kill the node in the middle of this update.
-		err := txn.Set(_prefixSnapshotHealth, []byte{0})
-		if err != nil {
-			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem flushing "+
-				"snapshot health")
-		}
 		// Iterate through all now-sorted keys.
-		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) new records", len(lastAncestralCache.RecordsKeyList))
+		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) new records", len(recordsKeyList))
 		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) ExistingRecordsMap records", len(lastAncestralCache.ExistingRecordsMap))
 		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) NonExistingRecordsMap records", len(lastAncestralCache.NonExistingRecordsMap))
-		for _, key := range lastAncestralCache.RecordsKeyList {
+		for _, key := range recordsKeyList {
 			// We store keys as strings because they're easier to store and sort this way.
 			keyBytes, err := hex.DecodeString(key)
 			if err != nil {
@@ -853,11 +871,6 @@ func (snap *Snapshot) FlushAncestralRecords() {
 				return fmt.Errorf("Snapshot.StartAncestralRecordsFlush: Error, key is not " +
 					"in copyAncestralMap nor copyNotExistsMap. This should never happen")
 			}
-		}
-		err = txn.Set(_prefixSnapshotHealth, []byte{1})
-		if err != nil {
-			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem flushing "+
-				"snapshot health")
 		}
 		return nil
 	})
