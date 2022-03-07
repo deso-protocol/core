@@ -929,7 +929,7 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeLike {
 		return bav._disconnectLike(
-			OperationTypeFollow, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+			OperationTypeLike, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
 		return bav._disconnectCreatorCoin(
