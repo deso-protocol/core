@@ -215,8 +215,9 @@ const (
 	TxnTypeMessagingGroup               TxnType = 23
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
+	TxnTypeDAOCoinLimitOrder            TxnType = 26
 
-	// NEXT_ID = 26
+	// NEXT_ID = 27
 )
 
 type TxnString string
@@ -247,6 +248,7 @@ const (
 	TxnStringMessagingGroup               TxnString = "MESSAGING_GROUP"
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
+	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -257,7 +259,7 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -265,7 +267,7 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder,
 	}
 )
 
@@ -329,6 +331,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoin
 	case TxnTypeDAOCoinTransfer:
 		return TxnStringDAOCoinTransfer
+	case TxnTypeDAOCoinLimitOrder:
+		return TxnStringDAOCoinLimitOrder
 	default:
 		return TxnStringUndefined
 	}
@@ -386,6 +390,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoin
 	case TxnStringDAOCoinTransfer:
 		return TxnTypeDAOCoinTransfer
+	case TxnStringDAOCoinLimitOrder:
+		return TxnTypeDAOCoinLimitOrder
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -451,6 +457,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinMetadata{}).New(), nil
 	case TxnTypeDAOCoinTransfer:
 		return (&DAOCoinTransferMetadata{}).New(), nil
+	case TxnTypeDAOCoinLimitOrder:
+		return (&DAOCoinLimitOrderMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -5476,6 +5484,32 @@ func (txnData *DAOCoinTransferMetadata) FromBytes(data []byte) error {
 
 func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 	return &DAOCoinTransferMetadata{}
+}
+
+// ==================================================================
+// DAOCoinLimitOrderMetadata
+// ==================================================================
+
+type DAOCoinLimitOrderMetadata struct {
+	// TODO
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
+	return TxnTypeDAOCoinLimitOrder
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// TODO
+	return nil, nil
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
+	// TODO
+	return nil
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) New() DeSoTxnMetadata {
+	return &DAOCoinLimitOrderMetadata{}
 }
 
 func SerializePubKeyToUint64Map(mm map[PublicKey]uint64) ([]byte, error) {
