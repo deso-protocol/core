@@ -18,9 +18,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/deso-protocol/go-deadlock"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -3133,6 +3131,17 @@ func (bc *Blockchain) CreateDAOCoinTransferTxn(
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
+	UpdaterPublicKey []byte,
+	// See DAOCoinLimitOrderMetadata for an explanation of these fields.
+	metadata *DAOCoinLimitOrderMetadata,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+	// TODO
+	return nil, 0, 0, 0, nil
 }
 
 func (bc *Blockchain) CreateCreateNFTTxn(
