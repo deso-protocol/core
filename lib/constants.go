@@ -183,6 +183,9 @@ type ForkHeights struct {
 	// are separated to allow developers time to generate new derived keys for their users. NOTE: this must always
 	// be greater than or equal to DerivedKeySetSpendingLimitsBlockHeight.
 	DerivedKeyTrackSpendingLimitsBlockHeight uint32
+
+	// DAOCoinLimitOrderBlockHeight defines the height at which DAO Coin Limit Order transactions will be accepted.
+	DAOCoinLimitOrderBlockHeight uint32
 }
 
 // DeSoParams defines the full list of possible parameters for the
@@ -414,6 +417,7 @@ func (params *DeSoParams) EnableRegtest() {
 		ExtraDataOnEntriesBlockHeight:                        uint32(0),
 		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
 		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
+		DAOCoinLimitOrderBlockHeight:                         uint32(0),
 	}
 }
 
@@ -663,6 +667,9 @@ var DeSoMainnetParams = DeSoParams{
 		// FIXME: Set these values when we're ready for the next fork.
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
+
+		// FIXME: Set to real block height when we're ready.
+		DAOCoinLimitOrderBlockHeight: math.MaxUint32,
 	},
 }
 
@@ -855,6 +862,9 @@ var DeSoTestnetParams = DeSoParams{
 		// FIXME: Set these values when we're ready for the next fork.
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
+
+		// FIXME: Set to real block height when we're ready.
+		DAOCoinLimitOrderBlockHeight: math.MaxUint32,
 	},
 }
 
