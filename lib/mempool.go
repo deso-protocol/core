@@ -1722,6 +1722,10 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "ReceiverPublicKey",
 		})
+	case TxnTypeDAOCoinLimitOrder:
+		realTxMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+		_ = realTxMeta
+		// TODO
 	}
 	return txnMeta
 }
