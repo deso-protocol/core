@@ -947,6 +947,10 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectDAOCoinTransfer(
 			OperationTypeDAOCoinTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		return bav._disconnectDAOCoinLimitOrder(
+			OperationTypeDAOCoinLimitOrder, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
 		return bav._disconnectSwapIdentity(
 			OperationTypeSwapIdentity, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
@@ -1569,6 +1573,10 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta.ProfilePublicKey, TransferDAOCoinOperation); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeDAOCoinLimitOrder:
+		txnMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+		_ = txnMeta
+		// TODO: figure out derived key entry logic for DAOCoinLimitOrder
 	case TxnTypeUpdateNFT:
 		txnMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 		if derivedKeyEntry, err = _checkNFTLimitAndUpdateDerivedKeyEntry(
@@ -2134,6 +2142,11 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectDAOCoinTransfer(
+				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectDAOCoinLimitOrder(
 				txn, txHash, blockHeight, verifySignatures)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {

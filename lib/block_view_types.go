@@ -123,8 +123,9 @@ const (
 	OperationTypeDAOCoin                      OperationType = 25
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
+	OperationTypeDAOCoinLimitOrder            OperationType = 28
 
-	// NEXT_TAG = 28
+	// NEXT_TAG = 29
 )
 
 func (op OperationType) String() string {
@@ -236,6 +237,10 @@ func (op OperationType) String() string {
 	case OperationTypeSpendingLimitAccounting:
 		{
 			return "OperationTypeSpendingLimitAccounting"
+		}
+	case OperationTypeDAOCoinLimitOrder:
+		{
+			return "OperationTypeDAOCoinLimitOrder"
 		}
 	}
 	return "OperationTypeUNKNOWN"
