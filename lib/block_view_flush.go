@@ -86,6 +86,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn); err != nil {
 			return err
 		}
+		if err := bav._flushDAOCoinLimitOrderToDbWithTxn(txn); err != nil {
+			return err
+		}
 	}
 
 	// Always flush to BadgerDB.
@@ -984,5 +987,10 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) err
 	}
 
 	glog.V(1).Infof("_flushMessagingGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	return nil
+}
+
+func (bav *UtxoView) _flushDAOCoinLimitOrderToDbWithTxn(txn *badger.Txn) error {
+	// TODO
 	return nil
 }
