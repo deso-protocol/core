@@ -18,10 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
-
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -1722,6 +1719,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "ReceiverPublicKey",
 		})
+	case TxnTypeDAOCoinLimitOrder:
+		realTxMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+		// TODO
 	}
 	return txnMeta
 }
