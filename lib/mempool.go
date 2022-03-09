@@ -1724,6 +1724,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		})
 	case TxnTypeDAOCoinLimitOrder:
 		realTxMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+		_ = realTxMeta
 		// TODO
 	}
 	return txnMeta
