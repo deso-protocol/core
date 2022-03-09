@@ -3135,6 +3135,17 @@ func (bc *Blockchain) CreateDAOCoinTransferTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
+	UpdaterPublicKey []byte,
+	// See DAOCoinLimitOrderMetadata for an explanation of these fields.
+	metadata *DAOCoinLimitOrderMetadata,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+	// TODO
+	return nil, 0, 0, 0, nil
+}
+
 func (bc *Blockchain) CreateCreateNFTTxn(
 	UpdaterPublicKey []byte,
 	NFTPostHash *BlockHash,
