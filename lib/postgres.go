@@ -1356,7 +1356,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	}
 
 	if len(metadataDAOCoinLimitOrder) > 0 {
-		if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").INSERT(); err != nil {
+		if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").Insert(); err != nil {
 			return err
 		}
 	}
