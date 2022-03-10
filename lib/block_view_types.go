@@ -1448,14 +1448,14 @@ type DAOCoinLimitOrderEntry struct {
 	Quantity                   uint256.Int
 }
 
-type DAOCoinLimitOrderEntryDenominatedCoinType uint64
+type DAOCoinLimitOrderEntryDenominatedCoinType uint32
 
 const (
 	DESO    DAOCoinLimitOrderEntryDenominatedCoinType = 0
 	DAOCoin DAOCoinLimitOrderEntryDenominatedCoinType = 1
 )
 
-type DAOCoinLimitOrderEntryOrderType uint64
+type DAOCoinLimitOrderEntryOrderType uint32
 
 const (
 	Ask DAOCoinLimitOrderEntryOrderType = 0
