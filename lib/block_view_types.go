@@ -1463,23 +1463,33 @@ const (
 )
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
-	outputBytes := append([]byte{}, order.CreatorPKID[:]...)
-	outputBytes = append(outputBytes, _EncodeUint32(uint32(order.DenominatedCoinType))...)
-	outputBytes = append(outputBytes, order.DenominatedCoinCreatorPKID[:]...)
-	outputBytes = append(outputBytes, order.DAOCoinCreatorPKID[:]...)
-	outputBytes = append(outputBytes, _EncodeUint32(uint32(order.OperationType))...)
-	outputBytes = append(outputBytes, order.PriceNanos.Bytes()...)
-	outputBytes = append(outputBytes, _EncodeUint32(order.BlockHeight)...)
-	outputBytes = append(outputBytes, order.Quantity.Bytes()...)
-	return outputBytes, nil
+	data := append([]byte{}, order.CreatorPKID[:]...)
+	data = append(data, _EncodeUint32(uint32(order.DenominatedCoinType))...)
+	data = append(data, order.DenominatedCoinCreatorPKID[:]...)
+	data = append(data, order.DAOCoinCreatorPKID[:]...)
+	data = append(data, _EncodeUint32(uint32(order.OperationType))...)
+	data = append(data, order.PriceNanos.Bytes()...)
+	data = append(data, _EncodeUint32(order.BlockHeight)...)
+	data = append(data, order.Quantity.Bytes()...)
+	return data, nil
 }
 
-func (order *DAOCoinLimitOrderEntry) FromBytes(inputBytes []byte) (*DAOCoinLimitOrderEntry, error) {
-	if len(inputBytes) == 0 {
-		return nil, nil
+func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
+	if len(data) == 0 {
+		return nil
 	}
 
+	rr := bytes.NewReader(data)
+	_ = rr
+
 	// TODO
-	//rr := bytes.NewReader(inputBytes)
-	return nil, nil
+	// Parse CreatorPKID
+	// Parse DenominatedCoinCreatorPKID
+	// Parse DAOCoinCreatorPKID
+	// Parse OperationType
+	// Parse PriceNanos
+	// Parse BlockHeight
+	// Parse Quantity
+
+	return nil
 }
