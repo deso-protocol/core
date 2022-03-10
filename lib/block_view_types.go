@@ -1497,7 +1497,7 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	return nil
 }
 
-func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
+func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	newOrder := &DAOCoinLimitOrderEntry{}
 	newOrder.CreatorPKID = order.CreatorPKID.NewPKID()
 	newOrder.DenominatedCoinType = order.DenominatedCoinType
@@ -1507,7 +1507,7 @@ func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
 	newOrder.PriceNanos = order.PriceNanos
 	newOrder.BlockHeight = order.BlockHeight
 	newOrder.Quantity = order.Quantity
-	return newOrder, nil
+	return newOrder
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
@@ -1546,7 +1546,6 @@ type DAOCoinLimitOrderMapKey struct {
 	OperationType              DAOCoinLimitOrderEntryOrderType
 	PriceNanos                 uint256.Int
 	BlockHeight                uint32
-	Quantity                   uint256.Int
 }
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
@@ -1558,6 +1557,5 @@ func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	key.OperationType = order.OperationType
 	key.PriceNanos = order.PriceNanos
 	key.BlockHeight = order.BlockHeight
-	key.Quantity = order.Quantity
 	return key
 }

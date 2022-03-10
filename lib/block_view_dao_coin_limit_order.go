@@ -55,9 +55,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Validate that buyer has enough $ to buy the DAO coin
 	// Validate that the seller has the DAO coin they're selling
 
-	// For each order, validate that the buyer has enough $ to buy the DAO coin
-	// For each order, validate that the seller has the DAO coin they're selling
-
 	// Validate that txn specifies inputs to cover $DESO spent on DAO coins
 
 	// ------ End validations
@@ -74,10 +71,65 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		Quantity:                   txMeta.Quantity,
 	}
 
-	// Seek matching orders
-	potentialMatchingOrders, _ := bav._getNextLimitOrdersToFill(requestedOrder, nil)
+	// Check if you already have an existing order at this price in this block.
+	// If exists, update new order with previous order's quantity and mark previous order for deletion.
+	// Only have to check UTXO and not Badger because we are only aggregating within the block height.
+	orderKey := requestedOrder.ToMapKey()
+	prevOrder, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderKey]
 
-	// Merge database values with mempool
+	if prevOrder != nil {
+		requestedOrder.Quantity = *uint256.NewInt().Add(&requestedOrder.Quantity, &prevOrder.Quantity)
+		bav._deleteDAOCoinLimitOrderEntryMappings(prevOrder)
+	}
+
+	// Seek matching orders
+	prevMatchingOrders, _ := bav._getNextLimitOrdersToFill(requestedOrder, nil)
+	matchingOrders := []*DAOCoinLimitOrderEntry{}
+
+	// Cache previous state of potential matching orders in case of revert.
+	for _, order := range prevMatchingOrders {
+		matchingOrders = append(matchingOrders, order.Copy())
+	}
+
+	// 1-by-1 match orders to the requested order.
+	for _, order := range matchingOrders {
+		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			// Validate that the seller has the DAO coin they're selling
+			// order.CreatorPKID --> wallet --> do you have this DAO coin (order.DAOCoinCreatorPKID)
+
+			balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.CreatorPKID, order.DAOCoinCreatorPKID, true)
+
+			// Seller doesn't have
+			if balanceEntry == nil {
+				continue
+			}
+			bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey()
+		}
+
+		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			// Validate that the buyer has enough $ to buy the DAO coin
+
+		}
+
+		if requestedOrder.Quantity.Lt(&order.Quantity) {
+			order.Quantity = *uint256.NewInt().Sub(&order.Quantity, &requestedOrder.Quantity)
+			requestedOrder.Quantity = *uint256.NewInt()
+			break
+		} else {
+			requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+			bav._deleteDAOCoinLimitOrderEntryMappings(order)
+
+			if requestedOrder.Quantity.IsZero() {
+				break
+			}
+		}
+	}
+
+	if requestedOrder.Quantity.GtUint64(0) {
+		// Submit requested order
+		bav._setDAOCoinLimitOrderEntryMappings(order)
+	}
+
 	// Will have to charge extra for DAO coin transfer
 
 	return 0, 0, nil, nil
@@ -98,11 +150,15 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			bav.Handle.View(func(txn *badger.Txn) error {
+			err := bav.Handle.View(func(txn *badger.Txn) error {
 				var err error
 				orders, err = DBGetLowestDAOCoinAskOrders(txn, requestedOrder, lastSeenKey)
 				return err
 			})
+
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

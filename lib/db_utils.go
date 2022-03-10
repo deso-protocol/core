@@ -6205,7 +6205,7 @@ func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry,
 }
 
 func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
-	queryOrder, _ := inputOrder.Copy()
+	queryOrder := inputOrder.Copy()
 	requestedQuantity := queryOrder.Quantity
 
 	// Confirm that the input order is a bid order.
@@ -6259,6 +6259,11 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetLowestDAOCoinAskOrder: problem getting limit order")
+		}
+
+		// Break if ask price is greater than requested bid price.
+		if order.PriceNanos.Gt(&inputOrder.PriceNanos) {
+			break
 		}
 
 		// Reduce requested quantity by matching order's quantity.
