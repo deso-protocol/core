@@ -1446,20 +1446,22 @@ type DAOCoinLimitOrderEntry struct {
 	PriceNanos                 uint256.Int
 	BlockHeight                uint32
 	Quantity                   uint256.Int
+
+	isDeleted bool
 }
 
 type DAOCoinLimitOrderEntryDenominatedCoinType uint8
 
 const (
-	DESO    DAOCoinLimitOrderEntryDenominatedCoinType = 0
-	DAOCoin DAOCoinLimitOrderEntryDenominatedCoinType = 1
+	DAOCoinLimitOrderEntryDenominatedCoinTypeDESO    DAOCoinLimitOrderEntryDenominatedCoinType = 0
+	DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin DAOCoinLimitOrderEntryDenominatedCoinType = 1
 )
 
 type DAOCoinLimitOrderEntryOrderType uint8
 
 const (
-	Ask DAOCoinLimitOrderEntryOrderType = 0
-	Bid DAOCoinLimitOrderEntryOrderType = 1
+	DAOCoinLimitOrderEntryOrderTypeAsk DAOCoinLimitOrderEntryOrderType = 0
+	DAOCoinLimitOrderEntryOrderTypeBid DAOCoinLimitOrderEntryOrderType = 1
 )
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
@@ -1493,4 +1495,41 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	// Parse Quantity
 
 	return nil
+}
+
+func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
+	newOrder := &DAOCoinLimitOrderEntry{}
+	newOrder.CreatorPKID = order.CreatorPKID.NewPKID()
+	newOrder.DenominatedCoinType = order.DenominatedCoinType
+	newOrder.DenominatedCoinCreatorPKID = order.DenominatedCoinCreatorPKID.NewPKID()
+	newOrder.DAOCoinCreatorPKID = order.DAOCoinCreatorPKID.NewPKID()
+	newOrder.OperationType = order.OperationType
+	newOrder.PriceNanos = order.PriceNanos
+	newOrder.BlockHeight = order.BlockHeight
+	newOrder.Quantity = order.Quantity
+	return newOrder, nil
+}
+
+type DAOCoinLimitOrderMapKey struct {
+	CreatorPKID                PKID
+	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
+	DenominatedCoinCreatorPKID PKID
+	DAOCoinCreatorPKID         PKID
+	OperationType              DAOCoinLimitOrderEntryOrderType
+	PriceNanos                 uint256.Int
+	BlockHeight                uint32
+	Quantity                   uint256.Int
+}
+
+func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
+	key := DAOCoinLimitOrderMapKey{}
+	key.CreatorPKID = *order.CreatorPKID.NewPKID()
+	key.DenominatedCoinType = order.DenominatedCoinType
+	key.DenominatedCoinCreatorPKID = *order.DenominatedCoinCreatorPKID.NewPKID()
+	key.DAOCoinCreatorPKID = *order.DAOCoinCreatorPKID.NewPKID()
+	key.OperationType = order.OperationType
+	key.PriceNanos = order.PriceNanos
+	key.BlockHeight = order.BlockHeight
+	key.Quantity = order.Quantity
+	return key
 }
