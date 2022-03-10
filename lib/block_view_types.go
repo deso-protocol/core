@@ -1461,3 +1461,35 @@ const (
 	Ask DAOCoinLimitOrderEntryOrderType = 0
 	Bid DAOCoinLimitOrderEntryOrderType = 1
 )
+
+func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
+	data := append([]byte{}, order.CreatorPKID[:]...)
+	data = append(data, _EncodeUint32(uint32(order.DenominatedCoinType))...)
+	data = append(data, order.DenominatedCoinCreatorPKID[:]...)
+	data = append(data, order.DAOCoinCreatorPKID[:]...)
+	data = append(data, _EncodeUint32(uint32(order.OperationType))...)
+	data = append(data, order.PriceNanos.Bytes()...)
+	data = append(data, _EncodeUint32(order.BlockHeight)...)
+	data = append(data, order.Quantity.Bytes()...)
+	return data, nil
+}
+
+func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	rr := bytes.NewReader(data)
+	_ = rr
+
+	// TODO
+	// Parse CreatorPKID
+	// Parse DenominatedCoinCreatorPKID
+	// Parse DAOCoinCreatorPKID
+	// Parse OperationType
+	// Parse PriceNanos
+	// Parse BlockHeight
+	// Parse Quantity
+
+	return nil
+}
