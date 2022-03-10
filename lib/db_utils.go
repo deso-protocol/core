@@ -6194,7 +6194,8 @@ func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry,
 		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
 	}
 
-	order, err := (&DAOCoinLimitOrderEntry{}).FromBytes(orderBytes)
+	order := &DAOCoinLimitOrderEntry{}
+	err = order.FromBytes(orderBytes)
 
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
@@ -6213,7 +6214,8 @@ func DBGetAllDAOCoinLimitOrdersByCreatorPKID(handle *badger.DB, creatorPKID *PKI
 
 	// Cast resulting values from bytes to order entries.
 	for _, valBytes := range valsFound {
-		order, err := (&DAOCoinLimitOrderEntry{}).FromBytes(valBytes)
+		order := &DAOCoinLimitOrderEntry{}
+		err := order.FromBytes(valBytes)
 
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrderByCreatorPKID: problem getting limit orders")
