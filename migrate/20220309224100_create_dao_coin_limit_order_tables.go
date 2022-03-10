@@ -9,13 +9,13 @@ func init() {
 	up := func(db orm.DB) error {
 		_, err := db.Exec(`
 			CREATE TABLE pg_metadata_dao_coin_limit_orders (
-				transaction_hash       			BYTEA PRIMARY KEY,
-				denominated_coin_type  			SMALLINT NOT NULL,
-				denominated_coin_creator_pkid	BYTEA NOT NULL,
-				dao_coin_creator_pkid			BYTEA NOT NULL,
-				operation_type					SMALLINT NOT NULL,
-				price_nanos						BIGINT NOT NULL,
-				quantity						BIGINT NOT NULL
+				transaction_hash              BYTEA PRIMARY KEY,
+				denominated_coin_type         SMALLINT NOT NULL,
+				denominated_coin_creator_pkid BYTEA NOT NULL,
+				dao_coin_creator_pkid         BYTEA NOT NULL,
+				operation_type                SMALLINT NOT NULL,
+				price_nanos                   BIGINT NOT NULL,
+				quantity                      BIGINT NOT NULL
 			);
 		`)
 
