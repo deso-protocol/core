@@ -130,6 +130,7 @@ type PGTransaction struct {
 	MetadataDerivedKey          *PGMetadataDerivedKey          `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDAOCoin             *PGMetadataDAOCoin             `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDAOCoinTransfer     *PGMetadataDAOCoinTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDAOCoinLimitOrder   *PGMetadataDAOCoinLimitOrder   `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents DeSoOutput, DeSoInput, and UtxoEntry
@@ -389,6 +390,19 @@ type PGMetadataDerivedKey struct {
 	ExpirationBlock  uint64                           `pg:",use_zero"`
 	OperationType    AuthorizeDerivedKeyOperationType `pg:",use_zero"`
 	AccessSignature  []byte                           `pg:",type:bytea"`
+}
+
+// PGMetadataDAOCoinLimitOrder represents DAOCoinLimitOrderMetadata
+type PGMetadataDAOCoinLimitOrder struct {
+	tableName struct{} `pg:"pg_metadata_dao_coin_limit_order"`
+
+	TransactionHash            *BlockHash `pg:",pk,type:bytea"`
+	DenominatedCoinType        uint32     `pg:",use_zero"`
+	DenominatedCoinCreatorPKID *PKID      `pg:",type:bytea"`
+	DAOCoinCreatorPKID         *PKID      `pg:",type:bytea"`
+	OperationType              uint32     `pg:",use_zero"`
+	PriceNanos                 uint64     `pg:",use_zero"`
+	Quantity                   uint64     `pg:",use_zero"`
 }
 
 type PGNotification struct {
@@ -915,6 +929,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataDerivedKey []*PGMetadataDerivedKey
 	var metadataDAOCoin []*PGMetadataDAOCoin
 	var metadataDAOCoinTransfer []*PGMetadataDAOCoinTransfer
+	var metadataDAOCoinLimitOrder []*PGMetadataDAOCoinLimitOrder
 
 	blockHash := blockNode.Hash
 
@@ -1173,6 +1188,12 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				ReceiverPublicKey:      txMeta.ReceiverPublicKey,
 			})
 
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+			_ = txMeta
+			_ = metadataDAOCoinLimitOrder
+			// TODO
+
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
 
 			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
@@ -1334,6 +1355,12 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 	}
 
+	if len(metadataDAOCoinLimitOrder) > 0 {
+		if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").INSERT(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1405,6 +1432,9 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 			return err
 		}
 		if err := postgres.flushDerivedKeys(tx, view); err != nil {
+			return err
+		}
+		if err := postgres.flushDAOCoinLimitOrders(tx, view); err != nil {
 			return err
 		}
 
@@ -1993,6 +2023,11 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
+func (postgres *Postgres) flushDAOCoinLimitOrders(tx *pg.Tx, view *UtxoView) error {
+	// TODO
+	return nil
+}
+
 //
 // UTXOS
 //
@@ -2341,6 +2376,12 @@ func (postgres *Postgres) GetDAOCoinHolders(pkid *PKID) []*PGDAOCoinBalance {
 	}
 	return holdings
 }
+
+//
+// DAO Coin Limit Orders
+//
+
+// TODO
 
 //
 // NFTS
