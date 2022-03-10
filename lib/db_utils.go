@@ -285,10 +285,36 @@ var (
 	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
 	_PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey = []byte{58}
 
+	// Prefixes for DAO coin limit orders
+	// This index powers the order book.
+	// <
+	//   prefix,
+	//   denominated coin enum {0: $DESO, 1: DAO coin} [1]byte,
+	//   DAO coin creator PKID or 0 if $DESO [33]byte,
+	//   ask-bid enum {0: ASK, 1: BID} [1]byte,
+	//   order price [256]byte,
+	//   block height [32]byte,
+	//   order quantity [256]byte,
+	// > -> <DAOCoinLimitOrder>
+	//
+	// This index allows users to query for their open orders.
+	// <
+	//   prefix,
+	//   order creator PKID [33]byte,
+	//   denominated coin enum {0: $DESO, 1: DAO coin} [1]byte,
+	//   DAO coin creator PKID or 0 if $DESO [33]byte,
+	//   ask-bid enum {0: ASK, 1: BID} [1]byte,
+	//   order price [256]byte,
+	//   block height [32]byte,
+	//   order quantity [256]byte,
+	// > -> <DAOCoinLimitOrder>
+	_PrefixDAOCoinLimitOrder              = []byte{59}
+	_PrefixDAOCoinLimitOrderByCreatorPKID = []byte{60}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 59
+	// NEXT_TAG: 61
 )
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
