@@ -6156,3 +6156,34 @@ func StartDBSummarySnapshots(db *badger.DB) {
 		}
 	}()
 }
+
+// ---------------------------------------------
+// DAO coin limit order
+// ---------------------------------------------
+
+func _dbKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
+	key := append([]byte{}, prefixCopy...)
+	key = append(key, EncodeUint64(uint64(order.DenominatedCoinType))...)
+	key = append(key, order.DenominatedCoinCreatorPKID[:]...)
+	key = append(key, order.DAOCoinCreatorPKID[:]...)
+	key = append(key, EncodeUint64(uint64(order.OperationType))...)
+	key = append(key, order.PriceNanos.Bytes()...)
+	key = append(key, _EncodeUint32(order.BlockHeight)...)
+	key = append(key, order.Quantity.Bytes()...)
+	return key
+}
+
+func _dbKeyForDAOCoinLimitOrderByCreatorPKID(order *DAOCoinLimitOrderEntry) []byte {
+	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByCreatorPKID...)
+	key := append([]byte{}, prefixCopy...)
+	key = append(key, order.CreatorPKID[:]...)
+	key = append(key, EncodeUint64(uint64(order.DenominatedCoinType))...)
+	key = append(key, order.DenominatedCoinCreatorPKID[:]...)
+	key = append(key, order.DAOCoinCreatorPKID[:]...)
+	key = append(key, EncodeUint64(uint64(order.OperationType))...)
+	key = append(key, order.PriceNanos.Bytes()...)
+	key = append(key, _EncodeUint32(order.BlockHeight)...)
+	key = append(key, order.Quantity.Bytes()...)
+	return key
+}
