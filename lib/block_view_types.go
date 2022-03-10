@@ -1484,6 +1484,7 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 
 	// TODO
 	// Parse CreatorPKID
+	// Parse DenominatedCoinType
 	// Parse DenominatedCoinCreatorPKID
 	// Parse DAOCoinCreatorPKID
 	// Parse OperationType

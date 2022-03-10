@@ -5491,7 +5491,12 @@ func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type DAOCoinLimitOrderMetadata struct {
-	// TODO
+	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
+	DenominatedCoinCreatorPKID *PKID
+	DAOCoinCreatorPKID         *PKID
+	OperationType              DAOCoinLimitOrderEntryOrderType
+	PriceNanos                 uint256.Int
+	Quantity                   uint256.Int
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
@@ -5499,12 +5504,33 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	// TODO
-	return nil, nil
+	data := append([]byte{}, _EncodeUint32(uint32(txnData.DenominatedCoinType))...)
+	data = append(data, txnData.DenominatedCoinCreatorPKID[:]...)
+	data = append(data, txnData.DAOCoinCreatorPKID[:]...)
+	data = append(data, _EncodeUint32(uint32(txnData.OperationType))...)
+	data = append(data, txnData.PriceNanos.Bytes()...)
+	data = append(data, txnData.Quantity.Bytes()...)
+	return data, nil
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	rr := bytes.NewReader(data)
+	_ = rr
+
 	// TODO
+	// Parse CreatorPKID
+	// Parse DenominatedCoinType
+	// Parse DenominatedCoinCreatorPKID
+	// Parse DAOCoinCreatorPKID
+	// Parse OperationType
+	// Parse PriceNanos
+	// Parse BlockHeight
+	// Parse Quantity
+
 	return nil
 }
 
