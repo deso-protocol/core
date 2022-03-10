@@ -6163,8 +6163,7 @@ func StartDBSummarySnapshots(db *badger.DB) {
 
 func _dbKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key := append([]byte{}, prefixCopy...)
-	key = append(key, _EncodeUint32(uint32(order.DenominatedCoinType))...)
+	key := append(prefixCopy, _EncodeUint32(uint32(order.DenominatedCoinType))...)
 	key = append(key, order.DenominatedCoinCreatorPKID[:]...)
 	key = append(key, order.DAOCoinCreatorPKID[:]...)
 	key = append(key, _EncodeUint32(uint32(order.OperationType))...)
@@ -6176,8 +6175,7 @@ func _dbKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 
 func _dbKeyForDAOCoinLimitOrderByCreatorPKID(order *DAOCoinLimitOrderEntry) []byte {
 	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByCreatorPKID...)
-	key := append([]byte{}, prefixCopy...)
-	key = append(key, order.CreatorPKID[:]...)
+	key := append(prefixCopy, order.CreatorPKID[:]...)
 	key = append(key, _EncodeUint32(uint32(order.DenominatedCoinType))...)
 	key = append(key, order.DenominatedCoinCreatorPKID[:]...)
 	key = append(key, order.DAOCoinCreatorPKID[:]...)
