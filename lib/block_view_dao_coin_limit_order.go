@@ -91,19 +91,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		matchingOrders = append(matchingOrders, order.Copy())
 	}
 
-	// 1-by-1 match orders to the requested order.
+	// 1-by-1 match existing orders to the requested order.
 	for _, order := range matchingOrders {
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			// Validate that the seller has the DAO coin they're selling
-			// order.CreatorPKID --> wallet --> do you have this DAO coin (order.DAOCoinCreatorPKID)
-
+			// Validate that the seller has the DAO coin they're selling.
 			balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.CreatorPKID, order.DAOCoinCreatorPKID, true)
 
-			// Seller doesn't have
+			// Seller with open ask order doesn't have any of the promised DAO coins.
+			// Don't include and mark their order for deletion.
 			if balanceEntry == nil {
+				bav._deleteDAOCoinLimitOrderEntryMappings(order)
 				continue
 			}
-			bav.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey()
+
 		}
 
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {

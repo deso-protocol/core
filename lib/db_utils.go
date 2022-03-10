@@ -6176,7 +6176,6 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byCreatorPKID bool
 	key = append(key, _EncodeUint32(uint32(order.OperationType))...)
 	key = append(key, order.PriceNanos.Bytes()...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
-	key = append(key, order.Quantity.Bytes()...)
 	return key
 }
 
