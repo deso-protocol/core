@@ -6161,9 +6161,16 @@ func StartDBSummarySnapshots(db *badger.DB) {
 // DAO coin limit order
 // ---------------------------------------------
 
-func _dbKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+func _dbKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byCreatorPKID bool) []byte {
 	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key := append(prefixCopy, _EncodeUint32(uint32(order.DenominatedCoinType))...)
+	key := append([]byte{}, prefixCopy...)
+
+	// If indexing by creator PKID, use it in the key.
+	if byCreatorPKID {
+		key = append(key, order.CreatorPKID[:]...)
+	}
+
+	key = append(key, _EncodeUint32(uint32(order.DenominatedCoinType))...)
 	key = append(key, order.DenominatedCoinCreatorPKID[:]...)
 	key = append(key, order.DAOCoinCreatorPKID[:]...)
 	key = append(key, _EncodeUint32(uint32(order.OperationType))...)
@@ -6173,15 +6180,72 @@ func _dbKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	return key
 }
 
-func _dbKeyForDAOCoinLimitOrderByCreatorPKID(order *DAOCoinLimitOrderEntry) []byte {
+func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byCreatorPKID bool) (*DAOCoinLimitOrderEntry, error) {
+	key := _dbKeyForDAOCoinLimitOrder(inputOrder, byCreatorPKID)
+	orderItem, err := txn.Get(key)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
+	}
+
+	orderBytes, err := orderItem.ValueCopy(nil)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
+	}
+
+	order, err := (&DAOCoinLimitOrderEntry{}).FromBytes(orderBytes)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
+	}
+
+	return order, nil
+}
+
+func DBGetAllDAOCoinLimitOrdersByCreatorPKID(handle *badger.DB, creatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByCreatorPKID...)
-	key := append(prefixCopy, order.CreatorPKID[:]...)
-	key = append(key, _EncodeUint32(uint32(order.DenominatedCoinType))...)
-	key = append(key, order.DenominatedCoinCreatorPKID[:]...)
-	key = append(key, order.DAOCoinCreatorPKID[:]...)
-	key = append(key, _EncodeUint32(uint32(order.OperationType))...)
-	key = append(key, order.PriceNanos.Bytes()...)
-	key = append(key, _EncodeUint32(order.BlockHeight)...)
-	key = append(key, order.Quantity.Bytes()...)
-	return key
+	key := append(prefixCopy, creatorPKID[:]...)
+
+	// Seek all orders for this creator PKID.
+	_, valsFound := _enumerateKeysForPrefix(handle, key)
+	orders := []*DAOCoinLimitOrderEntry{}
+
+	// Cast resulting values from bytes to order entries.
+	for _, valBytes := range valsFound {
+		order, err := (&DAOCoinLimitOrderEntry{}).FromBytes(valBytes)
+
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrderByCreatorPKID: problem getting limit orders")
+		}
+
+		orders = append(orders, order)
+	}
+
+	return orders, nil
+}
+
+func DBPutDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byCreatorPKID bool) error {
+	key := _dbKeyForDAOCoinLimitOrder(order, byCreatorPKID)
+	orderBytes, err := order.ToBytes()
+
+	if err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order")
+	}
+
+	if err = txn.Set(key, orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order")
+	}
+
+	return nil
+}
+
+func DBDeleteDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byCreatorPKID bool) error {
+	key := _dbKeyForDAOCoinLimitOrder(order, byCreatorPKID)
+
+	if err := txn.Delete(key); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrder: problem deleting limit order")
+	}
+
+	return nil
 }
