@@ -14,8 +14,8 @@ func init() {
 				denominated_coin_creator_pkid BYTEA NOT NULL,
 				dao_coin_creator_pkid         BYTEA NOT NULL,
 				operation_type                SMALLINT NOT NULL,
-				price_nanos                   BIGINT NOT NULL,
-				quantity                      BIGINT NOT NULL
+				price_nanos                   TEXT NOT NULL,
+				quantity                      TEXT NOT NULL
 			);
 		`)
 

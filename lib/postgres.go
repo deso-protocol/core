@@ -399,10 +399,10 @@ type PGMetadataDAOCoinLimitOrder struct {
 	TransactionHash            *BlockHash `pg:",pk,type:bytea"`
 	DenominatedCoinType        uint32     `pg:",use_zero"`
 	DenominatedCoinCreatorPKID *PKID      `pg:",type:bytea"`
-	DAOCoinCreatorPKID         *PKID      `pg:",type:bytea"`
+	DAOCoinCreatorPKID         *PKID      `pg:"dao_coin_creator_pkid,type:bytea"`
 	OperationType              uint32     `pg:",use_zero"`
-	PriceNanos                 uint64     `pg:",use_zero"`
-	Quantity                   uint64     `pg:",use_zero"`
+	PriceNanos                 string     `pg:",use_zero"`
+	Quantity                   string     `pg:",use_zero"`
 }
 
 type PGNotification struct {
@@ -1190,8 +1190,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
 			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-			_ = txMeta
-			_ = metadataDAOCoinLimitOrder
+			_, _ = txMeta, metadataDAOCoinLimitOrder
 			// TODO
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
