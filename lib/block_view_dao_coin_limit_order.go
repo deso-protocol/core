@@ -1,8 +1,11 @@
 package lib
 
 import (
+	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
+	"github.com/holiman/uint256"
+	"github.com/pkg/errors"
 	"reflect"
 	"sort"
 )
@@ -10,8 +13,72 @@ import (
 func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeDAOCoinLimitOrder {
+		return 0, 0, nil, fmt.Errorf("_connectDAOCoinLimitOrder: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
+	}
+
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the transaction is
+		// signed by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
 	// TODO
+
+	// ----- Begin validations
+	// Create rule errors for each of these validations below
+	// lib/errors.go
+
+	// Validate CreatorPKID exists
+	// Validate DenominatedCoinType is one of our supported enum values
+	// Validate DenominatedCoinCreatorPKID exists and has a profile or is all zeroes if $DESO
+	// Validate DAOCoinCreatorPKID exists and has a profile
+	// Validate OperationType is one of our supported enum values
+	// Validate PriceNanos > 0
+	//   If denominated in DESO, confirm PriceNanos is uint64
+	//   PriceNanos == uint256.ToUint64(PriceNanos).ToUint256()
+	// Validate Quantity > 0
+
+	// Validate transfer restriction status, if Dao coin can only be transferred to whitelisted members
+
+	// Validate that buyer has enough $ to buy the DAO coin
+	// Validate that the seller has the DAO coin they're selling
+
+	// For each order, validate that the buyer has enough $ to buy the DAO coin
+	// For each order, validate that the seller has the DAO coin they're selling
+
+	// Validate that txn specifies inputs to cover $DESO spent on DAO coins
+
+	// ------ End validations
+
+	// Create entry from txn metadata.
+	requestedOrder := &DAOCoinLimitOrderEntry{
+		CreatorPKID:                bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
+		DenominatedCoinType:        txMeta.DenominatedCoinType,
+		DenominatedCoinCreatorPKID: txMeta.DenominatedCoinCreatorPKID,
+		DAOCoinCreatorPKID:         txMeta.DAOCoinCreatorPKID,
+		OperationType:              txMeta.OperationType,
+		PriceNanos:                 txMeta.PriceNanos,
+		BlockHeight:                blockHeight,
+		Quantity:                   txMeta.Quantity,
+	}
+
+	// Seek matching orders
+	potentialMatchingOrders, _ := bav._getNextLimitOrdersToFill(requestedOrder, nil)
+
 	// Merge database values with mempool
+	// Will have to charge extra for DAO coin transfer
 
 	return 0, 0, nil, nil
 }
@@ -48,10 +115,15 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 	}
 
-	// TODO: sort bav by key so can find best order
-	sortedKeys := []DAOCoinLimitOrderMapKey{}
+	// Sort orders by best matching.
+	// Sort logic first looks at price, then block height (FIFO), then quantity (lowest first).
+	sortedOrders := []*DAOCoinLimitOrderEntry{}
 
-	for key, order := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+	for _, order := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		if order.isDeleted {
+			continue
+		}
+
 		if requestedOrder.DenominatedCoinType != order.DenominatedCoinType {
 			continue
 		}
@@ -78,22 +150,37 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			continue
 		}
 
-		sortedKeys = append(sortedKeys, key)
+		sortedOrders = append(sortedOrders, order)
 	}
 
-	sort.Slice(sortedKeys, func(ii, jj int) bool {
+	sort.Slice(sortedOrders, func(ii, jj int) bool {
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			return sortedKeys[ii] < sortedKeys[jj]
+			// If requested order is an ask, we want to sort by the best bids.
+			return sortedOrders[ii].IsBetterBidThan(sortedOrders[jj])
 		}
 
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			return sortedKeys[ii] > sortedKeys[jj]
+			// If requested order is an bid, we want to sort by the best asks.
+			return sortedOrders[ii].IsBetterAskThan(sortedOrders[jj])
 		}
 
 		return false
 	})
 
-	return orders, nil
+	// Pull orders up to the when the quantity is fulfilled or we run out of orders.
+	includedOrders := []*DAOCoinLimitOrderEntry{}
+	requestedQuantity := requestedOrder.Quantity
+
+	for _, order := range sortedOrders {
+		includedOrders = append(includedOrders, order)
+		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+
+		if requestedQuantity.LtUint64(0) {
+			break
+		}
+	}
+
+	return includedOrders, nil
 }
 
 func (bav *UtxoView) _disconnectDAOCoinLimitOrder(

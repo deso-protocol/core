@@ -1510,6 +1510,34 @@ func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
 	return newOrder, nil
 }
 
+func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
+	if !order.PriceNanos.Eq(&other.PriceNanos) {
+		return order.PriceNanos.Lt(&other.PriceNanos)
+	}
+
+	return order.IsBetterOrderThan(other)
+}
+
+func (order *DAOCoinLimitOrderEntry) IsBetterBidThan(other *DAOCoinLimitOrderEntry) bool {
+	if !order.PriceNanos.Eq(&other.PriceNanos) {
+		return order.PriceNanos.Gt(&other.PriceNanos)
+	}
+
+	return order.IsBetterOrderThan(other)
+}
+
+func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderEntry) bool {
+	if order.BlockHeight != other.BlockHeight {
+		return order.BlockHeight < other.BlockHeight
+	}
+
+	if order.Quantity.Eq(&other.Quantity) {
+		return order.Quantity.Lt(&other.Quantity)
+	}
+
+	return bytes.Compare(order.CreatorPKID[:], other.CreatorPKID[:]) < 0
+}
+
 type DAOCoinLimitOrderMapKey struct {
 	CreatorPKID                PKID
 	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
