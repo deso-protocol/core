@@ -1432,3 +1432,32 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 		return []byte{}, nil
 	}
 }
+
+// -----------------------------------
+// DAO coin limit order
+// -----------------------------------
+
+type DAOCoinLimitOrderEntry struct {
+	CreatorPKID                *PKID
+	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
+	DenominatedCoinCreatorPKID *PKID
+	DAOCoinCreatorPKID         *PKID
+	OperationType              DAOCoinLimitOrderEntryOrderType
+	PriceNanos                 uint256.Int
+	BlockHeight                uint32
+	Quantity                   uint256.Int
+}
+
+type DAOCoinLimitOrderEntryDenominatedCoinType uint32
+
+const (
+	DESO    DAOCoinLimitOrderEntryDenominatedCoinType = 0
+	DAOCoin DAOCoinLimitOrderEntryDenominatedCoinType = 1
+)
+
+type DAOCoinLimitOrderEntryOrderType uint32
+
+const (
+	Ask DAOCoinLimitOrderEntryOrderType = 0
+	Bid DAOCoinLimitOrderEntryOrderType = 1
+)
