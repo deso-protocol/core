@@ -469,7 +469,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 		}
 	} else {
 		handle := bav.Handle
-		dbPrefix := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
+		dbPrefix := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash)
 		dbPrefix = append(dbPrefix, publicKey...)
 		var prefix []byte
 		if startPostHash != nil {
@@ -565,7 +565,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 
 func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToDiamondLevel map[PKID]int64, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
+	dbPrefix := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
@@ -605,7 +605,7 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 
 func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKeys [][]byte, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKey...)
+	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKey)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
@@ -641,7 +641,7 @@ func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKey
 func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
 ) (_quoteReposterPubKeys [][]byte, _quoteReposterPubKeyToPosts map[PkMapKey][]*PostEntry, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
+	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 

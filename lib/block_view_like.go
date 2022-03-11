@@ -74,7 +74,7 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][
 		}
 	} else {
 		handle := bav.Handle
-		dbPrefix := append([]byte{}, _PrefixLikedPostHashToLikerPubKey...)
+		dbPrefix := append([]byte{}, _PrefixLikedPostHashToLikerPubKey)
 		dbPrefix = append(dbPrefix, postHash[:]...)
 		keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
