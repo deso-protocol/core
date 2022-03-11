@@ -24,6 +24,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// considering the transaction metadata.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
+
+	_, _, _ = totalInput, totalOutput, utxoOpsForTxn
+
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
 	}
