@@ -41,7 +41,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// lib/errors.go
 
 	// Validate CreatorPKID exists
-	// Validate DenominatedCoinType is one of our supported enum values
+	// Validate DenominatedCoinType is one of our supported enum values and is DESO for now
 	// Validate DenominatedCoinCreatorPKID exists and has a profile or is all zeroes if $DESO
 	// Validate DAOCoinCreatorPKID exists and has a profile
 	// Validate OperationType is one of our supported enum values
@@ -49,6 +49,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	//   If denominated in DESO, confirm PriceNanos is uint64
 	//   PriceNanos == uint256.ToUint64(PriceNanos).ToUint256()
 	// Validate Quantity > 0
+	// If DESO buy, validate quantity < max uint64, order.Quantity.IsUint64()
+	// If DESO buy, validate price * quantity < max uint64
+	// If DAO coin buy, validate price * quantity < max uint256
 
 	// Validate transfer restriction status, if Dao coin can only be transferred to whitelisted members
 
@@ -93,24 +96,49 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// 1-by-1 match existing orders to the requested order.
 	for _, order := range matchingOrders {
+		// Validate that the seller has the DAO coin they're selling.
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			// Validate that the seller has the DAO coin they're selling.
 			balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.CreatorPKID, order.DAOCoinCreatorPKID, true)
 
 			// Seller with open ask order doesn't have any of the promised DAO coins.
 			// Don't include and mark their order for deletion.
-			if balanceEntry == nil {
+			if balanceEntry == nil || balanceEntry.isDeleted {
 				bav._deleteDAOCoinLimitOrderEntryMappings(order)
 				continue
 			}
 
+			// Seller with open ask order doesn't have enough of the promised DAO coins.
+			// Don't include and mark their order for deletion.
+			// TODO: maybe we should partially fulfill the order? Maybe less error-prone to just close.
+			if balanceEntry.BalanceNanos.Lt(&order.Quantity) {
+				bav._deleteDAOCoinLimitOrderEntryMappings(order)
+				continue
+			}
 		}
 
+		// Validate that the buyer has enough $ to buy the DAO coin.
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			// Validate that the buyer has enough $ to buy the DAO coin
+			if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
+				desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.CreatorPKID))
 
+				if err != nil {
+					return 0, 0, nil, err
+				}
+
+				// Buyer with open bid order doesn't have enough $DESO.
+				// Don't include and mark their order for deletion.
+				if desoBalanceNanos < (order.PriceNanos.Uint64() * order.Quantity.Uint64()) {
+					bav._deleteDAOCoinLimitOrderEntryMappings(order)
+					continue
+				}
+			} else if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+				panic("DAO coin denominated limit orders not implemented")
+			} else {
+				return 0, 0, nil, fmt.Errorf("Invalid denominated coin type")
+			}
 		}
 
+		// Update order quantities and transfer DAO coins.
 		if requestedOrder.Quantity.Lt(&order.Quantity) {
 			order.Quantity = *uint256.NewInt().Sub(&order.Quantity, &requestedOrder.Quantity)
 			requestedOrder.Quantity = *uint256.NewInt()
@@ -125,9 +153,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
+	// If requested order is still not fully fulfilled, submit it to be stored.
 	if requestedOrder.Quantity.GtUint64(0) {
-		// Submit requested order
-		bav._setDAOCoinLimitOrderEntryMappings(order)
+		bav._setDAOCoinLimitOrderEntryMappings(requestedOrder)
 	}
 
 	// Will have to charge extra for DAO coin transfer
