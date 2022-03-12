@@ -732,6 +732,22 @@ func (snap *Snapshot) GetAncestralRecordsKey(key []byte) []byte {
 	return prefix
 }
 
+// DBSetExistingRecordWithTxn sets a record corresponding to our ExistingRecordsMap.
+// We append a []byte{1} to the end to indicate that this is an existing record.
+func (snap *Snapshot) DBSetExistingRecordWithTxn(
+	txn *badger.Txn, keyBytes []byte, value []byte) error {
+
+	return txn.Set(snap.GetAncestralRecordsKey(keyBytes), append(value, byte(1)))
+}
+
+// DBSetNonExistingRecordWithTxn sets a record corresponding to our NonExistingRecordsMap.
+// We append a []byte{0} to the end to indicate that this is a non-existing record.
+func (snap *Snapshot) DBSetNonExistingRecordWithTxn(
+	txn *badger.Txn, keyBytes []byte) error {
+
+	return txn.Set(snap.GetAncestralRecordsKey(keyBytes), []byte{byte(0)})
+}
+
 // AncestralRecordToDBEntry is used to translate the <ancestral_key, ancestral_value> pairs into
 // the actual <key, value> pairs. Ancestral records have the format:
 // 	<prefix [1]byte, block height [8]byte, key []byte> -> <value []byte, existence_byte [1]byte>
@@ -850,19 +866,21 @@ func (snap *Snapshot) FlushAncestralRecords() {
 					"reading exsiting record in the DB at key: %v", key)
 			}
 			if err == nil {
+				// In this case, there was no error, which means the key already exists.
+				// No need to set it in that case.
 				continue
 			}
 
 			// If we get here, it means that no record existed in ancestral records at key.
 			// The key was either added to copyAncestralMap or copyNotExistsMap during flush.
 			if value, exists := lastAncestralCache.ExistingRecordsMap[key]; exists {
-				err = txn.Set(snap.GetAncestralRecordsKey(keyBytes), append(value, byte(1)))
+				err = snap.DBSetExistingRecordWithTxn(txn, keyBytes, value)
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
 						"flushing a record from copyAncestralMap at key %v:", key)
 				}
 			} else if _, exists = lastAncestralCache.NonExistingRecordsMap[key]; exists {
-				err = txn.Set(snap.GetAncestralRecordsKey(keyBytes), []byte{byte(0)})
+				err = snap.DBSetNonExistingRecordWithTxn(txn, keyBytes)
 				if err != nil {
 					return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
 						"flushing a record from copyNotExistsMap at key %v:", key)
