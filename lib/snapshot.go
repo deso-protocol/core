@@ -299,6 +299,19 @@ var (
 	_prefixAncestralRecord = []byte{0}
 )
 
+type AncestralRecordValue struct {
+	// The value we're setting for an ancestral record.
+	Value []byte
+
+	// This is true if the key we're modifying had a pre-existing
+	// value in our state. For example, we if we are updating a profile
+	// then we might have a pre-existing entry for the pubkey->profile
+	// mapping that we're updating. When this value is false, it means
+	// we're setting a key that didn't have an associated value in our
+	// state previously.
+	Existed bool
+}
+
 // AncestralCache is an in-memory structure that helps manage concurrency between node's
 // main db flushes and ancestral records flushes. For each main db flush transaction, we
 // will build an ancestral cache that contains maps of historical values that were in the
@@ -320,20 +333,17 @@ type AncestralCache struct {
 	id uint64
 
 	// ExistingRecordsMap keeps track of original main db of records that we modified during
-	// UtxoView flush, which is where we're modifying state data.
+	// UtxoView flush, which is where we're modifying state data. A record for a particular
+	// key was either already existing in our state, or not already existing in our state.
+	//
 	// We store keys as strings because they're easier to store and sort this way.
-	ExistingRecordsMap map[string][]byte
-
-	// NonExistingRecordsMap keeps track of records that didn't exist prior to UtxoView flush.
-	// We store keys as strings because they're easier to store and sort this way.
-	NonExistingRecordsMap map[string]bool
+	AncestralRecordsMap map[string]*AncestralRecordValue
 }
 
 func NewAncestralCache(id uint64) *AncestralCache {
 	return &AncestralCache{
-		id:                    id,
-		ExistingRecordsMap:    make(map[string][]byte),
-		NonExistingRecordsMap: make(map[string]bool),
+		id:                  id,
+		AncestralRecordsMap: make(map[string]*AncestralRecordValue),
 	}
 }
 
@@ -680,7 +690,8 @@ func (snap *Snapshot) PrepareAncestralRecordsFlush() {
 }
 
 // PrepareAncestralRecord prepares an individual ancestral record in the last ancestral cache.
-// It will add the record to ExistingRecordsMap or NonExistingRecordsMap adequately.
+// It will add the record to AncestralRecordsMap with a bool indicating whether the key existed
+// before or not.
 func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed bool) error {
 	// If the record was not found, we add it to the NonExistingRecordsMap, otherwise to ExistingRecordsMap.
 	index := snap.AncestralFlushCounter
@@ -697,21 +708,15 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 			"greater than current flush index (%v)", lastAncestralCache.id, index)
 	}
 
-	// If the record already exists in the ancestral cache ExistingRecordsMap, skip.
-	if _, ok := lastAncestralCache.ExistingRecordsMap[key]; ok {
-		return nil
-	}
-
-	// If the record already exists in the ancestral cache NonExistingRecordsMap, skip.
-	if _, ok := lastAncestralCache.NonExistingRecordsMap[key]; ok {
+	// If the record already exists in the ancestral cache, skip.
+	if _, ok := lastAncestralCache.AncestralRecordsMap[key]; ok {
 		return nil
 	}
 
 	// Add the record to the records key list and the adequate records list.
-	if existed {
-		lastAncestralCache.ExistingRecordsMap[key] = value
-	} else {
-		lastAncestralCache.NonExistingRecordsMap[key] = true
+	lastAncestralCache.AncestralRecordsMap[key] = &AncestralRecordValue{
+		Value:   value,
+		Existed: existed,
 	}
 	return nil
 }
@@ -732,20 +737,19 @@ func (snap *Snapshot) GetAncestralRecordsKey(key []byte) []byte {
 	return prefix
 }
 
-// DBSetExistingRecordWithTxn sets a record corresponding to our ExistingRecordsMap.
-// We append a []byte{1} to the end to indicate that this is an existing record.
-func (snap *Snapshot) DBSetExistingRecordWithTxn(
-	txn *badger.Txn, keyBytes []byte, value []byte) error {
+// DBSetAncestralRecordWithTxn sets a record corresponding to our ExistingRecordsMap.
+// We append a []byte{1} to the end to indicate that this is an existing record, and
+// we append a []byte{0} to the end to indicate that this is a NON-existing record. We
+// need to create this distinction to tell the difference between a record that was
+// updated to have an *empty* value vs a record that was deleted entirely.
+func (snap *Snapshot) DBSetAncestralRecordWithTxn(
+	txn *badger.Txn, keyBytes []byte, value *AncestralRecordValue) error {
 
-	return txn.Set(snap.GetAncestralRecordsKey(keyBytes), append(value, byte(1)))
-}
-
-// DBSetNonExistingRecordWithTxn sets a record corresponding to our NonExistingRecordsMap.
-// We append a []byte{0} to the end to indicate that this is a non-existing record.
-func (snap *Snapshot) DBSetNonExistingRecordWithTxn(
-	txn *badger.Txn, keyBytes []byte) error {
-
-	return txn.Set(snap.GetAncestralRecordsKey(keyBytes), []byte{byte(0)})
+	if value.Existed {
+		return txn.Set(snap.GetAncestralRecordsKey(keyBytes), append(value.Value, byte(1)))
+	} else {
+		return txn.Set(snap.GetAncestralRecordsKey(keyBytes), []byte{byte(0)})
+	}
 }
 
 // AncestralRecordToDBEntry is used to translate the <ancestral_key, ancestral_value> pairs into
@@ -756,11 +760,7 @@ func (snap *Snapshot) DBSetNonExistingRecordWithTxn(
 func (snap *Snapshot) AncestralRecordToDBEntry(ancestralEntry *DBEntry) *DBEntry {
 	var dbKey, dbVal []byte
 	// Trim the prefix and the block height from the ancestral record key.
-	if len(ancestralEntry.Key) > 9 {
-		dbKey = ancestralEntry.Key[9:]
-	} else {
-		dbKey = ancestralEntry.Key
-	}
+	dbKey = ancestralEntry.Key[9:]
 
 	// Trim the existence_byte from the ancestral record value.
 	if len(ancestralEntry.Value) > 0 {
@@ -825,19 +825,16 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	// snapshot worker threads running so we want to wait until they're done.
 	err := snap.Checksum.Wait()
 	if err != nil {
-		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Error while waiting for checksum: (%v)", err)
+		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Error while waiting "+
+			"for checksum: (%v)", err)
 		return
 	}
 
 	// Pull items off of the deque for writing.
 	lastAncestralCache := snap.AncestralMemory.First().(*AncestralCache)
 	// First sort the keys so that we write to BadgerDB in order.
-	recordsKeyList := make(
-		[]string, 0, len(lastAncestralCache.ExistingRecordsMap)+len(lastAncestralCache.NonExistingRecordsMap))
-	for kk, _ := range lastAncestralCache.ExistingRecordsMap {
-		recordsKeyList = append(recordsKeyList, kk)
-	}
-	for kk, _ := range lastAncestralCache.NonExistingRecordsMap {
+	recordsKeyList := make([]string, 0, len(lastAncestralCache.AncestralRecordsMap))
+	for kk, _ := range lastAncestralCache.AncestralRecordsMap {
 		recordsKeyList = append(recordsKeyList, kk)
 	}
 	sort.Strings(recordsKeyList)
@@ -848,8 +845,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	err = snap.AncestralRecordsDb.Update(func(txn *badger.Txn) error {
 		// Iterate through all now-sorted keys.
 		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) new records", len(recordsKeyList))
-		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) ExistingRecordsMap records", len(lastAncestralCache.ExistingRecordsMap))
-		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) NonExistingRecordsMap records", len(lastAncestralCache.NonExistingRecordsMap))
+		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) ancestral records", len(lastAncestralCache.AncestralRecordsMap))
 		for _, key := range recordsKeyList {
 			// We store keys as strings because they're easier to store and sort this way.
 			keyBytes, err := hex.DecodeString(key)
@@ -861,33 +857,29 @@ func (snap *Snapshot) FlushAncestralRecords() {
 			// We check whether this record is already present in ancestral records,
 			// if so then there's nothing to do. What we want is err == badger.ErrKeyNotFound
 			_, err = txn.Get(snap.GetAncestralRecordsKey(keyBytes))
-			if err != nil && err != badger.ErrKeyNotFound {
-				return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
-					"reading exsiting record in the DB at key: %v", key)
-			}
-			if err == nil {
-				// In this case, there was no error, which means the key already exists.
-				// No need to set it in that case.
-				continue
+			if err != badger.ErrKeyNotFound {
+				if err != nil {
+					// In this case, we hit a real error with Badger, so we should return.
+					return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
+						"reading exsiting record in the DB at key: %v", key)
+				} else {
+					// In this case, there was no error, which means the key already exists.
+					// No need to set it in that case.
+					continue
+				}
 			}
 
-			// If we get here, it means that no record existed in ancestral records at key.
-			// The key was either added to copyAncestralMap or copyNotExistsMap during flush.
-			if value, exists := lastAncestralCache.ExistingRecordsMap[key]; exists {
-				err = snap.DBSetExistingRecordWithTxn(txn, keyBytes, value)
-				if err != nil {
-					return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
-						"flushing a record from copyAncestralMap at key %v:", key)
-				}
-			} else if _, exists = lastAncestralCache.NonExistingRecordsMap[key]; exists {
-				err = snap.DBSetNonExistingRecordWithTxn(txn, keyBytes)
-				if err != nil {
-					return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
-						"flushing a record from copyNotExistsMap at key %v:", key)
-				}
-			} else {
+			// If we get here, it means that no record existed in ancestral records at key,
+			// so we set it here.
+			value, exists := lastAncestralCache.AncestralRecordsMap[key]
+			if !exists {
 				return fmt.Errorf("Snapshot.StartAncestralRecordsFlush: Error, key is not " +
-					"in copyAncestralMap nor copyNotExistsMap. This should never happen")
+					"in AncestralRecordsMap. This should never happen")
+			}
+			err = snap.DBSetAncestralRecordWithTxn(txn, keyBytes, value)
+			if err != nil {
+				return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
+					"flushing a record from copyAncestralMap at key %v:", key)
 			}
 		}
 		return nil
@@ -958,10 +950,11 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 
-	// To combine the main DB entries and the ancestral records DB entries, we iterate through the ancestral records and
-	// for each key we add all the main DB keys that are smaller than the currently processed key. The ancestral records
-	// entries have priority over the main DB entries, so whenever there are entries with the same key among the two DBs,
-	// we will only add the ancestral record entry to our snapshot batch. Also, the loop below might appear like O(n^2)
+	// To combine the main DB entries and the ancestral records DB entries, we iterate through the
+	// ancestral records and for each key we add all the main DB keys that are smaller than the
+	// currently processed key. The ancestral records entries have priority over the main DB entries,
+	// so whenever there are entries with the same key among the two DBs, we will only add the
+	// ancestral record entry to our snapshot batch. Also, the loop below might appear like O(n^2)
 	// but it's actually O(n) because the inside loop iterates at most O(n) times in total.
 
 	// Index to keep track of how many main DB entries we've already processed.
