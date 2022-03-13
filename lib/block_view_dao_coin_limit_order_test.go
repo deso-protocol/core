@@ -59,7 +59,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
 		DenominatedCoinCreatorPKID: &ZeroPKID,
 		DAOCoinCreatorPKID:         m0PKID.PKID,
-		OperationType:              DAOCoinLimitOrderEntryOrderTypeAsk,
+		OperationType:              DAOCoinLimitOrderEntryOrderTypeBid,
 		PriceNanos:                 *uint256.NewInt().SetUint64(10),
 		Quantity:                   *uint256.NewInt().SetUint64(100),
 	}

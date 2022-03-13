@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"github.com/holiman/uint256"
 	"math"
 	"math/big"
 	"reflect"
@@ -3142,8 +3143,122 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
-	// TODO
-	return nil, 0, 0, 0, nil
+	// Create a transaction containing the create NFT fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	if metadata.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin &&
+		metadata.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+		// In this case, we need to find inputs from all the orders that match.
+		// This will move to txn construction as this will be put in the metadata
+
+		// Create a new UtxoView. If we have access to a mempool object, use it to
+		// get an augmented view that factors in pending transactions.
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateDAOCoinLimitOrderTxn: Problem creating new utxo view: ")
+		}
+		if mempool != nil {
+			utxoView, err = mempool.GetAugmentedUniversalView()
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(err,
+					"Blockchain.CreateDAOCoinLimitOrderTxn: Problem getting augmented UtxoView from mempool: ")
+
+			}
+		}
+
+		// Construct requested order
+		requestedOrder := &DAOCoinLimitOrderEntry{
+			CreatorPKID:                utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
+			DenominatedCoinType:        metadata.DenominatedCoinType,
+			DenominatedCoinCreatorPKID: metadata.DenominatedCoinCreatorPKID,
+			DAOCoinCreatorPKID:         metadata.DAOCoinCreatorPKID,
+			OperationType:              metadata.OperationType,
+			PriceNanos:                 metadata.PriceNanos,
+			BlockHeight:                bc.blockTip().Height + 1,
+			Quantity:                   metadata.Quantity,
+		}
+		var lastSeenOrder *DAOCoinLimitOrderEntry
+		desoNanosToConsumeMap := make(map[PKID]uint64)
+		for requestedOrder.Quantity.GtUint64(0) {
+			var matchingOrderEntries []*DAOCoinLimitOrderEntry
+			matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(
+					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting Bid orders to match: ")
+			}
+			if len(matchingOrderEntries) == 0 {
+				break
+			}
+			for _, order := range matchingOrderEntries {
+				var desoBalanceNanos uint64
+				//var desoToConsume uint64
+				desoBalanceNanos, err = utxoView.GetDeSoBalanceNanosForPublicKey(
+					utxoView.GetPublicKeyForPKID(order.CreatorPKID))
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(
+						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
+				}
+				// TODO: check overflow
+				if desoBalanceNanos >= order.Quantity.Uint64()*order.PriceNanos.Uint64() {
+					var desoNanosUint256ToConsume *uint256.Int
+					if requestedOrder.Quantity.Lt(&order.Quantity) {
+						desoNanosUint256ToConsume = uint256.NewInt().Mul(&requestedOrder.Quantity, &order.PriceNanos)
+						requestedOrder.Quantity = *uint256.NewInt()
+						//desoToConsume = requestedOrder.Quantity.Uint64() * order.PriceNanos.Uint64()
+					} else {
+						desoNanosUint256ToConsume = uint256.NewInt().Mul(&order.Quantity, &order.PriceNanos)
+						requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+						//desoToConsume = order.Quantity.Uint64() * order.PriceNanos.Uint64()
+					}
+					if !desoNanosUint256ToConsume.IsUint64() {
+						return nil, 0, 0, 0, fmt.Errorf(
+							"Blockchain.CreateDAOCoinLimitOrderTxn: fulfilling order exceeds uint64")
+					}
+					if _, exists := desoNanosToConsumeMap[*order.CreatorPKID]; !exists {
+						desoNanosToConsumeMap[*order.CreatorPKID] = 0
+					}
+					// TODO: check for overflow
+					desoNanosToConsumeMap[*order.CreatorPKID] += desoNanosUint256ToConsume.Uint64()
+				}
+				lastSeenOrder = order
+			}
+		}
+		metadata.MatchingBidsInputsMap = make(map[PKID][]*DeSoInput)
+		for pkid, desoNanosToConsume := range desoNanosToConsumeMap {
+			var inputs []*DeSoInput
+			inputs, err = bc.GetInputsToCoverAmount(utxoView.GetPublicKeyForPKID(&pkid), utxoView, desoNanosToConsume)
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(err,
+					"Blockchain.CreateDAOCoinLimitOrderTxn: Error getting inputs to cover amount: ")
+			}
+			metadata.MatchingBidsInputsMap[pkid] = inputs
+		}
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, _, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"CreateDAOCoinLimitOrderTxn: Problem adding inputs: ")
+	}
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateDAOCoinLimitOrderTxn: DAOCoinLimitOrder txn must have at least one input" +
+				" but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
 }
 
 func (bc *Blockchain) CreateCreateNFTTxn(
@@ -4036,22 +4151,31 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		}
 	}
 
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	getUtxoView := func() (*UtxoView, error) {
+		if mempool != nil {
+			utxoView, err := mempool.GetAugmentedUniversalView()
+			if err != nil {
+				return nil, errors.Wrapf(err,
+					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
+			}
+			return utxoView, nil
+		} else {
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+			if err != nil {
+				return nil, errors.Wrapf(err, "_computeInputsForTxn: Problem creating new utxo view: ")
+			}
+			return utxoView, nil
+		}
+	}
+
 	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
 	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
 		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
-		// Create a new UtxoView. If we have access to a mempool object, use it to
-		// get an augmented view that factors in pending transactions.
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+		utxoView, err := getUtxoView()
 		if err != nil {
-			return 0, 0, 0, 0, errors.Wrapf(err,
-				"_computeInputsForTxn: Problem creating new utxo view: ")
-		}
-		if mempool != nil {
-			utxoView, err = mempool.GetAugmentedUniversalView()
-			if err != nil {
-				return 0, 0, 0, 0, errors.Wrapf(err,
-					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
-			}
+			return 0, 0, 0, 0, err
 		}
 
 		nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
@@ -4064,6 +4188,69 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= txMeta.BidAmountNanos {
 			spendAmount += txMeta.BidAmountNanos
+		}
+	}
+
+	if txArg.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		txMeta := txArg.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+		utxoView, err := getUtxoView()
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+
+		if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
+			txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			// In this case, we need to add inputs from the transactor
+			// to cover all the ask orders that will match in the connect logic.
+
+			// Construct requested order
+			requestedOrder := &DAOCoinLimitOrderEntry{
+				CreatorPKID:                utxoView.GetPKIDForPublicKey(txArg.PublicKey).PKID,
+				DenominatedCoinType:        txMeta.DenominatedCoinType,
+				DenominatedCoinCreatorPKID: txMeta.DenominatedCoinCreatorPKID,
+				DAOCoinCreatorPKID:         txMeta.DAOCoinCreatorPKID,
+				OperationType:              txMeta.OperationType,
+				PriceNanos:                 txMeta.PriceNanos,
+				BlockHeight:                bc.blockTip().Height + 1,
+				Quantity:                   txMeta.Quantity,
+			}
+			var lastSeenOrder *DAOCoinLimitOrderEntry
+
+			nanosToFulfillOrders := uint256.NewInt()
+			for requestedOrder.Quantity.GtUint64(0) {
+				var matchingOrderEntries []*DAOCoinLimitOrderEntry
+				matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
+				if err != nil {
+					return 0, 0, 0, 0, errors.Wrapf(
+						err, "AddInputsAndChangeToTransaction")
+				}
+				if len(matchingOrderEntries) == 0 {
+					break
+				}
+				for _, order := range matchingOrderEntries {
+					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
+						order.CreatorPKID, order.DAOCoinCreatorPKID, true)
+					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(&order.Quantity) {
+						var nanosToFulfillOrder *uint256.Int
+						if requestedOrder.Quantity.Lt(&order.Quantity) {
+							nanosToFulfillOrder = uint256.NewInt().Mul(&requestedOrder.Quantity, &order.PriceNanos)
+							requestedOrder.Quantity = *uint256.NewInt()
+						} else {
+							nanosToFulfillOrder = uint256.NewInt().Mul(&order.Quantity, &order.PriceNanos)
+							requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+						}
+						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)
+					}
+					lastSeenOrder = order
+				}
+			}
+			if !nanosToFulfillOrders.IsUint64() {
+				return 0, 0, 0, 0, fmt.Errorf(
+					"AddInputsAndChangeToTransaction: fulfilling order exceeds uint64")
+			}
+			// Increment spendAmount by amount transactor will spend fulfilling orders
+			spendAmount += nanosToFulfillOrders.Uint64()
 		}
 	}
 
