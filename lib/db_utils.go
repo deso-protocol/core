@@ -3123,7 +3123,11 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 }
 
 func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
-	if snap != nil {
+	// We check if we're already inside of a call to PrepareAncestralRecordsFlush(). If
+	// we are, then the outer call to prepare will handle things for us. Note that making
+	// nested calls to Prepare should never happen, and will result in a panic.
+	requiresSnapshotFlush := snap != nil && snap.isPrepareCallRequired()
+	if requiresSnapshotFlush {
 		snap.PrepareAncestralRecordsFlush()
 		glog.Infof("ProcessBlock: Preparing snapshot flush")
 	}
@@ -3178,7 +3182,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 		}
 	}
 
-	if snap != nil {
+	if requiresSnapshotFlush {
 		glog.Infof("ProcessBlock: Snapshot flushing")
 		snap.StartAncestralRecordsFlush()
 	}

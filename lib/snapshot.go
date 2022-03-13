@@ -678,6 +678,14 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 func (snap *Snapshot) PrepareAncestralRecordsFlush() {
 	// Signal that the main db update has started by incrementing the main semaphore.
 	snap.SemaphoreLock.Lock()
+	// If the value of MainDBSemaphore is odd, then it means we're nesting calls to
+	// PrepareAncestralRecordsFlush()
+	if snap.MainDBSemaphore%2 != 0 {
+		glog.Fatalf("Nested calls to PrepareAncestralRecordsFlush() " +
+			"detected. Make sure you call StartAncestralRecordsFlush before " +
+			"calling PrepareAncestralRecordsFlush() again")
+	}
+
 	snap.MainDBSemaphore += 1
 	snap.SemaphoreLock.Unlock()
 
@@ -787,6 +795,21 @@ func (snap *Snapshot) isState(key []byte) bool {
 	} else {
 		return (isStateKey(key) || isTxIndexKey(key)) && !snap.brokenSnapshot
 	}
+}
+
+// This function is used to detect and prevent instances where we might nest calls
+// to PrepareAncestralRecords, which should never happen.
+func (snap *Snapshot) isPrepareCallRequired() bool {
+	// If mainDBSemaphore is odd, that means we're in between a call to
+	// PrepareAncestralRecords and StartAncestralRecordsFlush.
+	snap.SemaphoreLock.Lock()
+	mainDBSemaphore := snap.MainDBSemaphore
+	snap.SemaphoreLock.Unlock()
+
+	if mainDBSemaphore%2 == 0 {
+		return true
+	}
+	return false
 }
 
 // isFlushing checks whether a main DB flush or ancestral record flush is taking place.
