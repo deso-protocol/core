@@ -328,14 +328,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			bav._setDAOCoinBalanceEntryMappings(matchingBalanceEntry)
 		}
 
-		if requestedOrder.Quantity.IsZero() {
-			// If order is fulfilled, done.
-			break
-		} else {
-			// Else, seek new batch.
+		// If requested order is still not fully fulfilled, loop.
+		if requestedOrder.Quantity.GtUint64(0) {
 			lastSeenOrder = prevMatchingOrders[len(prevMatchingOrders)-1]
 			prevMatchingOrders, _ = bav._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 		}
+
+		// Else order is fulfilled, done.
+		break
 	}
 
 	// If requested order is still not fully fulfilled, submit it to be stored.
