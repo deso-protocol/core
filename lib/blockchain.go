@@ -3198,7 +3198,6 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			}
 			for _, order := range matchingOrderEntries {
 				var desoBalanceNanos uint64
-				//var desoToConsume uint64
 				desoBalanceNanos, err = utxoView.GetDeSoBalanceNanosForPublicKey(
 					utxoView.GetPublicKeyForPKID(order.TransactorPKID))
 				if err != nil {
@@ -3212,11 +3211,9 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					if requestedOrder.Quantity.Lt(&order.Quantity) {
 						desoNanosBigFloatToConsume = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(requestedOrder.Quantity.ToBig()))
 						requestedOrder.Quantity = *uint256.NewInt()
-						//desoToConsume = requestedOrder.Quantity.Uint64() * order.PriceNanos.Uint64()
 					} else {
 						desoNanosBigFloatToConsume = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
 						requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
-						//desoToConsume = order.Quantity.Uint64() * order.PriceNanos.Uint64()
 					}
 					if !IsUint64(desoNanosBigFloatToConsume) {
 						return nil, 0, 0, 0, fmt.Errorf(
