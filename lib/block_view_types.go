@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"io"
 	"math"
+	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -1439,12 +1440,12 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 // -----------------------------------
 
 type DAOCoinLimitOrderEntry struct {
-	CreatorPKID                *PKID
+	TransactorPKID             *PKID
 	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
 	DenominatedCoinCreatorPKID *PKID
 	DAOCoinCreatorPKID         *PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
-	PriceNanos                 uint256.Int
+	PriceNanos                 big.Float
 	BlockHeight                uint32
 	Quantity                   uint256.Int
 
@@ -1466,12 +1467,19 @@ const (
 )
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
-	data := append([]byte{}, order.CreatorPKID[:]...)
+	data := append([]byte{}, order.TransactorPKID[:]...)
 	data = append(data, UintToBuf(uint64(order.DenominatedCoinType))...)
 	data = append(data, order.DenominatedCoinCreatorPKID[:]...)
 	data = append(data, order.DAOCoinCreatorPKID[:]...)
 	data = append(data, UintToBuf(uint64(order.OperationType))...)
-	data = append(data, order.PriceNanos.Bytes()...)
+
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := EncodeBigFloat(&order.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+	data = append(data, priceNanosBytes...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	data = append(data, order.Quantity.Bytes()...)
 	return data, nil
@@ -1486,8 +1494,8 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	var err error
-	// Parse CreatorPKID
-	ret.CreatorPKID, err = ReadPKID(rr)
+	// Parse TransactorPKID
+	ret.TransactorPKID, err = ReadPKID(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading CreatorPKID: %v", err)
 	}
@@ -1516,10 +1524,12 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	}
 	ret.OperationType = DAOCoinLimitOrderEntryOrderType(operationType)
 	// Parse PriceNanos
-	ret.PriceNanos, err = ReadUint256(rr)
+	var priceNanos *big.Float
+	priceNanos, err = ReadBigFloat(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading PriceNanos: %v", err)
 	}
+	ret.PriceNanos = *priceNanos
 	// Parse BlockHeight
 	var blockHeight uint64
 	blockHeight, err = ReadUvarint(rr)
@@ -1527,7 +1537,7 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading BlockHeight: %v", err)
 	}
 	if blockHeight > uint64(math.MaxUint32) {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Invalid block height %d: Greater than max uint32")
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Invalid block height %d: Greater than max uint32", blockHeight)
 	}
 	ret.BlockHeight = uint32(blockHeight)
 	// Parse Quantity
@@ -1542,7 +1552,7 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 
 func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	newOrder := &DAOCoinLimitOrderEntry{}
-	newOrder.CreatorPKID = order.CreatorPKID.NewPKID()
+	newOrder.TransactorPKID = order.TransactorPKID.NewPKID()
 	newOrder.DenominatedCoinType = order.DenominatedCoinType
 	newOrder.DenominatedCoinCreatorPKID = order.DenominatedCoinCreatorPKID.NewPKID()
 	newOrder.DAOCoinCreatorPKID = order.DAOCoinCreatorPKID.NewPKID()
@@ -1554,51 +1564,65 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
-	if !order.PriceNanos.Eq(&other.PriceNanos) {
-		return order.PriceNanos.Lt(&other.PriceNanos)
+	if order.PriceNanos.Cmp(&other.PriceNanos) != 0 {
+		// order.PriceNanos < other.PriceNanos
+		return order.PriceNanos.Cmp(&other.PriceNanos) < 0
 	}
 
 	return order.IsBetterOrderThan(other)
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterBidThan(other *DAOCoinLimitOrderEntry) bool {
-	if !order.PriceNanos.Eq(&other.PriceNanos) {
-		return order.PriceNanos.Gt(&other.PriceNanos)
+	if order.PriceNanos.Cmp(&other.PriceNanos) != 0 {
+		// order.PriceNanos > other.PriceNanos
+		return order.PriceNanos.Cmp(&other.PriceNanos) > 0
 	}
 
 	return order.IsBetterOrderThan(other)
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderEntry) bool {
+	// FIFO, prefer older orders first, i.e. lower block height.
 	if order.BlockHeight != other.BlockHeight {
 		return order.BlockHeight < other.BlockHeight
 	}
 
+	// Prefer lower-quantity orders first.
 	if order.Quantity.Eq(&other.Quantity) {
 		return order.Quantity.Lt(&other.Quantity)
 	}
 
-	return bytes.Compare(order.CreatorPKID[:], other.CreatorPKID[:]) < 0
+	// To break a tie and guarantee idempotency in sorting, prefer lower TransactorPKIDs.
+	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
 }
 
+// TODO: fix big.Float as map key
 type DAOCoinLimitOrderMapKey struct {
-	CreatorPKID                PKID
+	TransactorPKID             PKID
 	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
 	DenominatedCoinCreatorPKID PKID
 	DAOCoinCreatorPKID         PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
-	PriceNanos                 uint256.Int
+	PriceNanos                 string // Can't use big.Float as key type.
 	BlockHeight                uint32
 }
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	key := DAOCoinLimitOrderMapKey{}
-	key.CreatorPKID = *order.CreatorPKID.NewPKID()
+	key.TransactorPKID = *order.TransactorPKID.NewPKID()
 	key.DenominatedCoinType = order.DenominatedCoinType
 	key.DenominatedCoinCreatorPKID = *order.DenominatedCoinCreatorPKID.NewPKID()
 	key.DAOCoinCreatorPKID = *order.DAOCoinCreatorPKID.NewPKID()
 	key.OperationType = order.OperationType
-	key.PriceNanos = order.PriceNanos
+
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := ToBytes(&order.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	key.PriceNanos = string(priceNanosBytes)
 	key.BlockHeight = order.BlockHeight
 	return key
 }

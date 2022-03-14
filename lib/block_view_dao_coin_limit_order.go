@@ -37,37 +37,146 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// public key so there is no need to verify anything further.
 	}
 
+	// ----- Begin custom validations
+
+	// Validate TransactorPKID exists.
+	transactorPKID := bav.GetPKIDForPublicKey(txn.PublicKey).PKID
+
+	if transactorPKID == nil {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTransactorPKID
+	}
+
+	// Validate DenominatedCoinType is one of our supported enum values and is always $DESO for now.
+	switch txMeta.DenominatedCoinType {
+	case DAOCoinLimitOrderEntryDenominatedCoinTypeDESO:
+		break
+	case DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin:
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+	default:
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+	}
+
+	// If denominated in $DESO, validate DenominatedCoinCreatorPKID is all zeroes.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
+		if !reflect.DeepEqual(ZeroPKID, *txMeta.DenominatedCoinCreatorPKID) {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
+		}
+	}
+
+	// If denominated in a DAO coin, validate DenominatedCoinCreatorPKID exists and has a profile.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+		profileEntry := bav.GetProfileEntryForPKID(txMeta.DenominatedCoinCreatorPKID)
+
+		if profileEntry == nil || profileEntry.isDeleted {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID
+		}
+	}
+
+	// Validate DAOCoinCreatorPKID exists and has a profile.
+	profileEntry := bav.GetProfileEntryForPKID(txMeta.DAOCoinCreatorPKID)
+
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
+	}
+
+	// Validate OperationType is one of our supported enum values.
+	switch txMeta.OperationType {
+	case DAOCoinLimitOrderEntryOrderTypeAsk:
+		break
+	case DAOCoinLimitOrderEntryOrderTypeBid:
+		break
+	default:
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
+	}
+
+	// Validate price > 0.
+	if txMeta.PriceNanos.Cmp(NewFloat()) > 0 {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
+	}
+
+	// If denominated in $DESO, confirm PriceNanos is uint64.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO && !IsUint64(&txMeta.PriceNanos) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
+	}
+
+	// If denominated in DAO coins, confirm PriceNanos is uint256.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin && !IsUint256(&txMeta.PriceNanos) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
+	}
+
+	// Validate quantity > 0.
+	if !txMeta.Quantity.Gt(uint256.NewInt()) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
+	}
+
+	// Order total cost = price x quantity.
+	// Price is a big Float. Quantity is an uint256.
+	// Cast Quantity to big Float so can multiply.
+	orderTotalCost := NewFloat().Mul(&txMeta.PriceNanos, NewFloat().SetInt(txMeta.Quantity.ToBig()))
+
+	// If $DESO buy, validate that order total cost is less than the max uint64.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
+		if !IsUint64(orderTotalCost) {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
+		}
+	}
+
+	// If DAO coin buy, validate that order total cost is less than the max uint256.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+		if !IsUint256(orderTotalCost) {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
+		}
+	}
+
+	// Validate transfer restriction status, if DAO coin can only be transferred to whitelisted members.
 	// TODO
 
-	// ----- Begin validations
-	// Create rule errors for each of these validations below
-	// lib/errors.go
+	// If ask order, validate that the seller has enough of the DAO coin they're trying to sell.
+	if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+		balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(transactorPKID, txMeta.DAOCoinCreatorPKID, true)
 
-	// Validate CreatorPKID exists
-	// Validate DenominatedCoinType is one of our supported enum values and is DESO for now
-	// Validate DenominatedCoinCreatorPKID exists and has a profile or is all zeroes if $DESO
-	// Validate DAOCoinCreatorPKID exists and has a profile
-	// Validate OperationType is one of our supported enum values
-	// Validate PriceNanos > 0
-	//   If denominated in DESO, confirm PriceNanos is uint64
-	//   PriceNanos == uint256.ToUint64(PriceNanos).ToUint256()
-	// Validate Quantity > 0
-	// If DESO buy, validate quantity < max uint64, order.Quantity.IsUint64()
-	// If DESO buy, validate price * quantity < max uint64
-	// If DAO coin buy, validate price * quantity < max uint256
+		// User is trying to open an ask order but doesn't have any of the promised DAO coins.
+		if balanceEntry == nil || balanceEntry.isDeleted {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder
+		}
 
-	// Validate transfer restriction status, if Dao coin can only be transferred to whitelisted members
+		// User is trying to open an ask order but doesn't have enough of the promised DAO coins.
+		if balanceEntry.BalanceNanos.Lt(&txMeta.Quantity) {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder
+		}
+	}
 
-	// Validate that buyer has enough $ to buy the DAO coin
-	// Validate that the seller has the DAO coin they're selling
+	// Validate if bid order, that buyer has enough $ to buy the DAO coin.
+	if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+		if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
+			desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(transactorPKID))
 
-	// Validate that txn specifies inputs to cover $DESO spent on DAO coins
+			if err != nil {
+				return 0, 0, nil, err
+			}
 
-	// ------ End validations
+			// User is trying to open a bid order but doesn't have enough $DESO.
+			orderTotalCostUint64, _ := orderTotalCost.Uint64()
+
+			if desoBalanceNanos < orderTotalCostUint64 {
+				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
+			}
+		} else if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+			// We currently don't support DAO coins as the denominated type.
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+		} else {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+		}
+	}
+
+	// Validate that txn specifies inputs to cover $DESO spent on DAO coins.
+	// TODO
+
+	// ------ End custom validations
 
 	// Create entry from txn metadata.
 	requestedOrder := &DAOCoinLimitOrderEntry{
-		CreatorPKID:                bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
+		TransactorPKID:             transactorPKID,
 		DenominatedCoinType:        txMeta.DenominatedCoinType,
 		DenominatedCoinCreatorPKID: txMeta.DenominatedCoinCreatorPKID,
 		DAOCoinCreatorPKID:         txMeta.DAOCoinCreatorPKID,
@@ -103,7 +212,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	for _, order := range matchingOrders {
 		// Validate that the seller has the DAO coin they're selling.
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.CreatorPKID, order.DAOCoinCreatorPKID, true)
+			balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
 
 			// Seller with open ask order doesn't have any of the promised DAO coins.
 			// Don't include and mark their order for deletion.
@@ -124,22 +233,31 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// Validate that the buyer has enough $ to buy the DAO coin.
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 			if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-				desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.CreatorPKID))
+				desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
 
 				if err != nil {
 					return 0, 0, nil, err
 				}
 
+				// Validate that order total cost is an uint64.
+				if !IsUint64(orderTotalCost) {
+					// TODO: replace with Rule Error Invalid Price or Quantity
+					panic("Invalid order total cost")
+				}
+
 				// Buyer with open bid order doesn't have enough $DESO.
 				// Don't include and mark their order for deletion.
-				if desoBalanceNanos < (order.PriceNanos.Uint64() * order.Quantity.Uint64()) {
+				orderTotalCostUint64, _ := orderTotalCost.Uint64()
+
+				if desoBalanceNanos < orderTotalCostUint64 {
 					bav._deleteDAOCoinLimitOrderEntryMappings(order)
 					continue
 				}
 			} else if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-				panic("DAO coin denominated limit orders not implemented")
+				// We currently don't support DAO coins as the denominated type.
+				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
 			} else {
-				return 0, 0, nil, fmt.Errorf("Invalid denominated coin type")
+				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
 			}
 		}
 
@@ -162,12 +280,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 
 		// Find or create balance entries.
-		requesterBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.CreatorPKID, requestedOrder.DAOCoinCreatorPKID, true)
-		matchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.CreatorPKID, order.DAOCoinCreatorPKID, true)
+		requesterBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.TransactorPKID, requestedOrder.DAOCoinCreatorPKID, true)
+		matchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
 
 		if requesterBalanceEntry == nil || requesterBalanceEntry.isDeleted {
 			requesterBalanceEntry = &BalanceEntry{
-				HODLerPKID:   requestedOrder.CreatorPKID,
+				HODLerPKID:   requestedOrder.TransactorPKID,
 				CreatorPKID:  requestedOrder.DenominatedCoinCreatorPKID,
 				BalanceNanos: *uint256.NewInt(),
 			}
@@ -175,7 +293,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 		if matchingBalanceEntry == nil || matchingBalanceEntry.isDeleted {
 			matchingBalanceEntry = &BalanceEntry{
-				HODLerPKID:   order.CreatorPKID,
+				HODLerPKID:   order.TransactorPKID,
 				CreatorPKID:  order.DenominatedCoinCreatorPKID,
 				BalanceNanos: *uint256.NewInt(),
 			}
@@ -231,16 +349,25 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			lastSeenKey = DBKeyForDAOCoinLimitOrder(lastSeenOrder, false)
 		}
 
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			err := bav.Handle.View(func(txn *badger.Txn) error {
-				var err error
-				orders, err = DBGetLowestDAOCoinAskOrders(txn, requestedOrder, lastSeenKey)
-				return err
-			})
+		var dbFunc func(*badger.Txn, *DAOCoinLimitOrderEntry, []byte) ([]*DAOCoinLimitOrderEntry, error)
 
-			if err != nil {
-				return nil, err
-			}
+		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			dbFunc = DBGetHighestDAOCoinBidOrders
+		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			dbFunc = DBGetLowestDAOCoinAskOrders
+		} else {
+			// TODO: switch to RuleErrorDAOCoinLimitOrderUnsupportedOperationType
+			return nil, fmt.Errorf("Invalid operation type")
+		}
+
+		err := bav.Handle.View(func(txn *badger.Txn) error {
+			var err error
+			orders, err = dbFunc(txn, requestedOrder, lastSeenKey)
+			return err
+		})
+
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -253,10 +380,10 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 	}
 
-	// Sort orders by best matching.
-	// Sort logic first looks at price, then block height (FIFO), then quantity (lowest first).
+	// Aggregate all applicable orders then sort.
 	sortedOrders := []*DAOCoinLimitOrderEntry{}
 
+	// 1. Aggregate orders.
 	for _, order := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
 		if order.isDeleted {
 			continue
@@ -270,13 +397,15 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			continue
 		}
 
+		// Ask: reject if requestedOrder.PriceNanos > order.PriceNanos
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk &&
-			requestedOrder.PriceNanos.Gt(&order.PriceNanos) {
+			requestedOrder.PriceNanos.Cmp(&order.PriceNanos) > 0 {
 			continue
 		}
 
+		// Bid: reject if requestedOrder.PriceNanos < order.PriceNanos
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid &&
-			requestedOrder.PriceNanos.Lt(&order.PriceNanos) {
+			requestedOrder.PriceNanos.Cmp(&order.PriceNanos) < 0 {
 			continue
 		}
 
@@ -291,6 +420,8 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		sortedOrders = append(sortedOrders, order)
 	}
 
+	// 2. Sort orders by best matching.
+	// Sort logic first looks at price, then block height (FIFO), then quantity (lowest first).
 	sort.Slice(sortedOrders, func(ii, jj int) bool {
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
 			// If requested order is an ask, we want to sort by the best bids.
@@ -298,7 +429,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			// If requested order is an bid, we want to sort by the best asks.
+			// If requested order is a bid, we want to sort by the best asks.
 			return sortedOrders[ii].IsBetterAskThan(sortedOrders[jj])
 		}
 
@@ -340,6 +471,12 @@ func (bav *UtxoView) _setDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrder
 }
 
 func (bav *UtxoView) _deleteDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrderEntry) {
+	// This function shouldn't be called with nil.
+	if entry == nil {
+		glog.Errorf("_deleteDAOCoinLimitOrderEntryMappings: Called with nil entry; this should never happen")
+		return
+	}
+
 	// Create a tombstone entry.
 	tombstoneEntry := *entry
 	tombstoneEntry.isDeleted = true

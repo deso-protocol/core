@@ -12,6 +12,7 @@ import (
 	"github.com/holiman/uint256"
 	"io"
 	"math"
+	"math/big"
 	"net"
 	"sort"
 	"time"
@@ -5495,7 +5496,7 @@ type DAOCoinLimitOrderMetadata struct {
 	DenominatedCoinCreatorPKID *PKID
 	DAOCoinCreatorPKID         *PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
-	PriceNanos                 uint256.Int
+	PriceNanos                 big.Float
 	Quantity                   uint256.Int
 	// This map is populated with the inputs consumed when a transaction
 	// is an ask offer and there are bids to match immediately.
@@ -5511,7 +5512,14 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, txnData.DenominatedCoinCreatorPKID.Encode()...)
 	data = append(data, txnData.DAOCoinCreatorPKID.Encode()...)
 	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
-	data = append(data, EncodeUint256(txnData.PriceNanos)...)
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := EncodeBigFloat(&txnData.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	data = append(data, priceNanosBytes...)
 	data = append(data, EncodeUint256(txnData.Quantity)...)
 	data = append(data, UintToBuf(uint64(len(txnData.MatchingBidsInputsMap)))...)
 	for bidderPKID, inputs := range txnData.MatchingBidsInputsMap {
@@ -5558,10 +5566,12 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 	ret.OperationType = DAOCoinLimitOrderEntryOrderType(operationType)
 	// Parse PriceNanos
-	ret.PriceNanos, err = ReadUint256(rr)
+	var priceNanos *big.Float
+	priceNanos, err = ReadBigFloat(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading Price nanos: %v", err)
 	}
+	ret.PriceNanos = *priceNanos
 	// Parse Quantity
 	ret.Quantity, err = ReadUint256(rr)
 	if err != nil {
