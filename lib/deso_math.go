@@ -82,10 +82,14 @@ func Add(a *big.Float, b *big.Float) *big.Float {
 }
 
 func IsUint64(a *big.Float) bool {
+	// It checks if it's less than the max value.
+	// It doesn't check if it's an integer.
 	return a.Cmp(NewFloat().SetUint64(math.MaxUint64)) <= 0
 }
 
 func IsUint256(a *big.Float) bool {
+	// It checks if it's less than the max value.
+	// It doesn't check if it's an integer.
 	return a.Cmp(NewFloat().SetInt(MaxUint256.ToBig())) <= 0
 }
 

@@ -70,7 +70,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Validate DAOCoinCreatorPKID exists and has a profile.
-	// TODO
+	profileEntry := bav.GetProfileEntryForPKID(txMeta.DAOCoinCreatorPKID)
+
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
+	}
 
 	// Validate OperationType is one of our supported enum values.
 	switch txMeta.OperationType {
@@ -93,15 +97,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// If denominated in DAO coins, confirm PriceNanos is uint256.
-	// TODO
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin && !IsUint256(&txMeta.PriceNanos) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
+	}
 
 	// Validate quantity > 0.
 	if !txMeta.Quantity.Gt(uint256.NewInt()) {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
-	}
-
-	// Validate quantity is uint64.
-	if !txMeta.Quantity.IsUint64() {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
