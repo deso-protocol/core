@@ -130,16 +130,30 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					return 0, 0, nil, err
 				}
 
+				// Order total cost = price x quantity.
+				// Price is a big Float. Quantity is an uint256.
+				// Cast Quantity to big Float so can multiply.
+				orderTotalCost := NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
+
+				// Validate that order total cost is an uint64.
+				if !IsUint64(orderTotalCost) {
+					// TODO: replace with Rule Error Invalid Price or Quantity
+					panic("Invalid order total cost")
+				}
+
 				// Buyer with open bid order doesn't have enough $DESO.
 				// Don't include and mark their order for deletion.
-				// TODO: convert to big.Float math
-				if desoBalanceNanos < (order.PriceNanos.Uint64() * order.Quantity.Uint64()) {
+				orderTotalCostUint64, _ := orderTotalCost.Uint64()
+
+				if desoBalanceNanos < orderTotalCostUint64 {
 					bav._deleteDAOCoinLimitOrderEntryMappings(order)
 					continue
 				}
 			} else if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+				// TODO: replace with Rule Error Invalid Denominated Coin Type
 				panic("DAO coin denominated limit orders not implemented")
 			} else {
+				// TODO: replace with Rule Error Invalid Denominated Coin Type
 				return 0, 0, nil, fmt.Errorf("Invalid denominated coin type")
 			}
 		}

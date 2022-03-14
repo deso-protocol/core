@@ -1471,7 +1471,15 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data = append(data, order.DenominatedCoinCreatorPKID[:]...)
 	data = append(data, order.DAOCoinCreatorPKID[:]...)
 	data = append(data, _EncodeUint32(uint32(order.OperationType))...)
-	data = append(data, ToBytes(&order.PriceNanos)...)
+
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := ToBytes(&order.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	data = append(data, priceNanosBytes...)
 	data = append(data, _EncodeUint32(order.BlockHeight)...)
 	data = append(data, order.Quantity.Bytes()...)
 	return data, nil
@@ -1548,7 +1556,7 @@ type DAOCoinLimitOrderMapKey struct {
 	DenominatedCoinCreatorPKID PKID
 	DAOCoinCreatorPKID         PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
-	PriceNanos                 big.Float
+	PriceNanos                 string // Can't use big.Float as key type.
 	BlockHeight                uint32
 }
 
@@ -1559,7 +1567,15 @@ func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	key.DenominatedCoinCreatorPKID = *order.DenominatedCoinCreatorPKID.NewPKID()
 	key.DAOCoinCreatorPKID = *order.DAOCoinCreatorPKID.NewPKID()
 	key.OperationType = order.OperationType
-	key.PriceNanos = order.PriceNanos
+
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := ToBytes(&order.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	key.PriceNanos = string(priceNanosBytes)
 	key.BlockHeight = order.BlockHeight
 	return key
 }

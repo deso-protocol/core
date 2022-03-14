@@ -3,6 +3,7 @@ package lib
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"math"
 	"math/big"
 )
 
@@ -80,9 +81,21 @@ func Add(a *big.Float, b *big.Float) *big.Float {
 	return NewFloat().Add(a, b)
 }
 
-func ToBytes(a *big.Float) []byte {
-	// TODO
-	return nil
+func IsUint64(a *big.Float) bool {
+	return a.Cmp(NewFloat().SetUint64(math.MaxUint64)) <= 0
+}
+
+func ToBytes(a *big.Float) ([]byte, error) {
+	// Only the Float value is marshaled (in full precision), other
+	// attributes such as precision or accuracy are ignored.
+	return a.MarshalText()
+}
+
+func FromBytes(inputBytes []byte) (*big.Float, error) {
+	outputFloat := NewFloat()
+	// The result is rounded per the precision and rounding mode of outputFloat.
+	err := outputFloat.UnmarshalText(inputBytes)
+	return outputFloat, err
 }
 
 var (

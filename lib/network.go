@@ -5509,7 +5509,15 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, txnData.DenominatedCoinCreatorPKID[:]...)
 	data = append(data, txnData.DAOCoinCreatorPKID[:]...)
 	data = append(data, _EncodeUint32(uint32(txnData.OperationType))...)
-	data = append(data, ToBytes(&txnData.PriceNanos)...)
+
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := ToBytes(&txnData.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	data = append(data, priceNanosBytes...)
 	data = append(data, txnData.Quantity.Bytes()...)
 	return data, nil
 }
