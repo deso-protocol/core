@@ -44,10 +44,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	transactorPKID := bav.GetPKIDForPublicKey(txn.PublicKey).PKID
 
 	if transactorPKID == nil {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderMissingTransactorPKID
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTransactorPKID
 	}
 
-	// Validate DenominatedCoinType is one of our supported enum values and is DESO for now.
+	// Validate DenominatedCoinType is one of our supported enum values and is always $DESO for now.
 	switch txMeta.DenominatedCoinType {
 	case DAOCoinLimitOrderEntryDenominatedCoinTypeDESO:
 		break
@@ -57,7 +57,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
 	}
 
-	// Validate DenominatedCoinCreatorPKID exists and has a profile or is all zeroes if $DESO.
+	// If denominated in $DESO, validate DenominatedCoinCreatorPKID is all zeroes.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
+		if !reflect.DeepEqual(ZeroPKID, txMeta.DenominatedCoinCreatorPKID) {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
+		}
+	}
+
+	// If denominated in a DAO coin, validate DenominatedCoinCreatorPKID exists and has a profile.
 	// TODO
 
 	// Validate DAOCoinCreatorPKID exists and has a profile.
@@ -78,7 +85,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
-	// If denominated in DESO, confirm PriceNanos is uint64.
+	// If denominated in $DESO, confirm PriceNanos is uint64.
 	if !txMeta.PriceNanos.IsUint64() {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
@@ -96,7 +103,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
-	// If DESO buy, validate price * quantity < max uint64.
+	// If $DESO buy, validate price * quantity < max uint64.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
 		if txMeta.PriceNanos.Uint64()*txMeta.Quantity.Uint64() >= math.MaxUint64 {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
@@ -338,10 +345,10 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 	}
 
-	// Sort orders by best matching.
-	// Sort logic first looks at price, then block height (FIFO), then quantity (lowest first).
+	// Aggregate all applicable orders then sort.
 	sortedOrders := []*DAOCoinLimitOrderEntry{}
 
+	// 1. Aggregate orders.
 	for _, order := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
 		if order.isDeleted {
 			continue
@@ -376,6 +383,8 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		sortedOrders = append(sortedOrders, order)
 	}
 
+	// 2. Sort orders by best matching.
+	// Sort logic first looks at price, then block height (FIFO), then quantity (lowest first).
 	sort.Slice(sortedOrders, func(ii, jj int) bool {
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
 			// If requested order is an ask, we want to sort by the best bids.
@@ -425,6 +434,12 @@ func (bav *UtxoView) _setDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrder
 }
 
 func (bav *UtxoView) _deleteDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrderEntry) {
+	// This function shouldn't be called with nil.
+	if entry == nil {
+		glog.Errorf("_deleteDAOCoinLimitOrderEntryMappings: Called with nil entry; this should never happen")
+		return
+	}
+
 	// Create a tombstone entry.
 	tombstoneEntry := *entry
 	tombstoneEntry.isDeleted = true

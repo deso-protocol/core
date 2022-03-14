@@ -246,8 +246,9 @@ const (
 	RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus           RuleError = "RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus"
 
 	// DAO Coin Limit Orders
-	RuleErrorDAOCoinLimitOrderMissingTransactorPKID              RuleError = "RuleErrorMissingTransactorPKID"
+	RuleErrorDAOCoinLimitOrderInvalidTransactorPKID              RuleError = "RuleErrorMissingTransactorPKID"
 	RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType     RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType"
+	RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID          RuleError = "RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID"
 	RuleErrorDAOCoinLimitOrderUnsupportedOperationType           RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedOperationType"
 	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder"
 	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder     RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder"
