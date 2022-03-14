@@ -154,6 +154,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Derived Key entries
 	bav.DerivedKeyToDerivedEntry = make(map[DerivedKeyMapKey]*DerivedKeyEntry)
+
+	// DAO Coin Limit Order Entries
+	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -341,6 +344,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.DerivedKeyToDerivedEntry[entryKey] = &newEntry
 	}
 
+	// Copy the DAO Coin Limit Order Entries
+	newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry,
+		len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
+	for entryKey, entry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		newEntry := *entry
+		newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[entryKey] = &newEntry
+	}
 	return newView, nil
 }
 

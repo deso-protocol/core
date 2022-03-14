@@ -59,8 +59,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
 		DenominatedCoinCreatorPKID: &ZeroPKID,
 		DAOCoinCreatorPKID:         m0PKID.PKID,
-		OperationType:              DAOCoinLimitOrderEntryOrderTypeAsk,
-		PriceNanos:                 *uint256.NewInt().SetUint64(10),
+		OperationType:              DAOCoinLimitOrderEntryOrderTypeBid,
+		PriceNanos:                 *NewFloat().SetUint64(10),
 		Quantity:                   *uint256.NewInt().SetUint64(100),
 	}
 
@@ -69,7 +69,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			t, chain, db, params, 10, m0Pub, m0Priv, metadata)
 
 		require.Error(err)
-		//require.Contains(err.Error(), RuleErrorDAOCoinOperationOnNonexistentProfile)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID)
 	}
 }
 

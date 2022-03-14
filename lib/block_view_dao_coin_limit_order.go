@@ -109,18 +109,21 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
-	orderTotalCost := NewFloat().Mul(&txMeta.PriceNanos, NewFloat().SetInt(txMeta.Quantity.ToBig()))
+	// Order total cost = price x quantity.
+	// Price is a big Float. Quantity is an uint256.
+	// Cast Quantity to big Float so can multiply.
+	requestedOrderTotalCost := NewFloat().Mul(&txMeta.PriceNanos, NewFloat().SetInt(txMeta.Quantity.ToBig()))
 
 	// If $DESO buy, validate that order total cost is less than the max uint64.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-		if !IsUint64(orderTotalCost) {
+		if !IsUint64(requestedOrderTotalCost) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 		}
 	}
 
 	// If DAO coin buy, validate that order total cost is less than the max uint256.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-		if !IsUint256(orderTotalCost) {
+		if !IsUint256(requestedOrderTotalCost) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 		}
 	}
@@ -153,9 +156,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// User is trying to open a bid order but doesn't have enough $DESO.
-			orderTotalCostUint64, _ := orderTotalCost.Uint64()
+			requestedOrderTotalCostUint64, _ := requestedOrderTotalCost.Uint64()
 
-			if desoBalanceNanos < orderTotalCostUint64 {
+			if desoBalanceNanos < requestedOrderTotalCostUint64 {
 				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 			}
 		} else if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
@@ -232,7 +235,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Validate that the buyer has enough $ to buy the DAO coin.
 			if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 				if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-					desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
+					var desoBalanceNanos uint64
+					desoBalanceNanos, err = bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
 
 					if err != nil {
 						return 0, 0, nil, err
@@ -339,9 +343,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		bav._setDAOCoinLimitOrderEntryMappings(requestedOrder)
 	}
 
-	// TODO: will have to charge extra for DAO coin transfer
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type: OperationTypeDAOCoinLimitOrder,
+		//TODO: populate with data we need for disconnect
+	})
 
-	return 0, 0, nil, nil
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _getNextLimitOrdersToFill(
