@@ -226,6 +226,18 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			lastSeenKey = DBKeyForDAOCoinLimitOrder(lastSeenOrder, false)
 		}
 
+		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			err := bav.Handle.View(func(txn *badger.Txn) error {
+				var err error
+				orders, err = DBGetHighestDAOCoinBidOrders(txn, requestedOrder, lastSeenKey)
+				return err
+			})
+
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 			err := bav.Handle.View(func(txn *badger.Txn) error {
 				var err error
@@ -293,7 +305,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			// If requested order is an bid, we want to sort by the best asks.
+			// If requested order is a bid, we want to sort by the best asks.
 			return sortedOrders[ii].IsBetterAskThan(sortedOrders[jj])
 		}
 
