@@ -1010,7 +1010,7 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn) 
 
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteDAOCoinLimitOrder(txn, orderEntry); err != nil {
+		if err := DBDeleteDAOCoinLimitOrderWithTxn(txn, orderEntry); err != nil {
 			return errors.Wrapf(
 				err, "_flushDAOCoinLimitOrderEntriesToDbWithTxn: problem deleting mappings")
 		}
@@ -1031,7 +1031,7 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn) 
 			numPut++
 			// If the OrderEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutDAOCoinLimitOrder(txn, orderEntry); err != nil {
+			if err := DBPutDAOCoinLimitOrderWithTxn(txn, orderEntry); err != nil {
 				return err
 			}
 		}
