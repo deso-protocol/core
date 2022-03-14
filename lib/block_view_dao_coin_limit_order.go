@@ -197,129 +197,141 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Seek matching orders
 	prevMatchingOrders, _ := bav._getNextLimitOrdersToFill(requestedOrder, nil)
 	matchingOrders := []*DAOCoinLimitOrderEntry{}
+	var lastSeenOrder *DAOCoinLimitOrderEntry
 
-	// Cache previous state of potential matching orders in case of revert.
-	for _, order := range prevMatchingOrders {
-		matchingOrders = append(matchingOrders, order.Copy())
-	}
-
-	// 1-by-1 match existing orders to the requested order.
-	prevMatchingBalanceEntries := []*BalanceEntry{}
-
-	for _, order := range matchingOrders {
-		// Validate that the seller has the DAO coin they're selling.
-		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
-
-			// Seller with open ask order doesn't have any of the promised DAO coins.
-			// Don't include and mark their order for deletion.
-			if balanceEntry == nil || balanceEntry.isDeleted {
-				bav._deleteDAOCoinLimitOrderEntryMappings(order)
-				continue
-			}
-
-			// Seller with open ask order doesn't have enough of the promised DAO coins.
-			// Don't include and mark their order for deletion.
-			// TODO: maybe we should partially fulfill the order? Maybe less error-prone to just close.
-			if balanceEntry.BalanceNanos.Lt(&order.Quantity) {
-				bav._deleteDAOCoinLimitOrderEntryMappings(order)
-				continue
-			}
+	for len(prevMatchingOrders) > 0 {
+		// Cache previous state of potential matching orders in case of revert.
+		for _, order := range prevMatchingOrders {
+			matchingOrders = append(matchingOrders, order.Copy())
 		}
 
-		// Validate that the buyer has enough $ to buy the DAO coin.
-		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-				desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
+		// 1-by-1 match existing orders to the requested order.
+		prevMatchingBalanceEntries := []*BalanceEntry{}
 
-				if err != nil {
-					return 0, 0, nil, err
-				}
+		for _, order := range matchingOrders {
+			// Validate that the seller has the DAO coin they're selling.
+			if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+				balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
 
-				// Order total cost = price x quantity.
-				// Price is a big Float. Quantity is an uint256.
-				// Cast Quantity to big Float so can multiply.
-				orderTotalCost := NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
-
-				// Validate that order total cost is an uint64.
-				if !IsUint64(orderTotalCost) {
-					// TODO: replace with Rule Error Invalid Price or Quantity
-					panic("Invalid order total cost")
-				}
-
-				// Buyer with open bid order doesn't have enough $DESO.
+				// Seller with open ask order doesn't have any of the promised DAO coins.
 				// Don't include and mark their order for deletion.
-				orderTotalCostUint64, _ := orderTotalCost.Uint64()
-
-				if desoBalanceNanos < orderTotalCostUint64 {
+				if balanceEntry == nil || balanceEntry.isDeleted {
 					bav._deleteDAOCoinLimitOrderEntryMappings(order)
 					continue
 				}
-			} else if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-				// We currently don't support DAO coins as the denominated type.
-				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
-			} else {
-				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+
+				// Seller with open ask order doesn't have enough of the promised DAO coins.
+				// Don't include and mark their order for deletion.
+				// TODO: maybe we should partially fulfill the order? Maybe less error-prone to just close.
+				if balanceEntry.BalanceNanos.Lt(&order.Quantity) {
+					bav._deleteDAOCoinLimitOrderEntryMappings(order)
+					continue
+				}
 			}
+
+			// Validate that the buyer has enough $ to buy the DAO coin.
+			if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+				if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
+					desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
+
+					if err != nil {
+						return 0, 0, nil, err
+					}
+
+					// Order total cost = price x quantity.
+					// Price is a big Float. Quantity is an uint256.
+					// Cast Quantity to big Float so can multiply.
+					orderTotalCost := NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
+
+					// Validate that order total cost is an uint64.
+					if !IsUint64(orderTotalCost) {
+						// TODO: replace with Rule Error Invalid Price or Quantity
+						panic("Invalid order total cost")
+					}
+
+					// Buyer with open bid order doesn't have enough $DESO.
+					// Don't include and mark their order for deletion.
+					orderTotalCostUint64, _ := orderTotalCost.Uint64()
+
+					if desoBalanceNanos < orderTotalCostUint64 {
+						bav._deleteDAOCoinLimitOrderEntryMappings(order)
+						continue
+					}
+				} else if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+					// We currently don't support DAO coins as the denominated type.
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+				} else {
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+				}
+			}
+
+			// Update order quantities.
+			var daoCoinsToTransfer uint256.Int
+
+			if requestedOrder.Quantity.Lt(&order.Quantity) {
+				daoCoinsToTransfer = requestedOrder.Quantity
+				order.Quantity = *uint256.NewInt().Sub(&order.Quantity, &requestedOrder.Quantity)
+				requestedOrder.Quantity = *uint256.NewInt()
+				break
+			} else {
+				daoCoinsToTransfer = order.Quantity
+				requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+				bav._deleteDAOCoinLimitOrderEntryMappings(order)
+
+				if requestedOrder.Quantity.IsZero() {
+					break
+				}
+			}
+
+			// Find or create balance entries.
+			requesterBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.TransactorPKID, requestedOrder.DAOCoinCreatorPKID, true)
+			matchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
+
+			if requesterBalanceEntry == nil || requesterBalanceEntry.isDeleted {
+				requesterBalanceEntry = &BalanceEntry{
+					HODLerPKID:   requestedOrder.TransactorPKID,
+					CreatorPKID:  requestedOrder.DenominatedCoinCreatorPKID,
+					BalanceNanos: *uint256.NewInt(),
+				}
+			}
+
+			if matchingBalanceEntry == nil || matchingBalanceEntry.isDeleted {
+				matchingBalanceEntry = &BalanceEntry{
+					HODLerPKID:   order.TransactorPKID,
+					CreatorPKID:  order.DenominatedCoinCreatorPKID,
+					BalanceNanos: *uint256.NewInt(),
+				}
+			}
+
+			// Transfer DAO coins.
+			prevMatchingBalanceEntries = append(prevMatchingBalanceEntries, matchingBalanceEntry)
+
+			if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+				// Requested ask order:
+				// Send DAO coins from requesterBalanceEntry to matchedBalanceEntry.
+				requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&requesterBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
+				matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&matchingBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
+			}
+
+			if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+				// Send DAO coins from matchedBalanceEntry to requesterBalanceEntry.
+				// Requested bid order:
+				matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&matchingBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
+				requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&requesterBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
+			}
+
+			bav._setDAOCoinBalanceEntryMappings(requesterBalanceEntry)
+			bav._setDAOCoinBalanceEntryMappings(matchingBalanceEntry)
 		}
 
-		// Update order quantities.
-		var daoCoinsToTransfer uint256.Int
-
-		if requestedOrder.Quantity.Lt(&order.Quantity) {
-			daoCoinsToTransfer = requestedOrder.Quantity
-			order.Quantity = *uint256.NewInt().Sub(&order.Quantity, &requestedOrder.Quantity)
-			requestedOrder.Quantity = *uint256.NewInt()
+		if requestedOrder.Quantity.IsZero() {
+			// If order is fulfilled, done.
 			break
 		} else {
-			daoCoinsToTransfer = order.Quantity
-			requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
-			bav._deleteDAOCoinLimitOrderEntryMappings(order)
-
-			if requestedOrder.Quantity.IsZero() {
-				break
-			}
+			// Else, seek new batch.
+			lastSeenOrder = prevMatchingOrders[len(prevMatchingOrders)-1]
+			prevMatchingOrders, _ = bav._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 		}
-
-		// Find or create balance entries.
-		requesterBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.TransactorPKID, requestedOrder.DAOCoinCreatorPKID, true)
-		matchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
-
-		if requesterBalanceEntry == nil || requesterBalanceEntry.isDeleted {
-			requesterBalanceEntry = &BalanceEntry{
-				HODLerPKID:   requestedOrder.TransactorPKID,
-				CreatorPKID:  requestedOrder.DenominatedCoinCreatorPKID,
-				BalanceNanos: *uint256.NewInt(),
-			}
-		}
-
-		if matchingBalanceEntry == nil || matchingBalanceEntry.isDeleted {
-			matchingBalanceEntry = &BalanceEntry{
-				HODLerPKID:   order.TransactorPKID,
-				CreatorPKID:  order.DenominatedCoinCreatorPKID,
-				BalanceNanos: *uint256.NewInt(),
-			}
-		}
-
-		// Transfer DAO coins.
-		prevMatchingBalanceEntries = append(prevMatchingBalanceEntries, matchingBalanceEntry)
-
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			// Requested ask order:
-			// Send DAO coins from requesterBalanceEntry to matchedBalanceEntry.
-			requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&requesterBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
-			matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&matchingBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
-		}
-
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			// Send DAO coins from matchedBalanceEntry to requesterBalanceEntry.
-			// Requested bid order:
-			matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&matchingBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
-			requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&requesterBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
-		}
-
-		bav._setDAOCoinBalanceEntryMappings(requesterBalanceEntry)
-		bav._setDAOCoinBalanceEntryMappings(matchingBalanceEntry)
 	}
 
 	// If requested order is still not fully fulfilled, submit it to be stored.
@@ -327,7 +339,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		bav._setDAOCoinLimitOrderEntryMappings(requestedOrder)
 	}
 
-	// Will have to charge extra for DAO coin transfer
+	// TODO: will have to charge extra for DAO coin transfer
 
 	return 0, 0, nil, nil
 }
