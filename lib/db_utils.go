@@ -3096,8 +3096,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5802,7 +5802,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5929,7 +5929,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6224,7 +6224,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	// Convert the input bid order to the ask-order params to query for.
 	// Retain the input bid order's:
 	//   * DenominatedCoinType
-	//	 * DenominatedCoinCreatorPKID
+	//   * DenominatedCoinCreatorPKID
 	//   * DAOCoinCreatorPKID
 	// Convert:
 	//   * OperationType from Bid to Ask
@@ -6252,7 +6252,8 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 
 	for iterator.Seek(key); iterator.ValidForPrefix(key) && requestedQuantity.GtUint64(0); iterator.Next() {
 		// If picking up from where you left off, skip the first order which has already been included.
-		if reflect.DeepEqual(key, startKey) {
+		if startKey != nil && reflect.DeepEqual(key, startKey) {
+			startKey = nil
 			continue
 		}
 
@@ -6283,9 +6284,77 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	return orders, nil
 }
 
-func DBGetHighestDAOCoinBidOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry) (*DAOCoinLimitOrderEntry, error) {
-	// TODO
-	return nil, nil
+func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+	queryOrder := inputOrder.Copy()
+	requestedQuantity := queryOrder.Quantity
+
+	// Confirm that the input order is an ask order.
+	if queryOrder.OperationType != DAOCoinLimitOrderEntryOrderTypeAsk {
+		return nil, fmt.Errorf("DBGetHighestDAOCoinBidOrder: input must be an ask order")
+	}
+
+	// Convert the input ask order to the bid-order params to query for.
+	// Retain the input ask order's:
+	//   * DenominatedCoinType
+	//   * DenominatedCoinCreatorPKID
+	//   * DAOCoinCreatorPKID
+	// Convert:
+	//   * OperationType from Ask to Bid
+	//   * PriceNanos to MAX_BIG_FLOAT
+	//   * BlockHeight to MAX_UINT32
+	//   * Quantity to MAX_UINT256
+	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeBid
+	queryOrder.PriceNanos = *NewFloat().SetInf(false)
+	queryOrder.BlockHeight = math.MaxUint32
+	queryOrder.Quantity = *MaxUint256.Clone()
+
+	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
+
+	// If passed a start key, start seeking from there.
+	if startKey != nil {
+		key = startKey
+	}
+
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true // Go in reverse order since a higher bid price is better.
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Seek first matching order.
+	orders := []*DAOCoinLimitOrderEntry{}
+
+	for iterator.Seek(key); iterator.ValidForPrefix(key) && requestedQuantity.GtUint64(0); iterator.Next() {
+		// If picking up from where you left off, skip the first order which has already been included.
+		if startKey != nil && reflect.DeepEqual(key, startKey) {
+			startKey = nil
+			continue
+		}
+
+		orderBytes, err := iterator.Item().ValueCopy(nil)
+
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetHighestDAOCoinBidOrder: problem getting limit order")
+		}
+
+		order := &DAOCoinLimitOrderEntry{}
+		err = order.FromBytes(orderBytes)
+
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetHighestDAOCoinBidOrder: problem getting limit order")
+		}
+
+		// Break if bid price is less than requested ask price.
+		// order.PriceNanos < inputOrder.PriceNanos
+		if order.PriceNanos.Cmp(&inputOrder.PriceNanos) < 0 {
+			break
+		}
+
+		// Reduce requested quantity by matching order's quantity.
+		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+		orders = append(orders, order)
+	}
+
+	return orders, nil
 }
 
 func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {

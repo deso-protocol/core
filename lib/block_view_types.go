@@ -1538,14 +1538,17 @@ func (order *DAOCoinLimitOrderEntry) IsBetterBidThan(other *DAOCoinLimitOrderEnt
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderEntry) bool {
+	// FIFO, prefer older orders first, i.e. lower block height.
 	if order.BlockHeight != other.BlockHeight {
 		return order.BlockHeight < other.BlockHeight
 	}
 
+	// Prefer lower-quantity orders first.
 	if order.Quantity.Eq(&other.Quantity) {
 		return order.Quantity.Lt(&other.Quantity)
 	}
 
+	// To break a tie and guarantee idempotency in sorting, prefer lower TransactorPKIDs.
 	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
 }
 
