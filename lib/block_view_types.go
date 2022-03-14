@@ -10,6 +10,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
+	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -1443,7 +1444,7 @@ type DAOCoinLimitOrderEntry struct {
 	DenominatedCoinCreatorPKID *PKID
 	DAOCoinCreatorPKID         *PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
-	PriceNanos                 uint256.Int
+	PriceNanos                 big.Float
 	BlockHeight                uint32
 	Quantity                   uint256.Int
 
@@ -1470,7 +1471,15 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data = append(data, order.DenominatedCoinCreatorPKID[:]...)
 	data = append(data, order.DAOCoinCreatorPKID[:]...)
 	data = append(data, _EncodeUint32(uint32(order.OperationType))...)
-	data = append(data, order.PriceNanos.Bytes()...)
+
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := ToBytes(&order.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	data = append(data, priceNanosBytes...)
 	data = append(data, _EncodeUint32(order.BlockHeight)...)
 	data = append(data, order.Quantity.Bytes()...)
 	return data, nil
@@ -1511,16 +1520,18 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
-	if !order.PriceNanos.Eq(&other.PriceNanos) {
-		return order.PriceNanos.Lt(&other.PriceNanos)
+	if order.PriceNanos.Cmp(&other.PriceNanos) != 0 {
+		// order.PriceNanos < other.PriceNanos
+		return order.PriceNanos.Cmp(&other.PriceNanos) < 0
 	}
 
 	return order.IsBetterOrderThan(other)
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterBidThan(other *DAOCoinLimitOrderEntry) bool {
-	if !order.PriceNanos.Eq(&other.PriceNanos) {
-		return order.PriceNanos.Gt(&other.PriceNanos)
+	if order.PriceNanos.Cmp(&other.PriceNanos) != 0 {
+		// order.PriceNanos > other.PriceNanos
+		return order.PriceNanos.Cmp(&other.PriceNanos) > 0
 	}
 
 	return order.IsBetterOrderThan(other)
@@ -1538,13 +1549,14 @@ func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderE
 	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
 }
 
+// TODO: fix big.Float as map key
 type DAOCoinLimitOrderMapKey struct {
 	TransactorPKID             PKID
 	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
 	DenominatedCoinCreatorPKID PKID
 	DAOCoinCreatorPKID         PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
-	PriceNanos                 uint256.Int
+	PriceNanos                 string // Can't use big.Float as key type.
 	BlockHeight                uint32
 }
 
@@ -1555,7 +1567,15 @@ func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	key.DenominatedCoinCreatorPKID = *order.DenominatedCoinCreatorPKID.NewPKID()
 	key.DAOCoinCreatorPKID = *order.DAOCoinCreatorPKID.NewPKID()
 	key.OperationType = order.OperationType
-	key.PriceNanos = order.PriceNanos
+
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := ToBytes(&order.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	key.PriceNanos = string(priceNanosBytes)
 	key.BlockHeight = order.BlockHeight
 	return key
 }
