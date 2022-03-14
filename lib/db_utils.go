@@ -3096,8 +3096,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5802,7 +5802,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5929,7 +5929,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6301,26 +6301,47 @@ func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKI
 	return orders, nil
 }
 
-func DBPutDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byTransactorPKID bool) error {
-	key := DBKeyForDAOCoinLimitOrder(order, byTransactorPKID)
+func DBPutDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
+
 	orderBytes, err := order.ToBytes()
 
 	if err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order")
 	}
 
+	key := DBKeyForDAOCoinLimitOrder(order, false)
+
 	if err = txn.Set(key, orderBytes); err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order")
+	}
+
+	key = DBKeyForDAOCoinLimitOrder(order, true)
+
+	if err = txn.Set(key, orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order with TransactorPKID")
 	}
 
 	return nil
 }
 
-func DBDeleteDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byTransactorPKID bool) error {
-	key := DBKeyForDAOCoinLimitOrder(order, byTransactorPKID)
+func DBDeleteDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
+
+	key := DBKeyForDAOCoinLimitOrder(order, false)
 
 	if err := txn.Delete(key); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrder: problem deleting limit order")
+	}
+
+	key = DBKeyForDAOCoinLimitOrder(order, true)
+
+	if err := txn.Delete(key); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrder: problem deleting limit order with TransactorPKID")
 	}
 
 	return nil
