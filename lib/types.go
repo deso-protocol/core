@@ -144,6 +144,8 @@ func ReadUint256(rr io.Reader) (uint256.Int, error) {
 	return *uint256.NewInt().SetBytes(valBytes), nil
 }
 
+// TODO: we need to know the max length of a big float.
+// Can't have infinite bytes...
 func EncodeBigFloat(val *big.Float) ([]byte, error) {
 	floatBytes, err := ToBytes(val)
 	if err != nil {
