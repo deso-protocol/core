@@ -65,7 +65,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// If denominated in a DAO coin, validate DenominatedCoinCreatorPKID exists and has a profile.
-	// TODO
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+		// We currently don't support DAO coins as the denominated type.
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+	}
 
 	// Validate DAOCoinCreatorPKID exists and has a profile.
 	// TODO
