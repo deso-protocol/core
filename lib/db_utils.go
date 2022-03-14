@@ -6311,26 +6311,39 @@ func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKI
 	return orders, nil
 }
 
-func DBPutDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byTransactorPKID bool) error {
-	key := DBKeyForDAOCoinLimitOrder(order, byTransactorPKID)
+func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
+
 	orderBytes, err := order.ToBytes()
 
 	if err != nil {
-		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order")
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
 	}
 
-	if err = txn.Set(key, orderBytes); err != nil {
-		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order")
+	if err = txn.Set(DBKeyForDAOCoinLimitOrder(order, false), orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	if err = txn.Set(DBKeyForDAOCoinLimitOrder(order, true), orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order with TransactorPKID")
 	}
 
 	return nil
 }
 
-func DBDeleteDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byTransactorPKID bool) error {
-	key := DBKeyForDAOCoinLimitOrder(order, byTransactorPKID)
+func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
 
-	if err := txn.Delete(key); err != nil {
-		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrder: problem deleting limit order")
+	if err := txn.Delete(DBKeyForDAOCoinLimitOrder(order, false)); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+	}
+
+	if err := txn.Delete(DBKeyForDAOCoinLimitOrder(order, true)); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrder: problem deleting limit order with TransactorPKID")
 	}
 
 	return nil
