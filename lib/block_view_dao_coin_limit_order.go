@@ -6,6 +6,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"math"
 	"reflect"
 	"sort"
 )
@@ -37,7 +38,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// public key so there is no need to verify anything further.
 	}
 
-	// ----- Begin validations
+	// ----- Begin custom validations
 
 	// Validate TransactorPKID exists.
 	transactorPKID := bav.GetPKIDForPublicKey(txn.PublicKey).PKID
@@ -72,16 +73,42 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
 	}
 
-	// Validate PriceNanos > 0
-	//   If denominated in DESO, confirm PriceNanos is uint64
-	//   PriceNanos == uint256.ToUint64(PriceNanos).ToUint256()
+	// Validate price > 0.
+	if !txMeta.PriceNanos.Gt(uint256.NewInt()) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
+	}
+
+	// If denominated in DESO, confirm PriceNanos is uint64.
+	if !txMeta.PriceNanos.IsUint64() {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
+	}
+
+	// If denominated in DAO coins, confirm PriceNanos is uint256.
 	// TODO
 
-	// Validate Quantity > 0
-	// If DESO buy, validate quantity < max uint64, order.Quantity.IsUint64()
-	// If DESO buy, validate price * quantity < max uint64
+	// Validate quantity > 0.
+	if !txMeta.Quantity.Gt(uint256.NewInt()) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
+	}
+
+	// Validate quantity is uint64.
+	if !txMeta.Quantity.IsUint64() {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
+	}
+
+	// If DESO buy, validate price * quantity < max uint64.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
+		if txMeta.PriceNanos.Uint64()*txMeta.Quantity.Uint64() >= math.MaxUint64 {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
+		}
+	}
+
 	// If DAO coin buy, validate price * quantity < max uint256
-	// TODO
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+		if !MaxUint256.Gt(uint256.NewInt().Mul(&txMeta.PriceNanos, &txMeta.Quantity)) {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
+		}
+	}
 
 	// Validate transfer restriction status, if Dao coin can only be transferred to whitelisted members.
 	// TODO
@@ -125,7 +152,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Validate that txn specifies inputs to cover $DESO spent on DAO coins.
 	// TODO
 
-	// ------ End validations
+	// ------ End custom validations
 
 	// Create entry from txn metadata.
 	requestedOrder := &DAOCoinLimitOrderEntry{
