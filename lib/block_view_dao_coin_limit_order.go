@@ -43,7 +43,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Create rule errors for each of these validations below
 	// lib/errors.go
 
-	// Validate CreatorPKID exists
+	// Validate TransactorPKID exists
 	// Validate DenominatedCoinType is one of our supported enum values and is DESO for now
 	// Validate DenominatedCoinCreatorPKID exists and has a profile or is all zeroes if $DESO
 	// Validate DAOCoinCreatorPKID exists and has a profile
@@ -67,7 +67,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Create entry from txn metadata.
 	requestedOrder := &DAOCoinLimitOrderEntry{
-		CreatorPKID:                bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
+		TransactorPKID:             bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
 		DenominatedCoinType:        txMeta.DenominatedCoinType,
 		DenominatedCoinCreatorPKID: txMeta.DenominatedCoinCreatorPKID,
 		DAOCoinCreatorPKID:         txMeta.DAOCoinCreatorPKID,
@@ -103,7 +103,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	for _, order := range matchingOrders {
 		// Validate that the seller has the DAO coin they're selling.
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.CreatorPKID, order.DAOCoinCreatorPKID, true)
+			balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
 
 			// Seller with open ask order doesn't have any of the promised DAO coins.
 			// Don't include and mark their order for deletion.
@@ -124,7 +124,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// Validate that the buyer has enough $ to buy the DAO coin.
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 			if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-				desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.CreatorPKID))
+				desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
 
 				if err != nil {
 					return 0, 0, nil, err
@@ -162,12 +162,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 
 		// Find or create balance entries.
-		requesterBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.CreatorPKID, requestedOrder.DAOCoinCreatorPKID, true)
-		matchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.CreatorPKID, order.DAOCoinCreatorPKID, true)
+		requesterBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.TransactorPKID, requestedOrder.DAOCoinCreatorPKID, true)
+		matchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
 
 		if requesterBalanceEntry == nil || requesterBalanceEntry.isDeleted {
 			requesterBalanceEntry = &BalanceEntry{
-				HODLerPKID:   requestedOrder.CreatorPKID,
+				HODLerPKID:   requestedOrder.TransactorPKID,
 				CreatorPKID:  requestedOrder.DenominatedCoinCreatorPKID,
 				BalanceNanos: *uint256.NewInt(),
 			}
@@ -175,7 +175,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 		if matchingBalanceEntry == nil || matchingBalanceEntry.isDeleted {
 			matchingBalanceEntry = &BalanceEntry{
-				HODLerPKID:   order.CreatorPKID,
+				HODLerPKID:   order.TransactorPKID,
 				CreatorPKID:  order.DenominatedCoinCreatorPKID,
 				BalanceNanos: *uint256.NewInt(),
 			}

@@ -300,7 +300,7 @@ var (
 	// This index allows users to query for their open orders.
 	// <
 	//   prefix,
-	//   order creator PKID [33]byte,
+	//   order transactor PKID [33]byte,
 	//   denominated coin enum {0: $DESO, 1: DAO coin} [1]byte,
 	//   DAO coin creator PKID or 0 if $DESO [33]byte,
 	//   ask-bid enum {0: ASK, 1: BID} [1]byte,
@@ -308,8 +308,8 @@ var (
 	//   block height [32]byte,
 	//   order quantity [256]byte,
 	// > -> <DAOCoinLimitOrder>
-	_PrefixDAOCoinLimitOrder              = []byte{59}
-	_PrefixDAOCoinLimitOrderByCreatorPKID = []byte{60}
+	_PrefixDAOCoinLimitOrder                 = []byte{59}
+	_PrefixDAOCoinLimitOrderByTransactorPKID = []byte{60}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
@@ -6161,13 +6161,13 @@ func StartDBSummarySnapshots(db *badger.DB) {
 // DAO coin limit order
 // ---------------------------------------------
 
-func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byCreatorPKID bool) []byte {
+func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
 	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
 	key := append([]byte{}, prefixCopy...)
 
-	// If indexing by creator PKID, use it in the key.
-	if byCreatorPKID {
-		key = append(key, order.CreatorPKID[:]...)
+	// If indexing by transactor PKID, use it in the key.
+	if byTransactorPKID {
+		key = append(key, order.TransactorPKID[:]...)
 	}
 
 	key = append(key, _EncodeUint32(uint32(order.DenominatedCoinType))...)
@@ -6179,8 +6179,8 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byCreatorPKID bool
 	return key
 }
 
-func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byCreatorPKID bool) (*DAOCoinLimitOrderEntry, error) {
-	key := DBKeyForDAOCoinLimitOrder(inputOrder, byCreatorPKID)
+func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
+	key := DBKeyForDAOCoinLimitOrder(inputOrder, byTransactorPKID)
 	orderItem, err := txn.Get(key)
 
 	if err != nil {
@@ -6278,9 +6278,9 @@ func DBGetHighestDAOCoinBidOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	return nil, nil
 }
 
-func DBGetAllDAOCoinLimitOrdersByCreatorPKID(handle *badger.DB, creatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByCreatorPKID...)
-	key := append(prefixCopy, creatorPKID[:]...)
+func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key := append(prefixCopy, transactorPKID[:]...)
 
 	// Seek all orders for this creator PKID.
 	_, valsFound := _enumerateKeysForPrefix(handle, key)
@@ -6301,8 +6301,8 @@ func DBGetAllDAOCoinLimitOrdersByCreatorPKID(handle *badger.DB, creatorPKID *PKI
 	return orders, nil
 }
 
-func DBPutDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byCreatorPKID bool) error {
-	key := DBKeyForDAOCoinLimitOrder(order, byCreatorPKID)
+func DBPutDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byTransactorPKID bool) error {
+	key := DBKeyForDAOCoinLimitOrder(order, byTransactorPKID)
 	orderBytes, err := order.ToBytes()
 
 	if err != nil {
@@ -6316,8 +6316,8 @@ func DBPutDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byCr
 	return nil
 }
 
-func DBDeleteDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byCreatorPKID bool) error {
-	key := DBKeyForDAOCoinLimitOrder(order, byCreatorPKID)
+func DBDeleteDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byTransactorPKID bool) error {
+	key := DBKeyForDAOCoinLimitOrder(order, byTransactorPKID)
 
 	if err := txn.Delete(key); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrder: problem deleting limit order")

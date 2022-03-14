@@ -1438,7 +1438,7 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 // -----------------------------------
 
 type DAOCoinLimitOrderEntry struct {
-	CreatorPKID                *PKID
+	TransactorPKID             *PKID
 	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
 	DenominatedCoinCreatorPKID *PKID
 	DAOCoinCreatorPKID         *PKID
@@ -1465,7 +1465,7 @@ const (
 )
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
-	data := append([]byte{}, order.CreatorPKID[:]...)
+	data := append([]byte{}, order.TransactorPKID[:]...)
 	data = append(data, _EncodeUint32(uint32(order.DenominatedCoinType))...)
 	data = append(data, order.DenominatedCoinCreatorPKID[:]...)
 	data = append(data, order.DAOCoinCreatorPKID[:]...)
@@ -1485,7 +1485,7 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	_ = rr
 
 	// TODO
-	// Parse CreatorPKID
+	// Parse TransactorPKID
 	// Parse DenominatedCoinType
 	// Parse DenominatedCoinCreatorPKID
 	// Parse DAOCoinCreatorPKID
@@ -1499,7 +1499,7 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 
 func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	newOrder := &DAOCoinLimitOrderEntry{}
-	newOrder.CreatorPKID = order.CreatorPKID.NewPKID()
+	newOrder.TransactorPKID = order.TransactorPKID.NewPKID()
 	newOrder.DenominatedCoinType = order.DenominatedCoinType
 	newOrder.DenominatedCoinCreatorPKID = order.DenominatedCoinCreatorPKID.NewPKID()
 	newOrder.DAOCoinCreatorPKID = order.DAOCoinCreatorPKID.NewPKID()
@@ -1535,11 +1535,11 @@ func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderE
 		return order.Quantity.Lt(&other.Quantity)
 	}
 
-	return bytes.Compare(order.CreatorPKID[:], other.CreatorPKID[:]) < 0
+	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
 }
 
 type DAOCoinLimitOrderMapKey struct {
-	CreatorPKID                PKID
+	TransactorPKID             PKID
 	DenominatedCoinType        DAOCoinLimitOrderEntryDenominatedCoinType
 	DenominatedCoinCreatorPKID PKID
 	DAOCoinCreatorPKID         PKID
@@ -1550,7 +1550,7 @@ type DAOCoinLimitOrderMapKey struct {
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	key := DAOCoinLimitOrderMapKey{}
-	key.CreatorPKID = *order.CreatorPKID.NewPKID()
+	key.TransactorPKID = *order.TransactorPKID.NewPKID()
 	key.DenominatedCoinType = order.DenominatedCoinType
 	key.DenominatedCoinCreatorPKID = *order.DenominatedCoinCreatorPKID.NewPKID()
 	key.DAOCoinCreatorPKID = *order.DAOCoinCreatorPKID.NewPKID()
