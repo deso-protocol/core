@@ -236,9 +236,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			if err != nil {
 				return nil, err
 			}
-		}
-
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 			err := bav.Handle.View(func(txn *badger.Txn) error {
 				var err error
 				orders, err = DBGetLowestDAOCoinAskOrders(txn, requestedOrder, lastSeenKey)
@@ -248,6 +246,9 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			// TODO: switch to RuleErrorDAOCoinLimitOrderUnsupportedOperationType
+			return nil, fmt.Errorf("Invalid operation type")
 		}
 	}
 
