@@ -65,8 +65,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// If denominated in a DAO coin, validate DenominatedCoinCreatorPKID exists and has a profile.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-		// We currently don't support DAO coins as the denominated type.
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+		profileEntry := bav.GetProfileEntryForPKID(txMeta.DenominatedCoinCreatorPKID)
+
+		if profileEntry == nil || profileEntry.isDeleted {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID
+		}
 	}
 
 	// Validate DAOCoinCreatorPKID exists and has a profile.
@@ -108,14 +111,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	orderTotalCost := NewFloat().Mul(&txMeta.PriceNanos, NewFloat().SetInt(txMeta.Quantity.ToBig()))
 
-	// If $DESO buy, validate that order total cost is an uint64.
+	// If $DESO buy, validate that order total cost is less than the max uint64.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
 		if !IsUint64(orderTotalCost) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 		}
 	}
 
-	// If DAO coin buy, validate that order total cost is an uint256.
+	// If DAO coin buy, validate that order total cost is less than the max uint256.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
 		if !IsUint256(orderTotalCost) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
@@ -125,7 +128,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Validate transfer restriction status, if DAO coin can only be transferred to whitelisted members.
 	// TODO
 
-	// Validate if ask order, that the seller has enough of the DAO coin they're trying to sell.
+	// If ask order, validate that the seller has enough of the DAO coin they're trying to sell.
 	if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
 		balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(transactorPKID, txMeta.DAOCoinCreatorPKID, true)
 

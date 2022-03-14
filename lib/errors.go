@@ -248,6 +248,7 @@ const (
 	// DAO Coin Limit Orders
 	RuleErrorDAOCoinLimitOrderInvalidTransactorPKID              RuleError = "RuleErrorMissingTransactorPKID"
 	RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType     RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType"
+	RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID  RuleError = "RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID"
 	RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID          RuleError = "RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID"
 	RuleErrorDAOCoinLimitOrderUnsupportedOperationType           RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedOperationType"
 	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder"
