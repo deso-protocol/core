@@ -8,7 +8,7 @@ import (
 	"reflect"
 )
 
-func ( bav *UtxoView ) GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+func (bav *UtxoView) GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 	hodlerPubKey []byte, creatorPubKey []byte) (
 	_balanceEntry *BalanceEntry, _hodlerPKID *PKID, _creatorPKID *PKID) {
 	return bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(hodlerPubKey, creatorPubKey, true)
