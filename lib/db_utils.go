@@ -6215,7 +6215,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	// Convert the input bid order to the ask-order params to query for.
 	// Retain the input bid order's:
 	//   * DenominatedCoinType
-	//	 * DenominatedCoinCreatorPKID
+	//   * DenominatedCoinCreatorPKID
 	//   * DAOCoinCreatorPKID
 	// Convert:
 	//   * OperationType from Bid to Ask
@@ -6285,7 +6285,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	// Convert the input ask order to the bid-order params to query for.
 	// Retain the input ask order's:
 	//   * DenominatedCoinType
-	//	 * DenominatedCoinCreatorPKID
+	//   * DenominatedCoinCreatorPKID
 	//   * DAOCoinCreatorPKID
 	// Convert:
 	//   * OperationType from Ask to Bid
