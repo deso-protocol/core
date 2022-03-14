@@ -132,6 +132,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 				// Buyer with open bid order doesn't have enough $DESO.
 				// Don't include and mark their order for deletion.
+				// TODO: convert to big.Float math
 				if desoBalanceNanos < (order.PriceNanos.Uint64() * order.Quantity.Uint64()) {
 					bav._deleteDAOCoinLimitOrderEntryMappings(order)
 					continue
@@ -265,13 +266,15 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			continue
 		}
 
+		// Ask: reject if requestedOrder.PriceNanos > order.PriceNanos
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk &&
-			requestedOrder.PriceNanos.Gt(&order.PriceNanos) {
+			requestedOrder.PriceNanos.Cmp(&order.PriceNanos) > 0 {
 			continue
 		}
 
+		// Bid: reject if requestedOrder.PriceNanos < order.PriceNanos
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid &&
-			requestedOrder.PriceNanos.Lt(&order.PriceNanos) {
+			requestedOrder.PriceNanos.Cmp(&order.PriceNanos) < 0 {
 			continue
 		}
 

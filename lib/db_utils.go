@@ -6174,7 +6174,7 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID b
 	key = append(key, order.DenominatedCoinCreatorPKID[:]...)
 	key = append(key, order.DAOCoinCreatorPKID[:]...)
 	key = append(key, _EncodeUint32(uint32(order.OperationType))...)
-	key = append(key, order.PriceNanos.Bytes()...)
+	key = append(key, ToBytes(&order.PriceNanos)...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	return key
 }
@@ -6223,7 +6223,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	//   * BlockHeight to 0
 	//   * Quantity to 0
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeAsk
-	queryOrder.PriceNanos = *uint256.NewInt()
+	queryOrder.PriceNanos = *NewFloat()
 	queryOrder.BlockHeight = uint32(0)
 	queryOrder.Quantity = *uint256.NewInt()
 
@@ -6261,7 +6261,8 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 		}
 
 		// Break if ask price is greater than requested bid price.
-		if order.PriceNanos.Gt(&inputOrder.PriceNanos) {
+		// order.PriceNanos > inputOrder.PriceNanos
+		if order.PriceNanos.Cmp(&inputOrder.PriceNanos) > 0 {
 			break
 		}
 

@@ -12,6 +12,7 @@ import (
 	"github.com/holiman/uint256"
 	"io"
 	"math"
+	"math/big"
 	"net"
 	"sort"
 	"time"
@@ -5495,7 +5496,7 @@ type DAOCoinLimitOrderMetadata struct {
 	DenominatedCoinCreatorPKID *PKID
 	DAOCoinCreatorPKID         *PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
-	PriceNanos                 uint256.Int
+	PriceNanos                 big.Float
 	Quantity                   uint256.Int
 }
 
@@ -5508,7 +5509,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, txnData.DenominatedCoinCreatorPKID[:]...)
 	data = append(data, txnData.DAOCoinCreatorPKID[:]...)
 	data = append(data, _EncodeUint32(uint32(txnData.OperationType))...)
-	data = append(data, txnData.PriceNanos.Bytes()...)
+	data = append(data, ToBytes(&txnData.PriceNanos)...)
 	data = append(data, txnData.Quantity.Bytes()...)
 	return data, nil
 }

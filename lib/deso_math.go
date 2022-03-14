@@ -80,6 +80,11 @@ func Add(a *big.Float, b *big.Float) *big.Float {
 	return NewFloat().Add(a, b)
 }
 
+func ToBytes(a *big.Float) []byte {
+	// TODO
+	return nil
+}
+
 var (
 	// Constants for BigFloatLog
 	bigLn2Hi          = NewFloat().SetFloat64(6.93147180369123816490e-01) /* 3fe62e42 fee00000 */
