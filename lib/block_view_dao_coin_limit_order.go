@@ -6,7 +6,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"math"
 	"reflect"
 	"sort"
 )
@@ -59,7 +58,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// If denominated in $DESO, validate DenominatedCoinCreatorPKID is all zeroes.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-		if !reflect.DeepEqual(ZeroPKID, txMeta.DenominatedCoinCreatorPKID) {
+		if !reflect.DeepEqual(ZeroPKID, *txMeta.DenominatedCoinCreatorPKID) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
 		}
 	}
@@ -89,7 +88,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// If denominated in $DESO, confirm PriceNanos is uint64.
-	if !txMeta.PriceNanos.IsUint64() {
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO && !txMeta.PriceNanos.IsUint64() {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
@@ -108,7 +107,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// If $DESO buy, validate price * quantity < max uint64.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-		if txMeta.PriceNanos.Uint64()*txMeta.Quantity.Uint64() >= math.MaxUint64 {
+		if !uint256.NewInt().Mul(&txMeta.PriceNanos, &txMeta.Quantity).IsUint64() {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 		}
 	}
@@ -120,7 +119,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
-	// Validate transfer restriction status, if Dao coin can only be transferred to whitelisted members.
+	// Validate transfer restriction status, if DAO coin can only be transferred to whitelisted members.
 	// TODO
 
 	// Validate if ask order, that the seller has enough of the DAO coin they're trying to sell.
@@ -148,7 +147,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// User is trying to open a bid order but doesn't have enough $DESO.
-			if desoBalanceNanos < (txMeta.PriceNanos.Uint64() * txMeta.Quantity.Uint64()) {
+			if uint256.NewInt().SetUint64(desoBalanceNanos).Lt(uint256.NewInt().Mul(&txMeta.PriceNanos, &txMeta.Quantity)) {
 				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 			}
 		} else if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
