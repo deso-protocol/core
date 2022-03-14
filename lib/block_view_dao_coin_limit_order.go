@@ -37,37 +37,99 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// public key so there is no need to verify anything further.
 	}
 
+	// ----- Begin validations
+
+	// Validate TransactorPKID exists.
+	transactorPKID := bav.GetPKIDForPublicKey(txn.PublicKey).PKID
+
+	if transactorPKID == nil {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderMissingTransactorPKID
+	}
+
+	// Validate DenominatedCoinType is one of our supported enum values and is DESO for now.
+	switch txMeta.DenominatedCoinType {
+	case DAOCoinLimitOrderEntryDenominatedCoinTypeDESO:
+		break
+	case DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin:
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+	default:
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+	}
+
+	// Validate DenominatedCoinCreatorPKID exists and has a profile or is all zeroes if $DESO.
 	// TODO
 
-	// ----- Begin validations
-	// Create rule errors for each of these validations below
-	// lib/errors.go
+	// Validate DAOCoinCreatorPKID exists and has a profile.
+	// TODO
 
-	// Validate TransactorPKID exists
-	// Validate DenominatedCoinType is one of our supported enum values and is DESO for now
-	// Validate DenominatedCoinCreatorPKID exists and has a profile or is all zeroes if $DESO
-	// Validate DAOCoinCreatorPKID exists and has a profile
-	// Validate OperationType is one of our supported enum values
+	// Validate OperationType is one of our supported enum values.
+	switch txMeta.OperationType {
+	case DAOCoinLimitOrderEntryOrderTypeAsk:
+		break
+	case DAOCoinLimitOrderEntryOrderTypeBid:
+		break
+	default:
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
+	}
+
 	// Validate PriceNanos > 0
 	//   If denominated in DESO, confirm PriceNanos is uint64
 	//   PriceNanos == uint256.ToUint64(PriceNanos).ToUint256()
+	// TODO
+
 	// Validate Quantity > 0
 	// If DESO buy, validate quantity < max uint64, order.Quantity.IsUint64()
 	// If DESO buy, validate price * quantity < max uint64
 	// If DAO coin buy, validate price * quantity < max uint256
+	// TODO
 
-	// Validate transfer restriction status, if Dao coin can only be transferred to whitelisted members
+	// Validate transfer restriction status, if Dao coin can only be transferred to whitelisted members.
+	// TODO
 
-	// Validate that buyer has enough $ to buy the DAO coin
-	// Validate that the seller has the DAO coin they're selling
+	// Validate if ask order, that the seller has enough of the DAO coin they're trying to sell.
+	if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+		balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(transactorPKID, txMeta.DAOCoinCreatorPKID, true)
 
-	// Validate that txn specifies inputs to cover $DESO spent on DAO coins
+		// User is trying to open an ask order but doesn't have any of the promised DAO coins.
+		if balanceEntry == nil || balanceEntry.isDeleted {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder
+		}
+
+		// User is trying to open an ask order but doesn't have enough of the promised DAO coins.
+		if balanceEntry.BalanceNanos.Lt(&txMeta.Quantity) {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder
+		}
+	}
+
+	// Validate if bid order, that buyer has enough $ to buy the DAO coin.
+	if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+		if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
+			desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(transactorPKID))
+
+			if err != nil {
+				return 0, 0, nil, err
+			}
+
+			// User is trying to open a bid order but doesn't have enough $DESO.
+			if desoBalanceNanos < (txMeta.PriceNanos.Uint64() * txMeta.Quantity.Uint64()) {
+				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
+			}
+		} else if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
+			// We currently don't support DAO coins as the denominated type.
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+		} else {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+		}
+	}
+
+	// Validate that txn specifies inputs to cover $DESO spent on DAO coins.
+	// TODO
 
 	// ------ End validations
 
 	// Create entry from txn metadata.
 	requestedOrder := &DAOCoinLimitOrderEntry{
-		TransactorPKID:             bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
+		TransactorPKID:             transactorPKID,
 		DenominatedCoinType:        txMeta.DenominatedCoinType,
 		DenominatedCoinCreatorPKID: txMeta.DenominatedCoinCreatorPKID,
 		DAOCoinCreatorPKID:         txMeta.DAOCoinCreatorPKID,
@@ -137,9 +199,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					continue
 				}
 			} else if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-				panic("DAO coin denominated limit orders not implemented")
+				// We currently don't support DAO coins as the denominated type.
+				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
 			} else {
-				return 0, 0, nil, fmt.Errorf("Invalid denominated coin type")
+				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
 			}
 		}
 

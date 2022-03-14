@@ -245,6 +245,13 @@ const (
 	RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted RuleError = "RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted"
 	RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus           RuleError = "RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus"
 
+	// DAO Coin Limit Orders
+	RuleErrorDAOCoinLimitOrderMissingTransactorPKID              RuleError = "RuleErrorMissingTransactorPKID"
+	RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType     RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType"
+	RuleErrorDAOCoinLimitOrderUnsupportedOperationType           RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedOperationType"
+	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder"
+	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder     RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder"
+
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
 	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput    RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
