@@ -112,18 +112,18 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Order total cost = price x quantity.
 	// Price is a big Float. Quantity is an uint256.
 	// Cast Quantity to big Float so can multiply.
-	orderTotalCost := NewFloat().Mul(&txMeta.PriceNanos, NewFloat().SetInt(txMeta.Quantity.ToBig()))
+	requestedOrderTotalCost := NewFloat().Mul(&txMeta.PriceNanos, NewFloat().SetInt(txMeta.Quantity.ToBig()))
 
 	// If $DESO buy, validate that order total cost is less than the max uint64.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-		if !IsUint64(orderTotalCost) {
+		if !IsUint64(requestedOrderTotalCost) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 		}
 	}
 
 	// If DAO coin buy, validate that order total cost is less than the max uint256.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-		if !IsUint256(orderTotalCost) {
+		if !IsUint256(requestedOrderTotalCost) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 		}
 	}
@@ -156,9 +156,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// User is trying to open a bid order but doesn't have enough $DESO.
-			orderTotalCostUint64, _ := orderTotalCost.Uint64()
+			requestedOrderTotalCostUint64, _ := requestedOrderTotalCost.Uint64()
 
-			if desoBalanceNanos < orderTotalCostUint64 {
+			if desoBalanceNanos < requestedOrderTotalCostUint64 {
 				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 			}
 		} else if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
@@ -233,11 +233,17 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// Validate that the buyer has enough $ to buy the DAO coin.
 		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 			if order.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-				desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
+				var desoBalanceNanos uint64
+				desoBalanceNanos, err = bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
 
 				if err != nil {
 					return 0, 0, nil, err
 				}
+
+				// Order total cost = price x quantity.
+				// Price is a big Float. Quantity is an uint256.
+				// Cast Quantity to big Float so can multiply.
+				orderTotalCost := NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
 
 				// Validate that order total cost is an uint64.
 				if !IsUint64(orderTotalCost) {
