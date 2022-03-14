@@ -209,7 +209,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Will have to charge extra for DAO coin transfer
 
-	return 0, 0, nil, nil
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type: OperationTypeDAOCoinLimitOrder,
+		//TODO: populate with data we need for disconnect
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _getNextLimitOrdersToFill(

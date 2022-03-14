@@ -5532,10 +5532,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 
 	ret := DAOCoinLimitOrderMetadata{}
 	rr := bytes.NewReader(data)
-	_ = rr
 
-	// TODO
-	// Parse CreatorPKID
 	// Parse DenominatedCoinType
 	denominatedCoinType, err := ReadUvarint(rr)
 	if err != nil {

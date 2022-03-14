@@ -3152,7 +3152,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		// inputs and change.
 	}
 
-	if metadata.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin &&
+	if metadata.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
 		metadata.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
 		// In this case, we need to find inputs from all the orders that match.
 		// This will move to txn construction as this will be put in the metadata

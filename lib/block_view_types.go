@@ -10,6 +10,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
+	"math"
 	"reflect"
 	"sort"
 	"strings"
@@ -1466,12 +1467,12 @@ const (
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data := append([]byte{}, order.CreatorPKID[:]...)
-	data = append(data, _EncodeUint32(uint32(order.DenominatedCoinType))...)
+	data = append(data, UintToBuf(uint64(order.DenominatedCoinType))...)
 	data = append(data, order.DenominatedCoinCreatorPKID[:]...)
 	data = append(data, order.DAOCoinCreatorPKID[:]...)
-	data = append(data, _EncodeUint32(uint32(order.OperationType))...)
+	data = append(data, UintToBuf(uint64(order.OperationType))...)
 	data = append(data, order.PriceNanos.Bytes()...)
-	data = append(data, _EncodeUint32(order.BlockHeight)...)
+	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	data = append(data, order.Quantity.Bytes()...)
 	return data, nil
 }
@@ -1481,19 +1482,61 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return nil
 	}
 
+	ret := DAOCoinLimitOrderEntry{}
 	rr := bytes.NewReader(data)
-	_ = rr
 
-	// TODO
+	var err error
 	// Parse CreatorPKID
+	ret.CreatorPKID, err = ReadPKID(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading CreatorPKID: %v", err)
+	}
 	// Parse DenominatedCoinType
+	var denominatedCoinType uint64
+	denominatedCoinType, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading DenominatedCoinType: %v", err)
+	}
+	ret.DenominatedCoinType = DAOCoinLimitOrderEntryDenominatedCoinType(denominatedCoinType)
 	// Parse DenominatedCoinCreatorPKID
+	ret.DenominatedCoinCreatorPKID, err = ReadPKID(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading DenominatedCoinCreatorPKID: %v", err)
+	}
 	// Parse DAOCoinCreatorPKID
+	ret.DAOCoinCreatorPKID, err = ReadPKID(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading DAOCoinCreatorPKID: %v", err)
+	}
 	// Parse OperationType
+	var operationType uint64
+	operationType, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OperationType: %v", err)
+	}
+	ret.OperationType = DAOCoinLimitOrderEntryOrderType(operationType)
 	// Parse PriceNanos
+	ret.PriceNanos, err = ReadUint256(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading PriceNanos: %v", err)
+	}
 	// Parse BlockHeight
+	var blockHeight uint64
+	blockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading BlockHeight: %v", err)
+	}
+	if blockHeight > uint64(math.MaxUint32) {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Invalid block height %d: Greater than max uint32")
+	}
+	ret.BlockHeight = uint32(blockHeight)
 	// Parse Quantity
+	ret.Quantity, err = ReadUint256(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading Quantity: %v", err)
+	}
 
+	*order = ret
 	return nil
 }
 
