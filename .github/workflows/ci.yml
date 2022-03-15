@@ -60,5 +60,5 @@ jobs:
       - name: Build package
         run: go build
 
-      - name: Run go test
-        run: go test -failfast -v ./...
+#      - name: Run go test
+#        run: go test -failfast -v ./...
