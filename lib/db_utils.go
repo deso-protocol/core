@@ -6218,7 +6218,9 @@ func DBGetDAOCoinLimitOrder(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntr
 	handle.View(func(txn *badger.Txn) error {
 		var err error
 		ret, err = DBGetDAOCoinLimitOrderWithTxn(txn, inputOrder, byTransactorPKID)
-		glog.Errorf("DBGetDAOCoinLimitOrder failed: %v", err)
+		if err != nil {
+			glog.Errorf("DBGetDAOCoinLimitOrder failed: %v", err)
+		}
 		return nil
 	})
 

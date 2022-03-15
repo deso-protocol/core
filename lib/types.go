@@ -122,9 +122,9 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 
 func EncodeUint256(val uint256.Int) []byte {
 	valBytes := val.Bytes()
-	data := make([]byte, 256, 256)
+	data := make([]byte, 32, 32)
 	//data := append([]byte{}, UintToBuf(uint64(len(valBytes)))...)
-	return append(data, valBytes...)[:]
+	return append(data, valBytes...)[len(valBytes):]
 }
 
 func ReadUint256(rr io.Reader) (uint256.Int, error) {
@@ -137,7 +137,7 @@ func ReadUint256(rr io.Reader) (uint256.Int, error) {
 	//	return *uint256.NewInt(), fmt.Errorf("ReadUint256: value length %d "+
 	//		"exceeds max %d", intLen, MaxMessagePayload)
 	//}
-	valBytes := make([]byte, 256, 256)
+	valBytes := make([]byte, 32, 32)
 	_, err := io.ReadFull(rr, valBytes)
 	if err != nil {
 		return *uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
