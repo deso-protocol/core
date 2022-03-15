@@ -5612,7 +5612,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 			return fmt.Errorf(
 				"DAOCoinLimitOrderMetadata.FromBytes: Error reading inputs length at index %v: %v", ii, err)
 		}
-		ret.MatchingBidsInputsMap[*pkid] = make([]*DeSoInput, matchingBidsInputsMapLength)
+		ret.MatchingBidsInputsMap[*pkid] = make([]*DeSoInput, 0, matchingBidsInputsMapLength)
 		for jj := uint64(0); jj < inputsLength; jj++ {
 			currentInput := NewDeSoInput()
 			_, err = io.ReadFull(rr, currentInput.TxID[:])
