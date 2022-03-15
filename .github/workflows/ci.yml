@@ -36,14 +36,23 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@v3
 
-      - name: Echo gopath
-        run: echo ${GOPATH}
+      - id: go-cache-paths
+        name: Echo Go paths
+        run: |
+          echo "::set-output name=go-build-cache::$(go env GOCACHE)"
+          echo "::set-output name=go-mod-cache::$(go env GOMODCACHE)"
 
-      - name: Cache dependencies
+      - name: Store Go build cache
         uses: actions/cache@v2
         with:
-          path: ${{ env.GOPATH }}/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          path: ${{ steps.go-cache-paths.outputs.go-build-cache }}
+          key: ${{ runner.os }}-go-build-${{ hashFiles('**/go.sum') }}
+
+      - name: Store Go mod cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.go-cache-paths.outputs.go-mod-cache }}
+          key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
 
       - name: Install dependencies
         run: go mod download && go install
