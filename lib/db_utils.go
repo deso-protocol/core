@@ -300,7 +300,7 @@ var (
 	// This index allows users to query for their open orders.
 	// <
 	//   prefix,
-	//   order creator PKID [33]byte,
+	//   order transactor PKID [33]byte,
 	//   denominated coin enum {0: $DESO, 1: DAO coin} [1]byte,
 	//   DAO coin creator PKID or 0 if $DESO [33]byte,
 	//   ask-bid enum {0: ASK, 1: BID} [1]byte,
@@ -308,8 +308,8 @@ var (
 	//   block height [32]byte,
 	//   order quantity [256]byte,
 	// > -> <DAOCoinLimitOrder>
-	_PrefixDAOCoinLimitOrder              = []byte{59}
-	_PrefixDAOCoinLimitOrderByCreatorPKID = []byte{60}
+	_PrefixDAOCoinLimitOrder                 = []byte{59}
+	_PrefixDAOCoinLimitOrderByTransactorPKID = []byte{60}
 
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
@@ -6161,27 +6161,35 @@ func StartDBSummarySnapshots(db *badger.DB) {
 // DAO coin limit order
 // ---------------------------------------------
 
-func _dbKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byCreatorPKID bool) []byte {
+func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
 	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
 	key := append([]byte{}, prefixCopy...)
 
-	// If indexing by creator PKID, use it in the key.
-	if byCreatorPKID {
-		key = append(key, order.CreatorPKID[:]...)
+	// If indexing by transactor PKID, use it in the key.
+	if byTransactorPKID {
+		key = append(key, order.TransactorPKID[:]...)
 	}
 
 	key = append(key, _EncodeUint32(uint32(order.DenominatedCoinType))...)
 	key = append(key, order.DenominatedCoinCreatorPKID[:]...)
 	key = append(key, order.DAOCoinCreatorPKID[:]...)
 	key = append(key, _EncodeUint32(uint32(order.OperationType))...)
-	key = append(key, order.PriceNanos.Bytes()...)
+
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := ToBytes(&order.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	key = append(key, priceNanosBytes...)
+
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
-	key = append(key, order.Quantity.Bytes()...)
 	return key
 }
 
-func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byCreatorPKID bool) (*DAOCoinLimitOrderEntry, error) {
-	key := _dbKeyForDAOCoinLimitOrder(inputOrder, byCreatorPKID)
+func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
+	key := DBKeyForDAOCoinLimitOrder(inputOrder, byTransactorPKID)
 	orderItem, err := txn.Get(key)
 
 	if err != nil {
@@ -6204,9 +6212,154 @@ func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry,
 	return order, nil
 }
 
-func DBGetAllDAOCoinLimitOrdersByCreatorPKID(handle *badger.DB, creatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByCreatorPKID...)
-	key := append(prefixCopy, creatorPKID[:]...)
+func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+	queryOrder := inputOrder.Copy()
+	requestedQuantity := queryOrder.Quantity
+
+	// Confirm that the input order is a bid order.
+	if queryOrder.OperationType != DAOCoinLimitOrderEntryOrderTypeBid {
+		return nil, fmt.Errorf("DBGetLowestDAOCoinAskOrder: input must be a bid order")
+	}
+
+	// Convert the input bid order to the ask-order params to query for.
+	// Retain the input bid order's:
+	//   * DenominatedCoinType
+	//   * DenominatedCoinCreatorPKID
+	//   * DAOCoinCreatorPKID
+	// Convert:
+	//   * OperationType from Bid to Ask
+	//   * PriceNanos to 0
+	//   * BlockHeight to 0
+	//   * Quantity to 0
+	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeAsk
+	queryOrder.PriceNanos = *NewFloat()
+	queryOrder.BlockHeight = uint32(0)
+	queryOrder.Quantity = *uint256.NewInt()
+
+	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
+
+	// If passed a start key, start seeking from there.
+	if startKey != nil {
+		key = startKey
+	}
+
+	opts := badger.DefaultIteratorOptions
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Seek first matching order.
+	orders := []*DAOCoinLimitOrderEntry{}
+
+	for iterator.Seek(key); iterator.ValidForPrefix(key) && requestedQuantity.GtUint64(0); iterator.Next() {
+		// If picking up from where you left off, skip the first order which has already been included.
+		if startKey != nil && reflect.DeepEqual(key, startKey) {
+			startKey = nil
+			continue
+		}
+
+		orderBytes, err := iterator.Item().ValueCopy(nil)
+
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLowestDAOCoinAskOrder: problem getting limit order")
+		}
+
+		order := &DAOCoinLimitOrderEntry{}
+		err = order.FromBytes(orderBytes)
+
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLowestDAOCoinAskOrder: problem getting limit order")
+		}
+
+		// Break if ask price is greater than requested bid price.
+		// order.PriceNanos > inputOrder.PriceNanos
+		if order.PriceNanos.Cmp(&inputOrder.PriceNanos) > 0 {
+			break
+		}
+
+		// Reduce requested quantity by matching order's quantity.
+		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+		orders = append(orders, order)
+	}
+
+	return orders, nil
+}
+
+func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+	queryOrder := inputOrder.Copy()
+	requestedQuantity := queryOrder.Quantity
+
+	// Confirm that the input order is an ask order.
+	if queryOrder.OperationType != DAOCoinLimitOrderEntryOrderTypeAsk {
+		return nil, fmt.Errorf("DBGetHighestDAOCoinBidOrder: input must be an ask order")
+	}
+
+	// Convert the input ask order to the bid-order params to query for.
+	// Retain the input ask order's:
+	//   * DenominatedCoinType
+	//   * DenominatedCoinCreatorPKID
+	//   * DAOCoinCreatorPKID
+	// Convert:
+	//   * OperationType from Ask to Bid
+	//   * PriceNanos to MAX_BIG_FLOAT
+	//   * BlockHeight to MAX_UINT32
+	//   * Quantity to MAX_UINT256
+	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeBid
+	queryOrder.PriceNanos = *NewFloat().SetInf(false)
+	queryOrder.BlockHeight = math.MaxUint32
+	queryOrder.Quantity = *MaxUint256.Clone()
+
+	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
+
+	// If passed a start key, start seeking from there.
+	if startKey != nil {
+		key = startKey
+	}
+
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true // Go in reverse order since a higher bid price is better.
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Seek first matching order.
+	orders := []*DAOCoinLimitOrderEntry{}
+
+	for iterator.Seek(key); iterator.ValidForPrefix(key) && requestedQuantity.GtUint64(0); iterator.Next() {
+		// If picking up from where you left off, skip the first order which has already been included.
+		if startKey != nil && reflect.DeepEqual(key, startKey) {
+			startKey = nil
+			continue
+		}
+
+		orderBytes, err := iterator.Item().ValueCopy(nil)
+
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetHighestDAOCoinBidOrder: problem getting limit order")
+		}
+
+		order := &DAOCoinLimitOrderEntry{}
+		err = order.FromBytes(orderBytes)
+
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetHighestDAOCoinBidOrder: problem getting limit order")
+		}
+
+		// Break if bid price is less than requested ask price.
+		// order.PriceNanos < inputOrder.PriceNanos
+		if order.PriceNanos.Cmp(&inputOrder.PriceNanos) < 0 {
+			break
+		}
+
+		// Reduce requested quantity by matching order's quantity.
+		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+		orders = append(orders, order)
+	}
+
+	return orders, nil
+}
+
+func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key := append(prefixCopy, transactorPKID[:]...)
 
 	// Seek all orders for this creator PKID.
 	_, valsFound := _enumerateKeysForPrefix(handle, key)
@@ -6227,26 +6380,39 @@ func DBGetAllDAOCoinLimitOrdersByCreatorPKID(handle *badger.DB, creatorPKID *PKI
 	return orders, nil
 }
 
-func DBPutDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byCreatorPKID bool) error {
-	key := _dbKeyForDAOCoinLimitOrder(order, byCreatorPKID)
+func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
+
 	orderBytes, err := order.ToBytes()
 
 	if err != nil {
-		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order")
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
 	}
 
-	if err = txn.Set(key, orderBytes); err != nil {
-		return errors.Wrapf(err, "DBPutDAOCoinLimitOrder: problem storing limit order")
+	if err = txn.Set(DBKeyForDAOCoinLimitOrder(order, false), orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	if err = txn.Set(DBKeyForDAOCoinLimitOrder(order, true), orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order with TransactorPKID")
 	}
 
 	return nil
 }
 
-func DBDeleteDAOCoinLimitOrder(txn *badger.Txn, order *DAOCoinLimitOrderEntry, byCreatorPKID bool) error {
-	key := _dbKeyForDAOCoinLimitOrder(order, byCreatorPKID)
+func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
 
-	if err := txn.Delete(key); err != nil {
-		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrder: problem deleting limit order")
+	if err := txn.Delete(DBKeyForDAOCoinLimitOrder(order, false)); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+	}
+
+	if err := txn.Delete(DBKeyForDAOCoinLimitOrder(order, true)); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrder: problem deleting limit order with TransactorPKID")
 	}
 
 	return nil

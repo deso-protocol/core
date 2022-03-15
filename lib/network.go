@@ -12,6 +12,7 @@ import (
 	"github.com/holiman/uint256"
 	"io"
 	"math"
+	"math/big"
 	"net"
 	"sort"
 	"time"
@@ -5495,8 +5496,11 @@ type DAOCoinLimitOrderMetadata struct {
 	DenominatedCoinCreatorPKID *PKID
 	DAOCoinCreatorPKID         *PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
-	PriceNanos                 uint256.Int
+	PriceNanos                 big.Float
 	Quantity                   uint256.Int
+	// This map is populated with the inputs consumed when a transaction
+	// is an ask offer and there are bids to match immediately.
+	MatchingBidsInputsMap map[PKID][]*DeSoInput
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
@@ -5504,12 +5508,28 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	data := append([]byte{}, _EncodeUint32(uint32(txnData.DenominatedCoinType))...)
-	data = append(data, txnData.DenominatedCoinCreatorPKID[:]...)
-	data = append(data, txnData.DAOCoinCreatorPKID[:]...)
-	data = append(data, _EncodeUint32(uint32(txnData.OperationType))...)
-	data = append(data, txnData.PriceNanos.Bytes()...)
-	data = append(data, txnData.Quantity.Bytes()...)
+	data := append([]byte{}, UintToBuf(uint64(txnData.DenominatedCoinType))...)
+	data = append(data, txnData.DenominatedCoinCreatorPKID.Encode()...)
+	data = append(data, txnData.DAOCoinCreatorPKID.Encode()...)
+	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
+	// TODO: figure out how to cast without error case.
+	priceNanosBytes, err := EncodeBigFloat(&txnData.PriceNanos)
+
+	if err != nil {
+		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	}
+
+	data = append(data, priceNanosBytes...)
+	data = append(data, EncodeUint256(txnData.Quantity)...)
+	data = append(data, UintToBuf(uint64(len(txnData.MatchingBidsInputsMap)))...)
+	for bidderPKID, inputs := range txnData.MatchingBidsInputsMap {
+		data = append(data, bidderPKID.Encode()...)
+		data = append(data, UintToBuf(uint64(len(inputs)))...)
+		for _, input := range inputs {
+			data = append(data, input.TxID[:]...)
+			data = append(data, UintToBuf(uint64(input.Index))...)
+		}
+	}
 	return data, nil
 }
 
@@ -5518,18 +5538,94 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 		return nil
 	}
 
+	ret := DAOCoinLimitOrderMetadata{}
 	rr := bytes.NewReader(data)
-	_ = rr
 
-	// TODO
-	// Parse CreatorPKID
 	// Parse DenominatedCoinType
+	denominatedCoinType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading denominated coin type: %v", err)
+	}
+	ret.DenominatedCoinType = DAOCoinLimitOrderEntryDenominatedCoinType(denominatedCoinType)
 	// Parse DenominatedCoinCreatorPKID
+	ret.DenominatedCoinCreatorPKID, err = ReadPKID(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading denominated coin creator PKID: %v", err)
+	}
 	// Parse DAOCoinCreatorPKID
+	ret.DAOCoinCreatorPKID, err = ReadPKID(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading DAO coin creator PKID: %v", err)
+	}
 	// Parse OperationType
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading operation type: %v", err)
+	}
+	ret.OperationType = DAOCoinLimitOrderEntryOrderType(operationType)
 	// Parse PriceNanos
-	// Parse BlockHeight
+	var priceNanos *big.Float
+	priceNanos, err = ReadBigFloat(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading Price nanos: %v", err)
+	}
+	ret.PriceNanos = *priceNanos
 	// Parse Quantity
+	ret.Quantity, err = ReadUint256(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading Quantity: %v", err)
+	}
+	// Parse matching bids input map
+	matchingBidsInputsMapLength, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading length of matching bids input: %v", err)
+	}
+	if matchingBidsInputsMapLength > 0 {
+		ret.MatchingBidsInputsMap = make(map[PKID][]*DeSoInput)
+	}
+	for ii := uint64(0); ii < matchingBidsInputsMapLength; ii++ {
+		var pkid *PKID
+		pkid, err = ReadPKID(rr)
+		if err != nil {
+			return fmt.Errorf(
+				"DAOCoinLimitOrderMetadata.FromBytes: Error reading PKID at index %v: %v", ii, err)
+		}
+		var inputsLength uint64
+		inputsLength, err = ReadUvarint(rr)
+		if err != nil {
+			return fmt.Errorf(
+				"DAOCoinLimitOrderMetadata.FromBytes: Error reading inputs length at index %v: %v", ii, err)
+		}
+		ret.MatchingBidsInputsMap[*pkid] = make([]*DeSoInput, matchingBidsInputsMapLength)
+		for jj := uint64(0); jj < inputsLength; jj++ {
+			currentInput := NewDeSoInput()
+			_, err = io.ReadFull(rr, currentInput.TxID[:])
+			if err != nil {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Error reading input txId at ii %v, jj %v: %v",
+					ii, jj, err)
+			}
+			var inputIndex uint64
+			inputIndex, err = ReadUvarint(rr)
+			if err != nil {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Error reading input index at ii %v, jj %v: %v",
+					ii, jj, err)
+			}
+			if inputIndex > uint64(^uint32(0)) {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Input index at ii %v, jj %v must not exceed %d",
+					ii, jj, ^uint32(0))
+			}
+			currentInput.Index = uint32(inputIndex)
+
+			ret.MatchingBidsInputsMap[*pkid] = append(ret.MatchingBidsInputsMap[*pkid], currentInput)
+		}
+	}
+	*txnData = ret
 
 	return nil
 }
