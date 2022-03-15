@@ -6188,7 +6188,20 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID b
 	return key
 }
 
-func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
+func DBGetDAOCoinLimitOrder(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) *DAOCoinLimitOrderEntry {
+	var ret *DAOCoinLimitOrderEntry
+
+	handle.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DBGetDAOCoinLimitOrderWithTxn(txn, inputOrder, byTransactorPKID)
+		glog.Errorf("DBGetDAOCoinLimitOrder failed: %v", err)
+		return nil
+	})
+
+	return ret
+}
+
+func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
 	key := DBKeyForDAOCoinLimitOrder(inputOrder, byTransactorPKID)
 	orderItem, err := txn.Get(key)
 

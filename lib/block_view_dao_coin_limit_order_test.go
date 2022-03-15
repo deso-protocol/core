@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -8,6 +9,7 @@ import (
 )
 
 func TestDAOCoinLimitOrder(t *testing.T) {
+	const FEE_RATE_NANOS_PER_KB = 10
 	require := require.New(t)
 
 	chain, params, db := NewLowDifficultyBlockchain()
@@ -15,6 +17,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Make m3 a paramUpdater for this test
 	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
+	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0, mempool)
@@ -64,13 +67,60 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		Quantity:                   *uint256.NewInt().SetUint64(100),
 	}
 
+	// Invalid DAOCoinCreatorPKID
+	// => RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile
 	{
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, 10, m0Pub, m0Priv, metadata)
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadata)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID)
 	}
+
+	// Create a profile for m0
+	{
+		_updateProfileWithTestMeta(
+			testMeta,
+			FEE_RATE_NANOS_PER_KB, /*feeRateNanosPerKB*/
+			m0Pub,                 /*updaterPkBase58Check*/
+			m0Priv,                /*updaterPrivBase58Check*/
+			[]byte{},              /*profilePubKey*/
+			"m0",                  /*newUsername*/
+			"i am the m0",         /*newDescription*/
+			shortPic,              /*newProfilePic*/
+			10*100,                /*newCreatorBasisPoints*/
+			1.25*100*100,          /*newStakeMultipleBasisPoints*/
+			false                  /*isHidden*/)
+	}
+
+	// Insufficient $DESO to open bid order
+	// TODO: add validation, no DAO coins in circulation for this profile
+	{
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadata)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder)
+	}
+
+	// Update quantity.
+	{
+		metadata.Quantity = *uint256.NewInt().SetUint64(2)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadata)
+
+		queryEntry := metadata.ToEntry(m0PKID.PKID, testMeta.savedHeight)
+		resultEntry := DBGetDAOCoinLimitOrder(db, queryEntry, false)
+
+		require.NotNil(resultEntry)
+		queryEntryBytes, err := queryEntry.ToBytes()
+		require.NoError(err)
+
+		resultEntryBytes, err := resultEntry.ToBytes()
+		require.NoError(err)
+
+		require.True(bytes.Equal(queryEntryBytes, resultEntryBytes))
+	}
+
 }
 
 // No error expected.

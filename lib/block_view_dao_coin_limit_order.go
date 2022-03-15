@@ -90,7 +90,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Validate price > 0.
-	if txMeta.PriceNanos.Cmp(NewFloat()) > 0 {
+	if txMeta.PriceNanos.Cmp(NewFloat()) <= 0 {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
