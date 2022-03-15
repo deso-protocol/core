@@ -122,22 +122,23 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 
 func EncodeUint256(val uint256.Int) []byte {
 	valBytes := val.Bytes()
-	data := append([]byte{}, UintToBuf(uint64(len(valBytes)))...)
-	return append(data, valBytes...)
+	data := make([]byte, 256, 256)
+	//data := append([]byte{}, UintToBuf(uint64(len(valBytes)))...)
+	return append(data, valBytes...)[:]
 }
 
 func ReadUint256(rr io.Reader) (uint256.Int, error) {
-	maxUint256BytesLen := len(MaxUint256.Bytes())
-	intLen, err := ReadUvarint(rr)
-	if err != nil {
-		return *uint256.NewInt(), errors.Wrapf(err, "ReadUint256: Problem reading length")
-	}
-	if intLen > uint64(maxUint256BytesLen) {
-		return *uint256.NewInt(), fmt.Errorf("ReadUint256: value length %d "+
-			"exceeds max %d", intLen, MaxMessagePayload)
-	}
-	valBytes := make([]byte, intLen)
-	_, err = io.ReadFull(rr, valBytes)
+	//maxUint256BytesLen := len(MaxUint256.Bytes())
+	//intLen, err := ReadUvarint(rr)
+	//if err != nil {
+	//	return *uint256.NewInt(), errors.Wrapf(err, "ReadUint256: Problem reading length")
+	//}
+	//if intLen > uint64(maxUint256BytesLen) {
+	//	return *uint256.NewInt(), fmt.Errorf("ReadUint256: value length %d "+
+	//		"exceeds max %d", intLen, MaxMessagePayload)
+	//}
+	valBytes := make([]byte, 256, 256)
+	_, err := io.ReadFull(rr, valBytes)
 	if err != nil {
 		return *uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
 	}

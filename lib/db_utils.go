@@ -3096,8 +3096,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5802,7 +5802,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5929,7 +5929,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6164,39 +6164,33 @@ func StartDBSummarySnapshots(db *badger.DB) {
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order, byTransactorPKID)
 
-	//// Cast PriceNanos big.Float using two uint256s.
-	//// One to represent the left side of the decimal place.
-	//// One to represent the right side of the decimal place.
-	//// This is to guarantee that the bytes-encoding widths are constant.
-	//var priceNanosLeftSide uint256.Int
-	//var priceNanosRightSide uint256.Int
-	//
-	//if order.PriceNanos.IsInf() {
-	//	priceNanosLeftSide = *MaxUint256.Clone()
-	//	priceNanosRightSide = *MaxUint256.Clone()
-	//} else {
-	//	priceNanosLeftSideInt, _ := order.PriceNanos.Int(nil)
-	//	priceNanosLeftSide = *uint256.NewInt()
-	//	priceNanosLeftSide.SetFromBig(priceNanosLeftSideInt)
-	//
-	//	// priceNanosRightSideInt
-	//}
-	//
-	//key = append(key, EncodeUint256(priceNanosLeftSide)...)
-	//key = append(key, EncodeUint256(priceNanosRightSide)...)
-	//priceNanosBytes, _ := order.PriceNanos.GobEncode()
-	//
-	//key = append(key, priceNanosBytes...)
+	// We cast PriceNanos from big.Float to uint256.
+	// This is to guarantee that the bytes-encoding widths are consistent.
+	// If the order is an ask, we subtract 1. If the order is a bid, we add 1.
+	// This is to be more inclusive in considering orders which may satisfy the
+	// incoming order, but we won't know until we pull the order out of Badger
+	// and check the decimal value in a later step.
+	var priceNanos256 *uint256.Int
 
-	//// TODO: figure out how to cast without error case.
-	//priceNanosBytes, err := ToBytes(&order.PriceNanos)
-	//
-	//if err != nil {
-	//	panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
-	//}
-	//
-	//key = append(key, priceNanosBytes...)
+	if order.PriceNanos.IsInf() {
+		priceNanos256 = MaxUint256.Clone()
+	} else {
+		priceNanosInt, _ := order.PriceNanos.Int(nil)
+		priceNanos256, _ = uint256.FromBig(priceNanosInt)
+		one256 := uint256.NewInt().SetUint64(1)
 
+		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			// If the order is an ask, we want math.FLOOR to be more inclusive at this stage.
+			priceNanos256 = uint256.NewInt().Sub(priceNanos256, one256)
+		} else if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			// If the order is a bid, we want math.CEIL to be more inclusive at this stage.
+			priceNanos256 = uint256.NewInt().Add(priceNanos256, one256)
+		} else {
+			priceNanos256 = uint256.NewInt()
+		}
+	}
+
+	key = append(key, EncodeUint256(*priceNanos256)...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	return key
 }
