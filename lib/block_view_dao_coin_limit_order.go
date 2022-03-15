@@ -333,7 +333,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			break
 		}
 
-		// If requested order is still not fully fulfilled, loop.
+		// Else requested order is still not fully fulfilled, so loop.
 		lastSeenOrder = prevMatchingOrders[len(prevMatchingOrders)-1]
 		prevMatchingOrders, _ = bav._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 	}
