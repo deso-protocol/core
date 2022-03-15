@@ -36,6 +36,12 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@v3
 
+      - name: Cache dependencies
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.GOPATH }}/pkg
+          key: core-dependencies
+
       - name: Install dependencies
         run: go mod download && go install
 
