@@ -76,7 +76,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	profileEntry := bav.GetProfileEntryForPKID(txMeta.DAOCoinCreatorPKID)
 
 	if profileEntry == nil || profileEntry.isDeleted {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile
 	}
 
 	// Validate OperationType is one of our supported enum values.

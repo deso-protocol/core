@@ -6162,6 +6162,46 @@ func StartDBSummarySnapshots(db *badger.DB) {
 // ---------------------------------------------
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
+	key := DBPrefixKeyForDAOCoinLimitOrder(order, byTransactorPKID)
+
+	//// Cast PriceNanos big.Float using two uint256s.
+	//// One to represent the left side of the decimal place.
+	//// One to represent the right side of the decimal place.
+	//// This is to guarantee that the bytes-encoding widths are constant.
+	//var priceNanosLeftSide uint256.Int
+	//var priceNanosRightSide uint256.Int
+	//
+	//if order.PriceNanos.IsInf() {
+	//	priceNanosLeftSide = *MaxUint256.Clone()
+	//	priceNanosRightSide = *MaxUint256.Clone()
+	//} else {
+	//	priceNanosLeftSideInt, _ := order.PriceNanos.Int(nil)
+	//	priceNanosLeftSide = *uint256.NewInt()
+	//	priceNanosLeftSide.SetFromBig(priceNanosLeftSideInt)
+	//
+	//	// priceNanosRightSideInt
+	//}
+	//
+	//key = append(key, EncodeUint256(priceNanosLeftSide)...)
+	//key = append(key, EncodeUint256(priceNanosRightSide)...)
+	//priceNanosBytes, _ := order.PriceNanos.GobEncode()
+	//
+	//key = append(key, priceNanosBytes...)
+
+	//// TODO: figure out how to cast without error case.
+	//priceNanosBytes, err := ToBytes(&order.PriceNanos)
+	//
+	//if err != nil {
+	//	panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
+	//}
+	//
+	//key = append(key, priceNanosBytes...)
+
+	key = append(key, _EncodeUint32(order.BlockHeight)...)
+	return key
+}
+
+func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
 	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
 	key := append([]byte{}, prefixCopy...)
 
@@ -6175,16 +6215,6 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID b
 	key = append(key, order.DAOCoinCreatorPKID[:]...)
 	key = append(key, _EncodeUint32(uint32(order.OperationType))...)
 
-	// TODO: figure out how to cast without error case.
-	priceNanosBytes, err := ToBytes(&order.PriceNanos)
-
-	if err != nil {
-		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
-	}
-
-	key = append(key, priceNanosBytes...)
-
-	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	return key
 }
 
@@ -6321,6 +6351,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	queryOrder.BlockHeight = math.MaxUint32
 	queryOrder.Quantity = *MaxUint256.Clone()
 
+	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
 
 	// If passed a start key, start seeking from there.
@@ -6336,7 +6367,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	// Seek first matching order.
 	orders := []*DAOCoinLimitOrderEntry{}
 
-	for iterator.Seek(key); iterator.ValidForPrefix(key) && requestedQuantity.GtUint64(0); iterator.Next() {
+	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && requestedQuantity.GtUint64(0); iterator.Next() {
 		// If picking up from where you left off, skip the first order which has already been included.
 		if startKey != nil && reflect.DeepEqual(key, startKey) {
 			startKey = nil

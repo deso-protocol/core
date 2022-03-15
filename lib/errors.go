@@ -250,6 +250,7 @@ const (
 	RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType     RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType"
 	RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID  RuleError = "RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID"
 	RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID          RuleError = "RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID"
+	RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile       RuleError = "RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile"
 	RuleErrorDAOCoinLimitOrderUnsupportedOperationType           RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedOperationType"
 	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder"
 	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder     RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder"
