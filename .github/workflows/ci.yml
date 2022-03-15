@@ -36,15 +36,14 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@v3
 
+      - name: Echo gopath
+        run: echo ${GOPATH}
+
       - name: Cache dependencies
         uses: actions/cache@v2
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
+          path: ${{ env.GOPATH }}/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
 
       - name: Install dependencies
         run: go mod download && go install
@@ -53,4 +52,4 @@ jobs:
         run: go build
 
       - name: Run go test
-        run: go test -p 1 -v ./...
+        run: go test -failfast -v ./...
