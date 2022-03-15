@@ -376,10 +376,8 @@ func isStateKey(key []byte) bool {
 		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
 	}
 	prefix := key[0]
-	if isState, exists := StatePrefixes.StatePrefixesMap[prefix]; exists && isState {
-		return true
-	}
-	return false
+	isState, exists := StatePrefixes.StatePrefixesMap[prefix]
+	return exists && isState
 }
 
 // isTxIndexKey checks if a key is a txindex-related key.
@@ -492,6 +490,9 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 		return nil, err
 	}
 	itemData, err := item.ValueCopy(nil)
+	if err != nil {
+		return nil, err
+	}
 
 	// If a flush takes place, we don't update cache. It will be updated in DBSetWithTxn.
 	if isState && !snap.isFlushing() {
@@ -608,7 +609,7 @@ func DBDeleteAllStateRecords(db *badger.DB) error {
 		// entries for a prefix.
 		for fetchingPrefix {
 			// Fetch a chunk of data from the DB.
-			dbEntries, isChunkFull, err := DBIteratePrefixKeys(db, prefix, startKey, 8<<20)
+			dbEntries, isChunkFull, err := DBIteratePrefixKeys(db, prefix, startKey, SnapshotBatchSize)
 			fetchingPrefix = isChunkFull
 			if err != nil {
 				return errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at "+
@@ -6283,15 +6284,6 @@ func _dbSeekPrefixForDerivedKeyMappings(
 
 func DBPutDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
-
-	if len(ownerPublicKey.ToBytes()) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Owner Public Key "+
-			"length %d != %d", len(ownerPublicKey), btcec.PubKeyBytesLenCompressed)
-	}
-	if len(derivedPublicKey.ToBytes()) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DBPutDerivedKeyMappingsWithTxn: Derived Public Key "+
-			"length %d != %d", len(derivedPublicKey), btcec.PubKeyBytesLenCompressed)
-	}
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
 

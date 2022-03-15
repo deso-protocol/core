@@ -363,6 +363,8 @@ const (
 	SnapshotOperationChecksumRemove
 	// SnapshotOperationChecksumPrint is called when we want to print the state checksum.
 	SnapshotOperationChecksumPrint
+	// SnapshotOperationExit is used to quit the snapshot loop
+	SnapshotOperationExit
 )
 
 // SnapshotOperation is passed in the snapshot's OperationChannel.
@@ -534,60 +536,59 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 
 // Run is the snapshot main loop. It handles the operations from the OperationChannel.
 func (snap *Snapshot) Run() {
-	glog.Infof("Snapshot.Run: Starting update thread")
+	glog.V(1).Infof("Snapshot.Run: Starting update thread")
 
 	snap.updateWaitGroup.Add(1)
 	for {
-		select {
-		case <-snap.ExitChannel:
-			snap.updateWaitGroup.Done()
-			return
-		case operation := <-snap.OperationChannel:
-			switch operation.operationType {
-			case SnapshotOperationFlush:
-				glog.Infof("Snapshot.Run: Flushing ancestral records with counter")
-				snap.FlushAncestralRecords()
+		operation := <-snap.OperationChannel
+		switch operation.operationType {
+		case SnapshotOperationFlush:
+			glog.V(1).Infof("Snapshot.Run: Flushing ancestral records with counter")
+			snap.FlushAncestralRecords()
 
-			case SnapshotOperationProcessBlock:
-				height := uint64(operation.blockNode.Height)
-				glog.Infof("Snapshot.Run: Getting into the delete channel with height (%v)", height)
-				if height%snap.SnapshotBlockHeightPeriod == 0 {
-					var err error
-					glog.Infof("Snapshot.Run: About to delete SnapshotBlockHeight (%v) and set new height (%v)",
-						snap.SnapshotBlockHeight, height)
-					snap.SnapshotBlockHeight = height
-					snap.CurrentEpochChecksumBytes, err = snap.Checksum.ToBytes()
-					if err != nil {
-						glog.Errorf("Snapshot.Run: Problem getting checksum bytes (%v)", err)
-					}
-					snap.CurrentEpochBlockHash = operation.blockNode.Hash
-					glog.Infof("Snapshot.Run: snapshot is (%v)", snap.CurrentEpochChecksumBytes)
-					// TODO: This should remove past height not current height.
-					snap.DeleteAncestralRecords(height)
-				}
-
-			case SnapshotOperationProcessChunk:
-				if err := snap.SetSnapshotChunk(operation.mainDb, operation.snapshotChunk); err != nil {
-					glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
-				}
-
-			case SnapshotOperationChecksumAdd:
-				if err := snap.Checksum.AddBytes(operation.checksumBytes); err != nil {
-					glog.Errorf("Snapshot.Run: Problem adding checksum bytes operation (%v)", operation)
-				}
-
-			case SnapshotOperationChecksumRemove:
-				if err := snap.Checksum.RemoveBytes(operation.checksumBytes); err != nil {
-					glog.Errorf("Snapshot.Run: Problem removing checksum bytes operation (%v)", operation)
-				}
-
-			case SnapshotOperationChecksumPrint:
-				stateChecksum, err := snap.Checksum.ToBytes()
+		case SnapshotOperationProcessBlock:
+			height := uint64(operation.blockNode.Height)
+			glog.Infof("Snapshot.Run: Getting into the delete channel with height (%v)", height)
+			if height%snap.SnapshotBlockHeightPeriod == 0 {
+				var err error
+				glog.V(1).Infof("Snapshot.Run: About to delete SnapshotBlockHeight (%v) and set new height (%v)",
+					snap.SnapshotBlockHeight, height)
+				snap.SnapshotBlockHeight = height
+				snap.CurrentEpochChecksumBytes, err = snap.Checksum.ToBytes()
 				if err != nil {
-					glog.Errorf("Snapshot.ChecksumPrint: Problem getting checksum bytes (%v)", err)
+					glog.Errorf("Snapshot.Run: Problem getting checksum bytes (%v)", err)
 				}
-				glog.Infof("Snapshot.ChecksumPrint: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
+				snap.CurrentEpochBlockHash = operation.blockNode.Hash
+				glog.V(1).Infof("Snapshot.Run: snapshot is (%v)", snap.CurrentEpochChecksumBytes)
+				// TODO: This should remove past height not current height.
+				snap.DeleteAncestralRecords(height)
 			}
+
+		case SnapshotOperationProcessChunk:
+			if err := snap.SetSnapshotChunk(operation.mainDb, operation.snapshotChunk); err != nil {
+				glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
+			}
+
+		case SnapshotOperationChecksumAdd:
+			if err := snap.Checksum.AddBytes(operation.checksumBytes); err != nil {
+				glog.Errorf("Snapshot.Run: Problem adding checksum bytes operation (%v)", operation)
+			}
+
+		case SnapshotOperationChecksumRemove:
+			if err := snap.Checksum.RemoveBytes(operation.checksumBytes); err != nil {
+				glog.Errorf("Snapshot.Run: Problem removing checksum bytes operation (%v)", operation)
+			}
+
+		case SnapshotOperationChecksumPrint:
+			stateChecksum, err := snap.Checksum.ToBytes()
+			if err != nil {
+				glog.Errorf("Snapshot.Run: Problem getting checksum bytes (%v)", err)
+			}
+			glog.Infof("Snapshot.Run: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
+			glog.Infof("Snapshot.Run: Number of operations in the operation channel: (%v)", len(snap.OperationChannel))
+
+		case SnapshotOperationExit:
+			snap.updateWaitGroup.Done()
 		}
 	}
 }
@@ -595,7 +596,9 @@ func (snap *Snapshot) Run() {
 func (snap *Snapshot) Stop() {
 	glog.Infof("Snapshot.Stop: Stopping the run loop")
 
-	snap.ExitChannel <- true
+	snap.OperationChannel <- &SnapshotOperation{
+		operationType: SnapshotOperationExit,
+	}
 	snap.updateWaitGroup.Wait()
 
 	snap.AncestralRecordsDb.Close()
@@ -623,7 +626,6 @@ func (snap *Snapshot) StartAncestralRecordsFlush() {
 	snap.OperationChannel <- &SnapshotOperation{
 		operationType: SnapshotOperationFlush,
 	}
-	return
 }
 
 func (snap *Snapshot) PrintChecksum(text string) {
@@ -709,7 +711,7 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 			"Did you forget to call Snapshot.PrepareAncestralRecordsFlush?")
 	}
 
-	// Get the last ancestral cache. This is where we'll add the new record to.
+	// Get the last ancestral cache. This is where we'll add the new record.
 	lastAncestralCache := snap.AncestralMemory.Last().(*AncestralCache)
 	if lastAncestralCache.id != index {
 		return fmt.Errorf("Snapshot.PrepareAncestralRecords: last ancestral cache index (%v) is "+
@@ -823,12 +825,8 @@ func (snap *Snapshot) isFlushing() bool {
 	// Flush is taking place if the semaphores have different counters or if they are odd.
 	// We increment each semaphore whenever we start the flush and when we end it so they are always
 	// even when the DB is not being updated.
-	if ancestralDBSemaphore != mainDBSemaphore ||
-		(ancestralDBSemaphore|mainDBSemaphore)%2 == 1 {
-
-		return true
-	}
-	return false
+	return ancestralDBSemaphore != mainDBSemaphore ||
+		(ancestralDBSemaphore|mainDBSemaphore)%2 == 1
 }
 
 // FlushAncestralRecords updates the ancestral records after a UtxoView flush.
@@ -986,9 +984,10 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		dbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
 
 		for jj := indexChunk; jj < len(mainDbBatchEntries); {
-			if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == -1 {
+			comparison := bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key)
+			if comparison == -1 {
 				snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
-			} else if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == 1 {
+			} else if comparison == 1 {
 				break
 			}
 			// if keys are equal we just skip
@@ -1097,7 +1096,7 @@ func (t *Timer) Initialize() {
 	t.totalElapsedTimes = make(map[string]float64)
 	t.lastTimes = make(map[string]time.Time)
 	// Change this to true to stop timing
-	t.productionMode = false
+	t.productionMode = DisableTimer
 }
 
 func (t *Timer) Start(eventName string) {

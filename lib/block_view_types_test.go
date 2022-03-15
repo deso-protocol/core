@@ -341,6 +341,4 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 		// Flushing the UtxoView should work.
 		require.NoError(utxoView.FlushToDb())
 	}
-	//utxoEntries, _ := chain.GetSpendableUtxosForPublicKey(pkBytes1, nil, utxoView)
-	//fmt.Println("Length of UtxoEntrie:", len(utxoEntries))
 }

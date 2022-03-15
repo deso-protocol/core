@@ -134,12 +134,6 @@ func TestTypes(t *testing.T) {
 	for i := 0; i < v.NumField(); i++ {
 		fmt.Println("PREFIX:", v.Field(i).Interface())
 	}
-
-	//for i := 0; i < v.NumField(); i++ {
-	//	if v.Field(i).Interface().(PrefixType).IsState() {
-	//		fmt.Println("STATE PREFIX:", v.Field(i).Interface())
-	//	}
-	//}
 }
 
 func TestFromBytes(t *testing.T) {
