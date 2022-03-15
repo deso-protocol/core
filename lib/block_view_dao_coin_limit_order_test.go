@@ -58,7 +58,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	_, _, _, _ = m0PKID, m1PKID, m2PKID, m4PKID
 
-	metadata := DAOCoinLimitOrderMetadata{
+	metadataM0 := DAOCoinLimitOrderMetadata{
 		DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
 		DenominatedCoinCreatorPKID: &ZeroPKID,
 		DAOCoinCreatorPKID:         m0PKID.PKID,
@@ -70,7 +70,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile
 	{
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadata)
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile)
@@ -89,14 +89,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false                  /*isHidden*/)
+			false /*isHidden*/)
 	}
 
 	// RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
-	// TODO: add validation, no DAO coins in circulation for this profile
 	{
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadata)
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder)
@@ -104,10 +103,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// Update quantity and resubmit. Should go through.
 	{
-		metadata.Quantity = *uint256.NewInt().SetUint64(2)
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadata)
+		metadataM0.Quantity = *uint256.NewInt().SetUint64(2)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
 
-		queryEntry := metadata.ToEntry(m0PKID.PKID, testMeta.savedHeight)
+		queryEntry := metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)
 		resultEntry := DBGetDAOCoinLimitOrder(db, queryEntry, false)
 
 		require.NotNil(resultEntry)
@@ -121,7 +120,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	}
 
 	// Mint DAO coins and transfer to M1.
-	// TODO: maybe test trying to buy more DAO coins than were minted.
 	{
 		daoCoinMintMetadata := DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
@@ -169,8 +167,20 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(
 			*uint256.NewInt().Sub(&originalM1DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
 			updatedM1DAOCoinBalance.BalanceNanos)
+
+		// Both orders are deleted from the order book.
+		askOrderEntry := DBGetDAOCoinLimitOrder(db, metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight), false)
+		require.Nil(askOrderEntry)
+
+		bidOrderEntry := DBGetDAOCoinLimitOrder(db, metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
+		require.Nil(bidOrderEntry)
 	}
 
+	// TODO: add validation, no DAO coins in circulation for this profile
+	// TODO: maybe test trying to buy more DAO coins than were minted.
+	// TODO: partially fulfilled orders
+	// TODO: two bid orders, different prices, choose high priced one
+	// TODO: two ask orders, different prices, choose lower priced one
 	// TODO: what if someone submits order that matches their own order.
 }
 
