@@ -3208,12 +3208,12 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				if NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig())).
 					Cmp(NewFloat().SetUint64(desoBalanceNanos)) <= 0 {
 					var desoNanosBigFloatToConsume *big.Float
-					if requestedOrder.Quantity.Lt(&order.Quantity) {
+					if requestedOrder.Quantity.Lt(order.Quantity) {
 						desoNanosBigFloatToConsume = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(requestedOrder.Quantity.ToBig()))
-						requestedOrder.Quantity = *uint256.NewInt()
+						requestedOrder.Quantity = uint256.NewInt()
 					} else {
 						desoNanosBigFloatToConsume = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
-						requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+						requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
 					}
 					if !IsUint64(desoNanosBigFloatToConsume) {
 						return nil, 0, 0, 0, fmt.Errorf(
@@ -4230,14 +4230,14 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 				for _, order := range matchingOrderEntries {
 					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
 						order.TransactorPKID, order.DAOCoinCreatorPKID, true)
-					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(&order.Quantity) {
+					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.Quantity) {
 						var nanosToFulfillOrder *big.Float
-						if requestedOrder.Quantity.Lt(&order.Quantity) {
+						if requestedOrder.Quantity.Lt(order.Quantity) {
 							nanosToFulfillOrder = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(requestedOrder.Quantity.ToBig()))
-							requestedOrder.Quantity = *uint256.NewInt()
+							requestedOrder.Quantity = uint256.NewInt()
 						} else {
 							nanosToFulfillOrder = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
-							requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+							requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
 						}
 						nanosToFulfillOrders = NewFloat().Add(nanosToFulfillOrders, nanosToFulfillOrder)
 					}
