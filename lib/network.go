@@ -5496,7 +5496,8 @@ type DAOCoinLimitOrderMetadata struct {
 	DAOCoinCreatorPKID           *PKID
 	OperationType                DAOCoinLimitOrderEntryOrderType
 	PriceNanosPerDenominatedCoin *uint256.Int
-	Quantity                     uint256.Int
+	Quantity                     *uint256.Int
+
 	// This map is populated with the inputs consumed when a transaction
 	// is an ask offer and there are bids to match immediately.
 	MatchingBidsInputsMap map[PKID][]*DeSoInput
@@ -5524,7 +5525,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, txnData.DenominatedCoinCreatorPKID.Encode()...)
 	data = append(data, txnData.DAOCoinCreatorPKID.Encode()...)
 	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
-	data = append(data, EncodeUint256(*txnData.PriceNanosPerDenominatedCoin)...)
+	data = append(data, EncodeUint256(txnData.PriceNanosPerDenominatedCoin)...)
 	data = append(data, EncodeUint256(txnData.Quantity)...)
 	data = append(data, UintToBuf(uint64(len(txnData.MatchingBidsInputsMap)))...)
 	for bidderPKID, inputs := range txnData.MatchingBidsInputsMap {
@@ -5571,12 +5572,10 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 	ret.OperationType = DAOCoinLimitOrderEntryOrderType(operationType)
 	// Parse PriceNanos
-	var priceNanos uint256.Int
-	priceNanos, err = ReadUint256(rr)
+	ret.PriceNanosPerDenominatedCoin, err = ReadUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading Price nanos: %v", err)
 	}
-	ret.PriceNanosPerDenominatedCoin = &priceNanos
 	// Parse Quantity
 	ret.Quantity, err = ReadUint256(rr)
 	if err != nil {

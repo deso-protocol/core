@@ -64,7 +64,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		DAOCoinCreatorPKID:           m0PKID.PKID,
 		OperationType:                DAOCoinLimitOrderEntryOrderTypeBid,
 		PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(10),
-		Quantity:                     *uint256.NewInt().SetUint64(100),
+		Quantity:                     uint256.NewInt().SetUint64(100),
 	}
 
 	// RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile
@@ -103,7 +103,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// Update quantity and resubmit. Should go through.
 	{
-		metadataM0.Quantity = *uint256.NewInt().SetUint64(2)
+		metadataM0.Quantity = uint256.NewInt().SetUint64(2)
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
 
 		queryEntry := metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)
@@ -150,7 +150,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			DAOCoinCreatorPKID:           m0PKID.PKID,
 			OperationType:                DAOCoinLimitOrderEntryOrderTypeAsk,
 			PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(10),
-			Quantity:                     *daoCoinQuantityChange,
+			Quantity:                     daoCoinQuantityChange,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m1Pub, m1Priv, metadataM1)

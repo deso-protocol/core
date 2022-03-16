@@ -3205,15 +3205,15 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
 				// TODO: check overflow
-				if uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &order.Quantity).
+				if uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, order.Quantity).
 					Cmp(uint256.NewInt().SetUint64(desoBalanceNanos)) <= 0 {
 					var desoNanosToConsume *uint256.Int
-					if requestedOrder.Quantity.Lt(&order.Quantity) {
-						desoNanosToConsume = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &requestedOrder.Quantity)
-						requestedOrder.Quantity = *uint256.NewInt()
+					if requestedOrder.Quantity.Lt(order.Quantity) {
+						desoNanosToConsume = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, requestedOrder.Quantity)
+						requestedOrder.Quantity = uint256.NewInt()
 					} else {
-						desoNanosToConsume = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &order.Quantity)
-						requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+						desoNanosToConsume = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, order.Quantity)
+						requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
 					}
 					if !desoNanosToConsume.IsUint64() {
 						return nil, 0, 0, 0, fmt.Errorf(
@@ -4229,14 +4229,14 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 				for _, order := range matchingOrderEntries {
 					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
 						order.TransactorPKID, order.DAOCoinCreatorPKID, true)
-					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(&order.Quantity) {
+					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.Quantity) {
 						var nanosToFulfillOrder *uint256.Int
-						if requestedOrder.Quantity.Lt(&order.Quantity) {
-							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &requestedOrder.Quantity)
-							requestedOrder.Quantity = *uint256.NewInt()
+						if requestedOrder.Quantity.Lt(order.Quantity) {
+							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, requestedOrder.Quantity)
+							requestedOrder.Quantity = uint256.NewInt()
 						} else {
-							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &order.Quantity)
-							requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, order.Quantity)
+							requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
 						}
 						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)
 					}

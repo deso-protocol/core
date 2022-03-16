@@ -1446,7 +1446,7 @@ type DAOCoinLimitOrderEntry struct {
 	OperationType                DAOCoinLimitOrderEntryOrderType
 	PriceNanosPerDenominatedCoin *uint256.Int
 	BlockHeight                  uint32
-	Quantity                     uint256.Int
+	Quantity                     *uint256.Int
 
 	isDeleted bool
 }
@@ -1471,7 +1471,7 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data = append(data, order.DenominatedCoinCreatorPKID.Encode()...)
 	data = append(data, order.DAOCoinCreatorPKID.Encode()...)
 	data = append(data, UintToBuf(uint64(order.OperationType))...)
-	data = append(data, EncodeUint256(*order.PriceNanosPerDenominatedCoin)...)
+	data = append(data, EncodeUint256(order.PriceNanosPerDenominatedCoin)...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	data = append(data, EncodeUint256(order.Quantity)...)
 	return data, nil
@@ -1516,12 +1516,10 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	}
 	ret.OperationType = DAOCoinLimitOrderEntryOrderType(operationType)
 	// Parse PriceNanosPerDenominatedCoin
-	var priceNanos uint256.Int
-	priceNanos, err = ReadUint256(rr)
+	ret.PriceNanosPerDenominatedCoin, err = ReadUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading PriceNanosPerDenominatedCoin: %v", err)
 	}
-	ret.PriceNanosPerDenominatedCoin = &priceNanos
 	// Parse BlockHeight
 	var blockHeight uint64
 	blockHeight, err = ReadUvarint(rr)
@@ -1580,8 +1578,8 @@ func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderE
 	}
 
 	// Prefer lower-quantity orders first.
-	if order.Quantity.Eq(&other.Quantity) {
-		return order.Quantity.Lt(&other.Quantity)
+	if order.Quantity.Eq(other.Quantity) {
+		return order.Quantity.Lt(other.Quantity)
 	}
 
 	// To break a tie and guarantee idempotency in sorting, prefer lower TransactorPKIDs.

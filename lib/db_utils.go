@@ -6163,7 +6163,7 @@ func StartDBSummarySnapshots(db *badger.DB) {
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order, byTransactorPKID)
-	key = append(key, EncodeUint256(*order.PriceNanosPerDenominatedCoin)...)
+	key = append(key, EncodeUint256(order.PriceNanosPerDenominatedCoin)...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	return key
 }
@@ -6246,7 +6246,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeAsk
 	queryOrder.PriceNanosPerDenominatedCoin = uint256.NewInt()
 	queryOrder.BlockHeight = uint32(0)
-	queryOrder.Quantity = *uint256.NewInt()
+	queryOrder.Quantity = uint256.NewInt()
 
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
 
@@ -6289,7 +6289,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 		}
 
 		// Reduce requested quantity by matching order's quantity.
-		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+		requestedQuantity = uint256.NewInt().Sub(requestedQuantity, order.Quantity)
 		orders = append(orders, order)
 	}
 
@@ -6318,7 +6318,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeBid
 	queryOrder.PriceNanosPerDenominatedCoin = MaxUint256.Clone()
 	queryOrder.BlockHeight = math.MaxUint32
-	queryOrder.Quantity = *MaxUint256.Clone()
+	queryOrder.Quantity = MaxUint256.Clone()
 
 	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
@@ -6363,7 +6363,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 		}
 
 		// Reduce requested quantity by matching order's quantity.
-		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+		requestedQuantity = uint256.NewInt().Sub(requestedQuantity, order.Quantity)
 		orders = append(orders, order)
 	}
 
