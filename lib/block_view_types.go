@@ -1554,18 +1554,18 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
-	if order.PriceNanosPerDenominatedCoin.Cmp(other.PriceNanosPerDenominatedCoin) != 0 {
+	if !order.PriceNanosPerDenominatedCoin.Eq(other.PriceNanosPerDenominatedCoin) {
 		// order.PriceNanos < other.PriceNanos
-		return order.PriceNanosPerDenominatedCoin.Cmp(other.PriceNanosPerDenominatedCoin) < 0
+		return order.PriceNanosPerDenominatedCoin.Lt(other.PriceNanosPerDenominatedCoin)
 	}
 
 	return order.IsBetterOrderThan(other)
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterBidThan(other *DAOCoinLimitOrderEntry) bool {
-	if order.PriceNanosPerDenominatedCoin.Cmp(other.PriceNanosPerDenominatedCoin) != 0 {
+	if !order.PriceNanosPerDenominatedCoin.Eq(other.PriceNanosPerDenominatedCoin) {
 		// order.PriceNanos > other.PriceNanos
-		return order.PriceNanosPerDenominatedCoin.Cmp(other.PriceNanosPerDenominatedCoin) > 0
+		return order.PriceNanosPerDenominatedCoin.Gt(other.PriceNanosPerDenominatedCoin)
 	}
 
 	return order.IsBetterOrderThan(other)

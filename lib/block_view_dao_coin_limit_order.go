@@ -90,7 +90,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Validate price > 0.
-	if txMeta.PriceNanosPerDenominatedCoin.Cmp(uint256.NewInt()) <= 0 {
+	if txMeta.PriceNanosPerDenominatedCoin.IsZero() ||
+		txMeta.PriceNanosPerDenominatedCoin.Lt(uint256.NewInt()) {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
@@ -403,13 +404,13 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 		// Ask: reject if requestedOrder.PriceNanos > order.PriceNanos
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk &&
-			requestedOrder.PriceNanosPerDenominatedCoin.Cmp(order.PriceNanosPerDenominatedCoin) > 0 {
+			requestedOrder.PriceNanosPerDenominatedCoin.Gt(order.PriceNanosPerDenominatedCoin) {
 			continue
 		}
 
 		// Bid: reject if requestedOrder.PriceNanos < order.PriceNanos
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid &&
-			requestedOrder.PriceNanosPerDenominatedCoin.Cmp(order.PriceNanosPerDenominatedCoin) < 0 {
+			requestedOrder.PriceNanosPerDenominatedCoin.Lt(order.PriceNanosPerDenominatedCoin) {
 			continue
 		}
 

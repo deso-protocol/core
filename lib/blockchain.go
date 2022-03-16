@@ -4216,7 +4216,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			var lastSeenOrder *DAOCoinLimitOrderEntry
 
 			nanosToFulfillOrders := uint256.NewInt()
-			for requestedOrder.Quantity.GtUint64(0) {
+			for !requestedOrder.Quantity.IsZero() {
 				var matchingOrderEntries []*DAOCoinLimitOrderEntry
 				matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 				if err != nil {

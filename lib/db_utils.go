@@ -6284,7 +6284,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 
 		// Break if ask price is greater than requested bid price.
 		// order.PriceNanos > inputOrder.PriceNanos
-		if order.PriceNanosPerDenominatedCoin.Cmp(inputOrder.PriceNanosPerDenominatedCoin) > 0 {
+		if order.PriceNanosPerDenominatedCoin.Gt(inputOrder.PriceNanosPerDenominatedCoin) {
 			break
 		}
 
@@ -6358,7 +6358,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 
 		// Break if bid price is less than requested ask price.
 		// order.PriceNanos < inputOrder.PriceNanos
-		if order.PriceNanosPerDenominatedCoin.Cmp(inputOrder.PriceNanosPerDenominatedCoin) < 0 {
+		if order.PriceNanosPerDenominatedCoin.Lt(inputOrder.PriceNanosPerDenominatedCoin) {
 			break
 		}
 
