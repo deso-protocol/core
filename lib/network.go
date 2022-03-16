@@ -2308,13 +2308,8 @@ func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
 }
 
 type MsgDeSoSnapshotData struct {
-	// SnapshotHeight is the block height of the current snapshot epoch.
-	SnapshotHeight uint64
-	// SnapshotBlockHash is the block hash of the block at the height of the current snapshot epoch.
-	SnapshotBlockHash *BlockHash
-
-	// SnapshotChecksum is the checksum of the snapshot state.
-	SnapshotChecksum []byte
+	// SnapshotMetadata is the information about the current snapshot epoch.
+	SnapshotMetadata *SnapshotEpochMetadata
 
 	// SnapshotChunk is the snapshot state data chunk.
 	SnapshotChunk []*DBEntry
@@ -2329,12 +2324,8 @@ type MsgDeSoSnapshotData struct {
 func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
-	data = append(data, UintToBuf(msg.SnapshotHeight)...)
-	data = append(data, msg.SnapshotBlockHash.ToBytes()...)
-
-	// Encode the snapshot checksum
-	data = append(data, UintToBuf(uint64(len(msg.SnapshotChecksum)))...)
-	data = append(data, msg.SnapshotChecksum...)
+	// Encode the snapshot metadata.
+	data = append(data, msg.SnapshotMetadata.Encode()...)
 
 	// Encode the snapshot chunk data.
 	if len(msg.SnapshotChunk) == 0 {
@@ -2356,26 +2347,12 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 
 	rr := bytes.NewReader(data)
 
-	msg.SnapshotHeight, err = ReadUvarint(rr)
+	// Decode snapshot metadata.
+	msg.SnapshotMetadata = &SnapshotEpochMetadata{}
+	err = msg.SnapshotMetadata.Decode(rr)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding snapshot metadata")
 	}
-	msg.SnapshotBlockHash = &BlockHash{}
-	_, err = io.ReadFull(rr, msg.SnapshotBlockHash[:])
-	if err != nil {
-		return err
-	}
-
-	checksumLen, err := ReadUvarint(rr)
-	if err != nil {
-		return err
-	}
-	msg.SnapshotChecksum = make([]byte, checksumLen)
-	_, err = io.ReadFull(rr, msg.SnapshotChecksum)
-	if err != nil {
-		return err
-	}
-
 	// Decode snapshot keys
 	dataLen, err := ReadUvarint(rr)
 	if err != nil {

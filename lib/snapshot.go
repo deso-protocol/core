@@ -158,6 +158,7 @@ func (sc *StateChecksum) GetChecksum() (group.Element, error) {
 	return checksumCopy, nil
 }
 
+// Wait until there is no checksum workers holding the semaphore.
 func (sc *StateChecksum) Wait() error {
 	if err := sc.semaphore.Acquire(sc.ctx, sc.maxWorkers); err != nil {
 		return errors.Wrapf(err, "StateChecksum.Wait: problem acquiring semaphore")
@@ -205,7 +206,7 @@ func (entry *DBEntry) Encode() []byte {
 	return data
 }
 
-func (entry *DBEntry) Decode(rr io.Reader) error {
+func (entry *DBEntry) Decode(rr *bytes.Reader) error {
 	var keyLen, entryLen uint64
 	var err error
 
@@ -286,7 +287,57 @@ var (
 	// the node, we would need to save health information about the snapshot in the db.
 	//  <prefix> -> <health byte [1]byte>
 	_prefixSnapshotHealth = []byte{1}
+
+	// Last Snapshot epoch metadata prefix is used to encode information about the last snapshot epoch.
+	// This includes the SnapshotBlockHeight, CurrentEpochChecksumBytes, CurrentEpochBlockHash.
+	// 	<prefix> -> <SnapshotEpochMetadata>
+	_prefixLastEpochMetadata = []byte{2}
+
+	// This prefix saves the checksum bytes after a flush.
+	// 	<prefix> -> <checksum bytes [33]byte>
+	_prefixSnapshotChecksum = []byte{3}
 )
+
+type SnapshotEpochMetadata struct {
+	// SnapshotBlockHeight is the height of the snapshot.
+	SnapshotBlockHeight uint64
+
+	// CurrentEpochChecksumBytes is the bytes of the state checksum for the snapshot at the epoch.
+	CurrentEpochChecksumBytes []byte
+	// CurrentEpochBlockHash is the hash of the first block of the current epoch. It's used to identify the snapshot.
+	CurrentEpochBlockHash *BlockHash
+}
+
+func (metadata *SnapshotEpochMetadata) Encode() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(metadata.SnapshotBlockHeight)...)
+	data = append(data, EncodeByteArray(metadata.CurrentEpochChecksumBytes)...)
+	data = append(data, metadata.CurrentEpochBlockHash.Encode()...)
+
+	return data
+}
+
+func (metadata *SnapshotEpochMetadata) Decode(rr *bytes.Reader) error {
+	var err error
+
+	metadata.SnapshotBlockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+
+	metadata.CurrentEpochChecksumBytes, err = DecodeByteArray(rr)
+	if err != nil {
+		return err
+	}
+
+	metadata.CurrentEpochBlockHash = &BlockHash{}
+	err = metadata.CurrentEpochBlockHash.Decode(rr)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
 // AncestralCache is an in-memory structure that helps manage concurrency between node's
 // main db flushes and ancestral records flushes. For each main db flush transaction, we
@@ -398,8 +449,8 @@ type SnapshotOperation struct {
 // 	- managing the state checksum
 // 	- serving snapshot chunks to syncing nodes.
 type Snapshot struct {
-	// AncestralRecordsDb is used to store ancestral records
-	AncestralRecordsDb *badger.DB
+	// SnapshotDb is used to store snapshot-related records.
+	SnapshotDb *badger.DB
 	// AncestralMemory stores information about the ancestral records that should be flushed into the db.
 	// We use a concurrency-safe deque which allows us to push objects to the end of the AncestralMemory
 	// queue in one thread and consume objects from the beginning of the queue in another thread without
@@ -410,9 +461,6 @@ type Snapshot struct {
 	// This is particularly useful for maintaining ancestral records, because
 	// it saves us read time when we're writing to DB during utxo_view flush.
 	DatabaseCache lru.KVCache
-
-	// SnapshotBlockHeight is the height of the last snapshot.
-	SnapshotBlockHeight uint64
 
 	// AncestralFlushCounter is used to offset ancestral records flush to occur only after x blocks.
 	AncestralFlushCounter uint64
@@ -427,10 +475,12 @@ type Snapshot struct {
 	// Checksum allows us to confirm integrity of the state so that when we're syncing with peers,
 	// we are confident that data wasn't tampered with.
 	Checksum *StateChecksum
-	// CurrentEpochChecksumBytes is the bytes of the state checksum for the snapshot at the current epoch.
-	CurrentEpochChecksumBytes []byte
-	// CurrentEpochBlockHash is the hash of the first block of the current epoch. It's used to identify the snapshot.
-	CurrentEpochBlockHash *BlockHash
+
+	// CurrentEpochSnapshotMetadata is the information about the currently stored complete snapshot, which
+	// reflects the state of the blockchain at the largest height divisible by SnapshotBlockHeightPeriod.
+	// The metadata includes the block height and its block hash of when the snapshot was taken, and the
+	// state checksum.
+	CurrentEpochSnapshotMetadata *SnapshotEpochMetadata
 
 	// MainDBSemaphore and AncestralDBSemaphore are atomically accessed counter semaphores that will be
 	// used to control race conditions between main db and ancestral records.
@@ -478,28 +528,61 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	checksum := &StateChecksum{}
 	checksum.Initialize()
 
+	metadata := &SnapshotEpochMetadata{
+		SnapshotBlockHeight:       uint64(0),
+		CurrentEpochChecksumBytes: []byte{},
+		CurrentEpochBlockHash:     NewBlockHash([]byte{}),
+	}
+	err = snapshotDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(_prefixSnapshotChecksum)
+		if err != nil {
+			return err
+		}
+		value, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		err = checksum.checksum.UnmarshalBinary(value)
+		if err != nil {
+			return err
+		}
+
+		item, err = txn.Get(_prefixLastEpochMetadata)
+		if err != nil {
+			return err
+		}
+		value, err = item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		rr := bytes.NewReader(value)
+		return metadata.Decode(rr)
+	})
+	if err != nil && err != badger.ErrKeyNotFound {
+		return nil, errors.Wrapf(err, "Snapshot.NewSnapshot: Problem retrieving snapshot information from db")
+	}
+
 	// Initialize the timer.
 	timer := &Timer{}
 	timer.Initialize()
 
 	// Set the snapshot.
 	snap := &Snapshot{
-		AncestralRecordsDb:        snapshotDb,
-		DatabaseCache:             lru.NewKVCache(DatabaseCacheSize),
-		SnapshotBlockHeight:       uint64(0),
-		AncestralFlushCounter:     uint64(0),
-		SnapshotBlockHeightPeriod: snapshotBlockHeightPeriod,
-		OperationChannel:          make(chan *SnapshotOperation, 10000),
-		Checksum:                  checksum,
-		CurrentEpochChecksumBytes: []byte{},
-		AncestralMemory:           lane.NewDeque(),
-		MainDBSemaphore:           int32(0),
-		AncestralDBSemaphore:      int32(0),
-		brokenSnapshot:            false,
-		isTxIndex:                 isTxIndex,
-		disableChecksum:           disableChecksum,
-		timer:                     timer,
-		ExitChannel:               make(chan bool),
+		SnapshotDb:                   snapshotDb,
+		DatabaseCache:                lru.NewKVCache(DatabaseCacheSize),
+		AncestralFlushCounter:        uint64(0),
+		SnapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
+		OperationChannel:             make(chan *SnapshotOperation, 10000),
+		Checksum:                     checksum,
+		CurrentEpochSnapshotMetadata: metadata,
+		AncestralMemory:              lane.NewDeque(),
+		MainDBSemaphore:              int32(0),
+		AncestralDBSemaphore:         int32(0),
+		brokenSnapshot:               false,
+		isTxIndex:                    isTxIndex,
+		disableChecksum:              disableChecksum,
+		timer:                        timer,
+		ExitChannel:                  make(chan bool),
 	}
 	// Run the snapshot main loop.
 	go snap.Run()
@@ -520,22 +603,9 @@ func (snap *Snapshot) Run() {
 			snap.FlushAncestralRecords()
 
 		case SnapshotOperationProcessBlock:
-			height := uint64(operation.blockNode.Height)
-			glog.Infof("Snapshot.Run: Getting into the delete channel with height (%v)", height)
-			if height%snap.SnapshotBlockHeightPeriod == 0 {
-				var err error
-				glog.V(1).Infof("Snapshot.Run: About to delete SnapshotBlockHeight (%v) and set new height (%v)",
-					snap.SnapshotBlockHeight, height)
-				snap.SnapshotBlockHeight = height
-				snap.CurrentEpochChecksumBytes, err = snap.Checksum.ToBytes()
-				if err != nil {
-					glog.Errorf("Snapshot.Run: Problem getting checksum bytes (%v)", err)
-				}
-				snap.CurrentEpochBlockHash = operation.blockNode.Hash
-				glog.V(1).Infof("Snapshot.Run: snapshot is (%v)", snap.CurrentEpochChecksumBytes)
-				// TODO: This should remove past height not current height.
-				snap.DeleteAncestralRecords(height)
-			}
+			glog.V(1).Infof("Snapshot.Run: Getting into the process block with height (%v)",
+				operation.blockNode.Height)
+			snap.ProcessBlock(operation.blockNode)
 
 		case SnapshotOperationProcessChunk:
 			if err := snap.SetSnapshotChunk(operation.mainDb, operation.snapshotChunk); err != nil {
@@ -557,31 +627,35 @@ func (snap *Snapshot) Run() {
 			if err != nil {
 				glog.Errorf("Snapshot.Run: Problem getting checksum bytes (%v)", err)
 			}
-			glog.Infof("Snapshot.Run: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
-			glog.Infof("Snapshot.Run: Number of operations in the operation channel: (%v)", len(snap.OperationChannel))
+			glog.V(1).Infof("Snapshot.Run: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
+			glog.V(1).Infof("Snapshot.Run: Number of operations in the operation channel: (%v)", len(snap.OperationChannel))
 
 		case SnapshotOperationExit:
+			if err := snap.Checksum.Wait(); err != nil {
+				glog.Errorf("Snapshot.Run: Problem waiting for the checksum, error (%v)", err)
+			}
 			snap.updateWaitGroup.Done()
+			return
 		}
 	}
 }
 
 func (snap *Snapshot) Stop() {
-	glog.Infof("Snapshot.Stop: Stopping the run loop")
+	glog.V(1).Infof("Snapshot.Stop: Stopping the run loop")
 
 	snap.OperationChannel <- &SnapshotOperation{
 		operationType: SnapshotOperationExit,
 	}
 	snap.updateWaitGroup.Wait()
 
-	snap.AncestralRecordsDb.Close()
+	snap.SnapshotDb.Close()
 }
 
 // StartAncestralRecordsFlush updates the ancestral records after a utxo_view flush.
 // This function should be called in a go-routine after all utxo_view flushes.
 func (snap *Snapshot) StartAncestralRecordsFlush() {
 	// If snapshot is broken then there's nothing to do.
-	glog.Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
+	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
 
 	if snap.brokenSnapshot {
 		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Broken snapshot, aborting")
@@ -594,7 +668,7 @@ func (snap *Snapshot) StartAncestralRecordsFlush() {
 	snap.MainDBSemaphore += 1
 	snap.AncestralDBSemaphore += 1
 	snap.SemaphoreLock.Unlock()
-	glog.Infof("Snapshot.StartAncestralRecordsFlush: Sending counter (%v) to the CounterChannel", snap.AncestralFlushCounter)
+	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Sending counter (%v) to the CounterChannel", snap.AncestralFlushCounter)
 	// We send the flush counter to the counter to indicate that a flush should take place.
 	snap.OperationChannel <- &SnapshotOperation{
 		operationType: SnapshotOperationFlush,
@@ -661,7 +735,7 @@ func (snap *Snapshot) PrepareAncestralRecordsFlush() {
 
 	snap.AncestralMemory.Append(NewAncestralCache(index))
 
-	glog.Infof("Snapshot.PrepareAncestralRecordsFlush: Created structs at index (%v)", index)
+	glog.V(1).Infof("Snapshot.PrepareAncestralRecordsFlush: Created structs at index (%v)", index)
 }
 
 // PrepareAncestralRecord prepares an individual ancestral record in the last ancestral cache.
@@ -712,7 +786,7 @@ func (snap *Snapshot) GetAncestralRecordsKey(key []byte) []byte {
 	prefix = append(prefix, _prefixAncestralRecord...)
 
 	// Append block height, which is the current snapshot identifier.
-	prefix = append(prefix, EncodeUint64(snap.SnapshotBlockHeight)...)
+	prefix = append(prefix, EncodeUint64(snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight)...)
 
 	// Finally, append the main DB key.
 	prefix = append(prefix, key...)
@@ -751,6 +825,36 @@ func (snap *Snapshot) CheckAnceststralRecordExistenceByte(value []byte) bool {
 	return false
 }
 
+// ProcessBlock updates the snapshot information after a block has been added.
+func (snap *Snapshot) ProcessBlock(blockNode *BlockNode) {
+	height := uint64(blockNode.Height)
+
+	if height%snap.SnapshotBlockHeightPeriod == 0 {
+		var err error
+		glog.V(1).Infof("Snapshot.ProcessBlock: About to delete SnapshotBlockHeight (%v) and set new height (%v)",
+			snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight, height)
+		snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight = height
+		snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes, err = snap.Checksum.ToBytes()
+		if err != nil {
+			glog.Errorf("Snapshot.ProcessBlock: Problem getting checksum bytes (%v)", err)
+		}
+		snap.CurrentEpochSnapshotMetadata.CurrentEpochBlockHash = blockNode.Hash
+
+		// Update the snapshot epoch metadata in the snapshot DB.
+		err = snap.SnapshotDb.Update(func(txn *badger.Txn) error {
+			return txn.Set(_prefixLastEpochMetadata, snap.CurrentEpochSnapshotMetadata.Encode())
+		})
+		if err != nil {
+			snap.brokenSnapshot = true
+			glog.Errorf("Snapshot.ProcessBlock: Problem setting snapshot epoch metadata in snapshot db")
+		}
+
+		glog.V(1).Infof("Snapshot.ProcessBlock: snapshot checksum is (%v)", snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
+		// TODO: This should remove past height not current height?
+		snap.DeleteAncestralRecords(height)
+	}
+}
+
 // isState determines if a key is a state-related record.
 func (snap *Snapshot) isState(key []byte) bool {
 	if !snap.isTxIndex {
@@ -778,7 +882,7 @@ func (snap *Snapshot) isFlushing() bool {
 // FlushAncestralRecords updates the ancestral records after a utxo_view flush.
 // This function should be called in a go-routine after all utxo_view flushes.
 func (snap *Snapshot) FlushAncestralRecords() {
-	glog.Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
+	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
 
 	// If snapshot is broken then there's nothing to do.
 	if snap.brokenSnapshot {
@@ -803,12 +907,20 @@ func (snap *Snapshot) FlushAncestralRecords() {
 
 	// We launch a new read-write transaction to set the records.
 
-	err = snap.AncestralRecordsDb.Update(func(txn *badger.Txn) error {
+	err = snap.SnapshotDb.Update(func(txn *badger.Txn) error {
 		// In case we kill the node in the middle of this update.
 		err := txn.Set(_prefixSnapshotHealth, []byte{0})
 		if err != nil {
-			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem flushing "+
-				"snapshot health")
+			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem flushing snapshot health")
+		}
+
+		currentChecksum, err := snap.Checksum.ToBytes()
+		if err != nil {
+			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem getting checksum bytes")
+		}
+		err = txn.Set(_prefixSnapshotChecksum, currentChecksum)
+		if err != nil {
+			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem flushing checksum bytes")
 		}
 		// Iterate through all now-sorted keys.
 		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) new records", len(lastAncestralCache.RecordsKeyList))
@@ -870,7 +982,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	snap.AncestralDBSemaphore += 1
 	snap.SemaphoreLock.Unlock()
 	snap.AncestralMemory.Shift()
-	glog.Infof("Snapshot.StartAncestralRecordsFlush: finished flushing ancestral records. Snapshot "+
+	glog.V(1).Infof("Snapshot.StartAncestralRecordsFlush: finished flushing ancestral records. Snapshot "+
 		"status, brokenSnapshot: (%v)", snap.brokenSnapshot)
 }
 
@@ -880,18 +992,19 @@ func (snap *Snapshot) DeleteAncestralRecords(height uint64) {
 	var prefix []byte
 	prefix = append(prefix, EncodeUint64(height)...)
 
-	glog.Infof("Snapshot.DeleteAncestralRecords: Starting delete process for height (%v)", height)
+	glog.V(2).Infof("Snapshot.DeleteAncestralRecords: Starting delete process for height (%v)", height)
 	numDeleted := 0
-	err := snap.AncestralRecordsDb.DropPrefix(prefix)
+	err := snap.SnapshotDb.DropPrefix(prefix)
 	if err != nil {
 		glog.Errorf("Snapshot.DeleteAncestralRecords: Problem deleting ancestral records error (%v)", err)
 		return
 	}
-	glog.Infof("Snapshot.DeleteAncestralRecords: Finished deleting for height (%v) total (%v)", height, numDeleted)
+	glog.V(2).Infof("Snapshot.DeleteAncestralRecords: Finished deleting for height (%v) total (%v)", height, numDeleted)
 }
 
 func (snap *Snapshot) String() string {
-	return fmt.Sprintf("< Snapshot | height: %v | broken: %v >", snap.SnapshotBlockHeight, snap.brokenSnapshot)
+	return fmt.Sprintf("< Snapshot | height: %v | broken: %v >",
+		snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight, snap.brokenSnapshot)
 }
 
 // GetSnapshotChunk fetches a batch of records from the nodes DB that match the provided prefix and
@@ -919,7 +1032,7 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
-	ancestralDbBatchEntries, ancestralDbFilled, err := DBIteratePrefixKeys(snap.AncestralRecordsDb,
+	ancestralDbBatchEntries, ancestralDbFilled, err := DBIteratePrefixKeys(snap.SnapshotDb,
 		snap.GetAncestralRecordsKey(prefix), snap.GetAncestralRecordsKey(startKey), SnapshotBatchSize)
 	if err != nil {
 		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")

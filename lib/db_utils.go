@@ -576,7 +576,7 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBy
 				dbEntries = append(dbEntries, KeyValueToDBEntry(key, value))
 				// If total amount of bytes in the dbEntries exceeds the target bytes size, we set the chunk as full.
 				totalBytes += len(key) + len(value)
-				if totalBytes > int(targetBytes) {
+				if totalBytes > int(targetBytes) && len(dbEntries) > 1 {
 					isChunkFull = true
 				}
 				return nil
@@ -3124,11 +3124,6 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 }
 
 func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
-	if snap != nil {
-		snap.PrepareAncestralRecordsFlush()
-		glog.Infof("ProcessBlock: Preparing snapshot flush")
-	}
-
 	if desoBlock.Header == nil {
 		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
 	}
@@ -3177,11 +3172,6 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward)); err != nil {
 			return err
 		}
-	}
-
-	if snap != nil {
-		glog.Infof("ProcessBlock: Snapshot flushing")
-		snap.StartAncestralRecordsFlush()
 	}
 
 	return nil

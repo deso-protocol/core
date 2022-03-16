@@ -1918,8 +1918,16 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// Store the new block in the db under the
 			//   <blockHash> -> <serialized block>
 			// index.
+			if bc.snapshot != nil {
+				bc.snapshot.PrepareAncestralRecordsFlush()
+				glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
+			}
 			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
+			}
+			if bc.snapshot != nil {
+				glog.V(2).Infof("ProcessBlock: Snapshot flushing")
+				bc.snapshot.StartAncestralRecordsFlush()
 			}
 
 			// Store the new block's node in our node index in the db under the

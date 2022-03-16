@@ -430,9 +430,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
 			"because node is syncing with ChainState (%v)", pp, chainState)
 		pp.AddDeSoMessage(&MsgDeSoSnapshotData{
-			SnapshotHeight:    pp.srv.blockchain.snapshot.SnapshotBlockHeight,
-			SnapshotBlockHash: pp.srv.blockchain.snapshot.CurrentEpochBlockHash,
-			SnapshotChecksum:  nil,
+			SnapshotMetadata:  nil,
 			SnapshotChunk:     nil,
 			SnapshotChunkFull: false,
 			Prefix:            msg.Prefix,
@@ -472,24 +470,18 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
 			pp.srv.blockchain.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.Prefix, msg.SnapshotStartKey)
 
-		snapshotDataMsg.SnapshotHeight = pp.srv.blockchain.snapshot.SnapshotBlockHeight
-		snapshotDataMsg.SnapshotBlockHash = pp.srv.blockchain.snapshot.CurrentEpochBlockHash
-		snapshotDataMsg.SnapshotChecksum = pp.srv.blockchain.snapshot.CurrentEpochChecksumBytes
+		snapshotDataMsg.SnapshotMetadata = pp.srv.blockchain.snapshot.CurrentEpochSnapshotMetadata
 	} else if isTxIndexKey(msg.Prefix) {
 		if pp.srv.TxIndex != nil && pp.srv.TxIndex.FinishedSyncing() {
 			snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
 				pp.srv.TxIndex.TXIndexChain.snapshot.GetSnapshotChunk(pp.srv.TxIndex.TXIndexChain.db, msg.Prefix, msg.SnapshotStartKey)
 
-			snapshotDataMsg.SnapshotHeight = pp.srv.TxIndex.TXIndexChain.snapshot.SnapshotBlockHeight
-			snapshotDataMsg.SnapshotBlockHash = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochBlockHash
-			snapshotDataMsg.SnapshotChecksum = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochChecksumBytes
+			snapshotDataMsg.SnapshotMetadata = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochSnapshotMetadata
 		} else {
 			glog.V(1).Infof("Peer.HandleGetSnapshot: Received a TxIndex prefix but ignoring "+
 				"GetSnapshot from Peer %v because node is still syncing or doesn't support TxIndex", pp)
 			pp.AddDeSoMessage(&MsgDeSoSnapshotData{
-				SnapshotHeight:    pp.srv.TxIndex.TXIndexChain.snapshot.SnapshotBlockHeight,
-				SnapshotBlockHash: pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochBlockHash,
-				SnapshotChecksum:  nil,
+				SnapshotMetadata:  nil,
 				SnapshotChunk:     nil,
 				SnapshotChunkFull: false,
 				Prefix:            msg.Prefix,
@@ -516,7 +508,8 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 
 	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) "+
 		"with SnapshotHeight (%v) and CurrentEpochChecksumBytes (%v) and Snapshotdata length (%v)", pp,
-		pp.srv.blockchain.snapshot.SnapshotBlockHeight, snapshotDataMsg.SnapshotChecksum, len(snapshotDataMsg.SnapshotChunk))
+		pp.srv.blockchain.snapshot.CurrentEpochSnapshotMetadata.SnapshotBlockHeight,
+		snapshotDataMsg.SnapshotMetadata, len(snapshotDataMsg.SnapshotChunk))
 }
 
 func (pp *Peer) cleanupMessageProcessor() {
