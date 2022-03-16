@@ -76,7 +76,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	profileEntry := bav.GetProfileEntryForPKID(txMeta.DAOCoinCreatorPKID)
 
 	if profileEntry == nil || profileEntry.isDeleted {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile
 	}
 
 	// Validate OperationType is one of our supported enum values.
@@ -90,7 +90,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Validate price > 0.
-	if txMeta.PriceNanos.Cmp(NewFloat()) > 0 {
+	if txMeta.PriceNanos.Cmp(NewFloat()) <= 0 {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
@@ -271,19 +271,20 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Update order quantities.
 			var daoCoinsToTransfer uint256.Int
+			orderIsComplete := false
 
 			if requestedOrder.Quantity.Lt(&order.Quantity) {
 				daoCoinsToTransfer = requestedOrder.Quantity
 				order.Quantity = *uint256.NewInt().Sub(&order.Quantity, &requestedOrder.Quantity)
 				requestedOrder.Quantity = *uint256.NewInt()
-				break
+				orderIsComplete = true
 			} else {
 				daoCoinsToTransfer = order.Quantity
 				requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
 				bav._deleteDAOCoinLimitOrderEntryMappings(order)
 
 				if requestedOrder.Quantity.IsZero() {
-					break
+					orderIsComplete = true
 				}
 			}
 
@@ -326,6 +327,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			bav._setDAOCoinBalanceEntryMappings(requesterBalanceEntry)
 			bav._setDAOCoinBalanceEntryMappings(matchingBalanceEntry)
+
+			// Break if order is complete.
+			if orderIsComplete {
+				break
+			}
 		}
 
 		// If order is fulfilled, done.

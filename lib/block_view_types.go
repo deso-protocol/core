@@ -1467,10 +1467,10 @@ const (
 )
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
-	data := append([]byte{}, order.TransactorPKID[:]...)
+	data := append([]byte{}, order.TransactorPKID.Encode()...)
 	data = append(data, UintToBuf(uint64(order.DenominatedCoinType))...)
-	data = append(data, order.DenominatedCoinCreatorPKID[:]...)
-	data = append(data, order.DAOCoinCreatorPKID[:]...)
+	data = append(data, order.DenominatedCoinCreatorPKID.Encode()...)
+	data = append(data, order.DAOCoinCreatorPKID.Encode()...)
 	data = append(data, UintToBuf(uint64(order.OperationType))...)
 
 	// TODO: figure out how to cast without error case.
@@ -1481,7 +1481,7 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	}
 	data = append(data, priceNanosBytes...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
-	data = append(data, order.Quantity.Bytes()...)
+	data = append(data, EncodeUint256(order.Quantity)...)
 	return data, nil
 }
 

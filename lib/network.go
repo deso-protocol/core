@@ -5507,6 +5507,19 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 	return TxnTypeDAOCoinLimitOrder
 }
 
+func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
+	return &DAOCoinLimitOrderEntry{
+		TransactorPKID:             transactorPKID,
+		DenominatedCoinType:        txnData.DenominatedCoinType,
+		DenominatedCoinCreatorPKID: txnData.DenominatedCoinCreatorPKID,
+		DAOCoinCreatorPKID:         txnData.DAOCoinCreatorPKID,
+		OperationType:              txnData.OperationType,
+		PriceNanos:                 txnData.PriceNanos,
+		BlockHeight:                blockHeight,
+		Quantity:                   txnData.Quantity,
+	}
+}
+
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := append([]byte{}, UintToBuf(uint64(txnData.DenominatedCoinType))...)
 	data = append(data, txnData.DenominatedCoinCreatorPKID.Encode()...)
@@ -5599,7 +5612,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 			return fmt.Errorf(
 				"DAOCoinLimitOrderMetadata.FromBytes: Error reading inputs length at index %v: %v", ii, err)
 		}
-		ret.MatchingBidsInputsMap[*pkid] = make([]*DeSoInput, matchingBidsInputsMapLength)
+		ret.MatchingBidsInputsMap[*pkid] = make([]*DeSoInput, 0, matchingBidsInputsMapLength)
 		for jj := uint64(0); jj < inputsLength; jj++ {
 			currentInput := NewDeSoInput()
 			_, err = io.ReadFull(rr, currentInput.TxID[:])

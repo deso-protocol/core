@@ -3096,8 +3096,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5802,7 +5802,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5929,7 +5929,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6162,6 +6162,40 @@ func StartDBSummarySnapshots(db *badger.DB) {
 // ---------------------------------------------
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
+	key := DBPrefixKeyForDAOCoinLimitOrder(order, byTransactorPKID)
+
+	// We cast PriceNanos from big.Float to uint256.
+	// This is to guarantee that the bytes-encoding widths are consistent.
+	// If the order is an ask, we subtract 1. If the order is a bid, we add 1.
+	// This is to be more inclusive in considering orders which may satisfy the
+	// incoming order, but we won't know until we pull the order out of Badger
+	// and check the decimal value in a later step.
+	var priceNanos256 *uint256.Int
+
+	if order.PriceNanos.IsInf() {
+		priceNanos256 = MaxUint256.Clone()
+	} else {
+		priceNanosInt, _ := order.PriceNanos.Int(nil)
+		priceNanos256, _ = uint256.FromBig(priceNanosInt)
+		one256 := uint256.NewInt().SetUint64(1)
+
+		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			// If the order is an ask, we want math.FLOOR to be more inclusive at this stage.
+			priceNanos256 = uint256.NewInt().Sub(priceNanos256, one256)
+		} else if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			// If the order is a bid, we want math.CEIL to be more inclusive at this stage.
+			priceNanos256 = uint256.NewInt().Add(priceNanos256, one256)
+		} else {
+			priceNanos256 = uint256.NewInt()
+		}
+	}
+
+	key = append(key, EncodeUint256(*priceNanos256)...)
+	key = append(key, _EncodeUint32(order.BlockHeight)...)
+	return key
+}
+
+func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
 	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
 	key := append([]byte{}, prefixCopy...)
 
@@ -6175,20 +6209,25 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID b
 	key = append(key, order.DAOCoinCreatorPKID[:]...)
 	key = append(key, _EncodeUint32(uint32(order.OperationType))...)
 
-	// TODO: figure out how to cast without error case.
-	priceNanosBytes, err := ToBytes(&order.PriceNanos)
-
-	if err != nil {
-		panic(fmt.Sprintf("We couldn't convert price nanos to bytes %v", err))
-	}
-
-	key = append(key, priceNanosBytes...)
-
-	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	return key
 }
 
-func DBGetDAOCoinLimitOrder(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
+func DBGetDAOCoinLimitOrder(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) *DAOCoinLimitOrderEntry {
+	var ret *DAOCoinLimitOrderEntry
+
+	handle.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DBGetDAOCoinLimitOrderWithTxn(txn, inputOrder, byTransactorPKID)
+		if err != nil {
+			glog.Errorf("DBGetDAOCoinLimitOrder failed: %v", err)
+		}
+		return nil
+	})
+
+	return ret
+}
+
+func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
 	key := DBKeyForDAOCoinLimitOrder(inputOrder, byTransactorPKID)
 	orderItem, err := txn.Get(key)
 
@@ -6308,6 +6347,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	queryOrder.BlockHeight = math.MaxUint32
 	queryOrder.Quantity = *MaxUint256.Clone()
 
+	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
 
 	// If passed a start key, start seeking from there.
@@ -6323,7 +6363,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	// Seek first matching order.
 	orders := []*DAOCoinLimitOrderEntry{}
 
-	for iterator.Seek(key); iterator.ValidForPrefix(key) && requestedQuantity.GtUint64(0); iterator.Next() {
+	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && requestedQuantity.GtUint64(0); iterator.Next() {
 		// If picking up from where you left off, skip the first order which has already been included.
 		if startKey != nil && reflect.DeepEqual(key, startKey) {
 			startKey = nil
