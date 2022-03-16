@@ -107,14 +107,18 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Order total cost = price x quantity.
-	// TODO: validate overflow.
 	requestedOrderTotalCost := uint256.NewInt().Mul(txMeta.PriceNanosPerDenominatedCoin, txMeta.Quantity)
 
+	// Validate that the order total cost didn't overflow.
+	// Note we have validated that price > 0 so we won't have a divide by zero error.
+	if !uint256.NewInt().Div(requestedOrderTotalCost, txMeta.PriceNanosPerDenominatedCoin).Eq(txMeta.Quantity) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
+	}
+
 	// If $DESO buy, validate that order total cost is less than the max uint64.
-	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-		if !requestedOrderTotalCost.IsUint64() {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
-		}
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
+		!requestedOrderTotalCost.IsUint64() {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
 	// Validate transfer restriction status, if DAO coin can only be transferred to whitelisted members.
@@ -357,9 +361,9 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		var dbFunc func(*badger.Txn, *DAOCoinLimitOrderEntry, []byte) ([]*DAOCoinLimitOrderEntry, error)
 
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			dbFunc = DBGetHighestDAOCoinBidOrders
+			dbFunc = DBGetMatchingDAOCoinBidOrders
 		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			dbFunc = DBGetLowestDAOCoinAskOrders
+			dbFunc = DBGetMatchingDAOCoinAskOrders
 		} else {
 			// TODO: switch to RuleErrorDAOCoinLimitOrderUnsupportedOperationType
 			return nil, fmt.Errorf("Invalid operation type")
@@ -403,14 +407,16 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 
 		// Ask: reject if requestedOrder.PriceNanos > order.PriceNanos
+		// I.e. requestedOrder.PriceNanosPerDenominatedCoin < order.PriceNanosPerDenominatedCoin
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk &&
-			requestedOrder.PriceNanosPerDenominatedCoin.Gt(order.PriceNanosPerDenominatedCoin) {
+			requestedOrder.PriceNanosPerDenominatedCoin.Lt(order.PriceNanosPerDenominatedCoin) {
 			continue
 		}
 
 		// Bid: reject if requestedOrder.PriceNanos < order.PriceNanos
+		// I.e. requestedOrder.PriceNanosPerDenominatedCoin > order.PriceNanosPerDenominatedCoin
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid &&
-			requestedOrder.PriceNanosPerDenominatedCoin.Lt(order.PriceNanosPerDenominatedCoin) {
+			requestedOrder.PriceNanosPerDenominatedCoin.Gt(order.PriceNanosPerDenominatedCoin) {
 			continue
 		}
 

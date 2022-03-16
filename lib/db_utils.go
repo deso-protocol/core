@@ -3096,8 +3096,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5802,7 +5802,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5929,7 +5929,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6224,7 +6224,7 @@ func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	return order, nil
 }
 
-func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+func DBGetMatchingDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
 	queryOrder := inputOrder.Copy()
 	requestedQuantity := queryOrder.Quantity
 
@@ -6240,13 +6240,13 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	//   * DAOCoinCreatorPKID
 	// Convert:
 	//   * OperationType from Bid to Ask
-	//   * PriceNanos to 0
-	//   * BlockHeight to 0
-	//   * Quantity to 0
+	//   * PriceNanos to MAX_BIG_FLOAT
+	//   * BlockHeight to MAX_UINT32
+	//   * Quantity to MAX_UINT256
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeAsk
-	queryOrder.PriceNanosPerDenominatedCoin = uint256.NewInt()
-	queryOrder.BlockHeight = uint32(0)
-	queryOrder.Quantity = uint256.NewInt()
+	queryOrder.PriceNanosPerDenominatedCoin = MaxUint256.Clone()
+	queryOrder.BlockHeight = math.MaxUint32
+	queryOrder.Quantity = MaxUint256.Clone()
 
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
 
@@ -6256,6 +6256,11 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	}
 
 	opts := badger.DefaultIteratorOptions
+
+	// Go in reverse order since a lower ask price is better.
+	// I.e. a higher ask price per denominated coin is better.
+	opts.Reverse = true
+
 	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
@@ -6282,9 +6287,11 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 			return nil, errors.Wrapf(err, "DBGetLowestDAOCoinAskOrder: problem getting limit order")
 		}
 
-		// Break if ask price is greater than requested bid price.
+		// Break if ask price is greater than requested bid price. In practice, this means we should break if the
+		// ask price per denominated coin is less than the requested bid price per denominated coin.
 		// order.PriceNanos > inputOrder.PriceNanos
-		if order.PriceNanosPerDenominatedCoin.Gt(inputOrder.PriceNanosPerDenominatedCoin) {
+		// order.PriceNanosPerDenominatedCoin < inputOrder.PriceNanosPerDenominatedCoin
+		if order.PriceNanosPerDenominatedCoin.Lt(inputOrder.PriceNanosPerDenominatedCoin) {
 			break
 		}
 
@@ -6296,7 +6303,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	return orders, nil
 }
 
-func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
 	queryOrder := inputOrder.Copy()
 	requestedQuantity := queryOrder.Quantity
 
@@ -6312,13 +6319,13 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	//   * DAOCoinCreatorPKID
 	// Convert:
 	//   * OperationType from Ask to Bid
-	//   * PriceNanos to MAX_BIG_FLOAT
-	//   * BlockHeight to MAX_UINT32
-	//   * Quantity to MAX_UINT256
+	//   * PriceNanosPerDenominatedCoin to 0
+	//   * BlockHeight to 0
+	//   * Quantity to 0
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeBid
-	queryOrder.PriceNanosPerDenominatedCoin = MaxUint256.Clone()
-	queryOrder.BlockHeight = math.MaxUint32
-	queryOrder.Quantity = MaxUint256.Clone()
+	queryOrder.PriceNanosPerDenominatedCoin = uint256.NewInt()
+	queryOrder.BlockHeight = uint32(0)
+	queryOrder.Quantity = uint256.NewInt()
 
 	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
@@ -6329,7 +6336,6 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	}
 
 	opts := badger.DefaultIteratorOptions
-	opts.Reverse = true // Go in reverse order since a higher bid price is better.
 	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
@@ -6356,8 +6362,18 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 			return nil, errors.Wrapf(err, "DBGetHighestDAOCoinBidOrder: problem getting limit order")
 		}
 
-		// Break if bid price is less than requested ask price.
+		// Break if bid price is less than requested ask price. In practice, this means we should break if the
+		// bid price per denominated coin is greater than the requested ask price per denominated coin.
 		// order.PriceNanos < inputOrder.PriceNanos
+		// order.PriceNanosPerDenominatedCoin > inputOrder.PriceNanosPerDenominatedCoin
+		if order.PriceNanosPerDenominatedCoin.Gt(inputOrder.PriceNanosPerDenominatedCoin) {
+			break
+		}
+
+		// Break if ask price is greater than requested bid price. In practice, this means we should break if the
+		// ask price per denominated coin is less than the requested bid price per denomiated coin.
+		// order.PriceNanos > inputOrder.PriceNanos
+		// order.PriceNanosPerDenominatedCoin < inputOrder.PriceNanosPerDenominatedCoin
 		if order.PriceNanosPerDenominatedCoin.Lt(inputOrder.PriceNanosPerDenominatedCoin) {
 			break
 		}
