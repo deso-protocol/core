@@ -90,17 +90,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Validate price > 0.
-	if txMeta.PriceNanos.Cmp(NewFloat()) <= 0 {
+	if txMeta.PriceNanosPerDenominatedCoin.Cmp(uint256.NewInt()) <= 0 {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
 	// If denominated in $DESO, confirm PriceNanos is uint64.
-	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO && !IsUint64(&txMeta.PriceNanos) {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
-	}
-
-	// If denominated in DAO coins, confirm PriceNanos is uint256.
-	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin && !IsUint256(&txMeta.PriceNanos) {
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
+		!txMeta.PriceNanosPerDenominatedCoin.IsUint64() {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
@@ -110,13 +106,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Order total cost = price x quantity.
-	// Price is a big Float. Quantity is an uint256.
-	// Cast Quantity to big Float so can multiply.
-	requestedOrderTotalCost := NewFloat().Mul(&txMeta.PriceNanos, NewFloat().SetInt(txMeta.Quantity.ToBig()))
+	// TODO: validate overflow.
+	requestedOrderTotalCost := uint256.NewInt().Mul(txMeta.PriceNanosPerDenominatedCoin, &txMeta.Quantity)
 
 	// If $DESO buy, validate that order total cost is less than the max uint64.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-		if !IsUint64(requestedOrderTotalCost) {
+		if !requestedOrderTotalCost.IsUint64() {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 		}
 	}
@@ -176,14 +171,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Create entry from txn metadata.
 	requestedOrder := &DAOCoinLimitOrderEntry{
-		TransactorPKID:             transactorPKID,
-		DenominatedCoinType:        txMeta.DenominatedCoinType,
-		DenominatedCoinCreatorPKID: txMeta.DenominatedCoinCreatorPKID,
-		DAOCoinCreatorPKID:         txMeta.DAOCoinCreatorPKID,
-		OperationType:              txMeta.OperationType,
-		PriceNanos:                 txMeta.PriceNanos,
-		BlockHeight:                blockHeight,
-		Quantity:                   txMeta.Quantity,
+		TransactorPKID:               transactorPKID,
+		DenominatedCoinType:          txMeta.DenominatedCoinType,
+		DenominatedCoinCreatorPKID:   txMeta.DenominatedCoinCreatorPKID,
+		DAOCoinCreatorPKID:           txMeta.DAOCoinCreatorPKID,
+		OperationType:                txMeta.OperationType,
+		PriceNanosPerDenominatedCoin: txMeta.PriceNanosPerDenominatedCoin,
+		BlockHeight:                  blockHeight,
+		Quantity:                     txMeta.Quantity,
 	}
 
 	// Check if you already have an existing order at this price in this block.
