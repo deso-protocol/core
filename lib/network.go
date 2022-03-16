@@ -5497,7 +5497,7 @@ type DAOCoinLimitOrderMetadata struct {
 	DAOCoinCreatorPKID         *PKID
 	OperationType              DAOCoinLimitOrderEntryOrderType
 	PriceNanos                 big.Float
-	Quantity                   uint256.Int
+	Quantity                   *uint256.Int
 	// This map is populated with the inputs consumed when a transaction
 	// is an ask offer and there are bids to match immediately.
 	MatchingBidsInputsMap map[PKID][]*DeSoInput

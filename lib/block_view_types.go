@@ -1447,7 +1447,7 @@ type DAOCoinLimitOrderEntry struct {
 	OperationType              DAOCoinLimitOrderEntryOrderType
 	PriceNanos                 big.Float
 	BlockHeight                uint32
-	Quantity                   uint256.Int
+	Quantity                   *uint256.Int
 
 	isDeleted bool
 }
@@ -1588,8 +1588,8 @@ func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderE
 	}
 
 	// Prefer lower-quantity orders first.
-	if order.Quantity.Eq(&other.Quantity) {
-		return order.Quantity.Lt(&other.Quantity)
+	if order.Quantity.Eq(other.Quantity) {
+		return order.Quantity.Lt(other.Quantity)
 	}
 
 	// To break a tie and guarantee idempotency in sorting, prefer lower TransactorPKIDs.

@@ -3096,8 +3096,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5802,7 +5802,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5929,7 +5929,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6190,7 +6190,7 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID b
 		}
 	}
 
-	key = append(key, EncodeUint256(*priceNanos256)...)
+	key = append(key, EncodeUint256(priceNanos256)...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	return key
 }
@@ -6273,7 +6273,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeAsk
 	queryOrder.PriceNanos = *NewFloat()
 	queryOrder.BlockHeight = uint32(0)
-	queryOrder.Quantity = *uint256.NewInt()
+	queryOrder.Quantity = uint256.NewInt()
 
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
 
@@ -6316,7 +6316,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 		}
 
 		// Reduce requested quantity by matching order's quantity.
-		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+		requestedQuantity = uint256.NewInt().Sub(requestedQuantity, order.Quantity)
 		orders = append(orders, order)
 	}
 
@@ -6345,7 +6345,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeBid
 	queryOrder.PriceNanos = *NewFloat().SetInf(false)
 	queryOrder.BlockHeight = math.MaxUint32
-	queryOrder.Quantity = *MaxUint256.Clone()
+	queryOrder.Quantity = MaxUint256.Clone()
 
 	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
@@ -6390,7 +6390,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 		}
 
 		// Reduce requested quantity by matching order's quantity.
-		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+		requestedQuantity = uint256.NewInt().Sub(requestedQuantity, order.Quantity)
 		orders = append(orders, order)
 	}
 

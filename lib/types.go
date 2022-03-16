@@ -120,14 +120,14 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	return newBlockhash
 }
 
-func EncodeUint256(val uint256.Int) []byte {
+func EncodeUint256(val *uint256.Int) []byte {
 	valBytes := val.Bytes()
 	data := make([]byte, 32, 32)
 	//data := append([]byte{}, UintToBuf(uint64(len(valBytes)))...)
 	return append(data, valBytes...)[len(valBytes):]
 }
 
-func ReadUint256(rr io.Reader) (uint256.Int, error) {
+func ReadUint256(rr io.Reader) (*uint256.Int, error) {
 	//maxUint256BytesLen := len(MaxUint256.Bytes())
 	//intLen, err := ReadUvarint(rr)
 	//if err != nil {
@@ -140,9 +140,9 @@ func ReadUint256(rr io.Reader) (uint256.Int, error) {
 	valBytes := make([]byte, 32, 32)
 	_, err := io.ReadFull(rr, valBytes)
 	if err != nil {
-		return *uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
+		return uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
 	}
-	return *uint256.NewInt().SetBytes(valBytes), nil
+	return uint256.NewInt().SetBytes(valBytes), nil
 }
 
 // TODO: we need to know the max length of a big float.
