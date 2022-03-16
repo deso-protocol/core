@@ -314,15 +314,15 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
 				// Requested ask order:
 				// Send DAO coins from requesterBalanceEntry to matchedBalanceEntry.
-				requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&requesterBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
-				matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&matchingBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
+				requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&requesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&matchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
 			}
 
 			if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 				// Send DAO coins from matchedBalanceEntry to requesterBalanceEntry.
 				// Requested bid order:
-				matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&matchingBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
-				requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&requesterBalanceEntry.BalanceNanos, &daoCoinsToTransfer)
+				matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&matchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&requesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
 			}
 
 			bav._setDAOCoinBalanceEntryMappings(requesterBalanceEntry)
