@@ -59,12 +59,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	_, _, _, _ = m0PKID, m1PKID, m2PKID, m4PKID
 
 	metadataM0 := DAOCoinLimitOrderMetadata{
-		DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
-		DenominatedCoinCreatorPKID: &ZeroPKID,
-		DAOCoinCreatorPKID:         m0PKID.PKID,
-		OperationType:              DAOCoinLimitOrderEntryOrderTypeBid,
-		PriceNanos:                 *NewFloat().SetUint64(10),
-		Quantity:                   *uint256.NewInt().SetUint64(100),
+		DenominatedCoinType:          DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
+		DenominatedCoinCreatorPKID:   &ZeroPKID,
+		DAOCoinCreatorPKID:           m0PKID.PKID,
+		OperationType:                DAOCoinLimitOrderEntryOrderTypeBid,
+		PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(10),
+		Quantity:                     *uint256.NewInt().SetUint64(100),
 	}
 
 	// RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile
@@ -145,12 +145,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		daoCoinQuantityChange := uint256.NewInt().SetUint64(2)
 
 		metadataM1 := DAOCoinLimitOrderMetadata{
-			DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
-			DenominatedCoinCreatorPKID: &ZeroPKID,
-			DAOCoinCreatorPKID:         m0PKID.PKID,
-			OperationType:              DAOCoinLimitOrderEntryOrderTypeAsk,
-			PriceNanos:                 *NewFloat().SetUint64(10),
-			Quantity:                   *daoCoinQuantityChange,
+			DenominatedCoinType:          DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
+			DenominatedCoinCreatorPKID:   &ZeroPKID,
+			DAOCoinCreatorPKID:           m0PKID.PKID,
+			OperationType:                DAOCoinLimitOrderEntryOrderTypeAsk,
+			PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(10),
+			Quantity:                     *daoCoinQuantityChange,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m1Pub, m1Priv, metadataM1)

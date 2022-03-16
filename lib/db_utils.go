@@ -3096,8 +3096,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5802,7 +5802,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5929,7 +5929,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6163,34 +6163,7 @@ func StartDBSummarySnapshots(db *badger.DB) {
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order, byTransactorPKID)
-
-	// We cast PriceNanos from big.Float to uint256.
-	// This is to guarantee that the bytes-encoding widths are consistent.
-	// If the order is an ask, we subtract 1. If the order is a bid, we add 1.
-	// This is to be more inclusive in considering orders which may satisfy the
-	// incoming order, but we won't know until we pull the order out of Badger
-	// and check the decimal value in a later step.
-	var priceNanos256 *uint256.Int
-
-	if order.PriceNanos.IsInf() {
-		priceNanos256 = MaxUint256.Clone()
-	} else {
-		priceNanosInt, _ := order.PriceNanos.Int(nil)
-		priceNanos256, _ = uint256.FromBig(priceNanosInt)
-		one256 := uint256.NewInt().SetUint64(1)
-
-		if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			// If the order is an ask, we want math.FLOOR to be more inclusive at this stage.
-			priceNanos256 = uint256.NewInt().Sub(priceNanos256, one256)
-		} else if order.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			// If the order is a bid, we want math.CEIL to be more inclusive at this stage.
-			priceNanos256 = uint256.NewInt().Add(priceNanos256, one256)
-		} else {
-			priceNanos256 = uint256.NewInt()
-		}
-	}
-
-	key = append(key, EncodeUint256(*priceNanos256)...)
+	key = append(key, EncodeUint256(*order.PriceNanosPerDenominatedCoin)...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	return key
 }
@@ -6271,7 +6244,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 	//   * BlockHeight to 0
 	//   * Quantity to 0
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeAsk
-	queryOrder.PriceNanos = *NewFloat()
+	queryOrder.PriceNanosPerDenominatedCoin = uint256.NewInt()
 	queryOrder.BlockHeight = uint32(0)
 	queryOrder.Quantity = *uint256.NewInt()
 
@@ -6311,7 +6284,7 @@ func DBGetLowestDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderE
 
 		// Break if ask price is greater than requested bid price.
 		// order.PriceNanos > inputOrder.PriceNanos
-		if order.PriceNanos.Cmp(&inputOrder.PriceNanos) > 0 {
+		if order.PriceNanosPerDenominatedCoin.Cmp(inputOrder.PriceNanosPerDenominatedCoin) > 0 {
 			break
 		}
 
@@ -6343,7 +6316,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 	//   * BlockHeight to MAX_UINT32
 	//   * Quantity to MAX_UINT256
 	queryOrder.OperationType = DAOCoinLimitOrderEntryOrderTypeBid
-	queryOrder.PriceNanos = *NewFloat().SetInf(false)
+	queryOrder.PriceNanosPerDenominatedCoin = MaxUint256.Clone()
 	queryOrder.BlockHeight = math.MaxUint32
 	queryOrder.Quantity = *MaxUint256.Clone()
 
@@ -6385,7 +6358,7 @@ func DBGetHighestDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrder
 
 		// Break if bid price is less than requested ask price.
 		// order.PriceNanos < inputOrder.PriceNanos
-		if order.PriceNanos.Cmp(&inputOrder.PriceNanos) < 0 {
+		if order.PriceNanosPerDenominatedCoin.Cmp(inputOrder.PriceNanosPerDenominatedCoin) < 0 {
 			break
 		}
 

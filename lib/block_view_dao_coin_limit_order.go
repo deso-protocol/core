@@ -116,13 +116,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
-	// If DAO coin buy, validate that order total cost is less than the max uint256.
-	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-		if !IsUint256(requestedOrderTotalCost) {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
-		}
-	}
-
 	// Validate transfer restriction status, if DAO coin can only be transferred to whitelisted members.
 	// TODO
 
@@ -151,9 +144,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// User is trying to open a bid order but doesn't have enough $DESO.
-			requestedOrderTotalCostUint64, _ := requestedOrderTotalCost.Uint64()
-
-			if desoBalanceNanos < requestedOrderTotalCostUint64 {
+			if desoBalanceNanos < requestedOrderTotalCost.Uint64() {
 				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 			}
 		} else if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
@@ -238,21 +229,17 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					}
 
 					// Order total cost = price x quantity.
-					// Price is a big Float. Quantity is an uint256.
-					// Cast Quantity to big Float so can multiply.
-					orderTotalCost := NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
+					orderTotalCost := uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &order.Quantity)
 
 					// Validate that order total cost is an uint64.
-					if !IsUint64(orderTotalCost) {
+					if !orderTotalCost.IsUint64() {
 						// TODO: replace with Rule Error Invalid Price or Quantity
 						panic("Invalid order total cost")
 					}
 
 					// Buyer with open bid order doesn't have enough $DESO.
 					// Don't include and mark their order for deletion.
-					orderTotalCostUint64, _ := orderTotalCost.Uint64()
-
-					if desoBalanceNanos < orderTotalCostUint64 {
+					if desoBalanceNanos < orderTotalCost.Uint64() {
 						bav._deleteDAOCoinLimitOrderEntryMappings(order)
 						continue
 					}
@@ -416,13 +403,13 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 		// Ask: reject if requestedOrder.PriceNanos > order.PriceNanos
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk &&
-			requestedOrder.PriceNanos.Cmp(&order.PriceNanos) > 0 {
+			requestedOrder.PriceNanosPerDenominatedCoin.Cmp(order.PriceNanosPerDenominatedCoin) > 0 {
 			continue
 		}
 
 		// Bid: reject if requestedOrder.PriceNanos < order.PriceNanos
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid &&
-			requestedOrder.PriceNanos.Cmp(&order.PriceNanos) < 0 {
+			requestedOrder.PriceNanosPerDenominatedCoin.Cmp(order.PriceNanosPerDenominatedCoin) < 0 {
 			continue
 		}
 

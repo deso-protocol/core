@@ -3175,14 +3175,14 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		// Construct requested order
 		requestedOrder := &DAOCoinLimitOrderEntry{
-			TransactorPKID:             utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
-			DenominatedCoinType:        metadata.DenominatedCoinType,
-			DenominatedCoinCreatorPKID: metadata.DenominatedCoinCreatorPKID,
-			DAOCoinCreatorPKID:         metadata.DAOCoinCreatorPKID,
-			OperationType:              metadata.OperationType,
-			PriceNanos:                 metadata.PriceNanos,
-			BlockHeight:                bc.blockTip().Height + 1,
-			Quantity:                   metadata.Quantity,
+			TransactorPKID:               utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
+			DenominatedCoinType:          metadata.DenominatedCoinType,
+			DenominatedCoinCreatorPKID:   metadata.DenominatedCoinCreatorPKID,
+			DAOCoinCreatorPKID:           metadata.DAOCoinCreatorPKID,
+			OperationType:                metadata.OperationType,
+			PriceNanosPerDenominatedCoin: metadata.PriceNanosPerDenominatedCoin,
+			BlockHeight:                  bc.blockTip().Height + 1,
+			Quantity:                     metadata.Quantity,
 		}
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 		desoNanosToConsumeMap := make(map[PKID]uint64)
@@ -3205,17 +3205,17 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
 				// TODO: check overflow
-				if NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig())).
-					Cmp(NewFloat().SetUint64(desoBalanceNanos)) <= 0 {
-					var desoNanosBigFloatToConsume *big.Float
+				if uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &order.Quantity).
+					Cmp(uint256.NewInt().SetUint64(desoBalanceNanos)) <= 0 {
+					var desoNanosToConsume *uint256.Int
 					if requestedOrder.Quantity.Lt(&order.Quantity) {
-						desoNanosBigFloatToConsume = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(requestedOrder.Quantity.ToBig()))
+						desoNanosToConsume = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &requestedOrder.Quantity)
 						requestedOrder.Quantity = *uint256.NewInt()
 					} else {
-						desoNanosBigFloatToConsume = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
+						desoNanosToConsume = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &order.Quantity)
 						requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
 					}
-					if !IsUint64(desoNanosBigFloatToConsume) {
+					if !desoNanosToConsume.IsUint64() {
 						return nil, 0, 0, 0, fmt.Errorf(
 							"Blockchain.CreateDAOCoinLimitOrderTxn: fulfilling order exceeds uint64")
 					}
@@ -3223,8 +3223,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						desoNanosToConsumeMap[*order.TransactorPKID] = 0
 					}
 					// TODO: check for overflow
-					desoNanosToConsumeUint64, _ := desoNanosBigFloatToConsume.Uint64()
-					desoNanosToConsumeMap[*order.TransactorPKID] += desoNanosToConsumeUint64
+					desoNanosToConsumeMap[*order.TransactorPKID] += desoNanosToConsume.Uint64()
 				}
 				lastSeenOrder = order
 			}
@@ -4205,18 +4204,18 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 			// Construct requested order
 			requestedOrder := &DAOCoinLimitOrderEntry{
-				TransactorPKID:             utxoView.GetPKIDForPublicKey(txArg.PublicKey).PKID,
-				DenominatedCoinType:        txMeta.DenominatedCoinType,
-				DenominatedCoinCreatorPKID: txMeta.DenominatedCoinCreatorPKID,
-				DAOCoinCreatorPKID:         txMeta.DAOCoinCreatorPKID,
-				OperationType:              txMeta.OperationType,
-				PriceNanos:                 txMeta.PriceNanos,
-				BlockHeight:                bc.blockTip().Height + 1,
-				Quantity:                   txMeta.Quantity,
+				TransactorPKID:               utxoView.GetPKIDForPublicKey(txArg.PublicKey).PKID,
+				DenominatedCoinType:          txMeta.DenominatedCoinType,
+				DenominatedCoinCreatorPKID:   txMeta.DenominatedCoinCreatorPKID,
+				DAOCoinCreatorPKID:           txMeta.DAOCoinCreatorPKID,
+				OperationType:                txMeta.OperationType,
+				PriceNanosPerDenominatedCoin: txMeta.PriceNanosPerDenominatedCoin,
+				BlockHeight:                  bc.blockTip().Height + 1,
+				Quantity:                     txMeta.Quantity,
 			}
 			var lastSeenOrder *DAOCoinLimitOrderEntry
 
-			nanosToFulfillOrders := NewFloat()
+			nanosToFulfillOrders := uint256.NewInt()
 			for requestedOrder.Quantity.GtUint64(0) {
 				var matchingOrderEntries []*DAOCoinLimitOrderEntry
 				matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
@@ -4231,26 +4230,25 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
 						order.TransactorPKID, order.DAOCoinCreatorPKID, true)
 					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(&order.Quantity) {
-						var nanosToFulfillOrder *big.Float
+						var nanosToFulfillOrder *uint256.Int
 						if requestedOrder.Quantity.Lt(&order.Quantity) {
-							nanosToFulfillOrder = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(requestedOrder.Quantity.ToBig()))
+							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &requestedOrder.Quantity)
 							requestedOrder.Quantity = *uint256.NewInt()
 						} else {
-							nanosToFulfillOrder = NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
+							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, &order.Quantity)
 							requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
 						}
-						nanosToFulfillOrders = NewFloat().Add(nanosToFulfillOrders, nanosToFulfillOrder)
+						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)
 					}
 					lastSeenOrder = order
 				}
 			}
-			if !IsUint64(nanosToFulfillOrders) {
+			if !nanosToFulfillOrders.IsUint64() {
 				return 0, 0, 0, 0, fmt.Errorf(
 					"AddInputsAndChangeToTransaction: fulfilling order exceeds uint64")
 			}
 			// Increment spendAmount by amount transactor will spend fulfilling orders
-			nanosToFulfillOrdersUint64, _ := nanosToFulfillOrders.Uint64()
-			spendAmount += nanosToFulfillOrdersUint64
+			spendAmount += nanosToFulfillOrders.Uint64()
 		}
 	}
 
