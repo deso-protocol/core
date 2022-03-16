@@ -33,8 +33,10 @@ const (
 	UtxoTypeNFTBidderChange          UtxoType = 7
 	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
 	UtxoTypeNFTAdditionalDESORoyalty UtxoType = 9
+	UtxoTypeDAOCoinLimitOrderPayout  UtxoType = 10
+	UtxoTypeDAOCoinLimitOrderChange  UtxoType = 11
 
-	// NEXT_TAG = 10
+	// NEXT_TAG = 12
 )
 
 func (mm UtxoType) String() string {
