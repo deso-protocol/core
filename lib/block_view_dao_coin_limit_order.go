@@ -270,16 +270,16 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// Update order quantities.
-			var daoCoinsToTransfer uint256.Int
+			var daoCoinsToTransfer *uint256.Int
 			orderIsComplete := false
 
 			if requestedOrder.Quantity.Lt(order.Quantity) {
-				daoCoinsToTransfer = *requestedOrder.Quantity
+				daoCoinsToTransfer = requestedOrder.Quantity
 				order.Quantity = uint256.NewInt().Sub(order.Quantity, requestedOrder.Quantity)
 				requestedOrder.Quantity = uint256.NewInt()
 				orderIsComplete = true
 			} else {
-				daoCoinsToTransfer = *order.Quantity
+				daoCoinsToTransfer = order.Quantity
 				requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
 				bav._deleteDAOCoinLimitOrderEntryMappings(order)
 
