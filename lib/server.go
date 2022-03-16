@@ -1578,8 +1578,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	}
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
-	// This is a minimal check, a more thorough check is made in the ProcessBlock function. This check is
-	// necessary because the ProcessBlock function only has access to mined transactions. Therefore, if an
+	// This is a minimal check, a more thorough check is made in the SnapshotProcessBlock function. This check is
+	// necessary because the SnapshotProcessBlock function only has access to mined transactions. Therefore, if an
 	// attacker were to prevent a "forbid X pubkey" transaction from mining, they could force nodes to continue
 	// processing their blocks.
 	if len(srv.blockchain.trustedBlockProducerPublicKeys) > 0 && blockHeader.Height >= srv.blockchain.trustedBlockProducerStartHeight {

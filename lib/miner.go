@@ -235,19 +235,19 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	// TODO(miner): Replace with a call to SubmitBlock.
 	isMainChain, isOrphan, err := desoMiner.BlockProducer.chain.ProcessBlock(
 		blockToMine, verifySignatures)
-	glog.V(2).Infof("Called ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+	glog.V(2).Infof("Called SnapshotProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 		isMainChain, isOrphan, err)
 	if err != nil {
-		glog.Errorf("ERROR calling ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+		glog.Errorf("ERROR calling SnapshotProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 			isMainChain, isOrphan, err)
 		// We return the block even when we have an error in case the caller wants to do
 		// something with it.
-		return blockToMine, fmt.Errorf("ERROR calling ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+		return blockToMine, fmt.Errorf("ERROR calling SnapshotProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 			isMainChain, isOrphan, err)
 	}
 
 	// If a mempool object is passed then update it. Normally this isn't necessary because
-	// ProcessBlock will trigger it because the backendServer will be set on the blockchain
+	// SnapshotProcessBlock will trigger it because the backendServer will be set on the blockchain
 	// object. But it's useful for tests.
 	if mempoolToUpdate != nil {
 		mempoolToUpdate.UpdateAfterConnectBlock(blockToMine)
