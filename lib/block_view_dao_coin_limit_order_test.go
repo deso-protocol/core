@@ -59,12 +59,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	_, _, _, _ = m0PKID, m1PKID, m2PKID, m4PKID
 
 	metadataM0 := DAOCoinLimitOrderMetadata{
-		DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
-		DenominatedCoinCreatorPKID: &ZeroPKID,
-		DAOCoinCreatorPKID:         m0PKID.PKID,
-		OperationType:              DAOCoinLimitOrderEntryOrderTypeBid,
-		PriceNanos:                 *NewFloat().SetUint64(10),
-		Quantity:                   uint256.NewInt().SetUint64(100),
+		DenominatedCoinType:          DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
+		DenominatedCoinCreatorPKID:   &ZeroPKID,
+		DAOCoinCreatorPKID:           m0PKID.PKID,
+		OperationType:                DAOCoinLimitOrderEntryOrderTypeBid,
+		PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(NanosPerUnit / 10),
+		Quantity:                     uint256.NewInt().SetUint64(100),
 	}
 
 	// RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType: DAO coin
@@ -128,7 +128,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                  /*isHidden*/)
 	}
 
 	// RuleErrorDAOCoinLimitOrderUnsupportedOperationType: nonexistent
@@ -146,41 +146,28 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// RuleErrorDAOCoinLimitOrderInvalidPrice: zero
 	{
-		originalValue := metadataM0.PriceNanos
-		metadataM0.PriceNanos = *NewFloat().SetFloat64(0)
+		originalValue := metadataM0.PriceNanosPerDenominatedCoin
+		metadataM0.PriceNanosPerDenominatedCoin = uint256.NewInt()
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
-		metadataM0.PriceNanos = originalValue
-	}
-
-	// RuleErrorDAOCoinLimitOrderInvalidPrice: negative
-	{
-		originalValue := metadataM0.PriceNanos
-		metadataM0.PriceNanos = *NewFloat().SetFloat64(-1)
-
-		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
-
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
-		metadataM0.PriceNanos = originalValue
+		metadataM0.PriceNanosPerDenominatedCoin = originalValue
 	}
 
 	// RuleErrorDAOCoinLimitOrderInvalidPrice: non-uint64
 	{
-		originalValue := metadataM0.PriceNanos
-		metadataM0.PriceNanos = *NewFloat().SetInf(false)
+		originalValue := metadataM0.PriceNanosPerDenominatedCoin
+		metadataM0.PriceNanosPerDenominatedCoin = MaxUint256.Clone()
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
-		metadataM0.PriceNanos = originalValue
+		metadataM0.PriceNanosPerDenominatedCoin = originalValue
 	}
 
 	// RuleErrorDAOCoinLimitOrderInvalidQuantity: zero
@@ -226,12 +213,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	}
 
 	metadataM1 := DAOCoinLimitOrderMetadata{
-		DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
-		DenominatedCoinCreatorPKID: &ZeroPKID,
-		DAOCoinCreatorPKID:         m0PKID.PKID,
-		OperationType:              DAOCoinLimitOrderEntryOrderTypeAsk,
-		PriceNanos:                 *NewFloat().SetUint64(10),
-		Quantity:                   daoCoinQuantityChange,
+		DenominatedCoinType:          DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
+		DenominatedCoinCreatorPKID:   &ZeroPKID,
+		DAOCoinCreatorPKID:           m0PKID.PKID,
+		OperationType:                DAOCoinLimitOrderEntryOrderTypeAsk,
+		PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(NanosPerUnit / 10),
+		Quantity:                     daoCoinQuantityChange,
 	}
 
 	// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder
