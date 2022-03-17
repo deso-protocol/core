@@ -65,11 +65,11 @@ func init() {
 	down := func(db orm.DB) error {
 		_, err := db.Exec(`
 			ALTER TABLE pg_nfts
-				DROP COLUMN additional_nft_royalties_to_coins_basis_points,
-				DROP COLUMN additional_nft_royalties_to_creators_basis_points; 
-			ALTER TABLE pg_posts
 				DROP COLUMN is_buy_now,
 				DROP COLUMN buy_now_price_nanos;
+			ALTER TABLE pg_posts
+				DROP COLUMN additional_nft_royalties_to_coins_basis_points,
+				DROP COLUMN additional_nft_royalties_to_creators_basis_points;
 			ALTER TABLE pg_dao_coin_balances
 				ALTER COLUMN balance_nanos TYPE BIGINT USING lpad(balance_nanos, 16, '0')::bit(64)::bigint;
 			ALTER TABLE pg_metadata_dao_coin_transfers

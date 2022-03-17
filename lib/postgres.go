@@ -677,6 +677,7 @@ func (order *PGDAOCoinLimitOrder) NewDAOCoinLimitOrder() *DAOCoinLimitOrderEntry
 		TransactorPKID:               order.TransactorPKID,
 		DenominatedCoinType:          order.DenominatedCoinType,
 		DenominatedCoinCreatorPKID:   order.DenominatedCoinCreatorPKID,
+		DAOCoinCreatorPKID:           order.DAOCoinCreatorPKID,
 		OperationType:                order.OperationType,
 		PriceNanosPerDenominatedCoin: LeftPaddedHexToUint256(order.PriceNanosPerDenominatedCoin),
 		BlockHeight:                  order.BlockHeight,
@@ -2483,7 +2484,7 @@ func ToPGDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntry) *PGDAOCoinLimitOr
 
 func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntry) *DAOCoinLimitOrderEntry {
 	order := ToPGDAOCoinLimitOrder(inputOrder)
-	err := postgres.db.Model(&order).WherePK().First()
+	err := postgres.db.Model(order).WherePK().First()
 
 	if err != nil {
 		return nil
