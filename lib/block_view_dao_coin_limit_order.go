@@ -579,7 +579,16 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 	orders := []*DAOCoinLimitOrderEntry{}
 
 	if bav.Postgres != nil {
-		// TODO
+		var err error
+
+		// TODO: incoming ask order
+		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			orders, err = bav.Postgres.GetMatchingDAOCoinAskOrders(requestedOrder, lastSeenOrder)
+
+			if err != nil {
+				return nil, err
+			}
+		}
 	} else {
 		var lastSeenKey []byte
 
