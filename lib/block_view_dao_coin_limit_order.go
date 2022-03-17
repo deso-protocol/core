@@ -115,11 +115,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// TODO: wrap with rule error describing overflow
 		return 0, 0, nil, err
 	}
-	// Validate that the order total cost didn't overflow.
-	// Note we have validated that price > 0 so we won't have a divide by zero error.
-	if !uint256.NewInt().Div(requestedOrderTotalCost, txMeta.PriceNanosPerDenominatedCoin).Eq(txMeta.Quantity) {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
-	}
 
 	// If $DESO buy, validate that order total cost is less than the max uint64.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
@@ -419,16 +414,26 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 		// Ask: reject if requestedOrder.PriceNanos > order.PriceNanos
 		// I.e. requestedOrder.PriceNanosPerDenominatedCoin < order.PriceNanosPerDenominatedCoin
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk &&
-			requestedOrder.PriceNanosPerDenominatedCoin.Lt(order.PriceNanosPerDenominatedCoin) {
-			continue
+		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			// We should have seen this order already.
+			if lastSeenOrder != nil && order.IsBetterBidThan(lastSeenOrder) {
+				continue
+			}
+			if requestedOrder.PriceNanosPerDenominatedCoin.Lt(order.PriceNanosPerDenominatedCoin) {
+				continue
+			}
 		}
 
 		// Bid: reject if requestedOrder.PriceNanos < order.PriceNanos
 		// I.e. requestedOrder.PriceNanosPerDenominatedCoin > order.PriceNanosPerDenominatedCoin
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid &&
-			requestedOrder.PriceNanosPerDenominatedCoin.Gt(order.PriceNanosPerDenominatedCoin) {
-			continue
+		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			// We should have seen this order already
+			if lastSeenOrder != nil && order.IsBetterAskThan(lastSeenOrder) {
+				continue
+			}
+			if requestedOrder.PriceNanosPerDenominatedCoin.Gt(order.PriceNanosPerDenominatedCoin) {
+				continue
+			}
 		}
 
 		if !reflect.DeepEqual(requestedOrder.DenominatedCoinCreatorPKID, order.DenominatedCoinCreatorPKID) {
