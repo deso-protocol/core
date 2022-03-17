@@ -1032,6 +1032,15 @@ func (bav *UtxoView) DisconnectBlock(
 		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 			numInputs += len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
 		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+			numMatchingOrderInputs := 0
+
+			for _, inputs := range txn.TxnMeta.(*DAOCoinLimitOrderMetadata).MatchingBidsInputsMap {
+				numMatchingOrderInputs += len(inputs)
+			}
+
+			numInputs += numMatchingOrderInputs
+		}
 		numOutputs += len(txn.TxOutputs)
 	}
 	numSpendOps := 0
