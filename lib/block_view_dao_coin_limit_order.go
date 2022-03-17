@@ -7,6 +7,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"math"
+	"math/big"
 	"reflect"
 	"sort"
 )
@@ -61,7 +62,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// If denominated in $DESO, validate DenominatedCoinCreatorPKID is all zeroes.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
 		if !reflect.DeepEqual(ZeroPKID, *txMeta.DenominatedCoinCreatorPKID) {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID
 		}
 	}
 
@@ -70,7 +71,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		profileEntry := bav.GetProfileEntryForPKID(txMeta.DenominatedCoinCreatorPKID)
 
 		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderDenominatedCoinCreatorMissingProfile
 		}
 	}
 
@@ -92,17 +93,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Validate price > 0.
-	if txMeta.PriceNanos.Cmp(NewFloat()) <= 0 {
+	if txMeta.PriceNanosPerDenominatedCoin.IsZero() ||
+		txMeta.PriceNanosPerDenominatedCoin.Lt(uint256.NewInt()) {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
 	// If denominated in $DESO, confirm PriceNanos is uint64.
-	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO && !IsUint64(&txMeta.PriceNanos) {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
-	}
-
-	// If denominated in DAO coins, confirm PriceNanos is uint256.
-	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin && !IsUint256(&txMeta.PriceNanos) {
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
+		!txMeta.PriceNanosPerDenominatedCoin.IsUint64() {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
@@ -111,23 +109,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
-	// Order total cost = price x quantity.
-	// Price is a big Float. Quantity is an uint256.
-	// Cast Quantity to big Float so can multiply.
-	requestedOrderTotalCost := NewFloat().Mul(&txMeta.PriceNanos, NewFloat().SetInt(txMeta.Quantity.ToBig()))
-
-	// If $DESO buy, validate that order total cost is less than the max uint64.
-	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-		if !IsUint64(requestedOrderTotalCost) {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
-		}
+	// requestedOrderTotalCost = Quantity * (Nanos / DenominatedCoin) * ( 1 / PriceNanosPerDenominatedCoin )
+	var requestedOrderTotalCost *uint256.Int
+	requestedOrderTotalCost, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+		txMeta.Quantity, txMeta.PriceNanosPerDenominatedCoin)
+	if err != nil {
+		// TODO: wrap with rule error describing overflow
+		return 0, 0, nil, err
 	}
 
-	// If DAO coin buy, validate that order total cost is less than the max uint256.
-	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-		if !IsUint256(requestedOrderTotalCost) {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
-		}
+	// If $DESO buy, validate that order total cost is less than the max uint64.
+	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
+		!requestedOrderTotalCost.IsUint64() {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
 	// Validate transfer restriction status, if DAO coin can only be transferred to whitelisted members.
@@ -143,7 +137,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 
 		// User is trying to open an ask order but doesn't have enough of the promised DAO coins.
-		if balanceEntry.BalanceNanos.Lt(&txMeta.Quantity) {
+		if balanceEntry.BalanceNanos.Lt(txMeta.Quantity) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder
 		}
 	}
@@ -158,9 +152,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// User is trying to open a bid order but doesn't have enough $DESO.
-			requestedOrderTotalCostUint64, _ := requestedOrderTotalCost.Uint64()
-
-			if desoBalanceNanos < requestedOrderTotalCostUint64 {
+			if desoBalanceNanos < requestedOrderTotalCost.Uint64() {
 				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 			}
 		} else if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
@@ -287,14 +279,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Create entry from txn metadata.
 	requestedOrder := &DAOCoinLimitOrderEntry{
-		TransactorPKID:             transactorPKID,
-		DenominatedCoinType:        txMeta.DenominatedCoinType,
-		DenominatedCoinCreatorPKID: txMeta.DenominatedCoinCreatorPKID,
-		DAOCoinCreatorPKID:         txMeta.DAOCoinCreatorPKID,
-		OperationType:              txMeta.OperationType,
-		PriceNanos:                 txMeta.PriceNanos,
-		BlockHeight:                blockHeight,
-		Quantity:                   txMeta.Quantity,
+		TransactorPKID:               transactorPKID,
+		DenominatedCoinType:          txMeta.DenominatedCoinType,
+		DenominatedCoinCreatorPKID:   txMeta.DenominatedCoinCreatorPKID,
+		DAOCoinCreatorPKID:           txMeta.DAOCoinCreatorPKID,
+		OperationType:                txMeta.OperationType,
+		PriceNanosPerDenominatedCoin: txMeta.PriceNanosPerDenominatedCoin,
+		BlockHeight:                  blockHeight,
+		Quantity:                     txMeta.Quantity,
 	}
 
 	// Check if you already have an existing order at this price in this block.
@@ -306,7 +298,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	prevOrder, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderKey]
 
 	if prevOrder != nil {
-		requestedOrder.Quantity = *uint256.NewInt().Add(&requestedOrder.Quantity, &prevOrder.Quantity)
+		requestedOrder.Quantity = uint256.NewInt().Add(requestedOrder.Quantity, prevOrder.Quantity)
 		bav._deleteDAOCoinLimitOrderEntryMappings(prevOrder)
 	}
 
@@ -319,6 +311,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// TODO: add to UTXO operation.
 	deletedDAOCoinLimitOrders := []*DAOCoinLimitOrderEntry{}
 	deletedBalanceEntries := []*BalanceEntry{}
+	_ = deletedBalanceEntries
 
 	for len(prevMatchingOrders) > 0 {
 		// Cache previous state of potential matching orders in case of revert.
@@ -345,7 +338,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// Seller with open ask order doesn't have enough of the promised DAO coins.
 				// Don't include and mark their order for deletion.
 				// TODO: maybe we should partially fulfill the order? Maybe less error-prone to just close.
-				if balanceEntry.BalanceNanos.Lt(&order.Quantity) {
+				if balanceEntry.BalanceNanos.Lt(order.Quantity) {
 					deletedDAOCoinLimitOrders = append(deletedDAOCoinLimitOrders, order)
 					bav._deleteDAOCoinLimitOrderEntryMappings(order)
 					continue
@@ -358,21 +351,22 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					desoBalanceNanos := pkidToNetDesoBalanceNanos[*order.TransactorPKID]
 
 					// Order total cost = price x quantity.
-					// Price is a big Float. Quantity is an uint256.
-					// Cast Quantity to big Float so can multiply.
-					orderTotalCost := NewFloat().Mul(&order.PriceNanos, NewFloat().SetInt(order.Quantity.ToBig()))
+					var orderTotalCost *uint256.Int
+					orderTotalCost, err = _getOrderTotalCost(order)
+					if err != nil {
+						// TODO: wrap error with RuleError for overflow
+						return 0, 0, nil, err
+					}
 
 					// Validate that order total cost is an uint64.
-					if !IsUint64(orderTotalCost) {
+					if !orderTotalCost.IsUint64() {
 						// TODO: replace with Rule Error Invalid Price or Quantity
 						panic("Invalid order total cost")
 					}
 
 					// Buyer with open bid order doesn't have enough $DESO.
 					// Don't include and mark their order for deletion.
-					orderTotalCostUint64, _ := orderTotalCost.Uint64()
-
-					if desoBalanceNanos < orderTotalCostUint64 {
+					if desoBalanceNanos < orderTotalCost.Uint64() {
 						// If order creator doesn't have enough DESO to cover bid order,
 						// then delete their bid order.
 						globalDesoBalance, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(order.TransactorPKID))
@@ -381,7 +375,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 							return 0, 0, nil, err
 						}
 
-						if globalDesoBalance < orderTotalCostUint64 {
+						if globalDesoBalance < orderTotalCost.Uint64() {
 							deletedDAOCoinLimitOrders = append(deletedDAOCoinLimitOrders, order)
 							bav._deleteDAOCoinLimitOrderEntryMappings(order)
 						}
@@ -400,14 +394,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			var daoCoinsToTransfer *uint256.Int
 			orderIsComplete := false
 
-			if requestedOrder.Quantity.Lt(&order.Quantity) {
-				daoCoinsToTransfer = &requestedOrder.Quantity
-				order.Quantity = *uint256.NewInt().Sub(&order.Quantity, &requestedOrder.Quantity)
-				requestedOrder.Quantity = *uint256.NewInt()
+			if requestedOrder.Quantity.Lt(order.Quantity) {
+				daoCoinsToTransfer = requestedOrder.Quantity
+				order.Quantity = uint256.NewInt().Sub(order.Quantity, requestedOrder.Quantity)
+				requestedOrder.Quantity = uint256.NewInt()
 				orderIsComplete = true
 			} else {
-				daoCoinsToTransfer = &order.Quantity
-				requestedOrder.Quantity = *uint256.NewInt().Sub(&requestedOrder.Quantity, &order.Quantity)
+				daoCoinsToTransfer = order.Quantity
+				requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
 				deletedDAOCoinLimitOrders = append(deletedDAOCoinLimitOrders, order)
 				bav._deleteDAOCoinLimitOrderEntryMappings(order)
 
@@ -446,26 +440,29 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
 				// Requested ask order:
 				// Send DAO coins from requesterBalanceEntry to matchedBalanceEntry.
-				requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&requesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
-				matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&matchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				newRequesterBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&prevRequesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				newMatchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&prevMatchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
 			}
 
 			if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 				// Send DAO coins from matchedBalanceEntry to requesterBalanceEntry.
 				// Requested bid order:
-				matchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&matchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
-				requesterBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&requesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				newMatchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&prevMatchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				newRequesterBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&prevRequesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
 			}
 
-			bav._setDAOCoinBalanceEntryMappings(requesterBalanceEntry)
-			bav._setDAOCoinBalanceEntryMappings(matchingBalanceEntry)
+			bav._setDAOCoinBalanceEntryMappings(newRequesterBalanceEntry)
+			bav._setDAOCoinBalanceEntryMappings(newMatchingBalanceEntry)
 
 			// Track how much denominated coin to transfer.
-			orderPrice := uint256.NewInt()
-			orderPriceInt, _ := order.PriceNanos.Int(nil)
-			orderPrice.SetFromBig(orderPriceInt)
-			denominatedCoinToTransfer := uint256.NewInt().Mul(daoCoinsToTransfer, orderPrice)
-			_ = denominatedCoinToTransfer
+			var denominatedCoinToTransfer *uint256.Int
+			denominatedCoinToTransfer, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+				daoCoinsToTransfer, order.PriceNanosPerDenominatedCoin)
+
+			if err != nil {
+				// TODO: wrap with rule error describing overflow
+				return 0, 0, nil, err
+			}
 
 			if requestedOrder.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
 				if !denominatedCoinToTransfer.IsUint64() {
@@ -591,9 +588,9 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		var dbFunc func(*badger.Txn, *DAOCoinLimitOrderEntry, []byte) ([]*DAOCoinLimitOrderEntry, error)
 
 		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			dbFunc = DBGetHighestDAOCoinBidOrders
+			dbFunc = DBGetMatchingDAOCoinBidOrders
 		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			dbFunc = DBGetLowestDAOCoinAskOrders
+			dbFunc = DBGetMatchingDAOCoinAskOrders
 		} else {
 			// TODO: switch to RuleErrorDAOCoinLimitOrderUnsupportedOperationType
 			return nil, fmt.Errorf("Invalid operation type")
@@ -637,15 +634,27 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 
 		// Ask: reject if requestedOrder.PriceNanos > order.PriceNanos
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk &&
-			requestedOrder.PriceNanos.Cmp(&order.PriceNanos) > 0 {
-			continue
+		// I.e. requestedOrder.PriceNanosPerDenominatedCoin < order.PriceNanosPerDenominatedCoin
+		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			// We should have seen this order already.
+			if lastSeenOrder != nil && order.IsBetterBidThan(lastSeenOrder) {
+				continue
+			}
+			if requestedOrder.PriceNanosPerDenominatedCoin.Lt(order.PriceNanosPerDenominatedCoin) {
+				continue
+			}
 		}
 
 		// Bid: reject if requestedOrder.PriceNanos < order.PriceNanos
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid &&
-			requestedOrder.PriceNanos.Cmp(&order.PriceNanos) < 0 {
-			continue
+		// I.e. requestedOrder.PriceNanosPerDenominatedCoin > order.PriceNanosPerDenominatedCoin
+		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			// We should have seen this order already
+			if lastSeenOrder != nil && order.IsBetterAskThan(lastSeenOrder) {
+				continue
+			}
+			if requestedOrder.PriceNanosPerDenominatedCoin.Gt(order.PriceNanosPerDenominatedCoin) {
+				continue
+			}
 		}
 
 		if !reflect.DeepEqual(requestedOrder.DenominatedCoinCreatorPKID, order.DenominatedCoinCreatorPKID) {
@@ -681,7 +690,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 	for _, order := range sortedOrders {
 		includedOrders = append(includedOrders, order)
-		requestedQuantity = *uint256.NewInt().Sub(&requestedQuantity, &order.Quantity)
+		requestedQuantity = uint256.NewInt().Sub(requestedQuantity, order.Quantity)
 
 		if requestedQuantity.LtUint64(0) {
 			break
@@ -722,4 +731,21 @@ func (bav *UtxoView) _deleteDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOr
 
 	// Set the mappings to point to the tombstone entry.
 	bav._setDAOCoinLimitOrderEntryMappings(&tombstoneEntry)
+}
+
+func _getOrderTotalCost(order *DAOCoinLimitOrderEntry) (*uint256.Int, error) {
+	return _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(order.Quantity, order.PriceNanosPerDenominatedCoin)
+}
+
+// TotalCost = Quantity * (Nanos / DenominatedCoin) * ( 1 / PriceNanosPerDenominatedCoin )
+func _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+	quantity *uint256.Int, priceNanosPerDenominatedCoin *uint256.Int) (
+	*uint256.Int, error) {
+	totalCostBigInt := big.NewInt(0).Mul(quantity.ToBig(), big.NewInt(int64(NanosPerUnit)))
+	totalCostBigInt = big.NewInt(0).Div(totalCostBigInt, priceNanosPerDenominatedCoin.ToBig())
+	totalCost, totalCostOverflow := uint256.FromBig(totalCostBigInt)
+	if totalCostOverflow {
+		return nil, fmt.Errorf("Order overflows uint256")
+	}
+	return totalCost, nil
 }

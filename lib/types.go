@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
-	"github.com/pkg/errors"
 	"io"
-	"math/big"
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -120,14 +118,14 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	return newBlockhash
 }
 
-func EncodeUint256(val uint256.Int) []byte {
+func EncodeUint256(val *uint256.Int) []byte {
 	valBytes := val.Bytes()
 	data := make([]byte, 32, 32)
 	//data := append([]byte{}, UintToBuf(uint64(len(valBytes)))...)
 	return append(data, valBytes...)[len(valBytes):]
 }
 
-func ReadUint256(rr io.Reader) (uint256.Int, error) {
+func ReadUint256(rr io.Reader) (*uint256.Int, error) {
 	//maxUint256BytesLen := len(MaxUint256.Bytes())
 	//intLen, err := ReadUvarint(rr)
 	//if err != nil {
@@ -140,32 +138,9 @@ func ReadUint256(rr io.Reader) (uint256.Int, error) {
 	valBytes := make([]byte, 32, 32)
 	_, err := io.ReadFull(rr, valBytes)
 	if err != nil {
-		return *uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
+		return uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
 	}
-	return *uint256.NewInt().SetBytes(valBytes), nil
-}
-
-// TODO: we need to know the max length of a big float.
-// Can't have infinite bytes...
-func EncodeBigFloat(val *big.Float) ([]byte, error) {
-	floatBytes, err := ToBytes(val)
-	if err != nil {
-		return nil, err
-	}
-	data := append([]byte{}, UintToBuf(uint64(len(floatBytes)))...)
-	return append(data, floatBytes...), nil
-}
-
-func ReadBigFloat(rr io.Reader) (*big.Float, error) {
-	intLen, err := ReadUvarint(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "ReadBigFloat: Problem reading length: ")
-	}
-	valBytes := make([]byte, intLen)
-	if _, err = io.ReadFull(rr, valBytes); err != nil {
-		return nil, errors.Wrapf(err, "ReadBigFloat: Problem reading %d bytes into slice: ", intLen)
-	}
-	return FromBytes(valBytes)
+	return uint256.NewInt().SetBytes(valBytes), nil
 }
 
 //var _ sql.Scanner = (*BlockHash)(nil)
