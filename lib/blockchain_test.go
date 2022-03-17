@@ -182,8 +182,6 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 			Database: "admin",
 			Password: "",
 		}))
-	} else {
-		postgresDb = nil
 	}
 
 	// Set some special parameters for testing. If the blocks above are changed
