@@ -176,7 +176,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// PKID -> DAO coin limit order payout
 	pkidToOutputDesoNanos := make(map[PKID]uint64)
 
-	// TODO: add to UTXO operation.
 	spentUtxoEntries := []*UtxoEntry{}
 
 	// If requester is submitting a bid order and it's denominated in $DESO,
@@ -236,7 +235,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Helpers to create UTXOs.
-	// TODO: add to UTXO operation.
 	daoCoinLimitOrderPaymentUtxoKeys := []*UtxoKey{}
 	// This may start negative but that's OK because the first thing we do is increment it
 	// in createUTXO
@@ -294,7 +292,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Only have to check UTXO and not Badger because we are only aggregating within the block height.
 	orderKey := requestedOrder.ToMapKey()
 
-	// TODO: add to UTXO operation.
 	prevOrder, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderKey]
 
 	if prevOrder != nil {
@@ -308,10 +305,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	var lastSeenOrder *DAOCoinLimitOrderEntry
 
 	// Keep track of state in case of reverting txn.
-	// TODO: add to UTXO operation.
 	deletedDAOCoinLimitOrders := []*DAOCoinLimitOrderEntry{}
-	deletedBalanceEntries := []*BalanceEntry{}
-	_ = deletedBalanceEntries
+	prevRequesterBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.TransactorPKID, requestedOrder.DAOCoinCreatorPKID, true)
+	prevMatchingBalanceEntries := []*BalanceEntry{}
 
 	for len(prevMatchingOrders) > 0 {
 		// Cache previous state of potential matching orders in case of revert.
@@ -320,8 +316,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 
 		// 1-by-1 match existing orders to the requested order.
-		prevMatchingBalanceEntries := []*BalanceEntry{}
-
 		for _, order := range matchingOrders {
 			// Validate that the seller has the DAO coin they're selling.
 			if order.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
@@ -411,18 +405,20 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// Find or create DAO coin balance entries.
-			prevRequesterBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.TransactorPKID, requestedOrder.DAOCoinCreatorPKID, true)
+			prevRequesterCurrentBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(requestedOrder.TransactorPKID, requestedOrder.DAOCoinCreatorPKID, true)
 			prevMatchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(order.TransactorPKID, order.DAOCoinCreatorPKID, true)
 
 			var newRequesterBalanceEntry *BalanceEntry
 			var newMatchingBalanceEntry *BalanceEntry
 
-			if prevRequesterBalanceEntry == nil || prevRequesterBalanceEntry.isDeleted {
+			if prevRequesterCurrentBalanceEntry == nil || prevRequesterCurrentBalanceEntry.isDeleted {
 				newRequesterBalanceEntry = &BalanceEntry{
 					HODLerPKID:   requestedOrder.TransactorPKID,
 					CreatorPKID:  requestedOrder.DenominatedCoinCreatorPKID,
 					BalanceNanos: *uint256.NewInt(),
 				}
+			} else {
+				newRequesterBalanceEntry = prevRequesterCurrentBalanceEntry.Copy()
 			}
 
 			if prevMatchingBalanceEntry == nil || prevMatchingBalanceEntry.isDeleted {
@@ -431,24 +427,25 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					CreatorPKID:  order.DenominatedCoinCreatorPKID,
 					BalanceNanos: *uint256.NewInt(),
 				}
+			} else {
+				newMatchingBalanceEntry = prevMatchingBalanceEntry.Copy()
 			}
 
 			// Transfer DAO coins.
-			// TODO: update to prevMatchingBalanceEntries.
 			prevMatchingBalanceEntries = append(prevMatchingBalanceEntries, prevMatchingBalanceEntry)
 
 			if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
 				// Requested ask order:
 				// Send DAO coins from requesterBalanceEntry to matchedBalanceEntry.
-				newRequesterBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&prevRequesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
-				newMatchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&prevMatchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				newRequesterBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&newRequesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				newMatchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&newMatchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
 			}
 
 			if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 				// Send DAO coins from matchedBalanceEntry to requesterBalanceEntry.
 				// Requested bid order:
-				newMatchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&prevMatchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
-				newRequesterBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&prevRequesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				newMatchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&newMatchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
+				newRequesterBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&newRequesterBalanceEntry.BalanceNanos, daoCoinsToTransfer)
 			}
 
 			bav._setDAOCoinBalanceEntryMappings(newRequesterBalanceEntry)
@@ -563,9 +560,15 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
+	// We included the transactor in the slices of the prev balance entries
+	// and the prev DAO coin limit order entries. Usually we leave them in
+	// a separate place, but here it makes sense.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: OperationTypeDAOCoinLimitOrder,
-		//TODO: populate with data we need for disconnect
+		Type:                             OperationTypeDAOCoinLimitOrder,
+		PrevBalanceEntries:               append(prevMatchingBalanceEntries, prevRequesterBalanceEntry),
+		PrevDAOCoinLimitOrderEntries:     append(deletedDAOCoinLimitOrders, prevOrder),
+		SpentUtxoEntries:                 spentUtxoEntries,
+		DAOCoinLimitOrderPaymentUtxoKeys: daoCoinLimitOrderPaymentUtxoKeys,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -703,8 +706,107 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
-	// TODO
-	return nil
+
+	// Verify that the last operation is a DAOCoinLimitOrder operation
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectDAOCoinLimitOrder: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeDAOCoinLimitOrder {
+		return fmt.Errorf("_disconnectDAOCoinLimitOrder: Trying to revert "+
+			"OperationTypeDAOCoinLimitOrder but found type %v",
+			utxoOpsForTxn[operationIndex].Type)
+	}
+	txMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+
+	// We sometimes have some extra AddUtxo operations we need to remove
+	// These are "implicit" outputs that always occur at the end of the
+	// list of UtxoOperations. The number of implicit outputs is equal to
+	// the total number of "Add" operations minus the explicit outputs.
+	numUtxoAdds := 0
+	for _, utxoOp := range utxoOpsForTxn {
+		if utxoOp.Type == OperationTypeAddUtxo {
+			numUtxoAdds += 1
+		}
+	}
+
+	// Revert the deleted limit orders in reverse order.
+	for ii := len(operationData.PrevDAOCoinLimitOrderEntries) - 1; ii >= 0; ii-- {
+		orderEntry := operationData.PrevDAOCoinLimitOrderEntries[ii]
+
+		if orderEntry == nil {
+			// TODO: raise an error if it's not the last element of the slice
+			// I.e. there's a nil that's not the first element of the reverse slice.
+			// TODO: handling the DAO coin limit order from the requester
+			continue
+		}
+
+		bav._setDAOCoinLimitOrderEntryMappings(orderEntry)
+	}
+
+	// Revert the balance entries in reverse order.
+	for ii := len(operationData.PrevBalanceEntries) - 1; ii >= 0; ii-- {
+		balanceEntry := operationData.PrevBalanceEntries[ii]
+
+		if balanceEntry == nil {
+			// TODO: raise an error if it's not the last element of the slice
+			// I.e. there's a nil that's not the first element of the reverse slice.
+			// TODO: handling the balance entry from the requester
+			// TODO: create a different element in the UtxoOperation struct to support.
+			continue
+		}
+
+		bav._setDAOCoinBalanceEntryMappings(balanceEntry)
+	}
+
+	// Disconnect payment UTXOs.
+	// TODO: confirm we don't need this. If we have an order that doesn't match anything
+	// we're not going to have any payments.
+	//if operationData.DAOCoinLimitOrderPaymentUtxoKeys == nil || len(operationData.DAOCoinLimitOrderPaymentUtxoKeys) == 0 {
+	//	return fmt.Errorf("_disconnectDAOCoinLimitOrder: DAOCoinLimitOrderPaymentUtxoKeys was nil; " +
+	//		"this should never happen")
+	//}
+
+	for ii := len(operationData.DAOCoinLimitOrderPaymentUtxoKeys) - 1; ii >= 0; ii-- {
+		paymentUtxoKey := operationData.DAOCoinLimitOrderPaymentUtxoKeys[ii]
+		if err := bav._unAddUtxo(paymentUtxoKey); err != nil {
+			return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unAdding utxo %v: ", paymentUtxoKey)
+		}
+	}
+
+	// Un-spend spent UTXOs.
+	if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+		// Un-spending UTXOs on behalf of the matching bid orders.
+		for ii := len(operationData.SpentUtxoEntries) - 1; ii >= 0; ii-- {
+			spentUtxoEntry := operationData.SpentUtxoEntries[ii]
+
+			if err := bav._unSpendUtxo(spentUtxoEntry); err != nil {
+				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpending utxo %v: ", spentUtxoEntry)
+			}
+		}
+	} else if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+		if len(operationData.SpentUtxoEntries) > 0 {
+			return errors.New("_disconnectDAOCoinLimitOrder: unspent UTXO entries for bid" +
+				"this should never happen!")
+		}
+	} else {
+		// TODO: is this rule kosher?
+		return RuleErrorDAOCoinLimitOrderUnsupportedOperationType
+	}
+
+	// Now revert the basic transfer with the remaining operations.
+	numMatchingOrderInputs := 0
+
+	for _, inputs := range txMeta.MatchingBidsInputsMap {
+		numMatchingOrderInputs += len(inputs)
+	}
+
+	numOrderOperations := (numUtxoAdds - len(currentTxn.TxOutputs) + numMatchingOrderInputs)
+	operationIndex -= numOrderOperations
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
 }
 
 func (bav *UtxoView) _setDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrderEntry) {

@@ -378,6 +378,12 @@ type UtxoOperation struct {
 	NFTBidCreatorDESORoyaltyNanos uint64
 	NFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
 	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
+
+	// DAO coin limit order
+	PrevBalanceEntries               []*BalanceEntry
+	PrevDAOCoinLimitOrderEntries     []*DAOCoinLimitOrderEntry
+	SpentUtxoEntries                 []*UtxoEntry
+	DAOCoinLimitOrderPaymentUtxoKeys []*UtxoKey
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -1254,6 +1260,16 @@ type BalanceEntry struct {
 
 	// Whether or not this entry is deleted in the view.
 	isDeleted bool
+}
+
+func (entry *BalanceEntry) Copy() *BalanceEntry {
+	return &BalanceEntry{
+		HODLerPKID:   entry.HODLerPKID.NewPKID(),
+		CreatorPKID:  entry.CreatorPKID.NewPKID(),
+		BalanceNanos: *entry.BalanceNanos.Clone(),
+		HasPurchased: entry.HasPurchased,
+		isDeleted:    entry.isDeleted,
+	}
 }
 
 type TransferRestrictionStatus uint8
