@@ -677,6 +677,7 @@ func (order *PGDAOCoinLimitOrder) NewDAOCoinLimitOrder() *DAOCoinLimitOrderEntry
 		TransactorPKID:               order.TransactorPKID,
 		DenominatedCoinType:          order.DenominatedCoinType,
 		DenominatedCoinCreatorPKID:   order.DenominatedCoinCreatorPKID,
+		DAOCoinCreatorPKID:           order.DAOCoinCreatorPKID,
 		OperationType:                order.OperationType,
 		PriceNanosPerDenominatedCoin: LeftPaddedHexToUint256(order.PriceNanosPerDenominatedCoin),
 		BlockHeight:                  order.BlockHeight,
