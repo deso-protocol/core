@@ -6370,14 +6370,6 @@ func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 			break
 		}
 
-		// Break if ask price is greater than requested bid price. In practice, this means we should break if the
-		// ask price per denominated coin is less than the requested bid price per denomiated coin.
-		// order.PriceNanos > inputOrder.PriceNanos
-		// order.PriceNanosPerDenominatedCoin < inputOrder.PriceNanosPerDenominatedCoin
-		if order.PriceNanosPerDenominatedCoin.Lt(inputOrder.PriceNanosPerDenominatedCoin) {
-			break
-		}
-
 		// Reduce requested quantity by matching order's quantity.
 		requestedQuantity = uint256.NewInt().Sub(requestedQuantity, order.Quantity)
 		orders = append(orders, order)
