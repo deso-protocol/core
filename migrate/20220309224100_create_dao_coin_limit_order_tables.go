@@ -7,15 +7,45 @@ import (
 
 func init() {
 	up := func(db orm.DB) error {
+		// TODO: what indices should we add?
+		// Create pg_metadata_dao_coin_limit_orders table.
 		_, err := db.Exec(`
 			CREATE TABLE pg_metadata_dao_coin_limit_orders (
-				transaction_hash              BYTEA PRIMARY KEY,
-				denominated_coin_type         SMALLINT NOT NULL,
-				denominated_coin_creator_pkid BYTEA NOT NULL,
-				dao_coin_creator_pkid         BYTEA NOT NULL,
-				operation_type                SMALLINT NOT NULL,
-				price_nanos                   TEXT NOT NULL,
-				quantity                      TEXT NOT NULL
+				transaction_hash                 BYTEA PRIMARY KEY,
+				denominated_coin_type            SMALLINT NOT NULL,
+				denominated_coin_creator_pkid    BYTEA NOT NULL,
+				dao_coin_creator_pkid            BYTEA NOT NULL,
+				operation_type                   SMALLINT NOT NULL,
+				price_nanos_per_denominated_coin TEXT NOT NULL,
+				quantity                         TEXT NOT NULL
+			);
+		`)
+
+		if err != nil {
+			return err
+		}
+
+		// Create pg_dao_coin_limit_orders table.
+		_, err = db.Exec(`
+			CREATE TABLE pg_dao_coin_limit_orders (
+				transactor_pkid                  BYTEA NOT NULL,
+				denominated_coin_type            SMALLINT NOT NULL,
+				denominated_coin_creator_pkid    BYTEA NOT NULL,
+				dao_coin_creator_pkid            BYTEA NOT NULL,
+				operation_type                   SMALLINT NOT NULL,
+				price_nanos_per_denominated_coin TEXT NOT NULL,
+				block_height				     BIGINT NOT NULL,
+				quantity                         TEXT NOT NULL,
+
+				PRIMARY KEY (
+					transactor_pkid,
+					denominated_coin_type,
+					denominated_coin_creator_pkid,
+					dao_coin_creator_pkid,
+					operation_type,
+					price_nanos_per_denominated_coin,
+					block_height
+				)
 			);
 		`)
 
@@ -28,6 +58,7 @@ func init() {
 
 	down := func(db orm.DB) error {
 		_, err := db.Exec(`
+			DROP TABLE pg_dao_coin_limit_orders;
 			DROP TABLE pg_metadata_dao_coin_limit_orders;
 		`)
 		return err

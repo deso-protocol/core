@@ -579,7 +579,22 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 	orders := []*DAOCoinLimitOrderEntry{}
 
 	if bav.Postgres != nil {
-		// TODO
+		var err error
+		var dbFunc func(*DAOCoinLimitOrderEntry, *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error)
+
+		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			dbFunc = bav.Postgres.GetMatchingDAOCoinBidOrders
+		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			dbFunc = bav.Postgres.GetMatchingDAOCoinAskOrders
+		} else {
+			return nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
+		}
+
+		orders, err = dbFunc(requestedOrder, lastSeenOrder)
+
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		var lastSeenKey []byte
 
@@ -594,8 +609,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 			dbFunc = DBGetMatchingDAOCoinAskOrders
 		} else {
-			// TODO: switch to RuleErrorDAOCoinLimitOrderUnsupportedOperationType
-			return nil, fmt.Errorf("Invalid operation type")
+			return nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
 		}
 
 		err := bav.Handle.View(func(txn *badger.Txn) error {
