@@ -564,11 +564,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// and the prev DAO coin limit order entries. Usually we leave them in
 	// a separate place, but here it makes sense.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                             OperationTypeDAOCoinLimitOrder,
-		PrevBalanceEntries:               append(prevMatchingBalanceEntries, prevRequesterBalanceEntry),
-		PrevDAOCoinLimitOrderEntries:     append(deletedDAOCoinLimitOrders, prevOrder),
-		SpentUtxoEntries:                 spentUtxoEntries,
-		DAOCoinLimitOrderPaymentUtxoKeys: daoCoinLimitOrderPaymentUtxoKeys,
+		Type:                                 OperationTypeDAOCoinLimitOrder,
+		PrevTransactorBalanceEntry:           prevRequesterBalanceEntry,
+		PrevTransactorDAOCoinLimitOrderEntry: prevOrder,
+		PrevBalanceEntries:                   prevMatchingBalanceEntries,
+		PrevDAOCoinLimitOrderEntries:         deletedDAOCoinLimitOrders,
+		SpentUtxoEntries:                     spentUtxoEntries,
+		DAOCoinLimitOrderPaymentUtxoKeys:     daoCoinLimitOrderPaymentUtxoKeys,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -730,6 +732,34 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		if utxoOp.Type == OperationTypeAddUtxo {
 			numUtxoAdds += 1
 		}
+	}
+
+	// Revert the transactor's balance entry.
+	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
+	prevTransactorBalanceEntry := operationData.PrevTransactorBalanceEntry
+
+	if prevTransactorBalanceEntry == nil {
+		prevTransactorBalanceEntry = &BalanceEntry{
+			HODLerPKID:   transactorPKID,
+			CreatorPKID:  txMeta.DAOCoinCreatorPKID,
+			BalanceNanos: *uint256.NewInt(),
+		}
+	}
+
+	bav._setDAOCoinBalanceEntryMappings(prevTransactorBalanceEntry)
+
+	// Revert the transactor's limit order entry.
+	prevTransactorOrderEntry := operationData.PrevTransactorDAOCoinLimitOrderEntry
+
+	if prevTransactorOrderEntry != nil {
+		// If previous transactor order entry is not null, set it
+		// which overwrites whatever is currently stored there.
+		bav._setDAOCoinLimitOrderEntryMappings(prevTransactorOrderEntry)
+	} else {
+		// Else, we need to explicitly delete the requested order entry
+		// from this transaction.
+		transactorOrderEntry := txMeta.ToEntry(transactorPKID, blockHeight)
+		bav._deleteDAOCoinLimitOrderEntryMappings(transactorOrderEntry)
 	}
 
 	// Revert the deleted limit orders in reverse order.

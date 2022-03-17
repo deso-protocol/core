@@ -380,10 +380,11 @@ type UtxoOperation struct {
 	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 
 	// DAO coin limit order
-	PrevBalanceEntries               []*BalanceEntry
-	PrevDAOCoinLimitOrderEntries     []*DAOCoinLimitOrderEntry
-	SpentUtxoEntries                 []*UtxoEntry
-	DAOCoinLimitOrderPaymentUtxoKeys []*UtxoKey
+	PrevTransactorDAOCoinLimitOrderEntry *DAOCoinLimitOrderEntry
+	PrevBalanceEntries                   []*BalanceEntry
+	PrevDAOCoinLimitOrderEntries         []*DAOCoinLimitOrderEntry
+	SpentUtxoEntries                     []*UtxoEntry
+	DAOCoinLimitOrderPaymentUtxoKeys     []*UtxoKey
 }
 
 func (utxoEntry *UtxoEntry) String() string {

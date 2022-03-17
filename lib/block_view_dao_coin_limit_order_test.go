@@ -288,7 +288,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	//_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
 // No error expected.
