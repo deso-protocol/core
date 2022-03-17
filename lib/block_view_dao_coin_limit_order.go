@@ -37,9 +37,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// public key so there is no need to verify anything further.
 	}
 
-	// TODO: in the for loop, when matching orders, send $ to the right person.
-	// Create UTXO, append to list of utxoOpsForTxn.
-
 	// ----- Begin custom validations
 
 	// Validate TransactorPKID exists.
