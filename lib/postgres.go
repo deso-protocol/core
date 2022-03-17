@@ -2519,6 +2519,38 @@ func (postgres *Postgres) GetMatchingDAOCoinAskOrders(inputOrder *DAOCoinLimitOr
 	return outputOrders, nil
 }
 
+func (postgres *Postgres) GetMatchingDAOCoinBidOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+	var orders []*PGDAOCoinLimitOrder
+	price := inputOrder.PriceNanosPerDenominatedCoin
+
+	if lastSeenOrder != nil {
+		price = lastSeenOrder.PriceNanosPerDenominatedCoin
+	}
+
+	err := postgres.db.Model(&orders).
+		Where("denominated_coin_type = ?", inputOrder.DenominatedCoinType).
+		Where("denominated_coin_creator_pkid = ?", inputOrder.DenominatedCoinCreatorPKID).
+		Where("dao_coin_creator_pkid = ?", inputOrder.DAOCoinCreatorPKID).
+		Where("operation_type = ?", DAOCoinLimitOrderEntryOrderTypeBid).
+		Where("price_nanos_per_denominated_coin <= ?", Uint256ToLeftPaddedHex(price)).
+		Order("price_nanos_per_denominated_coin ASC").
+		Order("block_height ASC").
+		Order("quantity ASC").
+		Select()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var outputOrders []*DAOCoinLimitOrderEntry
+
+	for _, order := range orders {
+		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+	}
+
+	return outputOrders, nil
+}
+
 //
 // NFTS
 //
