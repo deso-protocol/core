@@ -63,7 +63,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		DenominatedCoinCreatorPKID:   &ZeroPKID,
 		DAOCoinCreatorPKID:           m0PKID.PKID,
 		OperationType:                DAOCoinLimitOrderEntryOrderTypeBid,
-		PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(10),
+		PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(NanosPerUnit / 10),
 		Quantity:                     uint256.NewInt().SetUint64(100),
 	}
 
@@ -89,7 +89,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                  /*isHidden*/)
 	}
 
 	// RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
@@ -149,7 +149,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			DenominatedCoinCreatorPKID:   &ZeroPKID,
 			DAOCoinCreatorPKID:           m0PKID.PKID,
 			OperationType:                DAOCoinLimitOrderEntryOrderTypeAsk,
-			PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(10),
+			PriceNanosPerDenominatedCoin: uint256.NewInt().SetUint64(NanosPerUnit / 10),
 			Quantity:                     daoCoinQuantityChange,
 		}
 

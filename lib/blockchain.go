@@ -3205,14 +3205,24 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
 				// TODO: check overflow
-				if uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, order.Quantity).
-					Cmp(uint256.NewInt().SetUint64(desoBalanceNanos)) <= 0 {
+				orderCost, err := _getOrderTotalCost(order)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in total order cost")
+				}
+				if orderCost.LtUint64(desoBalanceNanos) {
 					var desoNanosToConsume *uint256.Int
 					if requestedOrder.Quantity.Lt(order.Quantity) {
-						desoNanosToConsume = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, requestedOrder.Quantity)
+						desoNanosToConsume, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+							requestedOrder.Quantity, order.PriceNanosPerDenominatedCoin)
+						if err != nil {
+							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
+						}
 						requestedOrder.Quantity = uint256.NewInt()
 					} else {
-						desoNanosToConsume = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, order.Quantity)
+						desoNanosToConsume, err = _getOrderTotalCost(order)
+						if err != nil {
+							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
+						}
 						requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
 					}
 					if !desoNanosToConsume.IsUint64() {
@@ -4221,7 +4231,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 				matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 				if err != nil {
 					return 0, 0, 0, 0, errors.Wrapf(
-						err, "AddInputsAndChangeToTransaction")
+						err, "AddInputsAndChangeToTransaction: ")
 				}
 				if len(matchingOrderEntries) == 0 {
 					break
@@ -4232,10 +4242,16 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.Quantity) {
 						var nanosToFulfillOrder *uint256.Int
 						if requestedOrder.Quantity.Lt(order.Quantity) {
-							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, requestedOrder.Quantity)
+							nanosToFulfillOrder, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(requestedOrder.Quantity, order.PriceNanosPerDenominatedCoin)
+							if err != nil {
+								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+							}
 							requestedOrder.Quantity = uint256.NewInt()
 						} else {
-							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, order.Quantity)
+							nanosToFulfillOrder, err = _getOrderTotalCost(order)
+							if err != nil {
+								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+							}
 							requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
 						}
 						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)

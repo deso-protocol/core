@@ -6249,6 +6249,7 @@ func DBGetMatchingDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	queryOrder.Quantity = MaxUint256.Clone()
 
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
+	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 
 	// If passed a start key, start seeking from there.
 	if startKey != nil {
@@ -6267,7 +6268,7 @@ func DBGetMatchingDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	// Seek first matching order.
 	orders := []*DAOCoinLimitOrderEntry{}
 
-	for iterator.Seek(key); iterator.ValidForPrefix(key) && requestedQuantity.GtUint64(0); iterator.Next() {
+	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && requestedQuantity.GtUint64(0); iterator.Next() {
 		// If picking up from where you left off, skip the first order which has already been included.
 		if startKey != nil && reflect.DeepEqual(key, startKey) {
 			startKey = nil
@@ -6326,7 +6327,6 @@ func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	queryOrder.PriceNanosPerDenominatedCoin = uint256.NewInt()
 	queryOrder.BlockHeight = uint32(0)
 	queryOrder.Quantity = uint256.NewInt()
-
 	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
 
@@ -6367,14 +6367,6 @@ func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 		// order.PriceNanos < inputOrder.PriceNanos
 		// order.PriceNanosPerDenominatedCoin > inputOrder.PriceNanosPerDenominatedCoin
 		if order.PriceNanosPerDenominatedCoin.Gt(inputOrder.PriceNanosPerDenominatedCoin) {
-			break
-		}
-
-		// Break if ask price is greater than requested bid price. In practice, this means we should break if the
-		// ask price per denominated coin is less than the requested bid price per denomiated coin.
-		// order.PriceNanos > inputOrder.PriceNanos
-		// order.PriceNanosPerDenominatedCoin < inputOrder.PriceNanosPerDenominatedCoin
-		if order.PriceNanosPerDenominatedCoin.Lt(inputOrder.PriceNanosPerDenominatedCoin) {
 			break
 		}
 
