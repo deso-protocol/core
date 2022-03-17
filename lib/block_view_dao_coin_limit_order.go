@@ -6,6 +6,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"math/big"
 	"reflect"
 	"sort"
 )
@@ -106,9 +107,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
-	// Order total cost = price x quantity.
-	requestedOrderTotalCost := uint256.NewInt().Mul(txMeta.PriceNanosPerDenominatedCoin, txMeta.Quantity)
-
+	// requestedOrderTotalCost = Quantity * (Nanos / DenominatedCoin) * ( 1 / PriceNanosPerDenominatedCoin )
+	var requestedOrderTotalCost *uint256.Int
+	requestedOrderTotalCost, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+		txMeta.Quantity, txMeta.PriceNanosPerDenominatedCoin)
+	if err != nil {
+		// TODO: wrap with rule error describing overflow
+		return 0, 0, nil, err
+	}
 	// Validate that the order total cost didn't overflow.
 	// Note we have validated that price > 0 so we won't have a divide by zero error.
 	if !uint256.NewInt().Div(requestedOrderTotalCost, txMeta.PriceNanosPerDenominatedCoin).Eq(txMeta.Quantity) {
@@ -234,7 +240,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					}
 
 					// Order total cost = price x quantity.
-					orderTotalCost := uint256.NewInt().Mul(order.PriceNanosPerDenominatedCoin, order.Quantity)
+					var orderTotalCost *uint256.Int
+					orderTotalCost, err = _getOrderTotalCost(order)
+					if err != nil {
+						// TODO: wrap error with RuleError for overflow
+						return 0, 0, nil, err
+					}
 
 					// Validate that order total cost is an uint64.
 					if !orderTotalCost.IsUint64() {
@@ -494,4 +505,21 @@ func (bav *UtxoView) _deleteDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOr
 
 	// Set the mappings to point to the tombstone entry.
 	bav._setDAOCoinLimitOrderEntryMappings(&tombstoneEntry)
+}
+
+func _getOrderTotalCost(order *DAOCoinLimitOrderEntry) (*uint256.Int, error) {
+	return _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(order.Quantity, order.PriceNanosPerDenominatedCoin)
+}
+
+// TotalCost = Quantity * (Nanos / DenominatedCoin) * ( 1 / PriceNanosPerDenominatedCoin )
+func _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+	quantity *uint256.Int, priceNanosPerDenominatedCoin *uint256.Int) (
+	*uint256.Int, error) {
+	totalCostBigInt := big.NewInt(0).Mul(quantity.ToBig(), big.NewInt(int64(NanosPerUnit)))
+	totalCostBigInt = big.NewInt(0).Div(totalCostBigInt, priceNanosPerDenominatedCoin.ToBig())
+	totalCost, totalCostOverflow := uint256.FromBig(totalCostBigInt)
+	if totalCostOverflow {
+		return nil, fmt.Errorf("Order overflows uint256")
+	}
+	return totalCost, nil
 }
