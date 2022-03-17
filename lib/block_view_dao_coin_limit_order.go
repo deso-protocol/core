@@ -59,7 +59,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// If denominated in $DESO, validate DenominatedCoinCreatorPKID is all zeroes.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
 		if !reflect.DeepEqual(ZeroPKID, *txMeta.DenominatedCoinCreatorPKID) {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDAOCoinCreatorPKID
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID
 		}
 	}
 
@@ -68,7 +68,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		profileEntry := bav.GetProfileEntryForPKID(txMeta.DenominatedCoinCreatorPKID)
 
 		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderDenominatedCoinCreatorMissingProfile
 		}
 	}
 

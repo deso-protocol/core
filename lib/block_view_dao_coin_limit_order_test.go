@@ -67,6 +67,45 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		Quantity:                   uint256.NewInt().SetUint64(100),
 	}
 
+	// RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType: DAO coin
+	{
+		originalValue := metadataM0.DenominatedCoinType
+		metadataM0.DenominatedCoinType = DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType)
+		metadataM0.DenominatedCoinType = originalValue
+	}
+
+	// RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType: nonexistent
+	{
+		originalValue := metadataM0.DenominatedCoinType
+		metadataM0.DenominatedCoinType = 99
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType)
+		metadataM0.DenominatedCoinType = originalValue
+	}
+
+	// RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID: non-zero PKID
+	{
+		originalValue := metadataM0.DenominatedCoinCreatorPKID
+		metadataM0.DenominatedCoinCreatorPKID = m0PKID.PKID
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID)
+		metadataM0.DenominatedCoinCreatorPKID = originalValue
+	}
+
 	// RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile
 	{
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -92,6 +131,71 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			false /*isHidden*/)
 	}
 
+	// RuleErrorDAOCoinLimitOrderUnsupportedOperationType: nonexistent
+	{
+		originalValue := metadataM0.OperationType
+		metadataM0.OperationType = 99
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderUnsupportedOperationType)
+		metadataM0.OperationType = originalValue
+	}
+
+	// RuleErrorDAOCoinLimitOrderInvalidPrice: zero
+	{
+		originalValue := metadataM0.PriceNanos
+		metadataM0.PriceNanos = *NewFloat().SetFloat64(0)
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
+		metadataM0.PriceNanos = originalValue
+	}
+
+	// RuleErrorDAOCoinLimitOrderInvalidPrice: negative
+	{
+		originalValue := metadataM0.PriceNanos
+		metadataM0.PriceNanos = *NewFloat().SetFloat64(-1)
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
+		metadataM0.PriceNanos = originalValue
+	}
+
+	// RuleErrorDAOCoinLimitOrderInvalidPrice: non-uint64
+	{
+		originalValue := metadataM0.PriceNanos
+		metadataM0.PriceNanos = *NewFloat().SetInf(false)
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
+		metadataM0.PriceNanos = originalValue
+	}
+
+	// RuleErrorDAOCoinLimitOrderInvalidQuantity: zero
+	{
+		originalValue := metadataM0.Quantity
+		metadataM0.Quantity = uint256.NewInt().SetUint64(0)
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidQuantity)
+		metadataM0.Quantity = originalValue
+	}
+
 	// RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 	{
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -101,9 +205,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder)
 	}
 
+	daoCoinQuantityChange := uint256.NewInt().SetUint64(2)
+
 	// Update quantity and resubmit. Should go through.
 	{
-		metadataM0.Quantity = uint256.NewInt().SetUint64(2)
+		metadataM0.Quantity = daoCoinQuantityChange
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
 
 		queryEntry := metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)
@@ -117,6 +223,24 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		require.True(bytes.Equal(queryEntryBytes, resultEntryBytes))
+	}
+
+	metadataM1 := DAOCoinLimitOrderMetadata{
+		DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
+		DenominatedCoinCreatorPKID: &ZeroPKID,
+		DAOCoinCreatorPKID:         m0PKID.PKID,
+		OperationType:              DAOCoinLimitOrderEntryOrderTypeAsk,
+		PriceNanos:                 *NewFloat().SetUint64(10),
+		Quantity:                   daoCoinQuantityChange,
+	}
+
+	// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder
+	{
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM1)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder)
 	}
 
 	// Mint DAO coins and transfer to M1.
@@ -142,16 +266,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	{
 		originalM0DAOCoinBalance := DbGetBalanceEntry(db, m0PKID.PKID, m0PKID.PKID, true)
 		originalM1DAOCoinBalance := DbGetBalanceEntry(db, m1PKID.PKID, m0PKID.PKID, true)
-		daoCoinQuantityChange := uint256.NewInt().SetUint64(2)
-
-		metadataM1 := DAOCoinLimitOrderMetadata{
-			DenominatedCoinType:        DAOCoinLimitOrderEntryDenominatedCoinTypeDESO,
-			DenominatedCoinCreatorPKID: &ZeroPKID,
-			DAOCoinCreatorPKID:         m0PKID.PKID,
-			OperationType:              DAOCoinLimitOrderEntryOrderTypeAsk,
-			PriceNanos:                 *NewFloat().SetUint64(10),
-			Quantity:                   daoCoinQuantityChange,
-		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m1Pub, m1Priv, metadataM1)
 
