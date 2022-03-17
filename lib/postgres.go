@@ -11,6 +11,7 @@ import (
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
+	"regexp"
 	"strings"
 )
 
@@ -652,7 +653,7 @@ func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
 	return &BalanceEntry{
 		HODLerPKID:   balance.HolderPKID,
 		CreatorPKID:  balance.CreatorPKID,
-		BalanceNanos: *StringToUint256(balance.BalanceNanos),
+		BalanceNanos: *HexToUint256(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -683,7 +684,7 @@ func (order *PGDAOCoinLimitOrder) NewDAOCoinLimitOrder() *DAOCoinLimitOrderEntry
 	}
 }
 
-func StringToUint256(input string) *uint256.Int {
+func HexToUint256(input string) *uint256.Int {
 	output := uint256.NewInt()
 
 	if input != "" {
@@ -711,8 +712,12 @@ func Uint256ToLeftPaddedHex(input *uint256.Int) string {
 }
 
 func LeftPaddedHexToUint256(input string) *uint256.Int {
-	// TODO: make this work
-	return StringToUint256(input)
+	// Chop off the starting "0x" prefix and any leading zeroes.
+	hexPrefixRegex := regexp.MustCompile("^0x0{0,31}")
+	// Replace with "0x".
+	output := hexPrefixRegex.ReplaceAllString(input, "0x")
+	// Convert to uint256.
+	return HexToUint256(output)
 }
 
 // PGBalance represents PublicKeyToDeSoBalanceNanos
