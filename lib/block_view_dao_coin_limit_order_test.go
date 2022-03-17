@@ -19,6 +19,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 
+	dbAdapter := DbAdapter{
+		badgerDb:   db,
+		postgresDb: chain.postgres,
+	}
+
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
@@ -128,7 +133,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                  /*isHidden*/)
 	}
 
 	// RuleErrorDAOCoinLimitOrderUnsupportedOperationType: nonexistent
@@ -200,7 +205,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m0Pub, m0Priv, metadataM0)
 
 		queryEntry := metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)
-		resultEntry := DBGetDAOCoinLimitOrder(db, queryEntry, false)
+		resultEntry := dbAdapter.GetDAOCoinLimitOrder(queryEntry, false)
 
 		require.NotNil(resultEntry)
 		queryEntryBytes, err := queryEntry.ToBytes()
@@ -251,13 +256,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// Submit matching order and confirm matching happy path.
 	{
-		originalM0DAOCoinBalance := DbGetBalanceEntry(db, m0PKID.PKID, m0PKID.PKID, true)
-		originalM1DAOCoinBalance := DbGetBalanceEntry(db, m1PKID.PKID, m0PKID.PKID, true)
+		originalM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
+		originalM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, FEE_RATE_NANOS_PER_KB, m1Pub, m1Priv, metadataM1)
 
-		updatedM0DAOCoinBalance := DbGetBalanceEntry(db, m0PKID.PKID, m0PKID.PKID, true)
-		updatedM1DAOCoinBalance := DbGetBalanceEntry(db, m1PKID.PKID, m0PKID.PKID, true)
+		updatedM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
+		updatedM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
 
 		// M0's BID order is fulfilled so his DAO coin balance increases.
 		require.Equal(
@@ -270,10 +275,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedM1DAOCoinBalance.BalanceNanos)
 
 		// Both orders are deleted from the order book.
-		askOrderEntry := DBGetDAOCoinLimitOrder(db, metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight), false)
+		askOrderEntry := dbAdapter.GetDAOCoinLimitOrder(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight), false)
 		require.Nil(askOrderEntry)
 
-		bidOrderEntry := DBGetDAOCoinLimitOrder(db, metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
+		bidOrderEntry := dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
 		require.Nil(bidOrderEntry)
 	}
 
@@ -322,7 +327,7 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, chain.postgres)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinLimitOrderTxn(
