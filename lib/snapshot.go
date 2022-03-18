@@ -1073,9 +1073,6 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		return nil, false, true, nil
 	}
 
-	// This the list of fetched DB entries.
-	var snapshotEntriesBatch []*DBEntry
-
 	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
 	mainDbBatchEntries, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, SnapshotBatchSize)
 	if err != nil {
@@ -1088,51 +1085,69 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 
-	// To combine the main DB entries and the ancestral records DB entries, we iterate through the
-	// ancestral records and for each key we add all the main DB keys that are smaller than the
-	// currently processed key. The ancestral records entries have priority over the main DB entries,
-	// so whenever there are entries with the same key among the two DBs, we will only add the
-	// ancestral record entry to our snapshot batch. Also, the loop below might appear like O(n^2)
-	// but it's actually O(n) because the inside loop iterates at most O(n) times in total.
+	// Convert the main db entries list into a map. We use strings for the keys for
+	// convenience.
+	mainDbEntriesMap := make(map[string]*DBEntry, len(mainDbBatchEntries))
+	for _, val := range mainDbBatchEntries {
+		kk := hex.EncodeToString(val.Key)
+		mainDbEntriesMap[kk] = val
+	}
 
-	// Index to keep track of how many main DB entries we've already processed.
-	indexChunk := 0
+	// Overwrite all entries in the main db map with values from the ancestral db
+	// where applicable.
 	for _, ancestralEntry := range ancestralDbBatchEntries {
-		dbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
+		mainDbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
+		mainDbKey := hex.EncodeToString(mainDbEntry.Key)
+		if !snap.CheckAnceststralRecordExistenceByte(ancestralEntry.Value) {
+			// In this case, the value needs to be deleted because it's marked as
+			// not having existed in the snapshot.
+			delete(mainDbEntriesMap, mainDbKey)
+			continue
+		}
+		// If we get here, we're dealing with an update.
+		mainDbEntriesMap[mainDbKey] = mainDbEntry
+	}
 
-		for jj := indexChunk; jj < len(mainDbBatchEntries); {
-			comparison := bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key)
-			if comparison == -1 {
-				snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
-			} else if comparison == 1 {
-				break
+	// Compute the last main db key and the last ancestral key. Will be empty string
+	// if the length of these maps is zero.
+	var lastAncestralKey, lastMainKey = "", ""
+	if len(ancestralDbBatchEntries) > 0 {
+		lastAncestralEntry := ancestralDbBatchEntries[len(ancestralDbBatchEntries)-1]
+		dbEntry := snap.AncestralRecordToDBEntry(lastAncestralEntry)
+		lastAncestralKey = hex.EncodeToString(dbEntry.Key)
+	}
+	if len(mainDbBatchEntries) > 0 {
+		lastMainEntry := mainDbBatchEntries[len(mainDbBatchEntries)-1]
+		lastMainKey = hex.EncodeToString(lastMainEntry.Key)
+	}
+
+	// Convert the map of updated entries into a list. While we iterate, omit
+	// values that are beyond the bounds of the seeks.
+	finalDbEntries := []*DBEntry{}
+	for kk, vv := range mainDbEntriesMap {
+		// If the ancestral fetch hit the space limit, then only keep values from the
+		// main db up to the edge of the ancestral fetch. Values beyond this in the
+		// main db may not have been updated properly.
+		if ancestralDbFilled && lastAncestralKey != "" {
+			if kk > lastAncestralKey {
+				continue
 			}
-			// if keys are equal we just skip
-			jj++
-			indexChunk = jj
 		}
-		if snap.CheckAnceststralRecordExistenceByte(ancestralEntry.Value) {
-			snapshotEntriesBatch = append(snapshotEntriesBatch, dbEntry)
+		// Delete entries beyond the edge of the main db fetch if needed.
+		if mainDbFilled && lastMainKey != "" {
+			if kk > lastMainKey {
+				continue
+			}
 		}
-		// If we filled the chunk for main db records, we will return so that there is no
-		// gap between the most recently added DBEntry and the next ancestral record. Otherwise,
-		// we will keep going with the loop and add all the ancestral records.
-		if mainDbFilled && indexChunk == len(mainDbBatchEntries) {
-			break
-		}
+		finalDbEntries = append(finalDbEntries, vv)
 	}
+	// Sort the list of entries.
+	sort.Slice(finalDbEntries, func(ii, jj int) bool {
+		return bytes.Compare(finalDbEntries[ii].Key, finalDbEntries[jj].Key) == -1
+	})
 
-	// If we got all ancestral records, but there are still some main DB entries that we can add,
-	// we will do that now.
-	if !ancestralDbFilled {
-		for jj := indexChunk; jj < len(mainDbBatchEntries); jj++ {
-			indexChunk = jj
-			snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
-		}
-	}
-
-	// If no records are present in the db for the provided prefix and startKey, return an empty db entry.
-	if len(snapshotEntriesBatch) == 0 {
+	// If we don't have any entries, add the empty entry and return early
+	if len(finalDbEntries) == 0 {
 		if ancestralDbFilled {
 			// This can happen in a rare case where all ancestral records were non-existent records and
 			// no record from the main DB was added.
@@ -1140,8 +1155,8 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 			dbEntry := snap.AncestralRecordToDBEntry(lastAncestralEntry)
 			return snap.GetSnapshotChunk(mainDb, prefix, dbEntry.Key)
 		} else {
-			snapshotEntriesBatch = append(snapshotEntriesBatch, EmptyDBEntry())
-			return snapshotEntriesBatch, false, false, nil
+			finalDbEntries = append(finalDbEntries, EmptyDBEntry())
+			return finalDbEntries, false, false, nil
 		}
 	}
 
@@ -1159,7 +1174,7 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 	}
 
 	// If either of the chunks is full, we should return true.
-	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, false, nil
+	return finalDbEntries, mainDbFilled || ancestralDbFilled, false, nil
 }
 
 // SetSnapshotChunk is called to put the snapshot chunk that we've got from a peer in the database.
