@@ -1121,6 +1121,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		completedPrefixes = append(completedPrefixes, prefix)
 	}
 
+	// Wait for the snapshot thread to process all operations and print the checksum.
+	srv.blockchain.snapshot.WaitForAllOperationsToFinish()
+
 	// If we get to this point it means we synced all db prefixes, therefore finishing hyper sync.
 	// Do some logging.
 	srv.timer.End("Hyper sync")
@@ -1130,10 +1133,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.Print("Server._handleSnapshot prefix progress")
 	srv.timer.Print("Server._handleSnapshot Main")
 	srv.timer.Print("Hyper sync")
-
-	// Wait for the snapshot thread to process all operations and print the checksum.
-	srv.blockchain.snapshot.WaitForAllOperationsToFinish()
 	srv.blockchain.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
+	glog.Infof("Server._handleSnapshot: metadata checksum: (%v)", srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)
 
 	glog.Infof("Best header chain %v best block chain %v",
 		srv.blockchain.bestHeaderChain[msg.SnapshotMetadata.SnapshotBlockHeight], srv.blockchain.bestChain)
@@ -1540,6 +1541,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	glog.Infof("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)
 
+	srv.timer.Start("Server._handleBlock: General")
 	// Pull out the header for easy access.
 	blockHeader := blk.Header
 	if blockHeader == nil {
@@ -1592,6 +1594,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			}
 		}
 	}
+	srv.timer.End("Server._handleBlock: General")
+	srv.timer.Start("Server._handleBlock: Process Block")
 
 	// Only verify signatures for recent blocks.
 	var isOrphan bool
@@ -1634,6 +1638,10 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			"This should never happen", blockHash, blk.Header.Height)
 		return
 	}
+	srv.timer.End("Server._handleBlock: Process Block")
+
+	srv.timer.Print("Server._handleBlock: General")
+	srv.timer.Print("Server._handleBlock: Process Block")
 
 	// We shouldn't be receiving blocks while syncing headers.
 	if srv.blockchain.chainState() == SyncStateSyncingHeaders {

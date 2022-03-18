@@ -442,6 +442,8 @@ type Blockchain struct {
 	// syncing from snapshot in the hyper sync protocol.
 	syncingState    bool
 	finishedSyncing bool
+
+	timer *Timer
 }
 
 func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
@@ -616,6 +618,9 @@ func NewBlockchain(
 		trustedBlockProducerPublicKeys[MakePkMapKey(pkBytes)] = true
 	}
 
+	timer := &Timer{}
+	timer.Initialize()
+
 	bc := &Blockchain{
 		db:                              db,
 		postgres:                        postgres,
@@ -633,6 +638,7 @@ func NewBlockchain(
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
 
 		orphanList: list.New(),
+		timer:      timer,
 	}
 
 	// Hold the chain lock whenever we modify this object from now on.
@@ -1685,6 +1691,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
+	bc.timer.Start("Blockchain.ProcessBlock: Initial")
 	if desoBlock == nil {
 		return false, false, fmt.Errorf("ProcessBlock: Block is nil")
 	}
@@ -1758,6 +1765,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 		}
 	}
+	bc.timer.End("Blockchain.ProcessBlock: Initial")
+	bc.timer.Start("Blockchain.ProcessBlock: BlockNode")
 
 	// See if a node for the block exists in our node index.
 	nodeToValidate, nodeExists := bc.blockIndex[*blockHash]
@@ -1908,6 +1917,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// Try and store the block and its corresponding node info since it has passed
 	// basic validation.
 	nodeToValidate.Status |= StatusBlockStored
+	bc.timer.End("Blockchain.ProcessBlock: BlockNode")
+	bc.timer.Start("Blockchain.ProcessBlock: Db Update")
 
 	if bc.postgres != nil {
 		if err = bc.postgres.UpsertBlock(nodeToValidate); err != nil {
@@ -1958,7 +1969,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// See if the current tip is equal to the block's parent.
 	isMainChain := false
 
+	bc.timer.End("Blockchain.ProcessBlock: Db Update")
+
 	if *parentNode.Hash == *currentTip.Hash {
+		bc.timer.Start("Blockchain.ProcessBlock: Transactions Validation")
 		// Create a new UtxoView representing the current tip.
 		//
 		// TODO: An optimization can be made here where we pre-load all the inputs this txn
@@ -2020,6 +2034,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// If all of the above passed it means the block is valid. So set the
 		// status flag on the block to indicate that and write the status to disk.
 		nodeToValidate.Status |= StatusBlockValidated
+		bc.timer.End("Blockchain.ProcessBlock: Transactions Validation")
 
 		// Now that we have a valid block that we know is connecting to the tip,
 		// update our data structures to actually make this connection. Do this
@@ -2036,8 +2051,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem flushing view to db")
 			}
 		} else {
+			bc.timer.Start("Blockchain.ProcessBlock: Transactions Db put")
 			err = bc.db.Update(func(txn *badger.Txn) error {
 				// This will update the node's status.
+				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db height & hash")
 				if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
 					return errors.Wrapf(
 						err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
@@ -2048,6 +2065,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				if err := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock); err != nil {
 					return err
 				}
+				bc.timer.End("Blockchain.ProcessBlock: Transactions Db height & hash")
+				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db utxo flush")
 
 				// Write the modified utxo set to the view.
 				if bc.blocksInView%MaxBlocksInView == 0 {
@@ -2055,6 +2074,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 						return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 					}
 				}
+				bc.timer.End("Blockchain.ProcessBlock: Transactions Db utxo flush")
+				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
 
 				// Write the utxo operations for this block to the db so we can have the
 				// ability to roll it back in the future.
@@ -2068,10 +2089,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 					bc.snapshot.StartAncestralRecordsFlush()
 					bc.snapshot.PrintChecksum("Checksum after flush")
 				}
+				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
 
 				return nil
 			})
+			bc.timer.End("Blockchain.ProcessBlock: Transactions Db put")
 		}
+		bc.timer.Start("Blockchain.ProcessBlock: Transactions Db end")
 
 		if err != nil {
 			return false, false, errors.Wrapf(err, "ProcessBlock: Problem writing block info to db on simple add to tip")
@@ -2128,6 +2152,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		if bc.blocksInView%MaxBlocksInView == 0 {
 			bc.blockView = nil
 		}
+		bc.timer.End("Blockchain.ProcessBlock: Transactions Db end")
 
 	} else if nodeToValidate.CumWork.Cmp(currentTip.CumWork) <= 0 {
 		// A block has less cumulative work than our tip. In this case, we just ignore
@@ -2432,6 +2457,15 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	if bc.eventManager != nil {
 		bc.eventManager.blockAccepted(&BlockEvent{Block: desoBlock})
 	}
+
+	bc.timer.Print("Blockchain.ProcessBlock: Initial")
+	bc.timer.Print("Blockchain.ProcessBlock: BlockNode")
+	bc.timer.Print("Blockchain.ProcessBlock: Db Update")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Validation")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db put")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db end")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db height & hash")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db utxo flush")
 
 	// At this point, the block we were processing originally should have been added
 	// to our data structures and any unconnectedTxns that are no longer unconnectedTxns should have

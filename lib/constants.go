@@ -53,8 +53,8 @@ const (
 	// DatabaseCacheSize is used to save read operations when fetching records from the main Db.
 	DatabaseCacheSize uint = 100000
 
-	// DisableTimer
-	DisableTimer = false
+	// EnableTimer
+	EnableTimer = true
 )
 
 type NetworkType uint64

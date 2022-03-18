@@ -82,6 +82,9 @@ type StateChecksum struct {
 	// ctx is a helper variable used by the semaphore.
 	ctx context.Context
 
+	// hashToCurveCache is a cache of computed hashToCurve mappings
+	hashToCurveCache lru.KVCache
+
 	// When we want to add a database record to the state checksum, we will first have to
 	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
 	// output point to the checksum. The hash_to_curve operation is about 2-3 orders of magnitude
@@ -104,6 +107,9 @@ func (sc *StateChecksum) Initialize() {
 	// Set max workers to the number of available threads.
 	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
 
+	// Set the hashToCurveCache
+	sc.hashToCurveCache = lru.NewKVCache(DatabaseCacheSize)
+
 	// Set the worker pool semaphore and context.
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
 	sc.ctx = context.Background()
@@ -114,6 +120,23 @@ func (sc *StateChecksum) AddToChecksum(elem group.Element) {
 	defer sc.addMutex.Unlock()
 
 	sc.checksum.Add(sc.checksum, elem)
+}
+
+func (sc *StateChecksum) HashtoCurve(bytes []byte) group.Element {
+	var hashElement group.Element
+
+	// Check if we've already mapped this element, if so we will save some computation this way.
+	bytesStr := hex.EncodeToString(bytes)
+	if elem, exists := sc.hashToCurveCache.Lookup(bytesStr); exists {
+		hashElement = elem.(group.Element)
+	} else {
+		// Compute the hash_to_curve primitive, mapping  the bytes to an elliptic curve point.
+		hashElement = sc.curve.HashToElement(bytes, sc.dst)
+		// Also add to the hashToCurveCache
+		sc.hashToCurveCache.Add(bytesStr, hashElement)
+	}
+
+	return hashElement
 }
 
 // AddBytes adds record bytes to the checksum in parallel.
@@ -128,9 +151,7 @@ func (sc *StateChecksum) AddBytes(bytes []byte) error {
 	go func(sc *StateChecksum, bytes []byte) {
 		defer sc.semaphore.Release(1)
 
-		// Compute the hash_to_curve primitive and map the bytes to an elliptic curve point.
-		hashElement := sc.curve.HashToElement(bytes, sc.dst)
-
+		hashElement := sc.HashtoCurve(bytes)
 		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
 		sc.AddToChecksum(hashElement)
 	}(sc, bytes)
@@ -154,7 +175,7 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 		// and add it to the checksum. Since the checksum is a sum of ec points, adding an inverse
 		// of a previously added point will remove that point from the checksum. If we've previously
 		// added point (x, y) to the checksum, we will be now adding the inverse (x, -y).
-		hashElement := sc.curve.HashToElement(bytes, sc.dst)
+		hashElement := sc.HashtoCurve(bytes)
 		hashElement = hashElement.Neg(hashElement)
 
 		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
@@ -192,7 +213,7 @@ func (sc *StateChecksum) Wait() error {
 	return nil
 }
 
-// ToBytes gets the checksum point encoded in compressed format as a 33 byte array.
+// ToBytes gets the checksum point encoded in compressed format as a 32 byte array.
 // Note: Don't use this function to deep copy the checksum, use GetChecksum instead.
 // ToBytes is doing an inverse square root, so it is slow.
 func (sc *StateChecksum) ToBytes() ([]byte, error) {
@@ -648,6 +669,7 @@ func (snap *Snapshot) Run() {
 			snap.ProcessBlock(operation.blockNode)
 
 		case SnapshotOperationProcessChunk:
+			glog.Infof("Snapshot.Run: Number of operations in the operation channel (%v)", len(snap.OperationChannel))
 			if err := snap.SetSnapshotChunk(operation.mainDb, operation.snapshotChunk); err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
 			}
@@ -1069,9 +1091,6 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		return nil, false, true, nil
 	}
 
-	// This the list of fetched DB entries.
-	var snapshotEntriesBatch []*DBEntry
-
 	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
 	mainDbBatchEntries, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, SnapshotBatchSize)
 	if err != nil {
@@ -1084,51 +1103,69 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 
-	// To combine the main DB entries and the ancestral records DB entries, we iterate through the
-	// ancestral records and for each key we add all the main DB keys that are smaller than the
-	// currently processed key. The ancestral records entries have priority over the main DB entries,
-	// so whenever there are entries with the same key among the two DBs, we will only add the
-	// ancestral record entry to our snapshot batch. Also, the loop below might appear like O(n^2)
-	// but it's actually O(n) because the inside loop iterates at most O(n) times in total.
+	// Convert the main db entries list into a map. We use strings for the keys for
+	// convenience.
+	mainDbEntriesMap := make(map[string]*DBEntry, len(mainDbBatchEntries))
+	for _, val := range mainDbBatchEntries {
+		kk := hex.EncodeToString(val.Key)
+		mainDbEntriesMap[kk] = val
+	}
 
-	// Index to keep track of how many main DB entries we've already processed.
-	indexChunk := 0
+	// Overwrite all entries in the main db map with values from the ancestral db
+	// where applicable.
 	for _, ancestralEntry := range ancestralDbBatchEntries {
-		dbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
+		mainDbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
+		mainDbKey := hex.EncodeToString(mainDbEntry.Key)
+		if !snap.CheckAnceststralRecordExistenceByte(ancestralEntry.Value) {
+			// In this case, the value needs to be deleted because it's marked as
+			// not having existed in the snapshot.
+			delete(mainDbEntriesMap, mainDbKey)
+			continue
+		}
+		// If we get here, we're dealing with an update.
+		mainDbEntriesMap[mainDbKey] = mainDbEntry
+	}
 
-		for jj := indexChunk; jj < len(mainDbBatchEntries); {
-			comparison := bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key)
-			if comparison == -1 {
-				snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
-			} else if comparison == 1 {
-				break
+	// Compute the last main db key and the last ancestral key. Will be empty string
+	// if the length of these maps is zero.
+	var lastAncestralKey, lastMainKey = "", ""
+	if len(ancestralDbBatchEntries) > 0 {
+		lastAncestralEntry := ancestralDbBatchEntries[len(ancestralDbBatchEntries)-1]
+		dbEntry := snap.AncestralRecordToDBEntry(lastAncestralEntry)
+		lastAncestralKey = hex.EncodeToString(dbEntry.Key)
+	}
+	if len(mainDbBatchEntries) > 0 {
+		lastMainEntry := mainDbBatchEntries[len(mainDbBatchEntries)-1]
+		lastMainKey = hex.EncodeToString(lastMainEntry.Key)
+	}
+
+	// Convert the map of updated entries into a list. While we iterate, omit
+	// values that are beyond the bounds of the seeks.
+	finalDbEntries := []*DBEntry{}
+	for kk, vv := range mainDbEntriesMap {
+		// If the ancestral fetch hit the space limit, then only keep values from the
+		// main db up to the edge of the ancestral fetch. Values beyond this in the
+		// main db may not have been updated properly.
+		if ancestralDbFilled && lastAncestralKey != "" {
+			if kk > lastAncestralKey {
+				continue
 			}
-			// if keys are equal we just skip
-			jj++
-			indexChunk = jj
 		}
-		if snap.CheckAnceststralRecordExistenceByte(ancestralEntry.Value) {
-			snapshotEntriesBatch = append(snapshotEntriesBatch, dbEntry)
+		// Delete entries beyond the edge of the main db fetch if needed.
+		if mainDbFilled && lastMainKey != "" {
+			if kk > lastMainKey {
+				continue
+			}
 		}
-		// If we filled the chunk for main db records, we will return so that there is no
-		// gap between the most recently added DBEntry and the next ancestral record. Otherwise,
-		// we will keep going with the loop and add all the ancestral records.
-		if mainDbFilled && indexChunk == len(mainDbBatchEntries) {
-			break
-		}
+		finalDbEntries = append(finalDbEntries, vv)
 	}
+	// Sort the list of entries.
+	sort.Slice(finalDbEntries, func(ii, jj int) bool {
+		return bytes.Compare(finalDbEntries[ii].Key, finalDbEntries[jj].Key) == -1
+	})
 
-	// If we got all ancestral records, but there are still some main DB entries that we can add,
-	// we will do that now.
-	if !ancestralDbFilled {
-		for jj := indexChunk; jj < len(mainDbBatchEntries); jj++ {
-			indexChunk = jj
-			snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
-		}
-	}
-
-	// If no records are present in the db for the provided prefix and startKey, return an empty db entry.
-	if len(snapshotEntriesBatch) == 0 {
+	// If we don't have any entries, add the empty entry and return early
+	if len(finalDbEntries) == 0 {
 		if ancestralDbFilled {
 			// This can happen in a rare case where all ancestral records were non-existent records and
 			// no record from the main DB was added.
@@ -1136,8 +1173,8 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 			dbEntry := snap.AncestralRecordToDBEntry(lastAncestralEntry)
 			return snap.GetSnapshotChunk(mainDb, prefix, dbEntry.Key)
 		} else {
-			snapshotEntriesBatch = append(snapshotEntriesBatch, EmptyDBEntry())
-			return snapshotEntriesBatch, false, false, nil
+			finalDbEntries = append(finalDbEntries, EmptyDBEntry())
+			return finalDbEntries, false, false, nil
 		}
 	}
 
@@ -1155,7 +1192,7 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 	}
 
 	// If either of the chunks is full, we should return true.
-	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, false, nil
+	return finalDbEntries, mainDbFilled || ancestralDbFilled, false, nil
 }
 
 // SetSnapshotChunk is called to put the snapshot chunk that we've got from a peer in the database.
@@ -1172,7 +1209,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 	syncGroup.Add(2)
 	go func() {
 		defer syncGroup.Done()
-		snap.timer.Start("SetSnapshotChunk.Set")
+		//snap.timer.Start("SetSnapshotChunk.Set")
 
 		for _, dbEntry := range chunk {
 			localErr := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
@@ -1187,12 +1224,12 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 			err = localErr
 			return
 		}
-		snap.timer.End("SetSnapshotChunk.Set")
+		//snap.timer.End("SetSnapshotChunk.Set")
 	}()
 	go func() {
 		defer syncGroup.Done()
 
-		snap.timer.Start("SetSnapshotChunk.Checksum")
+		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
 			if localErr := snap.Checksum.AddBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value)); localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem adding checksum")
@@ -1205,7 +1242,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 			glog.Errorf("Snapshot.SetSnapshotChunk: Problem waiting for the checksum")
 		}
 
-		snap.timer.End("SetSnapshotChunk.Checksum")
+		//snap.timer.End("SetSnapshotChunk.Checksum")
 	}()
 
 	syncGroup.Wait()
@@ -1229,18 +1266,18 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 type Timer struct {
 	totalElapsedTimes map[string]float64
 	lastTimes         map[string]time.Time
-	productionMode    bool
+	mode              bool
 }
 
 func (t *Timer) Initialize() {
 	t.totalElapsedTimes = make(map[string]float64)
 	t.lastTimes = make(map[string]time.Time)
-	// Change this to true to stop timing
-	t.productionMode = DisableTimer
+	// Comment this to stop timing
+	t.mode = EnableTimer
 }
 
 func (t *Timer) Start(eventName string) {
-	if t.productionMode {
+	if t.mode != EnableTimer {
 		return
 	}
 	if _, exists := t.lastTimes[eventName]; !exists {
@@ -1250,7 +1287,7 @@ func (t *Timer) Start(eventName string) {
 }
 
 func (t *Timer) End(eventName string) {
-	if t.productionMode {
+	if t.mode != EnableTimer {
 		return
 	}
 	if _, exists := t.totalElapsedTimes[eventName]; !exists {
@@ -1261,7 +1298,7 @@ func (t *Timer) End(eventName string) {
 }
 
 func (t *Timer) Print(eventName string) {
-	if t.productionMode {
+	if t.mode != EnableTimer {
 		return
 	}
 	if _, exists := t.lastTimes[eventName]; exists {
