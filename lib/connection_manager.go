@@ -54,7 +54,7 @@ type ConnectionManager struct {
 	// among other things.
 	limitOneInboundConnectionPerIP bool
 
-	// When --hyper-sync is set to true we will attempt fast block synchronization
+	// When --hypersync is set to true we will attempt fast block synchronization
 	HyperSync bool
 
 	// Keep track of the nonces we've sent in our version messages so
