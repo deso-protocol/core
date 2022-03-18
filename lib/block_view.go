@@ -2667,11 +2667,12 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	immatureBlockRewards := uint64(0)
 
 	if bav.Postgres != nil {
-		// TODO: Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
-		//outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), tipHeight-numImmatureBlocks, tipHeight)
-		//for _, output := range outputs {
-		//	immatureBlockRewards += output.AmountNanos
-		//}
+		// Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
+		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), tipHeight-numImmatureBlocks, tipHeight)
+
+		for _, output := range outputs {
+			immatureBlockRewards += output.AmountNanos
+		}
 	} else {
 		for ii := uint64(1); ii < uint64(numImmatureBlocks); ii++ {
 			// Don't look up the genesis block since it isn't in the DB.

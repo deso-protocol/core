@@ -133,7 +133,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false                  /*isHidden*/)
+			false /*isHidden*/)
 	}
 
 	// RuleErrorDAOCoinLimitOrderUnsupportedOperationType: nonexistent
@@ -293,7 +293,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+
+	if chain.postgres == nil {
+		// TODO: this step currently only works with Badger.
+		_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	}
 }
 
 // No error expected.
