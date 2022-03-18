@@ -2,7 +2,6 @@ package lib
 
 import (
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -576,54 +575,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 func (bav *UtxoView) _getNextLimitOrdersToFill(
 	requestedOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) (
 	[]*DAOCoinLimitOrderEntry, error) {
-	orders := []*DAOCoinLimitOrderEntry{}
-
-	if bav.Postgres != nil {
-		var err error
-		var dbFunc func(*DAOCoinLimitOrderEntry, *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error)
-
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			dbFunc = bav.Postgres.GetMatchingDAOCoinBidOrders
-		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			dbFunc = bav.Postgres.GetMatchingDAOCoinAskOrders
-		} else {
-			return nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
-		}
-
-		orders, err = dbFunc(requestedOrder, lastSeenOrder)
-
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		var lastSeenKey []byte
-
-		if lastSeenOrder != nil {
-			lastSeenKey = DBKeyForDAOCoinLimitOrder(lastSeenOrder, false)
-		}
-
-		var dbFunc func(*badger.Txn, *DAOCoinLimitOrderEntry, []byte) ([]*DAOCoinLimitOrderEntry, error)
-
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			dbFunc = DBGetMatchingDAOCoinBidOrders
-		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			dbFunc = DBGetMatchingDAOCoinAskOrders
-		} else {
-			return nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
-		}
-
-		err := bav.Handle.View(func(txn *badger.Txn) error {
-			var err error
-			orders, err = dbFunc(txn, requestedOrder, lastSeenKey)
-			return err
-		})
-
-		if err != nil {
-			return nil, err
-		}
+	// Get matching limit order entries from database.
+	dbAdapter := DbAdapter{
+		badgerDb:   bav.Handle,
+		postgresDb: bav.Postgres,
 	}
 
-	// Update UTXO with relevant values pulled from Badger.
+	orders, err := dbAdapter.GetMatchingDAOCoinLimitOrders(requestedOrder, lastSeenOrder)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Update UTXO with relevant limit order entries from database.
 	for _, order := range orders {
 		orderKey := order.ToMapKey()
 

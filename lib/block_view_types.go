@@ -1607,7 +1607,6 @@ func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderE
 	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
 }
 
-// TODO: fix big.Float as map key
 type DAOCoinLimitOrderMapKey struct {
 	TransactorPKID               PKID
 	DenominatedCoinType          DAOCoinLimitOrderEntryDenominatedCoinType
