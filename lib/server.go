@@ -124,11 +124,11 @@ type Server struct {
 	// point we can make the optimization.
 	SyncPeer *Peer
 
-	// If we're syncing state using hyper sync, we'll keep track of the progress using HyperSyncProgress.
+	// If we're syncing state using hypersync, we'll keep track of the progress using HyperSyncProgress.
 	// It stores information about all the prefixes that we're fetching. The way that HyperSyncProgress
 	// is organized allows for multi-peer state synchronization. In such case, we would assign prefixes
 	// to different peers. Whenever we assign a prefix to a peer, we would append a SyncProgressPrefix
-	// struct to the HyperSyncProgress.PrefixProgres array.
+	// struct to the HyperSyncProgress.PrefixProgress array.
 	HyperSyncProgress SyncProgress
 	// How long we wait on a transaction we're fetching before giving
 	// up on it. Note this doesn't apply to blocks because they have their own
@@ -327,6 +327,7 @@ func NewServer(
 	_numMiningThreads uint64,
 	_limitOneInboundConnectionPerIP bool,
 	_hyperSync bool,
+	_disableSlowSync bool,
 	_maxSyncBlockHeight uint32,
 	_rateLimitFeerateNanosPerKB uint64,
 	_minFeeRateNanosPerKB uint64,
@@ -365,7 +366,7 @@ func NewServer(
 	_cmgr := NewConnectionManager(
 		_params, _desoAddrMgr, _listeners, _connectIps, timesource,
 		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
-		_hyperSync, _stallTimeoutSeconds, _minFeeRateNanosPerKB,
+		_hyperSync, _disableSlowSync, _stallTimeoutSeconds, _minFeeRateNanosPerKB,
 		_incomingMessages, srv)
 
 	// Set up the blockchain data structure. This is responsible for accepting new
@@ -613,6 +614,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
 }
 
+// TODO: This function is a little messy.
 func (srv *Server) GetBlockToStore(pp *Peer) {
 	for _, blockNode := range srv.blockchain.bestChain {
 		if blockNode.Status&StatusBlockStored == 0 {
@@ -830,7 +832,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				srv.blockchain.snapshot.Checksum.Initialize()
 
 				// Start a timer for hyper sync. This keeps track of how long hyper sync takes in total.
-				srv.timer.Start("Hyper sync")
+				srv.timer.Start("Hypersync")
 
 				// Now proceed to start fetching snapshot data from the peer.
 				srv.GetSnapshot(pp)
@@ -996,7 +998,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// If we did set the checksum bytes, we will verify that they match the one that peer has sent us.
 	prevChecksumBytes := make([]byte, len(srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes))
 	copy(prevChecksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes[:])
-	if reflect.DeepEqual([]byte{}, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
+	if len(srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) == 0 {
 		srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = msg.SnapshotMetadata.CurrentEpochChecksumBytes
 	} else if !reflect.DeepEqual(srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes, msg.SnapshotMetadata.CurrentEpochChecksumBytes) {
 		// We should disconnect the peer because he is misbehaving
@@ -1018,7 +1020,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		glog.Infof("srv._handleSnapshot: First snapshot chunk is empty")
 		chunkEmpty = true
 	} else if bytes.Equal(syncPrefixProgress.LastReceivedKey, syncPrefixProgress.Prefix) {
-		// If this is the first message that we're receiving for this sync progress, the LastReceivedKey
+		// If this is the first message that we're receiving for this sync progress, the first entry in the chunk
 		// is going to be equal to the prefix.
 		if !bytes.HasPrefix(msg.SnapshotChunk[0].Key, msg.Prefix) {
 			// We should disconnect the peer because he is misbehaving.
@@ -1030,12 +1032,10 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		}
 		dbChunk = append(dbChunk, msg.SnapshotChunk[0])
 	} else {
-		// If this is not the first message that we're receiving for this sync prefix, then the lastKeyRequested
-		// should be identical to the first key in snapshot chunk. If it is not, then the peer either re-send
-		// the same payload twice, a message was dropped by network, or he is misbehaving.
+		// If this is not the first message that we're receiving for this sync prefix, then the LastKeyReceived
+		// should be identical to the first key in snapshot chunk. If it is not, then the peer either re-sent
+		// the same payload twice, a message was dropped by the network, or he is misbehaving.
 		if !bytes.Equal(syncPrefixProgress.LastReceivedKey, msg.SnapshotChunk[0].Key) {
-			// TODO: Do we want to disconnect the peer in here? It's technically not misbehaving
-			// but we would never request the same chunk twice
 			glog.Errorf("srv._handleSnapshot: Received a snapshot chunk that's not in-line with the sync progress "+
 				"disconnecting misbehaving peer (%v)", pp)
 			srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
@@ -1047,6 +1047,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	dbChunk = append(dbChunk, msg.SnapshotChunk[1:]...)
 
 	if !chunkEmpty {
+		// TODO: This loop skips the first element...
 		for ii := 1; ii < len(dbChunk); ii++ {
 			// Make sure that all dbChunk entries have the same prefix as in the message.
 			if !bytes.HasPrefix(dbChunk[ii].Key, msg.Prefix) {
@@ -1123,13 +1124,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// If we get to this point it means we synced all db prefixes, therefore finishing hyper sync.
 	// Do some logging.
-	srv.timer.End("Hyper sync")
+	srv.timer.End("HyperSync")
 	srv.timer.Print("Get Snapshot")
 	srv.timer.Print("Server._handleSnapshot Process Snapshot")
 	srv.timer.Print("Server._handleSnapshot Checksum")
 	srv.timer.Print("Server._handleSnapshot prefix progress")
 	srv.timer.Print("Server._handleSnapshot Main")
-	srv.timer.Print("Hyper sync")
+	srv.timer.Print("HyperSync")
 
 	// Wait for the snapshot thread to process all operations and print the checksum.
 	srv.blockchain.snapshot.WaitForAllOperationsToFinish()
@@ -1139,7 +1140,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		srv.blockchain.bestHeaderChain[msg.SnapshotMetadata.SnapshotBlockHeight], srv.blockchain.bestChain)
 
 	// Verify that the state checksum matches the one in HyperSyncProgress snapshot metadata.
-	// If the checksums don't match, it means that either we've been interacting with a peer that was misbehaving.
+	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.
 	checksumBytes, err := srv.blockchain.snapshot.Checksum.ToBytes()
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem getting checksum bytes, error (%v)", err)
@@ -1210,6 +1211,7 @@ func (srv *Server) _startSync() {
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
 		if !peer.IsSyncCandidate() {
+			glog.Infof("Peer is not sync candidate: %v", peer)
 			continue
 		}
 
@@ -1272,6 +1274,9 @@ func (srv *Server) _handleNewPeer(pp *Peer) {
 	// Start syncing by choosing the best candidate.
 	if isSyncCandidate && srv.SyncPeer == nil {
 		srv._startSync()
+	}
+	if !isSyncCandidate {
+		glog.Infof("Peer is not sync candidate: %v", pp)
 	}
 }
 
@@ -1578,8 +1583,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	}
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
-	// This is a minimal check, a more thorough check is made in the SnapshotProcessBlock function. This check is
-	// necessary because the SnapshotProcessBlock function only has access to mined transactions. Therefore, if an
+	// This is a minimal check, a more thorough check is made in the ProcessBlock function. This check is
+	// necessary because the ProcessBlock function only has access to mined transactions. Therefore, if an
 	// attacker were to prevent a "forbid X pubkey" transaction from mining, they could force nodes to continue
 	// processing their blocks.
 	if len(srv.blockchain.trustedBlockProducerPublicKeys) > 0 && blockHeader.Height >= srv.blockchain.trustedBlockProducerStartHeight {

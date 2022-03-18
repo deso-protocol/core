@@ -17,6 +17,7 @@ type Config struct {
 	Regtest                   bool
 	PostgresURI               string
 	HyperSync                 bool
+	DisableSlowSync           bool
 	MaxSyncBlockHeight        uint32
 	SnapshotBlockHeightPeriod uint64
 
@@ -88,6 +89,7 @@ func LoadConfig() *Config {
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
 	config.HyperSync = viper.GetBool("hypersync")
+	config.DisableSlowSync = viper.GetBool("disable-slow-sync")
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 
 	// Peers
@@ -148,7 +150,13 @@ func (config *Config) Print() {
 	}
 
 	if config.HyperSync {
-		glog.Infof("Hyper Sync: ON")
+		glog.Infof("HyperSync: ON")
+	}
+
+	if config.DisableSlowSync {
+		glog.Infof("DisableSlowSync: ON")
+	} else {
+		glog.Infof("DisableSlowSync: OFF")
 	}
 
 	if config.MaxSyncBlockHeight > 0 {

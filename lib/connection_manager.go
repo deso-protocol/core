@@ -56,6 +56,12 @@ type ConnectionManager struct {
 
 	// When --hypersync is set to true we will attempt fast block synchronization
 	HyperSync bool
+	// When --disable-slow-sync is set to true we will refuse to sync from non-hypersync
+	// peers. Note that this is set to false by default, which means the node will be
+	// willing to sync from a non-hypersync peer the slow way if it connects to one first
+	// (though note that it will still build ancestral records if --hypersync is set,
+	// meaning other peers can hypersync from it if they want).
+	DisableSlowSync bool
 
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
@@ -124,6 +130,7 @@ func NewConnectionManager(
 	_targetOutboundPeers uint32, _maxInboundPeers uint32,
 	_limitOneInboundConnectionPerIP bool,
 	_hyperSync bool,
+	_disableSlowSync bool,
 	_stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
 	_serverMessageQueue chan *ServerMessage,
@@ -157,6 +164,7 @@ func NewConnectionManager(
 		maxInboundPeers:                _maxInboundPeers,
 		limitOneInboundConnectionPerIP: _limitOneInboundConnectionPerIP,
 		HyperSync:                      _hyperSync,
+		DisableSlowSync:                _disableSlowSync,
 		serverMessageQueue:             _serverMessageQueue,
 		stallTimeoutSeconds:            _stallTimeoutSeconds,
 		minFeeRateNanosPerKB:           _minFeeRateNanosPerKB,
@@ -412,8 +420,6 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.N
 
 		// At this point Conn is set so create a peer object to do
 		// a version negotiation.
-		x := conn.RemoteAddr().String()
-		_ = x
 		na, err := IPToNetAddr(conn.RemoteAddr().String(), cmgr.AddrMgr, cmgr.params)
 		if err != nil {
 			glog.Errorf("ConnectPeer: Problem calling ipToNetAddr for addr: (%s) err: (%v)", conn.RemoteAddr().String(), err)

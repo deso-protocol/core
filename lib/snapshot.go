@@ -754,8 +754,10 @@ func (snap *Snapshot) RemoveChecksumBytes(bytes []byte) {
 // WaitForAllOperationsToFinish will busy-wait for the snapshot channel to process all
 // current operations. Spinlocks are undesired but it's the easiest solution in this case,
 func (snap *Snapshot) WaitForAllOperationsToFinish() {
+	// TODO: Spin waiting is bad, but not the end of the world here.
 	for {
 		if len(snap.OperationChannel) > 0 {
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 		break
