@@ -370,55 +370,78 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
 		require.NotNil(orderEntry)
 
-		//// m0 submits BID order for 3 DAO coins @ 15/1e9 $DESO.
-		//// Store original $DESO balances to check diffs.
-		//originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		//originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
-		//
-		//// Store original DAO coin balances to check diffs.
-		//originalM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
-		//originalM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
-		//
-		//// Confirm existing ASK orders.
-		//orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m0PKID.PKID, testMeta.savedHeight), false)
-		//require.NotNil(orderEntry)
+		// m0 submits BID order for 3 DAO coins @ 15/1e9 $DESO.
+		// Store original $DESO balances to check diffs.
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
 
-		//// Perform txn.
-		//_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-		//
-		//// Calculate updated $DESO balances.
-		//updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		//updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
-		//
-		//// Calculate updated DAO coin balances.
-		//updatedM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
-		//updatedM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
-		//
-		//// Calculate total cost of order to compare to changes in $DESO.
-		//totalOrderCost, err := _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
-		//	metadataM0.Quantity,
-		//	metadataM1.PriceNanosPerDenominatedCoin)
-		//
-		//require.NoError(err)
-		//
-		//// m0's BID order is fulfilled so his DESO balance decreases and his DAO coin balance increases.
+		// Store original DAO coin balances to check diffs.
+		originalM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
+		originalM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
+
+		// Construct metadata for m0's BID order.
+		metadataM0.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(NanosPerUnit / 15)
+		metadataM0.Quantity = uint256.NewInt().SetUint64(3)
+
+		// Confirm matching ASK orders exist.
+		orderEntry = metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)
+		orderEntries, err := dbAdapter.GetMatchingDAOCoinLimitOrders(orderEntry, nil)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// Perform txn.
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Calculate updated $DESO balances.
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+
+		// Calculate updated DAO coin balances.
+		updatedM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
+		updatedM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
+
+		// Orders partially fulfilled for 2 DAO coins @ 11/1e9 $DESO and 1 DAO coin @ 12/1e9 $DESO.
+		daoCoinQuantityChange = uint256.NewInt().SetUint64(3)
+
+		// Calculate total cost of order to compare to changes in $DESO.
+		// 2 DAO coins @ 11/1e9 $DESO
+		subOrderCost1, err := _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+			uint256.NewInt().SetUint64(2),
+			uint256.NewInt().SetUint64(NanosPerUnit/11))
+
+		require.NoError(err)
+
+		// 1 DAO coin @ 12/1e9 $DESO
+		subOrderCost2, err := _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+			uint256.NewInt().SetUint64(1),
+			uint256.NewInt().SetUint64(NanosPerUnit/12))
+
+		require.NoError(err)
+		totalOrderCost := uint256.NewInt().Add(subOrderCost1, subOrderCost2)
+
+		// TODO: fix these tests
+		_, _, _, _ = originalM0DESOBalance, originalM1DESOBalance, originalM0DAOCoinBalance, originalM1DAOCoinBalance
+		_, _, _, _ = updatedM0DESOBalance, updatedM1DESOBalance, updatedM0DAOCoinBalance, updatedM1DAOCoinBalance
+		_ = totalOrderCost
+
+		// m0's BID order is fulfilled so his DESO balance decreases and his DAO coin balance increases.
 		//require.Equal(
-		//	originalM0DESOBalance-totalOrderCost.Uint64(),
+		//	originalM0DESOBalance-totalOrderCost.Uint64()-uint64(2), // TODO: calculate gas fee instead of hard-coding.
 		//	updatedM0DESOBalance)
-		//
+
 		//require.Equal(
 		//	*uint256.NewInt().Add(&originalM0DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
 		//	updatedM0DAOCoinBalance.BalanceNanos)
-		//
-		//// m1's ASK order is fulfilled so his DESO balance increases and his DAO coin balance decreases.
+
+		// m1's ASK orders are fulfilled so his DESO balance increases and his DAO coin balance decreases.
 		//require.Equal(
-		//	originalM1DESOBalance+totalOrderCost.Uint64()-uint64(3), // TODO: calculate gas fee instead of hard-coding.
+		//	originalM1DESOBalance+totalOrderCost.Uint64(),
 		//	updatedM1DESOBalance)
-		//
+
 		//require.Equal(
 		//	*uint256.NewInt().Sub(&originalM1DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
 		//	updatedM1DAOCoinBalance.BalanceNanos)
-		//
+
 		//// Both orders are deleted from the order book.
 		//askOrderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight), false)
 		//require.Nil(askOrderEntry)
