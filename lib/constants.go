@@ -48,13 +48,13 @@ const (
 	SnapshotBlockHeightPeriod uint64 = 1000
 
 	// SnapshotBatchSize is the size in bytes of the snapshot batches sent to peers
-	SnapshotBatchSize uint32 = 8 << 20
+	SnapshotBatchSize uint32 = 8388608 // 8 << 20 = 8MB
 
 	// DatabaseCacheSize is used to save read operations when fetching records from the main Db.
-	DatabaseCacheSize uint = 100000
+	DatabaseCacheSize uint = 1000000 // 1M
 
-	// DisableTimer
-	DisableTimer = false
+	// EnableTimer
+	EnableTimer = true
 )
 
 type NetworkType uint64

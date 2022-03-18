@@ -129,6 +129,9 @@ func (node *Node) Start() {
 		glog.Fatal("--postgres-uri is not supported when --hypersync=true. We're " +
 			"working on Hypersync support for Postgres though!")
 	}
+	if !node.Config.HyperSync && node.Config.DisableSlowSync {
+		glog.Fatal("Cannot set --disable-slow-sync=true without also setting --hypersync=true")
+	}
 	var db *pg.DB
 	if node.Config.PostgresURI != "" {
 		options, err := pg.ParseURL(node.Config.PostgresURI)
@@ -178,6 +181,7 @@ func (node *Node) Start() {
 		node.Config.NumMiningThreads,
 		node.Config.OneInboundPerIp,
 		node.Config.HyperSync,
+		node.Config.DisableSlowSync,
 		node.Config.MaxSyncBlockHeight,
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,

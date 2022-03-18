@@ -82,6 +82,9 @@ type StateChecksum struct {
 	// ctx is a helper variable used by the semaphore.
 	ctx context.Context
 
+	// hashToCurveCache is a cache of computed hashToCurve mappings
+	hashToCurveCache lru.KVCache
+
 	// When we want to add a database record to the state checksum, we will first have to
 	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
 	// output point to the checksum. The hash_to_curve operation is about 2-3 orders of magnitude
@@ -104,6 +107,9 @@ func (sc *StateChecksum) Initialize() {
 	// Set max workers to the number of available threads.
 	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
 
+	// Set the hashToCurveCache
+	sc.hashToCurveCache = lru.NewKVCache(DatabaseCacheSize)
+
 	// Set the worker pool semaphore and context.
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
 	sc.ctx = context.Background()
@@ -114,6 +120,23 @@ func (sc *StateChecksum) AddToChecksum(elem group.Element) {
 	defer sc.addMutex.Unlock()
 
 	sc.checksum.Add(sc.checksum, elem)
+}
+
+func (sc *StateChecksum) HashtoCurve(bytes []byte) group.Element {
+	var hashElement group.Element
+
+	// Check if we've already mapped this element, if so we will save some computation this way.
+	bytesStr := hex.EncodeToString(bytes)
+	if elem, exists := sc.hashToCurveCache.Lookup(bytesStr); exists {
+		hashElement = elem.(group.Element)
+	} else {
+		// Compute the hash_to_curve primitive, mapping  the bytes to an elliptic curve point.
+		hashElement = sc.curve.HashToElement(bytes, sc.dst)
+		// Also add to the hashToCurveCache
+		sc.hashToCurveCache.Add(bytesStr, hashElement)
+	}
+
+	return hashElement
 }
 
 // AddBytes adds record bytes to the checksum in parallel.
@@ -128,9 +151,7 @@ func (sc *StateChecksum) AddBytes(bytes []byte) error {
 	go func(sc *StateChecksum, bytes []byte) {
 		defer sc.semaphore.Release(1)
 
-		// Compute the hash_to_curve primitive and map the bytes to an elliptic curve point.
-		hashElement := sc.curve.HashToElement(bytes, sc.dst)
-
+		hashElement := sc.HashtoCurve(bytes)
 		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
 		sc.AddToChecksum(hashElement)
 	}(sc, bytes)
@@ -154,7 +175,7 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 		// and add it to the checksum. Since the checksum is a sum of ec points, adding an inverse
 		// of a previously added point will remove that point from the checksum. If we've previously
 		// added point (x, y) to the checksum, we will be now adding the inverse (x, -y).
-		hashElement := sc.curve.HashToElement(bytes, sc.dst)
+		hashElement := sc.HashtoCurve(bytes)
 		hashElement = hashElement.Neg(hashElement)
 
 		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
@@ -192,7 +213,7 @@ func (sc *StateChecksum) Wait() error {
 	return nil
 }
 
-// ToBytes gets the checksum point encoded in compressed format as a 33 byte array.
+// ToBytes gets the checksum point encoded in compressed format as a 32 byte array.
 // Note: Don't use this function to deep copy the checksum, use GetChecksum instead.
 // ToBytes is doing an inverse square root, so it is slow.
 func (sc *StateChecksum) ToBytes() ([]byte, error) {
@@ -648,6 +669,7 @@ func (snap *Snapshot) Run() {
 			snap.SnapshotProcessBlock(operation.blockNode)
 
 		case SnapshotOperationProcessChunk:
+			glog.Infof("Snapshot.Run: Number of operations in the operation channel (%v)", len(snap.OperationChannel))
 			if err := snap.SetSnapshotChunk(operation.mainDb, operation.snapshotChunk); err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
 			}
@@ -757,6 +779,7 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 	// FIXME: Spin waiting is bad
 	for {
 		if len(snap.OperationChannel) > 0 {
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 		break
@@ -1112,7 +1135,8 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 	var lastAncestralKey, lastMainKey = "", ""
 	if len(ancestralDbBatchEntries) > 0 {
 		lastAncestralEntry := ancestralDbBatchEntries[len(ancestralDbBatchEntries)-1]
-		lastAncestralKey = hex.EncodeToString(lastAncestralEntry.Key)
+		dbEntry := snap.AncestralRecordToDBEntry(lastAncestralEntry)
+		lastAncestralKey = hex.EncodeToString(dbEntry.Key)
 	}
 	if len(mainDbBatchEntries) > 0 {
 		lastMainEntry := mainDbBatchEntries[len(mainDbBatchEntries)-1]
@@ -1189,7 +1213,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 	syncGroup.Add(2)
 	go func() {
 		defer syncGroup.Done()
-		snap.timer.Start("SetSnapshotChunk.Set")
+		//snap.timer.Start("SetSnapshotChunk.Set")
 
 		for _, dbEntry := range chunk {
 			localErr := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
@@ -1204,12 +1228,12 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 			err = localErr
 			return
 		}
-		snap.timer.End("SetSnapshotChunk.Set")
+		//snap.timer.End("SetSnapshotChunk.Set")
 	}()
 	go func() {
 		defer syncGroup.Done()
 
-		snap.timer.Start("SetSnapshotChunk.Checksum")
+		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
 			if localErr := snap.Checksum.AddBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value)); localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem adding checksum")
@@ -1222,7 +1246,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 			glog.Errorf("Snapshot.SetSnapshotChunk: Problem waiting for the checksum")
 		}
 
-		snap.timer.End("SetSnapshotChunk.Checksum")
+		//snap.timer.End("SetSnapshotChunk.Checksum")
 	}()
 
 	syncGroup.Wait()
@@ -1246,18 +1270,18 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 type Timer struct {
 	totalElapsedTimes map[string]float64
 	lastTimes         map[string]time.Time
-	productionMode    bool
+	mode              bool
 }
 
 func (t *Timer) Initialize() {
 	t.totalElapsedTimes = make(map[string]float64)
 	t.lastTimes = make(map[string]time.Time)
-	// Change this to true to stop timing
-	t.productionMode = DisableTimer
+	// Comment this to stop timing
+	t.mode = EnableTimer
 }
 
 func (t *Timer) Start(eventName string) {
-	if t.productionMode {
+	if t.mode != EnableTimer {
 		return
 	}
 	if _, exists := t.lastTimes[eventName]; !exists {
@@ -1267,7 +1291,7 @@ func (t *Timer) Start(eventName string) {
 }
 
 func (t *Timer) End(eventName string) {
-	if t.productionMode {
+	if t.mode != EnableTimer {
 		return
 	}
 	if _, exists := t.totalElapsedTimes[eventName]; !exists {
@@ -1278,7 +1302,7 @@ func (t *Timer) End(eventName string) {
 }
 
 func (t *Timer) Print(eventName string) {
-	if t.productionMode {
+	if t.mode != EnableTimer {
 		return
 	}
 	if _, exists := t.lastTimes[eventName]; exists {

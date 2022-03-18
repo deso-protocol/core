@@ -2262,6 +2262,8 @@ func (msg *MsgDeSoBlock) String() string {
 
 type MsgDeSoGetSnapshot struct {
 	// The prefix for which we want to fetch snapshot data chunk.
+	// FIXME: I don't think you need this. I don't think it adds any extra security
+	// Try removing it?
 	Prefix []byte
 	// SnapshotStartKey is the db key from which we want to start fetching the data.
 	SnapshotStartKey []byte
@@ -2314,10 +2316,13 @@ type MsgDeSoSnapshotData struct {
 	// SnapshotChunk is the snapshot state data chunk.
 	SnapshotChunk []*DBEntry
 	// SnapshotChunkFull indicates whether we've exhausted all entries for the given prefix.
-	// If this is true, it means that there are more entries in node's db, and false means we've fetched everything.
+	// If this is true, it means that there are more entries in node's db, and false means
+	// we've fetched everything.
 	SnapshotChunkFull bool
 
 	// Prefix indicates the db prefix of the current snapshot chunk.
+	// FIXME: I don't think you need this. Try removing it? The prefix seems like something you need to know on the fetcher side, but that you don't need to ping back and forth with the sender. You just ask the sender to send you stuff at startPrefix and that's it
+	// Hmm.. I guess the first message has prefix as the thing in it... Feel free to leave it, just take a look at it.
 	Prefix []byte
 }
 
