@@ -440,6 +440,9 @@ type Blockchain struct {
 
 	// State checksum is used to verify integrity of state data and when
 	// syncing from snapshot in the hyper sync protocol.
+	//
+	// TODO: These could be rolled into SyncState, or at least into a single
+	// variable.
 	syncingState    bool
 	finishedSyncing bool
 
@@ -794,7 +797,9 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 //
 // This function is safe for concurrent access.
 func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash *BlockHash) []*MsgDeSoHeader {
-	// TODO: Shouldn't we hold a ChainLock here?
+	// TODO: Shouldn't we hold a ChainLock here? I think it's fine though because the place
+	// where it's currently called is single-threaded via a channel in server.go. Going to
+	// avoid messing with it for now.
 	headers := locateHeaders(locator, stopHash, MaxHeadersPerMsg,
 		bc.blockIndex, bc.bestChain, bc.bestChainMap)
 
@@ -1991,6 +1996,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 		// We need to do this cuz RPH said so
 		// TODO: So do we need to do this or nah?
+		// FIXME: If we're able to do a full sync without this then we don't need it, so delete.
 		//if nodeToValidate.Height <= bc.params.ForkHeights.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight {
 		//	for _, entry := range bc.blockView.HODLerPKIDCreatorPKIDToBalanceEntry {
 		//		if entry.isDeleted {
@@ -2014,6 +2020,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				"not the current tip hash (%v)", bc.blockView.TipHash, currentTip.Hash)
 		}
 
+		// FIXME: Do we need this?
 		bc.blocksInView += 1
 
 		utxoOpsForBlock, err := bc.blockView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
@@ -2435,6 +2442,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 		// If we have a Server object then call its function
 		// TODO: Is this duplicated / necessary? A: Yes duplicated, because current block was part of attachBlocks list
+		// FIXME: Delete this
 		if bc.eventManager != nil {
 			// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
 			// For now it's fine because reorgs are virtually impossible.

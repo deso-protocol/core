@@ -666,7 +666,7 @@ func (snap *Snapshot) Run() {
 		case SnapshotOperationProcessBlock:
 			glog.V(1).Infof("Snapshot.Run: Getting into the process block with height (%v)",
 				operation.blockNode.Height)
-			snap.ProcessBlock(operation.blockNode)
+			snap.SnapshotProcessBlock(operation.blockNode)
 
 		case SnapshotOperationProcessChunk:
 			glog.Infof("Snapshot.Run: Number of operations in the operation channel (%v)", len(snap.OperationChannel))
@@ -776,8 +776,10 @@ func (snap *Snapshot) RemoveChecksumBytes(bytes []byte) {
 // WaitForAllOperationsToFinish will busy-wait for the snapshot channel to process all
 // current operations. Spinlocks are undesired but it's the easiest solution in this case,
 func (snap *Snapshot) WaitForAllOperationsToFinish() {
+	// TODO: Spin waiting is bad, but not the end of the world here.
 	for {
 		if len(snap.OperationChannel) > 0 {
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 		break
@@ -899,18 +901,18 @@ func (snap *Snapshot) CheckAnceststralRecordExistenceByte(value []byte) bool {
 	return false
 }
 
-// ProcessBlock updates the snapshot information after a block has been added.
-func (snap *Snapshot) ProcessBlock(blockNode *BlockNode) {
+// SnapshotProcessBlock updates the snapshot information after a block has been added.
+func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
 	height := uint64(blockNode.Height)
 
 	if height%snap.SnapshotBlockHeightPeriod == 0 {
 		var err error
-		glog.V(1).Infof("Snapshot.ProcessBlock: About to delete SnapshotBlockHeight (%v) and set new height (%v)",
+		glog.V(1).Infof("Snapshot.SnapshotProcessBlock: About to delete SnapshotBlockHeight (%v) and set new height (%v)",
 			snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight, height)
 		snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight = height
 		snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes, err = snap.Checksum.ToBytes()
 		if err != nil {
-			glog.Errorf("Snapshot.ProcessBlock: Problem getting checksum bytes (%v)", err)
+			glog.Errorf("Snapshot.SnapshotProcessBlock: Problem getting checksum bytes (%v)", err)
 		}
 		snap.CurrentEpochSnapshotMetadata.CurrentEpochBlockHash = blockNode.Hash
 
@@ -920,10 +922,12 @@ func (snap *Snapshot) ProcessBlock(blockNode *BlockNode) {
 		})
 		if err != nil {
 			snap.brokenSnapshot = true
-			glog.Errorf("Snapshot.ProcessBlock: Problem setting snapshot epoch metadata in snapshot db")
+			glog.Errorf("Snapshot.SnapshotProcessBlock: Problem setting snapshot epoch metadata in snapshot db")
 		}
 
-		glog.V(1).Infof("Snapshot.ProcessBlock: snapshot checksum is (%v)", snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
+		glog.V(1).Infof("Snapshot.SnapshotProcessBlock: snapshot checksum is (%v)",
+			snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
+
 		// TODO: This should remove past height not current height?
 		snap.DeleteAncestralRecords(height)
 	}

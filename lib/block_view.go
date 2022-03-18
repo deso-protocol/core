@@ -364,6 +364,12 @@ func NewUtxoView(
 		// Set everything else in _ResetViewMappings()
 	}
 
+	// Note that the TipHash does not get reset as part of
+	// _ResetViewMappingsAfterFlush because it is not something that is affected by a
+	// flush operation. Moreover, its value is consistent with the view regardless of
+	// whether or not the view is flushed or not. Additionally the utxo view does
+	// not concern itself with the header chain (see comment on GetBestHash for more
+	// info on that).
 	if view.Postgres != nil {
 		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
 	} else {

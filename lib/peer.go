@@ -474,7 +474,8 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	} else if isTxIndexKey(msg.Prefix) {
 		if pp.srv.TxIndex != nil && pp.srv.TxIndex.FinishedSyncing() {
 			snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
-				pp.srv.TxIndex.TXIndexChain.snapshot.GetSnapshotChunk(pp.srv.TxIndex.TXIndexChain.db, msg.Prefix, msg.SnapshotStartKey)
+				pp.srv.TxIndex.TXIndexChain.snapshot.GetSnapshotChunk(
+					pp.srv.TxIndex.TXIndexChain.db, msg.Prefix, msg.SnapshotStartKey)
 
 			snapshotDataMsg.SnapshotMetadata = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochSnapshotMetadata
 		} else {
@@ -1168,10 +1169,15 @@ func (pp *Peer) Start() {
 }
 
 func (pp *Peer) IsSyncCandidate() bool {
-	flagsAreCorrect := (pp.serviceFlags & SFFullNode) != 0
-	glog.Infof("IsSyncCandidate: localAddr (%v), flags (%v), is outbound (%v)",
-		pp.Conn.LocalAddr().String(), flagsAreCorrect, pp.isOutbound)
-	return flagsAreCorrect && pp.isOutbound
+	isFullNode := (pp.serviceFlags & SFFullNode) != 0
+	// TODO: This is a bit of a messy way to determine whether the node was
+	// run with --hypersync
+	hypersyncSatisfied := !pp.cmgr.DisableSlowSync || (pp.serviceFlags&SFHyperSync) != 0
+	glog.Infof("IsSyncCandidate: localAddr (%v), isFullNode (%v), "+
+		"hypersyncSatisfied (%v), is outbound (%v)",
+		pp.Conn.LocalAddr().String(), isFullNode, hypersyncSatisfied,
+		pp.isOutbound)
+	return isFullNode && pp.isOutbound && hypersyncSatisfied
 }
 
 func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {

@@ -284,7 +284,7 @@ type DBPrefixes struct {
 // getPrefixIdValue parses the DBPrefixes struct tags to fetch the prefix_id values.
 func getPrefixIdValue(structFields reflect.StructField, fieldType reflect.Type) (prefixId reflect.Value) {
 	var ref reflect.Value
-	// Get the prefix_id tags and parse it as byte array.
+	// Get the prefix_id tag and parse it as byte array.
 	if value := structFields.Tag.Get("prefix_id"); value != "-" {
 		ref = reflect.New(fieldType)
 		ref.Elem().Set(reflect.MakeSlice(fieldType, 0, 0))
