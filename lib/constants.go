@@ -53,6 +53,9 @@ const (
 	// DatabaseCacheSize is used to save read operations when fetching records from the main Db.
 	DatabaseCacheSize uint = 1000000 // 1M
 
+	// HashToCurveCache is used to save computation on hashing to curve.
+	HashToCurveCache uint = 10000 // 10K
+
 	// EnableTimer
 	EnableTimer = true
 )

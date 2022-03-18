@@ -108,7 +108,7 @@ func (sc *StateChecksum) Initialize() {
 	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
 
 	// Set the hashToCurveCache
-	sc.hashToCurveCache = lru.NewKVCache(DatabaseCacheSize)
+	sc.hashToCurveCache = lru.NewKVCache(HashToCurveCache)
 
 	// Set the worker pool semaphore and context.
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
