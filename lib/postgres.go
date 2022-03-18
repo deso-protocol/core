@@ -1503,6 +1503,7 @@ func (postgres *Postgres) flushUtxos(tx *pg.Tx, view *UtxoView) error {
 			OutputHash:  &utxoKey.TxID,
 			OutputIndex: utxoKey.Index,
 			OutputType:  utxoEntry.UtxoType,
+			Height:      utxoEntry.BlockHeight,
 			PublicKey:   utxoEntry.PublicKey,
 			AmountNanos: utxoEntry.AmountNanos,
 			Spent:       utxoEntry.isSpent,
@@ -2160,7 +2161,7 @@ func (postgres *Postgres) GetOutputs(outputs []*PGTransactionOutput) []*PGTransa
 func (postgres *Postgres) GetBlockRewardsForPublicKey(publicKey *PublicKey, startHeight uint32, endHeight uint32) []*PGTransactionOutput {
 	var transactionOutputs []*PGTransactionOutput
 	err := postgres.db.Model(&transactionOutputs).Where("public_key = ?", publicKey).
-		Where("height >= ?", startHeight).Where("height <= ?", endHeight).Select()
+		Where("height > ?", startHeight).Where("height < ?", endHeight).Select()
 	if err != nil {
 		return nil
 	}
