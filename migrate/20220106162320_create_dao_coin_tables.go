@@ -65,7 +65,7 @@ func init() {
 	down := func(db orm.DB) error {
 		_, err := db.Exec(`
 			DROP TABLE pg_metadata_dao_coins;
-			DROP TABLE pg_metadata_dao_coin_transfer;
+			DROP TABLE pg_metadata_dao_coin_transfers;
 			DROP TABLE pg_dao_coin_balances;
 			ALTER TABLE pg_profiles
 				DROP COLUMN minting_disabled,
