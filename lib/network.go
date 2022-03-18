@@ -5507,6 +5507,18 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 	return TxnTypeDAOCoinLimitOrder
 }
 
+// This is a helper method used in testing.
+func (txnData *DAOCoinLimitOrderMetadata) Copy() *DAOCoinLimitOrderMetadata {
+	return &DAOCoinLimitOrderMetadata{
+		DenominatedCoinType:          txnData.DenominatedCoinType,
+		DenominatedCoinCreatorPKID:   txnData.DenominatedCoinCreatorPKID.NewPKID(),
+		DAOCoinCreatorPKID:           txnData.DAOCoinCreatorPKID.NewPKID(),
+		OperationType:                txnData.OperationType,
+		PriceNanosPerDenominatedCoin: txnData.PriceNanosPerDenominatedCoin.Clone(),
+		Quantity:                     txnData.Quantity.Clone(),
+	}
+}
+
 func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
 	return &DAOCoinLimitOrderEntry{
 		TransactorPKID:               transactorPKID,

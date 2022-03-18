@@ -261,7 +261,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		utxoOp, err := bav._addUtxo(&utxoEntry)
 		if err != nil {
 			// TODO: fix error
-			return errors.Wrapf(err, "_helpConnectNFTSold: Problem adding output utxo")
+			return errors.Wrapf(err, "_connectDAOCoinLimitOrder: Problem adding output utxo")
 		}
 		daoCoinLimitOrderPaymentUtxoKeys = append(daoCoinLimitOrderPaymentUtxoKeys, outputKey)
 
