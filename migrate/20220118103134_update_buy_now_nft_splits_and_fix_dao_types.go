@@ -71,14 +71,14 @@ func init() {
 				DROP COLUMN additional_nft_royalties_to_coins_basis_points,
 				DROP COLUMN additional_nft_royalties_to_creators_basis_points;
 			ALTER TABLE pg_dao_coin_balances
-				ALTER COLUMN balance_nanos TYPE BIGINT USING lpad(balance_nanos, 16, '0')::bit(64)::bigint;
+				ALTER COLUMN balance_nanos TYPE BIGINT USING ('x' || lpad(replace(balance_nanos, '0x', ''), 16, '0'))::bit(64)::bigint;
 			ALTER TABLE pg_metadata_dao_coin_transfers
-				ALTER COLUMN dao_coin_to_transfer_nanos TYPE BIGINT USING lpad(dao_coin_to_transfer_nanos, 16, '0')::bit(64)::bigint;
+				ALTER COLUMN dao_coin_to_transfer_nanos TYPE BIGINT USING ('x' || lpad(replace(dao_coin_to_transfer_nanos, '0x', ''), 16, '0'))::bit(64)::bigint;
 			ALTER TABLE pg_metadata_dao_coins
-				ALTER COLUMN coins_to_mint_nanos TYPE BIGINT USING lpad(coins_to_mint_nanos, 16, '0')::bit(64)::bigint,
-				ALTER COLUMN coins_to_burn_nanos TYPE BIGINT USING lpad(coins_to_burn_nanos, 16, '0')::bit(64)::bigint;
+				ALTER COLUMN coins_to_mint_nanos TYPE BIGINT USING ('x' || lpad(replace(coins_to_mint_nanos, '0x', ''), 16, '0'))::bit(64)::bigint,
+				ALTER COLUMN coins_to_burn_nanos TYPE BIGINT USING ('x' || lpad(replace(coins_to_burn_nanos, '0x', ''), 16, '0'))::bit(64)::bigint;
 			ALTER TABLE pg_profiles
-				ALTER COLUMN dao_coin_coins_in_circulation_nanos TYPE BIGINT USING lpad(dao_coin_coins_in_circulation_nanos, 16, '0')::bit(64)::bigint; 
+				ALTER COLUMN dao_coin_coins_in_circulation_nanos TYPE BIGINT USING ('x' || lpad(replace(dao_coin_coins_in_circulation_nanos, '0x', ''), 16, '0'))::bit(64)::bigint;
 		`)
 		return err
 	}
