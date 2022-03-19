@@ -87,7 +87,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -176,7 +176,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	}
 	require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(t, utxoView.FlushToDb())
+	require.NoError(t, utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -269,7 +269,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -1472,7 +1472,7 @@ func TestSubmitPost(t *testing.T) {
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -1537,7 +1537,7 @@ func TestSubmitPost(t *testing.T) {
 		}
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	// Verify the profiles exist.
 	checkPostsExist()
@@ -1584,7 +1584,7 @@ func TestSubmitPost(t *testing.T) {
 			assertCommentCount(utxoView2, require, post6Hash, 0)
 		}
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 
 	// Verify that all the profiles have been deleted.
@@ -1612,10 +1612,10 @@ func TestSubmitPost(t *testing.T) {
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// Verify that all the profiles have been deleted.
@@ -1965,7 +1965,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		}
 		require.Equal(OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		return nil
 	}

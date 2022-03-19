@@ -756,6 +756,7 @@ func MakeDirIfNonExistent(filePath string) error {
 }
 
 func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
+	blockHeight := uint64(mp.bc.blockTip().Height + 1)
 	allTxns := mp.readOnlyUniversalTransactionList
 
 	tempMempoolDBDir := filepath.Join(mp.mempoolDir, "temp_mempool_dump")
@@ -787,7 +788,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 		if len(txnsToDump)%1000 == 0 || ii == len(allTxns)-1 {
 			glog.Infof("OpenTempDBAndDumpTxns: Dumping txns %v to %v", ii-len(txnsToDump)+1, ii)
 			err := tempMempoolDB.Update(func(txn *badger.Txn) error {
-				return FlushMempoolToDbWithTxn(txn, nil, txnsToDump)
+				return FlushMempoolToDbWithTxn(txn, nil, blockHeight, txnsToDump)
 			})
 			if err != nil {
 				return fmt.Errorf("OpenTempDBAndDumpTxns: Error flushing mempool txns to DB: %v", err)
@@ -981,6 +982,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	tx *MsgDeSoTxn, rateLimit bool, rejectDupUnconnected bool, verifySignatures bool) (
 	_missingParents []*BlockHash, _mempoolTx *MempoolTx, _err error) {
 
+	blockHeight := uint64(mp.bc.blockTip().Height + 1)
 	// Block reward transactions shouldn't appear individually
 	if tx.TxnMeta != nil && tx.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil, nil, TxErrorIndividualBlockReward
@@ -1105,7 +1107,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// Calculate metadata
 	mempoolTx.TxMeta = ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps)
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps, blockHeight)
 
 	glog.V(2).Infof("tryAcceptTransaction: Accepted transaction %v (pool size: %v)", txHash,
 		len(mp.poolMap))
@@ -1115,7 +1117,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
 	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation) *TransactionMetadata {
+	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation, blockHeight uint64) *TransactionMetadata {
 
 	var err error
 	txnMeta := &TransactionMetadata{
@@ -1494,7 +1496,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			SerialNumber:              realTxMeta.SerialNumber,
 			BidAmountNanos:            realTxMeta.BidAmountNanos,
 			IsBuyNowBid:               isBuyNow,
-			NFTRoyaltiesMetadata:      nftRoyaltiesMetadata,
+			NFTRoyaltiesMetadata:      &nftRoyaltiesMetadata,
 			OwnerPublicKeyBase58Check: ownerPublicKeyBase58Check,
 		}
 
@@ -1504,7 +1506,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "NFTCreatorPublicKeyBase58Check",
 			})
 
-			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
+			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.NFTRoyaltiesMetadata.AdditionalCoinRoyaltiesMap {
 				pubKey := pubKeyIter
 				// Skip affected pub key if no royalty received
 				if amountNanos == 0 {
@@ -1516,7 +1518,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				})
 			}
 
-			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.AdditionalDESORoyaltiesMap {
+			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.NFTRoyaltiesMetadata.AdditionalDESORoyaltiesMap {
 				pubKey := pubKeyIter
 				// Skip affected pub key if no royalty received
 				if amountNanos == 0 {
@@ -1538,7 +1540,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
 			SerialNumber:   realTxMeta.SerialNumber,
 			BidAmountNanos: realTxMeta.BidAmountNanos,
-			NFTRoyaltiesMetadata: NFTRoyaltiesMetadata{
+			NFTRoyaltiesMetadata: &NFTRoyaltiesMetadata{
 				CreatorCoinRoyaltyNanos:     utxoOp.AcceptNFTBidCreatorRoyaltyNanos,
 				CreatorRoyaltyNanos:         utxoOp.AcceptNFTBidCreatorDESORoyaltyNanos,
 				CreatorPublicKeyBase58Check: creatorPublicKeyBase58Check,
@@ -1559,7 +1561,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "NFTCreatorPublicKeyBase58Check",
 		})
 
-		for pubKeyIter, amountNanos := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
+		for pubKeyIter, amountNanos := range txnMeta.AcceptNFTBidTxindexMetadata.NFTRoyaltiesMetadata.AdditionalCoinRoyaltiesMap {
 			pubKey := pubKeyIter
 			// Skip affected pub key if no royalty received
 			if amountNanos == 0 {
@@ -1571,7 +1573,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			})
 		}
 
-		for pubKeyIter, amountNanos := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalDESORoyaltiesMap {
+		for pubKeyIter, amountNanos := range txnMeta.AcceptNFTBidTxindexMetadata.NFTRoyaltiesMetadata.AdditionalDESORoyaltiesMap {
 			pubKey := pubKeyIter
 			// Skip affected pub key if no royalty received
 			if amountNanos == 0 {
@@ -1828,7 +1830,7 @@ func ConnectTxnAndComputeTransactionMetadata(
 	}
 
 	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps), nil
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps, uint64(blockHeight)), nil
 }
 
 // This is the main function used for adding a new txn to the pool. It will

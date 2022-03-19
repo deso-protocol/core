@@ -99,7 +99,7 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	}
 	require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -309,7 +309,7 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	}
 	require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -413,7 +413,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	}
 	require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -503,7 +503,7 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	}
 	require.Equal(OperationTypeUpdateNFT, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -595,7 +595,7 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 	}
 	require.Equal(OperationTypeNFTTransfer, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -678,7 +678,7 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeAcceptNFTTransfer, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -757,7 +757,7 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeBurnNFT, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }

@@ -9,7 +9,7 @@ import (
 	"reflect"
 )
 
-func (bav *UtxoView) FlushToDb() error {
+func (bav *UtxoView) FlushToDb(blockHeight uint64) error {
 	// Make sure everything happens inside a single transaction.
 	var err error
 	if bav.Postgres != nil {
@@ -20,7 +20,7 @@ func (bav *UtxoView) FlushToDb() error {
 	}
 
 	err = bav.Handle.Update(func(txn *badger.Txn) error {
-		return bav.FlushToDbWithTxn(txn)
+		return bav.FlushToDbWithTxn(txn, blockHeight)
 	})
 	if err != nil {
 		return err
@@ -38,7 +38,7 @@ func (bav *UtxoView) FlushToDb() error {
 	return nil
 }
 
-func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// We're about to flush records to the main DB, so we initiate the snapshot update.
 	// This function prepares the data structures in the snapshot.
 	if bav.Snapshot != nil {
@@ -47,16 +47,16 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
-		if err := bav._flushUtxosToDbWithTxn(txn); err != nil {
+		if err := bav._flushUtxosToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushProfileEntriesToDbWithTxn(txn); err != nil {
+		if err := bav._flushProfileEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushPKIDEntriesToDbWithTxn(txn); err != nil {
+		if err := bav._flushPKIDEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushPostEntriesToDbWithTxn(txn); err != nil {
+		if err := bav._flushPostEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
 		if err := bav._flushLikeEntriesToDbWithTxn(txn); err != nil {
@@ -65,16 +65,16 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		if err := bav._flushFollowEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
-		if err := bav._flushDiamondEntriesToDbWithTxn(txn); err != nil {
+		if err := bav._flushDiamondEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushMessageEntriesToDbWithTxn(txn); err != nil {
+		if err := bav._flushMessageEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushBalanceEntriesToDbWithTxn(txn); err != nil {
+		if err := bav._flushBalanceEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushDAOCoinBalanceEntriesToDbWithTxn(txn); err != nil {
+		if err := bav._flushDAOCoinBalanceEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
 		if err := bav._flushDeSoBalancesToDbWithTxn(txn); err != nil {
@@ -83,13 +83,13 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 		if err := bav._flushForbiddenPubKeyEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
-		if err := bav._flushNFTEntriesToDbWithTxn(txn); err != nil {
+		if err := bav._flushNFTEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
 		if err := bav._flushNFTBidEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
-		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn); err != nil {
+		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
 	}
@@ -98,16 +98,16 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	if err := bav._flushBitcoinExchangeDataWithTxn(txn); err != nil {
 		return err
 	}
-	if err := bav._flushGlobalParamsEntryToDbWithTxn(txn); err != nil {
+	if err := bav._flushGlobalParamsEntryToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushAcceptedBidEntriesToDbWithTxn(txn); err != nil {
+	if err := bav._flushAcceptedBidEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushRepostEntriesToDbWithTxn(txn); err != nil {
+	if err := bav._flushRepostEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushMessagingGroupEntriesToDbWithTxn(txn); err != nil {
+	if err := bav._flushMessagingGroupEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 
@@ -120,7 +120,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushUtxosToDbWithTxn: flushing %d mappings", len(bav.UtxoKeyToUtxoEntry))
 
 	for utxoKeyIter, utxoEntry := range bav.UtxoKeyToUtxoEntry {
@@ -155,7 +155,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the entry is unspent, then we need to re-set its mappings in the db
 			// appropriately.
-			if err := PutMappingsForUtxoWithTxn(txn, bav.Snapshot, &utxoKey, utxoEntry); err != nil {
+			if err := PutMappingsForUtxoWithTxn(txn, bav.Snapshot, blockHeight, &utxoKey, utxoEntry); err != nil {
 				return err
 			}
 		}
@@ -203,9 +203,9 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushGlobalParamsEntryToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushGlobalParamsEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	globalParamsEntry := bav.GlobalParamsEntry
-	if err := DbPutGlobalParamsEntryWithTxn(txn, bav.Snapshot, *globalParamsEntry); err != nil {
+	if err := DbPutGlobalParamsEntryWithTxn(txn, bav.Snapshot, blockHeight, *globalParamsEntry); err != nil {
 		return errors.Wrapf(err, "_flushGlobalParamsEntryToDbWithTxn: Problem putting global params entry in DB")
 	}
 	return nil
@@ -282,7 +282,7 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// Go through all the entries in the MessageKeyToMessageEntry map.
 	for messageKeyIter, messageEntry := range bav.MessageKeyToMessageEntry {
 		// Make a copy of the iterator since we take references to it below.
@@ -304,7 +304,7 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the MessageEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutMessageEntryWithTxn(txn, bav.Snapshot, messageKey, messageEntry); err != nil {
+			if err := DBPutMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, messageKey, messageEntry); err != nil {
 				return err
 			}
 		}
@@ -315,7 +315,7 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 
 	// Go through all the entries in the repostKeyTorepostEntry map.
 	for repostKeyIter, repostEntry := range bav.RepostKeyToRepostEntry {
@@ -348,7 +348,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the RepostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutRepostMappingsWithTxn(txn, bav.Snapshot, repostEntry.ReposterPubKey,
+			if err := DbPutRepostMappingsWithTxn(txn, bav.Snapshot, blockHeight, repostEntry.ReposterPubKey,
 				*repostEntry.RepostedPostHash, *repostEntry); err != nil {
 
 				return err
@@ -455,7 +455,7 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 
 	// Go through and delete all the entries so they can be added back fresh.
 	for nftKeyIter, nftEntry := range bav.NFTKeyToNFTEntry {
@@ -490,7 +490,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutNFTEntryMappingsWithTxn(txn, bav.Snapshot, nftEntry); err != nil {
+			if err := DBPutNFTEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, nftEntry); err != nil {
 				return err
 			}
 		}
@@ -499,7 +499,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 
 	// Go through and delete all the entries so they can be added back fresh.
 	for nftKeyIter := range bav.NFTKeyToAcceptedNFTBidHistory {
@@ -529,7 +529,7 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn) error 
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, bav.Snapshot,
+			if err := DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, bav.Snapshot, blockHeight,
 				nftKey, acceptedNFTBidEntries); err != nil {
 
 				return err
@@ -584,7 +584,7 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 
 	// Go through and delete all the entries so they can be added back fresh.
 	for diamondKeyIter, diamondEntry := range bav.DiamondKeyToDiamondEntry {
@@ -620,7 +620,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 			// If the DiamondEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DbPutDiamondMappingsWithTxn(txn,
-				bav.Snapshot, diamondEntry); err != nil {
+				bav.Snapshot, blockHeight, diamondEntry); err != nil {
 
 				return err
 			}
@@ -632,7 +632,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// TODO(DELETEME): Remove flush logging after debugging MarkBlockInvalid bug.
 	glog.V(2).Infof("_flushPostEntriesToDbWithTxn: flushing %d mappings", len(bav.PostHashToPostEntry))
 
@@ -671,7 +671,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the PostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutPostEntryMappingsWithTxn(txn, bav.Snapshot,
+			if err := DBPutPostEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
 				postEntry, bav.Params); err != nil {
 
 				return err
@@ -686,7 +686,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn) error {
 
 	return nil
 }
-func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	for pubKeyIter, pkidEntry := range bav.PublicKeyToPKIDEntry {
 		pubKeyCopy := make([]byte, btcec.PubKeyBytesLenCompressed)
 		copy(pubKeyCopy, pubKeyIter[:])
@@ -731,7 +731,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutPKIDMappingsWithTxn(txn, bav.Snapshot,
+			if err := DBPutPKIDMappingsWithTxn(txn, bav.Snapshot, blockHeight,
 				pubKeyCopy, pkidEntry, bav.Params); err != nil {
 
 				return err
@@ -743,7 +743,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushProfilesToDbWithTxn: flushing %d mappings", len(bav.ProfilePKIDToProfileEntry))
 
 	// Go through all the entries in the ProfilePublicKeyToProfileEntry map.
@@ -786,7 +786,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutProfileEntryMappingsWithTxn(txn, bav.Snapshot,
+			if err := DBPutProfileEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
 				profileEntry, &profilePKID, bav.Params); err != nil {
 
 				return err
@@ -804,7 +804,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn) error {
 // TODO: All of these functions should be renamed "CreatorCoinBalanceEntry" to
 // distinguish them from DAOCoinBalanceEntry, which is a different but similar index
 // that got introduced later.
-func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToBalanceEntry))
 
 	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
@@ -846,8 +846,8 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 			numPut++
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutBalanceEntryMappingsWithTxn(
-				txn, bav.Snapshot, balanceEntry, false); err != nil {
+			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
+				balanceEntry, false); err != nil {
 
 				return err
 			}
@@ -862,7 +862,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
 }
 
 // TODO: This could theoretically be consolidated with the other BalanceEntry flusher.
-func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushDAOCoinBalanceEntriesToDbWithTxn: flushing %d mappings", len(bav.HODLerPKIDCreatorPKIDToDAOCoinBalanceEntry))
 
 	// Go through all the entries in the HODLerPubKeyCreatorPubKeyToBalanceEntry map.
@@ -904,7 +904,7 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) err
 			numPut++
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot,
+			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
 				balanceEntry, true); err != nil {
 
 				return err
@@ -919,7 +919,7 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn) err
 	return nil
 }
 
-func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
 
 	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the DB.
@@ -940,8 +940,8 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 			numDeleted++
 		} else {
 			// In this case we add the mapping to the DB.
-			if err := DBPutDerivedKeyMappingWithTxn(txn, bav.Snapshot, derivedKeyMapKey.OwnerPublicKey,
-				derivedKeyMapKey.DerivedPublicKey, derivedKeyEntry); err != nil {
+			if err := DBPutDerivedKeyMappingWithTxn(txn, bav.Snapshot, blockHeight,
+				derivedKeyMapKey.OwnerPublicKey, derivedKeyMapKey.DerivedPublicKey, derivedKeyEntry); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 					"Problem putting DerivedKeyEntry %v to db", *derivedKeyEntry)
@@ -954,7 +954,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn) error {
 	return nil
 }
 
-func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) error {
+func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushMessagingGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.MessagingGroupKeyToMessagingGroupEntry))
 	numDeleted := 0
 	numPut := 0
@@ -995,7 +995,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) err
 			// TODO: We should have a single PutMappings function in db_utils.go that we push this
 			// complexity into.
 			ownerPublicKey := messagingGroupKey.OwnerPublicKey
-			if err := DBPutMessagingGroupEntryWithTxn(txn, bav.Snapshot,
+			if err := DBPutMessagingGroupEntryWithTxn(txn, bav.Snapshot, blockHeight,
 				&ownerPublicKey, messagingGroupEntry); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 					"Problem putting MessagingGroupEntry %v to db", *messagingGroupEntry)
@@ -1007,7 +1007,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn) err
 				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey[:]) {
 					continue
 				}
-				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot,
+				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
 					recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
 					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 						"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)

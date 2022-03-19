@@ -381,7 +381,7 @@ func _doTxn(
 		require.Equal(operationType, utxoOps[len(utxoOps)-1].Type)
 	}
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -836,7 +836,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			transactionSpendingLimit,
 		)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
@@ -855,7 +855,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -870,7 +870,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -911,7 +911,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 				currentTxn, currentTxn.Hash(), currentUtxoOps, blockHeight))
 			fmt.Printf("Disconnected test index: %v\n", testIndex)
 
-			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
+			require.NoErrorf(utxoView.FlushToDb(0), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
@@ -945,7 +945,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		// Now flush at the end.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// Verify that expiration block and balance was persisted in the db
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
@@ -982,7 +982,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		// Now flush at the end.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// Verify that expiration block and balance was persisted in the db
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
@@ -1070,7 +1070,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -1085,7 +1085,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -1125,7 +1125,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 				currentTxn, currentTxn.Hash(), currentUtxoOps, blockHeight))
 			fmt.Printf("Disconnected test index: %v\n", testIndex)
 
-			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
+			require.NoErrorf(utxoView.FlushToDb(0), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
@@ -1236,7 +1236,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -1267,7 +1267,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			transactionSpendingLimit,
 		)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 		// Verify the expiration block in the db
@@ -1295,7 +1295,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -1346,7 +1346,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 				currentTxn, currentTxn.Hash(), currentUtxoOps, blockHeight))
 			fmt.Printf("Disconnected test index: %v\n", testIndex)
 
-			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
+			require.NoErrorf(utxoView.FlushToDb(0), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
@@ -1474,7 +1474,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(blockToDisconnect.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps, 0))
 	}
 	{
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
@@ -1487,7 +1487,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		fmt.Println("Successfully rolled back the blocks.")
 	}
 
@@ -1730,7 +1730,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			transactionSpendingLimit,
 		)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
@@ -1747,7 +1747,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -1762,7 +1762,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -1803,7 +1803,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 				currentTxn, currentTxn.Hash(), currentUtxoOps, blockHeight))
 			fmt.Printf("Disconnected test index: %v\n", testIndex)
 
-			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
+			require.NoErrorf(utxoView.FlushToDb(0), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
@@ -1837,7 +1837,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		}
 
 		// Now flush at the end.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// Verify that expiration block and balance was persisted in the db
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
@@ -1874,7 +1874,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		}
 
 		// Now flush at the end.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// Verify that expiration block and balance was persisted in the db
 		_verifyTest(authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
@@ -1962,7 +1962,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -2000,14 +2000,14 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			oneMoreBasicTransferSpendingLimit,
 		)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, authorizeUTXOOps)
 		testTxns = append(testTxns, authorizeTxn)
 
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivBase58Check, utxoView, nil, false)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -2047,7 +2047,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 				currentTxn, currentTxn.Hash(), currentUtxoOps, blockHeight))
 			fmt.Printf("Disconnected test index: %v\n", testIndex)
 
-			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
+			require.NoErrorf(utxoView.FlushToDb(0), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
 		_verifyTest(authTxnMeta.DerivedPublicKey, authTxnMeta.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
@@ -2158,7 +2158,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			derivedPrivDeAuthBase58Check, utxoView, nil, false)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -2189,7 +2189,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			transactionSpendingLimit,
 		)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 		// Verify the expiration block in the db
@@ -2217,7 +2217,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoOps, txn, err := _basicTransfer(senderPkBytes, recipientPkBytes,
 			senderPrivString, utxoView, nil, true)
 		require.NoError(err)
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		testUtxoOps = append(testUtxoOps, utxoOps)
 		testTxns = append(testTxns, txn)
 
@@ -2268,7 +2268,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 				currentTxn, currentTxn.Hash(), currentUtxoOps, blockHeight))
 			fmt.Printf("Disconnected test index: %v\n", testIndex)
 
-			require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
+			require.NoErrorf(utxoView.FlushToDb(0), "SimpleDisconnect: Index: %v", testIndex)
 		}
 
 		_verifyTest(authTxnMetaDeAuth.DerivedPublicKey, authTxnMetaDeAuth.ExpirationBlock, 2, AuthorizeDerivedKeyOperationValid, nil)
@@ -2396,7 +2396,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(blockToDisconnect.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps, 0))
 	}
 	{
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
@@ -2409,7 +2409,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 		fmt.Println("Successfully rolled back the blocks.")
 	}
 

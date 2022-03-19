@@ -34,7 +34,7 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 // accessSignature is the signed hash of (derivedPublicKey + expirationBlock + transaction spending limit)
 // in DER format, made with the ownerPublicKey.
 func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, derivedPublicKey []byte,
-	expirationBlock uint64, transactionSpendingLimit *TransactionSpendingLimit, accessSignature []byte) error {
+	expirationBlock uint64, transactionSpendingLimit *TransactionSpendingLimit, accessSignature []byte, blockHeight uint64) error {
 
 	// Sanity-check and convert ownerPublicKey to *btcec.PublicKey.
 	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
@@ -210,7 +210,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				derivedPublicKey,
 				txMeta.ExpirationBlock,
 				transactionSpendingLimit,
-				txMeta.AccessSignature); err != nil {
+				txMeta.AccessSignature,
+				uint64(blockHeight)); err != nil {
 				return 0, 0, nil, errors.Wrap(
 					RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 			}

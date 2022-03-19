@@ -991,7 +991,7 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 }
 
 func (bav *UtxoView) DisconnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation) error {
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation, blockHeight uint64) error {
 
 	glog.Infof("DisconnectBlock: Disconnecting block %v", desoBlock)
 
@@ -2223,7 +2223,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 }
 
 func (bav *UtxoView) ConnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager) (
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager, blockHeight uint64) (
 	[][]*UtxoOperation, error) {
 
 	glog.V(1).Infof("ConnectBlock: Connecting block %v", desoBlock)
@@ -2331,7 +2331,7 @@ func (bav *UtxoView) ConnectBlock(
 // the database. It's much faster to fetch data in bulk and cache "nil" values
 // then to query individual records when connecting every transaction. If something
 // is not preloaded the view falls back to individual queries.
-func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
+func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock, blockHeight uint64) error {
 	// We can only preload if we're using postgres
 	if bav.Postgres == nil {
 		return nil

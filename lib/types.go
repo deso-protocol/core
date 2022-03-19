@@ -28,11 +28,11 @@ func NewPKID(pkidBytes []byte) *PKID {
 	return pkid
 }
 
-func (pkid *PKID) Encode() []byte {
+func (pkid *PKID) Encode(blockHeight uint64) []byte {
 	return EncodeByteArray(pkid[:])
 }
 
-func (pkid *PKID) Decode(rr *bytes.Reader) error {
+func (pkid *PKID) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	pkidBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "PKID.Decode: Problem reading PKID")
@@ -68,11 +68,11 @@ func (publicKey *PublicKey) ToBytes() []byte {
 	return publicKey[:]
 }
 
-func (publicKey *PublicKey) Encode() []byte {
+func (publicKey *PublicKey) Encode(blockHeight uint64) []byte {
 	return EncodeByteArray(publicKey[:])
 }
 
-func (publicKey *PublicKey) Decode(rr *bytes.Reader) error {
+func (publicKey *PublicKey) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	publicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "PublicKey.Decode: Problem reading publicKey")
@@ -108,11 +108,11 @@ func NewBlockHash(input []byte) *BlockHash {
 	return blockHash
 }
 
-func (bh *BlockHash) Encode() []byte {
+func (bh *BlockHash) Encode(blockHeight uint64) []byte {
 	return EncodeByteArray(bh[:])
 }
 
-func (bh *BlockHash) Decode(rr *bytes.Reader) error {
+func (bh *BlockHash) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	blockHashBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BlockHash.Decode: Problem reading BlockHash")

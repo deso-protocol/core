@@ -136,6 +136,11 @@ func TestTypes(t *testing.T) {
 	}
 }
 
+func TestTest(t *testing.T) {
+	x := []byte{12, 2, 0, 108, 239, 24, 210, 138, 192, 54, 137, 45, 95, 211, 118, 6, 107, 69, 186, 232, 8, 118, 195, 156, 103, 24, 3, 28, 229, 36, 45, 196, 140, 236, 22, 184, 103, 240, 80, 87, 123, 74}
+	fmt.Println(hex.EncodeToString(x))
+}
+
 func TestFromBytes(t *testing.T) {
 	require := require.New(t)
 	_ = require

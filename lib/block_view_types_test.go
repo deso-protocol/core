@@ -38,15 +38,17 @@ func TestEmptyTypeEncoders(t *testing.T) {
 		&UtxoOperation{},
 	}
 	for _, testType := range testCases {
-		testBytes := testType.Encode()
+		testBytes := DeSoEncoderToBytes(0, testType)
 		rr := bytes.NewReader(testBytes)
-		require.NoError(testType.Decode(rr))
+		exists, err := DeSoEncoderFromBytes(testType, rr)
+		require.Equal(true, exists)
+		require.NoError(err)
 	}
 }
 
 func TestMessageEntryDecoding(t *testing.T) {
 	// Create a message entry
-	messageEntry := MessageEntry{
+	messageEntry := &MessageEntry{
 		NewPublicKey(m0PkBytes),
 		NewPublicKey(m1PkBytes),
 		[]byte{1, 2, 3, 4, 5, 6},
@@ -60,19 +62,21 @@ func TestMessageEntryDecoding(t *testing.T) {
 		nil,
 	}
 
-	encodedWithExtraData := messageEntry.Encode()
+	encodedWithExtraData := DeSoEncoderToBytes(0, messageEntry)
 
 	// We know the last byte is a 0 representing the length of the extra data, so chop that off
 	missingExtraDataEncoding := encodedWithExtraData[:len(encodedWithExtraData)-1]
 
-	decodedMessageEntryMissingExtraData := MessageEntry{}
+	decodedMessageEntryMissingExtraData := &MessageEntry{}
 	rr := bytes.NewReader(missingExtraDataEncoding)
-	err := decodedMessageEntryMissingExtraData.Decode(rr)
+	exists, err := DeSoEncoderFromBytes(decodedMessageEntryMissingExtraData, rr)
+	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
-	decodedMessageEntryWithExtraData := MessageEntry{}
+	decodedMessageEntryWithExtraData := &MessageEntry{}
 	rr = bytes.NewReader(encodedWithExtraData)
-	err = decodedMessageEntryWithExtraData.Decode(rr)
+	exists, err = DeSoEncoderFromBytes(decodedMessageEntryWithExtraData, rr)
+	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
 	// The message decoded without extra data should
@@ -80,7 +84,7 @@ func TestMessageEntryDecoding(t *testing.T) {
 	require.True(t, reflect.DeepEqual(decodedMessageEntryMissingExtraData, messageEntry))
 
 	// Now encode them again and prove they're the same
-	require.True(t, bytes.Equal(encodedWithExtraData, decodedMessageEntryMissingExtraData.Encode()))
+	require.True(t, bytes.Equal(encodedWithExtraData, DeSoEncoderToBytes(0, decodedMessageEntryMissingExtraData)))
 
 	// Okay now let's set the extra data on the message entry
 	messageEntry.ExtraData = map[string][]byte{
@@ -89,16 +93,17 @@ func TestMessageEntryDecoding(t *testing.T) {
 
 	encodedExtraData := EncodeExtraData(messageEntry.ExtraData)
 
-	encodedIncludingExtraData := messageEntry.Encode()
+	encodedIncludingExtraData := DeSoEncoderToBytes(0, messageEntry)
 
 	extraDataBytesRemoved := encodedIncludingExtraData[:len(encodedIncludingExtraData)-len(encodedExtraData)]
 
-	messageEntryWithExtraDataRemoved := MessageEntry{}
+	messageEntryWithExtraDataRemoved := &MessageEntry{}
 	rr = bytes.NewReader(extraDataBytesRemoved)
-	err = messageEntryWithExtraDataRemoved.Decode(rr)
+	exists, err = DeSoEncoderFromBytes(messageEntryWithExtraDataRemoved, rr)
+	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
-	messageEntryWithExtraDataRemovedBytes := messageEntryWithExtraDataRemoved.Encode()
+	messageEntryWithExtraDataRemovedBytes := DeSoEncoderToBytes(0, messageEntryWithExtraDataRemoved)
 
 	// This should be effectively equivalent to the original message entry above without extra data
 	require.True(t, reflect.DeepEqual(messageEntryWithExtraDataRemoved, decodedMessageEntryWithExtraData))
@@ -111,25 +116,27 @@ func TestMessageEntryDecoding(t *testing.T) {
 func TestMessagingGroupEntryDecoding(t *testing.T) {
 	// Create a messaging group entry
 
-	messagingGroupEntry := MessagingGroupEntry{
+	messagingGroupEntry := &MessagingGroupEntry{
 		GroupOwnerPublicKey:   NewPublicKey(m0PkBytes),
 		MessagingPublicKey:    NewPublicKey(m0PkBytes),
 		MessagingGroupKeyName: BaseGroupKeyName(),
 	}
 
-	encodedWithExtraData := messagingGroupEntry.Encode()
+	encodedWithExtraData := DeSoEncoderToBytes(0, messagingGroupEntry)
 
 	// We know the last byte is a 0 representing the length of the extra data, so chop that off
 	missingExtraDataEncoding := encodedWithExtraData[:len(encodedWithExtraData)-1]
 
-	decodedMessagingGroupEntryMissingExtraData := MessagingGroupEntry{}
+	decodedMessagingGroupEntryMissingExtraData := &MessagingGroupEntry{}
 	rr := bytes.NewReader(missingExtraDataEncoding)
-	err := decodedMessagingGroupEntryMissingExtraData.Decode(rr)
+	exists, err := DeSoEncoderFromBytes(decodedMessagingGroupEntryMissingExtraData, rr)
+	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
-	decodedMessagingGroupEntryWithExtraData := MessagingGroupEntry{}
+	decodedMessagingGroupEntryWithExtraData := &MessagingGroupEntry{}
 	rr = bytes.NewReader(encodedWithExtraData)
-	err = decodedMessagingGroupEntryWithExtraData.Decode(rr)
+	exists, err = DeSoEncoderFromBytes(decodedMessagingGroupEntryWithExtraData, rr)
+	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
 	// The message decoded without extra data should
@@ -137,7 +144,7 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 	require.True(t, reflect.DeepEqual(decodedMessagingGroupEntryMissingExtraData, messagingGroupEntry))
 
 	// Now encode them again and prove they're the same
-	require.True(t, bytes.Equal(encodedWithExtraData, decodedMessagingGroupEntryMissingExtraData.Encode()))
+	require.True(t, bytes.Equal(encodedWithExtraData, DeSoEncoderToBytes(0, decodedMessagingGroupEntryMissingExtraData)))
 
 	// Okay now let's set the extra data on the message entry
 	messagingGroupEntry.ExtraData = map[string][]byte{
@@ -146,16 +153,17 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 
 	encodedExtraData := EncodeExtraData(messagingGroupEntry.ExtraData)
 
-	encodedIncludingExtraData := messagingGroupEntry.Encode()
+	encodedIncludingExtraData := DeSoEncoderToBytes(0, messagingGroupEntry)
 
 	extraDataBytesRemoved := encodedIncludingExtraData[:len(encodedIncludingExtraData)-len(encodedExtraData)]
 
-	messagingGroupEntryWithExtraDataRemoved := MessagingGroupEntry{}
+	messagingGroupEntryWithExtraDataRemoved := &MessagingGroupEntry{}
 	rr = bytes.NewReader(extraDataBytesRemoved)
-	err = messagingGroupEntryWithExtraDataRemoved.Decode(rr)
+	exists, err = DeSoEncoderFromBytes(messagingGroupEntryWithExtraDataRemoved, rr)
+	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
-	messagingGroupEntryWithExtraDataRemovedBytes := messagingGroupEntryWithExtraDataRemoved.Encode()
+	messagingGroupEntryWithExtraDataRemovedBytes := DeSoEncoderToBytes(0, messagingGroupEntryWithExtraDataRemoved)
 
 	// This should be effectively equivalent to the original message entry above without extra data
 	require.True(t, reflect.DeepEqual(messagingGroupEntryWithExtraDataRemoved, decodedMessagingGroupEntryWithExtraData))
@@ -331,14 +339,14 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 		}
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, nil, utxoView)
 		for _, entry := range utxoEntries {
-			entryBytes := entry.Encode()
-			newEntry := UtxoEntry{}
+			entryBytes := DeSoEncoderToBytes(0, entry)
+			newEntry := &UtxoEntry{}
 			rr := bytes.NewReader(entryBytes)
-			newEntry.Decode(rr)
+			DeSoEncoderFromBytes(newEntry, rr)
 			require.Equal(reflect.DeepEqual(entry.String(), newEntry.String()), true)
 		}
 
 		// Flushing the UtxoView should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 }

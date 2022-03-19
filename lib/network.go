@@ -2330,7 +2330,7 @@ func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
 	// Encode the snapshot metadata.
-	data = append(data, msg.SnapshotMetadata.Encode()...)
+	data = append(data, msg.SnapshotMetadata.ToBytes()...)
 
 	// Encode the snapshot chunk data.
 	if len(msg.SnapshotChunk) == 0 {
@@ -2338,7 +2338,7 @@ func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
 	}
 	data = append(data, UintToBuf(uint64(len(msg.SnapshotChunk)))...)
 	for _, vv := range msg.SnapshotChunk {
-		data = append(data, vv.Encode()...)
+		data = append(data, vv.ToBytes()...)
 	}
 	data = append(data, BoolToByte(msg.SnapshotChunkFull))
 	data = append(data, UintToBuf(uint64(len(msg.Prefix)))...)
@@ -2354,8 +2354,7 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 
 	// Decode snapshot metadata.
 	msg.SnapshotMetadata = &SnapshotEpochMetadata{}
-	err = msg.SnapshotMetadata.Decode(rr)
-	if err != nil {
+	if err := msg.SnapshotMetadata.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding snapshot metadata")
 	}
 	// Decode snapshot keys
@@ -2365,8 +2364,7 @@ func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
 	}
 	for ; dataLen > 0; dataLen-- {
 		dbEntry := &DBEntry{}
-		err = dbEntry.Decode(rr)
-		if err != nil {
+		if err := dbEntry.FromBytes(rr); err != nil {
 			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunk")
 		}
 		msg.SnapshotChunk = append(msg.SnapshotChunk, dbEntry)
@@ -2413,14 +2411,14 @@ func (utxoKey *UtxoKey) String() string {
 	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
 }
 
-func (utxoKey *UtxoKey) Encode() []byte {
+func (utxoKey *UtxoKey) Encode(blockHeight uint64) []byte {
 	var data []byte
 	data = append(data, utxoKey.TxID.ToBytes()...)
 	data = append(data, UintToBuf(uint64(utxoKey.Index))...)
 	return data
 }
 
-func (utxoKey *UtxoKey) Decode(rr *bytes.Reader) error {
+func (utxoKey *UtxoKey) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	// Read TxIndex
 	txIdBytes := make([]byte, HashSizeBytes)
 	_, err := io.ReadFull(rr, txIdBytes)
@@ -2478,7 +2476,7 @@ func (desoOutput *DeSoOutput) String() string {
 		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
 }
 
-func (desoOutput *DeSoOutput) Encode() []byte {
+func (desoOutput *DeSoOutput) Encode(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(desoOutput.PublicKey)...)
@@ -2487,7 +2485,7 @@ func (desoOutput *DeSoOutput) Encode() []byte {
 	return data
 }
 
-func (desoOutput *DeSoOutput) Decode(rr *bytes.Reader) error {
+func (desoOutput *DeSoOutput) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	desoOutput.PublicKey, err = DecodeByteArray(rr)
@@ -4759,10 +4757,6 @@ type TransactionSpendingLimit struct {
 func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 	data := []byte{}
 
-	if tsl == nil {
-		return data, nil
-	}
-
 	// GlobalDESOLimit
 	data = append(data, UintToBuf(tsl.GlobalDESOLimit)...)
 
@@ -5720,7 +5714,7 @@ func (txnData *MessagingGroupMetadata) ToBytes(preSignature bool) ([]byte, error
 
 	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupMembers)))...)
 	for _, recipient := range txnData.MessagingGroupMembers {
-		data = append(data, recipient.Encode()...)
+		data = append(data, recipient.ToBytes()...)
 	}
 
 	return data, nil
@@ -5751,13 +5745,12 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 	numRecipients, err := ReadUvarint(rr)
 	for ; numRecipients > 0; numRecipients-- {
-		recipient := MessagingGroupMember{}
-		err = recipient.Decode(rr)
-		if err != nil {
+		recipient := &MessagingGroupMember{}
+		if err := recipient.FromBytes(rr); err != nil {
 			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
-		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)
+		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, recipient)
 	}
 
 	*txnData = ret

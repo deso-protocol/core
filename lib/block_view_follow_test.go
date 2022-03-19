@@ -60,7 +60,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeFollow, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -563,7 +563,7 @@ func TestFollowTxns(t *testing.T) {
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -648,7 +648,7 @@ func TestFollowTxns(t *testing.T) {
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 	testConnectedState()
 
 	// Disconnect the transactions from a single view in the same way as above
@@ -665,7 +665,7 @@ func TestFollowTxns(t *testing.T) {
 		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 	require.Equal(expectedRecipientBalances[0], _getBalance(t, chain, nil, recipientPkString))
 
@@ -709,10 +709,10 @@ func TestFollowTxns(t *testing.T) {
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	testDisconnectedState()

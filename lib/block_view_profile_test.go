@@ -84,7 +84,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -163,7 +163,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -1057,7 +1057,7 @@ func TestUpdateProfile(t *testing.T) {
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -1095,7 +1095,7 @@ func TestUpdateProfile(t *testing.T) {
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	// Verify the profiles exist.
 	checkProfilesExist()
@@ -1114,7 +1114,7 @@ func TestUpdateProfile(t *testing.T) {
 		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 
 	// Verify that all the profiles have been deleted.
@@ -1142,10 +1142,10 @@ func TestUpdateProfile(t *testing.T) {
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// Verify that all the profiles have been deleted.

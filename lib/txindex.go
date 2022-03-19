@@ -88,7 +88,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				})
 				totalOutput += seedBal.AmountNanos
 			}
-			err := DbPutTxindexTransactionMappings(txIndexDb, snapshot, dummyTxn, params, &TransactionMetadata{
+			err := DbPutTxindexTransactionMappings(txIndexDb, snapshot, 0, dummyTxn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: dummyPk,
 				AffectedPublicKeys:             affectedPublicKeys,
 				BlockHashHex:                   GenesisBlockHashHex,
@@ -115,7 +115,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 			if err := txn.FromBytes(txnBytes); err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
 			}
-			err = DbPutTxindexTransactionMappings(txIndexDb, snapshot, txn, params, &TransactionMetadata{
+			err = DbPutTxindexTransactionMappings(txIndexDb, snapshot, 0, txn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: PkToString(txn.PublicKey, params),
 				// Note that we don't set AffectedPublicKeys for the SeedTxns
 				BlockHashHex:    GenesisBlockHashHex,
@@ -315,10 +315,11 @@ func (txi *TXIndex) Update() error {
 		if txi.TXIndexChain.snapshot != nil {
 			txi.TXIndexChain.snapshot.PrepareAncestralRecordsFlush()
 		}
+		blockHeight := uint64(txi.CoreChain.blockTip().Height)
 		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 			for _, txn := range blockMsg.Txns {
-				if err := DbDeleteTxindexTransactionMappingsWithTxn(dbTxn,
-					txi.TXIndexChain.snapshot, txn, txi.Params); err != nil {
+				if err := DbDeleteTxindexTransactionMappingsWithTxn(dbTxn, txi.TXIndexChain.snapshot,
+					blockHeight, txn, txi.Params); err != nil {
 
 					return fmt.Errorf("Update: Problem deleting "+
 						"transaction mappings for transaction %v: %v", txn.Hash(), err)
@@ -354,11 +355,11 @@ func (txi *TXIndex) Update() error {
 				"Update: Error computing tx hashes for block %v: %v",
 				blockToDetach, err)
 		}
-		if err := utxoView.DisconnectBlock(blockMsg, txHashes, utxoOps); err != nil {
+		if err := utxoView.DisconnectBlock(blockMsg, txHashes, utxoOps, blockHeight); err != nil {
 			return fmt.Errorf("Update: Error detaching block "+
 				"%v from UtxoView: %v", blockToDetach, err)
 		}
-		if err := utxoView.FlushToDb(); err != nil {
+		if err := utxoView.FlushToDb(blockHeight); err != nil {
 			return fmt.Errorf("Update: Error flushing view to db for block "+
 				"%v: %v", blockToDetach, err)
 		}
@@ -430,6 +431,7 @@ func (txi *TXIndex) Update() error {
 
 		// Do each block update in a single transaction so we're safe in case the node
 		// restarts.
+		blockHeight := uint64(txi.CoreChain.BlockTip().Height)
 		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 
 			if txi.TXIndexChain.snapshot != nil {
@@ -447,7 +449,8 @@ func (txi *TXIndex) Update() error {
 						txn, err)
 				}
 
-				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, txi.TXIndexChain.snapshot, txn, txi.Params, txnMeta)
+				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, txi.TXIndexChain.snapshot, blockHeight,
+					txn, txi.Params, txnMeta)
 				if err != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
 						txn, err)

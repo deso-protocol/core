@@ -565,7 +565,7 @@ func _helpTestCreatorCoinBuySell(
 		require.NoError(utxoView.DisconnectTransaction(
 			currentTxn, currentTxn.Hash(), currentUtxoOps, blockHeight))
 		fmt.Printf("Disconnected test index: %v\n", testIndex)
-		require.NoErrorf(utxoView.FlushToDb(), "SimpleDisconnect: Index: %v", testIndex)
+		require.NoErrorf(utxoView.FlushToDb(0), "SimpleDisconnect: Index: %v", testIndex)
 	}
 
 	// Verify the DeSo balances are back to where they started after disconnecting all the txns.
@@ -602,7 +602,7 @@ func _helpTestCreatorCoinBuySell(
 		}
 
 		// Now flush at the end.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// Check that the state matches the final testData.
 		testIndex := len(creatorCoinTests) - 1
@@ -631,7 +631,7 @@ func _helpTestCreatorCoinBuySell(
 		}
 
 		// Now flush at the end.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// Verify the DeSo balances are back to where they started after disconnecting all the txns.
 		assert.Equalf(int64(m0StartNanos),
@@ -762,7 +762,7 @@ func _helpTestCreatorCoinBuySell(
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(blockToDisconnect.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps, 0))
 	}
 	{
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
@@ -772,7 +772,7 @@ func _helpTestCreatorCoinBuySell(
 		disconnectSingleBlock(finalBlock1, utxoView)
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The DeSo balances should line up with what they were initially after
@@ -4091,7 +4091,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -4183,7 +4183,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 	}
 	require.Equal(OperationTypeCreatorCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -4251,7 +4251,7 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeCreatorCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }

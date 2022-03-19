@@ -832,7 +832,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				srv.blockchain.snapshot.Checksum.Initialize()
 
 				// Start a timer for hyper sync. This keeps track of how long hyper sync takes in total.
-				srv.timer.Start("Hypersync")
+				srv.timer.Start("HyperSync")
 
 				// Now proceed to start fetching snapshot data from the peer.
 				srv.GetSnapshot(pp)

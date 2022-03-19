@@ -104,7 +104,7 @@ func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB
 	}
 	require.Equal(OperationTypePrivateMessage, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -396,7 +396,7 @@ func TestPrivateMessage(t *testing.T) {
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -465,7 +465,7 @@ func TestPrivateMessage(t *testing.T) {
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
@@ -481,7 +481,7 @@ func TestPrivateMessage(t *testing.T) {
 		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 	require.Equal(expectedRecipientBalances[0], _getBalance(t, chain, nil, recipientPkString))
 
@@ -565,10 +565,10 @@ func TestPrivateMessage(t *testing.T) {
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// Verify that all the messages have been deleted.
@@ -658,7 +658,7 @@ func _messagingKeyWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, 
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
 	require.Equal(OperationTypeMessagingKey, utxoOps[len(utxoOps)-1].Type)
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 	return utxoOps, txn, err
 }
 
@@ -710,7 +710,7 @@ func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *Messag
 		return false
 	}
 
-	return reflect.DeepEqual(utxoMessagingEntry.Encode(), entry.Encode())
+	return reflect.DeepEqual(DeSoEncoderToBytes(0, utxoMessagingEntry), DeSoEncoderToBytes(0, entry))
 }
 
 // _verifyAddedMessagingKeys is used to verify that messaging key entries in db match the expected entries.
@@ -729,7 +729,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 			expectedEntry.MessagingGroupMembers = sortMessagingGroupMembers(expectedEntry.MessagingGroupMembers)
 			ok := false
 			for _, entry := range entries {
-				if reflect.DeepEqual(expectedEntry.Encode(), entry.Encode()) {
+				if reflect.DeepEqual(DeSoEncoderToBytes(0, expectedEntry), DeSoEncoderToBytes(0, entry)) {
 					ok = true
 					break
 				}
@@ -1363,9 +1363,11 @@ func TestMessagingKeys(t *testing.T) {
 
 		// m1PubKey tries to add himself to the group, this will fail because only sender can add
 		// new members.
-		var entryCopy MessagingGroupEntry
-		rr := bytes.NewReader(entry.Encode())
-		require.NoError(entryCopy.Decode(rr))
+		entryCopy := &MessagingGroupEntry{}
+		rr := bytes.NewReader(DeSoEncoderToBytes(0, entry))
+		exists, err := DeSoEncoderFromBytes(entryCopy, rr)
+		require.Equal(true, exists)
+		require.NoError(err)
 		entryCopy.MessagingGroupMembers[0] = &MessagingGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
@@ -1383,9 +1385,11 @@ func TestMessagingKeys(t *testing.T) {
 			RuleErrorInvalidTransactionSignature)
 
 		// Sender adds m1PubKey to the group chat, this time we will succeed.
-		var workingCopy MessagingGroupEntry
-		rr = bytes.NewReader(entry.Encode())
-		require.NoError(workingCopy.Decode(rr))
+		workingCopy := &MessagingGroupEntry{}
+		rr = bytes.NewReader(DeSoEncoderToBytes(0, entry))
+		exists, err = DeSoEncoderFromBytes(workingCopy, rr)
+		require.Equal(true, exists)
+		require.NoError(err)
 		workingCopy.MessagingGroupMembers[0] = &MessagingGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
@@ -1449,8 +1453,10 @@ func TestMessagingKeys(t *testing.T) {
 		_, groupPkBytes := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(groupKeyName)[:])
 		groupPk := NewPublicKey(groupPkBytes.SerializeCompressed())
 		expectedEntry := &MessagingGroupEntry{}
-		rr := bytes.NewReader(entry.Encode())
-		require.NoError(expectedEntry.Decode(rr))
+		rr := bytes.NewReader(DeSoEncoderToBytes(0, entry))
+		exists, err := DeSoEncoderFromBytes(expectedEntry, rr)
+		require.Equal(true, exists)
+		require.NoError(err)
 		expectedEntry.MessagingPublicKey = groupPk
 		expectedEntry.GroupOwnerPublicKey = basePk
 		// Should pass.
@@ -1473,8 +1479,10 @@ func TestMessagingKeys(t *testing.T) {
 			nil)
 		// Verify that the entry exists in the DB.
 		expectedEntry = &MessagingGroupEntry{}
-		rr = bytes.NewReader(entry.Encode())
-		require.NoError(expectedEntry.Decode(rr))
+		rr = bytes.NewReader(DeSoEncoderToBytes(0, entry))
+		exists, err = DeSoEncoderFromBytes(expectedEntry, rr)
+		require.Equal(true, exists)
+		require.NoError(err)
 		expectedEntry.MessagingPublicKey = groupPk
 		expectedEntry.GroupOwnerPublicKey = basePk
 		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
@@ -1677,7 +1685,7 @@ func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBy
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
 	require.Equal(OperationTypePrivateMessage, utxoOps[len(utxoOps)-1].Type)
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, balance)
@@ -1714,10 +1722,10 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	if messageEntryRecipient == nil || messageEntryRecipient.isDeleted {
 		return false
 	}
-	if !reflect.DeepEqual(messageEntrySender.Encode(), messageEntryRecipient.Encode()) {
+	if !reflect.DeepEqual(DeSoEncoderToBytes(0, messageEntrySender), DeSoEncoderToBytes(0, messageEntryRecipient)) {
 		return false
 	}
-	if !reflect.DeepEqual(messageEntrySender.Encode(), expectedEntry.Encode()) {
+	if !reflect.DeepEqual(DeSoEncoderToBytes(0, messageEntrySender), DeSoEncoderToBytes(0, &expectedEntry)) {
 		return false
 	}
 	addedEntries := make(map[PublicKey]bool)
@@ -1766,7 +1774,8 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 		for _, messageEntry := range messageEntries {
 			ok := false
 			for _, dbMessageEntry := range dbMessageEntries {
-				if reflect.DeepEqual(messageEntry.Encode(), dbMessageEntry.Encode()) {
+				if reflect.DeepEqual(DeSoEncoderToBytes(0, &messageEntry),
+					DeSoEncoderToBytes(0, dbMessageEntry)) {
 					ok = true
 					break
 				}

@@ -66,7 +66,7 @@ func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeDAOCoin, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -142,7 +142,7 @@ func _daoCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeDAOCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }

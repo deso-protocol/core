@@ -1696,6 +1696,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
+	blockHeight := uint64(bc.BlockTip().Height + 1)
+
 	bc.timer.Start("Blockchain.ProcessBlock: Initial")
 	if desoBlock == nil {
 		return false, false, fmt.Errorf("ProcessBlock: Block is nil")
@@ -2007,7 +2009,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		//}
 
 		// Preload the view with almost all of the data it will need to connect the block
-		err := bc.blockView.Preload(desoBlock)
+		err := bc.blockView.Preload(desoBlock, blockHeight)
 		if err != nil {
 			glog.Errorf("ProcessBlock: Problem preloading the view: %v", err)
 		}
@@ -2023,7 +2025,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// FIXME: Do we need this?
 		bc.blocksInView += 1
 
-		utxoOpsForBlock, err := bc.blockView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
+		utxoOpsForBlock, err := bc.blockView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil, blockHeight)
 		if err != nil {
 			if IsRuleError(err) {
 				// If we have a RuleError, mark the block as invalid before
@@ -2054,7 +2056,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// Write the modified utxo set to the view.
 			// FIXME: This codepath breaks the balance computation in handleBlock for Rosetta
 			// because it clears the UtxoView before balances can be snapshotted.
-			if err := bc.blockView.FlushToDb(); err != nil {
+			if err := bc.blockView.FlushToDb(blockHeight); err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem flushing view to db")
 			}
 		} else {
@@ -2077,7 +2079,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 				// Write the modified utxo set to the view.
 				if bc.blocksInView%MaxBlocksInView == 0 {
-					if err := bc.blockView.FlushToDbWithTxn(txn); err != nil {
+					if err := bc.blockView.FlushToDbWithTxn(txn, blockHeight); err != nil {
 						return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 					}
 				}
@@ -2089,7 +2091,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				if bc.snapshot != nil {
 					bc.snapshot.PrepareAncestralRecordsFlush()
 				}
-				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHash, utxoOpsForBlock); err != nil {
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 				if bc.snapshot != nil {
@@ -2239,7 +2241,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Now roll the block back in the view.
-			if err := utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps); err != nil {
+			if err := utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps, blockHeight); err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem rolling back "+
 					"block (%v) during detachment in reorg", nodeToDetach)
 			}
@@ -2298,7 +2300,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Initialize the utxo operations slice.
 			utxoOps, err := utxoView.ConnectBlock(
-				blockToAttach, txHashes, verifySignatures, nil)
+				blockToAttach, txHashes, verifySignatures, nil, blockHeight)
 			if err != nil {
 				if IsRuleError(err) {
 					// If we have a RuleError, mark the block as invalid. But don't return
@@ -2372,7 +2374,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			for ii, attachNode := range attachBlocks {
 				// Add the utxo operations for the blocks we're attaching so we can roll them back
 				// in the future if necessary.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem putting utxo operations for block")
 				}
 			}
@@ -2382,7 +2384,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Write the modified utxo set to the view.
-			if err := utxoView.FlushToDbWithTxn(txn); err != nil {
+			if err := utxoView.FlushToDbWithTxn(txn, blockHeight); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem flushing to db")
 			}
 
@@ -3863,7 +3865,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 
 	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		if err := _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey, derivedPublicKey,
-			expirationBlock, transactionSpendingLimit, accessSignature); err != nil {
+			expirationBlock, transactionSpendingLimit, accessSignature, uint64(blockHeight)); err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature with transaction"+
 					" spending limit")
@@ -4362,6 +4364,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// Get the block at the tip of our block chain.
 	tipNode := bc.blockTip()
+	blockHeight := uint64(tipNode.Height + 1)
 	blk, err := GetBlock(tipNode.Hash, bc.db, bc.snapshot)
 	if err != nil {
 		return minFeeRateNanosPerKB
@@ -4392,7 +4395,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}
-	if err := utxoView.DisconnectBlock(blk, txHashes, utxoOps); err != nil {
+	if err := utxoView.DisconnectBlock(blk, txHashes, utxoOps, blockHeight); err != nil {
 		return minFeeRateNanosPerKB
 	}
 
