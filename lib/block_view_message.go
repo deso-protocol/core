@@ -693,8 +693,8 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	}
 
 	// Make sure the sender and recipient entries are identical by comparing their byte encodings.
-	if !reflect.DeepEqual(DeSoEncoderToBytes(uint64(blockHeight), recipientMessageEntry),
-		DeSoEncoderToBytes(uint64(blockHeight), senderMessageEntry)) {
+	if !reflect.DeepEqual(EncodeToBytes(uint64(blockHeight), recipientMessageEntry),
+		EncodeToBytes(uint64(blockHeight), senderMessageEntry)) {
 		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
 			"sender (%v) doesn't matche the entry for the recipient (%v)",
 			senderMessageEntry, recipientMessageEntry)
@@ -940,8 +940,8 @@ func (bav *UtxoView) _connectMessagingGroup(
 	var prevMessagingKeyEntry *MessagingGroupEntry
 	if existingEntry != nil && !existingEntry.isDeleted {
 		prevMessagingKeyEntry = &MessagingGroupEntry{}
-		rr := bytes.NewReader(DeSoEncoderToBytes(uint64(blockHeight), existingEntry))
-		if exists, err := DeSoEncoderFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
+		rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+		if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
 			return 0, 0, nil, errors.Wrapf(err,
 				"_connectMessagingGroup: Error decoding previous entry")
 		}

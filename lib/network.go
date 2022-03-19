@@ -2411,14 +2411,14 @@ func (utxoKey *UtxoKey) String() string {
 	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
 }
 
-func (utxoKey *UtxoKey) Encode(blockHeight uint64) []byte {
+func (utxoKey *UtxoKey) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 	data = append(data, utxoKey.TxID.ToBytes()...)
 	data = append(data, UintToBuf(uint64(utxoKey.Index))...)
 	return data
 }
 
-func (utxoKey *UtxoKey) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (utxoKey *UtxoKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// Read TxIndex
 	txIdBytes := make([]byte, HashSizeBytes)
 	_, err := io.ReadFull(rr, txIdBytes)
@@ -2476,7 +2476,7 @@ func (desoOutput *DeSoOutput) String() string {
 		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
 }
 
-func (desoOutput *DeSoOutput) Encode(blockHeight uint64) []byte {
+func (desoOutput *DeSoOutput) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(desoOutput.PublicKey)...)
@@ -2485,7 +2485,7 @@ func (desoOutput *DeSoOutput) Encode(blockHeight uint64) []byte {
 	return data
 }
 
-func (desoOutput *DeSoOutput) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (desoOutput *DeSoOutput) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	desoOutput.PublicKey, err = DecodeByteArray(rr)

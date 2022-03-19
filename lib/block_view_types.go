@@ -64,19 +64,19 @@ func (mm UtxoType) String() string {
 
 // DeSoEncoder represents types that implement custom to/from bytes encoding.
 type DeSoEncoder interface {
-	Encode(blockHeight uint64) []byte
-	Decode(blockHeight uint64, rr *bytes.Reader) error
+	RawEncodeWithoutMetadata(blockHeight uint64) []byte
+	RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error
 }
 
-// DeSoEncoderToBytes encodes a DeSoEncoder type to bytes, including
+// EncodeToBytes encodes a DeSoEncoder type to bytes, including
 // existence bytes. This byte is used to check if the pointer was nil.
-func DeSoEncoderToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
+func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 	var data []byte
 
 	if encoder != nil && !reflect.ValueOf(encoder).IsNil() {
 		data = append(data, BoolToByte(true))
 		data = append(data, UintToBuf(blockHeight)...)
-		data = append(data, encoder.Encode(blockHeight)...)
+		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight)...)
 	} else {
 		data = append(data, BoolToByte(false))
 	}
@@ -84,21 +84,21 @@ func DeSoEncoderToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 	return data
 }
 
-// DeSoEncoderFromBytes decodes a DeSoEncoder type from bytes. We check
+// DecodeFromBytes decodes a DeSoEncoder type from bytes. We check
 // for the existence byte, which tells us whether actual data was encoded, or a nil pointer.
-func DeSoEncoderFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (bool, error) {
+func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (bool, error) {
 	if existByte, err := ReadBoolByte(rr); existByte && err == nil {
 		blockHeight, err := ReadUvarint(rr)
 		if err != nil {
-			return false, errors.Wrapf(err, "DeSoEncoderFromBytes: Problem decoding block height")
+			return false, errors.Wrapf(err, "DecodeFromBytes: Problem decoding block height")
 		}
-		err = encoder.Decode(blockHeight, rr)
+		err = encoder.RawDecodeWithoutMetadata(blockHeight, rr)
 		if err != nil {
-			return false, errors.Wrapf(err, "DeSoEncoderFromBytes: Problem reading encoder")
+			return false, errors.Wrapf(err, "DecodeFromBytes: Problem reading encoder")
 		}
 		return true, nil
 	} else if err != nil {
-		return false, errors.Wrapf(err, "DeSoEncoderFromBytes: Problem reading existence byte")
+		return false, errors.Wrapf(err, "DecodeFromBytes: Problem reading existence byte")
 	}
 	return false, nil
 }
@@ -137,19 +137,19 @@ func (utxoEntry *UtxoEntry) String() string {
 		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
 }
 
-func (utxo *UtxoEntry) Encode(blockHeight uint64) []byte {
+func (utxo *UtxoEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(utxo.AmountNanos)...)
 	data = append(data, EncodeByteArray(utxo.PublicKey)...)
 	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
 	data = append(data, byte(utxo.UtxoType))
-	data = append(data, DeSoEncoderToBytes(blockHeight, utxo.UtxoKey)...)
+	data = append(data, EncodeToBytes(blockHeight, utxo.UtxoKey)...)
 
 	return data
 }
 
-func (utxo *UtxoEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (utxo *UtxoEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	utxo.AmountNanos, err = ReadUvarint(rr)
@@ -174,7 +174,7 @@ func (utxo *UtxoEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	utxo.UtxoType = UtxoType(utxoType)
 
 	utxoKey := &UtxoKey{}
-	if exist, err := DeSoEncoderFromBytes(utxoKey, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(utxoKey, rr); exist && err == nil {
 		utxo.UtxoKey = utxoKey
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading UtxoKey")
@@ -466,64 +466,64 @@ type UtxoOperation struct {
 	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 }
 
-func (op *UtxoOperation) Encode(blockHeight uint64) []byte {
+func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 	data = append(data, UintToBuf(uint64(op.Type))...)
 
 	// The op.Entry encoding will be prefixed by a single-byte flag that tells us if it existed.
 	// If the flag is set to 1 then the entry existed, otherwise the flag will be set to 0.
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.Entry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.Key)...)
+	data = append(data, EncodeToBytes(blockHeight, op.Entry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.Key)...)
 
 	data = append(data, UintToBuf(op.PrevNanosPurchased)...)
 	data = append(data, UintToBuf(op.PrevUSDCentsPerBitcoin)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevPostEntry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevParentPostEntry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevGrandparentPostEntry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevRepostedPostEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevPostEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevParentPostEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevGrandparentPostEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevRepostedPostEntry)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevProfileEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevProfileEntry)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevLikeEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevLikeEntry)...)
 	data = append(data, UintToBuf(op.PrevLikeCount)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevDiamondEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevDiamondEntry)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevNFTEntry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevNFTBidEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevNFTEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevNFTBidEntry)...)
 
 	data = append(data, UintToBuf(uint64(len(op.DeletedNFTBidEntries)))...)
 	for _, bidEntry := range op.DeletedNFTBidEntries {
-		data = append(data, DeSoEncoderToBytes(blockHeight, bidEntry)...)
+		data = append(data, EncodeToBytes(blockHeight, bidEntry)...)
 	}
 	data = append(data, UintToBuf(uint64(len(op.NFTPaymentUtxoKeys)))...)
 	for _, utxoKey := range op.NFTPaymentUtxoKeys {
-		data = append(data, DeSoEncoderToBytes(blockHeight, utxoKey)...)
+		data = append(data, EncodeToBytes(blockHeight, utxoKey)...)
 	}
 	data = append(data, UintToBuf(uint64(len(op.NFTSpentUtxoEntries)))...)
 	for _, utxoEntry := range op.NFTSpentUtxoEntries {
-		data = append(data, DeSoEncoderToBytes(blockHeight, utxoEntry)...)
+		data = append(data, EncodeToBytes(blockHeight, utxoEntry)...)
 	}
 	// Similarly to op.Entry, we encode an existence flag for the PrevAcceptedNFTBidEntries.
 	if op.PrevAcceptedNFTBidEntries != nil {
 		data = append(data, BoolToByte(true))
 		data = append(data, UintToBuf(uint64(len(*op.PrevAcceptedNFTBidEntries)))...)
 		for _, bidEntry := range *op.PrevAcceptedNFTBidEntries {
-			data = append(data, DeSoEncoderToBytes(blockHeight, bidEntry)...)
+			data = append(data, EncodeToBytes(blockHeight, bidEntry)...)
 		}
 	} else {
 		data = append(data, BoolToByte(false))
 	}
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevDerivedKeyEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevDerivedKeyEntry)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevMessagingKeyEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevMessagingKeyEntry)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevRepostEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevRepostEntry)...)
 	data = append(data, UintToBuf(op.PrevRepostCount)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevCoinEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevCoinEntry)...)
 	// Encode the PrevCoinRoyaltyCoinEntries map. We define a helper struct to store the <PKID, CoinEntry>
 	// objects as byte arrays. For coin entry, we first encode the struct, and then encode it as byte array.
 	type royaltyEntry struct {
@@ -543,7 +543,7 @@ func (op *UtxoOperation) Encode(blockHeight uint64) []byte {
 		for pkid, coinEntry := range op.PrevCoinRoyaltyCoinEntries {
 			royaltyCoinEntries = append(royaltyCoinEntries, royaltyEntry{
 				pkid:      pkid.ToBytes(),
-				coinEntry: DeSoEncoderToBytes(blockHeight, &coinEntry),
+				coinEntry: EncodeToBytes(blockHeight, &coinEntry),
 			})
 		}
 		sort.Slice(royaltyCoinEntries, func(i int, j int) bool {
@@ -564,16 +564,16 @@ func (op *UtxoOperation) Encode(blockHeight uint64) []byte {
 		data = append(data, BoolToByte(false))
 	}
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevTransactorBalanceEntry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevCreatorBalanceEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorBalanceEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevCreatorBalanceEntry)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.FounderRewardUtxoKey)...)
+	data = append(data, EncodeToBytes(blockHeight, op.FounderRewardUtxoKey)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevSenderBalanceEntry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevReceiverBalanceEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevSenderBalanceEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverBalanceEntry)...)
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevGlobalParamsEntry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, op.PrevForbiddenPubKeyEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevGlobalParamsEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevForbiddenPubKeyEntry)...)
 
 	data = append(data, UintToBuf(op.ClobberedProfileBugDESOLockedNanos)...)
 	// Note that int64 is encoded identically to uint64, the sign bit is just interpreted differently.
@@ -589,11 +589,11 @@ func (op *UtxoOperation) Encode(blockHeight uint64) []byte {
 
 	data = append(data, UintToBuf(uint64(len(op.AcceptNFTBidAdditionalCoinRoyalties)))...)
 	for _, pair := range op.AcceptNFTBidAdditionalCoinRoyalties {
-		data = append(data, DeSoEncoderToBytes(blockHeight, pair)...)
+		data = append(data, EncodeToBytes(blockHeight, pair)...)
 	}
 	data = append(data, UintToBuf(uint64(len(op.AcceptNFTBidAdditionalDESORoyalties)))...)
 	for _, pair := range op.AcceptNFTBidAdditionalDESORoyalties {
-		data = append(data, DeSoEncoderToBytes(blockHeight, pair)...)
+		data = append(data, EncodeToBytes(blockHeight, pair)...)
 	}
 
 	data = append(data, EncodeByteArray(op.NFTBidCreatorPublicKey)...)
@@ -603,16 +603,16 @@ func (op *UtxoOperation) Encode(blockHeight uint64) []byte {
 
 	data = append(data, UintToBuf(uint64(len(op.NFTBidAdditionalCoinRoyalties)))...)
 	for _, pair := range op.NFTBidAdditionalCoinRoyalties {
-		data = append(data, DeSoEncoderToBytes(blockHeight, pair)...)
+		data = append(data, EncodeToBytes(blockHeight, pair)...)
 	}
 	data = append(data, UintToBuf(uint64(len(op.NFTBidAdditionalDESORoyalties)))...)
 	for _, pair := range op.NFTBidAdditionalDESORoyalties {
-		data = append(data, DeSoEncoderToBytes(blockHeight, pair)...)
+		data = append(data, EncodeToBytes(blockHeight, pair)...)
 	}
 	return data
 }
 
-func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	typeUint64, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading type")
@@ -620,14 +620,14 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	op.Type = OperationType(uint(typeUint64))
 
 	entry := &UtxoEntry{}
-	if exist, err := DeSoEncoderFromBytes(entry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(entry, rr); exist && err == nil {
 		op.Entry = entry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading Entry")
 	}
 
 	key := &UtxoKey{}
-	if exist, err := DeSoEncoderFromBytes(key, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(key, rr); exist && err == nil {
 		op.Key = key
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading Key")
@@ -643,42 +643,42 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 
 	prevPostEntry := &PostEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevPostEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevPostEntry, rr); exist && err == nil {
 		op.PrevPostEntry = prevPostEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostEntry")
 	}
 
 	prevParentPostEntry := &PostEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevParentPostEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevParentPostEntry, rr); exist && err == nil {
 		op.PrevParentPostEntry = prevParentPostEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevParentPostEntry")
 	}
 
 	prevGrandparentPostEntry := &PostEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevGrandparentPostEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevGrandparentPostEntry, rr); exist && err == nil {
 		op.PrevGrandparentPostEntry = prevGrandparentPostEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGrandparentPostEntry")
 	}
 
 	prevRepostedPostEntry := &PostEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevRepostedPostEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevRepostedPostEntry, rr); exist && err == nil {
 		op.PrevRepostedPostEntry = prevRepostedPostEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRepostedPostEntry")
 	}
 
 	prevProfileEntry := &ProfileEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevProfileEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevProfileEntry, rr); exist && err == nil {
 		op.PrevProfileEntry = prevProfileEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevProfileEntry")
 	}
 
 	prevLikeEntry := &LikeEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevLikeEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevLikeEntry, rr); exist && err == nil {
 		op.PrevLikeEntry = prevLikeEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLikeEntry")
@@ -690,21 +690,21 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 
 	prevDiamondEntry := &DiamondEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevDiamondEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevDiamondEntry, rr); exist && err == nil {
 		op.PrevDiamondEntry = prevDiamondEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDiamondEntry")
 	}
 
 	prevNFTEntry := &NFTEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevNFTEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevNFTEntry, rr); exist && err == nil {
 		op.PrevNFTEntry = prevNFTEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNFTEntry")
 	}
 
 	prevNFTBidEntry := &NFTBidEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevNFTBidEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevNFTBidEntry, rr); exist && err == nil {
 		op.PrevNFTBidEntry = prevNFTBidEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNFTBidEntry")
@@ -716,7 +716,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 	for ; lenDeletedNFTBidEntries > 0; lenDeletedNFTBidEntries-- {
 		deletedNFTBidEntry := &NFTBidEntry{}
-		if exist, err := DeSoEncoderFromBytes(deletedNFTBidEntry, rr); exist && err == nil {
+		if exist, err := DecodeFromBytes(deletedNFTBidEntry, rr); exist && err == nil {
 			op.DeletedNFTBidEntries = append(op.DeletedNFTBidEntries, deletedNFTBidEntry)
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading deletedNFTBidEntry")
@@ -729,7 +729,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 	for ; lenNFTPaymentUtxoKeys > 0; lenNFTPaymentUtxoKeys-- {
 		NFTPaymentUtxoKey := &UtxoKey{}
-		if exist, err := DeSoEncoderFromBytes(NFTPaymentUtxoKey, rr); exist && err == nil {
+		if exist, err := DecodeFromBytes(NFTPaymentUtxoKey, rr); exist && err == nil {
 			op.NFTPaymentUtxoKeys = append(op.NFTPaymentUtxoKeys, NFTPaymentUtxoKey)
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTPaymentUtxoKey")
@@ -742,7 +742,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 	for ; lenNFTSpentUtxoEntries > 0; lenNFTSpentUtxoEntries-- {
 		NFTSpentUtxoEntry := &UtxoEntry{}
-		if exist, err := DeSoEncoderFromBytes(NFTSpentUtxoEntry, rr); exist && err == nil {
+		if exist, err := DecodeFromBytes(NFTSpentUtxoEntry, rr); exist && err == nil {
 			op.NFTSpentUtxoEntries = append(op.NFTSpentUtxoEntries, NFTSpentUtxoEntry)
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTSpentUtxoEntry")
@@ -757,7 +757,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 		var prevAcceptedNFTBidEntries []*NFTBidEntry
 		for ; lenPrevAcceptedNFTBidEntries > 0; lenPrevAcceptedNFTBidEntries-- {
 			PrevAcceptedNFTBidEntry := &NFTBidEntry{}
-			if exist, err := DeSoEncoderFromBytes(PrevAcceptedNFTBidEntry, rr); exist && err == nil {
+			if exist, err := DecodeFromBytes(PrevAcceptedNFTBidEntry, rr); exist && err == nil {
 				prevAcceptedNFTBidEntries = append(prevAcceptedNFTBidEntries, PrevAcceptedNFTBidEntry)
 			} else if err != nil {
 				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAcceptedNFTBidEntry")
@@ -769,21 +769,21 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 
 	prevDerivedKeyEntry := &DerivedKeyEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevDerivedKeyEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevDerivedKeyEntry, rr); exist && err == nil {
 		op.PrevDerivedKeyEntry = prevDerivedKeyEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDerivedKeyEntry")
 	}
 
 	prevMessagingKeyEntry := &MessagingGroupEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevMessagingKeyEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevMessagingKeyEntry, rr); exist && err == nil {
 		op.PrevMessagingKeyEntry = prevMessagingKeyEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevMessagingKeyEntry")
 	}
 
 	prevRepostEntry := &RepostEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevRepostEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevRepostEntry, rr); exist && err == nil {
 		op.PrevRepostEntry = prevRepostEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRepostEntry")
@@ -795,7 +795,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 
 	prevCoinEntry := &CoinEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevCoinEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevCoinEntry, rr); exist && err == nil {
 		op.PrevCoinEntry = prevCoinEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCoinEntry")
@@ -833,7 +833,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 			// We've already read the byte array of encoded coinEntry bytes. Now decode them.
 			coinEntry := CoinEntry{}
 			coinEntryReader := bytes.NewReader(entry.coinEntry)
-			if exists, err := DeSoEncoderFromBytes(&coinEntry, coinEntryReader); !exists || err != nil {
+			if exists, err := DecodeFromBytes(&coinEntry, coinEntryReader); !exists || err != nil {
 				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCoinRoyaltyCoinEntries")
 			}
 			op.PrevCoinRoyaltyCoinEntries[*NewPKID(entry.pkid)] = coinEntry
@@ -843,47 +843,47 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 
 	prevTransactorBalanceEntry := &BalanceEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevTransactorBalanceEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevTransactorBalanceEntry, rr); exist && err == nil {
 		op.PrevTransactorBalanceEntry = prevTransactorBalanceEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorBalanceEntry")
 	}
 
 	prevCreatorBalanceEntry := &BalanceEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevCreatorBalanceEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevCreatorBalanceEntry, rr); exist && err == nil {
 		op.PrevCreatorBalanceEntry = prevCreatorBalanceEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCreatorBalanceEntry")
 	}
 
 	founderRewardUtxoKey := &UtxoKey{}
-	if exist, err := DeSoEncoderFromBytes(founderRewardUtxoKey, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(founderRewardUtxoKey, rr); exist && err == nil {
 		op.FounderRewardUtxoKey = founderRewardUtxoKey
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FounderRewardUtxoKey")
 	}
 
 	prevSenderBalanceEntry := &BalanceEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevSenderBalanceEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevSenderBalanceEntry, rr); exist && err == nil {
 		op.PrevSenderBalanceEntry = prevSenderBalanceEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevSenderBalanceEntry")
 	}
 	prevReceiverBalanceEntry := &BalanceEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevReceiverBalanceEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevReceiverBalanceEntry, rr); exist && err == nil {
 		op.PrevReceiverBalanceEntry = prevReceiverBalanceEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevReceiverBalanceEntry")
 	}
 
 	prevGlobalParamsEntry := &GlobalParamsEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevGlobalParamsEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevGlobalParamsEntry, rr); exist && err == nil {
 		op.PrevGlobalParamsEntry = prevGlobalParamsEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalParamsEntry")
 	}
 	prevForbiddenPubKeyEntry := &ForbiddenPubKeyEntry{}
-	if exist, err := DeSoEncoderFromBytes(prevForbiddenPubKeyEntry, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(prevForbiddenPubKeyEntry, rr); exist && err == nil {
 		op.PrevForbiddenPubKeyEntry = prevForbiddenPubKeyEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevForbiddenPubKeyEntry")
@@ -929,7 +929,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 	for ; lenAcceptNFTBidAdditionalCoinRoyalties > 0; lenAcceptNFTBidAdditionalCoinRoyalties-- {
 		pair := &PublicKeyRoyaltyPair{}
-		if exist, err := DeSoEncoderFromBytes(pair, rr); exist && err == nil {
+		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
 			op.AcceptNFTBidAdditionalCoinRoyalties = append(op.AcceptNFTBidAdditionalCoinRoyalties, pair)
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalCoinRoyalties")
@@ -942,7 +942,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 	for ; lenAcceptNFTBidAdditionalDESORoyalties > 0; lenAcceptNFTBidAdditionalDESORoyalties-- {
 		pair := &PublicKeyRoyaltyPair{}
-		if exist, err := DeSoEncoderFromBytes(pair, rr); exist && err == nil {
+		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
 			op.AcceptNFTBidAdditionalDESORoyalties = append(op.AcceptNFTBidAdditionalDESORoyalties, pair)
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalDESORoyalties")
@@ -972,7 +972,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 	for ; lenNFTBidAdditionalCoinRoyalties > 0; lenNFTBidAdditionalCoinRoyalties-- {
 		pair := &PublicKeyRoyaltyPair{}
-		if exist, err := DeSoEncoderFromBytes(pair, rr); exist && err == nil {
+		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
 			op.NFTBidAdditionalCoinRoyalties = append(op.NFTBidAdditionalCoinRoyalties, pair)
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalCoinRoyalties")
@@ -986,7 +986,7 @@ func (op *UtxoOperation) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 	for ; lenNFTBidAdditionalDESORoyalties > 0; lenNFTBidAdditionalDESORoyalties-- {
 		pair := &PublicKeyRoyaltyPair{}
-		if exist, err := DeSoEncoderFromBytes(pair, rr); exist && err == nil {
+		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
 			op.NFTBidAdditionalDESORoyalties = append(op.NFTBidAdditionalDESORoyalties, pair)
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalDESORoyalties")
@@ -1089,34 +1089,34 @@ type MessageEntry struct {
 	ExtraData map[string][]byte
 }
 
-func (message *MessageEntry) Encode(blockHeight uint64) []byte {
+func (message *MessageEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, message.SenderPublicKey)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, message.RecipientPublicKey)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderPublicKey)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientPublicKey)...)
 	data = append(data, EncodeByteArray(message.EncryptedText)...)
 	data = append(data, UintToBuf(message.TstampNanos)...)
 	data = append(data, UintToBuf(uint64(message.Version))...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, message.SenderMessagingPublicKey)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, message.SenderMessagingGroupKeyName)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, message.RecipientMessagingPublicKey)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, message.RecipientMessagingGroupKeyName)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderMessagingPublicKey)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderMessagingGroupKeyName)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientMessagingPublicKey)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientMessagingGroupKeyName)...)
 	data = append(data, EncodeExtraData(message.ExtraData)...)
 	return data
 }
 
-func (message *MessageEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (message *MessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	senderPublicKey := &PublicKey{}
-	if exist, err := DeSoEncoderFromBytes(senderPublicKey, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(senderPublicKey, rr); exist && err == nil {
 		message.SenderPublicKey = senderPublicKey
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: Problem reading SenderPublicKey")
 	}
 
 	recipientPublicKey := &PublicKey{}
-	if exist, err := DeSoEncoderFromBytes(recipientPublicKey, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(recipientPublicKey, rr); exist && err == nil {
 		message.RecipientPublicKey = recipientPublicKey
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding recipient public key")
@@ -1139,28 +1139,28 @@ func (message *MessageEntry) Decode(blockHeight uint64, rr *bytes.Reader) error 
 	message.Version = uint8(versionBytes)
 
 	senderMessagingPublicKey := &PublicKey{}
-	if exist, err := DeSoEncoderFromBytes(senderMessagingPublicKey, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(senderMessagingPublicKey, rr); exist && err == nil {
 		message.SenderMessagingPublicKey = senderMessagingPublicKey
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging public key")
 	}
 
 	senderMessagingKeyName := &GroupKeyName{}
-	if exist, err := DeSoEncoderFromBytes(senderMessagingKeyName, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(senderMessagingKeyName, rr); exist && err == nil {
 		message.SenderMessagingGroupKeyName = senderMessagingKeyName
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
 	}
 
 	recipientMessagingPublicKey := &PublicKey{}
-	if exist, err := DeSoEncoderFromBytes(recipientMessagingPublicKey, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(recipientMessagingPublicKey, rr); exist && err == nil {
 		message.RecipientMessagingPublicKey = recipientMessagingPublicKey
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
 	}
 
 	recipientMessagingKeyName := &GroupKeyName{}
-	if exist, err := DeSoEncoderFromBytes(recipientMessagingKeyName, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(recipientMessagingKeyName, rr); exist && err == nil {
 		message.RecipientMessagingGroupKeyName = recipientMessagingKeyName
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
@@ -1188,11 +1188,11 @@ func (name *GroupKeyName) ToBytes() []byte {
 	return name[:]
 }
 
-func (name *GroupKeyName) Encode(blockHeight uint64) []byte {
+func (name *GroupKeyName) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	return EncodeByteArray(name[:])
 }
 
-func (name *GroupKeyName) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (name *GroupKeyName) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	nameBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "GroupKeyName.Decode: Problem reading name")
@@ -1319,40 +1319,40 @@ func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingG
 	return members
 }
 
-func (entry *MessagingGroupEntry) Encode(blockHeight uint64) []byte {
+func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var entryBytes []byte
 
-	entryBytes = append(entryBytes, DeSoEncoderToBytes(blockHeight, entry.GroupOwnerPublicKey)...)
-	entryBytes = append(entryBytes, DeSoEncoderToBytes(blockHeight, entry.MessagingPublicKey)...)
-	entryBytes = append(entryBytes, DeSoEncoderToBytes(blockHeight, entry.MessagingGroupKeyName)...)
+	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.GroupOwnerPublicKey)...)
+	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingPublicKey)...)
+	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingGroupKeyName)...)
 	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MessagingGroupMembers)))...)
 	// We sort the MessagingGroupMembers because they can be added while iterating over
 	// a map, which could lead to inconsistent orderings across nodes when encoding.
 	members := sortMessagingGroupMembers(entry.MessagingGroupMembers)
 	for ii := 0; ii < len(members); ii++ {
-		entryBytes = append(entryBytes, DeSoEncoderToBytes(blockHeight, members[ii])...)
+		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii])...)
 	}
 	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
 }
 
-func (entry *MessagingGroupEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	groupOwnerPublicKeyBytes := &PublicKey{}
-	if exist, err := DeSoEncoderFromBytes(groupOwnerPublicKeyBytes, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(groupOwnerPublicKeyBytes, rr); exist && err == nil {
 		entry.GroupOwnerPublicKey = groupOwnerPublicKeyBytes
 	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding groupOwnerPublicKeyBytes")
 	}
 
 	messagingPublicKeyBytes := &PublicKey{}
-	if exist, err := DeSoEncoderFromBytes(messagingPublicKeyBytes, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(messagingPublicKeyBytes, rr); exist && err == nil {
 		entry.MessagingPublicKey = messagingPublicKeyBytes
 	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding messagingPublicKey")
 	}
 
 	messagingKeyNameBytes := &GroupKeyName{}
-	if exist, err := DeSoEncoderFromBytes(messagingKeyNameBytes, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(messagingKeyNameBytes, rr); exist && err == nil {
 		entry.MessagingGroupKeyName = messagingKeyNameBytes
 	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding messagingKeyName")
@@ -1364,7 +1364,7 @@ func (entry *MessagingGroupEntry) Decode(blockHeight uint64, rr *bytes.Reader) e
 	}
 	for ; recipientsLen > 0; recipientsLen-- {
 		recipient := &MessagingGroupMember{}
-		if exist, err := DeSoEncoderFromBytes(recipient, rr); exist && err == nil {
+		if exist, err := DecodeFromBytes(recipient, rr); exist && err == nil {
 			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, recipient)
 		} else if err != nil {
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
@@ -1435,21 +1435,21 @@ func (rec *MessagingGroupMember) FromBytes(rr *bytes.Reader) error {
 	return nil
 }
 
-func (rec *MessagingGroupMember) Encode(blockHeight uint64) []byte {
+func (rec *MessagingGroupMember) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	data := []byte{}
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, rec.GroupMemberPublicKey)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, rec.GroupMemberKeyName)...)
+	data = append(data, EncodeToBytes(blockHeight, rec.GroupMemberPublicKey)...)
+	data = append(data, EncodeToBytes(blockHeight, rec.GroupMemberKeyName)...)
 	data = append(data, EncodeByteArray(rec.EncryptedKey)...)
 
 	return data
 }
 
-func (rec *MessagingGroupMember) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (rec *MessagingGroupMember) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	groupMemberPublicKey := &PublicKey{}
-	if exist, err := DeSoEncoderFromBytes(groupMemberPublicKey, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
 		rec.GroupMemberPublicKey = groupMemberPublicKey
 	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
@@ -1457,7 +1457,7 @@ func (rec *MessagingGroupMember) Decode(blockHeight uint64, rr *bytes.Reader) er
 	}
 
 	groupMemberKeyName := &GroupKeyName{}
-	if exist, err := DeSoEncoderFromBytes(groupMemberKeyName, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(groupMemberKeyName, rr); exist && err == nil {
 		rec.GroupMemberKeyName = groupMemberKeyName
 	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
@@ -1480,13 +1480,13 @@ type ForbiddenPubKeyEntry struct {
 	isDeleted bool
 }
 
-func (entry *ForbiddenPubKeyEntry) Encode(blockHeight uint64) []byte {
+func (entry *ForbiddenPubKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray(entry.PubKey)...)
 	return data
 }
 
-func (entry *ForbiddenPubKeyEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (entry *ForbiddenPubKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 	entry.PubKey, err = DecodeByteArray(rr)
 	if err != nil {
@@ -1516,15 +1516,15 @@ type LikeEntry struct {
 	isDeleted bool
 }
 
-func (likeEntry *LikeEntry) Encode(blockHeight uint64) []byte {
+func (likeEntry *LikeEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(likeEntry.LikerPubKey)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, likeEntry.LikedPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, likeEntry.LikedPostHash)...)
 	return data
 }
 
-func (likeEntry *LikeEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (likeEntry *LikeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	likeEntry.LikerPubKey, err = DecodeByteArray(rr)
@@ -1532,7 +1532,7 @@ func (likeEntry *LikeEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
 		return errors.Wrapf(err, "LikeEntry.Decode: problem reading LikerPubKey")
 	}
 	likedPostHash := &BlockHash{}
-	if exist, err := DeSoEncoderFromBytes(likedPostHash, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(likedPostHash, rr); exist && err == nil {
 		likeEntry.LikedPostHash = likedPostHash
 	} else if err != nil {
 		return errors.Wrapf(err, "LikeEntry.Decode: problem reading LikedPostHash")
@@ -1580,12 +1580,12 @@ type NFTEntry struct {
 	isDeleted bool
 }
 
-func (nft *NFTEntry) Encode(blockHeight uint64) []byte {
+func (nft *NFTEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, nft.LastOwnerPKID)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, nft.OwnerPKID)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, nft.NFTPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, nft.LastOwnerPKID)...)
+	data = append(data, EncodeToBytes(blockHeight, nft.OwnerPKID)...)
+	data = append(data, EncodeToBytes(blockHeight, nft.NFTPostHash)...)
 	data = append(data, UintToBuf(nft.SerialNumber)...)
 	data = append(data, BoolToByte(nft.IsForSale))
 	data = append(data, UintToBuf(nft.MinBidAmountNanos)...)
@@ -1598,25 +1598,25 @@ func (nft *NFTEntry) Encode(blockHeight uint64) []byte {
 	return data
 }
 
-func (nft *NFTEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (nft *NFTEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	lastOwnerPKID := &PKID{}
-	if exist, err := DeSoEncoderFromBytes(lastOwnerPKID, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(lastOwnerPKID, rr); exist && err == nil {
 		nft.LastOwnerPKID = lastOwnerPKID
 	} else if err != nil {
 		return errors.Wrapf(err, "NFTEntry.Decode: Problem reading LastOwnerPKID")
 	}
 
 	ownerPKID := &PKID{}
-	if exist, err := DeSoEncoderFromBytes(ownerPKID, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(ownerPKID, rr); exist && err == nil {
 		nft.OwnerPKID = ownerPKID
 	} else if err != nil {
 		return errors.Wrapf(err, "NFTEntry.Decode: Problem reading OwnerPKID")
 	}
 
 	NFTPostHash := &BlockHash{}
-	if exist, err := DeSoEncoderFromBytes(NFTPostHash, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(NFTPostHash, rr); exist && err == nil {
 		nft.NFTPostHash = NFTPostHash
 	} else if err != nil {
 		return errors.Wrapf(err, "NFTEntry.Decode: Problem reading NFTPostHash")
@@ -1697,11 +1697,11 @@ type NFTBidEntry struct {
 	isDeleted bool
 }
 
-func (be *NFTBidEntry) Encode(blockHeight uint64) []byte {
+func (be *NFTBidEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, be.BidderPKID)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, be.NFTPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, be.BidderPKID)...)
+	data = append(data, EncodeToBytes(blockHeight, be.NFTPostHash)...)
 	data = append(data, UintToBuf(be.SerialNumber)...)
 	data = append(data, UintToBuf(be.BidAmountNanos)...)
 
@@ -1714,17 +1714,17 @@ func (be *NFTBidEntry) Encode(blockHeight uint64) []byte {
 	return data
 }
 
-func (be *NFTBidEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (be *NFTBidEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	bidderPKID := &PKID{}
-	if exist, err := DeSoEncoderFromBytes(bidderPKID, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(bidderPKID, rr); exist && err == nil {
 		be.BidderPKID = bidderPKID
 	} else if err != nil {
 		return errors.Wrapf(err, "NFTBidEntry.Decode: Problem reading BidderPKID")
 	}
 	NFTPostHash := &BlockHash{}
-	if exist, err := DeSoEncoderFromBytes(NFTPostHash, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(NFTPostHash, rr); exist && err == nil {
 		be.NFTPostHash = NFTPostHash
 	} else if err != nil {
 		return errors.Wrapf(err, "NFTBidEntry.Decode: Problem reading NFTPostHash")
@@ -1790,7 +1790,7 @@ type DerivedKeyEntry struct {
 	isDeleted bool
 }
 
-func (key *DerivedKeyEntry) Encode(blockHeight uint64) []byte {
+func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(key.OwnerPublicKey.ToBytes())...)
@@ -1810,7 +1810,7 @@ func (key *DerivedKeyEntry) Encode(blockHeight uint64) []byte {
 	return data
 }
 
-func (key *DerivedKeyEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	ownerPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem reading OwnerPublicKey")
@@ -1940,21 +1940,21 @@ type DiamondEntry struct {
 	isDeleted bool
 }
 
-func (de *DiamondEntry) Encode(blockHeight uint64) []byte {
+func (de *DiamondEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, de.SenderPKID)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, de.ReceiverPKID)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, de.DiamondPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, de.SenderPKID)...)
+	data = append(data, EncodeToBytes(blockHeight, de.ReceiverPKID)...)
+	data = append(data, EncodeToBytes(blockHeight, de.DiamondPostHash)...)
 	// Encoding as uint64 as it's encoded identically to int64.
 	data = append(data, UintToBuf(uint64(de.DiamondLevel))...)
 
 	return data
 }
 
-func (de *DiamondEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (de *DiamondEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	senderPKID := &PKID{}
-	if exist, err := DeSoEncoderFromBytes(senderPKID, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(senderPKID, rr); exist && err == nil {
 		de.SenderPKID = senderPKID
 	} else if err != nil {
 		return errors.Wrapf(err, "DiamondEntry.Decode: Problem reading SenderPKID")
@@ -1962,14 +1962,14 @@ func (de *DiamondEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
 
 	// ReceiverPKID
 	receiverPKID := &PKID{}
-	if exist, err := DeSoEncoderFromBytes(receiverPKID, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(receiverPKID, rr); exist && err == nil {
 		de.ReceiverPKID = receiverPKID
 	} else if err != nil {
 		return errors.Wrapf(err, "DiamondEntry.Decode: Problem reading ReceiverPKID")
 	}
 
 	diamondPostHash := &BlockHash{}
-	if exist, err := DeSoEncoderFromBytes(diamondPostHash, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(diamondPostHash, rr); exist && err == nil {
 		de.DiamondPostHash = diamondPostHash
 	} else if err != nil {
 		return errors.Wrapf(err, "DiamondEntry.Decode: Problem reading DiamondPostHash")
@@ -2011,17 +2011,17 @@ type RepostEntry struct {
 	isDeleted bool
 }
 
-func (re *RepostEntry) Encode(blockHeight uint64) []byte {
+func (re *RepostEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(re.ReposterPubKey)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, re.RepostPostHash)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, re.RepostedPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, re.RepostPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, re.RepostedPostHash)...)
 
 	return data
 }
 
-func (re *RepostEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (re *RepostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	re.ReposterPubKey, err = DecodeByteArray(rr)
@@ -2030,14 +2030,14 @@ func (re *RepostEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 
 	repostPostHash := &BlockHash{}
-	if exist, err := DeSoEncoderFromBytes(repostPostHash, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(repostPostHash, rr); exist && err == nil {
 		re.RepostPostHash = repostPostHash
 	} else if err != nil {
 		return errors.Wrapf(err, "RepostEntry.Decode: Problem reading RepostPostHash")
 	}
 
 	repostedPostHash := &BlockHash{}
-	if exist, err := DeSoEncoderFromBytes(repostedPostHash, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(repostedPostHash, rr); exist && err == nil {
 		re.RepostedPostHash = repostedPostHash
 	} else if err != nil {
 		return errors.Wrapf(err, "RepostEntry.Decode: Problem reading RepostedPostHash")
@@ -2063,7 +2063,7 @@ type GlobalParamsEntry struct {
 	MinimumNetworkFeeNanosPerKB uint64
 }
 
-func (gp *GlobalParamsEntry) Encode(blockHeight uint64) []byte {
+func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(gp.USDCentsPerBitcoin)...)
@@ -2075,7 +2075,7 @@ func (gp *GlobalParamsEntry) Encode(blockHeight uint64) []byte {
 	return data
 }
 
-func (gp *GlobalParamsEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	gp.USDCentsPerBitcoin, err = ReadUvarint(rr)
@@ -2242,14 +2242,14 @@ func IsVanillaRepost(postEntry *PostEntry) bool {
 	return !postEntry.IsQuotedRepost && postEntry.RepostedPostHash != nil
 }
 
-func (pe *PostEntry) Encode(blockHeight uint64) []byte {
+func (pe *PostEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, pe.PostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, pe.PostHash)...)
 	data = append(data, EncodeByteArray(pe.PosterPublicKey)...)
 	data = append(data, EncodeByteArray(pe.ParentStakeID)...)
 	data = append(data, EncodeByteArray(pe.Body)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, pe.RepostedPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, pe.RepostedPostHash)...)
 	data = append(data, BoolToByte(pe.IsQuotedRepost))
 	data = append(data, UintToBuf(pe.CreatorBasisPoints)...)
 	data = append(data, UintToBuf(pe.StakeMultipleBasisPoints)...)
@@ -2275,11 +2275,11 @@ func (pe *PostEntry) Encode(blockHeight uint64) []byte {
 	return data
 }
 
-func (pe *PostEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	postHash := &BlockHash{}
-	if exist, err := DeSoEncoderFromBytes(postHash, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(postHash, rr); exist && err == nil {
 		pe.PostHash = postHash
 	} else if err != nil {
 		return errors.Wrapf(err, "PostEntry.Decode: Problem reading PostHash")
@@ -2298,7 +2298,7 @@ func (pe *PostEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
 	}
 
 	repostedPostHash := &BlockHash{}
-	if exist, err := DeSoEncoderFromBytes(repostedPostHash, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(repostedPostHash, rr); exist && err == nil {
 		pe.RepostedPostHash = repostedPostHash
 	} else if err != nil {
 		return errors.Wrapf(err, "PostEntry.Decode: Problem reading RepostedPostHash")
@@ -2436,28 +2436,28 @@ type BalanceEntry struct {
 	isDeleted bool
 }
 
-func (be *BalanceEntry) Encode(blockHeight uint64) []byte {
+func (be *BalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, be.HODLerPKID)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, be.CreatorPKID)...)
+	data = append(data, EncodeToBytes(blockHeight, be.HODLerPKID)...)
+	data = append(data, EncodeToBytes(blockHeight, be.CreatorPKID)...)
 	data = append(data, EncodeUint256(&be.BalanceNanos)...)
 	data = append(data, BoolToByte(be.HasPurchased))
 
 	return data
 }
 
-func (be *BalanceEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (be *BalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 
 	HODLerPKID := &PKID{}
-	if exist, err := DeSoEncoderFromBytes(HODLerPKID, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(HODLerPKID, rr); exist && err == nil {
 		be.HODLerPKID = HODLerPKID
 	} else if err != nil {
 		return errors.Wrapf(err, "BalanceEntry.Decode: Problem decoding HODLerPKID")
 	}
 
 	creatorPKID := &PKID{}
-	if exist, err := DeSoEncoderFromBytes(creatorPKID, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(creatorPKID, rr); exist && err == nil {
 		be.CreatorPKID = creatorPKID
 	} else if err != nil {
 		return errors.Wrapf(err, "BalanceEntry.Decode: Problem decoding CreatorPKID")
@@ -2560,7 +2560,7 @@ type CoinEntry struct {
 	TransferRestrictionStatus TransferRestrictionStatus
 }
 
-func (ce *CoinEntry) Encode(blockHeight uint64) []byte {
+func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	// CoinEntry
@@ -2575,7 +2575,7 @@ func (ce *CoinEntry) Encode(blockHeight uint64) []byte {
 	return data
 }
 
-func (ce *CoinEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	// CoinEntry
@@ -2621,7 +2621,7 @@ type PublicKeyRoyaltyPair struct {
 	RoyaltyAmountNanos uint64
 }
 
-func (pair *PublicKeyRoyaltyPair) Encode(blockHeight uint64) []byte {
+func (pair *PublicKeyRoyaltyPair) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(pair.PublicKey)...)
@@ -2629,7 +2629,7 @@ func (pair *PublicKeyRoyaltyPair) Encode(blockHeight uint64) []byte {
 	return data
 }
 
-func (pair *PublicKeyRoyaltyPair) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (pair *PublicKeyRoyaltyPair) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	pair.PublicKey, err = DecodeByteArray(rr)
@@ -2657,20 +2657,20 @@ func (pkid *PKIDEntry) String() string {
 	return fmt.Sprintf("< PKID: %s, OwnerPublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
 }
 
-func (pkid *PKIDEntry) Encode(blockHeight uint64) []byte {
+func (pkid *PKIDEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
-	data = append(data, DeSoEncoderToBytes(blockHeight, pkid.PKID)...)
+	data = append(data, EncodeToBytes(blockHeight, pkid.PKID)...)
 	data = append(data, EncodeByteArray(pkid.PublicKey)...)
 
 	return data
 }
 
-func (pkid *PKIDEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (pkid *PKIDEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	pkidCopy := &PKID{}
-	if exist, err := DeSoEncoderFromBytes(pkidCopy, rr); exist && err == nil {
+	if exist, err := DecodeFromBytes(pkidCopy, rr); exist && err == nil {
 		pkid.PKID = pkidCopy
 	} else if err != nil {
 		return errors.Wrapf(err, "PKIDEntry.Decode: Problem decoding PKID")
@@ -2733,7 +2733,7 @@ func (pe *ProfileEntry) IsDeleted() bool {
 	return pe.isDeleted
 }
 
-func (pe *ProfileEntry) Encode(blockHeight uint64) []byte {
+func (pe *ProfileEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(pe.PublicKey)...)
@@ -2743,15 +2743,15 @@ func (pe *ProfileEntry) Encode(blockHeight uint64) []byte {
 	data = append(data, BoolToByte(pe.IsHidden))
 
 	// CoinEntry
-	data = append(data, DeSoEncoderToBytes(blockHeight, &pe.CreatorCoinEntry)...)
-	data = append(data, DeSoEncoderToBytes(blockHeight, &pe.DAOCoinEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, &pe.CreatorCoinEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, &pe.DAOCoinEntry)...)
 
 	data = append(data, EncodeExtraData(pe.ExtraData)...)
 
 	return data
 }
 
-func (pe *ProfileEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
+func (pe *ProfileEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	pe.PublicKey, err = DecodeByteArray(rr)
@@ -2775,12 +2775,12 @@ func (pe *ProfileEntry) Decode(blockHeight uint64, rr *bytes.Reader) error {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading IsHidden")
 	}
 	pe.CreatorCoinEntry = CoinEntry{}
-	if exists, err := DeSoEncoderFromBytes(&pe.CreatorCoinEntry, rr); !exists || err != nil {
+	if exists, err := DecodeFromBytes(&pe.CreatorCoinEntry, rr); !exists || err != nil {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading CreatorCoinEntry")
 	}
 
 	pe.DAOCoinEntry = CoinEntry{}
-	if exists, err := DeSoEncoderFromBytes(&pe.DAOCoinEntry, rr); !exists || err != nil {
+	if exists, err := DecodeFromBytes(&pe.DAOCoinEntry, rr); !exists || err != nil {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading DAOCoinEntry")
 	}
 

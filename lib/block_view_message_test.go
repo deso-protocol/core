@@ -710,7 +710,7 @@ func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *Messag
 		return false
 	}
 
-	return reflect.DeepEqual(DeSoEncoderToBytes(0, utxoMessagingEntry), DeSoEncoderToBytes(0, entry))
+	return reflect.DeepEqual(EncodeToBytes(0, utxoMessagingEntry), EncodeToBytes(0, entry))
 }
 
 // _verifyAddedMessagingKeys is used to verify that messaging key entries in db match the expected entries.
@@ -729,7 +729,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 			expectedEntry.MessagingGroupMembers = sortMessagingGroupMembers(expectedEntry.MessagingGroupMembers)
 			ok := false
 			for _, entry := range entries {
-				if reflect.DeepEqual(DeSoEncoderToBytes(0, expectedEntry), DeSoEncoderToBytes(0, entry)) {
+				if reflect.DeepEqual(EncodeToBytes(0, expectedEntry), EncodeToBytes(0, entry)) {
 					ok = true
 					break
 				}
@@ -1364,8 +1364,8 @@ func TestMessagingKeys(t *testing.T) {
 		// m1PubKey tries to add himself to the group, this will fail because only sender can add
 		// new members.
 		entryCopy := &MessagingGroupEntry{}
-		rr := bytes.NewReader(DeSoEncoderToBytes(0, entry))
-		exists, err := DeSoEncoderFromBytes(entryCopy, rr)
+		rr := bytes.NewReader(EncodeToBytes(0, entry))
+		exists, err := DecodeFromBytes(entryCopy, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
 		entryCopy.MessagingGroupMembers[0] = &MessagingGroupMember{
@@ -1386,8 +1386,8 @@ func TestMessagingKeys(t *testing.T) {
 
 		// Sender adds m1PubKey to the group chat, this time we will succeed.
 		workingCopy := &MessagingGroupEntry{}
-		rr = bytes.NewReader(DeSoEncoderToBytes(0, entry))
-		exists, err = DeSoEncoderFromBytes(workingCopy, rr)
+		rr = bytes.NewReader(EncodeToBytes(0, entry))
+		exists, err = DecodeFromBytes(workingCopy, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
 		workingCopy.MessagingGroupMembers[0] = &MessagingGroupMember{
@@ -1453,8 +1453,8 @@ func TestMessagingKeys(t *testing.T) {
 		_, groupPkBytes := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(groupKeyName)[:])
 		groupPk := NewPublicKey(groupPkBytes.SerializeCompressed())
 		expectedEntry := &MessagingGroupEntry{}
-		rr := bytes.NewReader(DeSoEncoderToBytes(0, entry))
-		exists, err := DeSoEncoderFromBytes(expectedEntry, rr)
+		rr := bytes.NewReader(EncodeToBytes(0, entry))
+		exists, err := DecodeFromBytes(expectedEntry, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
 		expectedEntry.MessagingPublicKey = groupPk
@@ -1479,8 +1479,8 @@ func TestMessagingKeys(t *testing.T) {
 			nil)
 		// Verify that the entry exists in the DB.
 		expectedEntry = &MessagingGroupEntry{}
-		rr = bytes.NewReader(DeSoEncoderToBytes(0, entry))
-		exists, err = DeSoEncoderFromBytes(expectedEntry, rr)
+		rr = bytes.NewReader(EncodeToBytes(0, entry))
+		exists, err = DecodeFromBytes(expectedEntry, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
 		expectedEntry.MessagingPublicKey = groupPk
@@ -1722,10 +1722,10 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	if messageEntryRecipient == nil || messageEntryRecipient.isDeleted {
 		return false
 	}
-	if !reflect.DeepEqual(DeSoEncoderToBytes(0, messageEntrySender), DeSoEncoderToBytes(0, messageEntryRecipient)) {
+	if !reflect.DeepEqual(EncodeToBytes(0, messageEntrySender), EncodeToBytes(0, messageEntryRecipient)) {
 		return false
 	}
-	if !reflect.DeepEqual(DeSoEncoderToBytes(0, messageEntrySender), DeSoEncoderToBytes(0, &expectedEntry)) {
+	if !reflect.DeepEqual(EncodeToBytes(0, messageEntrySender), EncodeToBytes(0, &expectedEntry)) {
 		return false
 	}
 	addedEntries := make(map[PublicKey]bool)
@@ -1774,8 +1774,8 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 		for _, messageEntry := range messageEntries {
 			ok := false
 			for _, dbMessageEntry := range dbMessageEntries {
-				if reflect.DeepEqual(DeSoEncoderToBytes(0, &messageEntry),
-					DeSoEncoderToBytes(0, dbMessageEntry)) {
+				if reflect.DeepEqual(EncodeToBytes(0, &messageEntry),
+					EncodeToBytes(0, dbMessageEntry)) {
 					ok = true
 					break
 				}

@@ -40,9 +40,9 @@ func TestEmptyMetadataEncoders(t *testing.T) {
 		&UpdateProfileTxindexMetadata{},
 	}
 	for _, testType := range testCases {
-		testBytes := DeSoEncoderToBytes(0, testType)
+		testBytes := EncodeToBytes(0, testType)
 		rr := bytes.NewReader(testBytes)
-		exists, err := DeSoEncoderFromBytes(testType, rr)
+		exists, err := DecodeFromBytes(testType, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
 	}
