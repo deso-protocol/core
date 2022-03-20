@@ -8,6 +8,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
+	"net"
+	"sort"
+	"time"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
@@ -15,18 +21,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"io"
-	"math"
-	"net"
-	"sort"
-	"time"
 )
 
 // network.go defines all the basic data structures that get sent over the
 // network and defines precisely how they are serialized and de-serialized.
 
 // MaxMessagePayload is the maximum size alowed for a message payload.
-const MaxMessagePayload = (1024 * 1024 * 100) // 100MB
+const MaxMessagePayload = (1024 * 1024 * 1000) // 1GB
 
 // MaxBlockRewardDataSizeBytes is the maximum size allowed for a BLOCK_REWARD's ExtraData field.
 var MaxBlockRewardDataSizeBytes = 250
