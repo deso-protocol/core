@@ -606,7 +606,6 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	// Now send a message to the peer to fetch the snapshot chunk.
 	pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
-		Prefix:           prefix,
 		SnapshotStartKey: lastReceivedKey,
 	}, false)
 
