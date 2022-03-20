@@ -17,12 +17,12 @@ func (adapter *DbAdapter) GetBalanceEntry(holder *PKID, creator *PKID, isDAOCoin
 	if adapter.postgresDb != nil {
 		if isDAOCoin {
 			return adapter.postgresDb.GetDAOCoinBalance(holder, creator).NewBalanceEntry()
-		} else {
-			return adapter.postgresDb.GetCreatorCoinBalance(holder, creator).NewBalanceEntry()
 		}
-	} else {
-		return DbGetBalanceEntry(adapter.badgerDb, holder, creator, isDAOCoin)
+
+		return adapter.postgresDb.GetCreatorCoinBalance(holder, creator).NewBalanceEntry()
 	}
+
+	return DbGetBalanceEntry(adapter.badgerDb, holder, creator, isDAOCoin)
 }
 
 //
@@ -32,9 +32,18 @@ func (adapter *DbAdapter) GetBalanceEntry(holder *PKID, creator *PKID, isDAOCoin
 func (adapter *DbAdapter) GetDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntry, byTransactorPKID bool) *DAOCoinLimitOrderEntry {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetDAOCoinLimitOrder(orderEntry)
-	} else {
-		return DBGetDAOCoinLimitOrder(adapter.badgerDb, orderEntry, byTransactorPKID)
 	}
+
+	return DBGetDAOCoinLimitOrder(adapter.badgerDb, orderEntry, byTransactorPKID)
+}
+
+// This function is currently used for testing purposes only.
+func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetAllDAOCoinLimitOrders()
+	}
+
+	return DBGetAllDAOCoinLimitOrders(adapter.badgerDb)
 }
 
 func (adapter *DbAdapter) GetMatchingDAOCoinLimitOrders(transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {

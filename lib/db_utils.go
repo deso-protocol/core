@@ -6384,9 +6384,23 @@ func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	return orders, nil
 }
 
+// This function is currently used for testing purposes only.
+func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, error) {
+	return DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle, nil)
+}
+
 func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
-	key := append(prefixCopy, transactorPKID[:]...)
+	var key []byte
+
+	if transactorPKID == nil {
+		// Get all DAO coin limit orders.
+		prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
+		key = append([]byte{}, prefixCopy...)
+	} else {
+		// Get all DAO coin limit orders by transactor PKID.
+		prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
+		key = append(prefixCopy, transactorPKID[:]...)
+	}
 
 	// Seek all orders for this creator PKID.
 	_, valsFound := _enumerateKeysForPrefix(handle, key)

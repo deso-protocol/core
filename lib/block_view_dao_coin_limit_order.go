@@ -285,10 +285,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Check if you already have an existing order at this price in this block.
 	// If exists, update new order with previous order's quantity and mark previous order for deletion.
-	// Only have to check UTXO and not Badger because we are only aggregating within the block height.
-	orderKey := requestedOrder.ToMapKey()
-
-	prevOrder, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderKey]
+	prevOrder := bav._getDAOCoinLimitOrderEntryMappings(requestedOrder)
 
 	if prevOrder != nil {
 		requestedOrder.Quantity = uint256.NewInt().Add(requestedOrder.Quantity, prevOrder.Quantity)
@@ -806,6 +803,29 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
 }
 
+func (bav *UtxoView) _getDAOCoinLimitOrderEntryMappings(inputEntry *DAOCoinLimitOrderEntry) *DAOCoinLimitOrderEntry {
+	// This function shouldn't be called with nil.
+	if inputEntry == nil {
+		glog.Errorf("_getDAOCoinLimitOrderEntryMappings: Called with nil entry; this should never happen")
+		return nil
+	}
+
+	// First check if we have the order entry in the UTXO view.
+	outputEntry, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[inputEntry.ToMapKey()]
+
+	if outputEntry != nil {
+		return outputEntry
+	}
+
+	// If not, next check if we have the order entry in the database.
+	dbAdapter := DbAdapter{
+		badgerDb:   bav.Handle,
+		postgresDb: bav.Postgres,
+	}
+
+	return dbAdapter.GetDAOCoinLimitOrder(inputEntry, false)
+}
+
 func (bav *UtxoView) _setDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrderEntry) {
 	// This function shouldn't be called with nil.
 	if entry == nil {
@@ -813,8 +833,7 @@ func (bav *UtxoView) _setDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrder
 		return
 	}
 
-	orderKey := entry.ToMapKey()
-	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderKey] = entry
+	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[entry.ToMapKey()] = entry
 }
 
 func (bav *UtxoView) _deleteDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrderEntry) {

@@ -229,6 +229,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// Update quantity and resubmit. m0's BID order should be stored.
 	{
+		// Confirm no existing limit orders.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Empty(orderEntries)
+
 		metadataM0.Quantity = daoCoinQuantityChange
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 
@@ -243,6 +248,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		require.True(bytes.Equal(queryEntryBytes, resultEntryBytes))
+
+		// Confirm 1 existing limit order.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
 	}
 
 	// Construct metadata for a m1 BID order denominated in
@@ -346,22 +356,31 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Orders partially fulfilled for 2 DAO coins @ 11/1e9 $DESO and 1 DAO coin @ 12/1e9 $DESO.
 	{
 		var orderEntry *DAOCoinLimitOrderEntry
+		var orderEntries []*DAOCoinLimitOrderEntry
+
+		// Confirm no existing limit orders.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Empty(orderEntries)
 
 		// m1 submits ASK order for 1 DAO coin @ 12/1e9 $DESO.
 		metadataM1.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(NanosPerUnit / 12)
-		metadataM1.Quantity = uint256.NewInt().SetUint64(2)
+		metadataM1.Quantity = uint256.NewInt().SetUint64(1)
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 		orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
 		require.NotNil(orderEntry)
 
-		//// m1 submits ASK order for 1 DAO coin @ 12/1e9 $DESO.
-		//// Quantity is updated and only one order persists.
-		//_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-		//orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
-		//require.Nil(orderEntry)
-		//metadataM1.Quantity = uint256.NewInt().SetUint64(2)
-		//orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
-		//require.NotNil(orderEntry)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+
+		// m1 submits ASK order for 1 DAO coin @ 12/1e9 $DESO.
+		// Quantity is updated and only one order persists.
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
+		require.Nil(orderEntry)
+		metadataM1.Quantity = uint256.NewInt().SetUint64(2)
+		orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
+		require.NotNil(orderEntry)
 
 		// m1 submits ASK order for 2 DAO coins @ 11/1e9 $DESO.
 		metadataM1.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(NanosPerUnit / 11)
