@@ -53,10 +53,4 @@ jobs:
         run: go build
 
       - name: Run go test
-        # For now, we run all tests in two parts, first those beginning with letter
-        # A-L then those beginning with letter M-Z to side-step a race condition
-        # where multiple tests access the same shared /tmp directory.
-        # TODO: fix that race condition.
-        run: |
-          go test -run="Test[A-L]" -v ./lib && \
-          go test -run="Test[M-Z]" -v ./lib
+        run: go test -failfast -p=1 -parallel=1 -v ./lib
