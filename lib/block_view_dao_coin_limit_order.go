@@ -385,9 +385,18 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			orderIsComplete := false
 
 			if requestedOrder.Quantity.Lt(order.Quantity) {
+				// Since the transactor order's quantity is less than the matching order's
+				// quantity, we will be transferring the transactor order's quantity.
 				daoCoinsToTransfer = requestedOrder.Quantity
+
+				// Update matching order's quantity and store.
 				order.Quantity = uint256.NewInt().Sub(order.Quantity, requestedOrder.Quantity)
+				bav._setDAOCoinLimitOrderEntryMappings(order)
+
+				// Set transactor order's quantity to zero.
 				requestedOrder.Quantity = uint256.NewInt()
+
+				// Mark order is complete to braek out of loop.
 				orderIsComplete = true
 			} else {
 				daoCoinsToTransfer = order.Quantity
@@ -740,29 +749,12 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	// Revert the deleted limit orders in reverse order.
 	for ii := len(operationData.PrevDAOCoinLimitOrderEntries) - 1; ii >= 0; ii-- {
 		orderEntry := operationData.PrevDAOCoinLimitOrderEntries[ii]
-
-		if orderEntry == nil {
-			// TODO: raise an error if it's not the last element of the slice
-			// I.e. there's a nil that's not the first element of the reverse slice.
-			// TODO: handling the DAO coin limit order from the requester
-			continue
-		}
-
 		bav._setDAOCoinLimitOrderEntryMappings(orderEntry)
 	}
 
 	// Revert the balance entries in reverse order.
 	for ii := len(operationData.PrevBalanceEntries) - 1; ii >= 0; ii-- {
 		balanceEntry := operationData.PrevBalanceEntries[ii]
-
-		if balanceEntry == nil {
-			// TODO: raise an error if it's not the last element of the slice
-			// I.e. there's a nil that's not the first element of the reverse slice.
-			// TODO: handling the balance entry from the requester
-			// TODO: create a different element in the UtxoOperation struct to support.
-			continue
-		}
-
 		bav._setDAOCoinBalanceEntryMappings(balanceEntry)
 	}
 

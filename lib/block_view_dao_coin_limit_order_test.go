@@ -442,17 +442,24 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight), false)
 		require.Nil(orderEntry)
 
-		// m1's ASK order for 2 DAO coins @ 11/1e9 $DESO is fulfilled.
+		// There is only one of m1's matching ASK order still open for 1 DAO coin @ 12/1e9 $DESO.
+		orderEntry = metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)
+		orderEntries, err = dbAdapter.GetMatchingDAOCoinLimitOrders(orderEntry, nil)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.Equal(orderEntries[0].PriceNanosPerDenominatedCoin, uint256.NewInt().SetUint64(NanosPerUnit/12))
+		require.Equal(orderEntries[0].Quantity, uint256.NewInt().SetUint64(1))
+
+		// To double-check, confirm m1's ASK order for 2 DAO coins @ 11/1e9 $DESO is fulfilled.
 		metadataM1.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(NanosPerUnit / 11)
 		orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
 		require.Nil(orderEntry)
 
-		// m1's ASK order for 2 DAO coins @ 12/1e9 $DESO is partially fulfilled w/ 1 DAO coin remaining.
+		// To double-check, confirm m1's ASK order for 2 DAO coins @ 12/1e9 $DESO is partially fulfilled w/ 1 DAO coin remaining.
 		metadataM1.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(NanosPerUnit / 12)
 		orderEntry = dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight), false)
 		require.NotNil(orderEntry)
-		// TODO: the following test is currently failing.
-		// require.Equal(orderEntry.Quantity, uint256.NewInt().SetUint64(1))
+		require.Equal(orderEntry.Quantity, uint256.NewInt().SetUint64(1))
 	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
