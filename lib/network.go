@@ -2261,52 +2261,38 @@ func (msg *MsgDeSoBlock) String() string {
 // ==================================================================
 
 type MsgDeSoGetSnapshot struct {
-	// The prefix for which we want to fetch snapshot data chunk.
-	// FIXME: I don't think you need this. I don't think it adds any extra security
-	// Try removing it?
-	Prefix []byte
 	// SnapshotStartKey is the db key from which we want to start fetching the data.
 	SnapshotStartKey []byte
 }
 
 func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
-
-	data = append(data, UintToBuf(uint64(len(msg.Prefix)))...)
-	data = append(data, msg.Prefix...)
-	data = append(data, UintToBuf(uint64(len(msg.SnapshotStartKey)))...)
-	data = append(data, msg.SnapshotStartKey...)
+	data = append(data, EncodeByteArray(msg.SnapshotStartKey)...)
 
 	return data, nil
 }
 
 func (msg *MsgDeSoGetSnapshot) FromBytes(data []byte) error {
+	var err error
+
 	rr := bytes.NewReader(data)
 
-	prefixLen, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading prefix length")
-	}
-	msg.Prefix = make([]byte, prefixLen)
-	_, err = io.ReadFull(rr, msg.Prefix)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading prefix")
-	}
-
-	keyLen, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error raeding start key length")
-	}
-	msg.SnapshotStartKey = make([]byte, keyLen)
-	_, err = io.ReadFull(rr, msg.SnapshotStartKey)
+	msg.SnapshotStartKey, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading snapshot start key")
+	}
+	if len(msg.SnapshotStartKey) == 0 {
+		return fmt.Errorf("MsgDeSoGetSnapshot.FromBytes: Received an empty SnapshotStartKey")
 	}
 	return nil
 }
 
 func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
 	return MsgTypeGetSnapshot
+}
+
+func (msg *MsgDeSoGetSnapshot) GetPrefix() []byte {
+	return msg.SnapshotStartKey[:1]
 }
 
 type MsgDeSoSnapshotData struct {
@@ -2321,8 +2307,6 @@ type MsgDeSoSnapshotData struct {
 	SnapshotChunkFull bool
 
 	// Prefix indicates the db prefix of the current snapshot chunk.
-	// FIXME: I don't think you need this. Try removing it? The prefix seems like something you need to know on the fetcher side, but that you don't need to ping back and forth with the sender. You just ask the sender to send you stuff at startPrefix and that's it
-	// Hmm.. I guess the first message has prefix as the thing in it... Feel free to leave it, just take a look at it.
 	Prefix []byte
 }
 

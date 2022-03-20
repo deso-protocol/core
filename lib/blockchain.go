@@ -435,8 +435,7 @@ type Blockchain struct {
 	orphanList *list.List
 
 	// We connect many blocks in the same view and flush every X number of blocks
-	blockView    *UtxoView
-	blocksInView uint64
+	blockView *UtxoView
 
 	// State checksum is used to verify integrity of state data and when
 	// syncing from snapshot in the hyper sync protocol.
@@ -1996,18 +1995,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			bc.blockView = utxoView
 		}
 
-		// We need to do this cuz RPH said so
-		// TODO: So do we need to do this or nah?
-		// FIXME: If we're able to do a full sync without this then we don't need it, so delete.
-		//if nodeToValidate.Height <= bc.params.ForkHeights.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight {
-		//	for _, entry := range bc.blockView.HODLerPKIDCreatorPKIDToBalanceEntry {
-		//		if entry.isDeleted {
-		//			entry.isDeleted = false
-		//			entry.BalanceNanos = 0
-		//		}
-		//	}
-		//}
-
 		// Preload the view with almost all of the data it will need to connect the block
 		err := bc.blockView.Preload(desoBlock, blockHeight)
 		if err != nil {
@@ -2021,9 +2008,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			glog.Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
 				"not the current tip hash (%v)", bc.blockView.TipHash, currentTip.Hash)
 		}
-
-		// FIXME: Do we need this?
-		bc.blocksInView += 1
 
 		utxoOpsForBlock, err := bc.blockView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil, blockHeight)
 		if err != nil {
@@ -2078,10 +2062,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db utxo flush")
 
 				// Write the modified utxo set to the view.
-				if bc.blocksInView%MaxBlocksInView == 0 {
-					if err := bc.blockView.FlushToDbWithTxn(txn, blockHeight); err != nil {
-						return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
-					}
+				if err := bc.blockView.FlushToDbWithTxn(txn, blockHeight); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db utxo flush")
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
@@ -2158,9 +2140,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			})
 		}
 
-		if bc.blocksInView%MaxBlocksInView == 0 {
-			bc.blockView = nil
-		}
+		bc.blockView = nil
 		bc.timer.End("Blockchain.ProcessBlock: Transactions Db end")
 
 	} else if nodeToValidate.CumWork.Cmp(currentTip.CumWork) <= 0 {
@@ -2440,15 +2420,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				// For now it's fine because reorgs are virtually impossible.
 				bc.eventManager.blockConnected(&BlockEvent{Block: blockToAttach})
 			}
-		}
-
-		// If we have a Server object then call its function
-		// TODO: Is this duplicated / necessary? A: Yes duplicated, because current block was part of attachBlocks list
-		// FIXME: Delete this
-		if bc.eventManager != nil {
-			// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
-			// For now it's fine because reorgs are virtually impossible.
-			bc.eventManager.blockConnected(&BlockEvent{Block: desoBlock})
 		}
 	}
 

@@ -433,13 +433,13 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 			SnapshotMetadata:  nil,
 			SnapshotChunk:     nil,
 			SnapshotChunkFull: false,
-			Prefix:            msg.Prefix,
+			Prefix:            msg.GetPrefix(),
 		}, false)
 		return
 	}
 
 	// Make sure that the start key and prefix provided in the message are valid.
-	if len(msg.SnapshotStartKey) == 0 || len(msg.Prefix) == 0 {
+	if len(msg.SnapshotStartKey) == 0 || len(msg.GetPrefix()) == 0 {
 		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"because SnapshotStartKey or Prefix are empty", pp)
 		pp.Disconnect()
@@ -447,7 +447,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	}
 
 	// Make sure the provided start key matches the prefix.
-	if !bytes.HasPrefix(msg.SnapshotStartKey, msg.Prefix) {
+	if !bytes.HasPrefix(msg.SnapshotStartKey, msg.GetPrefix()) {
 		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot because Peer %v is misbehaving. "+
 			"The provided key Prefix doesn't match the SnapshotStartKey", pp)
 		pp.Disconnect()
@@ -464,18 +464,18 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	var err error
 
 	snapshotDataMsg := &MsgDeSoSnapshotData{
-		Prefix: msg.Prefix,
+		Prefix: msg.GetPrefix(),
 	}
-	if isStateKey(msg.Prefix) {
+	if isStateKey(msg.GetPrefix()) {
 		snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
-			pp.srv.blockchain.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.Prefix, msg.SnapshotStartKey)
+			pp.srv.blockchain.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.GetPrefix(), msg.SnapshotStartKey)
 
 		snapshotDataMsg.SnapshotMetadata = pp.srv.blockchain.snapshot.CurrentEpochSnapshotMetadata
-	} else if isTxIndexKey(msg.Prefix) {
+	} else if isTxIndexKey(msg.GetPrefix()) {
 		if pp.srv.TxIndex != nil && pp.srv.TxIndex.FinishedSyncing() {
 			snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
 				pp.srv.TxIndex.TXIndexChain.snapshot.GetSnapshotChunk(
-					pp.srv.TxIndex.TXIndexChain.db, msg.Prefix, msg.SnapshotStartKey)
+					pp.srv.TxIndex.TXIndexChain.db, msg.GetPrefix(), msg.SnapshotStartKey)
 
 			snapshotDataMsg.SnapshotMetadata = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochSnapshotMetadata
 		} else {
@@ -485,7 +485,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 				SnapshotMetadata:  nil,
 				SnapshotChunk:     nil,
 				SnapshotChunkFull: false,
-				Prefix:            msg.Prefix,
+				Prefix:            msg.GetPrefix(),
 			}, false)
 			return
 		}
@@ -573,7 +573,7 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetSnapshot {
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetSnapshot)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with start key %v "+
-					"and prefix %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), msg.SnapshotStartKey, msg.Prefix, pp)
+					"and prefix %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), msg.SnapshotStartKey, msg.GetPrefix(), pp)
 
 				pp.HandleGetSnapshot(msg)
 			} else {
