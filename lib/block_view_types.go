@@ -1572,6 +1572,25 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	return newOrder
 }
 
+func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) bool {
+	// This function is currently only used for testing purposes.
+	orderBytes, err := order.ToBytes()
+
+	if err != nil {
+		// TODO: is this kosher?
+		return false
+	}
+
+	otherBytes, err := other.ToBytes()
+
+	if err != nil {
+		// TODO: is this kosher?
+		return false
+	}
+
+	return bytes.Equal(orderBytes, otherBytes)
+}
+
 func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
 	if !order.PriceNanosPerDenominatedCoin.Eq(other.PriceNanosPerDenominatedCoin) {
 		// order.PriceNanos < other.PriceNanos ==>

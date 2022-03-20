@@ -37,8 +37,8 @@ func (adapter *DbAdapter) GetDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntr
 	return DBGetDAOCoinLimitOrder(adapter.badgerDb, orderEntry, byTransactorPKID)
 }
 
-// This function is currently used for testing purposes only.
 func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
+	// This function is currently used for testing purposes only.
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetAllDAOCoinLimitOrders()
 	}

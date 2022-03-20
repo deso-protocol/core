@@ -6169,12 +6169,14 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID b
 }
 
 func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
-	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key := append([]byte{}, prefixCopy...)
+	var key []byte
 
 	// If indexing by transactor PKID, use it in the key.
 	if byTransactorPKID {
+		key = append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 		key = append(key, order.TransactorPKID[:]...)
+	} else {
+		key = append([]byte{}, _PrefixDAOCoinLimitOrder...)
 	}
 
 	key = append(key, _EncodeUint32(uint32(order.DenominatedCoinType))...)
@@ -6384,26 +6386,22 @@ func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	return orders, nil
 }
 
-// This function is currently used for testing purposes only.
+// Get all DAO Coin limit orders.
 func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, error) {
-	return DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle, nil)
+	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
+// Get all DAO coin limit orders for this transactor PKID.
 func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	var key []byte
+	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key = append(key, transactorPKID[:]...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
 
-	if transactorPKID == nil {
-		// Get all DAO coin limit orders.
-		prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-		key = append([]byte{}, prefixCopy...)
-	} else {
-		// Get all DAO coin limit orders by transactor PKID.
-		prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
-		key = append(prefixCopy, transactorPKID[:]...)
-	}
-
-	// Seek all orders for this creator PKID.
-	_, valsFound := _enumerateKeysForPrefix(handle, key)
+// Get all DAO coin limit orders containing this prefix.
+func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey)
 	orders := []*DAOCoinLimitOrderEntry{}
 
 	// Cast resulting values from bytes to order entries.
@@ -6412,7 +6410,7 @@ func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKI
 		err := order.FromBytes(valBytes)
 
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrderByCreatorPKID: problem getting limit orders")
+			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrdersByPrefixKey: problem getting limit orders")
 		}
 
 		orders = append(orders, order)
