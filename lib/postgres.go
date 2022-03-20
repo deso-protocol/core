@@ -2494,6 +2494,24 @@ func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntr
 	return order.NewDAOCoinLimitOrder()
 }
 
+// This function is currently used for testing purposes only.
+func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
+	var orders []*PGDAOCoinLimitOrder
+	err := postgres.db.Model(&orders).Select()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var outputOrders []*DAOCoinLimitOrderEntry
+
+	for _, order := range orders {
+		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+	}
+
+	return outputOrders, nil
+}
+
 func (postgres *Postgres) GetMatchingDAOCoinAskOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 	var orders []*PGDAOCoinLimitOrder
 	price := inputOrder.PriceNanosPerDenominatedCoin

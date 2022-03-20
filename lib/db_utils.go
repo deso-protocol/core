@@ -3096,8 +3096,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5802,7 +5802,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5929,7 +5929,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6169,12 +6169,14 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID b
 }
 
 func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactorPKID bool) []byte {
-	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key := append([]byte{}, prefixCopy...)
+	var key []byte
 
 	// If indexing by transactor PKID, use it in the key.
 	if byTransactorPKID {
+		key = append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 		key = append(key, order.TransactorPKID[:]...)
+	} else {
+		key = append([]byte{}, _PrefixDAOCoinLimitOrder...)
 	}
 
 	key = append(key, _EncodeUint32(uint32(order.DenominatedCoinType))...)
@@ -6224,7 +6226,7 @@ func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	return order, nil
 }
 
-func DBGetMatchingDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+func DBGetMatchingDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 	queryOrder := inputOrder.Copy()
 	requestedQuantity := queryOrder.Quantity
 
@@ -6251,8 +6253,11 @@ func DBGetMatchingDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
 	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 
-	// If passed a start key, start seeking from there.
-	if startKey != nil {
+	// If passed a last seen order, start seeking from there.
+	var startKey []byte
+
+	if lastSeenOrder != nil {
+		startKey = DBPrefixKeyForDAOCoinLimitOrder(lastSeenOrder, false)
 		key = startKey
 	}
 
@@ -6304,7 +6309,7 @@ func DBGetMatchingDAOCoinAskOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	return orders, nil
 }
 
-func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, startKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 	queryOrder := inputOrder.Copy()
 	requestedQuantity := queryOrder.Quantity
 
@@ -6330,8 +6335,11 @@ func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder, false)
 	key := DBKeyForDAOCoinLimitOrder(queryOrder, false)
 
-	// If passed a start key, start seeking from there.
-	if startKey != nil {
+	// If passed a last seen order, start seeking from there.
+	var startKey []byte
+
+	if lastSeenOrder != nil {
+		startKey = DBPrefixKeyForDAOCoinLimitOrder(lastSeenOrder, false)
 		key = startKey
 	}
 
@@ -6378,12 +6386,22 @@ func DBGetMatchingDAOCoinBidOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	return orders, nil
 }
 
-func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	prefixCopy := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
-	key := append(prefixCopy, transactorPKID[:]...)
+// Get all DAO Coin limit orders.
+func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, error) {
+	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
 
-	// Seek all orders for this creator PKID.
-	_, valsFound := _enumerateKeysForPrefix(handle, key)
+// Get all DAO coin limit orders for this transactor PKID.
+func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key = append(key, transactorPKID[:]...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+// Get all DAO coin limit orders containing this prefix.
+func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey)
 	orders := []*DAOCoinLimitOrderEntry{}
 
 	// Cast resulting values from bytes to order entries.
@@ -6392,7 +6410,7 @@ func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKI
 		err := order.FromBytes(valBytes)
 
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrderByCreatorPKID: problem getting limit orders")
+			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrdersByPrefixKey: problem getting limit orders")
 		}
 
 		orders = append(orders, order)

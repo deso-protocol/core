@@ -1,6 +1,8 @@
 package lib
 
-import "github.com/dgraph-io/badger/v3"
+import (
+	"github.com/dgraph-io/badger/v3"
+)
 
 type DbAdapter struct {
 	badgerDb   *badger.DB
@@ -15,12 +17,12 @@ func (adapter *DbAdapter) GetBalanceEntry(holder *PKID, creator *PKID, isDAOCoin
 	if adapter.postgresDb != nil {
 		if isDAOCoin {
 			return adapter.postgresDb.GetDAOCoinBalance(holder, creator).NewBalanceEntry()
-		} else {
-			return adapter.postgresDb.GetCreatorCoinBalance(holder, creator).NewBalanceEntry()
 		}
-	} else {
-		return DbGetBalanceEntry(adapter.badgerDb, holder, creator, isDAOCoin)
+
+		return adapter.postgresDb.GetCreatorCoinBalance(holder, creator).NewBalanceEntry()
 	}
+
+	return DbGetBalanceEntry(adapter.badgerDb, holder, creator, isDAOCoin)
 }
 
 //
@@ -30,7 +32,52 @@ func (adapter *DbAdapter) GetBalanceEntry(holder *PKID, creator *PKID, isDAOCoin
 func (adapter *DbAdapter) GetDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntry, byTransactorPKID bool) *DAOCoinLimitOrderEntry {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetDAOCoinLimitOrder(orderEntry)
-	} else {
-		return DBGetDAOCoinLimitOrder(adapter.badgerDb, orderEntry, byTransactorPKID)
 	}
+
+	return DBGetDAOCoinLimitOrder(adapter.badgerDb, orderEntry, byTransactorPKID)
+}
+
+func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
+	// This function is currently used for testing purposes only.
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetAllDAOCoinLimitOrders()
+	}
+
+	return DBGetAllDAOCoinLimitOrders(adapter.badgerDb)
+}
+
+func (adapter *DbAdapter) GetMatchingDAOCoinLimitOrders(transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+	var outputOrders []*DAOCoinLimitOrderEntry
+	var err error
+
+	if adapter.postgresDb != nil {
+		var postgresFunc func(*DAOCoinLimitOrderEntry, *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error)
+
+		if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+			postgresFunc = adapter.postgresDb.GetMatchingDAOCoinBidOrders
+		} else if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+			postgresFunc = adapter.postgresDb.GetMatchingDAOCoinAskOrders
+		} else {
+			return nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
+		}
+
+		outputOrders, err = postgresFunc(transactorOrder, lastSeenOrder)
+	} else {
+		err = adapter.badgerDb.View(func(txn *badger.Txn) error {
+			var badgerFunc func(*badger.Txn, *DAOCoinLimitOrderEntry, *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error)
+
+			if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+				badgerFunc = DBGetMatchingDAOCoinBidOrders
+			} else if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+				badgerFunc = DBGetMatchingDAOCoinAskOrders
+			} else {
+				return RuleErrorDAOCoinLimitOrderUnsupportedOperationType
+			}
+
+			outputOrders, err = badgerFunc(txn, transactorOrder, lastSeenOrder)
+			return err
+		})
+	}
+
+	return outputOrders, err
 }

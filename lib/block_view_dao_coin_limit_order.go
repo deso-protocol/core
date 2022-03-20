@@ -2,7 +2,6 @@ package lib
 
 import (
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -261,7 +260,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		utxoOp, err := bav._addUtxo(&utxoEntry)
 		if err != nil {
 			// TODO: fix error
-			return errors.Wrapf(err, "_helpConnectNFTSold: Problem adding output utxo")
+			return errors.Wrapf(err, "_connectDAOCoinLimitOrder: Problem adding output utxo")
 		}
 		daoCoinLimitOrderPaymentUtxoKeys = append(daoCoinLimitOrderPaymentUtxoKeys, outputKey)
 
@@ -286,10 +285,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Check if you already have an existing order at this price in this block.
 	// If exists, update new order with previous order's quantity and mark previous order for deletion.
-	// Only have to check UTXO and not Badger because we are only aggregating within the block height.
-	orderKey := requestedOrder.ToMapKey()
-
-	prevOrder, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderKey]
+	prevOrder := bav._getDAOCoinLimitOrderEntryMappings(requestedOrder)
 
 	if prevOrder != nil {
 		requestedOrder.Quantity = uint256.NewInt().Add(requestedOrder.Quantity, prevOrder.Quantity)
@@ -386,9 +382,18 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			orderIsComplete := false
 
 			if requestedOrder.Quantity.Lt(order.Quantity) {
+				// Since the transactor order's quantity is less than the matching order's
+				// quantity, we will be transferring the transactor order's quantity.
 				daoCoinsToTransfer = requestedOrder.Quantity
+
+				// Update matching order's quantity and store.
 				order.Quantity = uint256.NewInt().Sub(order.Quantity, requestedOrder.Quantity)
+				bav._setDAOCoinLimitOrderEntryMappings(order)
+
+				// Set transactor order's quantity to zero.
 				requestedOrder.Quantity = uint256.NewInt()
+
+				// Mark order is complete to braek out of loop.
 				orderIsComplete = true
 			} else {
 				daoCoinsToTransfer = order.Quantity
@@ -576,54 +581,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 func (bav *UtxoView) _getNextLimitOrdersToFill(
 	requestedOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) (
 	[]*DAOCoinLimitOrderEntry, error) {
-	orders := []*DAOCoinLimitOrderEntry{}
-
-	if bav.Postgres != nil {
-		var err error
-		var dbFunc func(*DAOCoinLimitOrderEntry, *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error)
-
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			dbFunc = bav.Postgres.GetMatchingDAOCoinBidOrders
-		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			dbFunc = bav.Postgres.GetMatchingDAOCoinAskOrders
-		} else {
-			return nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
-		}
-
-		orders, err = dbFunc(requestedOrder, lastSeenOrder)
-
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		var lastSeenKey []byte
-
-		if lastSeenOrder != nil {
-			lastSeenKey = DBKeyForDAOCoinLimitOrder(lastSeenOrder, false)
-		}
-
-		var dbFunc func(*badger.Txn, *DAOCoinLimitOrderEntry, []byte) ([]*DAOCoinLimitOrderEntry, error)
-
-		if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			dbFunc = DBGetMatchingDAOCoinBidOrders
-		} else if requestedOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			dbFunc = DBGetMatchingDAOCoinAskOrders
-		} else {
-			return nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
-		}
-
-		err := bav.Handle.View(func(txn *badger.Txn) error {
-			var err error
-			orders, err = dbFunc(txn, requestedOrder, lastSeenKey)
-			return err
-		})
-
-		if err != nil {
-			return nil, err
-		}
+	// Get matching limit order entries from database.
+	dbAdapter := DbAdapter{
+		badgerDb:   bav.Handle,
+		postgresDb: bav.Postgres,
 	}
 
-	// Update UTXO with relevant values pulled from Badger.
+	orders, err := dbAdapter.GetMatchingDAOCoinLimitOrders(requestedOrder, lastSeenOrder)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Update UTXO with relevant limit order entries from database.
 	for _, order := range orders {
 		orderKey := order.ToMapKey()
 
@@ -776,29 +746,12 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	// Revert the deleted limit orders in reverse order.
 	for ii := len(operationData.PrevDAOCoinLimitOrderEntries) - 1; ii >= 0; ii-- {
 		orderEntry := operationData.PrevDAOCoinLimitOrderEntries[ii]
-
-		if orderEntry == nil {
-			// TODO: raise an error if it's not the last element of the slice
-			// I.e. there's a nil that's not the first element of the reverse slice.
-			// TODO: handling the DAO coin limit order from the requester
-			continue
-		}
-
 		bav._setDAOCoinLimitOrderEntryMappings(orderEntry)
 	}
 
 	// Revert the balance entries in reverse order.
 	for ii := len(operationData.PrevBalanceEntries) - 1; ii >= 0; ii-- {
 		balanceEntry := operationData.PrevBalanceEntries[ii]
-
-		if balanceEntry == nil {
-			// TODO: raise an error if it's not the last element of the slice
-			// I.e. there's a nil that's not the first element of the reverse slice.
-			// TODO: handling the balance entry from the requester
-			// TODO: create a different element in the UtxoOperation struct to support.
-			continue
-		}
-
 		bav._setDAOCoinBalanceEntryMappings(balanceEntry)
 	}
 
@@ -850,6 +803,29 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
 }
 
+func (bav *UtxoView) _getDAOCoinLimitOrderEntryMappings(inputEntry *DAOCoinLimitOrderEntry) *DAOCoinLimitOrderEntry {
+	// This function shouldn't be called with nil.
+	if inputEntry == nil {
+		glog.Errorf("_getDAOCoinLimitOrderEntryMappings: Called with nil entry; this should never happen")
+		return nil
+	}
+
+	// First check if we have the order entry in the UTXO view.
+	outputEntry, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[inputEntry.ToMapKey()]
+
+	if outputEntry != nil {
+		return outputEntry
+	}
+
+	// If not, next check if we have the order entry in the database.
+	dbAdapter := DbAdapter{
+		badgerDb:   bav.Handle,
+		postgresDb: bav.Postgres,
+	}
+
+	return dbAdapter.GetDAOCoinLimitOrder(inputEntry, false)
+}
+
 func (bav *UtxoView) _setDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrderEntry) {
 	// This function shouldn't be called with nil.
 	if entry == nil {
@@ -857,8 +833,7 @@ func (bav *UtxoView) _setDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrder
 		return
 	}
 
-	orderKey := entry.ToMapKey()
-	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderKey] = entry
+	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[entry.ToMapKey()] = entry
 }
 
 func (bav *UtxoView) _deleteDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOrderEntry) {
