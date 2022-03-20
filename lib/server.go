@@ -227,6 +227,11 @@ func (srv *Server) ExpireRequests() {
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
+func (srv *Server) GetSnapshotObj() *Snapshot {
+	return srv.blockchain.snapshot
+}
+
+// TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetBlockchain() *Blockchain {
 	return srv.blockchain
 }
