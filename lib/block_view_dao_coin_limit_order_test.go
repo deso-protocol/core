@@ -453,7 +453,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// TODO: partially fulfilled orders
 	// TODO: two bid orders, different prices, choose high priced one
 	// TODO: two ask orders, different prices, choose lower priced one
-	// TODO: what if someone submits order that matches their own order.
+	// TODO: what if someone submits order that matches their own order? Probably fine. Just match them.
+	// TODO: test disconnect logic
 
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
