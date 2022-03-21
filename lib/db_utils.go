@@ -6187,19 +6187,16 @@ func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, byTransactor
 	return key
 }
 
-func DBGetDAOCoinLimitOrder(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) *DAOCoinLimitOrderEntry {
+func DBGetDAOCoinLimitOrder(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
 	var ret *DAOCoinLimitOrderEntry
+	var err error
 
 	handle.View(func(txn *badger.Txn) error {
-		var err error
 		ret, err = DBGetDAOCoinLimitOrderWithTxn(txn, inputOrder, byTransactorPKID)
-		if err != nil {
-			glog.Errorf("DBGetDAOCoinLimitOrder failed: %v", err)
-		}
 		return nil
 	})
 
-	return ret
+	return ret, err
 }
 
 func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
@@ -6207,6 +6204,12 @@ func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	orderItem, err := txn.Get(key)
 
 	if err != nil {
+		// We don't want to error if the key isn't found.
+		// Instead, we just want to return nil.
+		if err.Error() == "Key not found" {
+			return nil, nil
+		}
+
 		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
 	}
 
@@ -6392,10 +6395,17 @@ func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, e
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
-// Get all DAO coin limit orders for this transactor PKID.
-func DBGetAllDAOCoinLimitOrdersByTransactorPKID(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+// Get all DAO coin limit orders for this transactor.
+func DBGetAllDAOCoinLimitOrdersForThisTransactor(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, transactorPKID[:]...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+// Get all DAO coin limit orders for this transactor PKID at this price.
+func DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+	key := DBPrefixKeyForDAOCoinLimitOrder(inputOrder, true)
+	key = append(key, EncodeUint256(inputOrder.PriceNanosPerDenominatedCoin)...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 

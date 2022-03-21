@@ -5498,6 +5498,10 @@ type DAOCoinLimitOrderMetadata struct {
 	PriceNanosPerDenominatedCoin *uint256.Int
 	Quantity                     *uint256.Int
 
+	// If set to true, we will cancel an existing order (up to the
+	// specified quantity) instead of creating a new one.
+	CancelExistingOrder bool
+
 	// This map is populated with the inputs consumed when a transaction
 	// is an ask offer and there are bids to match immediately.
 	MatchingBidsInputsMap map[PKID][]*DeSoInput

@@ -385,6 +385,7 @@ type UtxoOperation struct {
 	PrevDAOCoinLimitOrderEntries         []*DAOCoinLimitOrderEntry
 	SpentUtxoEntries                     []*UtxoEntry
 	DAOCoinLimitOrderPaymentUtxoKeys     []*UtxoKey
+	DAOCoinLimitOrderIsCancellation      bool
 }
 
 func (utxoEntry *UtxoEntry) String() string {

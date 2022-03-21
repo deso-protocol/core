@@ -2483,21 +2483,54 @@ func ToPGDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntry) *PGDAOCoinLimitOr
 	}
 }
 
-func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntry) *DAOCoinLimitOrderEntry {
+func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntry) (*DAOCoinLimitOrderEntry, error) {
 	order := ToPGDAOCoinLimitOrder(inputOrder)
 	err := postgres.db.Model(order).WherePK().First()
 
 	if err != nil {
-		return nil
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+
+		return nil, err
 	}
 
-	return order.NewDAOCoinLimitOrder()
+	return order.NewDAOCoinLimitOrder(), nil
 }
 
 func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
 	// This function is currently used for testing purposes only.
 	var orders []*PGDAOCoinLimitOrder
 	err := postgres.db.Model(&orders).Select()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var outputOrders []*DAOCoinLimitOrderEntry
+
+	for _, order := range orders {
+		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+	}
+
+	return outputOrders, nil
+}
+
+func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+	var orders []*PGDAOCoinLimitOrder
+	price := inputOrder.PriceNanosPerDenominatedCoin
+
+	err := postgres.db.Model(&orders).
+		Where("transactor_pkid = ?", inputOrder.TransactorPKID).
+		Where("denominated_coin_type = ?", inputOrder.DenominatedCoinType).
+		Where("denominated_coin_creator_pkid = ?", inputOrder.DenominatedCoinCreatorPKID).
+		Where("dao_coin_creator_pkid = ?", inputOrder.DAOCoinCreatorPKID).
+		Where("operation_type = ?", inputOrder.OperationType).
+		Where("price_nanos_per_denominated_coin >= ?", Uint256ToLeftPaddedHex(price)).
+		Order("block_height ASC").
+		Order("quantity ASC").
+		Select()
 
 	if err != nil {
 		return nil, err
