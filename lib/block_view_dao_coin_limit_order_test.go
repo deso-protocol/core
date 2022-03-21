@@ -188,19 +188,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM0.PriceNanosPerDenominatedCoin = originalValue
 	}
 
-	// RuleErrorDAOCoinLimitOrderInvalidPrice: non-uint64
-	{
-		originalValue := metadataM0.PriceNanosPerDenominatedCoin
-		metadataM0.PriceNanosPerDenominatedCoin = MaxUint256.Clone()
-
-		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
-		metadataM0.PriceNanosPerDenominatedCoin = originalValue
-	}
-
 	// RuleErrorDAOCoinLimitOrderInvalidQuantity: zero
 	{
 		originalValue := metadataM0.Quantity
