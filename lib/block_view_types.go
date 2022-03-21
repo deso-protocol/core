@@ -75,7 +75,7 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 
 	if encoder != nil && !reflect.ValueOf(encoder).IsNil() {
 		data = append(data, BoolToByte(true))
-		data = append(data, UintToBuf(blockHeight)...)
+		//data = append(data, UintToBuf(blockHeight)...)
 		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight)...)
 	} else {
 		data = append(data, BoolToByte(false))
@@ -88,10 +88,11 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 // for the existence byte, which tells us whether actual data was encoded, or a nil pointer.
 func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (bool, error) {
 	if existByte, err := ReadBoolByte(rr); existByte && err == nil {
-		blockHeight, err := ReadUvarint(rr)
-		if err != nil {
-			return false, errors.Wrapf(err, "DecodeFromBytes: Problem decoding block height")
-		}
+		//blockHeight, err := ReadUvarint(rr)
+		//if err != nil {
+		//	return false, errors.Wrapf(err, "DecodeFromBytes: Problem decoding block height")
+		//}
+		blockHeight := uint64(0)
 		err = encoder.RawDecodeWithoutMetadata(blockHeight, rr)
 		if err != nil {
 			return false, errors.Wrapf(err, "DecodeFromBytes: Problem reading encoder")

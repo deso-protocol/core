@@ -121,7 +121,7 @@ func (sc *StateChecksum) AddToChecksum(elem group.Element) {
 	sc.checksum.Add(sc.checksum, elem)
 }
 
-func (sc *StateChecksum) HashtoCurve(bytes []byte) group.Element {
+func (sc *StateChecksum) HashToCurve(bytes []byte) group.Element {
 	var hashElement group.Element
 
 	// Check if we've already mapped this element, if so we will save some computation this way.
@@ -609,6 +609,10 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	if err != nil && err != badger.ErrKeyNotFound {
 		return nil, errors.Wrapf(err, "Snapshot.NewSnapshot: Problem retrieving snapshot information from db")
 	}
+	metadata.SnapshotBlockHeight = uint64(114000)
+	bb, _ := hex.DecodeString("0000000000002418ed24a2ea4b1a75c7367225a856e35ab7ff11bb7b65a86f22")
+	metadata.CurrentEpochBlockHash = NewBlockHash(bb)
+	metadata.CurrentEpochChecksumBytes = []byte{144, 10, 88, 174, 109, 212, 184, 207, 60, 207, 144, 79, 213, 75, 201, 81, 201, 36, 203, 177, 98, 214, 137, 87, 28, 136, 88, 43, 123, 182, 46, 111}
 
 	// Initialize the timer.
 	timer := &Timer{}

@@ -945,15 +945,8 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 // a snapshot chunk, which is a sorted list of <key, value> pairs representing a section of the database
 // at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
-	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: "+
-		"%v) and metadata (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
-		len(msg.SnapshotChunk), msg.SnapshotMetadata, pp)
-
 	srv.timer.End("Get Snapshot")
 	srv.timer.Start("Server._handleSnapshot Main")
-
-	// Validate the snapshot chunk message
-
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
 	if len(msg.SnapshotChunk) == 0 {
@@ -963,6 +956,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		pp.Disconnect()
 		return
 	}
+	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: "+
+		"%v) and metadata (%v) and isEmpty (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
+		len(msg.SnapshotChunk), msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)
+
+	// Validate the snapshot chunk message
 
 	// Make sure that the expected snapshot height and blockhash match the ones in received message.
 	if msg.SnapshotMetadata.SnapshotBlockHeight != srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
