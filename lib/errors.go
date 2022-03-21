@@ -257,6 +257,7 @@ const (
 	RuleErrorDAOCoinLimitOrderInvalidPrice                         RuleError = "RuleErrorDAOCoinLimitOrderInvalidPrice"
 	RuleErrorDAOCoinLimitOrderInvalidQuantity                      RuleError = "RuleErrorDAOCoinLimitOrderInvalidQuantity"
 	RuleErrorDAOCoinLimitOrderInvalidTotalCost                     RuleError = "RuleErrorDAOCoinLimitOrderInvalidTotalCost"
+	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists            RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
