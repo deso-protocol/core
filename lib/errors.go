@@ -256,6 +256,7 @@ const (
 	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder       RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder"
 	RuleErrorDAOCoinLimitOrderInvalidPrice                         RuleError = "RuleErrorDAOCoinLimitOrderInvalidPrice"
 	RuleErrorDAOCoinLimitOrderInvalidQuantity                      RuleError = "RuleErrorDAOCoinLimitOrderInvalidQuantity"
+	RuleErrorDAOCoinLimitOrderInvalidTotalCost                     RuleError = "RuleErrorDAOCoinLimitOrderInvalidTotalCost"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"

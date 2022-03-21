@@ -2494,8 +2494,8 @@ func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntr
 	return order.NewDAOCoinLimitOrder()
 }
 
-// This function is currently used for testing purposes only.
 func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
+	// This function is currently used for testing purposes only.
 	var orders []*PGDAOCoinLimitOrder
 	err := postgres.db.Model(&orders).Select()
 

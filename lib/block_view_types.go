@@ -1572,23 +1572,21 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	return newOrder
 }
 
-func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) bool {
-	// This function is currently only used for testing purposes.
+func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {
+	// Convert both order entries to bytes and compare bytes.
 	orderBytes, err := order.ToBytes()
 
 	if err != nil {
-		// TODO: is this kosher?
-		return false
+		return false, err
 	}
 
 	otherBytes, err := other.ToBytes()
 
 	if err != nil {
-		// TODO: is this kosher?
-		return false
+		return false, err
 	}
 
-	return bytes.Equal(orderBytes, otherBytes)
+	return bytes.Equal(orderBytes, otherBytes), nil
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
