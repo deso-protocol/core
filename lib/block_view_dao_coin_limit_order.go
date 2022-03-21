@@ -224,8 +224,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Helpers to create UTXOs.
 	daoCoinLimitOrderPaymentUtxoKeys := []*UtxoKey{}
 
-	// This may start negative but that's OK because the first thing we do
-	// is increment it in createUTXO.
+	// This may start negative but that's OK because the first thing we do is increment it in createUTXO.
 	nextUtxoIndex := len(txn.TxOutputs) - 1
 
 	// Helper function to create UTXOs.
@@ -275,7 +274,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	prevTransactorBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(transactorOrder.TransactorPKID, transactorOrder.DAOCoinCreatorPKID, true)
 	prevMatchingBalanceEntries := []*BalanceEntry{}
 
-	// Logic to cancel an existing order
+	// ----- Logic to cancel an existing limit order
+
 	if txMeta.CancelExistingOrder {
 		// Get all existing limit orders:
 		//   + For this transactor
@@ -341,6 +341,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 		return totalInput, totalOutput, utxoOpsForTxn, nil
 	}
+
+	// ----- Logic to create a new limit order
 
 	// Check if you already have an existing order for this transactor at this price in this block.
 	// If exists, update new order with previous order's quantity and mark previous order for deletion.
@@ -612,9 +614,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		if reflect.DeepEqual(pkid, *transactorOrder.TransactorPKID) {
 			// Total output = how much is spent by this txn.
 			// I.e. not given as change to the transactor.
-			// TODO: check for underflow.
-			// TODO: check for overflow.
+
+			// Check for underflow.
+			if totalInput < balanceNanos {
+				return 0, 0, nil, fmt.Errorf("Underflow while calculating DAO coin limit order output UTXOs")
+			}
+
+			// Check for overflow.
+			if totalOutput > math.MaxUint64-(totalInput-balanceNanos) {
+				return 0, 0, nil, fmt.Errorf("Overflow while calculating DAO coin limit order output UTXOs")
+			}
+
 			totalOutput += totalInput - balanceNanos
+
 			continue
 		}
 
