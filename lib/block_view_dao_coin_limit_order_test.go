@@ -4,6 +4,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
+	"math"
 	"testing"
 )
 
@@ -201,6 +202,55 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM0.Quantity = originalValue
 	}
 
+	// RuleErrorDAOCoinLimitOrderInvalidTotalCost: uint256 overflow
+	{
+		originalPrice := metadataM0.PriceNanosPerDenominatedCoin
+		originalQuantity := metadataM0.Quantity
+		metadataM0.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(1)
+		metadataM0.Quantity = MaxUint256.Clone()
+
+		// Confirm that total order cost calculation is going to overflow.
+		_, err := _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+			metadataM0.Quantity, metadataM0.PriceNanosPerDenominatedCoin)
+
+		require.Error(err)
+
+		// Perform txn.
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidTotalCost)
+
+		metadataM0.PriceNanosPerDenominatedCoin = originalPrice
+		metadataM0.Quantity = originalQuantity
+	}
+
+	// RuleErrorDAOCoinLimitOrderInvalidTotalCost: non-uint64 value
+	{
+		originalPrice := metadataM0.PriceNanosPerDenominatedCoin
+		originalQuantity := metadataM0.Quantity
+
+		metadataM0.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(1)
+		metadataM0.Quantity = uint256.NewInt().SetUint64(math.MaxUint64)
+
+		// Confirm that total order cost calculation is NOT going to overflow.
+		_, err := _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
+			metadataM0.Quantity, metadataM0.PriceNanosPerDenominatedCoin)
+
+		require.NoError(err)
+
+		// Perform txn.
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidTotalCost)
+
+		metadataM0.PriceNanosPerDenominatedCoin = originalPrice
+		metadataM0.Quantity = originalQuantity
+	}
+
 	// RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 	{
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -213,7 +263,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Store how many DAO coins will be transferred.
 	daoCoinQuantityChange := uint256.NewInt().SetUint64(2)
 
-	// Update quantity and resubmit. m0's BID order should be stored.
+	// Happy path: update quantity and resubmit. m0's BID order should be stored.
 	{
 		// Confirm no existing limit orders.
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()

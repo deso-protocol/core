@@ -158,14 +158,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// This is checked in the loop over matching orders.
 	// Possible that an input could cover multiple orders.
 	// A balance model makes those checks easier.
-	// Track how much DESO is available for each matching order PKID.
+	// Track how much $DESO is available for each matching order PKID.
 	// Create temporary in-memory balance model for tracking.
 
 	// PKID -> leftover change after performing operations
-	pkidToDESOLeftoverChangeNanos := make(map[PKID]uint64)
+	pkidToLeftoverChangeDESONanos := make(map[PKID]uint64)
 
 	// PKID -> DAO coin limit order payout
-	pkidToOutputDesoNanos := make(map[PKID]uint64)
+	pkidToOutputDESONanos := make(map[PKID]uint64)
 
 	spentUtxoEntries := []*UtxoEntry{}
 
@@ -175,52 +175,48 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// We need to decrease totalInput by fees. Figure that out later.
 	if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
 		txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-		pkidToDESOLeftoverChangeNanos[*bav.GetPKIDForPublicKey(txn.PublicKey).PKID] = totalInput
+		pkidToLeftoverChangeDESONanos[*bav.GetPKIDForPublicKey(txn.PublicKey).PKID] = totalInput
 	}
 
-	for pkid, inputs := range txMeta.MatchingBidsInputsMap {
+	for pkid, matchingBidsInputs := range txMeta.MatchingBidsInputsMap {
 		publicKey := bav.GetPublicKeyForPKID(&pkid)
 
 		// If no balance recorded so far, initialize to zero.
-		if _, exists := pkidToDESOLeftoverChangeNanos[pkid]; !exists {
-			pkidToDESOLeftoverChangeNanos[pkid] = 0
+		if _, exists := pkidToLeftoverChangeDESONanos[pkid]; !exists {
+			pkidToLeftoverChangeDESONanos[pkid] = 0
 		}
 
-		for _, input := range inputs {
-			utxoKey := UtxoKey(*input)
+		for _, matchingBidInput := range matchingBidsInputs {
+			utxoKey := UtxoKey(*matchingBidInput)
 			utxoEntry := bav.GetUtxoEntryForUtxoKey(&utxoKey)
 
 			if utxoEntry == nil || utxoEntry.isSpent {
-				// TODO: update rule error
-				return 0, 0, nil, errors.Wrapf(RuleErrorBidderInputForAcceptedNFTBidNoLongerExists, "_helpConnectNFTSold: ")
+				return 0, 0, nil, RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists
 			}
 
-			// Make sure that the utxo specified is actually from the bidder.
+			// Make sure that the UTXO specified is actually from the bidder.
 			if !reflect.DeepEqual(utxoEntry.PublicKey, publicKey) {
-				// TODO check rule error
-				return 0, 0, nil, errors.Wrapf(RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey, "_helpConnectNFTSold: ")
+				return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
 			}
 
-			// If the utxo is from a block reward txn, make sure enough time has passed to make it spendable.
+			// If the UTXO is from a block reward txn, make sure enough time has passed to make it spendable.
 			if _isEntryImmatureBlockReward(utxoEntry, blockHeight, bav.Params) {
-				// TODO check rule error
-				return 0, 0, nil, errors.Wrapf(RuleErrorInputSpendsImmatureBlockReward, "_helpConnectNFTSold: ")
+				return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
 			}
 
-			pkidToDESOLeftoverChangeNanos[pkid] += utxoEntry.AmountNanos
+			pkidToLeftoverChangeDESONanos[pkid] += utxoEntry.AmountNanos
 
-			// Make sure we spend the utxo so that the bidder can't reuse it.
+			// Make sure we spend the UTXO so that the bidder can't reuse it.
 			utxoOp, err := bav._spendUtxo(&utxoKey)
 
 			if err != nil {
-				// TODO: check rule error
-				return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: Problem spending bidder utxo")
+				return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder: Problem spending bidder utxo")
 			}
 
-			// Track spent UTXO entries
+			// Track spent UTXO entries.
 			spentUtxoEntries = append(spentUtxoEntries, utxoEntry)
 
-			// Track the UtxoOperations so we can rollback, and for Rosetta
+			// Track the UtxoOperations so we can rollback, and for Rosetta.
 			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 		}
 	}
@@ -335,7 +331,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Validate that the matching buyer has enough $ to buy the DAO coin.
 			if matchingOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
 				if matchingOrder.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-					matchingDESOBalanceNanos := pkidToDESOLeftoverChangeNanos[*matchingOrder.TransactorPKID]
+					matchingDESOBalanceNanos := pkidToLeftoverChangeDESONanos[*matchingOrder.TransactorPKID]
 
 					// Calculate matching order total cost from price and quantity.
 					matchingOrderTotalCost, err := _getOrderTotalCost(matchingOrder)
@@ -488,25 +484,25 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
 				}
 
-				if _, exists := pkidToOutputDesoNanos[outputPKID]; !exists {
-					pkidToOutputDesoNanos[outputPKID] = 0
+				if _, exists := pkidToOutputDESONanos[outputPKID]; !exists {
+					pkidToOutputDESONanos[outputPKID] = 0
 				}
 
 				// Check for underflow in user sending $DESO.
-				if pkidToDESOLeftoverChangeNanos[inputPKID] < desoToTransfer {
+				if pkidToLeftoverChangeDESONanos[inputPKID] < desoToTransfer {
 					// TODO: revisit rule error
 					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 				}
 
-				pkidToDESOLeftoverChangeNanos[inputPKID] -= desoToTransfer
+				pkidToLeftoverChangeDESONanos[inputPKID] -= desoToTransfer
 
 				// Check for overflow in user receiving $DESO.
-				if pkidToOutputDesoNanos[outputPKID] > math.MaxUint64-desoToTransfer {
+				if pkidToOutputDESONanos[outputPKID] > math.MaxUint64-desoToTransfer {
 					// TODO: revisit rule error --> have specified too big of an order
 					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
 				}
 
-				pkidToOutputDesoNanos[outputPKID] += desoToTransfer
+				pkidToOutputDESONanos[outputPKID] += desoToTransfer
 			} else if transactorOrder.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
 				// TODO: DAO coin denominated types not supported yet.
 				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
@@ -539,7 +535,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Create UTXOs.
 
 	// UTXOs representing payments.
-	for pkid, desoNanos := range pkidToOutputDesoNanos {
+	for pkid, desoNanos := range pkidToOutputDESONanos {
 		err = createUTXO(desoNanos, bav.GetPublicKeyForPKID(&pkid), UtxoTypeDAOCoinLimitOrderPayout)
 
 		if err != nil {
@@ -548,7 +544,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// UTXOs representing leftover change from input UTXOs after users make payments.
-	for pkid, balanceNanos := range pkidToDESOLeftoverChangeNanos {
+	for pkid, balanceNanos := range pkidToLeftoverChangeDESONanos {
 		// We don't generate a change output for the transactor since
 		// that is handled by the basic transfer.
 		if reflect.DeepEqual(pkid, *transactorOrder.TransactorPKID) {
@@ -769,7 +765,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	for ii := len(operationData.DAOCoinLimitOrderPaymentUtxoKeys) - 1; ii >= 0; ii-- {
 		paymentUtxoKey := operationData.DAOCoinLimitOrderPaymentUtxoKeys[ii]
 		if err := bav._unAddUtxo(paymentUtxoKey); err != nil {
-			return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unAdding utxo %v: ", paymentUtxoKey)
+			return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unAdding UTXO %v: ", paymentUtxoKey)
 		}
 	}
 
@@ -780,7 +776,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 			spentUtxoEntry := operationData.SpentUtxoEntries[ii]
 
 			if err := bav._unSpendUtxo(spentUtxoEntry); err != nil {
-				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpending utxo %v: ", spentUtxoEntry)
+				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpending UTXO %v: ", spentUtxoEntry)
 			}
 		}
 	} else if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
