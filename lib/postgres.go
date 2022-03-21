@@ -2488,6 +2488,11 @@ func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntr
 	err := postgres.db.Model(order).WherePK().First()
 
 	if err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+
 		return nil, err
 	}
 
