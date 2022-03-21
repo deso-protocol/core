@@ -29,7 +29,7 @@ func (adapter *DbAdapter) GetBalanceEntry(holder *PKID, creator *PKID, isDAOCoin
 // DAO coin limit order
 //
 
-func (adapter *DbAdapter) GetDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntry, byTransactorPKID bool) *DAOCoinLimitOrderEntry {
+func (adapter *DbAdapter) GetDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntry, byTransactorPKID bool) (*DAOCoinLimitOrderEntry, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetDAOCoinLimitOrder(orderEntry)
 	}
@@ -44,6 +44,14 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 	}
 
 	return DBGetAllDAOCoinLimitOrders(adapter.badgerDb)
+}
+
+func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputOrder)
+	}
+
+	return DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(adapter.badgerDb, inputOrder)
 }
 
 func (adapter *DbAdapter) GetMatchingDAOCoinLimitOrders(transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
