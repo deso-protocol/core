@@ -13,7 +13,7 @@ import (
 func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
-	// ----- Begin boiler-plate txn validations
+	// ----- BOILER-PLATE VALIDATIONS
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeDAOCoinLimitOrder {
@@ -38,7 +38,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// public key so there is no need to verify anything further.
 	}
 
-	// ----- Begin custom validations
+	// ----- CUSTOM VALIDATIONS
 
 	// Validate TransactorPKID exists.
 	transactorPKID := bav.GetPKIDForPublicKey(txn.PublicKey).PKID
@@ -48,12 +48,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Validate BuyingDAOCoinCreatorPKID != SellingDAOCoinCreatorPKID.
-	if reflect.DeepEqual(txMeta.BuyingDAOCoinCreatorPKID, txMeta.SellingDAOCoinCreatorPKID) {
+	if reflect.DeepEqual(*txMeta.BuyingDAOCoinCreatorPKID, *txMeta.SellingDAOCoinCreatorPKID) {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
 	}
 
 	// If buying a DAO coin, validate BuyingDAOCoinCreatorPKID exists and has a profile.
-	transactorIsBuyingDESO := reflect.DeepEqual(txMeta.BuyingDAOCoinCreatorPKID, &ZeroPKID)
+	transactorIsBuyingDESO := reflect.DeepEqual(*txMeta.BuyingDAOCoinCreatorPKID, ZeroPKID)
 
 	if !transactorIsBuyingDESO {
 		profileEntry := bav.GetProfileEntryForPKID(txMeta.BuyingDAOCoinCreatorPKID)
@@ -64,7 +64,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// If selling a DAO coin, validate SellingDAOCoinCreatorPKID exists and has a profile.
-	transactorIsSellingDESO := reflect.DeepEqual(txMeta.SellingDAOCoinCreatorPKID, &ZeroPKID)
+	transactorIsSellingDESO := reflect.DeepEqual(*txMeta.SellingDAOCoinCreatorPKID, ZeroPKID)
 
 	if !transactorIsSellingDESO {
 		profileEntry := bav.GetProfileEntryForPKID(txMeta.SellingDAOCoinCreatorPKID)
@@ -87,8 +87,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Calculate order total cost from price and quantity.
 	transactorOrderTotalCost := uint256.NewInt().Mul(txMeta.PriceNanos, txMeta.QuantityNanos)
 
-	// If buying $DESO, validate that order total cost is less than the max uint64.
-	if transactorIsBuyingDESO && !transactorOrderTotalCost.IsUint64() {
+	// Validate that order total cost doesn't overflow uint256.
+	if txMeta.QuantityNanos.Gt(uint256.NewInt().Div(MaxUint256, txMeta.PriceNanos)) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
+	}
+
+	// If selling $DESO, validate that order total cost is less than the max uint64.
+	if transactorIsSellingDESO && !transactorOrderTotalCost.IsUint64() {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
 	}
 
@@ -230,7 +235,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return nil
 	}
 
-	// ------ End custom validations
+	// ------ END CUSTOM VALIDATIONS
 
 	// Create entry from txn metadata for the transactor.
 	transactorOrder := txMeta.ToEntry(transactorPKID, blockHeight)
@@ -253,7 +258,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	prevMatchingBalanceEntries := []*BalanceEntry{}
 
-	// ----- Logic to cancel an existing limit order
+	// ----- CANCEL AN EXISTING LIMIT ORDER (IF SPECIFIED)
 
 	if txMeta.CancelExistingOrder {
 		// Get all existing limit orders:
@@ -322,7 +327,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return totalInput, totalOutput, utxoOpsForTxn, nil
 	}
 
-	// ----- Logic to create a new limit order
+	// ----- CREATE A NEW LIMIT ORDER
 
 	// Check if you already have an existing order for this transactor at this price in this block.
 	// If exists, update new order with previous order's quantity and mark previous order for deletion.
@@ -723,11 +728,11 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			continue
 		}
 
-		if !reflect.DeepEqual(transactorOrder.BuyingDAOCoinCreatorPKID, matchingOrder.SellingDAOCoinCreatorPKID) {
+		if !reflect.DeepEqual(*transactorOrder.BuyingDAOCoinCreatorPKID, *matchingOrder.SellingDAOCoinCreatorPKID) {
 			continue
 		}
 
-		if !reflect.DeepEqual(transactorOrder.SellingDAOCoinCreatorPKID, matchingOrder.BuyingDAOCoinCreatorPKID) {
+		if !reflect.DeepEqual(*transactorOrder.SellingDAOCoinCreatorPKID, *matchingOrder.BuyingDAOCoinCreatorPKID) {
 			continue
 		}
 
@@ -801,7 +806,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
 
 	// If buying DAO coins, revert the transactor's buying DAO coin balance entry.
-	transactorIsBuyingDESO := reflect.DeepEqual(txMeta.BuyingDAOCoinCreatorPKID, &ZeroPKID)
+	transactorIsBuyingDESO := reflect.DeepEqual(*txMeta.BuyingDAOCoinCreatorPKID, ZeroPKID)
 
 	if !transactorIsBuyingDESO {
 		prevTransactorBalanceEntry := operationData.PrevTransactorBuyingDAOCoinBalanceEntry
@@ -818,7 +823,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	}
 
 	// If selling DAO coins, revert the transactors' selling DAO coin balance entry.
-	transactorIsSellingDESO := reflect.DeepEqual(txMeta.SellingDAOCoinCreatorPKID, &ZeroPKID)
+	transactorIsSellingDESO := reflect.DeepEqual(*txMeta.SellingDAOCoinCreatorPKID, ZeroPKID)
 
 	if !transactorIsSellingDESO {
 		prevTransactorBalanceEntry := operationData.PrevTransactorSellingDAOCoinBalanceEntry
