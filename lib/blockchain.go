@@ -3197,21 +3197,21 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
 				// TODO: check overflow
-				orderCost, err := _getOrderTotalCost(order)
-				if err != nil {
-					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in total order cost")
-				}
+				orderCost := uint256.NewInt().Mul(order.PriceNanos, order.QuantityNanos)
+
 				if orderCost.LtUint64(desoBalanceNanos) {
 					var desoNanosToConsume *uint256.Int
 					if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
-						desoNanosToConsume, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
-							requestedOrder.QuantityNanos, order.PriceNanos)
+						desoNanosToConsume = uint256.NewInt().Mul(
+							order.PriceNanos, requestedOrder.QuantityNanos)
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}
 						requestedOrder.QuantityNanos = uint256.NewInt()
 					} else {
-						desoNanosToConsume, err = _getOrderTotalCost(order)
+						desoNanosToConsume = uint256.NewInt().Mul(
+							order.PriceNanos, order.QuantityNanos)
+
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}
@@ -4227,16 +4227,10 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.QuantityNanos) {
 						var nanosToFulfillOrder *uint256.Int
 						if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
-							nanosToFulfillOrder, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(requestedOrder.QuantityNanos, order.PriceNanos)
-							if err != nil {
-								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
-							}
+							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanos, requestedOrder.QuantityNanos)
 							requestedOrder.QuantityNanos = uint256.NewInt()
 						} else {
-							nanosToFulfillOrder, err = _getOrderTotalCost(order)
-							if err != nil {
-								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
-							}
+							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanos, order.QuantityNanos)
 							requestedOrder.QuantityNanos = uint256.NewInt().Sub(requestedOrder.QuantityNanos, order.QuantityNanos)
 						}
 						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)

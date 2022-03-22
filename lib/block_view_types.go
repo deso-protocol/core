@@ -1561,25 +1561,13 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 	return bytes.Equal(orderBytes, otherBytes), nil
 }
 
-func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
+func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {
+	// All orders are stored as ASKs. So prefer the lower priced.
 	if !order.PriceNanos.Eq(other.PriceNanos) {
 		// order.PriceNanos < other.PriceNanos
 		return order.PriceNanos.Lt(other.PriceNanos)
 	}
 
-	return order.IsBetterOrderThan(other)
-}
-
-func (order *DAOCoinLimitOrderEntry) IsBetterBidThan(other *DAOCoinLimitOrderEntry) bool {
-	if !order.PriceNanos.Eq(other.PriceNanos) {
-		// order.PriceNanos > other.PriceNanos
-		return order.PriceNanos.Gt(other.PriceNanos)
-	}
-
-	return order.IsBetterOrderThan(other)
-}
-
-func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderEntry) bool {
 	// FIFO, prefer older orders first, i.e. lower block height.
 	if order.BlockHeight != other.BlockHeight {
 		return order.BlockHeight < other.BlockHeight

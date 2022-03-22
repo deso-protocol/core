@@ -6,7 +6,6 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"math"
-	"math/big"
 	"reflect"
 	"sort"
 )
@@ -239,7 +238,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Keep track of state in case of reverting txn.
 	prevDAOCoinLimitOrders := []*DAOCoinLimitOrderEntry{}
 	var prevTransactorBuyingDAOCoinBalanceEntry *BalanceEntry
-	_ = prevTransactorBuyingDAOCoinBalanceEntry // TODO: delete
 
 	if !transactorIsBuyingDESO {
 		prevTransactorBuyingDAOCoinBalanceEntry = bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(
@@ -247,7 +245,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	var prevTransactorSellingDAOCoinBalanceEntry *BalanceEntry
-	_ = prevTransactorSellingDAOCoinBalanceEntry // TODO: delete
 
 	if !transactorIsSellingDESO {
 		prevTransactorSellingDAOCoinBalanceEntry = bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(
@@ -517,16 +514,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			var prevMatchingBuyingDAOCoinBalanceEntry *BalanceEntry
 			var prevMatchingSellingDAOCoinBalanceEntry *BalanceEntry
 
-			_, _, _, _ = prevTransactorCurrentBuyingDAOCoinBalanceEntry, prevTransactorCurrentSellingDAOCoinBalanceEntry,
-				prevMatchingBuyingDAOCoinBalanceEntry, prevMatchingSellingDAOCoinBalanceEntry // TODO: delete
-
 			var newTransactorBuyingDAOCoinBalanceEntry *BalanceEntry
 			var newTransactorSellingDAOCoinBalanceEntry *BalanceEntry
 			var newMatchingBuyingDAOCoinBalanceEntry *BalanceEntry
 			var newMatchingSellingDAOCoinBalanceEntry *BalanceEntry
-
-			_, _, _, _ = newTransactorBuyingDAOCoinBalanceEntry, newTransactorSellingDAOCoinBalanceEntry,
-				newMatchingBuyingDAOCoinBalanceEntry, newMatchingSellingDAOCoinBalanceEntry // TODO: delete
 
 			if !transactorIsBuyingDESO {
 				// Transactor's order is buying DAO coin. Matching order is selling DAO coin.
@@ -687,14 +678,15 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// and the prev DAO coin limit order entries. Usually we leave them in
 	// a separate place, but here it makes sense.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                                 OperationTypeDAOCoinLimitOrder,
-		PrevTransactorBalanceEntry:           prevTransactorBalanceEntry,
-		PrevTransactorDAOCoinLimitOrderEntry: prevTransactorOrder,
-		PrevBalanceEntries:                   prevMatchingBalanceEntries,
-		PrevDAOCoinLimitOrderEntries:         prevDAOCoinLimitOrders,
-		SpentUtxoEntries:                     spentUtxoEntries,
-		DAOCoinLimitOrderPaymentUtxoKeys:     daoCoinLimitOrderPaymentUtxoKeys,
-		DAOCoinLimitOrderIsCancellation:      false,
+		Type:                                     OperationTypeDAOCoinLimitOrder,
+		PrevTransactorBuyingDAOCoinBalanceEntry:  prevTransactorBuyingDAOCoinBalanceEntry,
+		PrevTransactorSellingDAOCoinBalanceEntry: prevTransactorSellingDAOCoinBalanceEntry,
+		PrevTransactorDAOCoinLimitOrderEntry:     prevTransactorOrder,
+		PrevBalanceEntries:                       prevMatchingBalanceEntries,
+		PrevDAOCoinLimitOrderEntries:             prevDAOCoinLimitOrders,
+		SpentUtxoEntries:                         spentUtxoEntries,
+		DAOCoinLimitOrderPaymentUtxoKeys:         daoCoinLimitOrderPaymentUtxoKeys,
+		DAOCoinLimitOrderIsCancellation:          false,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -731,43 +723,24 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			continue
 		}
 
-		if transactorOrder.DenominatedCoinType != matchingOrder.DenominatedCoinType {
+		if !reflect.DeepEqual(transactorOrder.BuyingDAOCoinCreatorPKID, matchingOrder.SellingDAOCoinCreatorPKID) {
 			continue
 		}
 
-		if transactorOrder.OperationType == matchingOrder.OperationType {
+		if !reflect.DeepEqual(transactorOrder.SellingDAOCoinCreatorPKID, matchingOrder.BuyingDAOCoinCreatorPKID) {
 			continue
 		}
 
-		// ASK: reject if transactorOrder.PriceNanos > order.PriceNanos
-		// I.e. transactorOrder.PriceNanosPerDenominatedCoin < order.PriceNanosPerDenominatedCoin
-		if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			// We should have seen this order already.
-			if lastSeenOrder != nil && matchingOrder.IsBetterBidThan(lastSeenOrder) {
-				continue
-			}
-			if transactorOrder.PriceNanosPerDenominatedCoin.Lt(matchingOrder.PriceNanosPerDenominatedCoin) {
-				continue
-			}
-		}
-
-		// Bid: reject if transactorOrder.PriceNanos < order.PriceNanos
-		// I.e. transactorOrder.PriceNanosPerDenominatedCoin > order.PriceNanosPerDenominatedCoin
-		if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			// We should have seen this order already
-			if lastSeenOrder != nil && matchingOrder.IsBetterAskThan(lastSeenOrder) {
-				continue
-			}
-			if transactorOrder.PriceNanosPerDenominatedCoin.Gt(matchingOrder.PriceNanosPerDenominatedCoin) {
-				continue
-			}
-		}
-
-		if !reflect.DeepEqual(transactorOrder.DenominatedCoinCreatorPKID, matchingOrder.DenominatedCoinCreatorPKID) {
+		// We should have seen this order already.
+		if lastSeenOrder != nil && matchingOrder.IsBetterMatchingOrderThan(lastSeenOrder) {
 			continue
 		}
 
-		if !reflect.DeepEqual(transactorOrder.DAOCoinCreatorPKID, matchingOrder.DAOCoinCreatorPKID) {
+		// Transactor order is analogous to a BID.
+		// Matching order is analogous to an ASK.
+		// We want to validate that the BID price >= ASK price.
+		// Skip if transactor BID price < matching ASK price.
+		if transactorOrder.PriceNanos.Lt(matchingOrder.PriceNanos) {
 			continue
 		}
 
@@ -777,26 +750,16 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 	// Sort matching orders by best matching.
 	// Sort logic first looks at price, then block height (FIFO), then quantity (lowest first).
 	sort.Slice(sortedMatchingOrders, func(ii, jj int) bool {
-		if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-			// If transactor's order is an ASK, we want to sort by the best BID orders.
-			return sortedMatchingOrders[ii].IsBetterBidThan(sortedMatchingOrders[jj])
-		}
-
-		if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			// If transactor's order is a BID, we want to sort by the best ASK orders.
-			return sortedMatchingOrders[ii].IsBetterAskThan(sortedMatchingOrders[jj])
-		}
-
-		return false
+		return sortedMatchingOrders[ii].IsBetterMatchingOrderThan(sortedMatchingOrders[jj])
 	})
 
 	// Pull orders up to the when the quantity is fulfilled or we run out of orders.
 	outputMatchingOrders := []*DAOCoinLimitOrderEntry{}
-	transactorOrderQuantity := transactorOrder.Quantity
+	transactorOrderQuantity := transactorOrder.QuantityNanos
 
 	for _, matchingOrder := range sortedMatchingOrders {
 		outputMatchingOrders = append(outputMatchingOrders, matchingOrder)
-		transactorOrderQuantity = uint256.NewInt().Sub(transactorOrderQuantity, matchingOrder.Quantity)
+		transactorOrderQuantity = uint256.NewInt().Sub(transactorOrderQuantity, matchingOrder.QuantityNanos)
 
 		if transactorOrderQuantity.LtUint64(0) {
 			break
@@ -835,19 +798,41 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		}
 	}
 
-	// Revert the transactor's balance entry.
 	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
-	prevTransactorBalanceEntry := operationData.PrevTransactorBalanceEntry
 
-	if prevTransactorBalanceEntry == nil {
-		prevTransactorBalanceEntry = &BalanceEntry{
-			HODLerPKID:   transactorPKID,
-			CreatorPKID:  txMeta.DAOCoinCreatorPKID,
-			BalanceNanos: *uint256.NewInt(),
+	// If buying DAO coins, revert the transactor's buying DAO coin balance entry.
+	transactorIsBuyingDESO := reflect.DeepEqual(txMeta.BuyingDAOCoinCreatorPKID, &ZeroPKID)
+
+	if !transactorIsBuyingDESO {
+		prevTransactorBalanceEntry := operationData.PrevTransactorBuyingDAOCoinBalanceEntry
+
+		if prevTransactorBalanceEntry == nil {
+			prevTransactorBalanceEntry = &BalanceEntry{
+				HODLerPKID:   transactorPKID,
+				CreatorPKID:  txMeta.BuyingDAOCoinCreatorPKID,
+				BalanceNanos: *uint256.NewInt(),
+			}
 		}
+
+		bav._setDAOCoinBalanceEntryMappings(prevTransactorBalanceEntry)
 	}
 
-	bav._setDAOCoinBalanceEntryMappings(prevTransactorBalanceEntry)
+	// If selling DAO coins, revert the transactors' selling DAO coin balance entry.
+	transactorIsSellingDESO := reflect.DeepEqual(txMeta.SellingDAOCoinCreatorPKID, &ZeroPKID)
+
+	if !transactorIsSellingDESO {
+		prevTransactorBalanceEntry := operationData.PrevTransactorSellingDAOCoinBalanceEntry
+
+		if prevTransactorBalanceEntry == nil {
+			prevTransactorBalanceEntry = &BalanceEntry{
+				HODLerPKID:   transactorPKID,
+				CreatorPKID:  txMeta.SellingDAOCoinCreatorPKID,
+				BalanceNanos: *uint256.NewInt(),
+			}
+		}
+
+		bav._setDAOCoinBalanceEntryMappings(prevTransactorBalanceEntry)
+	}
 
 	// Revert the transactor's limit order entry.
 	prevTransactorOrderEntry := operationData.PrevTransactorDAOCoinLimitOrderEntry
@@ -896,24 +881,22 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	}
 
 	// Un-spend spent UTXOs.
-	if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-		// Un-spending UTXOs on behalf of the matching BID orders.
-		for ii := len(operationData.SpentUtxoEntries) - 1; ii >= 0; ii-- {
-			spentUtxoEntry := operationData.SpentUtxoEntries[ii]
-
-			if err := bav._unSpendUtxo(spentUtxoEntry); err != nil {
-				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpending UTXO %v: ", spentUtxoEntry)
-			}
-		}
-	} else if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-		if len(operationData.SpentUtxoEntries) > 0 {
-			return errors.New("_disconnectDAOCoinLimitOrder: unspent UTXO entries for BID order" +
-				"this should never happen!")
-		}
-	} else {
-		// TODO: is this rule kosher?
-		return RuleErrorDAOCoinLimitOrderUnsupportedOperationType
-	}
+	// TODO: what should we do here?
+	//if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
+	//	// Un-spending UTXOs on behalf of the matching BID orders.
+	//	for ii := len(operationData.SpentUtxoEntries) - 1; ii >= 0; ii-- {
+	//		spentUtxoEntry := operationData.SpentUtxoEntries[ii]
+	//
+	//		if err := bav._unSpendUtxo(spentUtxoEntry); err != nil {
+	//			return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpending UTXO %v: ", spentUtxoEntry)
+	//		}
+	//	}
+	//} else if txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
+	//	if len(operationData.SpentUtxoEntries) > 0 {
+	//		return errors.New("_disconnectDAOCoinLimitOrder: unspent UTXO entries for BID order" +
+	//			"this should never happen!")
+	//	}
+	//}
 
 	// Now revert the basic transfer with the remaining operations.
 	numMatchingOrderInputs := 0
@@ -972,7 +955,7 @@ func (bav *UtxoView) _getDAOCoinLimitOrderEntry(inputEntry *DAOCoinLimitOrderEnt
 		postgresDb: bav.Postgres,
 	}
 
-	return dbAdapter.GetDAOCoinLimitOrder(inputEntry, false)
+	return dbAdapter.GetDAOCoinLimitOrder(inputEntry)
 }
 
 func (bav *UtxoView) _getAllDAOCoinLimitOrderEntriesForThisTransactorAtThisPrice(inputEntry *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
@@ -1001,22 +984,4 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrderEntriesForThisTransactorAtThisPrice
 	}
 
 	return outputEntries, nil
-}
-
-func _getOrderTotalCost(order *DAOCoinLimitOrderEntry) (*uint256.Int, error) {
-	return _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(order.Quantity, order.PriceNanosPerDenominatedCoin)
-}
-
-// TotalCost = Quantity * (Nanos / DenominatedCoin) * ( 1 / PriceNanosPerDenominatedCoin )
-func _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
-	quantity *uint256.Int, priceNanosPerDenominatedCoin *uint256.Int) (*uint256.Int, error) {
-	totalCostBigInt := big.NewInt(0).Mul(quantity.ToBig(), big.NewInt(int64(NanosPerUnit)))
-	totalCostBigInt = big.NewInt(0).Div(totalCostBigInt, priceNanosPerDenominatedCoin.ToBig())
-	totalCost, totalCostOverflow := uint256.FromBig(totalCostBigInt)
-
-	if totalCostOverflow {
-		return nil, fmt.Errorf("Order total cost overflows uint256")
-	}
-
-	return totalCost, nil
 }
