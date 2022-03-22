@@ -246,19 +246,18 @@ const (
 	RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus           RuleError = "RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus"
 
 	// DAO Coin Limit Orders
-	RuleErrorDAOCoinLimitOrderInvalidTransactorPKID                RuleError = "RuleErrorMissingTransactorPKID"
-	RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType       RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType"
-	RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID    RuleError = "RuleErrorDAOCoinLimitOrderInvalidDenominatedCoinCreatorPKID"
-	RuleErrorDAOCoinLimitOrderDenominatedCoinCreatorMissingProfile RuleError = "RuleErrorDAOCoinLimitOrderDenominatedCoinCreatorMissingProfile"
-	RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile         RuleError = "RuleErrorDAOCoinLimitOrderDAOCoinCreatorMissingProfile"
-	RuleErrorDAOCoinLimitOrderUnsupportedOperationType             RuleError = "RuleErrorDAOCoinLimitOrderUnsupportedOperationType"
-	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder   RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder"
-	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder       RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder"
-	RuleErrorDAOCoinLimitOrderInvalidPrice                         RuleError = "RuleErrorDAOCoinLimitOrderInvalidPrice"
-	RuleErrorDAOCoinLimitOrderInvalidQuantity                      RuleError = "RuleErrorDAOCoinLimitOrderInvalidQuantity"
-	RuleErrorDAOCoinLimitOrderInvalidTotalCost                     RuleError = "RuleErrorDAOCoinLimitOrderInvalidTotalCost"
-	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists            RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
-	RuleErrorDAOCoinLimitOrderToCancelNotFound                     RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotFound"
+	RuleErrorDAOCoinLimitOrderInvalidTransactorPKID               RuleError = "RuleErrorMissingTransactorPKID"
+	RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin            RuleError = "RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin"
+	RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile  RuleError = "RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile"
+	RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile RuleError = "RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile"
+	RuleErrorDAOCoinLimitOrderInvalidPrice                        RuleError = "RuleErrorDAOCoinLimitOrderInvalidPrice"
+	RuleErrorDAOCoinLimitOrderInvalidQuantity                     RuleError = "RuleErrorDAOCoinLimitOrderInvalidQuantity"
+	RuleErrorDAOCoinLimitOrderInvalidTotalCost                    RuleError = "RuleErrorDAOCoinLimitOrderInvalidTotalCost"
+	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder         RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder"
+	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder     RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder"
+
+	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
+	RuleErrorDAOCoinLimitOrderToCancelNotFound          RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotFound"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
