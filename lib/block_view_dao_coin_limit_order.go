@@ -399,9 +399,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				}
 			}
 
-			// Update order quantities.
+			// ----- UPDATE ORDER QUANTITIES
+
 			var daoCoinNanosToTransfer *uint256.Int
-			_ = daoCoinNanosToTransfer // TODO: delete
 			transactorOrderIsComplete := false
 
 			if transactorOrder.QuantityNanos.Lt(matchingOrder.QuantityNanos) {
@@ -442,12 +442,81 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				}
 			}
 
+			// ----- TRANSFER DESO
+			desoNanosToTransfer256 := uint256.NewInt().Mul(matchingOrder.PriceNanos, daoCoinNanosToTransfer)
+
+			if !desoNanosToTransfer256.IsUint64() {
+				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
+			}
+
+			desoNanosToTransfer := desoNanosToTransfer256.Uint64()
+
+			if transactorIsBuyingDESO {
+				// Transactor is buying $DESO. Matching order is selling $DESO.
+				inputPKID := *matchingOrder.TransactorPKID
+				outputPKID := *transactorOrder.TransactorPKID
+
+				// Initialize PKID => output $DESO nanos map.
+				if _, exists := pkidToOutputDESONanos[outputPKID]; !exists {
+					pkidToOutputDESONanos[outputPKID] = 0
+				}
+
+				// Check for overflow in transactor receiving $DESO.
+				if pkidToOutputDESONanos[outputPKID] > math.MaxUint64-desoNanosToTransfer {
+					// TODO: revisit rule error --> have specified too big of an order
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
+				}
+
+				// Transactor $DESO increases.
+				pkidToOutputDESONanos[outputPKID] += desoNanosToTransfer
+
+				// Check for underflow in matching order sending $DESO.
+				if pkidToLeftoverChangeDESONanos[inputPKID] < desoNanosToTransfer {
+					// TODO: revisit rule error
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
+				}
+
+				// Matching order $DESO decreases.
+				pkidToLeftoverChangeDESONanos[inputPKID] -= desoNanosToTransfer
+			}
+
+			if transactorIsSellingDESO {
+				// Transactor is selling $DESO. Matching order is buying $DESO.
+				inputPKID := *transactorOrder.TransactorPKID
+				outputPKID := *matchingOrder.TransactorPKID
+
+				// Initialize PKID => output $DESO nanos map.
+				if _, exists := pkidToOutputDESONanos[outputPKID]; !exists {
+					pkidToOutputDESONanos[outputPKID] = 0
+				}
+
+				// Check for underflow in transactor sending $DESO.
+				if pkidToLeftoverChangeDESONanos[inputPKID] < desoNanosToTransfer {
+					// TODO: revisit rule error
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
+				}
+
+				// Transactor $DESO decreases.
+				pkidToLeftoverChangeDESONanos[inputPKID] -= desoNanosToTransfer
+
+				// Check for overflow in matching order receiving $DESO.
+				if pkidToOutputDESONanos[outputPKID] > math.MaxUint64-desoNanosToTransfer {
+					// TODO: revisit rule error --> have specified too big of an order
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
+				}
+
+				// Matching order $DESO increases.
+				pkidToOutputDESONanos[outputPKID] += desoNanosToTransfer
+			}
+
+			// ----- TRANSFER DAO COINS, UPDATE BALANCE ENTRIES
+
 			// Find or create DAO coin balance entries.
 			var prevTransactorCurrentBuyingDAOCoinBalanceEntry *BalanceEntry
 			var prevTransactorCurrentSellingDAOCoinBalanceEntry *BalanceEntry
 			var prevMatchingBuyingDAOCoinBalanceEntry *BalanceEntry
 			var prevMatchingSellingDAOCoinBalanceEntry *BalanceEntry
-			
+
 			_, _, _, _ = prevTransactorCurrentBuyingDAOCoinBalanceEntry, prevTransactorCurrentSellingDAOCoinBalanceEntry,
 				prevMatchingBuyingDAOCoinBalanceEntry, prevMatchingSellingDAOCoinBalanceEntry // TODO: delete
 
@@ -460,6 +529,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				newMatchingBuyingDAOCoinBalanceEntry, newMatchingSellingDAOCoinBalanceEntry // TODO: delete
 
 			if !transactorIsBuyingDESO {
+				// Transactor's order is buying DAO coin. Matching order is selling DAO coin.
+
 				// Find or create transactor buying DAO coin balance entry.
 				prevTransactorCurrentBuyingDAOCoinBalanceEntry = bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(
 					transactorOrder.TransactorPKID, transactorOrder.BuyingDAOCoinCreatorPKID, true)
@@ -487,6 +558,21 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				} else {
 					newMatchingSellingDAOCoinBalanceEntry = prevMatchingSellingDAOCoinBalanceEntry.Copy()
 				}
+
+				// Transfer DAO coins from matching order to transactor.
+				prevMatchingBalanceEntries = append(prevMatchingBalanceEntries, prevMatchingSellingDAOCoinBalanceEntry)
+
+				// Matching limit order's selling DAO coin balance entry decreases.
+				newMatchingSellingDAOCoinBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(
+					&newMatchingSellingDAOCoinBalanceEntry.BalanceNanos, daoCoinNanosToTransfer)
+
+				// Transactor's buying DAO coin balance entry increases.
+				newTransactorBuyingDAOCoinBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+					&newTransactorBuyingDAOCoinBalanceEntry.BalanceNanos, daoCoinNanosToTransfer)
+
+				// Store updated balance entries.
+				bav._setDAOCoinBalanceEntryMappings(newMatchingSellingDAOCoinBalanceEntry)
+				bav._setDAOCoinBalanceEntryMappings(newTransactorBuyingDAOCoinBalanceEntry)
 			}
 
 			if !transactorIsSellingDESO {
@@ -517,79 +603,21 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				} else {
 					newMatchingBuyingDAOCoinBalanceEntry = prevMatchingBuyingDAOCoinBalanceEntry.Copy()
 				}
-			}
 
-			// Transfer DAO coins.
-			prevMatchingBalanceEntries = append(prevMatchingBalanceEntries, prevMatchingBalanceEntry)
+				// Transfer DAO coins from transactor to matching order.
+				prevMatchingBalanceEntries = append(prevMatchingBalanceEntries, prevMatchingBuyingDAOCoinBalanceEntry)
 
-			if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-				// Transactor placed ASK order:
-				// Send DAO coins from transactorBalanceEntry to matched BalanceEntry.
-				newTransactorBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&newTransactorBalanceEntry.BalanceNanos, daoCoinsToTransfer)
-				newMatchingBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&newMatchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
-			}
+				// Transactor's selling DAO coin balance entry decreases.
+				newTransactorSellingDAOCoinBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(
+					&newTransactorSellingDAOCoinBalanceEntry.BalanceNanos, daoCoinNanosToTransfer)
 
-			if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-				// Transactor placed BID order:
-				// Send DAO coins from matchedBalanceEntry to transactorBalanceEntry.
-				newMatchingBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&newMatchingBalanceEntry.BalanceNanos, daoCoinsToTransfer)
-				newTransactorBalanceEntry.BalanceNanos = *uint256.NewInt().Add(&newTransactorBalanceEntry.BalanceNanos, daoCoinsToTransfer)
-			}
+				// Matching limit order's buying DAO coin balance entry increases.
+				newMatchingBuyingDAOCoinBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+					&newMatchingBuyingDAOCoinBalanceEntry.BalanceNanos, daoCoinNanosToTransfer)
 
-			bav._setDAOCoinBalanceEntryMappings(newTransactorBalanceEntry)
-			bav._setDAOCoinBalanceEntryMappings(newMatchingBalanceEntry)
-
-			// Track how much denominated coin to transfer.
-			denominatedCoinToTransfer, err := _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
-				daoCoinsToTransfer, matchingOrder.PriceNanosPerDenominatedCoin)
-
-			if err != nil {
-				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
-			}
-
-			if transactorOrder.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO {
-				if !denominatedCoinToTransfer.IsUint64() {
-					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
-				}
-
-				desoToTransfer := denominatedCoinToTransfer.Uint64()
-				var inputPKID PKID
-				var outputPKID PKID
-
-				if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-					inputPKID = *matchingOrder.TransactorPKID
-					outputPKID = *transactorOrder.TransactorPKID
-				} else if transactorOrder.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-					inputPKID = *transactorOrder.TransactorPKID
-					outputPKID = *matchingOrder.TransactorPKID
-				} else {
-					return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedOperationType
-				}
-
-				if _, exists := pkidToOutputDESONanos[outputPKID]; !exists {
-					pkidToOutputDESONanos[outputPKID] = 0
-				}
-
-				// Check for underflow in user sending $DESO.
-				if pkidToLeftoverChangeDESONanos[inputPKID] < desoToTransfer {
-					// TODO: revisit rule error
-					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
-				}
-
-				pkidToLeftoverChangeDESONanos[inputPKID] -= desoToTransfer
-
-				// Check for overflow in user receiving $DESO.
-				if pkidToOutputDESONanos[outputPKID] > math.MaxUint64-desoToTransfer {
-					// TODO: revisit rule error --> have specified too big of an order
-					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenBidOrder
-				}
-
-				pkidToOutputDESONanos[outputPKID] += desoToTransfer
-			} else if transactorOrder.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin {
-				// TODO: DAO coin denominated types not supported yet.
-				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
-			} else {
-				return 0, 0, nil, RuleErrorDAOCoinLimitOrderUnsupportedDenominatedCoinType
+				// Store updated balance entries.
+				bav._setDAOCoinBalanceEntryMappings(newTransactorSellingDAOCoinBalanceEntry)
+				bav._setDAOCoinBalanceEntryMappings(newMatchingBuyingDAOCoinBalanceEntry)
 			}
 
 			// Break if transactor's order is complete.
@@ -599,7 +627,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 
 		// If order is fulfilled, done.
-		if transactorOrder.Quantity.IsZero() {
+		if transactorOrder.QuantityNanos.IsZero() {
 			break
 		}
 
@@ -610,7 +638,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// After iterating through all potential matching orders, if transactor's order
 	// is still not fully fulfilled, submit it to be stored.
-	if transactorOrder.Quantity.GtUint64(0) {
+	if transactorOrder.QuantityNanos.GtUint64(0) {
 		bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 	}
 
