@@ -11,13 +11,12 @@ func init() {
 		// Create pg_metadata_dao_coin_limit_orders table.
 		_, err := db.Exec(`
 			CREATE TABLE pg_metadata_dao_coin_limit_orders (
-				transaction_hash                 BYTEA PRIMARY KEY,
-				denominated_coin_type            SMALLINT NOT NULL,
-				denominated_coin_creator_pkid    BYTEA NOT NULL,
-				dao_coin_creator_pkid            BYTEA NOT NULL,
-				operation_type                   SMALLINT NOT NULL,
-				price_nanos_per_denominated_coin TEXT NOT NULL,
-				quantity                         TEXT NOT NULL
+				transaction_hash              BYTEA PRIMARY KEY,
+				buying_dao_coin_creator_pkid  BYTEA NOT NULL,
+				selling_dao_coin_creator_pkid BYTEA NOT NULL,
+				price_nanos                   TEXT NOT NULL,
+				quantity_nanos                TEXT NOT NULL,
+				cancel_existing_order         BOOL NOT NULL
 			);
 		`)
 
@@ -28,22 +27,18 @@ func init() {
 		// Create pg_dao_coin_limit_orders table.
 		_, err = db.Exec(`
 			CREATE TABLE pg_dao_coin_limit_orders (
-				transactor_pkid                  BYTEA NOT NULL,
-				denominated_coin_type            SMALLINT NOT NULL,
-				denominated_coin_creator_pkid    BYTEA NOT NULL,
-				dao_coin_creator_pkid            BYTEA NOT NULL,
-				operation_type                   SMALLINT NOT NULL,
-				price_nanos_per_denominated_coin TEXT NOT NULL,
-				block_height				     BIGINT NOT NULL,
-				quantity                         TEXT NOT NULL,
+				transactor_pkid               BYTEA NOT NULL,
+				buying_dao_coin_creator_pkid  BYTEA NOT NULL,
+				selling_dao_coin_creator_pkid BYTEA NOT NULL,
+				price_nanos                   TEXT NOT NULL,
+                quantity                      TEXT NOT NULL,
+				block_height				  BIGINT NOT NULL,
 
 				PRIMARY KEY (
 					transactor_pkid,
-					denominated_coin_type,
-					denominated_coin_creator_pkid,
-					dao_coin_creator_pkid,
-					operation_type,
-					price_nanos_per_denominated_coin,
+					buying_dao_coin_creator_pkid,
+					selling_dao_coin_creator_pkid,
+					price_nanos,
 					block_height
 				)
 			);

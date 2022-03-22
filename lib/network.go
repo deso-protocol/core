@@ -5491,12 +5491,10 @@ func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type DAOCoinLimitOrderMetadata struct {
-	DenominatedCoinType          DAOCoinLimitOrderEntryDenominatedCoinType
-	DenominatedCoinCreatorPKID   *PKID
-	DAOCoinCreatorPKID           *PKID
-	OperationType                DAOCoinLimitOrderEntryOrderType
-	PriceNanosPerDenominatedCoin *uint256.Int
-	Quantity                     *uint256.Int
+	BuyingDAOCoinCreatorPKID  *PKID
+	SellingDAOCoinCreatorPKID *PKID
+	PriceNanos                *uint256.Int
+	QuantityNanos             *uint256.Int
 
 	// If set to true, we will cancel an existing order (up to the
 	// specified quantity) instead of creating a new one.
@@ -5514,36 +5512,32 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 // This is a helper method used in testing.
 func (txnData *DAOCoinLimitOrderMetadata) Copy() *DAOCoinLimitOrderMetadata {
 	return &DAOCoinLimitOrderMetadata{
-		DenominatedCoinType:          txnData.DenominatedCoinType,
-		DenominatedCoinCreatorPKID:   txnData.DenominatedCoinCreatorPKID.NewPKID(),
-		DAOCoinCreatorPKID:           txnData.DAOCoinCreatorPKID.NewPKID(),
-		OperationType:                txnData.OperationType,
-		PriceNanosPerDenominatedCoin: txnData.PriceNanosPerDenominatedCoin.Clone(),
-		Quantity:                     txnData.Quantity.Clone(),
+		BuyingDAOCoinCreatorPKID:  txnData.BuyingDAOCoinCreatorPKID.NewPKID(),
+		SellingDAOCoinCreatorPKID: txnData.SellingDAOCoinCreatorPKID.NewPKID(),
+		PriceNanos:                txnData.PriceNanos.Clone(),
+		QuantityNanos:             txnData.QuantityNanos.Clone(),
 	}
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
 	return &DAOCoinLimitOrderEntry{
-		TransactorPKID:               transactorPKID,
-		DenominatedCoinType:          txnData.DenominatedCoinType,
-		DenominatedCoinCreatorPKID:   txnData.DenominatedCoinCreatorPKID,
-		DAOCoinCreatorPKID:           txnData.DAOCoinCreatorPKID,
-		OperationType:                txnData.OperationType,
-		PriceNanosPerDenominatedCoin: txnData.PriceNanosPerDenominatedCoin,
-		BlockHeight:                  blockHeight,
-		Quantity:                     txnData.Quantity,
+		TransactorPKID:            transactorPKID,
+		BuyingDAOCoinCreatorPKID:  txnData.BuyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID: txnData.SellingDAOCoinCreatorPKID,
+		PriceNanos:                txnData.PriceNanos,
+		QuantityNanos:             txnData.QuantityNanos,
+		BlockHeight:               blockHeight,
 	}
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	data := append([]byte{}, UintToBuf(uint64(txnData.DenominatedCoinType))...)
-	data = append(data, txnData.DenominatedCoinCreatorPKID.Encode()...)
-	data = append(data, txnData.DAOCoinCreatorPKID.Encode()...)
-	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
-	data = append(data, EncodeUint256(txnData.PriceNanosPerDenominatedCoin)...)
-	data = append(data, EncodeUint256(txnData.Quantity)...)
+	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPKID.Encode()...)
+	data = append(data, txnData.SellingDAOCoinCreatorPKID.Encode()...)
+	data = append(data, EncodeUint256(txnData.PriceNanos)...)
+	data = append(data, EncodeUint256(txnData.QuantityNanos)...)
+	data = append(data, BoolToByte(txnData.CancelExistingOrder))
 	data = append(data, UintToBuf(uint64(len(txnData.MatchingBidsInputsMap)))...)
+
 	for bidderPKID, inputs := range txnData.MatchingBidsInputsMap {
 		data = append(data, bidderPKID.Encode()...)
 		data = append(data, UintToBuf(uint64(len(inputs)))...)
@@ -5552,6 +5546,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 			data = append(data, UintToBuf(uint64(input.Index))...)
 		}
 	}
+
 	return data, nil
 }
 
@@ -5562,50 +5557,48 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 
 	ret := DAOCoinLimitOrderMetadata{}
 	rr := bytes.NewReader(data)
+	var err error
 
-	// Parse DenominatedCoinType
-	denominatedCoinType, err := ReadUvarint(rr)
-	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading denominated coin type: %v", err)
-	}
-	ret.DenominatedCoinType = DAOCoinLimitOrderEntryDenominatedCoinType(denominatedCoinType)
-	// Parse DenominatedCoinCreatorPKID
-	ret.DenominatedCoinCreatorPKID, err = ReadPKID(rr)
+	// Parse BuyingDAOCoinCreatorPKID
+	ret.BuyingDAOCoinCreatorPKID, err = ReadPKID(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"DAOCoinLimitOrderMetadata.FromBytes: Error reading denominated coin creator PKID: %v", err)
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading BuyingDAOCoinCreatorPKID: %v", err)
 	}
-	// Parse DAOCoinCreatorPKID
-	ret.DAOCoinCreatorPKID, err = ReadPKID(rr)
+
+	// Parse SellingDAOCoinCreatorPKID
+	ret.SellingDAOCoinCreatorPKID, err = ReadPKID(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"DAOCoinLimitOrderMetadata.FromBytes: Error reading DAO coin creator PKID: %v", err)
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
 	}
-	// Parse OperationType
-	operationType, err := ReadUvarint(rr)
-	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading operation type: %v", err)
-	}
-	ret.OperationType = DAOCoinLimitOrderEntryOrderType(operationType)
+
 	// Parse PriceNanos
-	ret.PriceNanosPerDenominatedCoin, err = ReadUint256(rr)
+	ret.PriceNanos, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading Price nanos: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading PriceNanos: %v", err)
 	}
-	// Parse Quantity
-	ret.Quantity, err = ReadUint256(rr)
+
+	// Parse QuantityNanos
+	ret.QuantityNanos, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading Quantity: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityNanos: %v", err)
 	}
-	// Parse matching bids input map
+
+	// Parse CancelExistingOrder
+	ret.CancelExistingOrder = ReadBoolByte(rr)
+
+	// Parse MatchingBidsInputsMap
 	matchingBidsInputsMapLength, err := ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf(
 			"DAOCoinLimitOrderMetadata.FromBytes: Error reading length of matching bids input: %v", err)
 	}
+
 	if matchingBidsInputsMapLength > 0 {
 		ret.MatchingBidsInputsMap = make(map[PKID][]*DeSoInput)
 	}
+
 	for ii := uint64(0); ii < matchingBidsInputsMapLength; ii++ {
 		var pkid *PKID
 		pkid, err = ReadPKID(rr)
@@ -5645,8 +5638,8 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 			ret.MatchingBidsInputsMap[*pkid] = append(ret.MatchingBidsInputsMap[*pkid], currentInput)
 		}
 	}
-	*txnData = ret
 
+	*txnData = ret
 	return nil
 }
 

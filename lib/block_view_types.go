@@ -1459,41 +1459,23 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 // -----------------------------------
 
 type DAOCoinLimitOrderEntry struct {
-	TransactorPKID               *PKID
-	DenominatedCoinType          DAOCoinLimitOrderEntryDenominatedCoinType
-	DenominatedCoinCreatorPKID   *PKID
-	DAOCoinCreatorPKID           *PKID
-	OperationType                DAOCoinLimitOrderEntryOrderType
-	PriceNanosPerDenominatedCoin *uint256.Int
-	BlockHeight                  uint32
-	Quantity                     *uint256.Int
+	TransactorPKID            *PKID
+	BuyingDAOCoinCreatorPKID  *PKID
+	SellingDAOCoinCreatorPKID *PKID
+	PriceNanos                *uint256.Int
+	QuantityNanos             *uint256.Int
+	BlockHeight               uint32
 
 	isDeleted bool
 }
 
-type DAOCoinLimitOrderEntryDenominatedCoinType uint8
-
-const (
-	DAOCoinLimitOrderEntryDenominatedCoinTypeDESO    DAOCoinLimitOrderEntryDenominatedCoinType = 0
-	DAOCoinLimitOrderEntryDenominatedCoinTypeDAOCoin DAOCoinLimitOrderEntryDenominatedCoinType = 1
-)
-
-type DAOCoinLimitOrderEntryOrderType uint8
-
-const (
-	DAOCoinLimitOrderEntryOrderTypeAsk DAOCoinLimitOrderEntryOrderType = 0
-	DAOCoinLimitOrderEntryOrderTypeBid DAOCoinLimitOrderEntryOrderType = 1
-)
-
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data := append([]byte{}, order.TransactorPKID.Encode()...)
-	data = append(data, UintToBuf(uint64(order.DenominatedCoinType))...)
-	data = append(data, order.DenominatedCoinCreatorPKID.Encode()...)
-	data = append(data, order.DAOCoinCreatorPKID.Encode()...)
-	data = append(data, UintToBuf(uint64(order.OperationType))...)
-	data = append(data, EncodeUint256(order.PriceNanosPerDenominatedCoin)...)
+	data = append(data, order.BuyingDAOCoinCreatorPKID.Encode()...)
+	data = append(data, order.SellingDAOCoinCreatorPKID.Encode()...)
+	data = append(data, EncodeUint256(order.PriceNanos)...)
+	data = append(data, EncodeUint256(order.QuantityNanos)...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
-	data = append(data, EncodeUint256(order.Quantity)...)
 	return data, nil
 }
 
@@ -1504,42 +1486,38 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 
 	ret := DAOCoinLimitOrderEntry{}
 	rr := bytes.NewReader(data)
-
 	var err error
+
 	// Parse TransactorPKID
 	ret.TransactorPKID, err = ReadPKID(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading CreatorPKID: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading TransactorPKID: %v", err)
 	}
-	// Parse DenominatedCoinType
-	var denominatedCoinType uint64
-	denominatedCoinType, err = ReadUvarint(rr)
+
+	// Parse BuyingDAOCoinCreatorPKID
+	ret.BuyingDAOCoinCreatorPKID, err = ReadPKID(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading DenominatedCoinType: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading BuyingDAOCoinCreatorPKID: %v", err)
 	}
-	ret.DenominatedCoinType = DAOCoinLimitOrderEntryDenominatedCoinType(denominatedCoinType)
-	// Parse DenominatedCoinCreatorPKID
-	ret.DenominatedCoinCreatorPKID, err = ReadPKID(rr)
+
+	// Parse SellingDAOCoinCreatorPKID
+	ret.SellingDAOCoinCreatorPKID, err = ReadPKID(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading DenominatedCoinCreatorPKID: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
 	}
-	// Parse DAOCoinCreatorPKID
-	ret.DAOCoinCreatorPKID, err = ReadPKID(rr)
-	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading DAOCoinCreatorPKID: %v", err)
-	}
-	// Parse OperationType
-	var operationType uint64
-	operationType, err = ReadUvarint(rr)
-	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OperationType: %v", err)
-	}
-	ret.OperationType = DAOCoinLimitOrderEntryOrderType(operationType)
+
 	// Parse PriceNanosPerDenominatedCoin
-	ret.PriceNanosPerDenominatedCoin, err = ReadUint256(rr)
+	ret.PriceNanos, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading PriceNanosPerDenominatedCoin: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading PriceNanos: %v", err)
 	}
+
+	// Parse QuantityNanos
+	ret.QuantityNanos, err = ReadUint256(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading QuantityNanos: %v", err)
+	}
+
 	// Parse BlockHeight
 	var blockHeight uint64
 	blockHeight, err = ReadUvarint(rr)
@@ -1550,11 +1528,6 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Invalid block height %d: Greater than max uint32", blockHeight)
 	}
 	ret.BlockHeight = uint32(blockHeight)
-	// Parse Quantity
-	ret.Quantity, err = ReadUint256(rr)
-	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading Quantity: %v", err)
-	}
 
 	*order = ret
 	return nil
@@ -1563,26 +1536,22 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	newOrder := &DAOCoinLimitOrderEntry{}
 	newOrder.TransactorPKID = order.TransactorPKID.NewPKID()
-	newOrder.DenominatedCoinType = order.DenominatedCoinType
-	newOrder.DenominatedCoinCreatorPKID = order.DenominatedCoinCreatorPKID.NewPKID()
-	newOrder.DAOCoinCreatorPKID = order.DAOCoinCreatorPKID.NewPKID()
-	newOrder.OperationType = order.OperationType
-	newOrder.PriceNanosPerDenominatedCoin = order.PriceNanosPerDenominatedCoin
+	newOrder.BuyingDAOCoinCreatorPKID = order.BuyingDAOCoinCreatorPKID.NewPKID()
+	newOrder.SellingDAOCoinCreatorPKID = order.SellingDAOCoinCreatorPKID.NewPKID()
+	newOrder.PriceNanos = order.PriceNanos
+	newOrder.QuantityNanos = order.QuantityNanos
 	newOrder.BlockHeight = order.BlockHeight
-	newOrder.Quantity = order.Quantity
 	return newOrder
 }
 
 func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {
 	// Convert both order entries to bytes and compare bytes.
 	orderBytes, err := order.ToBytes()
-
 	if err != nil {
 		return false, err
 	}
 
 	otherBytes, err := other.ToBytes()
-
 	if err != nil {
 		return false, err
 	}
@@ -1591,20 +1560,18 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterAskThan(other *DAOCoinLimitOrderEntry) bool {
-	if !order.PriceNanosPerDenominatedCoin.Eq(other.PriceNanosPerDenominatedCoin) {
-		// order.PriceNanos < other.PriceNanos ==>
-		// order.PriceNanosPerDenominatedCoin > other.PriceNanosPerDenominatedCoin
-		return order.PriceNanosPerDenominatedCoin.Gt(other.PriceNanosPerDenominatedCoin)
+	if !order.PriceNanos.Eq(other.PriceNanos) {
+		// order.PriceNanos < other.PriceNanos
+		return order.PriceNanos.Lt(other.PriceNanos)
 	}
 
 	return order.IsBetterOrderThan(other)
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterBidThan(other *DAOCoinLimitOrderEntry) bool {
-	if !order.PriceNanosPerDenominatedCoin.Eq(other.PriceNanosPerDenominatedCoin) {
-		// order.PriceNanos > other.PriceNanos ===>
-		// order.PriceNanosPerDenominatedCoin < other.PriceNanosPerDenominatedCoin
-		return order.PriceNanosPerDenominatedCoin.Lt(other.PriceNanosPerDenominatedCoin)
+	if !order.PriceNanos.Eq(other.PriceNanos) {
+		// order.PriceNanos > other.PriceNanos
+		return order.PriceNanos.Gt(other.PriceNanos)
 	}
 
 	return order.IsBetterOrderThan(other)
@@ -1617,8 +1584,8 @@ func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderE
 	}
 
 	// Prefer lower-quantity orders first.
-	if order.Quantity.Eq(other.Quantity) {
-		return order.Quantity.Lt(other.Quantity)
+	if order.QuantityNanos.Eq(other.QuantityNanos) {
+		return order.QuantityNanos.Lt(other.QuantityNanos)
 	}
 
 	// To break a tie and guarantee idempotency in sorting, prefer lower TransactorPKIDs.
@@ -1626,23 +1593,19 @@ func (order *DAOCoinLimitOrderEntry) IsBetterOrderThan(other *DAOCoinLimitOrderE
 }
 
 type DAOCoinLimitOrderMapKey struct {
-	TransactorPKID               PKID
-	DenominatedCoinType          DAOCoinLimitOrderEntryDenominatedCoinType
-	DenominatedCoinCreatorPKID   PKID
-	DAOCoinCreatorPKID           PKID
-	OperationType                DAOCoinLimitOrderEntryOrderType
-	PriceNanosPerDenominatedCoin uint256.Int
-	BlockHeight                  uint32
+	TransactorPKID            PKID
+	BuyingDAOCoinCreatorPKID  PKID
+	SellingDAOCoinCreatorPKID PKID
+	PriceNanos                uint256.Int
+	BlockHeight               uint32
 }
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	key := DAOCoinLimitOrderMapKey{}
 	key.TransactorPKID = *order.TransactorPKID.NewPKID()
-	key.DenominatedCoinType = order.DenominatedCoinType
-	key.DenominatedCoinCreatorPKID = *order.DenominatedCoinCreatorPKID.NewPKID()
-	key.DAOCoinCreatorPKID = *order.DAOCoinCreatorPKID.NewPKID()
-	key.OperationType = order.OperationType
-	key.PriceNanosPerDenominatedCoin = *order.PriceNanosPerDenominatedCoin
+	key.BuyingDAOCoinCreatorPKID = *order.BuyingDAOCoinCreatorPKID.NewPKID()
+	key.SellingDAOCoinCreatorPKID = *order.SellingDAOCoinCreatorPKID.NewPKID()
+	key.PriceNanos = *order.PriceNanos
 	key.BlockHeight = order.BlockHeight
 	return key
 }

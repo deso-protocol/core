@@ -3152,10 +3152,9 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		// inputs and change.
 	}
 
-	if metadata.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
-		metadata.OperationType == DAOCoinLimitOrderEntryOrderTypeAsk {
-		// In this case, we need to find inputs from all the orders that match.
-		// This will move to txn construction as this will be put in the metadata
+	if reflect.DeepEqual(metadata.BuyingDAOCoinCreatorPKID, &ZeroPKID) {
+		// If selling a DAO coin for $DESO, we need to find inputs from all the orders that match.
+		// This will move to txn construction as this will be put in the metadata.
 
 		// Create a new UtxoView. If we have access to a mempool object, use it to
 		// get an augmented view that factors in pending transactions.
@@ -3174,19 +3173,12 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		}
 
 		// Construct requested order
-		requestedOrder := &DAOCoinLimitOrderEntry{
-			TransactorPKID:               utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
-			DenominatedCoinType:          metadata.DenominatedCoinType,
-			DenominatedCoinCreatorPKID:   metadata.DenominatedCoinCreatorPKID,
-			DAOCoinCreatorPKID:           metadata.DAOCoinCreatorPKID,
-			OperationType:                metadata.OperationType,
-			PriceNanosPerDenominatedCoin: metadata.PriceNanosPerDenominatedCoin,
-			BlockHeight:                  bc.blockTip().Height + 1,
-			Quantity:                     metadata.Quantity,
-		}
+		requestedOrder := metadata.ToEntry(
+			utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID, bc.blockTip().Height+1)
+
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 		desoNanosToConsumeMap := make(map[PKID]uint64)
-		for requestedOrder.Quantity.GtUint64(0) {
+		for requestedOrder.QuantityNanos.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
 			matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 			if err != nil {
@@ -3211,19 +3203,19 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				}
 				if orderCost.LtUint64(desoBalanceNanos) {
 					var desoNanosToConsume *uint256.Int
-					if requestedOrder.Quantity.Lt(order.Quantity) {
+					if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
 						desoNanosToConsume, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(
-							requestedOrder.Quantity, order.PriceNanosPerDenominatedCoin)
+							requestedOrder.QuantityNanos, order.PriceNanos)
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}
-						requestedOrder.Quantity = uint256.NewInt()
+						requestedOrder.QuantityNanos = uint256.NewInt()
 					} else {
 						desoNanosToConsume, err = _getOrderTotalCost(order)
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}
-						requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
+						requestedOrder.QuantityNanos = uint256.NewInt().Sub(requestedOrder.QuantityNanos, order.QuantityNanos)
 					}
 					if !desoNanosToConsume.IsUint64() {
 						return nil, 0, 0, 0, fmt.Errorf(
@@ -4207,26 +4199,18 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			return 0, 0, 0, 0, err
 		}
 
-		if txMeta.DenominatedCoinType == DAOCoinLimitOrderEntryDenominatedCoinTypeDESO &&
-			txMeta.OperationType == DAOCoinLimitOrderEntryOrderTypeBid {
-			// In this case, we need to add inputs from the transactor
+		if reflect.DeepEqual(txMeta.SellingDAOCoinCreatorPKID, &ZeroPKID) {
+			// If buying a DAO coin with $DESO, we need to add inputs from the transactor
 			// to cover all the ask orders that will match in the connect logic.
 
 			// Construct requested order
-			requestedOrder := &DAOCoinLimitOrderEntry{
-				TransactorPKID:               utxoView.GetPKIDForPublicKey(txArg.PublicKey).PKID,
-				DenominatedCoinType:          txMeta.DenominatedCoinType,
-				DenominatedCoinCreatorPKID:   txMeta.DenominatedCoinCreatorPKID,
-				DAOCoinCreatorPKID:           txMeta.DAOCoinCreatorPKID,
-				OperationType:                txMeta.OperationType,
-				PriceNanosPerDenominatedCoin: txMeta.PriceNanosPerDenominatedCoin,
-				BlockHeight:                  bc.blockTip().Height + 1,
-				Quantity:                     txMeta.Quantity,
-			}
+			requestedOrder := txMeta.ToEntry(
+				utxoView.GetPKIDForPublicKey(txArg.PublicKey).PKID, bc.blockTip().Height+1)
+
 			var lastSeenOrder *DAOCoinLimitOrderEntry
 
 			nanosToFulfillOrders := uint256.NewInt()
-			for !requestedOrder.Quantity.IsZero() {
+			for !requestedOrder.QuantityNanos.IsZero() {
 				var matchingOrderEntries []*DAOCoinLimitOrderEntry
 				matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 				if err != nil {
@@ -4237,22 +4221,23 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					break
 				}
 				for _, order := range matchingOrderEntries {
+					// TODO: double-check if this should be Buying or Selling DAOCoinCreatorPKID.
 					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
-						order.TransactorPKID, order.DAOCoinCreatorPKID, true)
-					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.Quantity) {
+						order.TransactorPKID, order.SellingDAOCoinCreatorPKID, true)
+					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.QuantityNanos) {
 						var nanosToFulfillOrder *uint256.Int
-						if requestedOrder.Quantity.Lt(order.Quantity) {
-							nanosToFulfillOrder, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(requestedOrder.Quantity, order.PriceNanosPerDenominatedCoin)
+						if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
+							nanosToFulfillOrder, err = _getTotalCostFromQuantityAndPriceNanosPerDenominatedCoin(requestedOrder.QuantityNanos, order.PriceNanos)
 							if err != nil {
 								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
 							}
-							requestedOrder.Quantity = uint256.NewInt()
+							requestedOrder.QuantityNanos = uint256.NewInt()
 						} else {
 							nanosToFulfillOrder, err = _getOrderTotalCost(order)
 							if err != nil {
 								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
 							}
-							requestedOrder.Quantity = uint256.NewInt().Sub(requestedOrder.Quantity, order.Quantity)
+							requestedOrder.QuantityNanos = uint256.NewInt().Sub(requestedOrder.QuantityNanos, order.QuantityNanos)
 						}
 						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)
 					}

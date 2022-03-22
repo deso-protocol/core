@@ -397,13 +397,12 @@ type PGMetadataDerivedKey struct {
 type PGMetadataDAOCoinLimitOrder struct {
 	tableName struct{} `pg:"pg_metadata_dao_coin_limit_order"`
 
-	TransactionHash              *BlockHash                                `pg:",pk,type:bytea"`
-	DenominatedCoinType          DAOCoinLimitOrderEntryDenominatedCoinType `pg:",use_zero"`
-	DenominatedCoinCreatorPKID   *PKID                                     `pg:",type:bytea"`
-	DAOCoinCreatorPKID           *PKID                                     `pg:"dao_coin_creator_pkid,type:bytea"`
-	OperationType                DAOCoinLimitOrderEntryOrderType           `pg:",use_zero"`
-	PriceNanosPerDenominatedCoin string                                    `pg:",use_zero"`
-	Quantity                     string                                    `pg:",use_zero"`
+	TransactionHash              *BlockHash `pg:",pk,type:bytea"`
+	BuyingDAOCoinCreatorPKID     *PKID      `pg:"buying_dao_coin_creator_pkid,type:bytea"`
+	SellingDAOCoinCreatorPKID    *PKID      `pg:"selling_dao_coin_creator_pkid,type:bytea"`
+	PriceNanosPerDenominatedCoin string     `pg:",use_zero"`
+	QuantityNanos                string     `pg:",use_zero"`
+	CancelExistingOrder          bool       `pg:",use_zero"`
 }
 
 type PGNotification struct {
@@ -662,26 +661,22 @@ func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
 type PGDAOCoinLimitOrder struct {
 	tableName struct{} `pg:"pg_dao_coin_limit_orders"`
 
-	TransactorPKID               *PKID                                     `pg:",pk,type:bytea"`
-	DenominatedCoinType          DAOCoinLimitOrderEntryDenominatedCoinType `pg:",pk,use_zero"`
-	DenominatedCoinCreatorPKID   *PKID                                     `pg:",pk,type:bytea"`
-	DAOCoinCreatorPKID           *PKID                                     `pg:"dao_coin_creator_pkid,pk,type:bytea"`
-	OperationType                DAOCoinLimitOrderEntryOrderType           `pg:",pk,use_zero"`
-	PriceNanosPerDenominatedCoin string                                    `pg:",pk,use_zero"`
-	BlockHeight                  uint32                                    `pg:",pk,use_zero"`
-	Quantity                     string                                    `pg:",use_zero"`
+	TransactorPKID            *PKID  `pg:",pk,type:bytea"`
+	BuyingDAOCoinCreatorPKID  *PKID  `pg:"buying_dao_coin_creator_pkid,pk,type:bytea"`
+	SellingDAOCoinCreatorPKID *PKID  `pg:"selling_dao_coin_creator_pkid,pk,type:bytea"`
+	PriceNanos                string `pg:",pk,use_zero"`
+	QuantityNanos             string `pg:",use_zero"`
+	BlockHeight               uint32 `pg:",pk,use_zero"`
 }
 
 func (order *PGDAOCoinLimitOrder) NewDAOCoinLimitOrder() *DAOCoinLimitOrderEntry {
 	return &DAOCoinLimitOrderEntry{
-		TransactorPKID:               order.TransactorPKID,
-		DenominatedCoinType:          order.DenominatedCoinType,
-		DenominatedCoinCreatorPKID:   order.DenominatedCoinCreatorPKID,
-		DAOCoinCreatorPKID:           order.DAOCoinCreatorPKID,
-		OperationType:                order.OperationType,
-		PriceNanosPerDenominatedCoin: LeftPaddedHexToUint256(order.PriceNanosPerDenominatedCoin),
-		BlockHeight:                  order.BlockHeight,
-		Quantity:                     LeftPaddedHexToUint256(order.Quantity),
+		TransactorPKID:            order.TransactorPKID,
+		BuyingDAOCoinCreatorPKID:  order.BuyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID: order.SellingDAOCoinCreatorPKID,
+		PriceNanos:                LeftPaddedHexToUint256(order.PriceNanos),
+		QuantityNanos:             LeftPaddedHexToUint256(order.QuantityNanos),
+		BlockHeight:               order.BlockHeight,
 	}
 }
 
@@ -2472,14 +2467,12 @@ func (postgres *Postgres) GetDAOCoinHolders(pkid *PKID) []*PGDAOCoinBalance {
 // TODO: convert from func to method on PGDAOCoinLimitOrder.
 func ToPGDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntry) *PGDAOCoinLimitOrder {
 	return &PGDAOCoinLimitOrder{
-		TransactorPKID:               orderEntry.TransactorPKID,
-		DenominatedCoinType:          orderEntry.DenominatedCoinType,
-		DenominatedCoinCreatorPKID:   orderEntry.DenominatedCoinCreatorPKID,
-		DAOCoinCreatorPKID:           orderEntry.DAOCoinCreatorPKID,
-		OperationType:                orderEntry.OperationType,
-		PriceNanosPerDenominatedCoin: Uint256ToLeftPaddedHex(orderEntry.PriceNanosPerDenominatedCoin),
-		BlockHeight:                  orderEntry.BlockHeight,
-		Quantity:                     Uint256ToLeftPaddedHex(orderEntry.Quantity),
+		TransactorPKID:            orderEntry.TransactorPKID,
+		BuyingDAOCoinCreatorPKID:  orderEntry.BuyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID: orderEntry.SellingDAOCoinCreatorPKID,
+		PriceNanos:                Uint256ToLeftPaddedHex(orderEntry.PriceNanos),
+		QuantityNanos:             Uint256ToLeftPaddedHex(orderEntry.QuantityNanos),
+		BlockHeight:               orderEntry.BlockHeight,
 	}
 }
 
@@ -2519,17 +2512,15 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 
 func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 	var orders []*PGDAOCoinLimitOrder
-	price := inputOrder.PriceNanosPerDenominatedCoin
+	price := inputOrder.PriceNanos
 
 	err := postgres.db.Model(&orders).
 		Where("transactor_pkid = ?", inputOrder.TransactorPKID).
-		Where("denominated_coin_type = ?", inputOrder.DenominatedCoinType).
-		Where("denominated_coin_creator_pkid = ?", inputOrder.DenominatedCoinCreatorPKID).
-		Where("dao_coin_creator_pkid = ?", inputOrder.DAOCoinCreatorPKID).
-		Where("operation_type = ?", inputOrder.OperationType).
-		Where("price_nanos_per_denominated_coin >= ?", Uint256ToLeftPaddedHex(price)).
+		Where("buying_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
+		Where("selling_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
+		Where("price_nanos >= ?", Uint256ToLeftPaddedHex(price)).
 		Order("block_height ASC").
-		Order("quantity ASC").
+		Order("quantity_nanos ASC").
 		Select()
 
 	if err != nil {
@@ -2545,23 +2536,25 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(i
 	return outputOrders, nil
 }
 
-func (postgres *Postgres) GetMatchingDAOCoinAskOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
-	var orders []*PGDAOCoinLimitOrder
-	price := inputOrder.PriceNanosPerDenominatedCoin
+func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+	var matchingOrders []*PGDAOCoinLimitOrder
+	priceNanos := inputOrder.PriceNanos
 
 	if lastSeenOrder != nil {
-		price = lastSeenOrder.PriceNanosPerDenominatedCoin
+		priceNanos = lastSeenOrder.PriceNanos
 	}
 
-	err := postgres.db.Model(&orders).
-		Where("denominated_coin_type = ?", inputOrder.DenominatedCoinType).
-		Where("denominated_coin_creator_pkid = ?", inputOrder.DenominatedCoinCreatorPKID).
-		Where("dao_coin_creator_pkid = ?", inputOrder.DAOCoinCreatorPKID).
-		Where("operation_type = ?", DAOCoinLimitOrderEntryOrderTypeAsk).
-		Where("price_nanos_per_denominated_coin >= ?", Uint256ToLeftPaddedHex(price)).
-		Order("price_nanos_per_denominated_coin DESC").
+	// Invert BID price to generate ASK price.
+	priceNanos = uint256.NewInt().Div(uint256.NewInt().SetUint64(1), priceNanos)
+
+	// Switch BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
+	err := postgres.db.Model(&matchingOrders).
+		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
+		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
+		Where("price_nanos >= ?", Uint256ToLeftPaddedHex(priceNanos)).
+		Order("price_nanos DESC").
 		Order("block_height DESC").
-		Order("quantity DESC").
+		Order("quantity_nanos DESC").
 		Select()
 
 	if err != nil {
@@ -2570,39 +2563,7 @@ func (postgres *Postgres) GetMatchingDAOCoinAskOrders(inputOrder *DAOCoinLimitOr
 
 	var outputOrders []*DAOCoinLimitOrderEntry
 
-	for _, order := range orders {
-		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
-	}
-
-	return outputOrders, nil
-}
-
-func (postgres *Postgres) GetMatchingDAOCoinBidOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
-	var orders []*PGDAOCoinLimitOrder
-	price := inputOrder.PriceNanosPerDenominatedCoin
-
-	if lastSeenOrder != nil {
-		price = lastSeenOrder.PriceNanosPerDenominatedCoin
-	}
-
-	err := postgres.db.Model(&orders).
-		Where("denominated_coin_type = ?", inputOrder.DenominatedCoinType).
-		Where("denominated_coin_creator_pkid = ?", inputOrder.DenominatedCoinCreatorPKID).
-		Where("dao_coin_creator_pkid = ?", inputOrder.DAOCoinCreatorPKID).
-		Where("operation_type = ?", DAOCoinLimitOrderEntryOrderTypeBid).
-		Where("price_nanos_per_denominated_coin <= ?", Uint256ToLeftPaddedHex(price)).
-		Order("price_nanos_per_denominated_coin ASC").
-		Order("block_height ASC").
-		Order("quantity ASC").
-		Select()
-
-	if err != nil {
-		return nil, err
-	}
-
-	var outputOrders []*DAOCoinLimitOrderEntry
-
-	for _, order := range orders {
+	for _, order := range matchingOrders {
 		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
 	}
 
