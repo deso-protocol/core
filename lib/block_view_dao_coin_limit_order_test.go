@@ -249,6 +249,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Store how many DAO coins will be transferred.
 	daoCoinQuantityChange := uint256.NewInt().SetUint64(2)
 
+	// m0 submits BID order for 2 DAO coins @ 10/1e9 $DESO.
 	// Happy path: update quantity and resubmit. m0's BID order should be stored.
 	{
 		// Confirm no existing limit orders.
@@ -301,6 +302,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinTransferMetadata)
 	}
 
+	// m1 submits ASK order for 2 DAO coins @ 10/1e9 $DESO.
+	// Orders fulfilled for 2 DAO coins @ 10/1e9 $DESO.
 	// Submit matching order and confirm matching happy path.
 	{
 		// Confirm 1 existing limit order, and it's from m0.
@@ -550,6 +553,30 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// Reset metadataM0.
 		metadataM0.CancelExistingOrder = false
+	}
+
+	// Scenario: m0 and m1 both submit open BID orders for the same price.
+	{
+		// Confirm 1 existing limit order from m0 with quantity 1.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+
+		// m1 submits BID order for 2 DAO coins @ 10/1e9 $DESO.
+		metadataM1.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(NanosPerUnit / 10)
+		metadataM1.Quantity = uint256.NewInt().SetUint64(2)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Confirm 2 existing limit orders @ 10/1e9 $DESO.
+		// 1 from m0 with quantity 1.
+		// 1 from m1 with quantity 2.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		// TODO: make these tests pass
+		// require.Equal(len(orderEntries), 2)
+		// require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+		// require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight)))
 	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
