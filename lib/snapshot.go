@@ -1121,7 +1121,6 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	snap.SemaphoreLock.Lock()
 	snap.AncestralDBSemaphore += 1
 	snap.SemaphoreLock.Unlock()
-	snap.AncestralMemory.Shift()
 	glog.V(1).Infof("Snapshot.StartAncestralRecordsFlush: finished flushing ancestral records. Snapshot "+
 		"status, brokenSnapshot: (%v)", snap.brokenSnapshot)
 }
