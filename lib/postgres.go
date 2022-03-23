@@ -669,7 +669,16 @@ type PGDAOCoinLimitOrder struct {
 	BlockHeight               uint32 `pg:",pk,use_zero"`
 }
 
-func (order *PGDAOCoinLimitOrder) NewDAOCoinLimitOrder() *DAOCoinLimitOrderEntry {
+func (order *PGDAOCoinLimitOrder) FromDAOCoinLimitOrderEntry(orderEntry *DAOCoinLimitOrderEntry) {
+	order.TransactorPKID = orderEntry.TransactorPKID
+	order.BuyingDAOCoinCreatorPKID = orderEntry.BuyingDAOCoinCreatorPKID
+	order.SellingDAOCoinCreatorPKID = orderEntry.SellingDAOCoinCreatorPKID
+	order.PriceNanos = Uint256ToLeftPaddedHex(orderEntry.PriceNanos)
+	order.QuantityNanos = Uint256ToLeftPaddedHex(orderEntry.QuantityNanos)
+	order.BlockHeight = orderEntry.BlockHeight
+}
+
+func (order *PGDAOCoinLimitOrder) ToDAOCoinLimitOrderEntry() *DAOCoinLimitOrderEntry {
 	return &DAOCoinLimitOrderEntry{
 		TransactorPKID:            order.TransactorPKID,
 		BuyingDAOCoinCreatorPKID:  order.BuyingDAOCoinCreatorPKID,
@@ -2080,7 +2089,8 @@ func (postgres *Postgres) flushDAOCoinLimitOrders(tx *pg.Tx, view *UtxoView) err
 			continue
 		}
 
-		order := ToPGDAOCoinLimitOrder(orderEntry)
+		order := &PGDAOCoinLimitOrder{}
+		order.FromDAOCoinLimitOrderEntry(orderEntry)
 
 		if orderEntry.isDeleted {
 			deleteOrders = append(deleteOrders, order)
@@ -2464,20 +2474,9 @@ func (postgres *Postgres) GetDAOCoinHolders(pkid *PKID) []*PGDAOCoinBalance {
 // DAO Coin Limit Orders
 //
 
-// TODO: convert from func to method on PGDAOCoinLimitOrder.
-func ToPGDAOCoinLimitOrder(orderEntry *DAOCoinLimitOrderEntry) *PGDAOCoinLimitOrder {
-	return &PGDAOCoinLimitOrder{
-		TransactorPKID:            orderEntry.TransactorPKID,
-		BuyingDAOCoinCreatorPKID:  orderEntry.BuyingDAOCoinCreatorPKID,
-		SellingDAOCoinCreatorPKID: orderEntry.SellingDAOCoinCreatorPKID,
-		PriceNanos:                Uint256ToLeftPaddedHex(orderEntry.PriceNanos),
-		QuantityNanos:             Uint256ToLeftPaddedHex(orderEntry.QuantityNanos),
-		BlockHeight:               orderEntry.BlockHeight,
-	}
-}
-
 func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntry) (*DAOCoinLimitOrderEntry, error) {
-	order := ToPGDAOCoinLimitOrder(inputOrder)
+	order := &PGDAOCoinLimitOrder{}
+	order.FromDAOCoinLimitOrderEntry(inputOrder)
 	err := postgres.db.Model(order).WherePK().First()
 
 	if err != nil {
@@ -2489,7 +2488,7 @@ func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntr
 		return nil, err
 	}
 
-	return order.NewDAOCoinLimitOrder(), nil
+	return order.ToDAOCoinLimitOrderEntry(), nil
 }
 
 func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
@@ -2504,7 +2503,7 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 	var outputOrders []*DAOCoinLimitOrderEntry
 
 	for _, order := range orders {
-		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+		outputOrders = append(outputOrders, order.ToDAOCoinLimitOrderEntry())
 	}
 
 	return outputOrders, nil
@@ -2518,8 +2517,8 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCo
 		Where("selling_dao_coin_creator_pkid = ?", sellingDAOCoinCreatorPKID).
 		Order("price_nanos ASC").
 		Order("block_height ASC").
-		Order("quantity_nanos ASC").
 		Order("transactor_pkid ASC").
+		Order("quantity_nanos ASC").
 		Select()
 
 	if err != nil {
@@ -2529,7 +2528,7 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCo
 	var outputOrders []*DAOCoinLimitOrderEntry
 
 	for _, order := range orders {
-		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+		outputOrders = append(outputOrders, order.ToDAOCoinLimitOrderEntry())
 	}
 
 	return outputOrders, nil
@@ -2554,7 +2553,7 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPK
 	var outputOrders []*DAOCoinLimitOrderEntry
 
 	for _, order := range orders {
-		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+		outputOrders = append(outputOrders, order.ToDAOCoinLimitOrderEntry())
 	}
 
 	return outputOrders, nil
@@ -2580,7 +2579,7 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(i
 	var outputOrders []*DAOCoinLimitOrderEntry
 
 	for _, order := range orders {
-		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+		outputOrders = append(outputOrders, order.ToDAOCoinLimitOrderEntry())
 	}
 
 	return outputOrders, nil
@@ -2594,17 +2593,17 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		priceNanos = lastSeenOrder.PriceNanos
 	}
 
-	// Invert BID price to generate ASK price.
+	// Invert price.
 	priceNanos = uint256.NewInt().Div(uint256.NewInt().SetUint64(1), priceNanos)
 
 	// Switch BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
 	err := postgres.db.Model(&matchingOrders).
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
-		Where("price_nanos >= ?", Uint256ToLeftPaddedHex(priceNanos)).
-		Order("price_nanos DESC").
-		Order("block_height DESC").
-		Order("quantity_nanos DESC").
+		Where("price_nanos <= ?", Uint256ToLeftPaddedHex(priceNanos)).
+		Order("price_nanos ASC").
+		Order("block_height ASC").
+		Order("quantity_nanos ASC").
 		Select()
 
 	if err != nil {
@@ -2614,7 +2613,7 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 	var outputOrders []*DAOCoinLimitOrderEntry
 
 	for _, order := range matchingOrders {
-		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+		outputOrders = append(outputOrders, order.ToDAOCoinLimitOrderEntry())
 	}
 
 	return outputOrders, nil
