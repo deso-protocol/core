@@ -82,6 +82,7 @@ type SyncProgress struct {
 type Server struct {
 	cmgr          *ConnectionManager
 	blockchain    *Blockchain
+	snapshot      *Snapshot
 	mempool       *DeSoMempool
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
@@ -354,6 +355,7 @@ func NewServer(
 		DisableNetworking:            _disableNetworking,
 		ReadOnlyMode:                 _readOnlyMode,
 		IgnoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
+		snapshot:                     _snapshot,
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -380,6 +382,7 @@ func NewServer(
 	//
 	// TODO: Would be nice if this heavier-weight operation were moved to Start() to
 	// keep this constructor fast.
+	srv.eventManager = eventManager
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
@@ -820,6 +823,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
 					SnapshotBlockHeight:       expectedSnapshotHeight,
+					FirstSnapshotBlockHeight:  expectedSnapshotHeight,
 					CurrentEpochChecksumBytes: []byte{},
 					CurrentEpochBlockHash:     srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash,
 				}
@@ -1181,6 +1185,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.blockchain.finishedSyncing = true
 	srv.blockchain.syncingState = false
 	srv.blockchain.snapshot.CurrentEpochSnapshotMetadata = srv.HyperSyncProgress.SnapshotMetadata
+
+	// Take care of any callbacks that need to run once the snapshot is completed.
+	srv.eventManager.snapshotCompleted()
 
 	// Now sync the remaining blocks.
 	// TODO: what if the snapshot height is at the blockchain tip, for instance because PoW takes a while.

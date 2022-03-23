@@ -328,6 +328,15 @@ type SnapshotEpochMetadata struct {
 	// SnapshotBlockHeight is the height of the snapshot.
 	SnapshotBlockHeight uint64
 
+	// This is the block height of the very first snapshot this node encountered on its
+	// initial hypersync. This field is distinct from SnapshotBlockHeight, which updates
+	// every time we enter a new snapshot epoch. It is mainly used by Rosetta to determine
+	// where to start returning "real" blocks vs "dummy" blocks. In particular, before the
+	// first snapshot, Rosetta will return dummy blocks that don't have any txn operations
+	// in them, whereas after the first snapshot, Rosetta will "bootstrap" all the balances
+	// in a single mega-block at the snapshot, and then return "real" blocks thereafter.
+	FirstSnapshotBlockHeight uint64
+
 	// CurrentEpochChecksumBytes is the bytes of the state checksum for the snapshot at the epoch.
 	CurrentEpochChecksumBytes []byte
 	// CurrentEpochBlockHash is the hash of the first block of the current epoch. It's used to identify the snapshot.
@@ -338,6 +347,7 @@ func (metadata *SnapshotEpochMetadata) ToBytes() []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(metadata.SnapshotBlockHeight)...)
+	data = append(data, UintToBuf(metadata.FirstSnapshotBlockHeight)...)
 	data = append(data, EncodeByteArray(metadata.CurrentEpochChecksumBytes)...)
 	data = append(data, EncodeByteArray(metadata.CurrentEpochBlockHash.ToBytes())...)
 
@@ -348,6 +358,11 @@ func (metadata *SnapshotEpochMetadata) FromBytes(rr *bytes.Reader) error {
 	var err error
 
 	metadata.SnapshotBlockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+
+	metadata.FirstSnapshotBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
 		return err
 	}
@@ -555,7 +570,7 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	snapshotDir := filepath.Join(GetBadgerDbPath(dataDirectory), "snapshot")
 	snapshotOpts := badger.DefaultOptions(snapshotDir)
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDir)
-	snapshotOpts.MemTableSize = 2000 << 20
+	snapshotOpts.MemTableSize = 4000000000 // 4gb
 	snapshotDb, err := badger.Open(snapshotOpts)
 	if err != nil {
 		glog.Fatal(err)
@@ -573,6 +588,7 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	// Retrieve the snapshot epoch metadata from the snapshot db.
 	metadata := &SnapshotEpochMetadata{
 		SnapshotBlockHeight:       uint64(0),
+		FirstSnapshotBlockHeight:  uint64(0),
 		CurrentEpochChecksumBytes: []byte{},
 		CurrentEpochBlockHash:     NewBlockHash([]byte{}),
 	}
