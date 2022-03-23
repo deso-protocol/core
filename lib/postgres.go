@@ -2510,15 +2510,40 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 	return outputOrders, nil
 }
 
+func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	var orders []*PGDAOCoinLimitOrder
+
+	err := postgres.db.Model(&orders).
+		Where("buying_dao_coin_creator_pkid = ?", buyingDAOCoinCreatorPKID).
+		Where("selling_dao_coin_creator_pkid = ?", sellingDAOCoinCreatorPKID).
+		Order("price_nanos ASC").
+		Order("block_height ASC").
+		Order("quantity_nanos ASC").
+		Order("transactor_pkid ASC").
+		Select()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var outputOrders []*DAOCoinLimitOrderEntry
+
+	for _, order := range orders {
+		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+	}
+
+	return outputOrders, nil
+}
+
 func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 	var orders []*PGDAOCoinLimitOrder
 
-	err := (postgres.db.Model(&orders).
+	err := postgres.db.Model(&orders).
 		Where("transactor_pkid = ?", transactorPKID).
-		Order("buying_dao_coin_creator_pkid ASC")).
+		Order("buying_dao_coin_creator_pkid ASC").
 		Order("selling_dao_coin_creator_pkid ASC").
-		Order("block_height ASC").
 		Order("price_nanos ASC").
+		Order("block_height ASC").
 		Order("quantity_nanos ASC").
 		Select()
 

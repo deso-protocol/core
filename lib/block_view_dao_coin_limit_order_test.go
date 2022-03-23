@@ -225,6 +225,17 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
 	}
 
+	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair()
+	{
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
+			metadataM0.BuyingDAOCoinCreatorPKID, metadataM0.SellingDAOCoinCreatorPKID)
+
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+	}
+
 	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisTransactor()
 	{
 		// Confirm 1 existing limit order, and it's from m0.
