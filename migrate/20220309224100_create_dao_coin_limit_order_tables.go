@@ -31,7 +31,7 @@ func init() {
 				buying_dao_coin_creator_pkid  BYTEA NOT NULL,
 				selling_dao_coin_creator_pkid BYTEA NOT NULL,
 				price_nanos                   TEXT NOT NULL,
-                quantity                      TEXT NOT NULL,
+                quantity_nanos                TEXT NOT NULL,
 				block_height				  BIGINT NOT NULL,
 
 				PRIMARY KEY (

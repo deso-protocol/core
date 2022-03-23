@@ -75,7 +75,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Tests
 	// -----------------------
 
-	// Construct metadata for a m0 BID order buying DAO coins
+	// Construct metadata for a m0 limit order buying DAO coins
 	// minted by m0 in exchange for $DESO.
 	metadataM0 := DAOCoinLimitOrderMetadata{
 		BuyingDAOCoinCreatorPKID:  m0PKID.PKID,
@@ -203,62 +203,62 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM0.QuantityNanos = originalQuantity
 	}
 
-	//// Store how many DAO coins will be transferred.
-	//daoCoinQuantityChange := uint256.NewInt().SetUint64(2)
-	//
-	//// m0 submits BID order for 2 DAO coins @ 10/1e9 $DESO.
-	//// Happy path: update quantity and resubmit. m0's BID order should be stored.
-	//{
-	//	// Confirm no existing limit orders.
-	//	orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	require.Empty(orderEntries)
-	//
-	//	// Perform txn.
-	//	metadataM0.Quantity = daoCoinQuantityChange
-	//	_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-	//
-	//	// Confirm 1 existing limit order, and it's from m0.
-	//	orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	require.Equal(len(orderEntries), 1)
-	//	require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
-	//}
-	//
-	//// Construct metadata for a m1 BID order denominated in
-	//// $DESO and buying DAO coins minted by m0.
-	//metadataM1 := *metadataM0.Copy()
-	//metadataM1.OperationType = DAOCoinLimitOrderEntryOrderTypeAsk
-	//metadataM1.Quantity = daoCoinQuantityChange
-	//
-	//// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder
-	//{
-	//	_, _, _, err = _doDAOCoinLimitOrderTxn(
-	//		t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM1)
-	//
-	//	require.Error(err)
-	//	require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenAskOrder)
-	//}
-	//
-	//// Mint DAO coins and transfer to m1.
-	//{
-	//	daoCoinMintMetadata := DAOCoinMetadata{
-	//		ProfilePublicKey: m0PkBytes,
-	//		OperationType:    DAOCoinOperationTypeMint,
-	//		CoinsToMintNanos: *uint256.NewInt().SetUint64(1e4),
-	//	}
-	//
-	//	_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinMintMetadata)
-	//
-	//	daoCoinTransferMetadata := DAOCoinTransferMetadata{
-	//		ProfilePublicKey:       m0PkBytes,
-	//		DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(100),
-	//		ReceiverPublicKey:      m1PkBytes,
-	//	}
-	//
-	//	_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinTransferMetadata)
-	//}
-	//
+	// Store how many DAO coin nanos will be transferred.
+	daoCoinQuantityNanosChange := uint256.NewInt().SetUint64(2)
+
+	// m0 submits limit order buying 2 DAO coin nanos @ 10 $DESO nanos / DAO coin nano.
+	// Happy path: update quantity and resubmit. m0's order should be stored.
+	{
+		// Confirm no existing limit orders.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// Perform txn.
+		metadataM0.QuantityNanos = daoCoinQuantityNanosChange
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+	}
+
+	// Construct metadata for a m1 limit order selling
+	// 2 DAO coins minted by m0 in exchange for $DESO.
+	metadataM1 := *metadataM0.Copy()
+	metadataM1.BuyingDAOCoinCreatorPKID = metadataM0.SellingDAOCoinCreatorPKID
+	metadataM1.SellingDAOCoinCreatorPKID = metadataM0.BuyingDAOCoinCreatorPKID
+
+	// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
+	{
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM1)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder)
+	}
+
+	// Mint DAO coins and transfer to m1.
+	{
+		daoCoinMintMetadata := DAOCoinMetadata{
+			ProfilePublicKey: m0PkBytes,
+			OperationType:    DAOCoinOperationTypeMint,
+			CoinsToMintNanos: *uint256.NewInt().SetUint64(1e4),
+		}
+
+		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinMintMetadata)
+
+		daoCoinTransferMetadata := DAOCoinTransferMetadata{
+			ProfilePublicKey:       m0PkBytes,
+			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(100),
+			ReceiverPublicKey:      m1PkBytes,
+		}
+
+		_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinTransferMetadata)
+	}
+
 	//// m1 submits ASK order for 2 DAO coins @ 10/1e9 $DESO.
 	//// Orders fulfilled for 2 DAO coins @ 10/1e9 $DESO.
 	//// Submit matching order and confirm matching happy path.
