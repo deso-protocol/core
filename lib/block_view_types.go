@@ -75,6 +75,7 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 
 	if encoder != nil && !reflect.ValueOf(encoder).IsNil() {
 		data = append(data, BoolToByte(true))
+		// TODO: Figure out a better way to be forward-compatible with changes to the encoders
 		//data = append(data, UintToBuf(blockHeight)...)
 		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight)...)
 	} else {
