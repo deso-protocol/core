@@ -225,6 +225,26 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
 	}
 
+	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisTransactor()
+	{
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+	}
+
+	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice()
+	{
+		// Confirm 1 existing limit order, and it's from m0.
+		// Note that the blockHeight param is ignored.
+		orderEntry := metadataM0.ToEntry(m0PKID.PKID, 0)
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(orderEntry)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+	}
+
 	// Construct metadata for a m1 limit order selling
 	// 2 DAO coins minted by m0 in exchange for $DESO.
 	metadataM1 := *metadataM0.Copy()

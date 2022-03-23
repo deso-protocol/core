@@ -2092,7 +2092,7 @@ func (postgres *Postgres) flushDAOCoinLimitOrders(tx *pg.Tx, view *UtxoView) err
 	if len(insertOrders) > 0 {
 		_, err := tx.Model(&insertOrders).
 			WherePK().
-			OnConflict("(transactor_pkid, denominated_coin_type, denominated_coin_creator_pkid, dao_coin_creator_pkid, operation_type, price_nanos_per_denominated_coin, block_height) DO UPDATE").
+			OnConflict("(transactor_pkid, buying_dao_coin_creator_pkid, selling_dao_coin_creator_pkid, price_nanos, block_height) DO UPDATE").
 			Returning("NULL").
 			Insert()
 
@@ -2496,6 +2496,31 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 	// This function is currently used for testing purposes only.
 	var orders []*PGDAOCoinLimitOrder
 	err := postgres.db.Model(&orders).Select()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var outputOrders []*DAOCoinLimitOrderEntry
+
+	for _, order := range orders {
+		outputOrders = append(outputOrders, order.NewDAOCoinLimitOrder())
+	}
+
+	return outputOrders, nil
+}
+
+func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	var orders []*PGDAOCoinLimitOrder
+
+	err := (postgres.db.Model(&orders).
+		Where("transactor_pkid = ?", transactorPKID).
+		Order("buying_dao_coin_creator_pkid ASC")).
+		Order("selling_dao_coin_creator_pkid ASC").
+		Order("block_height ASC").
+		Order("price_nanos ASC").
+		Order("quantity_nanos ASC").
+		Select()
 
 	if err != nil {
 		return nil, err
