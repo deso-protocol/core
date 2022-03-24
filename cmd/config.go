@@ -88,7 +88,7 @@ func LoadConfig() *Config {
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
-	config.HyperSync = viper.GetBool("hypersync")
+	config.HyperSync = viper.GetBool("hyper-sync")
 	config.DisableSlowSync = viper.GetBool("disable-slow-sync")
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 
