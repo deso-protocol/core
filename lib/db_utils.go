@@ -495,7 +495,7 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	}
 
 	// If a flush takes place, we don't update cache. It will be updated in DBSetWithTxn.
-	if isState && !snap.isFlushing() {
+	if isState && !snap.Status.IsFlushing() {
 		snap.DatabaseCache.Add(keyString, itemData)
 	}
 	return itemData, nil
@@ -3365,7 +3365,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	}
 
 	if snap != nil {
-		snap.StartAncestralRecordsFlush()
+		snap.StartAncestralRecordsFlush(true)
 	}
 
 	// We apply seed transactions here. This step is useful for setting

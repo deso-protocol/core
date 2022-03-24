@@ -1932,19 +1932,16 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		}
 	} else {
 		err = bc.db.Update(func(txn *badger.Txn) error {
+			if bc.snapshot != nil {
+				bc.snapshot.PrepareAncestralRecordsFlush()
+				defer bc.snapshot.StartAncestralRecordsFlush(true)
+				glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
+			}
 			// Store the new block in the db under the
 			//   <blockHash> -> <serialized block>
 			// index.
-			if bc.snapshot != nil {
-				bc.snapshot.PrepareAncestralRecordsFlush()
-				glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
-			}
 			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
-			}
-			if bc.snapshot != nil {
-				glog.V(2).Infof("ProcessBlock: Snapshot flushing")
-				bc.snapshot.StartAncestralRecordsFlush()
 			}
 
 			// Store the new block's node in our node index in the db under the
@@ -2072,13 +2069,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				// ability to roll it back in the future.
 				if bc.snapshot != nil {
 					bc.snapshot.PrepareAncestralRecordsFlush()
+					defer bc.snapshot.StartAncestralRecordsFlush(true)
 				}
 				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
-				}
-				if bc.snapshot != nil {
-					bc.snapshot.StartAncestralRecordsFlush()
-					bc.snapshot.PrintChecksum("Checksum after flush")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
 
@@ -2342,6 +2336,9 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				// Delete the utxo operations for the blocks we're detaching since we don't need
 				// them anymore.
 				if err := DeleteUtxoOperationsForBlockWithTxn(txn, bc.snapshot, detachNode.Hash); err != nil {
+					if bc.snapshot != nil {
+						bc.snapshot.StartAncestralRecordsFlush(true)
+					}
 					return errors.Wrapf(err, "ProcessBlock: Problem deleting utxo operations for block")
 				}
 
@@ -2355,11 +2352,14 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				// Add the utxo operations for the blocks we're attaching so we can roll them back
 				// in the future if necessary.
 				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
+					if bc.snapshot != nil {
+						bc.snapshot.StartAncestralRecordsFlush(true)
+					}
 					return errors.Wrapf(err, "ProcessBlock: Problem putting utxo operations for block")
 				}
 			}
 			if bc.snapshot != nil {
-				bc.snapshot.StartAncestralRecordsFlush()
+				bc.snapshot.StartAncestralRecordsFlush(true)
 				bc.snapshot.PrintChecksum("Checksum after flush")
 			}
 

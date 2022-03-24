@@ -56,6 +56,9 @@ const (
 	// HashToCurveCache is used to save computation on hashing to curve.
 	HashToCurveCache uint = 10000 // 10K
 
+	// MetadataRetryCount is used to retry updating data in badger just in case.
+	MetadataRetryCount int = 5
+
 	// EnableTimer
 	EnableTimer = true
 )
