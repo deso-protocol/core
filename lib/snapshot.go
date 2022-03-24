@@ -568,9 +568,8 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	// TODO: make sure we don't snapshot when using PG
 	// Initialize the ancestral records database
 	snapshotDir := filepath.Join(GetBadgerDbPath(dataDirectory), "snapshot")
-	snapshotOpts := badger.DefaultOptions(snapshotDir)
+	snapshotOpts := PerformanceBadgerOptions(snapshotDir)
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDir)
-	snapshotOpts.MemTableSize = 4000000000 // 4gb
 	snapshotDb, err := badger.Open(snapshotOpts)
 	if err != nil {
 		glog.Fatal(err)

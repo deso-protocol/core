@@ -766,9 +766,8 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	if err != nil {
 		return fmt.Errorf("OpenTempDBAndDumpTxns: Error making top-level dir: %v", err)
 	}
-	tempMempoolDBOpts := badger.DefaultOptions(tempMempoolDBDir)
+	tempMempoolDBOpts := PerformanceBadgerOptions(tempMempoolDBDir)
 	tempMempoolDBOpts.ValueDir = tempMempoolDBDir
-	tempMempoolDBOpts.MemTableSize = 1024 << 20
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
 		return fmt.Errorf("OpenTempDBAndDumpTxns: Could not open temp db to dump mempool: %v", err)
@@ -2320,9 +2319,8 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 	}
 
 	// If we make it this far, we found a mempool dump to load.  Woohoo!
-	tempMempoolDBOpts := badger.DefaultOptions(savedTxnsDir)
+	tempMempoolDBOpts := PerformanceBadgerOptions(savedTxnsDir)
 	tempMempoolDBOpts.ValueDir = savedTxnsDir
-	tempMempoolDBOpts.MemTableSize = 1024 << 20
 	glog.Infof("LoadTxnsFrom: Opening new temp db %v", savedTxnsDir)
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {

@@ -794,14 +794,14 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// If we get here it means that we've just finished syncing headers and we will proceed to
 		// syncing state either through hyper sync or block sync. First let's check if the peer
 		// supports hyper sync.
-		if (pp.serviceFlags & SFHyperSync) != 0 {
+		if (pp.serviceFlags&SFHyperSync) != 0 && srv.blockchain.isSyncing() {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at "+
 				"height %v from peer %v", srv.blockchain.headerTip().Header.Height, pp)
 			// TODO: Handle a case where the node has synced during some previous snapshot epoch,
 			// and it has been re-run with a new snapshot epoch.
 
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
-			if srv.cmgr.HyperSync && !srv.blockchain.finishedSyncing {
+			if srv.cmgr.HyperSync {
 				srv.blockchain.syncingState = true
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
 					srv.GetSnapshot(pp)
@@ -1188,6 +1188,18 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.blockchain.syncingState = false
 	srv.blockchain.snapshot.CurrentEpochSnapshotMetadata = srv.HyperSyncProgress.SnapshotMetadata
 
+	// Update the snapshot epoch metadata in the snapshot DB.
+	err = srv.snapshot.SnapshotDb.Update(func(txn *badger.Txn) error {
+		return txn.Set(_prefixLastEpochMetadata, srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
+	})
+	if err != nil {
+		srv.snapshot.brokenSnapshot = true
+		glog.Errorf("server._handleSnapshot: Problem setting snapshot epoch metadata in snapshot db")
+	}
+
+	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v)",
+		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
+
 	// Take care of any callbacks that need to run once the snapshot is completed.
 	srv.eventManager.snapshotCompleted()
 
@@ -1264,6 +1276,10 @@ func (srv *Server) _startSync() {
 	}, false)
 	glog.V(1).Infof("Server._startSync: Downloading headers for blocks starting at "+
 		"header tip height %v from peer %v", bestHeight, bestPeer)
+
+	if bestPeer.cmgr.HyperSync && !srv.blockchain.isSyncing() {
+		srv.GetBlockToStore(bestPeer)
+	}
 
 	srv.SyncPeer = bestPeer
 }
@@ -1696,12 +1712,18 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	if srv.cmgr.HyperSync && srv.blockchain.finishedSyncing {
+	if srv.cmgr.HyperSync && !srv.blockchain.isSyncing() {
 		srv.GetBlockToStore(pp)
+		// FIXME: Check that we have blocks with StatusBlockStored == false
 	}
 
 	// If we get here, it means we're in SyncStateFullySynced, which is great.
 	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
+	//
+	// FIXME: In the hypersync case we're hammering the node with mempool requests every
+	// single time. We need to fix this by having a way to checking whether we have any
+	// blocks left with StatusBlockStored, and only request this if we no longer have such
+	// blocks.
 	srv._maybeRequestSync(pp)
 }
 
