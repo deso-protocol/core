@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"io"
 	"math"
+	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -1464,7 +1465,7 @@ type DAOCoinLimitOrderEntry struct {
 	TransactorPKID            *PKID
 	BuyingDAOCoinCreatorPKID  *PKID
 	SellingDAOCoinCreatorPKID *PKID
-	PriceNanos                *uint256.Int
+	Price                     *big.Float
 	QuantityNanos             *uint256.Int
 	BlockHeight               uint32
 
@@ -1475,7 +1476,13 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data := append([]byte{}, order.TransactorPKID.Encode()...)
 	data = append(data, order.BuyingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, order.SellingDAOCoinCreatorPKID.Encode()...)
-	data = append(data, EncodeUint256(order.PriceNanos)...)
+
+	priceBytes, err := ToBytes(order.Price)
+	if err != nil {
+		return nil, fmt.Errorf("DAOCoinLimitOrderEntry.ToBytes: Error reading Price: %v", err)
+	}
+
+	data = append(data, priceBytes...)
 	data = append(data, EncodeUint256(order.QuantityNanos)...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	return data, nil
@@ -1508,8 +1515,8 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
 	}
 
-	// Parse PriceNanosPerDenominatedCoin
-	ret.PriceNanos, err = ReadUint256(rr)
+	// Parse Price
+	ret.Price, err = ReadBigFloat(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading PriceNanos: %v", err)
 	}
@@ -1540,7 +1547,7 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	newOrder.TransactorPKID = order.TransactorPKID.NewPKID()
 	newOrder.BuyingDAOCoinCreatorPKID = order.BuyingDAOCoinCreatorPKID.NewPKID()
 	newOrder.SellingDAOCoinCreatorPKID = order.SellingDAOCoinCreatorPKID.NewPKID()
-	newOrder.PriceNanos = order.PriceNanos
+	newOrder.Price = order.Price
 	newOrder.QuantityNanos = order.QuantityNanos
 	newOrder.BlockHeight = order.BlockHeight
 	return newOrder
@@ -1563,9 +1570,9 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 
 func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {
 	// All orders are stored as ASKs. So prefer the lower priced.
-	if !order.PriceNanos.Eq(other.PriceNanos) {
-		// order.PriceNanos < other.PriceNanos
-		return order.PriceNanos.Lt(other.PriceNanos)
+	if order.Price.Cmp(other.Price) != 0 {
+		// order.Price < other.Price
+		return order.Price.Cmp(other.Price) < 1
 	}
 
 	// FIFO, prefer older orders first, i.e. lower block height.
@@ -1586,7 +1593,7 @@ type DAOCoinLimitOrderMapKey struct {
 	TransactorPKID            PKID
 	BuyingDAOCoinCreatorPKID  PKID
 	SellingDAOCoinCreatorPKID PKID
-	PriceNanos                uint256.Int
+	Price                     string
 	BlockHeight               uint32
 }
 
@@ -1595,7 +1602,7 @@ func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	key.TransactorPKID = *order.TransactorPKID.NewPKID()
 	key.BuyingDAOCoinCreatorPKID = *order.BuyingDAOCoinCreatorPKID.NewPKID()
 	key.SellingDAOCoinCreatorPKID = *order.SellingDAOCoinCreatorPKID.NewPKID()
-	key.PriceNanos = *order.PriceNanos
+	key.Price = ToString(order.Price)
 	key.BlockHeight = order.BlockHeight
 	return key
 }

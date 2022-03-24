@@ -80,7 +80,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	metadataM0 := DAOCoinLimitOrderMetadata{
 		BuyingDAOCoinCreatorPKID:  m0PKID.PKID,
 		SellingDAOCoinCreatorPKID: ZeroPKID.NewPKID(),
-		PriceNanos:                uint256.NewInt().SetUint64(10),
+		Price:                     NewFloat().SetUint64(10),
 		QuantityNanos:             uint256.NewInt().SetUint64(100),
 	}
 
@@ -125,15 +125,28 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// RuleErrorDAOCoinLimitOrderInvalidPrice: zero
 	{
-		originalValue := metadataM0.PriceNanos
-		metadataM0.PriceNanos = uint256.NewInt()
+		originalValue := metadataM0.Price
+		metadataM0.Price = NewFloat().SetUint64(0)
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
-		metadataM0.PriceNanos = originalValue
+		metadataM0.Price = originalValue
+	}
+
+	// RuleErrorDAOCoinLimitOrderInvalidPrice: zero
+	{
+		originalValue := metadataM0.Price
+		metadataM0.Price = NewFloat().SetInt64(-1)
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidPrice)
+		metadataM0.Price = originalValue
 	}
 
 	// RuleErrorDAOCoinLimitOrderInvalidQuantity: zero
@@ -151,9 +164,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// RuleErrorDAOCoinLimitOrderInvalidTotalCost: uint256 overflow
 	{
-		originalPrice := metadataM0.PriceNanos
+		originalPrice := metadataM0.Price
 		originalQuantity := metadataM0.QuantityNanos
-		metadataM0.PriceNanos = uint256.NewInt().SetUint64(2)
+		metadataM0.Price = NewFloat().SetUint64(2)
 		metadataM0.QuantityNanos = MaxUint256.Clone()
 
 		// Perform txn.
@@ -163,16 +176,16 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidTotalCost)
 
-		metadataM0.PriceNanos = originalPrice
+		metadataM0.Price = originalPrice
 		metadataM0.QuantityNanos = originalQuantity
 	}
 
 	// RuleErrorDAOCoinLimitOrderInvalidTotalCost: non-uint64 value
 	{
-		originalPrice := metadataM0.PriceNanos
+		originalPrice := metadataM0.Price
 		originalQuantity := metadataM0.QuantityNanos
 
-		metadataM0.PriceNanos = uint256.NewInt().SetUint64(2)
+		metadataM0.Price = NewFloat().SetUint64(2)
 		metadataM0.QuantityNanos = uint256.NewInt().SetUint64(math.MaxUint64)
 
 		// Perform txn.
@@ -182,16 +195,16 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidTotalCost)
 
-		metadataM0.PriceNanos = originalPrice
+		metadataM0.Price = originalPrice
 		metadataM0.QuantityNanos = originalQuantity
 	}
 
 	// RuleErrorDAOCoinLimitOrderInsufficientDESOCoinsToOpenOrder
 	{
-		originalPrice := metadataM0.PriceNanos
+		originalPrice := metadataM0.Price
 		originalQuantity := metadataM0.QuantityNanos
 
-		metadataM0.PriceNanos = uint256.NewInt().SetUint64(1)
+		metadataM0.Price = NewFloat().SetUint64(1)
 		metadataM0.QuantityNanos = uint256.NewInt().SetUint64(math.MaxUint64)
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -199,7 +212,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder)
-		metadataM0.PriceNanos = originalPrice
+		metadataM0.Price = originalPrice
 		metadataM0.QuantityNanos = originalQuantity
 	}
 

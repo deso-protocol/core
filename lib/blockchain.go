@@ -3196,36 +3196,40 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					return nil, 0, 0, 0, errors.Wrapf(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
-				// TODO: check overflow
-				orderCost := uint256.NewInt().Mul(order.PriceNanos, order.QuantityNanos)
+
+				orderCost, err := ToUint256(Mul(order.Price, ToBigFloat(order.QuantityNanos)))
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
+				}
 
 				if orderCost.LtUint64(desoBalanceNanos) {
-					var desoNanosToConsume *uint256.Int
+					var desoNanosToConsume uint64
 					if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
-						desoNanosToConsume = uint256.NewInt().Mul(
-							order.PriceNanos, requestedOrder.QuantityNanos)
-						if err != nil {
-							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
-						}
-						requestedOrder.QuantityNanos = uint256.NewInt()
-					} else {
-						desoNanosToConsume = uint256.NewInt().Mul(
-							order.PriceNanos, order.QuantityNanos)
+						desoNanosToConsume, err = ToUint64(Mul(
+							order.Price, ToBigFloat(requestedOrder.QuantityNanos)))
 
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}
+
+						requestedOrder.QuantityNanos = uint256.NewInt()
+					} else {
+						desoNanosToConsume, err = ToUint64(Mul(
+							order.Price, ToBigFloat(requestedOrder.QuantityNanos)))
+
+						if err != nil {
+							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
+						}
+
 						requestedOrder.QuantityNanos = uint256.NewInt().Sub(requestedOrder.QuantityNanos, order.QuantityNanos)
 					}
-					if !desoNanosToConsume.IsUint64() {
-						return nil, 0, 0, 0, fmt.Errorf(
-							"Blockchain.CreateDAOCoinLimitOrderTxn: fulfilling order exceeds uint64")
-					}
+
 					if _, exists := desoNanosToConsumeMap[*order.TransactorPKID]; !exists {
 						desoNanosToConsumeMap[*order.TransactorPKID] = 0
 					}
+
 					// TODO: check for overflow
-					desoNanosToConsumeMap[*order.TransactorPKID] += desoNanosToConsume.Uint64()
+					desoNanosToConsumeMap[*order.TransactorPKID] += desoNanosToConsume
 				}
 				lastSeenOrder = order
 			}
@@ -4227,10 +4231,18 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.QuantityNanos) {
 						var nanosToFulfillOrder *uint256.Int
 						if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
-							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanos, requestedOrder.QuantityNanos)
+							nanosToFulfillOrder, err = ToUint256(Mul(order.Price, ToBigFloat(requestedOrder.QuantityNanos)))
+							if err != nil {
+								// TODO: confirm error message.
+								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+							}
 							requestedOrder.QuantityNanos = uint256.NewInt()
 						} else {
-							nanosToFulfillOrder = uint256.NewInt().Mul(order.PriceNanos, order.QuantityNanos)
+							nanosToFulfillOrder, err = ToUint256(Mul(order.Price, ToBigFloat(order.QuantityNanos)))
+							if err != nil {
+								// TODO: confirm error message.
+								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+							}
 							requestedOrder.QuantityNanos = uint256.NewInt().Sub(requestedOrder.QuantityNanos, order.QuantityNanos)
 						}
 						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)

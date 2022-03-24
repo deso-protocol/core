@@ -3,6 +3,8 @@ package lib
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
+	"io"
 	"math/big"
 )
 
@@ -222,4 +224,78 @@ func BigFloatPow(z *big.Float, w *big.Float) *big.Float {
 func GetS256BasePointCompressed() []byte {
 	basePoint, _ := btcec.S256().CurveParams.Gx.GobEncode()
 	return basePoint
+}
+
+// ----- CONVERTERS
+
+func Clone(input *big.Float) *big.Float {
+	// *big.Float => *big.Float
+	output := NewFloat()
+	output.Copy(input)
+	return output
+}
+
+func ToString(input *big.Float) string {
+	// *big.Float => string
+	return input.String()
+}
+
+func ToBytes(input *big.Float) ([]byte, error) {
+	// *big.Float => []byte
+	output256, err := ToUint256(input)
+	if err != nil {
+		return nil, err
+	}
+
+	return EncodeUint256(output256), nil
+}
+
+func FromBytes(input []byte) (*big.Float, error) {
+	// []byte => *big.Float
+	output := ToBigFloat(uint256.NewInt().SetBytes(input))
+	return output, nil
+}
+
+func ReadBigFloat(rr io.Reader) (*big.Float, error) {
+	// io.Reader => *big.Float
+	output256, err := ReadUint256(rr)
+	if err != nil {
+		return nil, err
+	}
+
+	return ToBigFloat(output256), nil
+}
+
+func ToBigFloat(input *uint256.Int) *big.Float {
+	// *uint256.Int => *big.Float
+	output := NewFloat()
+	output.SetInt(input.ToBig())
+	return output
+}
+
+func ToUint256(input *big.Float) (*uint256.Int, error) {
+	// *big.Float => *uint256.Int
+	if input.Cmp(NewFloat().SetUint64(0)) <= 0 {
+		return uint256.NewInt(), nil
+	}
+
+	output := uint256.NewInt()
+	inputInt, _ := input.Int(nil)
+
+	isOverflow := output.SetFromBig(inputInt)
+	if isOverflow {
+		return nil, fmt.Errorf("Overflow when converting big.Float to uint256")
+	}
+
+	return output, nil
+}
+
+func ToUint64(input *big.Float) (uint64, error) {
+	// *big.Float => uint64
+	inputUint256, err := ToUint256(input)
+	if err != nil || !inputUint256.IsUint64() {
+		return 0, fmt.Errorf("Overflow when converting big.Float to uint64")
+	}
+
+	return inputUint256.Uint64(), nil
 }

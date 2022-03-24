@@ -12,6 +12,7 @@ import (
 	"github.com/holiman/uint256"
 	"io"
 	"math"
+	"math/big"
 	"net"
 	"sort"
 	"time"
@@ -5493,7 +5494,7 @@ func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 type DAOCoinLimitOrderMetadata struct {
 	BuyingDAOCoinCreatorPKID  *PKID
 	SellingDAOCoinCreatorPKID *PKID
-	PriceNanos                *uint256.Int
+	Price                     *big.Float
 	QuantityNanos             *uint256.Int
 
 	// If set to true, we will cancel an existing order (up to the
@@ -5514,7 +5515,7 @@ func (txnData *DAOCoinLimitOrderMetadata) Copy() *DAOCoinLimitOrderMetadata {
 	return &DAOCoinLimitOrderMetadata{
 		BuyingDAOCoinCreatorPKID:  txnData.BuyingDAOCoinCreatorPKID.NewPKID(),
 		SellingDAOCoinCreatorPKID: txnData.SellingDAOCoinCreatorPKID.NewPKID(),
-		PriceNanos:                txnData.PriceNanos.Clone(),
+		Price:                     Clone(txnData.Price),
 		QuantityNanos:             txnData.QuantityNanos.Clone(),
 	}
 }
@@ -5524,7 +5525,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHei
 		TransactorPKID:            transactorPKID,
 		BuyingDAOCoinCreatorPKID:  txnData.BuyingDAOCoinCreatorPKID,
 		SellingDAOCoinCreatorPKID: txnData.SellingDAOCoinCreatorPKID,
-		PriceNanos:                txnData.PriceNanos,
+		Price:                     txnData.Price,
 		QuantityNanos:             txnData.QuantityNanos,
 		BlockHeight:               blockHeight,
 	}
@@ -5533,7 +5534,13 @@ func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHei
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, txnData.SellingDAOCoinCreatorPKID.Encode()...)
-	data = append(data, EncodeUint256(txnData.PriceNanos)...)
+
+	priceBytes, err := ToBytes(txnData.Price)
+	if err != nil {
+		return nil, err
+	}
+
+	data = append(data, priceBytes...)
 	data = append(data, EncodeUint256(txnData.QuantityNanos)...)
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
 	data = append(data, UintToBuf(uint64(len(txnData.MatchingBidsInputsMap)))...)
@@ -5573,10 +5580,10 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 			"DAOCoinLimitOrderMetadata.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
 	}
 
-	// Parse PriceNanos
-	ret.PriceNanos, err = ReadUint256(rr)
+	// Parse Price
+	ret.Price, err = ReadBigFloat(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading PriceNanos: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading Price: %v", err)
 	}
 
 	// Parse QuantityNanos
