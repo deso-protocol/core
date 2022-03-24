@@ -6519,7 +6519,7 @@ func DBPutProfileEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight ui
 // TODO(performance): This currently fetches all profiles. We should implement
 // some kind of pagination instead though.
 func DBGetAllProfilesByCoinValue(handle *badger.DB, snap *Snapshot, fetchEntries bool) (
-	_lockedDeSoNanos []uint64, _profilePublicKeys []*PKID,
+	_lockedDeSoNanos []uint64, _profilePKIDs []*PKID,
 	_profileEntries []*ProfileEntry, _err error) {
 
 	lockedDeSoNanosFetched := []uint64{}

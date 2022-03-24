@@ -82,6 +82,7 @@ type SyncProgress struct {
 type Server struct {
 	cmgr          *ConnectionManager
 	blockchain    *Blockchain
+	snapshot      *Snapshot
 	mempool       *DeSoMempool
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
@@ -354,6 +355,7 @@ func NewServer(
 		DisableNetworking:            _disableNetworking,
 		ReadOnlyMode:                 _readOnlyMode,
 		IgnoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
+		snapshot:                     _snapshot,
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -380,6 +382,7 @@ func NewServer(
 	//
 	// TODO: Would be nice if this heavier-weight operation were moved to Start() to
 	// keep this constructor fast.
+	srv.eventManager = eventManager
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
@@ -820,6 +823,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
 					SnapshotBlockHeight:       expectedSnapshotHeight,
+					FirstSnapshotBlockHeight:  expectedSnapshotHeight,
 					CurrentEpochChecksumBytes: []byte{},
 					CurrentEpochBlockHash:     srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash,
 				}
@@ -945,15 +949,8 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 // a snapshot chunk, which is a sorted list of <key, value> pairs representing a section of the database
 // at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
-	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: "+
-		"%v) and metadata (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
-		len(msg.SnapshotChunk), msg.SnapshotMetadata, pp)
-
 	srv.timer.End("Get Snapshot")
 	srv.timer.Start("Server._handleSnapshot Main")
-
-	// Validate the snapshot chunk message
-
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
 	if len(msg.SnapshotChunk) == 0 {
@@ -963,6 +960,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		pp.Disconnect()
 		return
 	}
+	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: "+
+		"%v) and metadata (%v) and isEmpty (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
+		len(msg.SnapshotChunk), msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)
+
+	// Validate the snapshot chunk message
 
 	// Make sure that the expected snapshot height and blockhash match the ones in received message.
 	if msg.SnapshotMetadata.SnapshotBlockHeight != srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
@@ -1183,6 +1185,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.blockchain.finishedSyncing = true
 	srv.blockchain.syncingState = false
 	srv.blockchain.snapshot.CurrentEpochSnapshotMetadata = srv.HyperSyncProgress.SnapshotMetadata
+
+	// Take care of any callbacks that need to run once the snapshot is completed.
+	srv.eventManager.snapshotCompleted()
 
 	// Now sync the remaining blocks.
 	// TODO: what if the snapshot height is at the blockchain tip, for instance because PoW takes a while.

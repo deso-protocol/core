@@ -1172,10 +1172,14 @@ func (pp *Peer) IsSyncCandidate() bool {
 	isFullNode := (pp.serviceFlags & SFFullNode) != 0
 	// TODO: This is a bit of a messy way to determine whether the node was
 	// run with --hypersync
-	hypersyncSatisfied := !pp.cmgr.DisableSlowSync || (pp.serviceFlags&SFHyperSync) != 0
+	nodeSupportsHypersync := (pp.serviceFlags & SFHyperSync) != 0
+	hypersyncSatisfied := !pp.cmgr.DisableSlowSync || nodeSupportsHypersync
 	glog.Infof("IsSyncCandidate: localAddr (%v), isFullNode (%v), "+
-		"hypersyncSatisfied (%v), is outbound (%v)",
+		"hypersyncSatisfied (%v), --disableSlowSync (%v), nodeSupportsHypersync (%v), "+
+		"is outbound (%v)",
 		pp.Conn.LocalAddr().String(), isFullNode, hypersyncSatisfied,
+		pp.cmgr.DisableSlowSync,
+		nodeSupportsHypersync,
 		pp.isOutbound)
 	return isFullNode && pp.isOutbound && hypersyncSatisfied
 }
