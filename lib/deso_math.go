@@ -257,3 +257,21 @@ func ToUint256(input *big.Float) (*uint256.Int, error) {
 
 	return output, nil
 }
+
+func Uint64Pow(base int, power int) uint64 {
+	if base < 0 || power < 0 {
+		panic("Invalid inputs to Uint64Pow")
+	}
+
+	if power == 0 {
+		return 1
+	}
+
+	result := base
+
+	for i := 2; i <= power; i++ {
+		result *= base
+	}
+
+	return uint64(result)
+}

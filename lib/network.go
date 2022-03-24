@@ -5522,17 +5522,14 @@ func (txnData *DAOCoinLimitOrderMetadata) Copy() *DAOCoinLimitOrderMetadata {
 	}
 }
 
-func (txnData *DAOCoinLimitOrderMetadata) TotalCost256() (*uint256.Int, error) {
-	order := &DAOCoinLimitOrderEntry{
-		ScaledPrice:   txnData.ScaledPrice,
-		QuantityNanos: txnData.QuantityNanos,
-	}
-
-	return order.TotalCostUint256()
+func (txnData *DAOCoinLimitOrderMetadata) UpdatePrice(newPrice *big.Float) error {
+	// This method is only used in testing at the moment.
+	txnData.Price = newPrice
+	return txnData.SetScaledPrice()
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) SetScaledPrice() error {
-	scalingFactor := NewFloat().SetUint64(MaxDAOCoinLimitOrderPricePrecision)
+	scalingFactor := NewFloat().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
 	scaledPrice, err := ToUint256(Mul(txnData.Price, scalingFactor))
 
 	if err != nil {

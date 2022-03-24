@@ -1592,7 +1592,7 @@ func (order *DAOCoinLimitOrderEntry) TotalCostUint256() (*uint256.Int, error) {
 func (order *DAOCoinLimitOrderEntry) CostUint256(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (*uint256.Int, error) {
 	// Returns the total cost of the inputted price x quantity as a uint256.
 	unscaledTotalCost := uint256.NewInt().Mul(scaledPrice, quantityNanos)
-	scalingFactor := uint256.NewInt().SetUint64(MaxDAOCoinLimitOrderPricePrecision)
+	scalingFactor := uint256.NewInt().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
 	scaledTotalCost := uint256.NewInt().Div(unscaledTotalCost, scalingFactor)
 	// TODO: check for overflow.
 	return scaledTotalCost, nil
@@ -1618,7 +1618,7 @@ func (order *DAOCoinLimitOrderEntry) InvertedScaledPrice() (*uint256.Int, error)
 		return nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
-	scalingFactor := uint256.NewInt().SetUint64(MaxDAOCoinLimitOrderPricePrecision)
+	scalingFactor := uint256.NewInt().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
 	return uint256.NewInt().Div(scalingFactor, order.ScaledPrice), nil
 }
 
@@ -1626,7 +1626,7 @@ func (order *DAOCoinLimitOrderEntry) SetUnscaledPrice() error {
 	// Internally, we operate exclusively over the ScaledPrice
 	// *uint256.Int value. But once we need to return values to
 	// external clients, we need to set the Price *big.Float value.
-	scalingFactor := NewFloat().SetUint64(MaxDAOCoinLimitOrderPricePrecision)
+	scalingFactor := NewFloat().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
 	order.Price = Div(ToBigFloat(order.ScaledPrice), scalingFactor)
 	return nil
 }

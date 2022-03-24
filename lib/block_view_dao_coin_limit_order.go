@@ -91,7 +91,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Calculate order total cost from price and quantity.
-	transactorOrderTotalCost, err := txMeta.TotalCost256()
+	transactorOrderTotalCost, err := (&DAOCoinLimitOrderEntry{}).CostUint256(
+		txMeta.ScaledPrice, txMeta.QuantityNanos)
 
 	// Validate that order total cost doesn't overflow uint256.
 	if err != nil {
