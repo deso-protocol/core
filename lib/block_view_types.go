@@ -1466,6 +1466,7 @@ type DAOCoinLimitOrderEntry struct {
 	BuyingDAOCoinCreatorPKID  *PKID
 	SellingDAOCoinCreatorPKID *PKID
 	Price                     *big.Float
+	ScaledPrice               *uint256.Int
 	QuantityNanos             *uint256.Int
 	BlockHeight               uint32
 
@@ -1476,13 +1477,7 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data := append([]byte{}, order.TransactorPKID.Encode()...)
 	data = append(data, order.BuyingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, order.SellingDAOCoinCreatorPKID.Encode()...)
-
-	priceBytes, err := ToBytes(order.Price)
-	if err != nil {
-		return nil, fmt.Errorf("DAOCoinLimitOrderEntry.ToBytes: Error reading Price: %v", err)
-	}
-
-	data = append(data, priceBytes...)
+	data = append(data, EncodeUint256(order.ScaledPrice)...)
 	data = append(data, EncodeUint256(order.QuantityNanos)...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	return data, nil
@@ -1515,10 +1510,10 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
 	}
 
-	// Parse Price
-	ret.Price, err = ReadBigFloat(rr)
+	// Parse Scaled Price
+	ret.ScaledPrice, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading PriceNanos: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
 	// Parse QuantityNanos
@@ -1547,7 +1542,7 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	newOrder.TransactorPKID = order.TransactorPKID.NewPKID()
 	newOrder.BuyingDAOCoinCreatorPKID = order.BuyingDAOCoinCreatorPKID.NewPKID()
 	newOrder.SellingDAOCoinCreatorPKID = order.SellingDAOCoinCreatorPKID.NewPKID()
-	newOrder.Price = order.Price
+	newOrder.ScaledPrice = order.ScaledPrice
 	newOrder.QuantityNanos = order.QuantityNanos
 	newOrder.BlockHeight = order.BlockHeight
 	return newOrder
@@ -1570,9 +1565,9 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 
 func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {
 	// All orders are stored as ASKs. So prefer the lower priced.
-	if order.Price.Cmp(other.Price) != 0 {
-		// order.Price < other.Price
-		return order.Price.Cmp(other.Price) < 1
+	if !order.ScaledPrice.Eq(other.ScaledPrice) {
+		// order.ScaledPrice < other.ScaledPrice
+		return order.ScaledPrice.Lt(other.ScaledPrice)
 	}
 
 	// FIFO, prefer older orders first, i.e. lower block height.
@@ -1589,11 +1584,58 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
 }
 
+func (order *DAOCoinLimitOrderEntry) TotalCostUint256() (*uint256.Int, error) {
+	// Returns the total cost of this order (price x quantity) as a uint256.
+	return order.CostUint256(order.ScaledPrice, order.QuantityNanos)
+}
+
+func (order *DAOCoinLimitOrderEntry) CostUint256(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (*uint256.Int, error) {
+	// Returns the total cost of the inputted price x quantity as a uint256.
+	unscaledTotalCost := uint256.NewInt().Mul(scaledPrice, quantityNanos)
+	scalingFactor := uint256.NewInt().SetUint64(MaxDAOCoinLimitOrderPricePrecision)
+	scaledTotalCost := uint256.NewInt().Div(unscaledTotalCost, scalingFactor)
+	// TODO: check for overflow.
+	return scaledTotalCost, nil
+}
+
+func (order *DAOCoinLimitOrderEntry) CostUint64(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (uint64, error) {
+	// Returns the total cost of the inputted price x quantity as a uint64.
+	cost256, err := order.CostUint256(scaledPrice, quantityNanos)
+
+	if err != nil || !cost256.IsUint64() {
+		return 0, RuleErrorDAOCoinLimitOrderInvalidTotalCost
+	}
+
+	return cost256.Uint64(), nil
+}
+
+func (order *DAOCoinLimitOrderEntry) InvertedScaledPrice() (*uint256.Int, error) {
+	// When we compare the ScaledPrice to the values in the database we
+	// want to invert it to find the best matching orders (i.e. X becomes 1/X).
+	// Since the price is scaled we also need to scale up the numerator in the
+	// inversion to the MaxDAOCoinLimitOrderPricePrecision.
+	if order.ScaledPrice.IsZero() {
+		return nil, RuleErrorDAOCoinLimitOrderInvalidPrice
+	}
+
+	scalingFactor := uint256.NewInt().SetUint64(MaxDAOCoinLimitOrderPricePrecision)
+	return uint256.NewInt().Div(scalingFactor, order.ScaledPrice), nil
+}
+
+func (order *DAOCoinLimitOrderEntry) SetUnscaledPrice() error {
+	// Internally, we operate exclusively over the ScaledPrice
+	// *uint256.Int value. But once we need to return values to
+	// external clients, we need to set the Price *big.Float value.
+	scalingFactor := NewFloat().SetUint64(MaxDAOCoinLimitOrderPricePrecision)
+	order.Price = Div(ToBigFloat(order.ScaledPrice), scalingFactor)
+	return nil
+}
+
 type DAOCoinLimitOrderMapKey struct {
 	TransactorPKID            PKID
 	BuyingDAOCoinCreatorPKID  PKID
 	SellingDAOCoinCreatorPKID PKID
-	Price                     string
+	ScaledPrice               uint256.Int
 	BlockHeight               uint32
 }
 
@@ -1602,7 +1644,7 @@ func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	key.TransactorPKID = *order.TransactorPKID.NewPKID()
 	key.BuyingDAOCoinCreatorPKID = *order.BuyingDAOCoinCreatorPKID.NewPKID()
 	key.SellingDAOCoinCreatorPKID = *order.SellingDAOCoinCreatorPKID.NewPKID()
-	key.Price = ToString(order.Price)
+	key.ScaledPrice = *order.ScaledPrice
 	key.BlockHeight = order.BlockHeight
 	return key
 }

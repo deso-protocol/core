@@ -979,4 +979,8 @@ const (
 	// Messaging key constants
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
+
+	// DAO coin limit order prices come in as floats but are internally handled as uint256s
+	// so that we don't lose precision. This value tells us how many decimal places to retain.
+	MaxDAOCoinLimitOrderPricePrecision = 12
 )

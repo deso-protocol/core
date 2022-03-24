@@ -3172,6 +3172,12 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			}
 		}
 
+		// Set scaled price.
+		err = metadata.SetScaledPrice()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: invalid price")
+		}
+
 		// Construct requested order
 		requestedOrder := metadata.ToEntry(
 			utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID, bc.blockTip().Height+1)
@@ -3197,7 +3203,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
 
-				orderCost, err := ToUint256(Mul(order.Price, ToBigFloat(order.QuantityNanos)))
+				orderCost, err := order.TotalCostUint256()
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 				}
@@ -3205,8 +3211,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				if orderCost.LtUint64(desoBalanceNanos) {
 					var desoNanosToConsume uint64
 					if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
-						desoNanosToConsume, err = ToUint64(Mul(
-							order.Price, ToBigFloat(requestedOrder.QuantityNanos)))
+						desoNanosToConsume, err = order.CostUint64(order.ScaledPrice, requestedOrder.QuantityNanos)
 
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
@@ -3214,8 +3219,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 						requestedOrder.QuantityNanos = uint256.NewInt()
 					} else {
-						desoNanosToConsume, err = ToUint64(Mul(
-							order.Price, ToBigFloat(requestedOrder.QuantityNanos)))
+						desoNanosToConsume, err = order.CostUint64(order.ScaledPrice, requestedOrder.QuantityNanos)
 
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
@@ -4207,6 +4211,12 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			// If buying a DAO coin with $DESO, we need to add inputs from the transactor
 			// to cover all the ask orders that will match in the connect logic.
 
+			// Set scaled price.
+			err = txMeta.SetScaledPrice()
+			if err != nil {
+				return 0, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: invalid price")
+			}
+
 			// Construct requested order
 			requestedOrder := txMeta.ToEntry(
 				utxoView.GetPKIDForPublicKey(txArg.PublicKey).PKID, bc.blockTip().Height+1)
@@ -4231,14 +4241,14 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.QuantityNanos) {
 						var nanosToFulfillOrder *uint256.Int
 						if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
-							nanosToFulfillOrder, err = ToUint256(Mul(order.Price, ToBigFloat(requestedOrder.QuantityNanos)))
+							nanosToFulfillOrder, err = order.CostUint256(order.ScaledPrice, requestedOrder.QuantityNanos)
 							if err != nil {
 								// TODO: confirm error message.
 								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
 							}
 							requestedOrder.QuantityNanos = uint256.NewInt()
 						} else {
-							nanosToFulfillOrder, err = ToUint256(Mul(order.Price, ToBigFloat(order.QuantityNanos)))
+							nanosToFulfillOrder, err = order.TotalCostUint256()
 							if err != nil {
 								// TODO: confirm error message.
 								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")

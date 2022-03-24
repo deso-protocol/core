@@ -291,7 +291,7 @@ var (
 	//   _PrefixDAOCoinLimitOrder
 	//   BuyingDAOCoinCreatorPKID [33]byte
 	//   SellingDAOCoinCReatorPKID [33]byte
-	//   PriceNanos [256]byte
+	//   ScaledPrice [256]byte
 	//   BlockHeight [32]byte
 	//   TransactorPKID [33]byte
 	// > -> <DAOCoinLimitOrderEntry>
@@ -302,7 +302,7 @@ var (
 	//   TransactorPKID [33]byte
 	//   BuyingDAOCoinCreatorPKID [33]byte
 	//   SellingDAOCoinCReatorPKID [33]byte
-	//   PriceNanos [256]byte
+	//   ScaledPrice [256]byte
 	//   BlockHeight [32]byte
 	// > -> <DAOCoinLimitOrder>
 	_PrefixDAOCoinLimitOrder                 = []byte{59}
@@ -6160,13 +6160,7 @@ func StartDBSummarySnapshots(db *badger.DB) {
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) ([]byte, error) {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order)
-
-	priceBytes, err := ToBytes(order.Price)
-	if err != nil {
-		return nil, err
-	}
-
-	key = append(key, priceBytes...)
+	key = append(key, EncodeUint256(order.ScaledPrice)...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	key = append(key, order.TransactorPKID[:]...)
 	return key, nil
@@ -6184,13 +6178,7 @@ func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) ([
 	key = append(key, order.TransactorPKID[:]...)
 	key = append(key, order.BuyingDAOCoinCreatorPKID[:]...)
 	key = append(key, order.SellingDAOCoinCreatorPKID[:]...)
-
-	priceBytes, err := ToBytes(order.Price)
-	if err != nil {
-		return nil, err
-	}
-
-	key = append(key, priceBytes...)
+	key = append(key, EncodeUint256(order.ScaledPrice)...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	return key, nil
 }
@@ -6245,20 +6233,20 @@ func DBGetMatchingDAOCoinLimitOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOr
 	queryOrder := inputOrder.Copy()
 	queryQuantityNanos := queryOrder.QuantityNanos
 
+	// Calculate the inverse of the input order's ScaledPrice.
+	invertedScaledPrice, err := inputOrder.InvertedScaledPrice()
+	if err != nil {
+		return nil, err
+	}
+
 	// Convert the input BID order to the ASK order to query for.
 	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
-	//   * Take the inverse (1/x) of PriceNanos.
+	//   * Take the inverse (1/x) of ScaledPrice.
 	//   * Set BlockHeight to zero.
 	//   * Set TransactorPKID to ZeroPKID
 	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID.NewPKID()
 	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID.NewPKID()
-
-	// Ensure price > 0 before inverting.
-	if inputOrder.Price.Cmp(bigZero) <= 0 {
-		return nil, nil
-	}
-
-	queryOrder.Price = Div(bigOne, inputOrder.Price)
+	queryOrder.ScaledPrice = invertedScaledPrice
 	queryOrder.BlockHeight = uint32(0)
 	queryOrder.TransactorPKID = ZeroPKID.NewPKID()
 
@@ -6305,8 +6293,8 @@ func DBGetMatchingDAOCoinLimitOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOr
 		}
 
 		// Break if stored ASK price is greater than input BID price.
-		// matchingOrder.PriceNanos > inputOrder.PriceNanos
-		if matchingOrder.Price.Cmp(inputOrder.Price) > 0 {
+		// matchingOrder.ScaledPrice > inputOrder.ScaledPrice
+		if matchingOrder.ScaledPrice.Gt(inputOrder.ScaledPrice) {
 			break
 		}
 
@@ -6347,13 +6335,7 @@ func DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(handle *badger.DB, i
 	key = append(key, inputOrder.TransactorPKID[:]...)
 	key = append(key, inputOrder.BuyingDAOCoinCreatorPKID[:]...)
 	key = append(key, inputOrder.SellingDAOCoinCreatorPKID[:]...)
-
-	priceBytes, err := ToBytes(inputOrder.Price)
-	if err != nil {
-		return nil, err
-	}
-
-	key = append(key, priceBytes...)
+	key = append(key, EncodeUint256(inputOrder.ScaledPrice)...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 

@@ -204,7 +204,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		originalPrice := metadataM0.Price
 		originalQuantity := metadataM0.QuantityNanos
 
-		metadataM0.Price = NewFloat().SetUint64(1)
+		metadataM0.Price = NewFloat().SetFloat64(0.99)
 		metadataM0.QuantityNanos = uint256.NewInt().SetUint64(math.MaxUint64)
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -595,7 +595,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	if chain.postgres == nil {
 		// TODO: this step currently only works with Badger.
-		_connectBlockThenDisconnectBlockAndFlush(testMeta)
+		//_connectBlockThenDisconnectBlockAndFlush(testMeta)
 	}
 }
 

@@ -5495,6 +5495,7 @@ type DAOCoinLimitOrderMetadata struct {
 	BuyingDAOCoinCreatorPKID  *PKID
 	SellingDAOCoinCreatorPKID *PKID
 	Price                     *big.Float
+	ScaledPrice               *uint256.Int
 	QuantityNanos             *uint256.Int
 
 	// If set to true, we will cancel an existing order (up to the
@@ -5516,16 +5517,46 @@ func (txnData *DAOCoinLimitOrderMetadata) Copy() *DAOCoinLimitOrderMetadata {
 		BuyingDAOCoinCreatorPKID:  txnData.BuyingDAOCoinCreatorPKID.NewPKID(),
 		SellingDAOCoinCreatorPKID: txnData.SellingDAOCoinCreatorPKID.NewPKID(),
 		Price:                     Clone(txnData.Price),
+		ScaledPrice:               txnData.ScaledPrice.Clone(),
 		QuantityNanos:             txnData.QuantityNanos.Clone(),
 	}
 }
 
+func (txnData *DAOCoinLimitOrderMetadata) TotalCost256() (*uint256.Int, error) {
+	order := &DAOCoinLimitOrderEntry{
+		ScaledPrice:   txnData.ScaledPrice,
+		QuantityNanos: txnData.QuantityNanos,
+	}
+
+	return order.TotalCostUint256()
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) SetScaledPrice() error {
+	scalingFactor := NewFloat().SetUint64(MaxDAOCoinLimitOrderPricePrecision)
+	scaledPrice, err := ToUint256(Mul(txnData.Price, scalingFactor))
+
+	if err != nil {
+		return err
+	}
+
+	txnData.ScaledPrice = scaledPrice
+	return nil
+}
+
 func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
+	if txnData.ScaledPrice == nil {
+		err := txnData.SetScaledPrice()
+		if err != nil {
+			panic("This should never happen as we validate before this step.")
+		}
+	}
+
 	return &DAOCoinLimitOrderEntry{
 		TransactorPKID:            transactorPKID,
 		BuyingDAOCoinCreatorPKID:  txnData.BuyingDAOCoinCreatorPKID,
 		SellingDAOCoinCreatorPKID: txnData.SellingDAOCoinCreatorPKID,
 		Price:                     txnData.Price,
+		ScaledPrice:               txnData.ScaledPrice,
 		QuantityNanos:             txnData.QuantityNanos,
 		BlockHeight:               blockHeight,
 	}
@@ -5534,13 +5565,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHei
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, txnData.SellingDAOCoinCreatorPKID.Encode()...)
-
-	priceBytes, err := ToBytes(txnData.Price)
-	if err != nil {
-		return nil, err
-	}
-
-	data = append(data, priceBytes...)
+	data = append(data, EncodeUint256(txnData.ScaledPrice)...)
 	data = append(data, EncodeUint256(txnData.QuantityNanos)...)
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
 	data = append(data, UintToBuf(uint64(len(txnData.MatchingBidsInputsMap)))...)
@@ -5581,9 +5606,9 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 
 	// Parse Price
-	ret.Price, err = ReadBigFloat(rr)
+	ret.ScaledPrice, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading Price: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
 	// Parse QuantityNanos

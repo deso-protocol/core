@@ -47,19 +47,47 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 }
 
 func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	var orders []*DAOCoinLimitOrderEntry
+	var err error
+
 	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
+		orders, err = adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
+	} else {
+		orders, err = DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(adapter.badgerDb, buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
 	}
 
-	return DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(adapter.badgerDb, buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate Price (unscaled) for use by external clients.
+	for _, order := range orders {
+		order.SetUnscaledPrice()
+	}
+
+	return orders, nil
 }
 
 func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	var orders []*DAOCoinLimitOrderEntry
+	var err error
+
 	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID)
+		orders, err = adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID)
+	} else {
+		orders, err = DBGetAllDAOCoinLimitOrdersForThisTransactor(adapter.badgerDb, transactorPKID)
 	}
 
-	return DBGetAllDAOCoinLimitOrdersForThisTransactor(adapter.badgerDb, transactorPKID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate Price (unscaled) for use by external clients.
+	for _, order := range orders {
+		order.SetUnscaledPrice()
+	}
+
+	return orders, nil
 }
 
 func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {

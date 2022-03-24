@@ -14,7 +14,7 @@ func init() {
 				transaction_hash              BYTEA PRIMARY KEY,
 				buying_dao_coin_creator_pkid  BYTEA NOT NULL,
 				selling_dao_coin_creator_pkid BYTEA NOT NULL,
-				price                         DECIMAL NOT NULL,
+				scaled_price                  TEXT NOT NULL,
 				quantity_nanos                TEXT NOT NULL,
 				cancel_existing_order         BOOL NOT NULL
 			);
@@ -30,7 +30,7 @@ func init() {
 				transactor_pkid               BYTEA NOT NULL,
 				buying_dao_coin_creator_pkid  BYTEA NOT NULL,
 				selling_dao_coin_creator_pkid BYTEA NOT NULL,
-				price                         DECIMAL NOT NULL,
+				scaled_price                  TEXT NOT NULL,
                 quantity_nanos                TEXT NOT NULL,
 				block_height				  BIGINT NOT NULL,
 
@@ -38,7 +38,7 @@ func init() {
 					transactor_pkid,
 					buying_dao_coin_creator_pkid,
 					selling_dao_coin_creator_pkid,
-					price,
+					scaled_price,
 					block_height
 				)
 			);
