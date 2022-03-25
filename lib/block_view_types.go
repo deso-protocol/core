@@ -1564,10 +1564,12 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {
-	// All orders are stored as ASKs. So prefer the lower priced.
+	// We prefer the order with the higher scaled price. This would result
+	// in more of their selling DAO coin being offered to the transactor
+	// for each of the corresponding buying DAO coin.
 	if !order.ScaledPrice.Eq(other.ScaledPrice) {
-		// order.ScaledPrice < other.ScaledPrice
-		return order.ScaledPrice.Lt(other.ScaledPrice)
+		// order.ScaledPrice > other.ScaledPrice
+		return order.ScaledPrice.Gt(other.ScaledPrice)
 	}
 
 	// FIFO, prefer older orders first, i.e. lower block height.

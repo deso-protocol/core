@@ -453,8 +453,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// ----- TRANSFER DESO
 			if transactorIsBuyingDESO {
-				// Transactor's order: Buying $DESO. Selling DAO coin.
-				// Matching order: Buying DAO coin. Selling $DESO.
+				// Transactor's order: buying $DESO. Matching order: selling $DESO.
 				// We want to use the matching order's price as it is better than or
 				// equal to the transactor's price. The matching order's price is
 				// denominated in $DESO. So we use it as-is.
@@ -491,11 +490,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			if transactorIsSellingDESO {
-				// Transactor's order: Buying DAO coin. Selling $DESO.
-				// Matching order: Buying $DESO. Selling DAO coin.
+				// Transactor's order: Selling $DESO. Matching order: Buying $DESO.
 				// We want to use the matching order's price as it is better than or
 				// equal to the transactor's price. The matching order's price is
-				// denominated in the DAO coin being traded. So we use the inverted
+				// denominated in the DAO coin they're selling. So we use the inverted
 				// matching order's price to calculate total cost in $DESO.
 				matchingPrice, err := matchingOrder.InvertedScaledPrice()
 				if err != nil {
@@ -658,7 +656,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// After iterating through all potential matching orders, if transactor's order
 	// is still not fully fulfilled, submit it to be stored.
-	if transactorOrder.QuantityNanos.GtUint64(0) {
+	if !transactorOrder.QuantityNanos.IsZero() {
 		bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 	}
 
