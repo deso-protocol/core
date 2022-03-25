@@ -96,12 +96,17 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Validate that order total cost doesn't overflow uint256.
 	if err != nil {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256
 	}
 
 	// If selling $DESO, validate that order total cost is less than the max uint64.
 	if transactorIsSellingDESO && !transactorOrderTotalCost.IsUint64() {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
+	}
+
+	// Validate that order total cost > 0.
+	if transactorOrderTotalCost.IsZero() {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}
 
 	// Validate transfer restriction status, if DAO coin can only be transferred to whitelisted members.
@@ -375,7 +380,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					return 0, 0, nil, err
 				}
 
-				matchingOrderTotalCost, err := matchingOrder.TotalCostUint256()
+				matchingOrderTotalCost, err := matchingOrder.TotalCostUint64()
 				if err != nil {
 					return 0, 0, nil, err
 				}
@@ -383,7 +388,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// Matching seller is trying to sell $DESO they don't have enough of.
 				// Don't include and mark their order for deletion.
 				// TODO: maybe we should partially fulfill the order? Maybe less error-prone to just close.
-				if matchingDESOBalanceNanos < matchingOrderTotalCost.Uint64() {
+				if matchingDESOBalanceNanos < matchingOrderTotalCost {
 					prevDAOCoinLimitOrders = append(prevDAOCoinLimitOrders, matchingOrder)
 					bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
 					continue
@@ -454,18 +459,17 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// ----- TRANSFER DESO
-			var desoNanosToTransfer uint64
-
-			if transactorIsBuyingDESO || transactorIsSellingDESO {
-				desoNanosToTransfer, err = matchingOrder.CostUint64(matchingOrder.ScaledPrice, daoCoinNanosToTransfer)
-
+			if transactorIsBuyingDESO {
+				// Transactor's order: Buying $DESO. Selling DAO coin.
+				// Matching order: Buying DAO coin. Selling $DESO.
+				// We want to use the matching order's price as it is better than or
+				// equal to the transactor's price. The matching order's price is
+				// denominated in $DESO. So we use it as-is.
+				desoNanosToTransfer, err := matchingOrder.CostUint64(matchingOrder.ScaledPrice, daoCoinNanosToTransfer)
 				if err != nil {
 					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
 				}
-			}
 
-			if transactorIsBuyingDESO {
-				// Transactor is buying $DESO. Matching order is selling $DESO.
 				inputPKID := *matchingOrder.TransactorPKID
 				outputPKID := *transactorOrder.TransactorPKID
 
@@ -494,7 +498,23 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			if transactorIsSellingDESO {
-				// Transactor is selling $DESO. Matching order is buying $DESO.
+				// Transactor's order: Buying DAO coin. Selling $DESO.
+				// Matching order: Buying $DESO. Selling DAO coin.
+				// We want to use the matching order's price as it is better than or
+				// equal to the transactor's price. The matching order's price is
+				// denominated in the DAO coin being traded. So we use the inverted
+				// matching order's price to calculate total cost in $DESO.
+				matchingPrice, err := matchingOrder.InvertedScaledPrice()
+				if err != nil {
+					// This should never happen as we have already validated the stored limit order's price.
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
+				}
+
+				desoNanosToTransfer, err := matchingOrder.CostUint64(matchingPrice, daoCoinNanosToTransfer)
+				if err != nil {
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidTotalCost
+				}
+
 				inputPKID := *transactorOrder.TransactorPKID
 				outputPKID := *matchingOrder.TransactorPKID
 

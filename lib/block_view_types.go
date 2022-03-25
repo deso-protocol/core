@@ -1591,11 +1591,16 @@ func (order *DAOCoinLimitOrderEntry) TotalCostUint256() (*uint256.Int, error) {
 
 func (order *DAOCoinLimitOrderEntry) CostUint256(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (*uint256.Int, error) {
 	// Returns the total cost of the inputted price x quantity as a uint256.
+	// TODO: check for overflow.
 	unscaledTotalCost := uint256.NewInt().Mul(scaledPrice, quantityNanos)
 	scalingFactor := uint256.NewInt().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
 	scaledTotalCost := uint256.NewInt().Div(unscaledTotalCost, scalingFactor)
-	// TODO: check for overflow.
 	return scaledTotalCost, nil
+}
+
+func (order *DAOCoinLimitOrderEntry) TotalCostUint64() (uint64, error) {
+	// Returns the total cost of this order (price x quantity) as a uint64.
+	return order.CostUint64(order.ScaledPrice, order.QuantityNanos)
 }
 
 func (order *DAOCoinLimitOrderEntry) CostUint64(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (uint64, error) {
@@ -1613,13 +1618,23 @@ func (order *DAOCoinLimitOrderEntry) InvertedScaledPrice() (*uint256.Int, error)
 	// When we compare the ScaledPrice to the values in the database we
 	// want to invert it to find the best matching orders (i.e. X becomes 1/X).
 	// Since the price is scaled we also need to scale up the numerator in the
-	// inversion to the MaxDAOCoinLimitOrderPricePrecision.
+	// inversion to the MaxDAOCoinLimitOrderPricePrecision. Note that this
+	// inversion does require big.Float math. Proceed with caution.
+
+	// Double check scaled price isn't zero so don't have a divide by zero bug.
+	// This should never happen if we have gotten to this point.
 	if order.ScaledPrice.IsZero() {
 		return nil, RuleErrorDAOCoinLimitOrderInvalidPrice
 	}
 
-	scalingFactor := uint256.NewInt().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
-	return uint256.NewInt().Div(scalingFactor, order.ScaledPrice), nil
+	// Inverted price = scaling factor / scaled price.
+	scalingFactor := NewFloat().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
+	scaledPrice := NewFloat().SetInt(order.ScaledPrice.ToBig())
+	invertedPrice := Div(scalingFactor, scaledPrice)
+
+	// Inverted scaled price = scaling factor * inverted price
+	invertedScaledPrice := Mul(scalingFactor, invertedPrice)
+	return ToUint256(invertedScaledPrice)
 }
 
 func (order *DAOCoinLimitOrderEntry) SetUnscaledPrice() error {

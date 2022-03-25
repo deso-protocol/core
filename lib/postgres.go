@@ -2602,10 +2602,10 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 	err = postgres.db.Model(&matchingOrders).
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
-		Where("scaled_price <= ?", Uint256ToLeftPaddedHex(invertedScaledPrice)).
-		Order("scaled_price ASC").
+		Where("scaled_price >= ?", Uint256ToLeftPaddedHex(invertedScaledPrice)).
+		Order("scaled_price DESC").
 		Order("block_height ASC").
-		Order("quantity_nanos ASC").
+		Order("transactor_pkid DESC").
 		Select()
 
 	if err != nil {
