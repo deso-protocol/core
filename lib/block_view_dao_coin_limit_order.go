@@ -94,19 +94,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	transactorOrderTotalCost, err := (&DAOCoinLimitOrderEntry{}).CostUint256(
 		txMeta.ScaledPrice, txMeta.QuantityNanos)
 
-	// Validate that order total cost doesn't overflow uint256.
+	// Validate that order 0 < total cost < MaxUint256.
 	if err != nil {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256
+		return 0, 0, nil, err
 	}
 
 	// If selling $DESO, validate that order total cost is less than the max uint64.
 	if transactorIsSellingDESO && !transactorOrderTotalCost.IsUint64() {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
-	}
-
-	// Validate that order total cost > 0.
-	if transactorOrderTotalCost.IsZero() {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}
 
 	// Validate transfer restriction status, if DAO coin can only be transferred to whitelisted members.
@@ -275,12 +270,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	if txMeta.CancelExistingOrder {
 		// Get all existing limit orders:
 		//   + For this transactor
-		//   + For this denominated coin
-		//   + For this DAO coin
-		//   + For this operation type
+		//   + For this buying DAO coin PKID
+		//   + For this selling DAO coin PKID
 		//   + For this price
 		//   - Any block height
-		//   - Any quantity
 		existingTransactorOrders, err := bav._getAllDAOCoinLimitOrderEntriesForThisTransactorAtThisPrice(transactorOrder)
 
 		if err != nil {
@@ -373,8 +366,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// 1-by-1 match existing orders to the transactor's order.
 		for _, matchingOrder := range matchingOrders {
 			if transactorIsBuyingDESO {
-				// If matching order is selling $DESO, validate that the matching
-				// seller has enough $DESO to cover what they're selling.
+				// Transactor is buying $DESO, so the matching order is selling $DESO.
+				// Validate that the matching seller has enough $DESO to cover what they're selling.
 				matchingDESOBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(bav.GetPublicKeyForPKID(transactorPKID))
 				if err != nil {
 					return 0, 0, nil, err
@@ -394,9 +387,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					continue
 				}
 			} else {
-				// If matching order is selling DAO coins, validate that the matching
-				// seller has enough of the DAO coins they're selling.
-				matchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(transactorPKID, txMeta.SellingDAOCoinCreatorPKID, true)
+				// Transactor is buying a DAO coin, so the matching order is selling a DAO coin.
+				// Validate that the matching seller has enough of the DAO coins they're selling.
+				matchingBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(matchingOrder.TransactorPKID, txMeta.BuyingDAOCoinCreatorPKID, true)
 
 				// Matching seller is trying to sell DAO coins they don't have any of.
 				if matchingBalanceEntry == nil || matchingBalanceEntry.isDeleted {
@@ -731,6 +724,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 func (bav *UtxoView) _getNextLimitOrdersToFill(
 	transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) (
 	[]*DAOCoinLimitOrderEntry, error) {
+	// Calculate the inverse of the transactor's order's ScaledPrice.
+	// The matching orders' prices have to be >= this price.
+	transactorOrderInvertedScaledPrice, err := transactorOrder.InvertedScaledPrice()
+	if err != nil {
+		return nil, err
+	}
+
 	// Get matching limit order entries from database.
 	dbAdapter := DbAdapter{
 		badgerDb:   bav.Handle,
@@ -772,11 +772,9 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			continue
 		}
 
-		// Transactor order is analogous to a BID.
-		// Matching order is analogous to an ASK.
-		// We want to validate that the BID price >= ASK price.
-		// Skip if transactor BID price < matching ASK price.
-		if transactorOrder.ScaledPrice.Lt(matchingOrder.ScaledPrice) {
+		// Break if matching order's scaled price < transactor order's inverted scaled price.
+		// matchingOrder.ScaledPrice < transactorOrder.ScaledPrice
+		if matchingOrder.ScaledPrice.Lt(transactorOrderInvertedScaledPrice) {
 			continue
 		}
 

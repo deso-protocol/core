@@ -318,7 +318,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		daoCoinTransferMetadata := DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1e3),
+			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(3000),
 			ReceiverPublicKey:      m1PkBytes,
 		}
 
@@ -353,6 +353,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Perform txn.
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
+		// Both orders are deleted from the order book.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Empty(orderEntries)
+
 		// Calculate updated $DESO balances.
 		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
 		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
@@ -384,11 +389,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(
 			*uint256.NewInt().Sub(&originalM1DAOCoinBalance.BalanceNanos, daoCoinQuantityNanosChange),
 			updatedM1DAOCoinBalance.BalanceNanos)
-
-		// Both orders are deleted from the order book.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Empty(orderEntries)
 	}
 
 	// Scenario: partially fulfilled orders sorting by best price
@@ -411,14 +411,16 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		err = metadataM1.UpdatePrice(NewFloat().SetUint64(11))
 		metadataM1.QuantityNanos = uint256.NewInt().SetUint64(200)
 		require.NoError(err)
-		scaledPrice11 := metadataM1.ScaledPrice
+		invertedScaledPrice11, err := metadataM1.ToEntry(m1PKID.PKID, savedHeight).InvertedScaledPrice()
+		require.NoError(err)
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 		// m1 submits ASK order for 100 DAO coin nanos @ 12 DAO coin / $DESO.
 		err = metadataM1.UpdatePrice(NewFloat().SetUint64(12))
 		metadataM1.QuantityNanos = uint256.NewInt().SetUint64(100)
 		require.NoError(err)
-		scaledPrice12 := metadataM1.ScaledPrice
+		invertedScaledPrice12, err := metadataM1.ToEntry(m1PKID.PKID, savedHeight).InvertedScaledPrice()
+		require.NoError(err)
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 		// Confirm 2 existing limit orders.
@@ -438,7 +440,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM1.QuantityNanos = uint256.NewInt().SetUint64(200)
 		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight)))
 
-		// m0 submits BID order for 300 DAO coin nanos @ 1/8 $DESO / DAO coin.
 		// Store original $DESO balances to check diffs.
 		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
 		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
@@ -459,8 +460,20 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
-		// Perform txn.
+		// m0 submits BID order for 300 DAO coin nanos @ 1/8 $DESO / DAO coin.
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		// The correct orders are removed from the order book.
+		// m0's BID order for 300 DAO coin nanos @ 1/8 $DESO / DAO coin is fulfilled.
+		// m1's ASK order for 200 DAO coin nanos @ 12 DAO coin / $DESO is fulfilled.
+		// m1's ASK order for 200 DAO coin nanos @ 11 DAO coin / $DESO is partially fulfilled w/ 100 DAO coin nanos remaining.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		err = metadataM1.UpdatePrice(NewFloat().SetUint64(11))
+		require.NoError(err)
+		metadataM1.QuantityNanos = uint256.NewInt().SetUint64(100)
+		require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight)))
 
 		// Calculate updated $DESO balances.
 		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
@@ -478,13 +491,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Calculate total cost of order to compare to changes in $DESO.
 		// 200 DAO coin nanos @ 12 DAO coin / $DESO
 		subOrderCost1, err := (&DAOCoinLimitOrderEntry{}).CostUint64(
-			scaledPrice12, uint256.NewInt().SetUint64(200))
+			invertedScaledPrice12, uint256.NewInt().SetUint64(200))
 
 		require.NoError(err)
 
-		// 1 DAO coin nano @ 11 DAO coin / $DESO
+		// 100 DAO coin nanos @ 11 DAO coin / $DESO
 		subOrderCost2, err := (&DAOCoinLimitOrderEntry{}).CostUint64(
-			scaledPrice11, uint256.NewInt().SetUint64(100))
+			invertedScaledPrice11, uint256.NewInt().SetUint64(100))
 
 		require.NoError(err)
 		totalOrderCost := subOrderCost1 + subOrderCost2
@@ -506,18 +519,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(
 			*uint256.NewInt().Sub(&originalM1DAOCoinBalance.BalanceNanos, daoCoinQuantityNanosChange),
 			updatedM1DAOCoinBalance.BalanceNanos)
-
-		// The correct orders are removed from the order book.
-		// m0's BID order for 3 DAO coin nanos @ 15 $DESO is fulfilled.
-		// m1's ASK order for 2 DAO coin nanos @ 11 $DESO is fulfilled.
-		// m1's ASK order for 2 DAO coin nanos @ 12 $DESO is partially fulfilled w/ 1 DAO coin nano remaining.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Equal(len(orderEntries), 1)
-		err = metadataM1.UpdatePrice(NewFloat().SetUint64(12))
-		require.NoError(err)
-		metadataM1.QuantityNanos = uint256.NewInt().SetUint64(1)
-		require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight)))
 	}
 
 	//// Scenario: cancel all of an open ASK order.

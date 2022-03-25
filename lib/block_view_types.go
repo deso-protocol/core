@@ -1591,11 +1591,16 @@ func (order *DAOCoinLimitOrderEntry) TotalCostUint256() (*uint256.Int, error) {
 
 func (order *DAOCoinLimitOrderEntry) CostUint256(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (*uint256.Int, error) {
 	// Returns the total cost of the inputted price x quantity as a uint256.
+	// TODO: double-check that we don't have to do this math as floats.
 	// TODO: check for overflow.
-	unscaledTotalCost := uint256.NewInt().Mul(scaledPrice, quantityNanos)
+	scaledTotalCost := uint256.NewInt().Mul(scaledPrice, quantityNanos)
 	scalingFactor := uint256.NewInt().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
-	scaledTotalCost := uint256.NewInt().Div(unscaledTotalCost, scalingFactor)
-	return scaledTotalCost, nil
+	unscaledTotalCost := uint256.NewInt().Div(scaledTotalCost, scalingFactor)
+	if unscaledTotalCost.IsZero() {
+		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
+	}
+
+	return unscaledTotalCost, nil
 }
 
 func (order *DAOCoinLimitOrderEntry) TotalCostUint64() (uint64, error) {
@@ -1606,9 +1611,12 @@ func (order *DAOCoinLimitOrderEntry) TotalCostUint64() (uint64, error) {
 func (order *DAOCoinLimitOrderEntry) CostUint64(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (uint64, error) {
 	// Returns the total cost of the inputted price x quantity as a uint64.
 	cost256, err := order.CostUint256(scaledPrice, quantityNanos)
+	if err != nil {
+		return 0, err
+	}
 
-	if err != nil || !cost256.IsUint64() {
-		return 0, RuleErrorDAOCoinLimitOrderInvalidTotalCost
+	if !cost256.IsUint64() {
+		return 0, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
 	}
 
 	return cost256.Uint64(), nil
