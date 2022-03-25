@@ -2494,7 +2494,15 @@ func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntr
 func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
 	// This function is currently used for testing purposes only.
 	var orders []*PGDAOCoinLimitOrder
-	err := postgres.db.Model(&orders).Select()
+
+	// Order in the same way as Badger keys.
+	err := postgres.db.Model(&orders).
+		Order("buying_dao_coin_creator_pkid ASC").
+		Order("selling_dao_coin_creator_pkid ASC").
+		Order("scaled_price ASC").
+		Order("block_height ASC").
+		Order("transactor_pkid ASC").
+		Select()
 
 	if err != nil {
 		return nil, err

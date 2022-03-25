@@ -559,64 +559,69 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM1.CancelExistingOrder = false
 	}
 
-	//// Scenario: submit and subsequently cancel part of open BID order.
-	//// m0 submits BID order for 2 DAO coins @ 10/1e9 $DESO.
-	//// m0 cancels BID order for 1 DAO coin @ 10/1e9 $DESO.
-	//{
-	//	// Confirm no existing limit orders.
-	//	orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	require.Empty(orderEntries)
-	//
-	//	// m0 submits BID order for 2 DAO coins @ 10/1e9 $DESO.
-	//	metadataM0.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(NanosPerUnit / 10)
-	//	metadataM0.Quantity = uint256.NewInt().SetUint64(2)
-	//	_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-	//
-	//	// Confirm 1 existing limit order from m0.
-	//	orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	require.Equal(len(orderEntries), 1)
-	//	require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
-	//
-	//	// m0 cancels BID order for 1 DAO coin @ 10/1e9 $DESO.
-	//	metadataM0.Quantity = uint256.NewInt().SetUint64(1)
-	//	metadataM0.CancelExistingOrder = true
-	//	_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-	//
-	//	// Confirm 1 existing limit order from m0 with updated quantity of 1.
-	//	orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	require.Equal(len(orderEntries), 1)
-	//	require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
-	//
-	//	// Reset metadataM0.
-	//	metadataM0.CancelExistingOrder = false
-	//}
-	//
-	//// Scenario: m0 and m1 both submit open BID orders for the same price.
-	//{
-	//	// Confirm 1 existing limit order from m0 with quantity 1.
-	//	orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	require.Equal(len(orderEntries), 1)
-	//	require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
-	//
-	//	// m1 submits BID order for 2 DAO coins @ 10/1e9 $DESO.
-	//	metadataM1.PriceNanosPerDenominatedCoin = uint256.NewInt().SetUint64(NanosPerUnit / 10)
-	//	metadataM1.Quantity = uint256.NewInt().SetUint64(2)
-	//	_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-	//
-	//	// Confirm 2 existing limit orders @ 10/1e9 $DESO.
-	//	// 1 from m0 with quantity 1.
-	//	// 1 from m1 with quantity 2.
-	//	orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	// TODO: make these tests pass
-	//	// require.Equal(len(orderEntries), 2)
-	//	// require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
-	//	// require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight)))
-	//}
+	// Scenario: submit and subsequently cancel part of open BID order.
+	// m0 submits BID order for 200 DAO coin nanos @ 0.1 $DESO / DAO coin.
+	// m0 cancels BID order for 100 DAO coin nanos @ 0.1 $DESO / DAO coin.
+	{
+		// Confirm no existing limit orders.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// m0 submits BID order for 200 DAO coin nanos @ 0.1 $DESO / DAO coin.
+		err = metadataM0.UpdatePrice(NewFloat().SetFloat64(0.1))
+		require.NoError(err)
+		metadataM0.QuantityNanos = uint256.NewInt().SetUint64(200)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		// Confirm 1 existing limit order from m0.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+
+		// m0 cancels BID order for 100 DAO coin nanos @ 0.1 $DESO / DAO coin.
+		metadataM0.QuantityNanos = uint256.NewInt().SetUint64(100)
+		metadataM0.CancelExistingOrder = true
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		// Confirm 1 existing limit order from m0 with updated quantity of 100.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+
+		// Reset metadataM0.
+		metadataM0.CancelExistingOrder = false
+	}
+
+	// Scenario: m0 and m1 both submit open BID orders for the same price.
+	{
+		// Confirm 1 existing limit order from m0.
+		// BID order for 100 DAO coin nanos @ 0.1 $DESO / DAO coin
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+
+		// m1 submits BID order for 200 DAO coins @ 0.1 $DESO / DAO coin.
+		err = metadataM1.UpdatePrice(NewFloat().SetFloat64(0.1))
+		require.NoError(err)
+		metadataM1.QuantityNanos = uint256.NewInt().SetUint64(200)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Confirm 2 existing limit orders @ 0.1 $DESO / DAO coin.
+		// 1 from m0 with quantity 100.
+		// 1 from m1 with quantity 200.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// m1's order is listed first bc his m1PKID < m0PKID and the key
+		// is identicial for both of these orders other than the PKID.
+		require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight)))
+		require.True(orderEntries[1].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight)))
+	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
 	// TODO: maybe test trying to buy more DAO coins than were minted.
