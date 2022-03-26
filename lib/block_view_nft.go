@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
@@ -445,6 +446,19 @@ func (bav *UtxoView) GetAllNFTBidEntries(nftPostHash *BlockHash, serialNumber ui
 			nftBidEntries = append(nftBidEntries, nftBidEntry)
 		}
 	}
+	// Make sure NFT Bid entries are returned in a deterministic order. Bids must differ by BidderPKID, given they have
+	// distinct NFTBidKeys in the NFTBidKeyToNFTBidEntry map, so we use BidderPKID to order the bid entries.
+	sort.Slice(nftBidEntries, func(i int, j int) bool {
+		switch bytes.Compare(nftBidEntries[i].BidderPKID.ToBytes(), nftBidEntries[i].BidderPKID.ToBytes()) {
+		case 0:
+			return true
+		case -1:
+			return true
+		case 1:
+			return false
+		}
+		return false
+	})
 	return nftBidEntries
 }
 
