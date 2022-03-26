@@ -1763,12 +1763,41 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 // 		<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
 // -------------------------------------------------------------------------------------
 //PrefixReposterPubKeyRepostedPostHashToRepostPostHash
-func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash) []byte {
+func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash, repostPostHash BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
+	key := append(prefixCopy, userPubKey...)
+	key = append(key, repostedPostHash[:]...)
+	key = append(key, repostPostHash[:]...)
+	return key
+}
+
+// This is a little hacky but we can save space by encoding RepostEntry entirely in the prefix []byte{39} keys.
+// _dbKeyForReposterPubKeyRepostedPostHashToRepostEntry decodes these keys into RepostEntry.
+func _dbKeyForReposterPubKeyRepostedPostHashToRepostEntry(key []byte) *RepostEntry {
+	if len(key) != 1+33+32+32 {
+		return nil
+	}
+
+	entry := &RepostEntry{}
+	entry.ReposterPubKey = key[1:34]
+	entry.RepostedPostHash = NewBlockHash(key[34:66])
+	entry.RepostPostHash = NewBlockHash(key[66:98])
+	return entry
+}
+
+func _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
 	key := append(prefixCopy, userPubKey...)
 	key = append(key, repostedPostHash[:]...)
 	return key
+}
+
+func _dbSeekPrefixForPostHashesYouRepost(yourPubKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
+	return append(prefixCopy, yourPubKey...)
 }
 
 //PrefixRepostedPostHashReposterPubKey
@@ -1792,23 +1821,23 @@ func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
 	return key
 }
 
-func _dbSeekPrefixForPostHashesYouRepost(yourPubKey []byte) []byte {
-	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
-	return append(prefixCopy, yourPubKey...)
-}
-
 // Note that this adds a mapping for the user *and* the reposted post.
 func DbPutRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry) error {
+	repostEntry RepostEntry) error {
 
-	if len(userPubKey) != btcec.PubKeyBytesLenCompressed {
+	if len(repostEntry.ReposterPubKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutRepostMappingsWithTxn: User public key "+
-			"length %d != %d", len(userPubKey), btcec.PubKeyBytesLenCompressed)
+			"length %d != %d", len(repostEntry.ReposterPubKey), btcec.PubKeyBytesLenCompressed)
+	}
+	if repostEntry.RepostedPostHash == nil {
+		return fmt.Errorf("DbPutRepostMappingsWithTxn: Reposted post hash cannot be nil")
+	}
+	if repostEntry.RepostPostHash == nil {
+		return fmt.Errorf("DbPutRepostMappingsWithTxn: Repost post hash cannot be nil")
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
-		userPubKey, repostedPostHash), EncodeToBytes(blockHeight, &repostEntry)); err != nil {
+		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash), []byte{}); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutRepostMappingsWithTxn: Problem adding user to reposted post mapping: ")
@@ -1821,23 +1850,25 @@ func DbPutRepostMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
 	userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutRepostMappingsWithTxn(txn, snap, blockHeight, userPubKey, repostedPostHash, repostEntry)
+		return DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry)
 	})
 }
 
 func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(txn *badger.Txn,
 	snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash) *RepostEntry {
 
-	key := _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
-	repostEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
+	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key)
 	if err != nil {
 		return nil
 	}
-
-	repostEntryObj := &RepostEntry{}
-	rr := bytes.NewReader(repostEntryBytes)
-	DecodeFromBytes(repostEntryObj, rr)
-	return repostEntryObj
+	// We select the RepostEntry with the "smallest" repostHash. We can't tell which
+	// one is preferred, so we just return the first one.
+	for _, keyBytes := range keysFound {
+		return _dbKeyForReposterPubKeyRepostedPostHashToRepostEntry(keyBytes)
+		// We must slice off the first byte and userPubKey to get the repostedPostHash.
+	}
+	return nil
 }
 
 func DbReposterPubKeyRepostedPostHashToRepostEntry(db *badger.DB,
@@ -1853,32 +1884,39 @@ func DbReposterPubKeyRepostedPostHashToRepostEntry(db *badger.DB,
 
 // Note this deletes the repost for the user *and* the reposted post since a mapping
 // should exist for each.
-func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	userPubKey []byte, repostedPostHash BlockHash) error {
+func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, repostEntry RepostEntry) error {
 
 	// First check that a mapping exists. If one doesn't exist then there's nothing to do.
-	existingMapping := DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(
-		txn, snap, userPubKey, repostedPostHash)
-	if existingMapping == nil {
+	_, err := DBGetWithTxn(txn, snap, _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
+		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash))
+	if err != nil {
 		return nil
 	}
 
 	// When a repost exists, delete the repost entry mapping.
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
+		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash)); err != nil {
 		return errors.Wrapf(err, "DbDeleteRepostMappingsWithTxn: Deleting "+
-			"user public key %s and reposted post hash %s failed",
-			PkToStringMainnet(userPubKey[:]), PkToStringMainnet(repostedPostHash[:]))
+			"user public key %s and reposted post hash %v and repost post hash %v failed",
+			PkToStringMainnet(repostEntry.ReposterPubKey[:]), repostEntry.RepostedPostHash[:], repostEntry.RepostPostHash[:])
 	}
 	return nil
 }
 
-func DbDeleteRepostMappings(handle *badger.DB, snap *Snapshot,
-	userPubKey []byte, repostedPostHash BlockHash) error {
+func DbDeleteAllRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash) error {
 
-	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteRepostMappingsWithTxn(txn, snap, userPubKey, repostedPostHash)
-	})
+	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
+	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key)
+	if err != nil {
+		return nil
+	}
+	for _, keyBytes := range keysFound {
+		if err := DBDeleteWithTxn(txn, snap, keyBytes); err != nil {
+			return errors.Wrapf(err, "DbDeleteAllRepostMappingsWithTxn: Problem deleting a repost entry "+
+				"with key (%v)", key)
+		}
+	}
+	return nil
 }
 
 func DbGetPostHashesYouRepost(handle *badger.DB, yourPublicKey []byte) (
@@ -5343,7 +5381,7 @@ func DBDeletePostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	// Delete the repost entries for the post.
 	if IsVanillaRepost(postEntry) {
 		if err := DBDeleteWithTxn(txn, snap,
-			_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash)); err != nil {
+			_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash, *postEntry.PostHash)); err != nil {
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem deleting mapping for repostPostHash to ReposterPubKey: %v", err)
 		}
 		if err := DBDeleteWithTxn(txn, snap,
@@ -5438,14 +5476,12 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 	// We treat reposting the same for both comments and posts.
 	// We only store repost entry mappings for vanilla reposts
 	if IsVanillaRepost(postEntry) {
-		repostEntry := &RepostEntry{
+		repostEntry := RepostEntry{
 			RepostPostHash:   postEntry.PostHash,
 			RepostedPostHash: postEntry.RepostedPostHash,
 			ReposterPubKey:   postEntry.PosterPublicKey,
 		}
-		if err := DBSetWithTxn(txn, snap,
-			_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash),
-			EncodeToBytes(blockHeight, repostEntry)); err != nil {
+		if err := DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding mapping for repostPostHash to ReposterPubKey: %v", err)
 		}
 		if err := DBSetWithTxn(txn, snap,

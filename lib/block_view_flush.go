@@ -331,8 +331,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn, blockHeight
 
 		// Delete the existing mappings in the db for this RepostKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteRepostMappingsWithTxn(txn, bav.Snapshot,
-			repostKey.ReposterPubKey[:], repostKey.RepostedPostHash); err != nil {
+		if err := DbDeleteRepostMappingsWithTxn(txn, bav.Snapshot, *repostEntry); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushRepostEntriesToDbWithTxn: Problem deleting mappings "+
@@ -346,8 +345,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn, blockHeight
 		} else {
 			// If the RepostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutRepostMappingsWithTxn(txn, bav.Snapshot, blockHeight, repostEntry.ReposterPubKey,
-				*repostEntry.RepostedPostHash, *repostEntry); err != nil {
+			if err := DbPutRepostMappingsWithTxn(txn, bav.Snapshot, blockHeight, *repostEntry); err != nil {
 
 				return err
 			}
