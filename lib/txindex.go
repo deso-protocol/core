@@ -40,9 +40,8 @@ type TXIndex struct {
 func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (*TXIndex, error) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
-	txIndexOpts := badger.DefaultOptions(txIndexDir)
+	txIndexOpts := PerformanceBadgerOptions(txIndexDir)
 	txIndexOpts.ValueDir = GetBadgerDbPath(txIndexDir)
-	txIndexOpts.MemTableSize = 4000000000 // 4gb
 	glog.Infof("TxIndex BadgerDB Dir: %v", txIndexOpts.Dir)
 	glog.Infof("TxIndex BadgerDB ValueDir: %v", txIndexOpts.ValueDir)
 	txIndexDb, err := badger.Open(txIndexOpts)

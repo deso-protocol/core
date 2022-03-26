@@ -91,10 +91,9 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	}
 
 	// Open a badgerdb in a temporary directory.
-	opts := badger.DefaultOptions(dir)
+	opts := PerformanceBadgerOptions(dir)
 	opts.Dir = dir
 	opts.ValueDir = dir
-	opts.MemTableSize = 1024 << 20
 	db, err := badger.Open(opts)
 	if err != nil {
 		log.Fatal(err)
