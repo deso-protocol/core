@@ -449,7 +449,7 @@ func (bav *UtxoView) GetAllNFTBidEntries(nftPostHash *BlockHash, serialNumber ui
 	// Make sure NFT Bid entries are returned in a deterministic order. Bids must differ by BidderPKID, given they have
 	// distinct NFTBidKeys in the NFTBidKeyToNFTBidEntry map, so we use BidderPKID to order the bid entries.
 	sort.Slice(nftBidEntries, func(i int, j int) bool {
-		switch bytes.Compare(nftBidEntries[i].BidderPKID.ToBytes(), nftBidEntries[i].BidderPKID.ToBytes()) {
+		switch bytes.Compare(nftBidEntries[i].BidderPKID.ToBytes(), nftBidEntries[j].BidderPKID.ToBytes()) {
 		case 0:
 			return true
 		case -1:
