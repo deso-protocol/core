@@ -809,7 +809,6 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 		CurrentEpochSnapshotMetadata: metadata,
 		AncestralMemory:              lane.NewDeque(),
 		Status:                       status,
-		brokenSnapshot:               false,
 		isTxIndex:                    isTxIndex,
 		disableChecksum:              disableChecksum,
 		timer:                        timer,
@@ -893,11 +892,6 @@ func (snap *Snapshot) Stop() {
 func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
 	// If snapshot is broken then there's nothing to do.
 	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush, shouldIncrement: (%v)", shouldIncrement)
-
-	if snap.brokenSnapshot {
-		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Broken snapshot, aborting")
-		return
-	}
 
 	// Signal that the main db update has finished by incrementing the main semaphore.
 	// Also signal that the ancestral db write started by increasing the ancestral semaphore.
@@ -1124,8 +1118,6 @@ func (snap *Snapshot) FlushAncestralRecords() {
 
 	// Signal that the ancestral db write has finished by incrementing the semaphore.
 	snap.Status.MemoryLock.Lock()
-	glog.V(1).Infof("Snapshot.StartAncestralRecordsFlush: finished flushing ancestral records. Snapshot "+
-		"status, brokenSnapshot: (%v)", snap.brokenSnapshot)
 	snap.Status.IncrementAncestralDBSemaphoreWithLock()
 	snap.Status.MemoryLock.Unlock()
 
@@ -1263,15 +1255,15 @@ func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
 // isState determines if a key is a state-related record.
 func (snap *Snapshot) isState(key []byte) bool {
 	if !snap.isTxIndex {
-		return isStateKey(key) && !snap.brokenSnapshot
+		return isStateKey(key)
 	} else {
-		return (isStateKey(key) || isTxIndexKey(key)) && !snap.brokenSnapshot
+		return isStateKey(key) || isTxIndexKey(key)
 	}
 }
 
 func (snap *Snapshot) String() string {
-	return fmt.Sprintf("< Snapshot | height: %v | broken: %v >",
-		snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight, snap.brokenSnapshot)
+	return fmt.Sprintf("< Snapshot | height: %v >",
+		snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight)
 }
 
 // GetSnapshotChunk fetches a batch of records from the nodes DB that match the provided prefix and

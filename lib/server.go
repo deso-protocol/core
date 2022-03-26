@@ -953,6 +953,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.Start("Server._handleSnapshot Main")
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
+	if srv.snapshot == nil {
+		glog.Errorf("srv_handleSnapshot: Received a snapshot message from a peer but srv.snapshot is nil. " +
+			"This peer shouldn't send us snapshot messages because we didn't pass the SFHyperSync flag.")
+		pp.Disconnect()
+		return
+	}
+
 	if len(msg.SnapshotChunk) == 0 {
 		// We should disconnect the peer because he is misbehaving or doesn't have the snapshot.
 		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk "+
@@ -1187,12 +1194,16 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.blockchain.snapshot.CurrentEpochSnapshotMetadata = srv.HyperSyncProgress.SnapshotMetadata
 
 	// Update the snapshot epoch metadata in the snapshot DB.
-	err = srv.snapshot.SnapshotDb.Update(func(txn *badger.Txn) error {
-		return txn.Set(_prefixLastEpochMetadata, srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
-	})
-	if err != nil {
-		srv.snapshot.brokenSnapshot = true
-		glog.Errorf("server._handleSnapshot: Problem setting snapshot epoch metadata in snapshot db")
+	for ii := 0; ii < MetadataRetryCount; ii++ {
+		err = srv.snapshot.SnapshotDb.Update(func(txn *badger.Txn) error {
+			return txn.Set(_prefixLastEpochMetadata, srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
+		})
+		if err != nil {
+			glog.Errorf("server._handleSnapshot: Problem setting snapshot epoch metadata in snapshot db, error (%v)", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break
 	}
 
 	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v)",
