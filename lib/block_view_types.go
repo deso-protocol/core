@@ -538,13 +538,14 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 		data = append(data, EncodeByteArray(entry.coinEntry)...)
 		return data
 	}
-	var royaltyCoinEntries []royaltyEntry
+	var royaltyCoinEntries []*royaltyEntry
 	if op.PrevCoinRoyaltyCoinEntries != nil {
 		data = append(data, BoolToByte(true))
 		data = append(data, UintToBuf(uint64(len(op.PrevCoinRoyaltyCoinEntries)))...)
 		for pkid, coinEntry := range op.PrevCoinRoyaltyCoinEntries {
-			royaltyCoinEntries = append(royaltyCoinEntries, royaltyEntry{
-				pkid:      pkid.ToBytes(),
+			newPKID := pkid
+			royaltyCoinEntries = append(royaltyCoinEntries, &royaltyEntry{
+				pkid:      newPKID.ToBytes(),
 				coinEntry: EncodeToBytes(blockHeight, &coinEntry),
 			})
 		}
@@ -560,7 +561,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 			return false
 		})
 		for _, entry := range royaltyCoinEntries {
-			data = append(data, encodeRoyaltyEntry(&entry)...)
+			data = append(data, encodeRoyaltyEntry(entry)...)
 		}
 	} else {
 		data = append(data, BoolToByte(false))
