@@ -1428,13 +1428,6 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 		//snap.timer.Start("SetSnapshotChunk.Set")
 		// TODO: Should we split the chunk into batches of 8MB so that we don't write too much data at once?
 		for _, dbEntry := range chunk {
-			if bytes.Equal(dbEntry.Key, Prefixes.PrefixGlobalParams) {
-				globalParams := &GlobalParamsEntry{}
-				rr := bytes.NewReader(dbEntry.Value)
-				DecodeFromBytes(globalParams, rr)
-				glog.Infof("Snapshot.SetSnapshotChunk: setting global params like DbPutGlobalParamsEntryWithTxn but without "+
-					"DBSet, global params is (%v)", globalParams)
-			}
 			localErr := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
 			if localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem setting db entry in write batch")

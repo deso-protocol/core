@@ -2615,7 +2615,6 @@ func DbPutGlobalParamsEntry(handle *badger.DB, snap *Snapshot, blockHeight uint6
 func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	globalParamsEntry GlobalParamsEntry) error {
 
-	glog.Info("DbPutGlobalParamsEntryWithTxn: Setting the entry (%v)", globalParamsEntry)
 	err := DBSetWithTxn(txn, snap, Prefixes.PrefixGlobalParams, EncodeToBytes(blockHeight, &globalParamsEntry))
 	if err != nil {
 		return errors.Wrapf(err, "DbPutGlobalParamsEntryWithTxn: Problem adding global params entry to db: ")

@@ -1173,7 +1173,6 @@ func (pp *Peer) IsSyncCandidate() bool {
 	// TODO: This is a bit of a messy way to determine whether the node was
 	// run with --hypersync
 	nodeSupportsHypersync := (pp.serviceFlags & SFHyperSync) != 0
-	glog.Infof("IsSyncCandidate: cmgr (%v), nodeSupportsHyperSync (%v)", pp.cmgr, nodeSupportsHypersync)
 	hypersyncSatisfied := !pp.cmgr.DisableSlowSync || nodeSupportsHypersync
 	glog.Infof("IsSyncCandidate: localAddr (%v), isFullNode (%v), "+
 		"hypersyncSatisfied (%v), --disableSlowSync (%v), nodeSupportsHypersync (%v), "+
