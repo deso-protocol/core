@@ -3152,7 +3152,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		// inputs and change.
 	}
 
-	if reflect.DeepEqual(metadata.BuyingDAOCoinCreatorPublicKey, ZeroPublicKey) {
+	if bytes.Equal(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes(), ZeroPublicKey.ToBytes()) {
 		// If selling a DAO coin for $DESO, we need to find inputs from all the orders that match.
 		// This will move to txn construction as this will be put in the metadata.
 
@@ -3171,12 +3171,6 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 			}
 		}
-
-		//// Set scaled price.
-		//err = metadata.SetScaledPrice()
-		//if err != nil {
-		//	return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: invalid price")
-		//}
 
 		// Construct requested order
 		requestedOrder := metadata.ToEntry(
@@ -3213,7 +3207,6 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					if requestedOrder.QuantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
 						desoNanosToConsume, err = ComputeBaseUnitsToSellUint256(
 							order.ScaledExchangeRateCoinsToSellPerCoinToBuy, requestedOrder.QuantityToBuyInBaseUnits)
-
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}

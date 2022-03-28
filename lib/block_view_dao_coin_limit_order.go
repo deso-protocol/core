@@ -9,7 +9,6 @@ import (
 	"github.com/pkg/errors"
 	"math"
 	"math/big"
-	"reflect"
 	"sort"
 )
 
@@ -76,9 +75,12 @@ func (bav *UtxoView) balanceChange(
 	prevBalances map[PKID]map[PKID]*BalanceEntry) {
 
 	{
-		if innerMap, exists := deltasMap[*userPKID]; exists {
-			oldVal, _ := innerMap[*daoCoinPKID]
-			innerMap[*daoCoinPKID] = big.NewInt(0).Add(oldVal, val)
+		if innerMap, userExists := deltasMap[*userPKID]; userExists {
+			if oldVal, daoCoinExists := innerMap[*daoCoinPKID]; daoCoinExists {
+				innerMap[*daoCoinPKID] = big.NewInt(0).Add(oldVal, val)
+			} else {
+				innerMap[*daoCoinPKID] = val
+			}
 		} else {
 			newMap := make(map[PKID]*big.Int)
 			newMap[*daoCoinPKID] = val
@@ -550,7 +552,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Start by adding the output minus input for the transactor, since they can
 	// technically spend this amount if they want (and the amount that's left over
 	// goes to miners).
-	desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = totalOutput - totalInput
+	if totalOutput > totalInput {
+		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = totalOutput - totalInput
+	} else {
+		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
+	}
 	// Iterate over all the UTXOs in the txn and spend them. As we spend each one,
 	// add the amount each account is allowed to spend to our map.
 	//
@@ -571,7 +577,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// Make sure that the UTXO specified is actually from the bidder.
-			if !reflect.DeepEqual(utxoEntry.PublicKey, publicKey) {
+			if !bytes.Equal(utxoEntry.PublicKey, publicKey.ToBytes()) {
 				return 0, 0, nil, RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey
 			}
 
@@ -600,8 +606,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// At this point, we have fully spent all of the passed-in UTXOs. Now, we are free
 	// to move the DESO around according to the laws of the exchange.
 
-	// Helpers to create UTXOs as we iterate over the balance changes for each
-	// account.
+	// Helpers to create UTXOs as we iterate over the balance changes for each account.
 	daoCoinLimitOrderPaymentUtxoKeys := []*UtxoKey{}
 	// This may start negative but that's OK because the first thing we do is increment it in createUTXO.
 	nextUtxoIndex := len(txn.TxOutputs) - 1
@@ -793,7 +798,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		return sortedMatchingOrders[ii].IsBetterMatchingOrderThan(sortedMatchingOrders[jj])
 	})
 
-	// Pull orders up to the when the quantity is fulfilled or we run out of orders.
+	// Pull orders up to when the quantity is fulfilled or we run out of orders.
 	outputMatchingOrders := []*DAOCoinLimitOrderEntry{}
 	transactorOrderQuantity := transactorOrder.QuantityToBuyInBaseUnits
 
