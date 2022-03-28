@@ -674,7 +674,7 @@ func (order *PGDAOCoinLimitOrder) FromDAOCoinLimitOrderEntry(orderEntry *DAOCoin
 	order.BuyingDAOCoinCreatorPKID = orderEntry.BuyingDAOCoinCreatorPKID
 	order.SellingDAOCoinCreatorPKID = orderEntry.SellingDAOCoinCreatorPKID
 	order.ScaledPrice = Uint256ToLeftPaddedHex(orderEntry.ScaledPrice)
-	order.QuantityNanos = Uint256ToLeftPaddedHex(orderEntry.QuantityNanos)
+	order.QuantityNanos = Uint256ToLeftPaddedHex(orderEntry.QuantityToBuyInBaseUnits)
 	order.BlockHeight = orderEntry.BlockHeight
 }
 
@@ -684,7 +684,7 @@ func (order *PGDAOCoinLimitOrder) ToDAOCoinLimitOrderEntry() *DAOCoinLimitOrderE
 		BuyingDAOCoinCreatorPKID:  order.BuyingDAOCoinCreatorPKID,
 		SellingDAOCoinCreatorPKID: order.SellingDAOCoinCreatorPKID,
 		ScaledPrice:               LeftPaddedHexToUint256(order.ScaledPrice),
-		QuantityNanos:             LeftPaddedHexToUint256(order.QuantityNanos),
+		QuantityToBuyInBaseUnits:  LeftPaddedHexToUint256(order.QuantityNanos),
 		BlockHeight:               order.BlockHeight,
 	}
 }

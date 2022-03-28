@@ -3184,7 +3184,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 		desoNanosToConsumeMap := make(map[PKID]uint64)
-		for requestedOrder.QuantityNanos.GtUint64(0) {
+		for requestedOrder.QuantityToBuyInBaseUnits.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
 			matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 			if err != nil {
@@ -3210,22 +3210,22 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 				if orderCost.LtUint64(desoBalanceNanos) {
 					var desoNanosToConsume uint64
-					if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
-						desoNanosToConsume, err = order.CostUint64(order.ScaledPrice, requestedOrder.QuantityNanos)
+					if requestedOrder.QuantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
+						desoNanosToConsume, err = order.CostUint64(order.ScaledPrice, requestedOrder.QuantityToBuyInBaseUnits)
 
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}
 
-						requestedOrder.QuantityNanos = uint256.NewInt()
+						requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt()
 					} else {
-						desoNanosToConsume, err = order.CostUint64(order.ScaledPrice, requestedOrder.QuantityNanos)
+						desoNanosToConsume, err = order.CostUint64(order.ScaledPrice, requestedOrder.QuantityToBuyInBaseUnits)
 
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}
 
-						requestedOrder.QuantityNanos = uint256.NewInt().Sub(requestedOrder.QuantityNanos, order.QuantityNanos)
+						requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt().Sub(requestedOrder.QuantityToBuyInBaseUnits, order.QuantityToBuyInBaseUnits)
 					}
 
 					if _, exists := desoNanosToConsumeMap[*order.TransactorPKID]; !exists {
@@ -4207,24 +4207,61 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			return 0, 0, 0, 0, err
 		}
 
-		if reflect.DeepEqual(txMeta.SellingDAOCoinCreatorPKID, &ZeroPKID) {
+		// Construct requested order
+		sellCoinPKIDEntry := utxoView.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey[:])
+		if sellCoinPKIDEntry == nil || sellCoinPKIDEntry.isDeleted {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"_computeInputsForTxn: sellCoinPKIDEntry is deleted: %v",
+				spew.Sdump(sellCoinPKIDEntry))
+		}
+		buyCoinPKIDEntry := utxoView.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey[:])
+		if buyCoinPKIDEntry == nil || buyCoinPKIDEntry.isDeleted {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"_computeInputsForTxn: buyCoinPKIDEntry is deleted: %v",
+				spew.Sdump(buyCoinPKIDEntry))
+		}
+		transactorPKIDEntry := utxoView.GetPKIDForPublicKey(txArg.PublicKey[:])
+		if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"_computeInputsForTxn: transactorPKIDEntry is deleted: %v",
+				spew.Sdump(transactorPKIDEntry))
+		}
+
+		// It's better to use == for fixed-size slice rather than reflect.DeepEqual because
+		// the compiler will type-check you.
+		if *sellCoinPKIDEntry.PKID == ZeroPKID {
 			// If buying a DAO coin with $DESO, we need to add inputs from the transactor
 			// to cover all the ask orders that will match in the connect logic.
 
-			// Set scaled price.
-			err = txMeta.SetScaledPrice()
-			if err != nil {
-				return 0, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: invalid price")
-			}
-
 			// Construct requested order
-			requestedOrder := txMeta.ToEntry(
-				utxoView.GetPKIDForPublicKey(txArg.PublicKey).PKID, bc.blockTip().Height+1)
+			requestedOrder := txMeta.ToEntry(buyCoinPKIDEntry.PKID, sellCoinPKIDEntry.PKID,
+				transactorPKIDEntry.PKID, bc.blockTip().Height+1)
 
 			var lastSeenOrder *DAOCoinLimitOrderEntry
 
 			nanosToFulfillOrders := uint256.NewInt()
-			for !requestedOrder.QuantityNanos.IsZero() {
+			// FIXME: nit: I don't like the idea of modifying object fields in a loop. We
+			// do this here and in db_utils.
+			// I think the reason why is it's error-prone because the scope of the variable
+			// lives beyond the scope of
+			// the loop when you do it this way, and it's hard for the reader to guage where
+			// this variable is going to stop mattering. Additionally, if someone doesn't notice
+			// that the object field is being modified in this loop, they might accidentally
+			// use it, introducing a bug. In general, I like it when variables have the minimum
+			// possible scope they can have, and using object members as variables causes scope
+			// expansion so often that I tend to avoid it at all costs.
+			//
+			// The other reason why it's weird is because the loop variables aren't clearly defined
+			// in one place. When you write a for loop and you define all the variables you're
+			// looping outside of it, it's very easy for the reader to go "oh ok, these four things
+			// are what are being modified in here." When you do the object approach here, it's
+			// harder to see that.
+			//
+			// I would define a quantityToBuyInBaseUnits right outside of this loop and iterate
+			// that rather than using a field on an object. Same for any other variables. Just
+			// pull them out of the object at the top of the loop, or just don't use the secondary
+			// object at all.
+			for !requestedOrder.QuantityToBuyInBaseUnits.IsZero() {
 				var matchingOrderEntries []*DAOCoinLimitOrderEntry
 				matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
 				if err != nil {
@@ -4235,25 +4272,34 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					break
 				}
 				for _, order := range matchingOrderEntries {
-					// TODO: double-check if this should be Buying or Selling DAOCoinCreatorPKID.
 					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
 						order.TransactorPKID, order.SellingDAOCoinCreatorPKID, true)
-					if balanceEntry != nil && !balanceEntry.isDeleted && !balanceEntry.BalanceNanos.Lt(order.QuantityNanos) {
+					if balanceEntry != nil && !balanceEntry.isDeleted &&
+						!balanceEntry.BalanceNanos.Lt(order.QuantityToBuyInBaseUnits) {
+
+						// FIXME: I think this logic isn't right but need to look at consensus first
+						// and then come back to it.
 						var nanosToFulfillOrder *uint256.Int
-						if requestedOrder.QuantityNanos.Lt(order.QuantityNanos) {
-							nanosToFulfillOrder, err = order.CostUint256(order.ScaledPrice, requestedOrder.QuantityNanos)
+						if requestedOrder.QuantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
+							nanosToFulfillOrder, err = OrderCostUint256(
+								order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+								requestedOrder.QuantityToBuyInBaseUnits)
 							if err != nil {
-								// TODO: confirm error message.
-								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+								return 0, 0, 0, 0,
+									errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
 							}
-							requestedOrder.QuantityNanos = uint256.NewInt()
+							requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt()
 						} else {
 							nanosToFulfillOrder, err = order.TotalCostUint256()
 							if err != nil {
 								// TODO: confirm error message.
-								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+								return 0, 0, 0, 0,
+									errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
 							}
-							requestedOrder.QuantityNanos = uint256.NewInt().Sub(requestedOrder.QuantityNanos, order.QuantityNanos)
+							requestedOrder.QuantityToBuyInBaseUnits =
+								uint256.NewInt().Sub(
+									requestedOrder.QuantityToBuyInBaseUnits,
+									order.QuantityToBuyInBaseUnits)
 						}
 						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)
 					}

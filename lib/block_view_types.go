@@ -381,14 +381,21 @@ type UtxoOperation struct {
 	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 
 	// DAO coin limit order
-	PrevTransactorBuyingDAOCoinBalanceEntry  *BalanceEntry
-	PrevTransactorSellingDAOCoinBalanceEntry *BalanceEntry
-	PrevTransactorDAOCoinLimitOrderEntry     *DAOCoinLimitOrderEntry
-	PrevBalanceEntries                       []*BalanceEntry
-	PrevDAOCoinLimitOrderEntries             []*DAOCoinLimitOrderEntry
-	SpentUtxoEntries                         []*UtxoEntry
-	DAOCoinLimitOrderPaymentUtxoKeys         []*UtxoKey
-	DAOCoinLimitOrderIsCancellation          bool
+	// FIXME: Annotate all of these fields with comments
+	PrevTransactorDAOCoinLimitOrderEntry *DAOCoinLimitOrderEntry
+	// NOTE(FIXME): I think to disconnect, you can just set all these balance
+	// entries to get the DAO coin balances fixed, and then you go
+	// iterate through the UtxoOps going backwards and call unAdd on
+	// all of the outputs, and unSpend on all of the inputs. You just
+	// need a clever way to determine when you've reached the end of
+	// the BidInputs so you don't eat into the BasicTransfer operations.
+	//
+	// Oh yeah, and to revert the orders it seems like you should just
+	// be able to call set on all the prevMatchingOrders
+	PrevBalanceEntries map[PKID]map[PKID]*BalanceEntry
+	PrevMatchingOrders []*DAOCoinLimitOrderEntry
+	// TODO: I don't think we need this field.
+	SpentUtxoEntries []*UtxoEntry
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -1462,23 +1469,75 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 // -----------------------------------
 
 type DAOCoinLimitOrderEntry struct {
-	TransactorPKID            *PKID
-	BuyingDAOCoinCreatorPKID  *PKID
+	// TransactorPKID is the pkid of the user who created this order.
+	TransactorPKID *PKID
+	// The PKID of the coin that we're going to buy
+	// FIXME: Change to public key and lookup pkid
+	BuyingDAOCoinCreatorPKID *PKID
+	// The PKID of the coin that we're going to sell
+	// FIXME: Change to public key and lookup pkid
 	SellingDAOCoinCreatorPKID *PKID
-	Price                     *big.Float
-	ScaledPrice               *uint256.Int
-	QuantityNanos             *uint256.Int
-	BlockHeight               uint32
+	// ScaledExchangeRateCoinsToSellPerCoinToBuy specifies how many of the coins
+	// associated with SellingDAOCoinCreatorPKID we need to convert in order
+	// to get one BuyingDAOCoinCreatorPKID. For example, if this value was
+	// 2, then we would need to convert 2 SellingDAOCoinCreatorPKID
+	// coins to get 1 BuyingDAOCoinCreatorPKID. Note, however, that to represent
+	// 2, we would actually have to set ScaledExchangeRateCoinsToSellPerCoinToBuy to
+	// be equal to 2*2^128 because of the representation format we describe
+	// below.
+	//
+	// The exchange rate is represented as a UQ128x128, which works
+	// as follows:
+	// - Whenever we reference an exchange rate, call it Y, we pass it
+	//   around as a uint256 BUT we consider it to be implicitly divided
+	//   by 2^128.
+	// - For example, to represent a decimal number like 123456789.987654321,
+	//   call it X, we would pass around Y = X*2^128 = 4.2010169e+46 as a uint256.
+	//   Then, to do operations with Y, we would make sure to always divide by
+	//   2^128 before returning a final quantity.
+	// - We will refer to Y as "scaled." The value of ScaledExchangeRateCoinsToSellPerCoinToBuy
+	//   will always be scaled, meaning it is a uint256 that we implicitly
+	//   assume represents a number that is divided by 2^128.
+	//
+	// This scheme is also referred to as "fixed point," and a similar scheme
+	// is utilized by Uniswap. You can learn more about how this works here:
+	// - https://en.wikipedia.org/wiki/Q_(number_format)
+	// - https://ethereum.org/de/developers/tutorials/uniswap-v2-annotated-code/#FixedPoint
+	// - https://uniswap.org/whitepaper.pdf
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	// QuantityBaseUnits expresses how many "base units" of the coin this order is
+	// buying. Note that we could have called this QuantityToBuyNanos, and in the
+	// case where we're buying DESO, the base unit is a "nano." However, we call it
+	// "base unit" rather than nano because other DAO coins might decide to use a
+	// different scheme than nanos for their base unit. For example, someone could
+	// arbitrarily define 1e12 base units equaling one DAO coin if they felt like it.
+	QuantityToBuyInBaseUnits *uint256.Int
+	// This is the block height at which the order was placed. We use the block height
+	// to break ties between orders. If there are two orders that could be filled, we
+	// pick the one that was submitted earlier.
+	BlockHeight uint32
 
 	isDeleted bool
+}
+
+func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
+	bb, err := order.ToBytes()
+	if err != nil {
+		return nil, err
+	}
+	newOrder := &DAOCoinLimitOrderEntry{}
+	if err := newOrder.FromBytes(bb); err != nil {
+		return nil, err
+	}
+	return newOrder, nil
 }
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data := append([]byte{}, order.TransactorPKID.Encode()...)
 	data = append(data, order.BuyingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, order.SellingDAOCoinCreatorPKID.Encode()...)
-	data = append(data, EncodeUint256(order.ScaledPrice)...)
-	data = append(data, EncodeUint256(order.QuantityNanos)...)
+	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, EncodeUint256(order.QuantityToBuyInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	return data, nil
 }
@@ -1510,16 +1569,16 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
 	}
 
-	// Parse Scaled Price
-	ret.ScaledPrice, err = ReadUint256(rr)
+	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
+	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = ReadUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
-	// Parse QuantityNanos
-	ret.QuantityNanos, err = ReadUint256(rr)
+	// Parse QuantityToBuyInBaseUnits
+	ret.QuantityToBuyInBaseUnits, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading QuantityNanos: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading QuantityToBuyInBaseUnits: %v", err)
 	}
 
 	// Parse BlockHeight
@@ -1535,17 +1594,6 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 
 	*order = ret
 	return nil
-}
-
-func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
-	newOrder := &DAOCoinLimitOrderEntry{}
-	newOrder.TransactorPKID = order.TransactorPKID.NewPKID()
-	newOrder.BuyingDAOCoinCreatorPKID = order.BuyingDAOCoinCreatorPKID.NewPKID()
-	newOrder.SellingDAOCoinCreatorPKID = order.SellingDAOCoinCreatorPKID.NewPKID()
-	newOrder.ScaledPrice = order.ScaledPrice
-	newOrder.QuantityNanos = order.QuantityNanos
-	newOrder.BlockHeight = order.BlockHeight
-	return newOrder
 }
 
 func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {
@@ -1564,12 +1612,15 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {
-	// We prefer the order with the higher scaled price. This would result
+	// We prefer the order with the higher exchange rate. This would result
 	// in more of their selling DAO coin being offered to the transactor
 	// for each of the corresponding buying DAO coin.
-	if !order.ScaledPrice.Eq(other.ScaledPrice) {
+	if !order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Eq(
+		other.ScaledExchangeRateCoinsToSellPerCoinToBuy) {
+
 		// order.ScaledPrice > other.ScaledPrice
-		return order.ScaledPrice.Gt(other.ScaledPrice)
+		return order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Gt(
+			other.ScaledExchangeRateCoinsToSellPerCoinToBuy)
 	}
 
 	// FIFO, prefer older orders first, i.e. lower block height.
@@ -1578,26 +1629,49 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 	}
 
 	// Prefer lower-quantity orders first.
-	if order.QuantityNanos.Eq(other.QuantityNanos) {
-		return order.QuantityNanos.Lt(other.QuantityNanos)
+	if order.QuantityToBuyInBaseUnits.Eq(other.QuantityToBuyInBaseUnits) {
+		return order.QuantityToBuyInBaseUnits.Lt(other.QuantityToBuyInBaseUnits)
 	}
 
-	// To break a tie and guarantee idempotency in sorting, prefer lower TransactorPKIDs.
+	// To break a tie and guarantee idempotency in sorting,
+	// prefer lower TransactorPKIDs.
 	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
 }
 
-func (order *DAOCoinLimitOrderEntry) TotalCostUint256() (*uint256.Int, error) {
+func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, error) {
 	// Returns the total cost of this order (price x quantity) as a uint256.
-	return order.CostUint256(order.ScaledPrice, order.QuantityNanos)
+	return ComputeBaseUnitsToSellUint256(
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		order.QuantityToBuyInBaseUnits)
 }
 
-func (order *DAOCoinLimitOrderEntry) CostUint256(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (*uint256.Int, error) {
+func ComputeBaseUnitsToSellUint256(
+	scaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int,
+	quantityToBuyBaseUnits *uint256.Int) (*uint256.Int, error) {
+
+	// Note that we account for overflow here. Not doing this could result
+	// in a money printer bug. You need to check the following:
+	// scaledExchangeRateCoinsToSellPerCoinToBuy * quantityToBuyBaseUnits < uint256max
+	// -> scaledExchangeRateCoinsToSellPerCoinToBuy < uint256max / quantitybaseunits
+	//
+	// The division afterward is inherently safe so no need to check it.
+
 	// Returns the total cost of the inputted price x quantity as a uint256.
-	// TODO: double-check that we don't have to do this math as floats.
-	// TODO: check for overflow.
-	scaledTotalCost := uint256.NewInt().Mul(scaledPrice, quantityNanos)
-	scalingFactor := uint256.NewInt().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
-	unscaledTotalCost := uint256.NewInt().Div(scaledTotalCost, scalingFactor)
+	scaledTotalCostBigint := big.NewInt(0).Mul(
+		scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig(),
+		quantityToBuyBaseUnits.ToBig())
+	if scaledTotalCostBigint.Cmp(MaxUint256.ToBig()) > 0 {
+		return nil, errors.Wrapf(
+			RuleErrorDAOCoinLimitOrderCostTimesQuantityOverflows,
+			"OrderCostUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
+				"quantityBaseUnits: %v",
+			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
+			quantityToBuyBaseUnits.Hex())
+	}
+	// We don't trust the overflow checker in uint256. It's too risky because
+	// it could cause a money printer bug if there's a problem with it.
+	scaledTotalCost, _ := uint256.FromBig(scaledTotalCostBigint)
+	unscaledTotalCost := uint256.NewInt().Div(scaledTotalCost, OneUQ128x128)
 	if unscaledTotalCost.IsZero() {
 		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}
@@ -1605,71 +1679,45 @@ func (order *DAOCoinLimitOrderEntry) CostUint256(scaledPrice *uint256.Int, quant
 	return unscaledTotalCost, nil
 }
 
-func (order *DAOCoinLimitOrderEntry) TotalCostUint64() (uint64, error) {
-	// Returns the total cost of this order (price x quantity) as a uint64.
-	return order.CostUint64(order.ScaledPrice, order.QuantityNanos)
-}
-
-func (order *DAOCoinLimitOrderEntry) CostUint64(scaledPrice *uint256.Int, quantityNanos *uint256.Int) (uint64, error) {
-	// Returns the total cost of the inputted price x quantity as a uint64.
-	cost256, err := order.CostUint256(scaledPrice, quantityNanos)
-	if err != nil {
-		return 0, err
-	}
-
-	if !cost256.IsUint64() {
-		return 0, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
-	}
-
-	return cost256.Uint64(), nil
-}
-
-func (order *DAOCoinLimitOrderEntry) InvertedScaledPrice() (*uint256.Int, error) {
-	// When we compare the ScaledPrice to the values in the database we
-	// want to invert it to find the best matching orders (i.e. X becomes 1/X).
-	// Since the price is scaled we also need to scale up the numerator in the
-	// inversion to the MaxDAOCoinLimitOrderPricePrecision. Note that this
-	// inversion does require big.Float math. Proceed with caution.
-
-	// Double check scaled price isn't zero so don't have a divide by zero bug.
-	// This should never happen if we have gotten to this point.
-	if order.ScaledPrice.IsZero() {
-		return nil, RuleErrorDAOCoinLimitOrderInvalidPrice
-	}
-
-	// Inverted price = scaling factor / scaled price.
-	scalingFactor := NewFloat().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
-	scaledPrice := NewFloat().SetInt(order.ScaledPrice.ToBig())
-	invertedPrice := Div(scalingFactor, scaledPrice)
-
-	// Inverted scaled price = scaling factor * inverted price
-	invertedScaledPrice := Mul(scalingFactor, invertedPrice)
-	return ToUint256(invertedScaledPrice)
-}
-
-func (order *DAOCoinLimitOrderEntry) SetUnscaledPrice() error {
-	// Internally, we operate exclusively over the ScaledPrice
-	// *uint256.Int value. But once we need to return values to
-	// external clients, we need to set the Price *big.Float value.
-	scalingFactor := NewFloat().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
-	order.Price = Div(ToBigFloat(order.ScaledPrice), scalingFactor)
-	return nil
-}
+// FIXME: DELETE ONCE WE CONFIRM THIS ISN'T NEEDED
+//
+//func (order *DAOCoinLimitOrderEntry) TotalCostUint64() (uint64, error) {
+//	// Returns the total cost of this order (price x quantity) as a uint64.
+//	return order.CostUint64(
+//		order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+//		order.QuantityToBuyInBaseUnits)
+//}
+//
+//func (order *DAOCoinLimitOrderEntry) CostUint64(
+//	scaledExchangRateCoinsToSellPerCoinsToBuy *uint256.Int,
+//	quantityNanos *uint256.Int) (uint64, error) {
+//	// Returns the total cost of the inputted price x quantity as a uint64.
+//	cost256, err := order.CostUint256(
+//		scaledExchangRateCoinsToSellPerCoinsToBuy,
+//		quantityNanos)
+//	if err != nil {
+//		return 0, err
+//	}
+//
+//	if !cost256.IsUint64() {
+//		return 0, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
+//	}
+//
+//	return cost256.Uint64(), nil
+//}
 
 type DAOCoinLimitOrderMapKey struct {
-	TransactorPKID            PKID
-	BuyingDAOCoinCreatorPKID  PKID
-	SellingDAOCoinCreatorPKID PKID
-	ScaledPrice               uint256.Int
-	BlockHeight               uint32
+	TransactorPKID                            PKID
+	BuyingDAOCoinCreatorPKID                  PKID
+	SellingDAOCoinCreatorPKID                 PKID
+	ScaledExchangeRateCoinsToSellPerCoinToBuy uint256.Int
 }
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
-	key := DAOCoinLimitOrderMapKey{}
-	key.TransactorPKID = *order.TransactorPKID.NewPKID()
-	key.BuyingDAOCoinCreatorPKID = *order.BuyingDAOCoinCreatorPKID.NewPKID()
-	key.SellingDAOCoinCreatorPKID = *order.SellingDAOCoinCreatorPKID.NewPKID()
-	key.ScaledPrice = *order.ScaledPrice
-	key.BlockHeight = order.BlockHeight
-	return key
+	return DAOCoinLimitOrderMapKey{
+		TransactorPKID:                            *order.TransactorPKID.NewPKID(),
+		BuyingDAOCoinCreatorPKID:                  *order.BuyingDAOCoinCreatorPKID.NewPKID(),
+		SellingDAOCoinCreatorPKID:                 *order.SellingDAOCoinCreatorPKID.NewPKID(),
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: *order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+	}
 }

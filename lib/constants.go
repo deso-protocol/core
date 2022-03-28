@@ -70,6 +70,11 @@ const (
 
 var (
 	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+
+	// These values are used by the DAOCoinLimitOrder logic in order to convert
+	// fixed-point numbers to and from their exponentiated representation. For
+	// more info on how this works, see the comment on DAOCoinLimitOrderEntry.
+	OneUQ128x128, _ = uint256.FromHex("0x100000000000000000000000000000000")
 )
 
 func (nt NetworkType) String() string {
@@ -979,8 +984,4 @@ const (
 	// Messaging key constants
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
-
-	// DAO coin limit order prices come in as floats but are internally handled as uint256s
-	// so that we don't lose precision. This value tells us how many decimal places to retain.
-	MaxDAOCoinLimitOrderPricePrecision = 12
 )

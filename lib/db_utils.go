@@ -6160,7 +6160,7 @@ func StartDBSummarySnapshots(db *badger.DB) {
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) ([]byte, error) {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order)
-	key = append(key, EncodeUint256(order.ScaledPrice)...)
+	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 
 	// Store MaxUint32 - block height to guarantee FIFO
 	// orders as we seek in reverse order.
@@ -6182,12 +6182,14 @@ func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) ([
 	key = append(key, order.TransactorPKID[:]...)
 	key = append(key, order.BuyingDAOCoinCreatorPKID[:]...)
 	key = append(key, order.SellingDAOCoinCreatorPKID[:]...)
-	key = append(key, EncodeUint256(order.ScaledPrice)...)
+	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
 	return key, nil
 }
 
-func DBGetDAOCoinLimitOrder(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry) (*DAOCoinLimitOrderEntry, error) {
+func DBGetDAOCoinLimitOrder(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry) (
+	*DAOCoinLimitOrderEntry, error) {
+
 	var ret *DAOCoinLimitOrderEntry
 	var err error
 
@@ -6233,16 +6235,14 @@ func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 	return order, nil
 }
 
-func DBGetMatchingDAOCoinLimitOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
-	queryOrder := inputOrder.Copy()
-	queryQuantityNanos := queryOrder.QuantityNanos
+func DBGetMatchingDAOCoinLimitOrders(
+	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 
-	// Calculate the inverse of the input order's ScaledPrice.
-	// The matching orders' prices have to be >= this price.
-	inputOrderInvertedScaledPrice, err := inputOrder.InvertedScaledPrice()
+	queryOrder, err := inputOrder.Copy()
 	if err != nil {
 		return nil, err
 	}
+	queryQuantityToBuy := queryOrder.QuantityToBuyInBaseUnits
 
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.
@@ -6250,11 +6250,12 @@ func DBGetMatchingDAOCoinLimitOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOr
 	//   * Set ScaledPrice to MaxUint256.
 	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
 	//   * Set TransactorPKID to ZeroPKID. This isn't used but it's safer not to be nil.
-	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID.NewPKID()
 	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID.NewPKID()
-	queryOrder.ScaledPrice = MaxUint256.Clone()
+	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID.NewPKID()
+	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 	queryOrder.BlockHeight = uint32(0)
-	queryOrder.TransactorPKID = ZeroPKID.NewPKID()
+	// Set this to 0xff to make sure we seek from *just beyond* the last entry.
+	queryOrder.TransactorPKID = MaxPKID.NewPKID()
 
 	key, err := DBKeyForDAOCoinLimitOrder(queryOrder)
 	if err != nil {
@@ -6267,7 +6268,13 @@ func DBGetMatchingDAOCoinLimitOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOr
 	var startKey []byte
 
 	if lastSeenOrder != nil {
-		startKey = DBPrefixKeyForDAOCoinLimitOrder(lastSeenOrder)
+		copyLastSeenOrder := *lastSeenOrder
+		copyLastSeenOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
+		copyLastSeenOrder.BlockHeight = 0
+		copyLastSeenOrder.TransactorPKID = MaxPKID.NewPKID()
+
+		// We need to pad the key with 0xff in this case.
+		startKey = DBPrefixKeyForDAOCoinLimitOrder(&copyLastSeenOrder)
 		key = startKey
 	}
 
@@ -6281,9 +6288,10 @@ func DBGetMatchingDAOCoinLimitOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOr
 	// Seek first matching order.
 	matchingOrders := []*DAOCoinLimitOrderEntry{}
 
-	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityNanos.GtUint64(0); iterator.Next() {
-		// If picking up from where you left off, skip the first order which has already been included.
-		if startKey != nil && reflect.DeepEqual(key, startKey) {
+	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityToBuy.GtUint64(0); iterator.Next() {
+		// If picking up from where you left off, skip the first order which
+		// has already been included.
+		if len(startKey) != 0 && reflect.DeepEqual(key, startKey) {
 			startKey = nil
 			continue
 		}
@@ -6295,19 +6303,40 @@ func DBGetMatchingDAOCoinLimitOrders(txn *badger.Txn, inputOrder *DAOCoinLimitOr
 
 		matchingOrder := &DAOCoinLimitOrderEntry{}
 		err = matchingOrder.FromBytes(matchingOrderBytes)
-
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem getting limit order")
 		}
 
-		// Break if matching order's scaled price < input order's inverted scaled price.
-		// matchingOrder.ScaledPrice < inputOrder.ScaledPrice
-		if matchingOrder.ScaledPrice.Lt(inputOrderInvertedScaledPrice) {
+		// Break if the price on the order exceeds the value we're looking for. We have
+		// a special formula that allows us to do this without overflowing and without
+		// losing precision. It looks like this:
+		// - Want: 1 / exchangeRatePassed >= exchangeRateFound
+		// -> exchangeRateFound * exchangeRatePassed >= 1
+		//
+		// Because of the quirks of the UQ128x128 format we're using, this formula actually
+		// becomes:
+		// - Start:
+		//   * exchangeRateFound = scaledExchangeRateFound / OneUQ128x128
+		//   * exchangeRatePassed = scaledExchangeRatePassed / OneUQ128x128
+		// -> exchangeRateFound * exchangeRatePassed >= OneUQ128x128 * OneUQ128x128
+		exchangeRateProduct := big.NewInt(0).Mul(
+			inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig(),
+			matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
+		rightHandSide := big.NewInt(0).Mul(
+			OneUQ128x128.ToBig(),
+			OneUQ128x128.ToBig())
+		if exchangeRateProduct.Cmp(rightHandSide) < 0 {
 			break
 		}
 
-		// Reduce requested quantity by matching order's quantity.
-		queryQuantityNanos = uint256.NewInt().Sub(queryQuantityNanos, matchingOrder.QuantityNanos)
+		// Reduce requested quantity by matching order's quantity. Set to zero
+		// if this order covers how much we want to buy.
+		if queryQuantityToBuy.Cmp(matchingOrder.QuantityToBuyInBaseUnits) < 0 {
+			queryQuantityToBuy = uint256.NewInt()
+		} else {
+			queryQuantityToBuy = uint256.NewInt().Sub(
+				queryQuantityToBuy, matchingOrder.QuantityToBuyInBaseUnits)
+		}
 		matchingOrders = append(matchingOrders, matchingOrder)
 	}
 
@@ -6343,7 +6372,7 @@ func DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(handle *badger.DB, i
 	key = append(key, inputOrder.TransactorPKID[:]...)
 	key = append(key, inputOrder.BuyingDAOCoinCreatorPKID[:]...)
 	key = append(key, inputOrder.SellingDAOCoinCreatorPKID[:]...)
-	key = append(key, EncodeUint256(inputOrder.ScaledPrice)...)
+	key = append(key, EncodeUint256(inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
@@ -6356,7 +6385,6 @@ func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([
 	for _, valBytes := range valsFound {
 		order := &DAOCoinLimitOrderEntry{}
 		err := order.FromBytes(valBytes)
-
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrdersByPrefixKey: problem getting limit orders")
 		}

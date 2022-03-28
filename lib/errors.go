@@ -255,7 +255,9 @@ const (
 	RuleErrorDAOCoinLimitOrderInvalidTotalCost                    RuleError = "RuleErrorDAOCoinLimitOrderInvalidTotalCost"
 	RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256           RuleError = "RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256"
 	RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64            RuleError = "RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64"
+	RuleErrorDAOCoinLimitOrderMatchingCostOverflowsUint256        RuleError = "RuleErrorDAOCoinLimitOrderMatchingCostOverflowsUint256"
 	RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano          RuleError = "RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano"
+	RuleErrorDAOCoinLimitOrderCostTimesQuantityOverflows          RuleError = "RuleErrorDAOCoinLimitOrderCostTimesQuantityOverflows"
 	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder         RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder"
 	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder     RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder"
 

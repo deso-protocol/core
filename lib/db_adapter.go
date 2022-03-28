@@ -60,11 +60,6 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCo
 		return nil, err
 	}
 
-	// Calculate Price (unscaled) for use by external clients.
-	for _, order := range orders {
-		order.SetUnscaledPrice()
-	}
-
 	return orders, nil
 }
 
@@ -80,11 +75,6 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPK
 
 	if err != nil {
 		return nil, err
-	}
-
-	// Calculate Price (unscaled) for use by external clients.
-	for _, order := range orders {
-		order.SetUnscaledPrice()
 	}
 
 	return orders, nil

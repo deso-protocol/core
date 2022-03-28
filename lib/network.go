@@ -12,7 +12,6 @@ import (
 	"github.com/holiman/uint256"
 	"io"
 	"math"
-	"math/big"
 	"net"
 	"sort"
 	"time"
@@ -5492,11 +5491,10 @@ func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 // ==================================================================
 
 type DAOCoinLimitOrderMetadata struct {
-	BuyingDAOCoinCreatorPKID  *PKID
-	SellingDAOCoinCreatorPKID *PKID
-	Price                     *big.Float
-	ScaledPrice               *uint256.Int
-	QuantityNanos             *uint256.Int
+	BuyingDAOCoinCreatorPublicKey             *PublicKey
+	SellingDAOCoinCreatorPublicKey            *PublicKey
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	QuantityToBuyInBaseUnits                  *uint256.Int
 
 	// If set to true, we will cancel an existing order (up to the
 	// specified quantity) instead of creating a new one.
@@ -5504,71 +5502,66 @@ type DAOCoinLimitOrderMetadata struct {
 
 	// This map is populated with the inputs consumed when a transaction
 	// is an ask offer and there are bids to match immediately.
-	MatchingBidsInputsMap map[PKID][]*DeSoInput
+	MatchingBidsInputsMap map[PublicKey][]*DeSoInput
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 	return TxnTypeDAOCoinLimitOrder
 }
 
-// This is a helper method used in testing.
-func (txnData *DAOCoinLimitOrderMetadata) Copy() *DAOCoinLimitOrderMetadata {
-	return &DAOCoinLimitOrderMetadata{
-		BuyingDAOCoinCreatorPKID:  txnData.BuyingDAOCoinCreatorPKID.NewPKID(),
-		SellingDAOCoinCreatorPKID: txnData.SellingDAOCoinCreatorPKID.NewPKID(),
-		Price:                     Clone(txnData.Price),
-		ScaledPrice:               txnData.ScaledPrice.Clone(),
-		QuantityNanos:             txnData.QuantityNanos.Clone(),
-	}
-}
-
-func (txnData *DAOCoinLimitOrderMetadata) UpdatePrice(newPrice *big.Float) error {
-	// This method is only used in testing at the moment.
-	txnData.Price = newPrice
-	return txnData.SetScaledPrice()
-}
-
-func (txnData *DAOCoinLimitOrderMetadata) SetScaledPrice() error {
-	scalingFactor := NewFloat().SetUint64(Uint64Pow(10, MaxDAOCoinLimitOrderPricePrecision))
-	scaledPrice, err := ToUint256(Mul(txnData.Price, scalingFactor))
-
-	if err != nil {
-		return err
-	}
-
-	txnData.ScaledPrice = scaledPrice
-	return nil
-}
-
-func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
-	if txnData.ScaledPrice == nil {
-		err := txnData.SetScaledPrice()
-		if err != nil {
-			panic("This should never happen as we validate before this step.")
-		}
-	}
+func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
+	buyingDAOCoinCreatorPKID *PKID,
+	sellingDAOCoinCreatorPKID *PKID,
+	transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
 
 	return &DAOCoinLimitOrderEntry{
-		TransactorPKID:            transactorPKID,
-		BuyingDAOCoinCreatorPKID:  txnData.BuyingDAOCoinCreatorPKID,
-		SellingDAOCoinCreatorPKID: txnData.SellingDAOCoinCreatorPKID,
-		Price:                     txnData.Price,
-		ScaledPrice:               txnData.ScaledPrice,
-		QuantityNanos:             txnData.QuantityNanos,
-		BlockHeight:               blockHeight,
+		TransactorPKID:                            transactorPKID,
+		BuyingDAOCoinCreatorPKID:                  buyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID:                 sellingDAOCoinCreatorPKID,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		QuantityToBuyInBaseUnits:                  txnData.QuantityToBuyInBaseUnits,
+		BlockHeight:                               blockHeight,
 	}
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPKID.Encode()...)
-	data = append(data, txnData.SellingDAOCoinCreatorPKID.Encode()...)
-	data = append(data, EncodeUint256(txnData.ScaledPrice)...)
-	data = append(data, EncodeUint256(txnData.QuantityNanos)...)
+	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPublicKey[:]...)
+	data = append(data, txnData.SellingDAOCoinCreatorPublicKey[:]...)
+	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, EncodeUint256(txnData.QuantityToBuyInBaseUnits)...)
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
 	data = append(data, UintToBuf(uint64(len(txnData.MatchingBidsInputsMap)))...)
 
-	for bidderPKID, inputs := range txnData.MatchingBidsInputsMap {
-		data = append(data, bidderPKID.Encode()...)
+	// Maps MUST be iterated in sorted order or else the serialization of the txn
+	// will be non-deterministic. This is very bad because it results in the txn
+	// hash being different each time.
+	//
+	// We sort the keys based on the mainnet string encoding of the public key.
+	sortedBidderPkStrings := []string{}
+	for bidderPkIter, _ := range txnData.MatchingBidsInputsMap {
+		// You must make a copy of the iterator before taking a pointer of it.
+		// If you don't do this, you'll have one of the worst bugs you've ever
+		// had to deal with, where the underlying data of all your pointers is
+		// shifted under your feet. It's not needed here because we're not saving
+		// the pointer, but do it just to be safe.
+		bidderPk := bidderPkIter
+		sortedBidderPkStrings = append(sortedBidderPkStrings, PkToStringMainnet(bidderPk[:]))
+	}
+	for ii, pkStr := range sortedBidderPkStrings {
+		bidderPkBytes, _, err := Base58CheckDecode(pkStr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DAOCoinLimitOrderMetadata: "+
+				"Error serializing pubkey %v at index %v in MatchingBidsInputsMap",
+				pkStr, ii)
+		}
+		bidderPk := NewPublicKey(bidderPkBytes)
+		inputs, exists := txnData.MatchingBidsInputsMap[*bidderPk]
+		if !exists {
+			return nil, fmt.Errorf("DAOCoinLimitOrderMetadata: Error "+
+				"serializing inputs for pubkey %v at index %v. Map value "+
+				"did not exist. This should never happen", pkStr, ii)
+		}
+		data = append(data, bidderPk[:]...)
 		data = append(data, UintToBuf(uint64(len(inputs)))...)
 		for _, input := range inputs {
 			data = append(data, input.TxID[:]...)
@@ -5589,29 +5582,31 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	var err error
 
 	// Parse BuyingDAOCoinCreatorPKID
-	ret.BuyingDAOCoinCreatorPKID, err = ReadPKID(rr)
+	ret.BuyingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"DAOCoinLimitOrderMetadata.FromBytes: Error reading BuyingDAOCoinCreatorPKID: %v", err)
+			"DAOCoinLimitOrderMetadata.FromBytes: Error "+
+				"reading BuyingDAOCoinCreatorPublicKey: %v", err)
 	}
 
 	// Parse SellingDAOCoinCreatorPKID
-	ret.SellingDAOCoinCreatorPKID, err = ReadPKID(rr)
+	ret.SellingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"DAOCoinLimitOrderMetadata.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading "+
+				"SellingDAOCoinCreatorPKID: %v", err)
 	}
 
 	// Parse Price
-	ret.ScaledPrice, err = ReadUint256(rr)
+	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = ReadUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
-	// Parse QuantityNanos
-	ret.QuantityNanos, err = ReadUint256(rr)
+	// Parse QuantityToBuyInBaseUnits
+	ret.QuantityToBuyInBaseUnits, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityNanos: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToBuyInBaseUnits: %v", err)
 	}
 
 	// Parse CancelExistingOrder
@@ -5625,12 +5620,11 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 
 	if matchingBidsInputsMapLength > 0 {
-		ret.MatchingBidsInputsMap = make(map[PKID][]*DeSoInput)
+		ret.MatchingBidsInputsMap = make(map[PublicKey][]*DeSoInput)
 	}
 
 	for ii := uint64(0); ii < matchingBidsInputsMapLength; ii++ {
-		var pkid *PKID
-		pkid, err = ReadPKID(rr)
+		pubKey, err := ReadPublicKey(rr)
 		if err != nil {
 			return fmt.Errorf(
 				"DAOCoinLimitOrderMetadata.FromBytes: Error reading PKID at index %v: %v", ii, err)
@@ -5641,7 +5635,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 			return fmt.Errorf(
 				"DAOCoinLimitOrderMetadata.FromBytes: Error reading inputs length at index %v: %v", ii, err)
 		}
-		ret.MatchingBidsInputsMap[*pkid] = make([]*DeSoInput, 0, matchingBidsInputsMapLength)
+		ret.MatchingBidsInputsMap[*pubKey] = make([]*DeSoInput, 0, matchingBidsInputsMapLength)
 		for jj := uint64(0); jj < inputsLength; jj++ {
 			currentInput := NewDeSoInput()
 			_, err = io.ReadFull(rr, currentInput.TxID[:])
@@ -5657,14 +5651,15 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 					"DAOCoinLimitOrderMetadata.FromBytes: Error reading input index at ii %v, jj %v: %v",
 					ii, jj, err)
 			}
-			if inputIndex > uint64(^uint32(0)) {
+			if inputIndex > uint64(math.MaxUint32) {
 				return fmt.Errorf(
 					"DAOCoinLimitOrderMetadata.FromBytes: Input index at ii %v, jj %v must not exceed %d",
-					ii, jj, ^uint32(0))
+					ii, jj, math.MaxUint32)
 			}
 			currentInput.Index = uint32(inputIndex)
 
-			ret.MatchingBidsInputsMap[*pkid] = append(ret.MatchingBidsInputsMap[*pkid], currentInput)
+			ret.MatchingBidsInputsMap[*pubKey] = append(
+				ret.MatchingBidsInputsMap[*pubKey], currentInput)
 		}
 	}
 

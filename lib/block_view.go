@@ -1598,7 +1598,9 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	case TxnTypeDAOCoinLimitOrder:
 		txnMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 		_ = txnMeta
-		// TODO: figure out derived key entry logic for DAOCoinLimitOrder
+		// FIXME: Figure out derived key entry logic for DAOCoinLimitOrder
+		// Right now this is a chink in our armor because it allows someone to create this
+		// kind of txn without approval.
 	case TxnTypeUpdateNFT:
 		txnMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 		if derivedKeyEntry, err = _checkNFTLimitAndUpdateDerivedKeyEntry(
