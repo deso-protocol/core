@@ -270,6 +270,11 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 
 func (desoMiner *DeSoMiner) _startThread(threadIndex uint32) {
 	for {
+		if desoMiner.BlockProducer.chain.syncingState {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
 		newBlock, err := desoMiner.MineAndProcessSingleBlock(threadIndex, nil /*mempoolToUpdate*/)
 		if err != nil {
 			glog.Errorf(err.Error())
