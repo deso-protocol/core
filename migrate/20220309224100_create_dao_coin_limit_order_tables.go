@@ -11,12 +11,12 @@ func init() {
 		// Create pg_metadata_dao_coin_limit_orders table.
 		_, err := db.Exec(`
 			CREATE TABLE pg_metadata_dao_coin_limit_orders (
-				transaction_hash              BYTEA PRIMARY KEY,
-				buying_dao_coin_creator_pkid  BYTEA NOT NULL,
-				selling_dao_coin_creator_pkid BYTEA NOT NULL,
-				scaled_price                  TEXT NOT NULL,
-				quantity_nanos                TEXT NOT NULL,
-				cancel_existing_order         BOOL NOT NULL
+				transaction_hash                                   BYTEA PRIMARY KEY,
+				buying_dao_coin_creator_public_key                 BYTEA NOT NULL,
+				selling_dao_coin_creator_public_key                BYTEA NOT NULL,
+				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT NOT NULL,
+				quantity_to_buy_in_base_units                      TEXT NOT NULL,
+				cancel_existing_order                              BOOL NOT NULL
 			);
 		`)
 
@@ -27,18 +27,18 @@ func init() {
 		// Create pg_dao_coin_limit_orders table.
 		_, err = db.Exec(`
 			CREATE TABLE pg_dao_coin_limit_orders (
-				transactor_pkid               BYTEA NOT NULL,
-				buying_dao_coin_creator_pkid  BYTEA NOT NULL,
-				selling_dao_coin_creator_pkid BYTEA NOT NULL,
-				scaled_price                  TEXT NOT NULL,
-                quantity_nanos                TEXT NOT NULL,
-				block_height				  BIGINT NOT NULL,
+				transactor_pkid                                    BYTEA NOT NULL,
+				buying_dao_coin_creator_public_key                 BYTEA NOT NULL,
+				selling_dao_coin_creator_public_key                BYTEA NOT NULL,
+				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT NOT NULL,
+                quantity_to_buy_in_base_units                      TEXT NOT NULL,
+				block_height				                       BIGINT NOT NULL,
 
 				PRIMARY KEY (
 					transactor_pkid,
-					buying_dao_coin_creator_pkid,
-					selling_dao_coin_creator_pkid,
-					scaled_price,
+					buying_dao_coin_creator_public_key,
+					selling_dao_coin_creator_public_key,
+					scaled_exchange_rate_coins_to_sell_per_coin_to_buy,
 					block_height
 				)
 			);

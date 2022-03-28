@@ -260,9 +260,12 @@ const (
 	RuleErrorDAOCoinLimitOrderCostTimesQuantityOverflows          RuleError = "RuleErrorDAOCoinLimitOrderCostTimesQuantityOverflows"
 	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder         RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder"
 	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder     RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder"
-
-	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
-	RuleErrorDAOCoinLimitOrderToCancelNotFound          RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotFound"
+	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists           RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
+	RuleErrorDAOCoinLimitOrderToCancelNotFound                    RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotFound"
+	RuleErrorDAOCoinLimitOrderOverspendingDESO                    RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDESO"
+	RuleErrorDAOCoinLimitOrderOverflowsDESO                       RuleError = "RuleErrorDAOCoinLimitOrderOverflowsDESO"
+	RuleErrorDAOCoinLimitOrderOverspendingDAOCoin                 RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDAOCoin"
+	RuleErrorDAOCoinLimitOrderOverflowsDAOCoin                    RuleError = "RuleErrorDAOCoinLimitOrderOverflowsDAOCoin"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"

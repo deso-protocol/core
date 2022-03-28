@@ -3093,8 +3093,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5799,7 +5799,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5926,7 +5926,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6172,16 +6172,16 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) ([]byte, error) {
 
 func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key = append(key, order.BuyingDAOCoinCreatorPKID[:]...)
-	key = append(key, order.SellingDAOCoinCreatorPKID[:]...)
+	key = append(key, order.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
+	key = append(key, order.SellingDAOCoinCreatorPublicKey.ToBytes()...)
 	return key
 }
 
 func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) ([]byte, error) {
 	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, order.TransactorPKID[:]...)
-	key = append(key, order.BuyingDAOCoinCreatorPKID[:]...)
-	key = append(key, order.SellingDAOCoinCreatorPKID[:]...)
+	key = append(key, order.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
+	key = append(key, order.SellingDAOCoinCreatorPublicKey.ToBytes()...)
 	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
 	return key, nil
@@ -6246,12 +6246,12 @@ func DBGetMatchingDAOCoinLimitOrders(
 
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.
-	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
+	//   * Swap BuyingDAOCoinCreatorPublic and SellingDAOCoinCreatorPublicKey.
 	//   * Set ScaledPrice to MaxUint256.
 	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
 	//   * Set TransactorPKID to ZeroPKID. This isn't used but it's safer not to be nil.
-	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID.NewPKID()
-	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID.NewPKID()
+	queryOrder.SellingDAOCoinCreatorPublicKey = inputOrder.BuyingDAOCoinCreatorPublicKey
+	queryOrder.BuyingDAOCoinCreatorPublicKey = inputOrder.SellingDAOCoinCreatorPublicKey
 	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 	queryOrder.BlockHeight = uint32(0)
 	// Set this to 0xff to make sure we seek from *just beyond* the last entry.
@@ -6349,11 +6349,15 @@ func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, e
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
-func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(handle *badger.DB, buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
+	handle *badger.DB,
+	buyingDAOCoinCreatorPublicKey *PublicKey,
+	sellingDAOCoinCreatorPublicKey *PublicKey) ([]*DAOCoinLimitOrderEntry, error) {
+
 	// Get all DAO coin limit orders for this transactor.
 	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key = append(key, buyingDAOCoinCreatorPKID[:]...)
-	key = append(key, sellingDAOCoinCreatorPKID[:]...)
+	key = append(key, buyingDAOCoinCreatorPublicKey.ToBytes()...)
+	key = append(key, sellingDAOCoinCreatorPublicKey.ToBytes()...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
@@ -6370,8 +6374,8 @@ func DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(handle *badger.DB, i
 	// key except we omit BlockHeight as we want value across all block heights.
 	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, inputOrder.TransactorPKID[:]...)
-	key = append(key, inputOrder.BuyingDAOCoinCreatorPKID[:]...)
-	key = append(key, inputOrder.SellingDAOCoinCreatorPKID[:]...)
+	key = append(key, inputOrder.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
+	key = append(key, inputOrder.SellingDAOCoinCreatorPublicKey.ToBytes()...)
 	key = append(key, EncodeUint256(inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }

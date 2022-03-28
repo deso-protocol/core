@@ -3152,7 +3152,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		// inputs and change.
 	}
 
-	if reflect.DeepEqual(metadata.BuyingDAOCoinCreatorPKID, &ZeroPKID) {
+	if reflect.DeepEqual(metadata.BuyingDAOCoinCreatorPublicKey, ZeroPublicKey) {
 		// If selling a DAO coin for $DESO, we need to find inputs from all the orders that match.
 		// This will move to txn construction as this will be put in the metadata.
 
@@ -3172,11 +3172,11 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			}
 		}
 
-		// Set scaled price.
-		err = metadata.SetScaledPrice()
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: invalid price")
-		}
+		//// Set scaled price.
+		//err = metadata.SetScaledPrice()
+		//if err != nil {
+		//	return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: invalid price")
+		//}
 
 		// Construct requested order
 		requestedOrder := metadata.ToEntry(
@@ -3203,15 +3203,17 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
 
-				orderCost, err := order.TotalCostUint256()
+				orderCost, err := ComputeBaseUnitsToSellUint256(
+					order.ScaledExchangeRateCoinsToSellPerCoinToBuy, order.QuantityToBuyInBaseUnits)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 				}
 
 				if orderCost.LtUint64(desoBalanceNanos) {
-					var desoNanosToConsume uint64
+					var desoNanosToConsume *uint256.Int
 					if requestedOrder.QuantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
-						desoNanosToConsume, err = order.CostUint64(order.ScaledPrice, requestedOrder.QuantityToBuyInBaseUnits)
+						desoNanosToConsume, err = ComputeBaseUnitsToSellUint256(
+							order.ScaledExchangeRateCoinsToSellPerCoinToBuy, requestedOrder.QuantityToBuyInBaseUnits)
 
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
@@ -3219,8 +3221,8 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 						requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt()
 					} else {
-						desoNanosToConsume, err = order.CostUint64(order.ScaledPrice, requestedOrder.QuantityToBuyInBaseUnits)
-
+						desoNanosToConsume, err = ComputeBaseUnitsToSellUint256(
+							order.ScaledExchangeRateCoinsToSellPerCoinToBuy, requestedOrder.QuantityToBuyInBaseUnits)
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 						}
@@ -3232,21 +3234,27 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						desoNanosToConsumeMap[*order.TransactorPKID] = 0
 					}
 
+					if !desoNanosToConsume.IsUint64() {
+						return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateDAOCoinLimitOrderTxn: order cost overflows $DESO")
+					}
+
 					// TODO: check for overflow
-					desoNanosToConsumeMap[*order.TransactorPKID] += desoNanosToConsume
+					desoNanosToConsumeMap[*order.TransactorPKID] += desoNanosToConsume.Uint64()
 				}
 				lastSeenOrder = order
 			}
 		}
-		metadata.MatchingBidsInputsMap = make(map[PKID][]*DeSoInput)
+		metadata.MatchingBidsInputsMap = make(map[PublicKey][]*DeSoInput)
 		for pkid, desoNanosToConsume := range desoNanosToConsumeMap {
 			var inputs []*DeSoInput
-			inputs, err = bc.GetInputsToCoverAmount(utxoView.GetPublicKeyForPKID(&pkid), utxoView, desoNanosToConsume)
+			publicKey := NewPublicKey(utxoView.GetPublicKeyForPKID(&pkid))
+
+			inputs, err = bc.GetInputsToCoverAmount(publicKey.ToBytes(), utxoView, desoNanosToConsume)
 			if err != nil {
 				return nil, 0, 0, 0, errors.Wrapf(err,
 					"Blockchain.CreateDAOCoinLimitOrderTxn: Error getting inputs to cover amount: ")
 			}
-			metadata.MatchingBidsInputsMap[pkid] = inputs
+			metadata.MatchingBidsInputsMap[*publicKey] = inputs
 		}
 	}
 
@@ -4234,8 +4242,14 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			// to cover all the ask orders that will match in the connect logic.
 
 			// Construct requested order
-			requestedOrder := txMeta.ToEntry(buyCoinPKIDEntry.PKID, sellCoinPKIDEntry.PKID,
-				transactorPKIDEntry.PKID, bc.blockTip().Height+1)
+			requestedOrder := &DAOCoinLimitOrderEntry{
+				TransactorPKID:                            transactorPKIDEntry.PKID,
+				BuyingDAOCoinCreatorPublicKey:             NewPublicKey(buyCoinPKIDEntry.PublicKey),
+				SellingDAOCoinCreatorPublicKey:            NewPublicKey(sellCoinPKIDEntry.PublicKey),
+				ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+				QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
+				BlockHeight:                               bc.blockTip().Height + 1,
+			}
 
 			var lastSeenOrder *DAOCoinLimitOrderEntry
 
@@ -4272,8 +4286,11 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					break
 				}
 				for _, order := range matchingOrderEntries {
+					sellingDAOCoinCreatorPKID := utxoView.GetPKIDForPublicKey(order.SellingDAOCoinCreatorPublicKey.ToBytes())
+
 					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
-						order.TransactorPKID, order.SellingDAOCoinCreatorPKID, true)
+						order.TransactorPKID, sellingDAOCoinCreatorPKID.PKID, true)
+
 					if balanceEntry != nil && !balanceEntry.isDeleted &&
 						!balanceEntry.BalanceNanos.Lt(order.QuantityToBuyInBaseUnits) {
 
@@ -4281,7 +4298,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 						// and then come back to it.
 						var nanosToFulfillOrder *uint256.Int
 						if requestedOrder.QuantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
-							nanosToFulfillOrder, err = OrderCostUint256(
+							nanosToFulfillOrder, err = ComputeBaseUnitsToSellUint256(
 								order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 								requestedOrder.QuantityToBuyInBaseUnits)
 							if err != nil {
@@ -4290,7 +4307,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 							}
 							requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt()
 						} else {
-							nanosToFulfillOrder, err = order.TotalCostUint256()
+							nanosToFulfillOrder, err = ComputeBaseUnitsToSellUint256(
+								order.ScaledExchangeRateCoinsToSellPerCoinToBuy, order.QuantityToBuyInBaseUnits)
 							if err != nil {
 								// TODO: confirm error message.
 								return 0, 0, 0, 0,

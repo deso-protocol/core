@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
@@ -156,19 +157,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// return ZeroPKID back to us, which is what we want. Recall that ZeroPKID
 	// is how we signal that we're buying/selling DESO rather than a particular
 	// DAO coin.
-	sellCoinPKIDEntry := bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey[:])
+	sellCoinPKIDEntry := bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes())
 	if sellCoinPKIDEntry == nil || sellCoinPKIDEntry.isDeleted {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoinLimitOrder: sellCoinPKIDEntry is deleted: %v",
 			spew.Sdump(sellCoinPKIDEntry))
 	}
-	buyCoinPKIDEntry := bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey[:])
+	buyCoinPKIDEntry := bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes())
 	if buyCoinPKIDEntry == nil || buyCoinPKIDEntry.isDeleted {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoinLimitOrder: buyCoinPKIDEntry is deleted: %v",
 			spew.Sdump(buyCoinPKIDEntry))
 	}
-	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey[:])
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoinLimitOrder: transactorPKIDEntry is deleted: %v",
@@ -242,9 +243,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Create entry from txn metadata for the transactor.
-	transactorOrder := txMeta.ToEntry(
-		buyCoinPKIDEntry.PKID, sellCoinPKIDEntry.PKID,
-		transactorPKIDEntry.PKID, blockHeight)
+	transactorOrder := &DAOCoinLimitOrderEntry{
+		TransactorPKID:                            transactorPKIDEntry.PKID,
+		BuyingDAOCoinCreatorPublicKey:             NewPublicKey(buyCoinPKIDEntry.PublicKey),
+		SellingDAOCoinCreatorPublicKey:            NewPublicKey(sellCoinPKIDEntry.PublicKey),
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
+		BlockHeight:                               blockHeight,
+	}
 
 	// See if we have an existing limit order at this price and set up
 	// a variable for it if we do. Save the previous version in case
@@ -763,11 +769,15 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			continue
 		}
 
-		if !reflect.DeepEqual(*transactorOrder.BuyingDAOCoinCreatorPKID, *matchingOrder.SellingDAOCoinCreatorPKID) {
+		if bytes.Compare(
+			transactorOrder.BuyingDAOCoinCreatorPublicKey.ToBytes(),
+			matchingOrder.SellingDAOCoinCreatorPublicKey.ToBytes()) != 0 {
 			continue
 		}
 
-		if !reflect.DeepEqual(*transactorOrder.SellingDAOCoinCreatorPKID, *matchingOrder.BuyingDAOCoinCreatorPKID) {
+		if bytes.Compare(
+			transactorOrder.SellingDAOCoinCreatorPublicKey.ToBytes(),
+			matchingOrder.BuyingDAOCoinCreatorPublicKey.ToBytes()) != 0 {
 			continue
 		}
 
@@ -816,7 +826,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 			utxoOpsForTxn[operationIndex].Type)
 	}
 	txMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-	operationData := utxoOpsForTxn[operationIndex]
+	//operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
 	// We sometimes have some extra AddUtxo operations we need to remove
@@ -830,87 +840,87 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		}
 	}
 
-	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
+	//transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
 
-	// If buying DAO coins, revert the transactor's buying DAO coin balance entry.
-	transactorIsBuyingDESO := reflect.DeepEqual(*txMeta.BuyingDAOCoinCreatorPKID, ZeroPKID)
-
-	if !transactorIsBuyingDESO {
-		prevTransactorBalanceEntry := operationData.PrevTransactorBuyingDAOCoinBalanceEntry
-
-		if prevTransactorBalanceEntry == nil {
-			prevTransactorBalanceEntry = &BalanceEntry{
-				HODLerPKID:   transactorPKID,
-				CreatorPKID:  txMeta.BuyingDAOCoinCreatorPKID,
-				BalanceNanos: *uint256.NewInt(),
-			}
-		}
-
-		bav._setDAOCoinBalanceEntryMappings(prevTransactorBalanceEntry)
-	}
-
-	// If selling DAO coins, revert the transactors' selling DAO coin balance entry.
-	transactorIsSellingDESO := reflect.DeepEqual(*txMeta.SellingDAOCoinCreatorPKID, ZeroPKID)
-
-	if !transactorIsSellingDESO {
-		prevTransactorBalanceEntry := operationData.PrevTransactorSellingDAOCoinBalanceEntry
-
-		if prevTransactorBalanceEntry == nil {
-			prevTransactorBalanceEntry = &BalanceEntry{
-				HODLerPKID:   transactorPKID,
-				CreatorPKID:  txMeta.SellingDAOCoinCreatorPKID,
-				BalanceNanos: *uint256.NewInt(),
-			}
-		}
-
-		bav._setDAOCoinBalanceEntryMappings(prevTransactorBalanceEntry)
-	}
-
-	// Revert the transactor's limit order entry.
-	prevTransactorOrderEntry := operationData.PrevTransactorDAOCoinLimitOrderEntry
-
-	if !operationData.DAOCoinLimitOrderIsCancellation {
-		// For a cancellation limit order, there is nothing to revert here as the
-		// new transactor limit order is never saved and the existing transactor
-		// limit orders are stored/reverted in PrevDAOCoinLimitOrderEntries.
-		if prevTransactorOrderEntry != nil {
-			// If previous transactor order entry is not null, set it
-			// which overwrites whatever is currently stored there.
-			bav._setDAOCoinLimitOrderEntryMappings(prevTransactorOrderEntry)
-		} else {
-			// Else, we need to explicitly delete the transactor's order entry
-			// from this transaction.
-			transactorOrderEntry := txMeta.ToEntry(transactorPKID, blockHeight)
-			bav._deleteDAOCoinLimitOrderEntryMappings(transactorOrderEntry)
-		}
-	}
-
-	// Revert the deleted limit orders in reverse order.
-	for ii := len(operationData.PrevDAOCoinLimitOrderEntries) - 1; ii >= 0; ii-- {
-		orderEntry := operationData.PrevDAOCoinLimitOrderEntries[ii]
-		bav._setDAOCoinLimitOrderEntryMappings(orderEntry)
-	}
-
-	// Revert the balance entries in reverse order.
-	for ii := len(operationData.PrevBalanceEntries) - 1; ii >= 0; ii-- {
-		balanceEntry := operationData.PrevBalanceEntries[ii]
-		bav._setDAOCoinBalanceEntryMappings(balanceEntry)
-	}
-
-	// Disconnect payment UTXOs.
-	// TODO: confirm we don't need this. If we have an order that doesn't match anything
-	// we're not going to have any payments.
-	//if operationData.DAOCoinLimitOrderPaymentUtxoKeys == nil || len(operationData.DAOCoinLimitOrderPaymentUtxoKeys) == 0 {
-	//	return fmt.Errorf("_disconnectDAOCoinLimitOrder: DAOCoinLimitOrderPaymentUtxoKeys was nil; " +
-	//		"this should never happen")
+	//// If buying DAO coins, revert the transactor's buying DAO coin balance entry.
+	//transactorIsBuyingDESO := reflect.DeepEqual(*txMeta.BuyingDAOCoinCreatorPublicKey, ZeroPublicKey)
+	//
+	//if !transactorIsBuyingDESO {
+	//	prevTransactorBalanceEntry := operationData.PrevBalanceEntries
+	//
+	//	if prevTransactorBalanceEntry == nil {
+	//		prevTransactorBalanceEntry = &BalanceEntry{
+	//			HODLerPKID:   transactorPKID,
+	//			CreatorPKID:  DBGetPKIDEntryForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey),
+	//			BalanceNanos: *uint256.NewInt(),
+	//		}
+	//	}
+	//
+	//	bav._setDAOCoinBalanceEntryMappings(prevTransactorBalanceEntry)
 	//}
-
-	for ii := len(operationData.DAOCoinLimitOrderPaymentUtxoKeys) - 1; ii >= 0; ii-- {
-		paymentUtxoKey := operationData.DAOCoinLimitOrderPaymentUtxoKeys[ii]
-		if err := bav._unAddUtxo(paymentUtxoKey); err != nil {
-			return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unAdding UTXO %v: ", paymentUtxoKey)
-		}
-	}
+	//
+	//// If selling DAO coins, revert the transactors' selling DAO coin balance entry.
+	//transactorIsSellingDESO := reflect.DeepEqual(*txMeta.SellingDAOCoinCreatorPKID, ZeroPKID)
+	//
+	//if !transactorIsSellingDESO {
+	//	prevTransactorBalanceEntry := operationData.PrevTransactorSellingDAOCoinBalanceEntry
+	//
+	//	if prevTransactorBalanceEntry == nil {
+	//		prevTransactorBalanceEntry = &BalanceEntry{
+	//			HODLerPKID:   transactorPKID,
+	//			CreatorPKID:  txMeta.SellingDAOCoinCreatorPKID,
+	//			BalanceNanos: *uint256.NewInt(),
+	//		}
+	//	}
+	//
+	//	bav._setDAOCoinBalanceEntryMappings(prevTransactorBalanceEntry)
+	//}
+	//
+	//// Revert the transactor's limit order entry.
+	//prevTransactorOrderEntry := operationData.PrevTransactorDAOCoinLimitOrderEntry
+	//
+	//if !operationData.DAOCoinLimitOrderIsCancellation {
+	//	// For a cancellation limit order, there is nothing to revert here as the
+	//	// new transactor limit order is never saved and the existing transactor
+	//	// limit orders are stored/reverted in PrevDAOCoinLimitOrderEntries.
+	//	if prevTransactorOrderEntry != nil {
+	//		// If previous transactor order entry is not null, set it
+	//		// which overwrites whatever is currently stored there.
+	//		bav._setDAOCoinLimitOrderEntryMappings(prevTransactorOrderEntry)
+	//	} else {
+	//		// Else, we need to explicitly delete the transactor's order entry
+	//		// from this transaction.
+	//		transactorOrderEntry := txMeta.ToEntry(transactorPKID, blockHeight)
+	//		bav._deleteDAOCoinLimitOrderEntryMappings(transactorOrderEntry)
+	//	}
+	//}
+	//
+	//// Revert the deleted limit orders in reverse order.
+	//for ii := len(operationData.PrevDAOCoinLimitOrderEntries) - 1; ii >= 0; ii-- {
+	//	orderEntry := operationData.PrevDAOCoinLimitOrderEntries[ii]
+	//	bav._setDAOCoinLimitOrderEntryMappings(orderEntry)
+	//}
+	//
+	//// Revert the balance entries in reverse order.
+	//for ii := len(operationData.PrevBalanceEntries) - 1; ii >= 0; ii-- {
+	//	balanceEntry := operationData.PrevBalanceEntries[ii]
+	//	bav._setDAOCoinBalanceEntryMappings(balanceEntry)
+	//}
+	//
+	//// Disconnect payment UTXOs.
+	//// TODO: confirm we don't need this. If we have an order that doesn't match anything
+	//// we're not going to have any payments.
+	////if operationData.DAOCoinLimitOrderPaymentUtxoKeys == nil || len(operationData.DAOCoinLimitOrderPaymentUtxoKeys) == 0 {
+	////	return fmt.Errorf("_disconnectDAOCoinLimitOrder: DAOCoinLimitOrderPaymentUtxoKeys was nil; " +
+	////		"this should never happen")
+	////}
+	//
+	//for ii := len(operationData.DAOCoinLimitOrderPaymentUtxoKeys) - 1; ii >= 0; ii-- {
+	//	paymentUtxoKey := operationData.DAOCoinLimitOrderPaymentUtxoKeys[ii]
+	//	if err := bav._unAddUtxo(paymentUtxoKey); err != nil {
+	//		return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unAdding UTXO %v: ", paymentUtxoKey)
+	//	}
+	//}
 
 	// Un-spend spent UTXOs.
 	// TODO: what should we do here?

@@ -5509,15 +5509,11 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 	return TxnTypeDAOCoinLimitOrder
 }
 
-func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
-	buyingDAOCoinCreatorPKID *PKID,
-	sellingDAOCoinCreatorPKID *PKID,
-	transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
-
+func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
 	return &DAOCoinLimitOrderEntry{
 		TransactorPKID:                            transactorPKID,
-		BuyingDAOCoinCreatorPKID:                  buyingDAOCoinCreatorPKID,
-		SellingDAOCoinCreatorPKID:                 sellingDAOCoinCreatorPKID,
+		BuyingDAOCoinCreatorPublicKey:             txnData.BuyingDAOCoinCreatorPublicKey,
+		SellingDAOCoinCreatorPublicKey:            txnData.SellingDAOCoinCreatorPublicKey,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToBuyInBaseUnits:                  txnData.QuantityToBuyInBaseUnits,
 		BlockHeight:                               blockHeight,
@@ -5525,8 +5521,8 @@ func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPublicKey[:]...)
-	data = append(data, txnData.SellingDAOCoinCreatorPublicKey[:]...)
+	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
+	data = append(data, txnData.SellingDAOCoinCreatorPublicKey.ToBytes()...)
 	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(txnData.QuantityToBuyInBaseUnits)...)
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
@@ -5581,7 +5577,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 	var err error
 
-	// Parse BuyingDAOCoinCreatorPKID
+	// Parse BuyingDAOCoinCreatorPublicKey
 	ret.BuyingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
@@ -5589,7 +5585,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 				"reading BuyingDAOCoinCreatorPublicKey: %v", err)
 	}
 
-	// Parse SellingDAOCoinCreatorPKID
+	// Parse SellingDAOCoinCreatorPublicKey
 	ret.SellingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(

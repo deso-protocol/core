@@ -46,14 +46,17 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 	return DBGetAllDAOCoinLimitOrders(adapter.badgerDb)
 }
 
-func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
+	buyingDAOCoinCreatorPublicKey *PublicKey,
+	sellingDAOCoinCreatorPublicKey *PublicKey) ([]*DAOCoinLimitOrderEntry, error) {
+
 	var orders []*DAOCoinLimitOrderEntry
 	var err error
 
 	if adapter.postgresDb != nil {
-		orders, err = adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
+		orders, err = adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPublicKey, sellingDAOCoinCreatorPublicKey)
 	} else {
-		orders, err = DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(adapter.badgerDb, buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
+		orders, err = DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(adapter.badgerDb, buyingDAOCoinCreatorPublicKey, sellingDAOCoinCreatorPublicKey)
 	}
 
 	if err != nil {
