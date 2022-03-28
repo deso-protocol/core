@@ -286,8 +286,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice()
 	{
 		// Confirm 1 existing limit order, and it's from m0.
-		// Note that the blockHeight param is ignored.
-		orderEntry := metadataM0.ToEntry(m0PKID.PKID, 0, toPKID)
+		orderEntry := metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(orderEntry)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -756,10 +755,11 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
 	transactorPKID *PKID, blockHeight uint32, toPKID func(*PublicKey) *PKID) *DAOCoinLimitOrderEntry {
 
+	// Convert *DAOCoinLimitOrderMetadata to *DAOCoinLimitOrderEntry.
 	return &DAOCoinLimitOrderEntry{
 		TransactorPKID:                            transactorPKID,
 		BuyingDAOCoinCreatorPKID:                  toPKID(txnData.BuyingDAOCoinCreatorPublicKey),
-		SellingDAOCoinCreatorPKID:                 toPKID(txnData.BuyingDAOCoinCreatorPublicKey),
+		SellingDAOCoinCreatorPKID:                 toPKID(txnData.SellingDAOCoinCreatorPublicKey),
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToBuyInBaseUnits:                  txnData.QuantityToBuyInBaseUnits,
 		BlockHeight:                               blockHeight,
