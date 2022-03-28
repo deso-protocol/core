@@ -245,8 +245,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Create entry from txn metadata for the transactor.
 	transactorOrder := &DAOCoinLimitOrderEntry{
 		TransactorPKID:                            transactorPKIDEntry.PKID,
-		BuyingDAOCoinCreatorPublicKey:             NewPublicKey(buyCoinPKIDEntry.PublicKey),
-		SellingDAOCoinCreatorPublicKey:            NewPublicKey(sellCoinPKIDEntry.PublicKey),
+		BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
+		SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
 		BlockHeight:                               blockHeight,
@@ -773,14 +773,14 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 
 		if bytes.Compare(
-			transactorOrder.BuyingDAOCoinCreatorPublicKey.ToBytes(),
-			matchingOrder.SellingDAOCoinCreatorPublicKey.ToBytes()) != 0 {
+			transactorOrder.BuyingDAOCoinCreatorPKID.ToBytes(),
+			matchingOrder.SellingDAOCoinCreatorPKID.ToBytes()) != 0 {
 			continue
 		}
 
 		if bytes.Compare(
-			transactorOrder.SellingDAOCoinCreatorPublicKey.ToBytes(),
-			matchingOrder.BuyingDAOCoinCreatorPublicKey.ToBytes()) != 0 {
+			transactorOrder.SellingDAOCoinCreatorPKID.ToBytes(),
+			matchingOrder.BuyingDAOCoinCreatorPKID.ToBytes()) != 0 {
 			continue
 		}
 

@@ -6172,16 +6172,16 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) ([]byte, error) {
 
 func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key = append(key, order.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
-	key = append(key, order.SellingDAOCoinCreatorPublicKey.ToBytes()...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, order.SellingDAOCoinCreatorPKID.Encode()...)
 	return key
 }
 
 func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) ([]byte, error) {
 	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, order.TransactorPKID[:]...)
-	key = append(key, order.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
-	key = append(key, order.SellingDAOCoinCreatorPublicKey.ToBytes()...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, order.SellingDAOCoinCreatorPKID.Encode()...)
 	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
 	return key, nil
@@ -6246,12 +6246,12 @@ func DBGetMatchingDAOCoinLimitOrders(
 
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.
-	//   * Swap BuyingDAOCoinCreatorPublic and SellingDAOCoinCreatorPublicKey.
+	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
 	//   * Set ScaledPrice to MaxUint256.
 	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
 	//   * Set TransactorPKID to ZeroPKID. This isn't used but it's safer not to be nil.
-	queryOrder.SellingDAOCoinCreatorPublicKey = inputOrder.BuyingDAOCoinCreatorPublicKey
-	queryOrder.BuyingDAOCoinCreatorPublicKey = inputOrder.SellingDAOCoinCreatorPublicKey
+	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
+	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID
 	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 	queryOrder.BlockHeight = uint32(0)
 	// Set this to 0xff to make sure we seek from *just beyond* the last entry.
@@ -6351,13 +6351,13 @@ func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, e
 
 func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	handle *badger.DB,
-	buyingDAOCoinCreatorPublicKey *PublicKey,
-	sellingDAOCoinCreatorPublicKey *PublicKey) ([]*DAOCoinLimitOrderEntry, error) {
+	buyingDAOCoinCreatorPKID *PKID,
+	sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 
 	// Get all DAO coin limit orders for this transactor.
 	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key = append(key, buyingDAOCoinCreatorPublicKey.ToBytes()...)
-	key = append(key, sellingDAOCoinCreatorPublicKey.ToBytes()...)
+	key = append(key, buyingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, sellingDAOCoinCreatorPKID.Encode()...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
@@ -6374,8 +6374,8 @@ func DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(handle *badger.DB, i
 	// key except we omit BlockHeight as we want value across all block heights.
 	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, inputOrder.TransactorPKID[:]...)
-	key = append(key, inputOrder.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
-	key = append(key, inputOrder.SellingDAOCoinCreatorPublicKey.ToBytes()...)
+	key = append(key, inputOrder.BuyingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, inputOrder.SellingDAOCoinCreatorPKID.Encode()...)
 	key = append(key, EncodeUint256(inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }

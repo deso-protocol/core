@@ -5509,17 +5509,6 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 	return TxnTypeDAOCoinLimitOrder
 }
 
-func (txnData *DAOCoinLimitOrderMetadata) ToEntry(transactorPKID *PKID, blockHeight uint32) *DAOCoinLimitOrderEntry {
-	return &DAOCoinLimitOrderEntry{
-		TransactorPKID:                            transactorPKID,
-		BuyingDAOCoinCreatorPublicKey:             txnData.BuyingDAOCoinCreatorPublicKey,
-		SellingDAOCoinCreatorPublicKey:            txnData.SellingDAOCoinCreatorPublicKey,
-		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		QuantityToBuyInBaseUnits:                  txnData.QuantityToBuyInBaseUnits,
-		BlockHeight:                               blockHeight,
-	}
-}
-
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
 	data = append(data, txnData.SellingDAOCoinCreatorPublicKey.ToBytes()...)

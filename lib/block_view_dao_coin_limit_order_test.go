@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -29,8 +30,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		badgerDb:   db,
 		postgresDb: chain.postgres,
 	}
-
-	_ = dbAdapter // TODO: delete
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0, mempool)
@@ -68,6 +67,27 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
 	m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
 	_, _, _, _ = m0PKID, m1PKID, m2PKID, m4PKID // TODO: delete
+
+	// -----------------------
+	// Helpers
+	// -----------------------
+
+	// Helper function to convert PublicKeys to PKIDs without initializing a new UTXOView.
+	toPKID := func(inputPK *PublicKey) *PKID {
+		if bytes.Equal(inputPK.ToBytes(), ZeroPublicKey.ToBytes()) {
+			return &ZeroPKID
+		}
+
+		if bytes.Equal(inputPK.ToBytes(), m0PkBytes) {
+			return m0PKID.PKID
+		}
+
+		if bytes.Equal(inputPK.ToBytes(), m1PkBytes) {
+			return m1PKID.PKID
+		}
+
+		return nil
+	}
 
 	// -----------------------
 	// Tests
@@ -239,18 +259,19 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight, toPKID)))
 	}
 
 	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair()
 	{
 		// Confirm 1 existing limit order, and it's from m0.
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
-			metadataM0.BuyingDAOCoinCreatorPublicKey, metadataM0.SellingDAOCoinCreatorPublicKey)
+			toPKID(metadataM0.BuyingDAOCoinCreatorPublicKey),
+			toPKID(metadataM0.SellingDAOCoinCreatorPublicKey))
 
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight, toPKID)))
 	}
 
 	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisTransactor()
@@ -259,18 +280,18 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight, toPKID)))
 	}
 
 	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice()
 	{
 		// Confirm 1 existing limit order, and it's from m0.
 		// Note that the blockHeight param is ignored.
-		orderEntry := metadataM0.ToEntry(m0PKID.PKID, 0)
+		orderEntry := metadataM0.ToEntry(m0PKID.PKID, 0, toPKID)
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(orderEntry)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+		require.True(orderEntries[0].Eq(orderEntry))
 	}
 
 	// Construct metadata for a m1 limit order:
@@ -321,10 +342,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight)))
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, testMeta.savedHeight, toPKID)))
 
 		// Confirm 1 matching limit orders exists.
-		orderEntryM1 := metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight)
+		orderEntryM1 := metadataM1.ToEntry(m1PKID.PKID, testMeta.savedHeight, toPKID)
 		orderEntries, err = dbAdapter.GetMatchingDAOCoinLimitOrders(orderEntryM1, nil)
 
 		require.NoError(err)
@@ -715,4 +736,32 @@ func CalculateScaledExchangeRate(price float64) *uint256.Int {
 	scaledPriceInt, _ := Mul(NewFloat().SetFloat64(price), NewFloat().SetInt(OneUQ128x128.ToBig())).Int(nil)
 	scaledPriceUint256, _ := uint256.FromBig(scaledPriceInt)
 	return scaledPriceUint256
+}
+
+func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {
+	// Convert both order entries to bytes and compare bytes.
+	orderBytes, err := order.ToBytes()
+	if err != nil {
+		return false, err
+	}
+
+	otherBytes, err := other.ToBytes()
+	if err != nil {
+		return false, err
+	}
+
+	return bytes.Equal(orderBytes, otherBytes), nil
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
+	transactorPKID *PKID, blockHeight uint32, toPKID func(*PublicKey) *PKID) *DAOCoinLimitOrderEntry {
+
+	return &DAOCoinLimitOrderEntry{
+		TransactorPKID:                            transactorPKID,
+		BuyingDAOCoinCreatorPKID:                  toPKID(txnData.BuyingDAOCoinCreatorPublicKey),
+		SellingDAOCoinCreatorPKID:                 toPKID(txnData.BuyingDAOCoinCreatorPublicKey),
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		QuantityToBuyInBaseUnits:                  txnData.QuantityToBuyInBaseUnits,
+		BlockHeight:                               blockHeight,
+	}
 }

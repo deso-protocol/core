@@ -1469,12 +1469,12 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 // -----------------------------------
 
 type DAOCoinLimitOrderEntry struct {
-	// TransactorPKID is the pkid of the user who created this order.
+	// TransactorPKID is the PKID of the user who created this order.
 	TransactorPKID *PKID
-	// The PublicKey of the coin that we're going to buy
-	BuyingDAOCoinCreatorPublicKey *PublicKey
-	// The PublicKey of the coin that we're going to sell
-	SellingDAOCoinCreatorPublicKey *PublicKey
+	// The PKID of the coin that we're going to buy
+	BuyingDAOCoinCreatorPKID *PKID
+	// The PKID of the coin that we're going to sell
+	SellingDAOCoinCreatorPKID *PKID
 	// ScaledExchangeRateCoinsToSellPerCoinToBuy specifies how many of the coins
 	// associated with SellingDAOCoinCreatorPKID we need to convert in order
 	// to get one BuyingDAOCoinCreatorPKID. For example, if this value was
@@ -1532,8 +1532,8 @@ func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data := append([]byte{}, order.TransactorPKID.Encode()...)
-	data = append(data, order.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
-	data = append(data, order.SellingDAOCoinCreatorPublicKey.ToBytes()...)
+	data = append(data, order.BuyingDAOCoinCreatorPKID.Encode()...)
+	data = append(data, order.SellingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(order.QuantityToBuyInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
@@ -1555,16 +1555,16 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading TransactorPKID: %v", err)
 	}
 
-	// Parse BuyingDAOCoinCreatorPublicKey
-	ret.BuyingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
+	// Parse BuyingDAOCoinCreatorPKID
+	ret.BuyingDAOCoinCreatorPKID, err = ReadPKID(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading BuyingDAOCoinCreatorPublicKey: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading BuyingDAOCoinCreatorPKID: %v", err)
 	}
 
 	// Parse SellingDAOCoinCreatorPublicKey
-	ret.SellingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
+	ret.SellingDAOCoinCreatorPKID, err = ReadPKID(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading SellingDAOCoinCreatorPublicKey: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
 	}
 
 	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
@@ -1592,21 +1592,6 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 
 	*order = ret
 	return nil
-}
-
-func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {
-	// Convert both order entries to bytes and compare bytes.
-	orderBytes, err := order.ToBytes()
-	if err != nil {
-		return false, err
-	}
-
-	otherBytes, err := other.ToBytes()
-	if err != nil {
-		return false, err
-	}
-
-	return bytes.Equal(orderBytes, otherBytes), nil
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {
@@ -1710,16 +1695,16 @@ func ComputeBaseUnitsToSellUint256(
 
 type DAOCoinLimitOrderMapKey struct {
 	TransactorPKID                            PKID
-	BuyingDAOCoinCreatorPublicKey             PublicKey
-	SellingDAOCoinCreatorPublicKey            PublicKey
+	BuyingDAOCoinCreatorPKID                  PKID
+	SellingDAOCoinCreatorPKID                 PKID
 	ScaledExchangeRateCoinsToSellPerCoinToBuy uint256.Int
 }
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	return DAOCoinLimitOrderMapKey{
 		TransactorPKID:                            *order.TransactorPKID.NewPKID(),
-		BuyingDAOCoinCreatorPublicKey:             *order.BuyingDAOCoinCreatorPublicKey,
-		SellingDAOCoinCreatorPublicKey:            *order.SellingDAOCoinCreatorPublicKey,
+		BuyingDAOCoinCreatorPKID:                  *order.BuyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID:                 *order.SellingDAOCoinCreatorPKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: *order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 	}
 }

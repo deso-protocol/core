@@ -3173,8 +3173,14 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		}
 
 		// Construct requested order
-		requestedOrder := metadata.ToEntry(
-			utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID, bc.blockTip().Height+1)
+		requestedOrder := &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
+			BuyingDAOCoinCreatorPKID:                  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			SellingDAOCoinCreatorPKID:                 utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			QuantityToBuyInBaseUnits:                  metadata.QuantityToBuyInBaseUnits,
+			BlockHeight:                               bc.blockTip().Height + 1,
+		}
 
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 		desoNanosToConsumeMap := make(map[PKID]uint64)
@@ -4236,8 +4242,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			// Construct requested order
 			requestedOrder := &DAOCoinLimitOrderEntry{
 				TransactorPKID:                            transactorPKIDEntry.PKID,
-				BuyingDAOCoinCreatorPublicKey:             NewPublicKey(buyCoinPKIDEntry.PublicKey),
-				SellingDAOCoinCreatorPublicKey:            NewPublicKey(sellCoinPKIDEntry.PublicKey),
+				BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
+				SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
 				ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 				QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
 				BlockHeight:                               bc.blockTip().Height + 1,
@@ -4278,10 +4284,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					break
 				}
 				for _, order := range matchingOrderEntries {
-					sellingDAOCoinCreatorPKID := utxoView.GetPKIDForPublicKey(order.SellingDAOCoinCreatorPublicKey.ToBytes())
-
 					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
-						order.TransactorPKID, sellingDAOCoinCreatorPKID.PKID, true)
+						order.TransactorPKID, order.SellingDAOCoinCreatorPKID, true)
 
 					if balanceEntry != nil && !balanceEntry.isDeleted &&
 						!balanceEntry.BalanceNanos.Lt(order.QuantityToBuyInBaseUnits) {
