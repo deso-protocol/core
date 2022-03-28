@@ -3203,8 +3203,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
 
-				orderCost, err := ComputeBaseUnitsToSellUint256(
-					order.ScaledExchangeRateCoinsToSellPerCoinToBuy, order.QuantityToBuyInBaseUnits)
+				orderCost, err := order.BaseUnitsToSellUint256()
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 				}
@@ -4307,8 +4306,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 							}
 							requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt()
 						} else {
-							nanosToFulfillOrder, err = ComputeBaseUnitsToSellUint256(
-								order.ScaledExchangeRateCoinsToSellPerCoinToBuy, order.QuantityToBuyInBaseUnits)
+							nanosToFulfillOrder, err = order.BaseUnitsToSellUint256()
 							if err != nil {
 								// TODO: confirm error message.
 								return 0, 0, 0, 0,

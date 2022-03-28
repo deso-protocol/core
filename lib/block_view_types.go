@@ -1660,7 +1660,7 @@ func ComputeBaseUnitsToSellUint256(
 		quantityToBuyBaseUnits.ToBig())
 	if scaledTotalCostBigint.Cmp(MaxUint256.ToBig()) > 0 {
 		return nil, errors.Wrapf(
-			RuleErrorDAOCoinLimitOrderCostTimesQuantityOverflows,
+			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
 			"OrderCostUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
 				"quantityBaseUnits: %v",
 			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
@@ -1670,6 +1670,10 @@ func ComputeBaseUnitsToSellUint256(
 	// it could cause a money printer bug if there's a problem with it.
 	scaledTotalCost, _ := uint256.FromBig(scaledTotalCostBigint)
 	unscaledTotalCost := uint256.NewInt().Div(scaledTotalCost, OneUQ128x128)
+
+	// TODO: this could be because of overflow.
+	// Alternatively, this could be because exchange * quantity < 1 base units.
+	// We should differentiate between the two errors.
 	if unscaledTotalCost.IsZero() {
 		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}

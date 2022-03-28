@@ -250,7 +250,7 @@ const (
 	RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin            RuleError = "RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin"
 	RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile  RuleError = "RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile"
 	RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile RuleError = "RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile"
-	RuleErrorDAOCoinLimitOrderInvalidPrice                        RuleError = "RuleErrorDAOCoinLimitOrderInvalidPrice"
+	RuleErrorDAOCoinLimitOrderInvalidExchangeRate                 RuleError = "RuleErrorDAOCoinLimitOrderInvalidExchangeRate"
 	RuleErrorDAOCoinLimitOrderInvalidQuantity                     RuleError = "RuleErrorDAOCoinLimitOrderInvalidQuantity"
 	RuleErrorDAOCoinLimitOrderInvalidTotalCost                    RuleError = "RuleErrorDAOCoinLimitOrderInvalidTotalCost"
 	RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256           RuleError = "RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256"

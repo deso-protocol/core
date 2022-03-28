@@ -152,8 +152,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// ----- CUSTOM VALIDATIONS
 
-	// Extract the buyCoin and sellCoin PKIDs from the txn's public keys
-	// Note that if any of these are ZeroPKID, then GetPKIDForPublicKey will
+	// Extract the buyCoin and sellCoin PKIDs from the txn's public keys.
+	// Note that if any of these are ZeroPublicKey, then GetPKIDForPublicKey will
 	// return ZeroPKID back to us, which is what we want. Recall that ZeroPKID
 	// is how we signal that we're buying/selling DESO rather than a particular
 	// DAO coin.
@@ -202,7 +202,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Validate price > 0.
 	if !txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy.Gt(uint256.NewInt()) {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidPrice
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
 	// Validate quantity > 0.
@@ -212,14 +212,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Calculate order total amount to sell from price and quantity.
 	baseUnitsToSell, err := ComputeBaseUnitsToSellUint256(
-		txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		txMeta.QuantityToBuyInBaseUnits)
+		txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy, txMeta.QuantityToBuyInBaseUnits)
 	if err != nil {
 		return 0, 0, nil, err
 	}
 
-	// If selling $DESO, validate that order total cost is less
-	// than the max uint64.
+	// If selling $DESO, validate that order total cost is less than the max uint64.
 	if transactorIsSellingDESO && !baseUnitsToSell.IsUint64() {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
 	}
