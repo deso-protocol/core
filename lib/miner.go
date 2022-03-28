@@ -270,7 +270,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 
 func (desoMiner *DeSoMiner) _startThread(threadIndex uint32) {
 	for {
-		if desoMiner.BlockProducer.chain.syncingState {
+		if desoMiner.BlockProducer.chain.chainState() != SyncStateFullyCurrent {
 			time.Sleep(1 * time.Second)
 			continue
 		}
