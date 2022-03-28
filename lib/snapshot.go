@@ -331,10 +331,6 @@ var (
 	// This prefix saves the checksum bytes after a flush.
 	// 	<prefix [1]byte> -> <checksum bytes [33]byte>
 	_prefixSnapshotChecksum = []byte{2}
-
-	// This prefix saves the snapshot status that is saved periodically to ensure node can recover after sudden crash.
-	// 	<prefix [1]byte> -> <snapshot status bytes [20]byte>
-	_prefixSnapshotStatus = []byte{3}
 )
 
 type SnapshotEpochMetadata struct {
@@ -529,6 +525,12 @@ func (opChan *SnapshotOperationChannel) GetStatus() int32 {
 	return opChan.StateSemaphore
 }
 
+var (
+	// This prefix saves the snapshot status that is saved periodically to ensure node can recover after sudden crash.
+	// 	<prefix [1]byte> -> <snapshot status bytes [20]byte>
+	_prefixSnapshotStatus = []byte{0}
+)
+
 type SnapshotStatus struct {
 	// MainDBSemaphore and AncestralDBSemaphore are atomically accessed counter semaphores that will be
 	// used to control race conditions between main db and ancestral records. They basically manage the concurrency
@@ -538,13 +540,41 @@ type SnapshotStatus struct {
 	// MemoryLock is held whenever we modify the MainDBSemaphore or AncestralDBSemaphore.
 	MemoryLock sync.Mutex
 
-	db *badger.DB
+	// SnapshotStatus is called concurrently by the Server and Snapshot threads.
+	// And badger cannot handle concurrent writes to the database.
+	// To make sure this concurrency doesn't affect general performance, we use
+	// a custom badger.DB to save SnapshotStatus.
+	statusDb *badger.DB
 }
 
-func (status *SnapshotStatus) Initialize(db *badger.DB) error {
+func (status *SnapshotStatus) Initialize(dataDirectory string) error {
 	status.MainDBSemaphore = uint64(0)
 	status.AncestralDBSemaphore = uint64(0)
-	status.db = db
+
+	// Calling the database "status" because maybe we want to have more Status structs for other things.
+	statusDir := filepath.Join(GetBadgerDbPath(dataDirectory), "status")
+	statusOpts := PerformanceBadgerOptions(statusDir)
+	statusOpts.ValueDir = GetBadgerDbPath(statusDir)
+	statusDb, err := badger.Open(statusOpts)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	status.statusDb = statusDb
+	err = statusDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(_prefixSnapshotStatus)
+		if err != nil {
+			return err
+		}
+		statusBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		rr := bytes.NewReader(statusBytes)
+		return status.FromBytes(rr)
+	})
+	if err != nil && err != badger.ErrKeyNotFound {
+		glog.Fatalf("SnapshotStatus.Initialize: Problem reading snapshot status, err: (%v)", err)
+	}
 
 	return status.ReadStatus()
 }
@@ -572,7 +602,8 @@ func (status *SnapshotStatus) FromBytes(rr *bytes.Reader) error {
 }
 
 func (status *SnapshotStatus) SaveStatus() {
-	err := status.db.Update(func(txn *badger.Txn) error {
+
+	err := status.statusDb.Update(func(txn *badger.Txn) error {
 		return txn.Set(_prefixSnapshotStatus, status.ToBytes())
 	})
 	if err != nil {
@@ -581,7 +612,7 @@ func (status *SnapshotStatus) SaveStatus() {
 }
 
 func (status *SnapshotStatus) ReadStatus() error {
-	err := status.db.View(func(txn *badger.Txn) error {
+	err := status.statusDb.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(_prefixSnapshotStatus)
 		if err != nil {
 			return err
@@ -602,25 +633,25 @@ func (status *SnapshotStatus) ReadStatus() error {
 	return nil
 }
 
-// IncrementMainDbSemaphoreWithLock increments the MainDBSemaphore by one, it should be called with MemoryLock.
-func (status *SnapshotStatus) IncrementMainDbSemaphoreWithLock() {
+// IncrementMainDbSemaphoreLockRequired increments the MainDBSemaphore by one, it should be called with MemoryLock.
+func (status *SnapshotStatus) IncrementMainDbSemaphoreLockRequired() {
 	status.MainDBSemaphore++
 	status.SaveStatus()
 }
 
-// IncrementAncestralDBSemaphoreWithLock increments the AncestralDBSemaphore by one, it should be called with MemoryLock.
-func (status *SnapshotStatus) IncrementAncestralDBSemaphoreWithLock() {
+// IncrementAncestralDBSemaphoreLockRequired increments the AncestralDBSemaphore by one, it should be called with MemoryLock.
+func (status *SnapshotStatus) IncrementAncestralDBSemaphoreLockRequired() {
 	status.AncestralDBSemaphore++
 	status.SaveStatus()
 }
 
-// IsFlushingToMainDBWithLock checks if a flush to MainDB takes place. This should be called with MemoryLock.
-func (status *SnapshotStatus) IsFlushingToMainDBWithLock() bool {
+// IsFlushingToMainDBLockRequired checks if a flush to MainDB takes place. This should be called with MemoryLock.
+func (status *SnapshotStatus) IsFlushingToMainDBLockRequired() bool {
 	return status.MainDBSemaphore%2 == 1
 }
 
-// IsFlushingToAncestralDBWithLock checks if a flush to AncestralDB takes place. This should be called with MemoryLock.
-func (status *SnapshotStatus) IsFlushingToAncestralDBWithLock() bool {
+// IsFlushingToAncestralLockRequired checks if a flush to AncestralDB takes place. This should be called with MemoryLock.
+func (status *SnapshotStatus) IsFlushingToAncestralLockRequired() bool {
 	return status.AncestralDBSemaphore%2 == 1
 }
 
@@ -752,7 +783,7 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 
 	// TODO: If SnapshotStatus.Initialize fails, we should resync the node from the beginning of last snapshot epoch.
 	status := &SnapshotStatus{}
-	_ = status.Initialize(snapshotDb)
+	_ = status.Initialize(dataDirectory)
 
 	// Retrieve the snapshot epoch metadata from the snapshot db.
 	metadata := &SnapshotEpochMetadata{
@@ -897,8 +928,8 @@ func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
 	// Also signal that the ancestral db write started by increasing the ancestral semaphore.
 	if shouldIncrement {
 		snap.Status.MemoryLock.Lock()
-		snap.Status.IncrementMainDbSemaphoreWithLock()
-		snap.Status.IncrementAncestralDBSemaphoreWithLock()
+		snap.Status.IncrementMainDbSemaphoreLockRequired()
+		snap.Status.IncrementAncestralDBSemaphoreLockRequired()
 		snap.Status.MemoryLock.Unlock()
 	}
 	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Sending counter (%v) to the CounterChannel", snap.AncestralFlushCounter)
@@ -965,12 +996,12 @@ func (snap *Snapshot) PrepareAncestralRecordsFlush() {
 	snap.Status.MemoryLock.Lock()
 	// If at this point we're flushing to the main DB, i.e. the MainDBSemaphore is odd, then it means we're nesting
 	// calls to PrepareAncestralRecordsFlush()
-	if snap.Status.IsFlushingToMainDBWithLock() {
+	if snap.Status.IsFlushingToMainDBLockRequired() {
 		glog.Fatalf("Nested calls to PrepareAncestralRecordsFlush() " +
 			"detected. Make sure you call StartAncestralRecordsFlush before " +
 			"calling PrepareAncestralRecordsFlush() again")
 	}
-	snap.Status.IncrementMainDbSemaphoreWithLock()
+	snap.Status.IncrementMainDbSemaphoreLockRequired()
 	snap.Status.MemoryLock.Unlock()
 
 	// Add an entry to the ancestral memory.
@@ -1038,7 +1069,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 			"metadata blockHeight (%v)", blockHeight, snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight)
 		// Signal that the ancestral db write has finished by incrementing the semaphore.
 		snap.Status.MemoryLock.Lock()
-		snap.Status.IncrementAncestralDBSemaphoreWithLock()
+		snap.Status.IncrementAncestralDBSemaphoreLockRequired()
 		snap.Status.MemoryLock.Unlock()
 
 		snap.AncestralMemory.Shift()
@@ -1118,7 +1149,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 
 	// Signal that the ancestral db write has finished by incrementing the semaphore.
 	snap.Status.MemoryLock.Lock()
-	snap.Status.IncrementAncestralDBSemaphoreWithLock()
+	snap.Status.IncrementAncestralDBSemaphoreLockRequired()
 	snap.Status.MemoryLock.Unlock()
 
 	snap.AncestralMemory.Shift()
@@ -1131,11 +1162,12 @@ func (snap *Snapshot) DeleteAncestralRecords(height uint64) {
 	snap.timer.Start("Snapshot.DeleteAncestralRecords")
 	var prefix []byte
 	prefix = append(prefix, EncodeUint64(height)...)
-	err := snap.SnapshotDb.DropPrefix(prefix)
-	if err != nil {
-		glog.Errorf("Snapshot.DeleteAncestralRecords: Problem deleting ancestral records error (%v)", err)
-		return
-	}
+	// Don't delete.
+	//err := snap.SnapshotDb.DropPrefix(prefix)
+	//if err != nil {
+	//	glog.Errorf("Snapshot.DeleteAncestralRecords: Problem deleting ancestral records error (%v)", err)
+	//	return
+	//}
 	snap.timer.End("Snapshot.DeleteAncestralRecords")
 	snap.timer.Print("Snapshot.DeleteAncestralRecords")
 }
