@@ -1188,6 +1188,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// we've initialized the chain with seed transactions.
 	srv.blockchain.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
 
+	glog.Infof("Server._handleSnapshot: Global params (%v)", DbGetGlobalParamsEntry(srv.blockchain.db, srv.blockchain.snapshot))
+
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.finishedSyncing = true
 	srv.blockchain.syncingState = false
