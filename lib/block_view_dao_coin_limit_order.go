@@ -361,7 +361,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Track all orders that get filled for notification purposes.
-	filledOrders := []*DAOCoinLimitOrderEntry{}
+	filledOrders := []*FulfilledDAOCoinLimitOrder{}
 
 	matchingOrders := []*DAOCoinLimitOrderEntry{}
 	for _, matchingOrder := range prevMatchingOrders {
@@ -459,28 +459,31 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			}
 
+			originalQuantityToBuyInBaseUnits := matchingOrder.QuantityToBuyInBaseUnits
+
 			// Update matching order's quantity by deducting the number of dao coins
 			// sold from the order quantity.
 			matchingOrder.QuantityToBuyInBaseUnits = uint256.NewInt().Sub(
-				matchingOrder.QuantityToBuyInBaseUnits, sellCoinBaseUnitsSold)
+				originalQuantityToBuyInBaseUnits, sellCoinBaseUnitsSold)
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
 			// amount purchased by the matching order.
-			filledOrders = append(filledOrders, &DAOCoinLimitOrderEntry{
-				TransactorPKID:                            matchingOrder.TransactorPKID,
-				BuyingDAOCoinCreatorPKID:                  matchingOrder.BuyingDAOCoinCreatorPKID,
-				SellingDAOCoinCreatorPKID:                 matchingOrder.SellingDAOCoinCreatorPKID,
-				ScaledExchangeRateCoinsToSellPerCoinToBuy: matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-				QuantityToBuyInBaseUnits:                  sellCoinBaseUnitsSold,
-				BlockHeight:                               blockHeight,
+			filledOrders = append(filledOrders, &FulfilledDAOCoinLimitOrder{
+				TransactorPKID:                 matchingOrder.TransactorPKID,
+				BuyingDAOCoinCreatorPKID:       matchingOrder.BuyingDAOCoinCreatorPKID,
+				SellingDAOCoinCreatorPKID:      matchingOrder.SellingDAOCoinCreatorPKID,
+				BuyingDAOCoinQuantityPurchased: sellCoinBaseUnitsSold,
+				BuyingDAOCoinQuantityRequested: originalQuantityToBuyInBaseUnits,
+				SellingDAOCoinQuantitySold:     buyCoinBaseUnitsBought,
 			})
 
 			// Set the updated order in the db. It should replace the existing order.
 			bav._setDAOCoinLimitOrderEntryMappings(matchingOrder)
 
+			transactorOriginalQuantityToBuyInBaseUnits := transactorOrder.QuantityToBuyInBaseUnits
 			// Decrement the transactor's order and sanity-check that its new value is zero.
 			transactorOrder.QuantityToBuyInBaseUnits = uint256.NewInt().Sub(
-				transactorOrder.QuantityToBuyInBaseUnits, buyCoinBaseUnitsBought)
+				transactorOriginalQuantityToBuyInBaseUnits, buyCoinBaseUnitsBought)
 			if !transactorOrder.QuantityToBuyInBaseUnits.IsZero() {
 				return 0, 0, nil, fmt.Errorf(
 					"Sanity-check failed. transactorOrder.QuantityToBuyInBaseUnits %v is "+
@@ -490,13 +493,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
 			// amount purchased by the transactor.
-			filledOrders = append(filledOrders, &DAOCoinLimitOrderEntry{
-				TransactorPKID:                            transactorPKIDEntry.PKID,
-				BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
-				SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
-				ScaledExchangeRateCoinsToSellPerCoinToBuy: matchingOrder.InvertScaledExchangeRate(),
-				QuantityToBuyInBaseUnits:                  buyCoinBaseUnitsBought,
-				BlockHeight:                               blockHeight,
+			filledOrders = append(filledOrders, &FulfilledDAOCoinLimitOrder{
+				TransactorPKID:                 transactorPKIDEntry.PKID,
+				BuyingDAOCoinCreatorPKID:       buyCoinPKIDEntry.PKID,
+				SellingDAOCoinCreatorPKID:      sellCoinPKIDEntry.PKID,
+				BuyingDAOCoinQuantityPurchased: buyCoinBaseUnitsBought,
+				BuyingDAOCoinQuantityRequested: transactorOriginalQuantityToBuyInBaseUnits,
+				SellingDAOCoinQuantitySold:     sellCoinBaseUnitsSold,
 			})
 
 			// If we're here it means we fully covered the transactor's order
@@ -512,9 +515,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// actually the number of B units that the matching order is SELLING.
 			buyCoinBaseUnitsBought = matchingOrderTotalBuyCoinToSell
 
+			transactorOriginalQuanityToBuyInBaseUnits := transactorOrder.QuantityToBuyInBaseUnits
 			// Update transactor order's quantity.
 			transactorOrder.QuantityToBuyInBaseUnits = uint256.NewInt().Sub(
-				transactorOrder.QuantityToBuyInBaseUnits, matchingOrderTotalBuyCoinToSell)
+				transactorOriginalQuanityToBuyInBaseUnits, matchingOrderTotalBuyCoinToSell)
 
 			// Save the quantity of the matching order. This is the number of coins
 			// the transactor is selling.
@@ -525,24 +529,25 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
 			// amount purchased by the matching order.
-			filledOrders = append(filledOrders, &DAOCoinLimitOrderEntry{
-				TransactorPKID:                            matchingOrder.TransactorPKID,
-				BuyingDAOCoinCreatorPKID:                  matchingOrder.BuyingDAOCoinCreatorPKID,
-				SellingDAOCoinCreatorPKID:                 matchingOrder.SellingDAOCoinCreatorPKID,
-				ScaledExchangeRateCoinsToSellPerCoinToBuy: matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-				QuantityToBuyInBaseUnits:                  sellCoinBaseUnitsSold,
-				BlockHeight:                               blockHeight,
+			filledOrders = append(filledOrders, &FulfilledDAOCoinLimitOrder{
+				TransactorPKID:                 matchingOrder.TransactorPKID,
+				BuyingDAOCoinCreatorPKID:       matchingOrder.BuyingDAOCoinCreatorPKID,
+				SellingDAOCoinCreatorPKID:      matchingOrder.SellingDAOCoinCreatorPKID,
+				BuyingDAOCoinQuantityPurchased: sellCoinBaseUnitsSold,
+				// We filled the whole order so BuyingCoinQuantityPurchased = BuyingCoinQuantityRequested
+				BuyingDAOCoinQuantityRequested: sellCoinBaseUnitsSold,
+				SellingDAOCoinQuantitySold:     buyCoinBaseUnitsBought,
 			})
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
 			// amount purchased by the transactor.
-			filledOrders = append(filledOrders, &DAOCoinLimitOrderEntry{
-				TransactorPKID:                            transactorPKIDEntry.PKID,
-				BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
-				SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
-				ScaledExchangeRateCoinsToSellPerCoinToBuy: matchingOrder.InvertScaledExchangeRate(),
-				QuantityToBuyInBaseUnits:                  buyCoinBaseUnitsBought,
-				BlockHeight:                               blockHeight,
+			filledOrders = append(filledOrders, &FulfilledDAOCoinLimitOrder{
+				TransactorPKID:                 transactorPKIDEntry.PKID,
+				BuyingDAOCoinCreatorPKID:       buyCoinPKIDEntry.PKID,
+				SellingDAOCoinCreatorPKID:      sellCoinPKIDEntry.PKID,
+				BuyingDAOCoinQuantityPurchased: buyCoinBaseUnitsBought,
+				BuyingDAOCoinQuantityRequested: transactorOriginalQuanityToBuyInBaseUnits,
+				SellingDAOCoinQuantitySold:     sellCoinBaseUnitsSold,
 			})
 			// In the case where the transactor and matching order's quantities were
 			// equal to each other, mark transactor's order as complete so that this
@@ -801,7 +806,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		PrevBalanceEntries:                   prevBalances,
 		PrevMatchingOrders:                   prevMatchingOrders,
 		SpentUtxoEntries:                     spentUtxoEntries,
-		FilledDAOCoinLimitOrders:             filledOrders,
+		FulfilledDAOCoinLimitOrders:          filledOrders,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
