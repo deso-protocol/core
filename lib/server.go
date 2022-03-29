@@ -1115,7 +1115,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// and see what's left to do.
 
 	var completedPrefixes [][]byte
-	for _, prefix := range StatePrefixes.StatePrefixesList {
+	for ii, prefix := range StatePrefixes.StatePrefixesList {
 		completed := false
 		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
@@ -1125,8 +1125,15 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			}
 		}
 		if !completed {
-			glog.Infof("Server._handleSnapshot: completed: prefixes (%v)", completedPrefixes)
-			glog.Infof("srv._handleSnapshot: not completed, calling GetSnapshot, prefix (%v)", prefix)
+			glog.Infof(CLog(Magenta, fmt.Sprintf("_handleSnapshot: currently syncing prefix (%v)", prefix)))
+			glog.Infof(CLog(Magenta, fmt.Sprintf("_handleSnapshot: completed prefixes (%v)", completedPrefixes)))
+			var notStartedPrefixes [][]byte
+			for jj := ii + 1; jj < len(StatePrefixes.StatePrefixesList); jj++ {
+				notStartedPrefixes = append(notStartedPrefixes, StatePrefixes.StatePrefixesList[jj])
+			}
+			if len(notStartedPrefixes) > 0 {
+				glog.Infof("_handleSnapshot: remaining prefixes (%v)", notStartedPrefixes)
+			}
 			srv.GetSnapshot(pp)
 			return
 		}
@@ -1579,7 +1586,7 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 }
 
 func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
-	glog.Infof(CLog(Green, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
+	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)))
 
 	srv.timer.Start("Server._handleBlock: General")
@@ -1641,18 +1648,18 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	// Only verify signatures for recent blocks.
 	var isOrphan bool
 	if srv.blockchain.isSyncing() {
-		glog.V(1).Infof("Server._handleBlock: Processing block %v WITHOUT "+
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)
+			blk, srv.blockchain.chainState(), pp)))
 		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, false)
 
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
 		// ChainLock, which is what Bitcoin Core does.
-		glog.V(1).Infof("Server._handleBlock: Processing block %v WITH "+
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITH "+
 			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)
+			blk, srv.blockchain.chainState(), pp)))
 		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, true)
 	}
 

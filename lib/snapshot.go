@@ -226,16 +226,16 @@ func (snap *Snapshot) Run() {
 		operation := snap.OperationChannel.DequeueOperationStateless()
 		switch operation.operationType {
 		case SnapshotOperationFlush:
-			glog.V(1).Infof("Snapshot.Run: Flushing ancestral records with counter")
+			glog.V(2).Infof("Snapshot.Run: Flushing ancestral records with counter")
 			snap.FlushAncestralRecords()
 
 		case SnapshotOperationProcessBlock:
-			glog.V(1).Infof("Snapshot.Run: Getting into the process block with height (%v)",
+			glog.V(2).Infof("Snapshot.Run: Getting into the process block with height (%v)",
 				operation.blockNode.Height)
 			snap.SnapshotProcessBlock(operation.blockNode)
 
 		case SnapshotOperationProcessChunk:
-			glog.Infof("Snapshot.Run: Number of operations in the operation channel (%v)",
+			glog.V(1).Infof("Snapshot.Run: Number of operations in the operation channel (%v)",
 				snap.OperationChannel.GetStatus())
 			if err := snap.SetSnapshotChunk(operation.mainDb, operation.mainDbMutex, operation.snapshotChunk); err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
@@ -256,7 +256,7 @@ func (snap *Snapshot) Run() {
 			if err != nil {
 				glog.Errorf("Snapshot.Run: Problem getting checksum bytes (%v)", err)
 			}
-			glog.V(1).Infof("Snapshot.Run: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
+			glog.V(2).Infof("Snapshot.Run: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
 
 		case SnapshotOperationExit:
 			if err := snap.Checksum.Wait(); err != nil {
@@ -346,10 +346,34 @@ func (snap *Snapshot) RemoveChecksumBytes(bytes []byte) {
 // WaitForAllOperationsToFinish will busy-wait for the snapshot channel to process all
 // current operations. Spinlocks are undesired but it's the easiest solution in this case,
 func (snap *Snapshot) WaitForAllOperationsToFinish() {
+	// Define some helper variables so that the node prints nice logs.
+	initialLen := snap.OperationChannel.GetStatus()
+	printMap := make(map[int]bool)
+	for ii := 1; ii <= 10; ii++ {
+		printMap[ii] = false
+	}
+	printProgress := func(currentLen int32) {
+		div := int(initialLen / currentLen)
+		if !printMap[div] {
+			progress := ""
+			for ii := 1; ii <= 10; ii++ {
+				if ii <= div {
+					progress += "⬛"
+				} else {
+					progress += "⬜"
+				}
+			}
+			glog.Infof(CLog(Magenta, fmt.Sprintf("Snapshot.WaitForAllOperationsToFinish: finishing "+
+				"snapshot operations progress: (%v) | (%v)%", progress, div)))
+			printMap[div] = true
+		}
+	}
+
 	// FIXME: Spin waiting is bad
 	for {
 		operationChannelStatus := snap.OperationChannel.GetStatus()
 		if operationChannelStatus > 0 {
+			printProgress(operationChannelStatus)
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
@@ -1691,6 +1715,7 @@ var (
 	Magenta = color.New(color.FgHiMagenta)
 	Yellow  = color.New(color.FgYellow)
 	Green   = color.New(color.FgGreen)
+	Blue    = color.New(color.FgHiBlue)
 )
 
 func CLog(c *color.Color, str string) string {

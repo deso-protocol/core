@@ -774,7 +774,6 @@ func (pp *Peer) IsOutbound() bool {
 
 func (pp *Peer) QueueMessage(desoMessage DeSoMessage) {
 	// If the peer is disconnected, don't queue anything.
-	glog.Infof("QueueMessage: connected (%v)", pp.Connected())
 	if !pp.Connected() {
 		return
 	}
