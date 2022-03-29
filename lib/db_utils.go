@@ -6308,7 +6308,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 
 	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityToBuy.GtUint64(0); iterator.Next() {
 		// If picking up from where you left off, skip the first order which
-		// has already been included.
+		// has already been processed previously.
 		if len(startKey) != 0 && bytes.Equal(key, startKey) {
 			startKey = nil
 			continue
