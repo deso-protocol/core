@@ -323,10 +323,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 		// Update quantity to add that of the previous order at this level.
 		transactorOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Add(
-			transactorOrder.QuantityToBuyInBaseUnits, prevTransactorOrder.QuantityToBuyInBaseUnits)
+			transactorOrder.QuantityToBuyInBaseUnits,
+			prevTransactorOrder.QuantityToBuyInBaseUnits)
 
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity:")
+			return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 		}
 	}
 
@@ -475,7 +476,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				originalQuantityToBuyInBaseUnits, sellCoinBaseUnitsSold)
 
 			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity:")
+				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 			}
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
@@ -498,7 +499,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				transactorOriginalQuantityToBuyInBaseUnits, buyCoinBaseUnitsBought)
 
 			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity:")
+				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 			}
 
 			if !transactorOrder.QuantityToBuyInBaseUnits.IsZero() {
@@ -538,7 +539,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				transactorOriginalQuanityToBuyInBaseUnits, matchingOrderTotalBuyCoinToSell)
 
 			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity:")
+				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 			}
 
 			// Save the quantity of the matching order. This is the number of coins
@@ -925,7 +926,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 		if err != nil {
 			// This should never happen because of the check above.
-			return nil, errors.Wrapf(err, "Error updating order quantity:")
+			return nil, errors.Wrapf(err, "Error updating order quantity: ")
 		}
 	}
 

@@ -6354,7 +6354,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 		if err != nil {
 			// This should never happen as we validate the
 			// stored orders when they are submitted.
-			return nil, err
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
 		}
 
 		// Reduce requested buying quantity by matching order's selling quantity.
@@ -6362,8 +6362,13 @@ func DBGetMatchingDAOCoinLimitOrders(
 		if queryQuantityToBuy.Lt(matchingOrderQuantityToSell) {
 			queryQuantityToBuy = uint256.NewInt()
 		} else {
-			queryQuantityToBuy = uint256.NewInt().Sub(
+			queryQuantityToBuy, err = SafeUint256().Sub(
 				queryQuantityToBuy, matchingOrderQuantityToSell)
+
+			if err != nil {
+				// This should never happen with the check above.
+				return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
+			}
 		}
 
 		matchingOrders = append(matchingOrders, matchingOrder)
