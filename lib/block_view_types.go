@@ -1703,8 +1703,8 @@ type DAOCoinLimitOrderMapKey struct {
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	return DAOCoinLimitOrderMapKey{
 		TransactorPKID:                            *order.TransactorPKID.NewPKID(),
-		BuyingDAOCoinCreatorPKID:                  *order.BuyingDAOCoinCreatorPKID,
-		SellingDAOCoinCreatorPKID:                 *order.SellingDAOCoinCreatorPKID,
+		BuyingDAOCoinCreatorPKID:                  *order.BuyingDAOCoinCreatorPKID.NewPKID(),
+		SellingDAOCoinCreatorPKID:                 *order.SellingDAOCoinCreatorPKID.NewPKID(),
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: *order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 	}
 }

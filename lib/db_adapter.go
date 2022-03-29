@@ -46,9 +46,7 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 	return DBGetAllDAOCoinLimitOrders(adapter.badgerDb)
 }
 
-func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
-	buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-
+func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 	var orders []*DAOCoinLimitOrderEntry
 	var err error
 
