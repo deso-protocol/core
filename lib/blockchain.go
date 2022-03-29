@@ -597,7 +597,7 @@ func (bc *Blockchain) _initChain() error {
 // NewBlockchain returns a new blockchain object. It initializes some in-memory
 // data structures by reading from the db. It also initializes the db if it hasn't
 // been initialized in the past. This function should only be called once per
-// db, and one should never run two blockhain objects over the same db at the same
+// db, and one should never run two blockchain objects over the same db at the same
 // time as they will likely step on each other and become inconsistent.
 func NewBlockchain(
 	trustedBlockProducerPublicKeyStrs []string,

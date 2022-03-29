@@ -19,6 +19,7 @@ require (
 	github.com/dgraph-io/badger/v3 v3.2103.0
 	github.com/dgraph-io/ristretto v0.1.0
 	github.com/ethereum/go-ethereum v1.9.25
+	github.com/fatih/color v1.13.0 // indirect
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-pg/pg/v10 v10.10.0
 	github.com/gobuffalo/packr v1.30.1

@@ -693,10 +693,10 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 }
 
 func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
-	glog.Infof("Received header bundle with %v headers "+
+	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
 		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, pp.StartingBlockHeight())
+		srv.blockchain.headerTip().Header.Height, pp.StartingBlockHeight())))
 
 	// Start by processing all of the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
@@ -820,7 +820,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.SnapshotBlockHeightPeriod)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
 					SnapshotBlockHeight:       expectedSnapshotHeight,
 					FirstSnapshotBlockHeight:  expectedSnapshotHeight,
@@ -832,7 +832,10 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.
-				srv.blockchain.snapshot.Checksum.Initialize()
+				srv.snapshot.Checksum.ResetChecksum()
+				if err := srv.snapshot.Checksum.SaveChecksum(); err != nil {
+					glog.Errorf("Server._handleHeaderBundle: Problem saving snapshot to database, error (%v)", err)
+				}
 
 				// Start a timer for hyper sync. This keeps track of how long hyper sync takes in total.
 				srv.timer.Start("HyperSync")
@@ -1080,7 +1083,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 		// Process the DBEntries from the msg and add them to the db.
 		srv.timer.Start("Server._handleSnapshot Process Snapshot")
-		srv.blockchain.snapshot.ProcessSnapshotChunk(srv.blockchain.db, dbChunk)
+		srv.snapshot.ProcessSnapshotChunk(srv.blockchain.db, &srv.blockchain.ChainLock, dbChunk)
 		srv.timer.End("Server._handleSnapshot Process Snapshot")
 	}
 
@@ -1131,7 +1134,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 
 	// Wait for the snapshot thread to process all operations and print the checksum.
-	srv.blockchain.snapshot.WaitForAllOperationsToFinish()
+	srv.snapshot.WaitForAllOperationsToFinish()
 
 	// If we get to this point it means we synced all db prefixes, therefore finishing hyper sync.
 	// Do some logging.
@@ -1142,7 +1145,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.Print("Server._handleSnapshot prefix progress")
 	srv.timer.Print("Server._handleSnapshot Main")
 	srv.timer.Print("HyperSync")
-	srv.blockchain.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
+	srv.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
 	glog.Infof("Server._handleSnapshot: metadata checksum: (%v)", srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)
 
 	glog.Infof("Best header chain %v best block chain %v",
@@ -1150,7 +1153,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// Verify that the state checksum matches the one in HyperSyncProgress snapshot metadata.
 	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.
-	checksumBytes, err := srv.blockchain.snapshot.Checksum.ToBytes()
+	checksumBytes, err := srv.snapshot.Checksum.ToBytes()
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem getting checksum bytes, error (%v)", err)
 	}
@@ -1172,13 +1175,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
 			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
 			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
-			err := PutHeightHashToNodeInfoWithTxn(txn, srv.blockchain.snapshot, curretNode, false /*bitcoinNodes*/)
+			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/)
 			if err != nil {
 				return err
 			}
 		}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err := PutBestHashWithTxn(txn, srv.blockchain.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock)
+		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock)
 		return err
 	})
 	if err != nil {
@@ -1186,7 +1189,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
-	srv.blockchain.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
+	srv.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.finishedSyncing = true
@@ -1195,9 +1198,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// Update the snapshot epoch metadata in the snapshot DB.
 	for ii := 0; ii < MetadataRetryCount; ii++ {
+		srv.snapshot.SnapshotDbMutex.Lock()
 		err = srv.snapshot.SnapshotDb.Update(func(txn *badger.Txn) error {
 			return txn.Set(_prefixLastEpochMetadata, srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
 		})
+		srv.snapshot.SnapshotDbMutex.Unlock()
 		if err != nil {
 			glog.Errorf("server._handleSnapshot: Problem setting snapshot epoch metadata in snapshot db, error (%v)", err)
 			time.Sleep(1 * time.Second)
@@ -1574,8 +1579,8 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 }
 
 func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
-	glog.Infof("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
-		blk.Header.Height, srv.blockchain.headerTip().Height, pp)
+	glog.Infof(CLog(Green, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
+		blk.Header.Height, srv.blockchain.headerTip().Height, pp)))
 
 	srv.timer.Start("Server._handleBlock: General")
 	// Pull out the header for easy access.
