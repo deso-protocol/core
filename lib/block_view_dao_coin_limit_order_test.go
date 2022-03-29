@@ -535,7 +535,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM1.CancelExistingOrder = false
 	}
 
-	// Scenario: submit and subsequently cancel part of open order.
+	// Scenario: submit and subsequently cancel part of open order. This cancels the whole order.
+	// Note: we thought about cancelling only part of the open order, but came to the conclusion
+	// that it is easier and cleaner if we just cancel the entire order regardless of what
+	// quantity the transactor specifies.
 	// m0 submits order buying 200 DAO coin nanos @ 0.1 $DESO / DAO coin.
 	// m0 cancels order buying 100 DAO coin nanos @ 0.1 $DESO / DAO coin.
 	{
@@ -563,40 +566,46 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Confirm 1 existing limit order from m0 with updated quantity of 100.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
-		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.Equal(len(orderEntries), 0)
 
 		// Reset metadataM0.
 		metadataM0.CancelExistingOrder = false
 	}
 
-	//// Scenario: m0 and m1 both submit open BID orders for the same price.
-	//{
-	//	// Confirm 1 existing limit order from m0.
-	//	// BID order for 100 DAO coin nanos @ 0.1 $DESO / DAO coin
-	//	orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	require.Equal(len(orderEntries), 1)
-	//	require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight)))
-	//
-	//	// m1 submits BID order for 200 DAO coins @ 0.1 $DESO / DAO coin.
-	//	err = metadataM1.UpdatePrice(NewFloat().SetFloat64(0.1))
-	//	require.NoError(err)
-	//	metadataM1.QuantityNanos = uint256.NewInt().SetUint64(200)
-	//	_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-	//
-	//	// Confirm 2 existing limit orders @ 0.1 $DESO / DAO coin.
-	//	// 1 from m0 with quantity 100.
-	//	// 1 from m1 with quantity 200.
-	//	orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-	//	require.NoError(err)
-	//	require.Equal(len(orderEntries), 2)
-	//
-	//	// m1's order is listed first bc his m1PKID < m0PKID and the key
-	//	// is identicial for both of these orders other than the PKID.
-	//	require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight)))
-	//	require.True(orderEntries[1].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight)))
-	//}
+	// Scenario: m0 and m1 both submit open orders buying and selling
+	// the same coins for the same price. Both orders are stored.
+	{
+		// Confirm no existing limit orders.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// m0 submits order buying 100 DAO coins @ 0.1 $DESO / DAO coin.
+		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(0.1)
+		metadataM0.QuantityToBuyInBaseUnits = uint256.NewInt().SetUint64(100)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		// Confirm 1 existing limit order from m0.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+
+		// m1 submits order buying 100 DAO coins @ 0.1 $DESO / DAO coin.
+		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(0.1)
+		metadataM1.QuantityToBuyInBaseUnits = uint256.NewInt().SetUint64(100)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Confirm 2 existing limit orders @ 0.1 $DESO / DAO coin.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// m1's order is listed first bc his m1PKID < m0PKID and the key
+		// is identicial for both of these orders other than the PKID.
+		require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
 	// TODO: maybe test trying to buy more DAO coins than were minted.
