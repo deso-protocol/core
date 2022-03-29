@@ -847,7 +847,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 			utxoOpsForTxn[operationIndex].Type)
 	}
 	txMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-	//operationData := utxoOpsForTxn[operationIndex]
+	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
 	// We sometimes have some extra AddUtxo operations we need to remove
@@ -861,8 +861,25 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		}
 	}
 
-	//transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
+	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
 
+	if operationData.PrevTransactorDAOCoinLimitOrderEntry != nil {
+		bav._setDAOCoinLimitOrderEntryMappings(operationData.PrevTransactorDAOCoinLimitOrderEntry)
+	}
+
+	if len(operationData.PrevBalanceEntries) != 0 {
+		for _, daoCoinPKIDToBalanceEntryMap := range operationData.PrevBalanceEntries {
+			for _, balanceEntry := range daoCoinPKIDToBalanceEntryMap {
+				bav._setDAOCoinBalanceEntryMappings(balanceEntry)
+			}
+		}
+	}
+
+	if len(operationData.PrevMatchingOrders) != 0 {
+		for _, prevMatchingOrder := range operationData.PrevMatchingOrders {
+			bav._setDAOCoinLimitOrderEntryMappings(prevMatchingOrder)
+		}
+	}
 	//// If buying DAO coins, revert the transactor's buying DAO coin balance entry.
 	//transactorIsBuyingDESO := reflect.DeepEqual(*txMeta.BuyingDAOCoinCreatorPublicKey, ZeroPublicKey)
 	//
