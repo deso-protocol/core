@@ -3093,8 +3093,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -3628,6 +3628,22 @@ type DAOCoinTxindexMetadata struct {
 	TransferRestrictionStatus string
 }
 
+type FilledOrderMetadata struct {
+	TransactorPublicKeyBase58Check            string
+	BuyingDAOCoinCreatorPublicKey             string
+	SellingDAOCoinCreatorPublicKey            string
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	QuantityPurchased                         *uint256.Int
+}
+
+type DAOCoinLimitOrderTxindexMetadata struct {
+	BuyingDAOCoinCreatorPublicKey             string
+	SellingDAOCoinCreatorPublicKey            string
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	QuantityToBuyInBaseUnits                  *uint256.Int
+	FilledOrdersMetadata                      []*FilledOrderMetadata
+}
+
 type UpdateProfileTxindexMetadata struct {
 	ProfilePublicKeyBase58Check string
 
@@ -3768,6 +3784,7 @@ type TransactionMetadata struct {
 	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
 	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
 	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata   *DAOCoinLimitOrderTxindexMetadata   `json:",omitempty"`
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
@@ -5799,7 +5816,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5926,7 +5943,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

@@ -395,7 +395,8 @@ type UtxoOperation struct {
 	PrevBalanceEntries map[PKID]map[PKID]*BalanceEntry
 	PrevMatchingOrders []*DAOCoinLimitOrderEntry
 	// TODO: I don't think we need this field.
-	SpentUtxoEntries []*UtxoEntry
+	SpentUtxoEntries         []*UtxoEntry
+	FilledDAOCoinLimitOrders []*DAOCoinLimitOrderEntry
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -1516,6 +1517,21 @@ type DAOCoinLimitOrderEntry struct {
 	BlockHeight uint32
 
 	isDeleted bool
+}
+
+// FIXME: Is this the correct way to invert the scaled exchange rate?
+func (order *DAOCoinLimitOrderEntry) InvertScaledExchangeRate() *uint256.Int {
+	inverted, overflowed := uint256.FromBig(
+		big.NewInt(0).
+			Div(
+				order.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig(),
+				OneUQ128x128.ToBig(),
+			),
+	)
+	if overflowed {
+		return nil
+	}
+	return inverted
 }
 
 func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {

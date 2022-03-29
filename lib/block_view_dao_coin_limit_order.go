@@ -65,8 +65,8 @@ func (bav *UtxoView) getAdjustedDAOCoinBalanceForUserInBaseUnits(
 	}
 
 	// Make a copy and return just to be safe
-	ret := transactorBalanceEntry.BalanceNanos
-	return adjustBalance(&ret, delta)
+	ret := transactorBalanceEntry.BalanceNanos.Clone()
+	return adjustBalance(ret, delta)
 }
 
 func (bav *UtxoView) balanceChange(
@@ -185,7 +185,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// If buying a DAO coin, validate buyCoinPKIDEntry exists and has a profile.
 	// Note that ZeroPKID indicates that we are buying/selling DESO.
-	transactorIsBuyingDESO := (*buyCoinPKIDEntry.PKID == ZeroPKID)
+	transactorIsBuyingDESO := *buyCoinPKIDEntry.PKID == ZeroPKID
 	if !transactorIsBuyingDESO {
 		profileEntry := bav.GetProfileEntryForPKID(buyCoinPKIDEntry.PKID)
 		if profileEntry == nil || profileEntry.isDeleted {
@@ -194,7 +194,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// If selling a DAO coin, validate sellCoinPKIDEntry exists and has a profile.
-	transactorIsSellingDESO := (*sellCoinPKIDEntry.PKID == ZeroPKID)
+	transactorIsSellingDESO := *sellCoinPKIDEntry.PKID == ZeroPKID
 	if !transactorIsSellingDESO {
 		profileEntry := bav.GetProfileEntryForPKID(sellCoinPKIDEntry.PKID)
 		if profileEntry == nil || profileEntry.isDeleted {
@@ -354,7 +354,15 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	//
 	// Fetch all the orders, and copy them over into a new list so that we can revert in
 	// the disconnect case.
-	prevMatchingOrders, _ := bav._getNextLimitOrdersToFill(transactorOrder, nil)
+	prevMatchingOrders, err := bav._getNextLimitOrdersToFill(transactorOrder, nil)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(
+			err, "Error getting next limit orders to fill: ")
+	}
+
+	// Track all orders that get filled for notification purposes.
+	filledOrders := []*DAOCoinLimitOrderEntry{}
+
 	matchingOrders := []*DAOCoinLimitOrderEntry{}
 	for _, matchingOrder := range prevMatchingOrders {
 		orderCopy, err := matchingOrder.Copy()
@@ -456,6 +464,17 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			matchingOrder.QuantityToBuyInBaseUnits = uint256.NewInt().Sub(
 				matchingOrder.QuantityToBuyInBaseUnits, sellCoinBaseUnitsSold)
 
+			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
+			// amount purchased by the matching order.
+			filledOrders = append(filledOrders, &DAOCoinLimitOrderEntry{
+				TransactorPKID:                            matchingOrder.TransactorPKID,
+				BuyingDAOCoinCreatorPKID:                  matchingOrder.BuyingDAOCoinCreatorPKID,
+				SellingDAOCoinCreatorPKID:                 matchingOrder.SellingDAOCoinCreatorPKID,
+				ScaledExchangeRateCoinsToSellPerCoinToBuy: matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+				QuantityToBuyInBaseUnits:                  sellCoinBaseUnitsSold,
+				BlockHeight:                               blockHeight,
+			})
+
 			// Set the updated order in the db. It should replace the existing order.
 			bav._setDAOCoinLimitOrderEntryMappings(matchingOrder)
 
@@ -468,6 +487,17 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 						"not zero. This should never happen %v",
 					transactorOrder.QuantityToBuyInBaseUnits, buyCoinBaseUnitsBought)
 			}
+
+			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
+			// amount purchased by the transactor.
+			filledOrders = append(filledOrders, &DAOCoinLimitOrderEntry{
+				TransactorPKID:                            transactorPKIDEntry.PKID,
+				BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
+				SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
+				ScaledExchangeRateCoinsToSellPerCoinToBuy: matchingOrder.InvertScaledExchangeRate(),
+				QuantityToBuyInBaseUnits:                  buyCoinBaseUnitsBought,
+				BlockHeight:                               blockHeight,
+			})
 
 			// If we're here it means we fully covered the transactor's order
 			// so we're done
@@ -493,6 +523,27 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Mark matching order for deletion.
 			bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
 
+			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
+			// amount purchased by the matching order.
+			filledOrders = append(filledOrders, &DAOCoinLimitOrderEntry{
+				TransactorPKID:                            matchingOrder.TransactorPKID,
+				BuyingDAOCoinCreatorPKID:                  matchingOrder.BuyingDAOCoinCreatorPKID,
+				SellingDAOCoinCreatorPKID:                 matchingOrder.SellingDAOCoinCreatorPKID,
+				ScaledExchangeRateCoinsToSellPerCoinToBuy: matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+				QuantityToBuyInBaseUnits:                  sellCoinBaseUnitsSold,
+				BlockHeight:                               blockHeight,
+			})
+
+			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
+			// amount purchased by the transactor.
+			filledOrders = append(filledOrders, &DAOCoinLimitOrderEntry{
+				TransactorPKID:                            transactorPKIDEntry.PKID,
+				BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
+				SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
+				ScaledExchangeRateCoinsToSellPerCoinToBuy: matchingOrder.InvertScaledExchangeRate(),
+				QuantityToBuyInBaseUnits:                  buyCoinBaseUnitsBought,
+				BlockHeight:                               blockHeight,
+			})
 			// In the case where the transactor and matching order's quantities were
 			// equal to each other, mark transactor's order as complete so that this
 			// is our last iteration of this loop.
@@ -559,11 +610,16 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 	// Iterate over all the UTXOs in the txn and spend them. As we spend each one,
 	// add the amount each account is allowed to spend to our map.
-	//
-	// FIXME: This map iteration NEEDS to be deterministic and sorted. If it's not then
-	// hypersync will fail.
 	spentUtxoEntries := []*UtxoEntry{}
-	for publicKey, matchingBidsInputs := range txMeta.MatchingBidsInputsMap {
+	publicKeys := []PublicKey{}
+	for publicKey := range txMeta.MatchingBidsInputsMap {
+		publicKeys = append(publicKeys, publicKey)
+	}
+	sort.Slice(publicKeys, func(ii, jj int) bool {
+		return bytes.Compare(publicKeys[ii].ToBytes(), publicKeys[jj].ToBytes()) > 0
+	})
+	for _, publicKey := range publicKeys {
+		matchingBidsInputs := txMeta.MatchingBidsInputsMap[publicKey]
 		// If no balance recorded so far, initialize to zero.
 		if _, exists := desoAllowedToSpendByPublicKey[publicKey]; !exists {
 			desoAllowedToSpendByPublicKey[publicKey] = 0
@@ -653,14 +709,24 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// by each coin that changed. The values will be incorrect for DESO, but
 	// that's OK because we don't need the balances for DESO in the disconnect
 	// logic because simply reverting the UTXOs will be sufficient.
-	//
-	// FIXME: This iteration needs to be deterministic in order to avoid
-	// breaking hypersync
-	for userPKIDIter, innerMap := range balanceDeltas {
-		for daoCoinPKIDIter, delta := range innerMap {
-			userPKID := userPKIDIter
+	userPKIDs := []PKID{}
+	for userPKIDIter := range balanceDeltas {
+		userPKID := userPKIDIter
+		userPKIDs = append(userPKIDs, userPKID)
+	}
+	sortedUserPKIDs := SortPKIDs(userPKIDs)
+	for _, userPKIDIter := range sortedUserPKIDs {
+		userPKID := userPKIDIter
+		innerMap := balanceDeltas[userPKID]
+		innerMapPKIDs := []PKID{}
+		for innerMapPKIDIter := range innerMap {
+			innerMapPKID := innerMapPKIDIter
+			innerMapPKIDs = append(innerMapPKIDs, innerMapPKID)
+		}
+		sortedInnerMapPKIDs := SortPKIDs(innerMapPKIDs)
+		for _, daoCoinPKIDIter := range sortedInnerMapPKIDs {
 			daoCoinPKID := daoCoinPKIDIter
-
+			delta := innerMap[daoCoinPKIDIter]
 			if daoCoinPKID == ZeroPKID {
 				// If this is DESO, add/subtract the amount to the amount
 				// we're allowed to spend. Check for overflow/underflow.
@@ -735,6 +801,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		PrevBalanceEntries:                   prevBalances,
 		PrevMatchingOrders:                   prevMatchingOrders,
 		SpentUtxoEntries:                     spentUtxoEntries,
+		FilledDAOCoinLimitOrders:             filledOrders,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
