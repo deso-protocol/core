@@ -6329,14 +6329,25 @@ func DBGetMatchingDAOCoinLimitOrders(
 			break
 		}
 
-		// Reduce requested quantity by matching order's quantity. Set to zero
-		// if this order covers how much we want to buy.
-		if queryQuantityToBuy.Cmp(matchingOrder.QuantityToBuyInBaseUnits) < 0 {
+		// To properly compare quantities, we need to compare the quantity
+		// that the input order is interested in buying to the quantity the
+		// matching order is interested in selling.
+		matchingOrderQuantityToSell, err := matchingOrder.BaseUnitsToSellUint256()
+		if err != nil {
+			// This should never happen as we validate the
+			// stored orders when they are submitted.
+			return nil, err
+		}
+
+		// Reduce requested buying quantity by matching order's selling quantity.
+		// Set to zero if this order covers how much we want to buy.
+		if queryQuantityToBuy.Lt(matchingOrderQuantityToSell) {
 			queryQuantityToBuy = uint256.NewInt()
 		} else {
 			queryQuantityToBuy = uint256.NewInt().Sub(
-				queryQuantityToBuy, matchingOrder.QuantityToBuyInBaseUnits)
+				queryQuantityToBuy, matchingOrderQuantityToSell)
 		}
+
 		matchingOrders = append(matchingOrders, matchingOrder)
 	}
 

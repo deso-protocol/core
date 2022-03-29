@@ -704,6 +704,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				prevBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(
 					&userPKID, &daoCoinPKID, true)
 				if prevBalanceEntry == nil || prevBalanceEntry.isDeleted {
+					// FIXME: this isn't a proper error to return.
+					// It's whatever was set above which is most likely nil.
 					return 0, 0, nil, err
 				}
 				newBalance := big.NewInt(0).Add(prevBalanceEntry.BalanceNanos.ToBig(), delta)
@@ -716,8 +718,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				}
 				// At this point we're certain that the new balance didn't underflow or
 				// overflow. Set it in the db without fear.
-
+				newBalanceUint256, _ := uint256.FromBig(newBalance)
 				newBalanceEntry := prevBalanceEntry.Copy()
+				newBalanceEntry.BalanceNanos = *newBalanceUint256
 				bav._setDAOCoinBalanceEntryMappings(newBalanceEntry)
 			}
 		}
@@ -741,9 +744,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 func (bav *UtxoView) _getNextLimitOrdersToFill(
 	transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) (
 	[]*DAOCoinLimitOrderEntry, error) {
-	// Calculate the inverse of the transactor's order's scaled price.
-	// The matching orders' prices have to be >= this price.
-
 	// Get matching limit order entries from database.
 	dbAdapter := DbAdapter{
 		badgerDb:   bav.Handle,
@@ -789,6 +789,8 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 			continue
 		}
 
+		// TODO: should we also validate that the price is better?
+
 		sortedMatchingOrders = append(sortedMatchingOrders, matchingOrder)
 	}
 
@@ -800,15 +802,31 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 	// Pull orders up to when the quantity is fulfilled or we run out of orders.
 	outputMatchingOrders := []*DAOCoinLimitOrderEntry{}
-	transactorOrderQuantity := transactorOrder.QuantityToBuyInBaseUnits
+	transactorOrderBuyingQuantity := transactorOrder.QuantityToBuyInBaseUnits
 
 	for _, matchingOrder := range sortedMatchingOrders {
 		outputMatchingOrders = append(outputMatchingOrders, matchingOrder)
-		transactorOrderQuantity = uint256.NewInt().Sub(transactorOrderQuantity, matchingOrder.QuantityToBuyInBaseUnits)
 
-		if transactorOrderQuantity.LtUint64(0) {
+		// To properly compare quantities, we need to compare the quantity
+		// that the transactor order is interested in buying to the quantity
+		// the matching order is interested in selling.
+		matchingOrderSellingQuantity, err := matchingOrder.BaseUnitsToSellUint256()
+		if err != nil {
+			// This should never happen as we validate the
+			// stored orders when they are submitted.
+			return nil, err
+		}
+
+		// Break once the transactor's buying quantity is <= this matching
+		// order's selling quantity or their buying quantity is <= 0.
+		if transactorOrderBuyingQuantity.Eq(matchingOrderSellingQuantity) ||
+			transactorOrderBuyingQuantity.Lt(matchingOrderSellingQuantity) ||
+			transactorOrderBuyingQuantity.LtUint64(1) {
 			break
 		}
+
+		transactorOrderBuyingQuantity = uint256.NewInt().Sub(
+			transactorOrderBuyingQuantity, matchingOrderSellingQuantity)
 	}
 
 	return outputMatchingOrders, nil

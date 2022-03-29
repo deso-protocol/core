@@ -374,14 +374,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		updatedM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
 		updatedM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
 
-		// Calculate total cost of order to compare to changes in $DESO.
-		totalOrderCost256, err := orderEntryM1.BaseUnitsToSellUint256()
-		totalOrderCost := totalOrderCost256.Uint64()
-		require.NoError(err)
-
 		// m0's BID order is fulfilled so his DESO balance decreases and his DAO coin balance increases.
 		require.Equal(
-			originalM0DESOBalance-totalOrderCost,
+			originalM0DESOBalance-desoQuantityChange.Uint64(),
 			updatedM0DESOBalance)
 
 		require.Equal(
@@ -390,7 +385,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m1's ASK order is fulfilled so his DESO balance increases and his DAO coin balance decreases.
 		require.Equal(
-			originalM1DESOBalance+totalOrderCost-uint64(3), // TODO: calculate gas fee instead of hard-coding.
+			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(3), // TODO: calculate gas fee instead of hard-coding.
 			updatedM1DESOBalance)
 
 		require.Equal(
