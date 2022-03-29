@@ -667,7 +667,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				return 0, 0, nil, RuleErrorInputSpendsImmatureBlockReward
 			}
 
-			desoAllowedToSpendByPublicKey[publicKey] += utxoEntry.AmountNanos
+			desoAllowedToSpendByPublicKey[publicKey], err = SafeUint64().Add(
+				desoAllowedToSpendByPublicKey[publicKey], utxoEntry.AmountNanos)
+
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
+			}
 
 			// Make sure we spend the UTXO so that the bidder can't reuse it.
 			utxoOp, err := bav._spendUtxo(&utxoKey)
