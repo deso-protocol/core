@@ -74,6 +74,10 @@ func (node *Node) Start() {
 		}
 	}
 
+	if node.Config.TimeEvents {
+		lib.Mode = lib.EnableTimer
+	}
+
 	// Setup statsd
 	statsdClient, err := statsd.New(fmt.Sprintf("%s:%d", os.Getenv("DD_AGENT_HOST"), 8125))
 	if err != nil {

@@ -1488,7 +1488,11 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, chunk []*DBEntry) erro
 // Timer
 // -------------------------------------------------------------------------------------
 
+// Mode determines if Timer will be used by the node. Set --time-events=true to enable timing.
+var Mode = DisableTimer
+
 // Timer is used for convenience to time certain events during development.
+// NOTE: Timer uses maps and so doesn't support concurrent calls to Start() or End().
 type Timer struct {
 	totalElapsedTimes map[string]float64
 	lastTimes         map[string]time.Time
@@ -1499,7 +1503,7 @@ func (t *Timer) Initialize() {
 	t.totalElapsedTimes = make(map[string]float64)
 	t.lastTimes = make(map[string]time.Time)
 	// Comment this to stop timing
-	t.mode = EnableTimer
+	t.mode = Mode
 }
 
 func (t *Timer) Start(eventName string) {

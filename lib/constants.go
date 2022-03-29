@@ -60,7 +60,8 @@ const (
 	MetadataRetryCount int = 5
 
 	// EnableTimer
-	EnableTimer = true
+	EnableTimer  = true
+	DisableTimer = false
 )
 
 type NetworkType uint64
