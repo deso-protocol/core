@@ -3238,8 +3238,13 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateDAOCoinLimitOrderTxn: order cost overflows $DESO")
 					}
 
-					// TODO: check for overflow
-					desoNanosToConsumeMap[*matchingOrder.TransactorPKID] += desoNanosToConsume.Uint64()
+					desoNanosToConsumeMap[*matchingOrder.TransactorPKID], err = SafeUint64().Add(
+						desoNanosToConsumeMap[*matchingOrder.TransactorPKID],
+						desoNanosToConsume.Uint64())
+
+					if err != nil {
+						return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
+					}
 				}
 				lastSeenOrder = matchingOrder
 			}

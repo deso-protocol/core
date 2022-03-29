@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
+	"math"
 	"math/big"
 )
 
@@ -263,4 +264,44 @@ func (safeUint256 *_SafeUint256) Div(x *uint256.Int, y *uint256.Int) (*uint256.I
 	}
 
 	return uint256.NewInt().Div(x, y), nil
+}
+
+// SafeUint64 allows for arithmetic operations that error
+// if an overflow or underflow situation is detected.
+type _SafeUint64 struct{}
+
+func SafeUint64() *_SafeUint64 {
+	return &_SafeUint64{}
+}
+
+func (safeUint64 *_SafeUint64) Add(x uint64, y uint64) (uint64, error) {
+	if uint64(math.MaxUint64)-y < x {
+		return 0, fmt.Errorf("addition overflows uint64")
+	}
+
+	return x + y, nil
+}
+
+func (safeUint64 *_SafeUint64) Sub(x uint64, y uint64) (uint64, error) {
+	if x < y {
+		return 0, fmt.Errorf("subtraction underflows uint64")
+	}
+
+	return x - y, nil
+}
+
+func (safeUint64 *_SafeUint64) Mul(x uint64, y uint64) (uint64, error) {
+	if uint64(math.MaxUint64)/y < x {
+		return 0, fmt.Errorf("multiplication overflows uint64")
+	}
+
+	return x * y, nil
+}
+
+func (safeUint64 *_SafeUint64) Div(x uint64, y uint64) (uint64, error) {
+	if y == 0 {
+		return 0, fmt.Errorf("division by zero")
+	}
+
+	return x / y, nil
 }
