@@ -2579,7 +2579,7 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 		Where("transactor_pkid = ?", inputOrder.TransactorPKID).
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
-		Where("scaled_exchange_rate_coins_to_sell_per_coin_to_buy >= ?", Uint256ToLeftPaddedHex(inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy)).
+		Where("scaled_exchange_rate_coins_to_sell_per_coin_to_buy = ?", Uint256ToLeftPaddedHex(inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy)).
 		Order("block_height ASC").
 		Order("quantity_to_buy_in_base_units ASC").
 		Select()

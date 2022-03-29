@@ -290,19 +290,26 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			baseUnitsToSell.Hex())
 	}
 
-	// See if we have an existing limit order at this price and set up
-	// a variable for it if we do. Save the previous version in case
+	// See if we have an existing limit order at this price and in this block
+	// and set up a variable for it if we do. Save the previous version in case
 	// we need to disconnect. We do this because we don't want to create a
 	// fresh order if one already exists. Rather, in this case we'll just
 	// modify the existing order.
 	var prevTransactorOrder *DAOCoinLimitOrderEntry
 
-	if len(existingTransactorOrderss) > 0 {
-		prevTransactorOrder, err = existingTransactorOrderss[0].Copy()
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(
-				err, "Error copying order entry to generate prev order: %v",
-				spew.Sdump(existingTransactorOrderss))
+	for _, existingTransactorOrder := range existingTransactorOrderss {
+		// The existing transactor orders are across any block height.
+		// We would only want to update a order if it occurs at the
+		// current block height. Otherwise, we would be messing up
+		// the FIFO ordering of the older order being deleted instead
+		// of resolved first.
+		if existingTransactorOrder.BlockHeight == blockHeight {
+			prevTransactorOrder, err = existingTransactorOrder.Copy()
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(
+					err, "Error copying order entry to generate prev order: %v",
+					spew.Sdump(existingTransactorOrderss))
+			}
 		}
 	}
 
