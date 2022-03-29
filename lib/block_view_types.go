@@ -395,7 +395,8 @@ type UtxoOperation struct {
 	PrevBalanceEntries map[PKID]map[PKID]*BalanceEntry
 	PrevMatchingOrders []*DAOCoinLimitOrderEntry
 	// TODO: I don't think we need this field.
-	SpentUtxoEntries []*UtxoEntry
+	SpentUtxoEntries            []*UtxoEntry
+	FulfilledDAOCoinLimitOrders []*FulfilledDAOCoinLimitOrder
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -1516,6 +1517,17 @@ type DAOCoinLimitOrderEntry struct {
 	BlockHeight uint32
 
 	isDeleted bool
+}
+
+// FulfilledDAOCoinLimitOrder only exists to support understanding what orders were
+// fulfilled when connecting a DAO Coin Limit Order Txn
+type FulfilledDAOCoinLimitOrder struct {
+	TransactorPKID                 *PKID
+	BuyingDAOCoinCreatorPKID       *PKID
+	SellingDAOCoinCreatorPKID      *PKID
+	BuyingDAOCoinQuantityPurchased *uint256.Int
+	BuyingDAOCoinQuantityRequested *uint256.Int
+	SellingDAOCoinQuantitySold     *uint256.Int
 }
 
 func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
