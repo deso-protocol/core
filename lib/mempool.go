@@ -1740,10 +1740,10 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 		utxoOp := utxoOps[len(utxoOps)-1]
 		uniquePKIDMap := make(map[PKID]bool)
-		filledOrderMetadata := []*FilledOrderMetadata{}
+		fulfilledOrderMetadata := []*FulfilledDAOCoinLimitOrderMetadata{}
 		for _, filledOrder := range utxoOp.FulfilledDAOCoinLimitOrders {
 			uniquePKIDMap[*filledOrder.TransactorPKID] = true
-			filledOrderMetadata = append(filledOrderMetadata, &FilledOrderMetadata{
+			fulfilledOrderMetadata = append(fulfilledOrderMetadata, &FulfilledDAOCoinLimitOrderMetadata{
 				TransactorPublicKeyBase58Check: PkToString(
 					utxoView.GetPublicKeyForPKID(filledOrder.TransactorPKID), utxoView.Params),
 				BuyingDAOCoinCreatorPublicKey: PkToString(
@@ -1764,7 +1764,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		}
 
 		txnMeta.DAOCoinLimitOrderTxindexMetadata = &DAOCoinLimitOrderTxindexMetadata{
-			FilledOrdersMetadata: filledOrderMetadata,
+			FulfilledDAOCoinLimitOrdersMetadata: fulfilledOrderMetadata,
 			BuyingDAOCoinCreatorPublicKey: PkToString(
 				realTxMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
 			SellingDAOCoinCreatorPublicKey: PkToString(

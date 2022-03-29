@@ -361,7 +361,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Track all orders that get filled for notification purposes.
-	filledOrders := []*FulfilledDAOCoinLimitOrder{}
+	fulfilledOrders := []*FulfilledDAOCoinLimitOrder{}
 
 	matchingOrders := []*DAOCoinLimitOrderEntry{}
 	for _, matchingOrder := range prevMatchingOrders {
@@ -468,7 +468,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
 			// amount purchased by the matching order.
-			filledOrders = append(filledOrders, &FulfilledDAOCoinLimitOrder{
+			fulfilledOrders = append(fulfilledOrders, &FulfilledDAOCoinLimitOrder{
 				TransactorPKID:                 matchingOrder.TransactorPKID,
 				BuyingDAOCoinCreatorPKID:       matchingOrder.BuyingDAOCoinCreatorPKID,
 				SellingDAOCoinCreatorPKID:      matchingOrder.SellingDAOCoinCreatorPKID,
@@ -493,7 +493,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
 			// amount purchased by the transactor.
-			filledOrders = append(filledOrders, &FulfilledDAOCoinLimitOrder{
+			fulfilledOrders = append(fulfilledOrders, &FulfilledDAOCoinLimitOrder{
 				TransactorPKID:                 transactorPKIDEntry.PKID,
 				BuyingDAOCoinCreatorPKID:       buyCoinPKIDEntry.PKID,
 				SellingDAOCoinCreatorPKID:      sellCoinPKIDEntry.PKID,
@@ -529,7 +529,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
 			// amount purchased by the matching order.
-			filledOrders = append(filledOrders, &FulfilledDAOCoinLimitOrder{
+			fulfilledOrders = append(fulfilledOrders, &FulfilledDAOCoinLimitOrder{
 				TransactorPKID:                 matchingOrder.TransactorPKID,
 				BuyingDAOCoinCreatorPKID:       matchingOrder.BuyingDAOCoinCreatorPKID,
 				SellingDAOCoinCreatorPKID:      matchingOrder.SellingDAOCoinCreatorPKID,
@@ -541,7 +541,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
 			// amount purchased by the transactor.
-			filledOrders = append(filledOrders, &FulfilledDAOCoinLimitOrder{
+			fulfilledOrders = append(fulfilledOrders, &FulfilledDAOCoinLimitOrder{
 				TransactorPKID:                 transactorPKIDEntry.PKID,
 				BuyingDAOCoinCreatorPKID:       buyCoinPKIDEntry.PKID,
 				SellingDAOCoinCreatorPKID:      sellCoinPKIDEntry.PKID,
@@ -806,7 +806,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		PrevBalanceEntries:                   prevBalances,
 		PrevMatchingOrders:                   prevMatchingOrders,
 		SpentUtxoEntries:                     spentUtxoEntries,
-		FulfilledDAOCoinLimitOrders:          filledOrders,
+		FulfilledDAOCoinLimitOrders:          fulfilledOrders,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil

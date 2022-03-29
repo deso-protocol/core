@@ -3628,7 +3628,7 @@ type DAOCoinTxindexMetadata struct {
 	TransferRestrictionStatus string
 }
 
-type FilledOrderMetadata struct {
+type FulfilledDAOCoinLimitOrderMetadata struct {
 	TransactorPublicKeyBase58Check string
 	BuyingDAOCoinCreatorPublicKey  string
 	SellingDAOCoinCreatorPublicKey string
@@ -3642,7 +3642,7 @@ type DAOCoinLimitOrderTxindexMetadata struct {
 	SellingDAOCoinCreatorPublicKey            string
 	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
 	QuantityToBuyInBaseUnits                  *uint256.Int
-	FilledOrdersMetadata                      []*FilledOrderMetadata
+	FulfilledDAOCoinLimitOrdersMetadata       []*FulfilledDAOCoinLimitOrderMetadata
 }
 
 type UpdateProfileTxindexMetadata struct {
