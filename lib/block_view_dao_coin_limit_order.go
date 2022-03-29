@@ -325,7 +325,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		transactorOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Add(
 			transactorOrder.QuantityToBuyInBaseUnits,
 			prevTransactorOrder.QuantityToBuyInBaseUnits)
-
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 		}
@@ -474,7 +473,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// sold from the order quantity.
 			matchingOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Sub(
 				originalQuantityToBuyInBaseUnits, sellCoinBaseUnitsSold)
-
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 			}
@@ -497,7 +495,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Decrement the transactor's order and sanity-check that its new value is zero.
 			transactorOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Sub(
 				transactorOriginalQuantityToBuyInBaseUnits, buyCoinBaseUnitsBought)
-
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 			}
@@ -537,7 +534,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Update transactor order's quantity.
 			transactorOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Sub(
 				transactorOriginalQuanityToBuyInBaseUnits, matchingOrderTotalBuyCoinToSell)
-
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 			}
@@ -923,7 +919,6 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 		transactorOrderBuyingQuantity, err = SafeUint256().Sub(
 			transactorOrderBuyingQuantity, matchingOrderSellingQuantity)
-
 		if err != nil {
 			// This should never happen because of the check above.
 			return nil, errors.Wrapf(err, "Error updating order quantity: ")

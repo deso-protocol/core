@@ -3224,11 +3224,9 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						transactorOrderBuyingQuantity = uint256.NewInt()
 					} else {
 						transactorOrderBuyingQuantity, err = SafeUint256().Sub(transactorOrderBuyingQuantity, matchingOrderSellingQuantity)
-
 						if err != nil {
 							// This should never happen because of the check above.
-							return nil, 0, 0, 0,
-								errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: underflow in partial order cost")
+							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: underflow in partial order cost")
 						}
 					}
 
@@ -4317,15 +4315,12 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 								requestedOrder.QuantityToBuyInBaseUnits,
 								order.QuantityToBuyInBaseUnits)
 							if err != nil {
-								return 0, 0, 0, 0,
-									errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
 							}
 						}
 						nanosToFulfillOrders, err = SafeUint256().Add(nanosToFulfillOrders, nanosToFulfillOrder)
-
 						if err != nil {
-							return 0, 0, 0, 0,
-								errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+							return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
 						}
 					}
 					lastSeenOrder = order
