@@ -552,8 +552,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Start by adding the output minus input for the transactor, since they can
 	// technically spend this amount if they want (and the amount that's left over
 	// goes to miners).
-	if totalOutput > totalInput {
-		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = totalOutput - totalInput
+	// TODO: confirm we want to subtract totalInput - totalOutput because that's
+	// the amount of $DESO the transactor has to spend in this transaction.
+	if totalInput > totalOutput {
+		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = totalInput - totalOutput
 	} else {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
 	}

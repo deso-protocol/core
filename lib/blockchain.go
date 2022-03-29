@@ -3153,7 +3153,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 	}
 
 	if bytes.Equal(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes(), ZeroPublicKey.ToBytes()) {
-		// If selling a DAO coin for $DESO, we need to find inputs from all the orders that match.
+		// If buying $DESO, we need to find inputs from all the orders that match.
 		// This will move to txn construction as this will be put in the metadata.
 
 		// Create a new UtxoView. If we have access to a mempool object, use it to
@@ -3172,8 +3172,8 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			}
 		}
 
-		// Construct requested order
-		requestedOrder := &DAOCoinLimitOrderEntry{
+		// Construct transactor order
+		transactorOrder := &DAOCoinLimitOrderEntry{
 			TransactorPKID:                            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
 			BuyingDAOCoinCreatorPKID:                  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
 			SellingDAOCoinCreatorPKID:                 utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
@@ -3184,9 +3184,11 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 		desoNanosToConsumeMap := make(map[PKID]uint64)
-		for requestedOrder.QuantityToBuyInBaseUnits.GtUint64(0) {
+		transactorOrderBuyingQuantity := transactorOrder.QuantityToBuyInBaseUnits
+
+		for transactorOrderBuyingQuantity.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
-			matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
+			matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(transactorOrder, lastSeenOrder)
 			if err != nil {
 				return nil, 0, 0, 0, errors.Wrapf(
 					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting Bid orders to match: ")
@@ -3194,42 +3196,38 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			if len(matchingOrderEntries) == 0 {
 				break
 			}
-			for _, order := range matchingOrderEntries {
-				var desoBalanceNanos uint64
-				desoBalanceNanos, err = utxoView.GetDeSoBalanceNanosForPublicKey(
-					utxoView.GetPublicKeyForPKID(order.TransactorPKID))
+			for _, matchingOrder := range matchingOrderEntries {
+				var matchingOrderDESOBalanceNanos uint64
+				matchingOrderDESOBalanceNanos, err = utxoView.GetDeSoBalanceNanosForPublicKey(
+					utxoView.GetPublicKeyForPKID(matchingOrder.TransactorPKID))
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
 				}
 
-				orderCost, err := order.BaseUnitsToSellUint256()
+				// Transactor is buying $DESO so matching order is selling $DESO.
+				matchingOrderSellingQuantity, err := matchingOrder.BaseUnitsToSellUint256()
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 				}
 
-				if orderCost.LtUint64(desoBalanceNanos) {
+				if matchingOrderSellingQuantity.LtUint64(matchingOrderDESOBalanceNanos) {
 					var desoNanosToConsume *uint256.Int
-					if requestedOrder.QuantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
-						desoNanosToConsume, err = ComputeBaseUnitsToSellUint256(
-							order.ScaledExchangeRateCoinsToSellPerCoinToBuy, requestedOrder.QuantityToBuyInBaseUnits)
-						if err != nil {
-							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
-						}
 
-						requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt()
-					} else {
-						desoNanosToConsume, err = ComputeBaseUnitsToSellUint256(
-							order.ScaledExchangeRateCoinsToSellPerCoinToBuy, requestedOrder.QuantityToBuyInBaseUnits)
-						if err != nil {
-							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
-						}
-
-						requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt().Sub(requestedOrder.QuantityToBuyInBaseUnits, order.QuantityToBuyInBaseUnits)
+					desoNanosToConsume, err = ComputeBaseUnitsToSellUint256(
+						matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy, transactorOrder.QuantityToBuyInBaseUnits)
+					if err != nil {
+						return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 					}
 
-					if _, exists := desoNanosToConsumeMap[*order.TransactorPKID]; !exists {
-						desoNanosToConsumeMap[*order.TransactorPKID] = 0
+					if transactorOrderBuyingQuantity.Lt(matchingOrderSellingQuantity) {
+						transactorOrderBuyingQuantity = uint256.NewInt()
+					} else {
+						transactorOrderBuyingQuantity = uint256.NewInt().Sub(transactorOrderBuyingQuantity, matchingOrderSellingQuantity)
+					}
+
+					if _, exists := desoNanosToConsumeMap[*matchingOrder.TransactorPKID]; !exists {
+						desoNanosToConsumeMap[*matchingOrder.TransactorPKID] = 0
 					}
 
 					if !desoNanosToConsume.IsUint64() {
@@ -3237,9 +3235,9 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					}
 
 					// TODO: check for overflow
-					desoNanosToConsumeMap[*order.TransactorPKID] += desoNanosToConsume.Uint64()
+					desoNanosToConsumeMap[*matchingOrder.TransactorPKID] += desoNanosToConsume.Uint64()
 				}
-				lastSeenOrder = order
+				lastSeenOrder = matchingOrder
 			}
 		}
 		metadata.MatchingBidsInputsMap = make(map[PublicKey][]*DeSoInput)
@@ -4235,7 +4233,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		// It's better to use == for fixed-size slice rather than reflect.DeepEqual because
 		// the compiler will type-check you.
-		if *sellCoinPKIDEntry.PKID == ZeroPKID {
+		if bytes.Equal(sellCoinPKIDEntry.PKID.ToBytes(), ZeroPKID.ToBytes()) {
 			// If buying a DAO coin with $DESO, we need to add inputs from the transactor
 			// to cover all the ask orders that will match in the connect logic.
 
