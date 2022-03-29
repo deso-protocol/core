@@ -50,776 +50,6 @@ var (
 )
 
 // -------------------------------------------------------------------------------------
-// StateChecksum
-// -------------------------------------------------------------------------------------
-
-// StateChecksum is used to verify integrity of state data. When syncing state from
-// peers, we need to ensure that we are receiving the same copy of the database.
-// Traditionally, this has been done using Merkle trees; however, Merkle trees incur
-// O(log n) computational complexity for updates and O(n) space complexity, where n
-// is the number of leaves in the tree.
-//
-// Instead, we use a structure that allows us to have an O(1) time and O(1) space complexity. We call
-// our checksum construction EllipticSum, as the checksum of the data is represented by a sum of
-// elliptic curve points. To verify integrity of the data, we only need a single ec point.
-//
-// To put in layman's terms, the EllipticSum checksum works as follows:
-// - Checksum = hash_to_curve(chunk_0) + hash_to_curve(chunk_1) + ... + hash_to_curve(chunk_n)
-// where chunk_i is a chunk of bytes, and hash_to_curve(chunk_i) generates an elliptic curve point
-// from the bytes deterministically, similar to hashing the bytes. The reason we sum elliptic curve
-// points rather than hashes of the bytes is because summing hashes of the bytes would result in
-// the checksum being vulnerable to attack, as discussed below.
-//
-// EllipticSum is inspired by the generalized k-sum problem, where given a set of uniformly random
-// numbers L, we want to find a subset of k elements in L that XORs to 0. This XOR problem
-// can actually be solved efficiently with dynamic programming, so it's not
-// useful to us as a checksum if we use the naive XOR version. However, if we extend it to
-// using elliptic curve points, as we explain below, it becomes computationally infeasible
-// to solve, which is what we need.
-//
-// The reason this works is that k-sum can be generalized to any algebraic group. That is,
-// given a group G, identity element 0, operation +, and some set L of random group elements, find a
-// subset (a_0, a_1, ..., a_k) such that a_0 + a_1 + ... + a_k = 0.
-//
-// It turns out that if this is a cyclic group, such as the group formed by elliptic curve points,
-// then this problem is equivalent to the DLP in G, which is computationally infeasible for a
-// sufficiently large group, and which has a computational lower bound
-// of O(sqrt(p)) where p is the smallest prime dividing the order of G.
-// https://link.springer.com/content/pdf/10.1007%2F3-540-45708-9_19.pdf
-//
-// We use an elliptic curve group Ristretto255 and hash state data directly on the curve
-// using the hash_to_curve primitive based on elligator2. The hash_to_curve mapping takes a
-// byte array input and outputs a point via a mapping indistinguishable from a random function.
-// Hash_to_curve does not reveal the discrete logarithm of the output points.
-// According to the O(sqrt(p)) lower bound, Ristretto255 guarantees 126 bits of security.
-//
-// To learn more about hash_to_curve, see this article:
-// https://tools.ietf.org/id/draft-irtf-cfrg-hash-to-curve-06.html
-type StateChecksum struct {
-	// curve is the Ristretto255 elliptic curve group.
-	curve group.Group
-	// checksum is the ec point we use for verifying integrity of state data. It represents
-	// the sum of points associated with all individual db records.
-	checksum group.Element
-	// dst string for the hash_to_curve function. This works like a seed.
-	dst []byte
-
-	// semaphore is used to manage parallelism when computing the state checksum. We use
-	// a worker pool pattern of spawning a bounded number of threads to compute the checksum
-	// in parallel. This allows us to compute it much more efficiently.
-	semaphore *semaphore.Weighted
-	// ctx is a helper variable used by the semaphore.
-	ctx context.Context
-
-	// hashToCurveCache is a cache of computed hashToCurve mappings
-	hashToCurveCache lru.KVCache
-
-	// When we want to add a database record to the state checksum, we will first have to
-	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
-	// output point to the checksum. The hash_to_curve operation is about 2-3 orders of magnitude
-	// slower than the point addition, therefore we will compute the hash_to_curve in parallel
-	// and then add the output points to the checksum serially while holding a mutex.
-	addMutex sync.Mutex
-
-	// maxWorkers is the maximum number of workers we can have in the worker pool.
-	maxWorkers int64
-
-	snapshotDb      *badger.DB
-	snapshotDbMutex *sync.Mutex
-}
-
-// Initialize starts the state checksum by initializing it to the identity element.
-func (sc *StateChecksum) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
-	// Set the elliptic curve group to Ristretto255 and initialize checksum as identity.
-	sc.curve = group.Ristretto255
-	sc.checksum = sc.curve.Identity()
-	// Set the dst string.
-	sc.dst = []byte("DESO-ELLIPTIC-SUM:Ristretto255")
-
-	// Set max workers to the number of available threads.
-	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
-
-	// Set the hashToCurveCache
-	sc.hashToCurveCache = lru.NewKVCache(HashToCurveCache)
-
-	// Set the worker pool semaphore and context.
-	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
-	sc.ctx = context.Background()
-
-	sc.snapshotDb = snapshotDb
-	sc.snapshotDbMutex = snapshotDbMutex
-
-	if snapshotDb == nil || snapshotDbMutex == nil {
-		sc.snapshotDbMutex = &sync.Mutex{}
-		return nil
-	}
-	sc.snapshotDbMutex.Lock()
-	defer sc.snapshotDbMutex.Unlock()
-
-	// Get snapshot checksum from the db.
-	err := sc.snapshotDb.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(_prefixSnapshotChecksum)
-		if err != nil {
-			return err
-		}
-		value, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
-		}
-		// If we get here, it means we've saved a checksum in the db, so we will set it to the checksum.
-		return sc.FromBytes(value)
-	})
-	if err != nil && err != badger.ErrKeyNotFound {
-		return errors.Wrapf(err, "StateChecksum.Initialize: Problem reading checksum from the db")
-	}
-	return nil
-}
-
-func (sc *StateChecksum) SaveChecksum() error {
-	sc.snapshotDbMutex.Lock()
-	defer sc.snapshotDbMutex.Unlock()
-
-	return sc.snapshotDb.Update(func(txn *badger.Txn) error {
-		checksumBytes, err := sc.ToBytes()
-		if err != nil {
-			return errors.Wrapf(err, "StateChecksum.SaveChecksum: Problem getting checksum bytes")
-		}
-		return txn.Set(_prefixSnapshotChecksum, checksumBytes)
-	})
-}
-
-func (sc *StateChecksum) ResetChecksum() {
-	sc.checksum = sc.curve.Identity()
-}
-
-func (sc *StateChecksum) AddToChecksum(elem group.Element) {
-	sc.addMutex.Lock()
-	defer sc.addMutex.Unlock()
-
-	sc.checksum.Add(sc.checksum, elem)
-}
-
-func (sc *StateChecksum) HashToCurve(bytes []byte) group.Element {
-	var hashElement group.Element
-
-	// Check if we've already mapped this element, if so we will save some computation this way.
-	bytesStr := hex.EncodeToString(bytes)
-	if elem, exists := sc.hashToCurveCache.Lookup(bytesStr); exists {
-		hashElement = elem.(group.Element)
-	} else {
-		// Compute the hash_to_curve primitive, mapping  the bytes to an elliptic curve point.
-		hashElement = sc.curve.HashToElement(bytes, sc.dst)
-		// Also add to the hashToCurveCache
-		sc.hashToCurveCache.Add(bytesStr, hashElement)
-	}
-
-	return hashElement
-}
-
-// AddBytes adds record bytes to the checksum in parallel.
-func (sc *StateChecksum) AddBytes(bytes []byte) error {
-	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
-	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
-		return errors.Wrapf(err, "StateChecksum.AddBytes: problem acquiring semaphore")
-	}
-
-	// Spawn a go routine that will add the bytes to the checksum and then
-	// decrement the semaphore.
-	go func(sc *StateChecksum, bytes []byte) {
-		defer sc.semaphore.Release(1)
-
-		hashElement := sc.curve.HashToElement(bytes, sc.dst)
-		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
-		sc.AddToChecksum(hashElement)
-	}(sc, bytes)
-
-	return nil
-}
-
-// RemoveBytes works similarly to AddBytes.
-func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
-	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
-	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
-		return errors.Wrapf(err, " StateChecksum.RemoveBytes: problem acquiring semaphore")
-	}
-
-	// Spawn a go routine that will remove the bytes from the checksum
-	// and decrement the semaphore.
-	go func(sc *StateChecksum, bytes []byte) {
-		defer sc.semaphore.Release(1)
-
-		// To remove bytes from the checksum, we will compute the inverse of the provided data
-		// and add it to the checksum. Since the checksum is a sum of ec points, adding an inverse
-		// of a previously added point will remove that point from the checksum. If we've previously
-		// added point (x, y) to the checksum, we will be now adding the inverse (x, -y).
-		hashElement := sc.curve.HashToElement(bytes, sc.dst)
-		hashElement = hashElement.Neg(hashElement)
-
-		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
-		sc.AddToChecksum(hashElement)
-	}(sc, bytes)
-	return nil
-}
-
-// GetChecksum is used to get the checksum elliptic curve element.
-func (sc *StateChecksum) GetChecksum() (group.Element, error) {
-	// To get the checksum we will wait for all the current worker threads to finish.
-	// To do so, we can just try to acquire sc.maxWorkers in the semaphore.
-	if err := sc.semaphore.Acquire(sc.ctx, sc.maxWorkers); err != nil {
-		return nil, errors.Wrapf(err, "StateChecksum.GetChecksum: problem acquiring semaphore")
-	}
-	defer sc.semaphore.Release(sc.maxWorkers)
-
-	// Also acquire the add mutex for good hygiene to make sure the checksum doesn't change.
-	sc.addMutex.Lock()
-	defer sc.addMutex.Unlock()
-
-	// Clone the checksum by adding it to identity. That's faster than doing ToBytes / FromBytes
-	checksumCopy := group.Ristretto255.Identity()
-	checksumCopy.Add(checksumCopy, sc.checksum)
-
-	return checksumCopy, nil
-}
-
-// Wait until there is no checksum workers holding the semaphore.
-func (sc *StateChecksum) Wait() error {
-	if err := sc.semaphore.Acquire(sc.ctx, sc.maxWorkers); err != nil {
-		return errors.Wrapf(err, "StateChecksum.Wait: problem acquiring semaphore")
-	}
-	defer sc.semaphore.Release(sc.maxWorkers)
-	return nil
-}
-
-// ToBytes gets the checksum point encoded in compressed format as a 32 byte array.
-// Note: Don't use this function to deep copy the checksum, use GetChecksum instead.
-// ToBytes is doing an inverse square root, so it is slow.
-func (sc *StateChecksum) ToBytes() ([]byte, error) {
-	// Get the checksum.
-	checksum, err := sc.GetChecksum()
-	if err != nil {
-		return nil, errors.Wrapf(err, "StateChecksum.ToBytes: problem getting checksum")
-	}
-
-	// Encode checksum to bytes.
-	checksumBytes, err := checksum.MarshalBinary()
-	if err != nil {
-		return nil, errors.Wrapf(err, "stateChecksum.ToBytes: error during MarshalBinary")
-	}
-	return checksumBytes, nil
-}
-
-func (sc *StateChecksum) FromBytes(checksumBytes []byte) error {
-	// If we get here, it means we've saved a checksum in the db, so we will set it to the checksum.
-	err := sc.checksum.UnmarshalBinary(checksumBytes)
-	if err != nil {
-		return errors.Wrapf(err, "StateChecksum.FromBytes: Problem setting checksum from bytes")
-	}
-	return nil
-}
-
-// -------------------------------------------------------------------------------------
-// DBEntry
-// -------------------------------------------------------------------------------------
-
-// DBEntry is used to represent a database record. It's more convenient than passing
-// <key, value> everywhere.
-type DBEntry struct {
-	Key   []byte
-	Value []byte
-}
-
-func (entry *DBEntry) ToBytes() []byte {
-	data := []byte{}
-
-	data = append(data, EncodeByteArray(entry.Key)...)
-	data = append(data, EncodeByteArray(entry.Value)...)
-	return data
-}
-
-func (entry *DBEntry) FromBytes(rr *bytes.Reader) error {
-	var err error
-
-	// Decode key.
-	entry.Key, err = DecodeByteArray(rr)
-	if err != nil {
-		return err
-	}
-
-	// Decode value.
-	entry.Value, err = DecodeByteArray(rr)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// KeyValueToDBEntry is used to instantiate db entry from a <key, value> pair.
-func KeyValueToDBEntry(key []byte, value []byte) *DBEntry {
-	dbEntry := &DBEntry{}
-	// Encode the key.
-	dbEntry.Key = make([]byte, len(key))
-	copy(dbEntry.Key, key)
-
-	// Encode the value.
-	dbEntry.Value = make([]byte, len(value))
-	copy(dbEntry.Value, value)
-
-	return dbEntry
-}
-
-// EmptyDBEntry indicates an empty DB entry. It's used for convenience.
-func EmptyDBEntry() *DBEntry {
-	// We do not use prefix 0 for state so we can use it in the empty DBEntry.
-	return &DBEntry{
-		Key:   []byte{0},
-		Value: []byte{},
-	}
-}
-
-// IsEmpty return true if the DBEntry is empty, false otherwise.
-func (entry *DBEntry) IsEmpty() bool {
-	return bytes.Equal(entry.Key, []byte{0})
-}
-
-// -------------------------------------------------------------------------------------
-// SnapshotEpochMetadata
-// -------------------------------------------------------------------------------------
-
-type SnapshotEpochMetadata struct {
-	// SnapshotBlockHeight is the height of the snapshot.
-	SnapshotBlockHeight uint64
-
-	// This is the block height of the very first snapshot this node encountered on its
-	// initial hypersync. This field is distinct from SnapshotBlockHeight, which updates
-	// every time we enter a new snapshot epoch. It is mainly used by Rosetta to determine
-	// where to start returning "real" blocks vs "dummy" blocks. In particular, before the
-	// first snapshot, Rosetta will return dummy blocks that don't have any txn operations
-	// in them, whereas after the first snapshot, Rosetta will "bootstrap" all the balances
-	// in a single mega-block at the snapshot, and then return "real" blocks thereafter.
-	FirstSnapshotBlockHeight uint64
-
-	// CurrentEpochChecksumBytes is the bytes of the state checksum for the snapshot at the epoch.
-	CurrentEpochChecksumBytes []byte
-	// CurrentEpochBlockHash is the hash of the first block of the current epoch. It's used to identify the snapshot.
-	CurrentEpochBlockHash *BlockHash
-
-	snapshotDb      *badger.DB
-	snapshotDbMutex *sync.Mutex
-}
-
-func (metadata *SnapshotEpochMetadata) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
-	metadata.SnapshotBlockHeight = uint64(0)
-	metadata.FirstSnapshotBlockHeight = uint64(0)
-	metadata.CurrentEpochChecksumBytes = []byte{}
-	metadata.CurrentEpochBlockHash = NewBlockHash([]byte{})
-
-	metadata.snapshotDb = snapshotDb
-	metadata.snapshotDbMutex = snapshotDbMutex
-
-	if snapshotDb == nil || snapshotDbMutex == nil {
-		metadata.snapshotDbMutex = &sync.Mutex{}
-		return nil
-	}
-	metadata.snapshotDbMutex.Lock()
-	defer metadata.snapshotDbMutex.Unlock()
-
-	err := snapshotDb.View(func(txn *badger.Txn) error {
-		// Now get the last epoch metadata.
-		item, err := txn.Get(_prefixLastEpochMetadata)
-		if err != nil {
-			return err
-		}
-		value, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
-		}
-		rr := bytes.NewReader(value)
-		return metadata.FromBytes(rr)
-	})
-	// If we're starting the hyper sync node for the first time, then there will be no snapshot saved
-	// and we'll get ErrKeyNotFound error. That's why we don't error when it happens.
-	if err != nil && err != badger.ErrKeyNotFound {
-		return errors.Wrapf(err, "Snapshot.NewSnapshot: Problem retrieving snapshot information from db")
-	}
-	return nil
-}
-
-func (metadata *SnapshotEpochMetadata) ToBytes() []byte {
-	var data []byte
-
-	data = append(data, UintToBuf(metadata.SnapshotBlockHeight)...)
-	data = append(data, UintToBuf(metadata.FirstSnapshotBlockHeight)...)
-	data = append(data, EncodeByteArray(metadata.CurrentEpochChecksumBytes)...)
-	data = append(data, EncodeByteArray(metadata.CurrentEpochBlockHash.ToBytes())...)
-
-	return data
-}
-
-func (metadata *SnapshotEpochMetadata) FromBytes(rr *bytes.Reader) error {
-	var err error
-
-	metadata.SnapshotBlockHeight, err = ReadUvarint(rr)
-	if err != nil {
-		return err
-	}
-
-	metadata.FirstSnapshotBlockHeight, err = ReadUvarint(rr)
-	if err != nil {
-		return err
-	}
-
-	metadata.CurrentEpochChecksumBytes, err = DecodeByteArray(rr)
-	if err != nil {
-		return err
-	}
-
-	blockHashBytes, err := DecodeByteArray(rr)
-	if err != nil {
-		return err
-	}
-	metadata.CurrentEpochBlockHash = NewBlockHash(blockHashBytes)
-
-	return nil
-}
-
-// -------------------------------------------------------------------------------------
-// AncestralCache
-// -------------------------------------------------------------------------------------
-
-type AncestralRecordValue struct {
-	// The value we're setting for an ancestral record.
-	Value []byte
-
-	// This is true if the key we're modifying had a pre-existing
-	// value in our state. For example, we if we are updating a profile
-	// then we might have a pre-existing entry for the pubkey->profile
-	// mapping that we're updating. When this value is false, it means
-	// we're setting a key that didn't have an associated value in our
-	// state previously.
-	Existed bool
-}
-
-// AncestralCache is an in-memory structure that helps manage concurrency between node's
-// main db flushes and ancestral records flushes. For each main db flush transaction, we
-// will build an ancestral cache that contains maps of historical values that were in the
-// main db before we flushed. In particular, we distinguish between existing and
-// non-existing records. Existing records are those records that had already been present
-// in the main db prior to the flush. Non-existing records were not present in the main db,
-// and the flush added them for the first time.
-//
-// The AncestralCache is stored in the Snapshot struct in a concurrency-safe deque (bi-directional
-// queue). This deque follows a pub-sub pattern where the main db thread pushes ancestral
-// caches onto the deque. The snapshot thread then consumes these objects and writes to the
-// ancestral records. We decided to use this pattern because it doesn't slow down the main
-// block processing thread. However, to make this fully work, we also need some bookkeeping
-// to ensure the ancestral record flushes are up-to-date with the main db flushes. We
-// solve this with non-blocking counters (MainDBSemaphore, AncestralDBSemaphore) that count
-// the total number of flushes to main db and ancestral records.
-type AncestralCache struct {
-	// id is used to identify the AncestralCache.
-	id uint64
-
-	blockHeight uint64
-
-	// ExistingRecordsMap keeps track of original main db of records that we modified during
-	// UtxoView flush, which is where we're modifying state data. A record for a particular
-	// key was either already existing in our state, or not already existing in our state.
-	//
-	// We store keys as strings because they're easier to store and sort this way.
-	AncestralRecordsMap map[string]*AncestralRecordValue
-}
-
-func NewAncestralCache(id uint64, blockHeight uint64) *AncestralCache {
-	return &AncestralCache{
-		id:                  id,
-		blockHeight:         blockHeight,
-		AncestralRecordsMap: make(map[string]*AncestralRecordValue),
-	}
-}
-
-// -------------------------------------------------------------------------------------
-// SnapshotOperation
-// SnapshotOperationChannel
-// -------------------------------------------------------------------------------------
-
-// SnapshotOperationType define the different operations that can be enqueued to the snapshot's OperationChannel.
-type SnapshotOperationType uint8
-
-const (
-	// SnapshotOperationFlush operation enqueues a flush to the ancestral records.
-	SnapshotOperationFlush SnapshotOperationType = iota
-	// SnapshotOperationProcessBlock operation signals that a new block has been added to the blockchain.
-	SnapshotOperationProcessBlock
-	// SnapshotOperationProcessChunk operation is enqueued when we receive a snapshot chunk during syncing.
-	SnapshotOperationProcessChunk
-	// SnapshotOperationChecksumAdd operation is enqueued when we want to add bytes to the state checksum.
-	SnapshotOperationChecksumAdd
-	// SnapshotOperationChecksumRemove operation is enqueued when we want to remove bytes to the state checksum.
-	SnapshotOperationChecksumRemove
-	// SnapshotOperationChecksumPrint is called when we want to print the state checksum.
-	SnapshotOperationChecksumPrint
-	// SnapshotOperationExit is used to quit the snapshot loop
-	SnapshotOperationExit
-)
-
-// SnapshotOperation is passed in the snapshot's OperationChannel.
-type SnapshotOperation struct {
-	// operationType determines the operation.
-	operationType SnapshotOperationType
-
-	/* SnapshotOperationProcessBlock */
-	// blockNode is the processed block.
-	blockNode *BlockNode
-
-	/* SnapshotOperationProcessChunk */
-	// mainDb is the main db instance.
-	mainDb      *badger.DB
-	mainDbMutex *deadlock.RWMutex
-	// snapshotChunk is the snapshot chunk received from the peer.
-	snapshotChunk []*DBEntry
-
-	/* SnapshotOperationChecksumAdd, SnapshotOperationChecksumRemove */
-	// checksumBytes is the bytes we want to add to the checksum, passed during
-	checksumBytes []byte
-
-	/* SnapshotOperationChecksumPrint */
-	// printText is the text we want to put in the print statement.
-	printText string
-}
-
-type SnapshotOperationChannel struct {
-	OperationChannel chan *SnapshotOperation
-
-	StateSemaphore     int32
-	StateSemaphoreLock sync.Mutex
-
-	snapshotDb      *badger.DB
-	snapshotDbMutex *sync.Mutex
-}
-
-func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
-	opChan.OperationChannel = make(chan *SnapshotOperation, 100000)
-	opChan.StateSemaphore = 0
-
-	opChan.snapshotDb = snapshotDb
-	opChan.snapshotDbMutex = snapshotDbMutex
-
-	if snapshotDb == nil || snapshotDbMutex == nil {
-		opChan.snapshotDbMutex = &sync.Mutex{}
-		return nil
-	}
-	opChan.snapshotDbMutex.Lock()
-	defer opChan.snapshotDbMutex.Unlock()
-	err := snapshotDb.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(_prefixOperationChannelStatus)
-		if err != nil {
-			return err
-		}
-		stateSemaphoreBytes, err := item.ValueCopy(nil)
-		if err != nil {
-			return errors.Wrapf(err, "problem during ValueCopy")
-		}
-		rr := bytes.NewReader(stateSemaphoreBytes)
-		stateSemaphore, err := ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "problem during ReadUvarint")
-		}
-		opChan.StateSemaphore = int32(stateSemaphore)
-		return nil
-	})
-	if err != nil && err != badger.ErrKeyNotFound {
-		return errors.Wrapf(err, "SnapshotOperationChannel.Initialize: Problem reading StateSemaphore from db")
-	}
-
-	return nil
-}
-
-func (opChan *SnapshotOperationChannel) SaveOperationChannel() error {
-	opChan.snapshotDbMutex.Lock()
-	defer opChan.snapshotDbMutex.Unlock()
-
-	return opChan.snapshotDb.Update(func(txn *badger.Txn) error {
-		return txn.Set(_prefixOperationChannelStatus, UintToBuf(uint64(opChan.StateSemaphore)))
-	})
-}
-
-func (opChan *SnapshotOperationChannel) EnqueueOperation(op *SnapshotOperation) {
-	opChan.StateSemaphoreLock.Lock()
-	opChan.StateSemaphore += 1
-	if opChan.StateSemaphore == 1 {
-		if err := opChan.SaveOperationChannel(); err != nil {
-			glog.Errorf("SnapshotOperationChannel.EnqueueOperation: Problem saving StateSemaphore to db")
-		}
-	}
-	opChan.StateSemaphoreLock.Unlock()
-
-	opChan.OperationChannel <- op
-}
-
-func (opChan *SnapshotOperationChannel) DequeueOperationStateless() *SnapshotOperation {
-	return <-opChan.OperationChannel
-}
-
-func (opChan *SnapshotOperationChannel) FinishOperation() {
-	opChan.StateSemaphoreLock.Lock()
-	defer opChan.StateSemaphoreLock.Unlock()
-
-	opChan.StateSemaphore -= 1
-	if opChan.StateSemaphore == 0 {
-		if err := opChan.SaveOperationChannel(); err != nil {
-			glog.Errorf("SnapshotOperationChannel.FinishOperation: Problem saving StateSemaphore to db")
-		}
-	}
-}
-
-func (opChan *SnapshotOperationChannel) GetStatus() int32 {
-	opChan.StateSemaphoreLock.Lock()
-	defer opChan.StateSemaphoreLock.Unlock()
-
-	return opChan.StateSemaphore
-}
-
-// -------------------------------------------------------------------------------------
-// SnapshotStatus
-// -------------------------------------------------------------------------------------
-
-type SnapshotStatus struct {
-	// MainDBSemaphore and AncestralDBSemaphore are atomically accessed counter semaphores that will be
-	// used to control race conditions between main db and ancestral records. They basically manage the concurrency
-	// between writes to the main and ancestral dbs.
-	MainDBSemaphore      uint64
-	AncestralDBSemaphore uint64
-	// MemoryLock is held whenever we modify the MainDBSemaphore or AncestralDBSemaphore.
-	MemoryLock sync.Mutex
-
-	// SnapshotStatus is called concurrently by the Server and Snapshot threads. And badger cannot handle
-	// concurrent writes to the database. To make sure this concurrency doesn't affect general performance,
-	// we use a custom badger.DB to save SnapshotStatus.
-	snapshotDb *badger.DB
-
-	// snapshotDbMutex is held whenever we modify snapshotDb.
-	snapshotDbMutex *sync.Mutex
-}
-
-func (status *SnapshotStatus) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
-	status.MainDBSemaphore = uint64(0)
-	status.AncestralDBSemaphore = uint64(0)
-
-	status.snapshotDb = snapshotDb
-	status.snapshotDbMutex = snapshotDbMutex
-
-	if snapshotDb == nil || snapshotDbMutex == nil {
-		status.snapshotDbMutex = &sync.Mutex{}
-		return nil
-	}
-	if err := status.ReadStatus(); err != nil {
-		return errors.Wrapf(err, "SnapshotStatus.ReadStatus: Can't read snapshot status from db")
-	}
-
-	return nil
-}
-
-func (status *SnapshotStatus) ToBytes() []byte {
-	var data []byte
-	data = append(data, UintToBuf(status.MainDBSemaphore)...)
-	data = append(data, UintToBuf(status.AncestralDBSemaphore)...)
-
-	return data
-}
-
-func (status *SnapshotStatus) FromBytes(rr *bytes.Reader) error {
-	var err error
-	status.MainDBSemaphore, err = ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "SnapshotStatus: Problem reading MainDBSemaphore")
-	}
-
-	status.AncestralDBSemaphore, err = ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "SnapshotStatus: Problem reading AncestralDBSemaphore")
-	}
-	return nil
-}
-
-func (status *SnapshotStatus) SaveStatus() {
-	status.snapshotDbMutex.Lock()
-	defer status.snapshotDbMutex.Unlock()
-
-	err := status.snapshotDb.Update(func(txn *badger.Txn) error {
-		return txn.Set(_prefixSnapshotStatus, status.ToBytes())
-	})
-	if err != nil {
-		glog.Fatalf("SnapshotStatus.SaveStatus: problem writing snapshot status error (%v)", err)
-	}
-}
-
-func (status *SnapshotStatus) ReadStatus() error {
-	status.snapshotDbMutex.Lock()
-	defer status.snapshotDbMutex.Unlock()
-
-	err := status.snapshotDb.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(_prefixSnapshotStatus)
-		if err != nil {
-			return err
-		}
-		statusBytes, err := item.ValueCopy(nil)
-		if err != nil {
-			return errors.Wrapf(err, "problem calling ValueCopy on the fetched item")
-		}
-		rr := bytes.NewReader(statusBytes)
-		return status.FromBytes(rr)
-	})
-	if err != nil && err != badger.ErrKeyNotFound {
-		return errors.Wrapf(err, "SnapshotStatus.ReadStatus: Problem reading status from db")
-	}
-	return nil
-}
-
-// IncrementMainDbSemaphoreMemoryLockRequired increments the MainDBSemaphore by one, it should be called with MemoryLock.
-func (status *SnapshotStatus) IncrementMainDbSemaphoreMemoryLockRequired() {
-	status.MainDBSemaphore++
-	status.SaveStatus()
-}
-
-// IncrementAncestralDBSemaphoreMemoryLockRequired increments the AncestralDBSemaphore by one, it should be called with MemoryLock.
-func (status *SnapshotStatus) IncrementAncestralDBSemaphoreMemoryLockRequired() {
-	status.AncestralDBSemaphore++
-	status.SaveStatus()
-}
-
-// IsFlushingToMainDBMemoryLockRequired checks if a flush to MainDB takes place. This should be called with MemoryLock.
-func (status *SnapshotStatus) IsFlushingToMainDBMemoryLockRequired() bool {
-	return status.MainDBSemaphore%2 == 1
-}
-
-// IsFlushingToAncestralMemoryLockRequired checks if a flush to AncestralDB takes place. This should be called with MemoryLock.
-func (status *SnapshotStatus) IsFlushingToAncestralMemoryLockRequired() bool {
-	return status.AncestralDBSemaphore%2 == 1
-}
-
-// IsFlushing checks whether a main DB flush or ancestral record flush is taking place.
-func (status *SnapshotStatus) IsFlushing() bool {
-	// We retrieve the ancestral record and main db semaphores.
-	status.MemoryLock.Lock()
-	defer status.MemoryLock.Unlock()
-
-	// Flush is taking place if the semaphores have different counters or if they are odd.
-	// We increment each semaphore whenever we start the flush and when we end it so they are always
-	// even when the DB is not being updated.
-	return status.MainDBSemaphore != status.AncestralDBSemaphore ||
-		(status.MainDBSemaphore|status.AncestralDBSemaphore)%2 == 1
-}
-
-// GetSemaphores retrieves main and ancestral db semaphores.
-func (status *SnapshotStatus) GetSemaphores() (_mainDbSemaphore uint64, _ancestralDBSemaphore uint64) {
-	status.MemoryLock.Lock()
-	defer status.MemoryLock.Unlock()
-
-	return status.MainDBSemaphore, status.AncestralDBSemaphore
-}
-
-// -------------------------------------------------------------------------------------
 // Snapshot
 // -------------------------------------------------------------------------------------
 
@@ -1627,6 +857,776 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	snap.timer.Print("SetSnapshotChunk.Set")
 	snap.timer.Print("SetSnapshotChunk.Checksum")
 	return nil
+}
+
+// -------------------------------------------------------------------------------------
+// StateChecksum
+// -------------------------------------------------------------------------------------
+
+// StateChecksum is used to verify integrity of state data. When syncing state from
+// peers, we need to ensure that we are receiving the same copy of the database.
+// Traditionally, this has been done using Merkle trees; however, Merkle trees incur
+// O(log n) computational complexity for updates and O(n) space complexity, where n
+// is the number of leaves in the tree.
+//
+// Instead, we use a structure that allows us to have an O(1) time and O(1) space complexity. We call
+// our checksum construction EllipticSum, as the checksum of the data is represented by a sum of
+// elliptic curve points. To verify integrity of the data, we only need a single ec point.
+//
+// To put in layman's terms, the EllipticSum checksum works as follows:
+// - Checksum = hash_to_curve(chunk_0) + hash_to_curve(chunk_1) + ... + hash_to_curve(chunk_n)
+// where chunk_i is a chunk of bytes, and hash_to_curve(chunk_i) generates an elliptic curve point
+// from the bytes deterministically, similar to hashing the bytes. The reason we sum elliptic curve
+// points rather than hashes of the bytes is because summing hashes of the bytes would result in
+// the checksum being vulnerable to attack, as discussed below.
+//
+// EllipticSum is inspired by the generalized k-sum problem, where given a set of uniformly random
+// numbers L, we want to find a subset of k elements in L that XORs to 0. This XOR problem
+// can actually be solved efficiently with dynamic programming, so it's not
+// useful to us as a checksum if we use the naive XOR version. However, if we extend it to
+// using elliptic curve points, as we explain below, it becomes computationally infeasible
+// to solve, which is what we need.
+//
+// The reason this works is that k-sum can be generalized to any algebraic group. That is,
+// given a group G, identity element 0, operation +, and some set L of random group elements, find a
+// subset (a_0, a_1, ..., a_k) such that a_0 + a_1 + ... + a_k = 0.
+//
+// It turns out that if this is a cyclic group, such as the group formed by elliptic curve points,
+// then this problem is equivalent to the DLP in G, which is computationally infeasible for a
+// sufficiently large group, and which has a computational lower bound
+// of O(sqrt(p)) where p is the smallest prime dividing the order of G.
+// https://link.springer.com/content/pdf/10.1007%2F3-540-45708-9_19.pdf
+//
+// We use an elliptic curve group Ristretto255 and hash state data directly on the curve
+// using the hash_to_curve primitive based on elligator2. The hash_to_curve mapping takes a
+// byte array input and outputs a point via a mapping indistinguishable from a random function.
+// Hash_to_curve does not reveal the discrete logarithm of the output points.
+// According to the O(sqrt(p)) lower bound, Ristretto255 guarantees 126 bits of security.
+//
+// To learn more about hash_to_curve, see this article:
+// https://tools.ietf.org/id/draft-irtf-cfrg-hash-to-curve-06.html
+type StateChecksum struct {
+	// curve is the Ristretto255 elliptic curve group.
+	curve group.Group
+	// checksum is the ec point we use for verifying integrity of state data. It represents
+	// the sum of points associated with all individual db records.
+	checksum group.Element
+	// dst string for the hash_to_curve function. This works like a seed.
+	dst []byte
+
+	// semaphore is used to manage parallelism when computing the state checksum. We use
+	// a worker pool pattern of spawning a bounded number of threads to compute the checksum
+	// in parallel. This allows us to compute it much more efficiently.
+	semaphore *semaphore.Weighted
+	// ctx is a helper variable used by the semaphore.
+	ctx context.Context
+
+	// hashToCurveCache is a cache of computed hashToCurve mappings
+	hashToCurveCache lru.KVCache
+
+	// When we want to add a database record to the state checksum, we will first have to
+	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
+	// output point to the checksum. The hash_to_curve operation is about 2-3 orders of magnitude
+	// slower than the point addition, therefore we will compute the hash_to_curve in parallel
+	// and then add the output points to the checksum serially while holding a mutex.
+	addMutex sync.Mutex
+
+	// maxWorkers is the maximum number of workers we can have in the worker pool.
+	maxWorkers int64
+
+	snapshotDb      *badger.DB
+	snapshotDbMutex *sync.Mutex
+}
+
+// Initialize starts the state checksum by initializing it to the identity element.
+func (sc *StateChecksum) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
+	// Set the elliptic curve group to Ristretto255 and initialize checksum as identity.
+	sc.curve = group.Ristretto255
+	sc.checksum = sc.curve.Identity()
+	// Set the dst string.
+	sc.dst = []byte("DESO-ELLIPTIC-SUM:Ristretto255")
+
+	// Set max workers to the number of available threads.
+	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
+
+	// Set the hashToCurveCache
+	sc.hashToCurveCache = lru.NewKVCache(HashToCurveCache)
+
+	// Set the worker pool semaphore and context.
+	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
+	sc.ctx = context.Background()
+
+	sc.snapshotDb = snapshotDb
+	sc.snapshotDbMutex = snapshotDbMutex
+
+	if snapshotDb == nil || snapshotDbMutex == nil {
+		sc.snapshotDbMutex = &sync.Mutex{}
+		return nil
+	}
+	sc.snapshotDbMutex.Lock()
+	defer sc.snapshotDbMutex.Unlock()
+
+	// Get snapshot checksum from the db.
+	err := sc.snapshotDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(_prefixSnapshotChecksum)
+		if err != nil {
+			return err
+		}
+		value, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		// If we get here, it means we've saved a checksum in the db, so we will set it to the checksum.
+		return sc.FromBytes(value)
+	})
+	if err != nil && err != badger.ErrKeyNotFound {
+		return errors.Wrapf(err, "StateChecksum.Initialize: Problem reading checksum from the db")
+	}
+	return nil
+}
+
+func (sc *StateChecksum) SaveChecksum() error {
+	sc.snapshotDbMutex.Lock()
+	defer sc.snapshotDbMutex.Unlock()
+
+	return sc.snapshotDb.Update(func(txn *badger.Txn) error {
+		checksumBytes, err := sc.ToBytes()
+		if err != nil {
+			return errors.Wrapf(err, "StateChecksum.SaveChecksum: Problem getting checksum bytes")
+		}
+		return txn.Set(_prefixSnapshotChecksum, checksumBytes)
+	})
+}
+
+func (sc *StateChecksum) ResetChecksum() {
+	sc.checksum = sc.curve.Identity()
+}
+
+func (sc *StateChecksum) AddToChecksum(elem group.Element) {
+	sc.addMutex.Lock()
+	defer sc.addMutex.Unlock()
+
+	sc.checksum.Add(sc.checksum, elem)
+}
+
+func (sc *StateChecksum) HashToCurve(bytes []byte) group.Element {
+	var hashElement group.Element
+
+	// Check if we've already mapped this element, if so we will save some computation this way.
+	bytesStr := hex.EncodeToString(bytes)
+	if elem, exists := sc.hashToCurveCache.Lookup(bytesStr); exists {
+		hashElement = elem.(group.Element)
+	} else {
+		// Compute the hash_to_curve primitive, mapping  the bytes to an elliptic curve point.
+		hashElement = sc.curve.HashToElement(bytes, sc.dst)
+		// Also add to the hashToCurveCache
+		sc.hashToCurveCache.Add(bytesStr, hashElement)
+	}
+
+	return hashElement
+}
+
+// AddBytes adds record bytes to the checksum in parallel.
+func (sc *StateChecksum) AddBytes(bytes []byte) error {
+	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
+	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
+		return errors.Wrapf(err, "StateChecksum.AddBytes: problem acquiring semaphore")
+	}
+
+	// Spawn a go routine that will add the bytes to the checksum and then
+	// decrement the semaphore.
+	go func(sc *StateChecksum, bytes []byte) {
+		defer sc.semaphore.Release(1)
+
+		hashElement := sc.curve.HashToElement(bytes, sc.dst)
+		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
+		sc.AddToChecksum(hashElement)
+	}(sc, bytes)
+
+	return nil
+}
+
+// RemoveBytes works similarly to AddBytes.
+func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
+	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
+	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
+		return errors.Wrapf(err, " StateChecksum.RemoveBytes: problem acquiring semaphore")
+	}
+
+	// Spawn a go routine that will remove the bytes from the checksum
+	// and decrement the semaphore.
+	go func(sc *StateChecksum, bytes []byte) {
+		defer sc.semaphore.Release(1)
+
+		// To remove bytes from the checksum, we will compute the inverse of the provided data
+		// and add it to the checksum. Since the checksum is a sum of ec points, adding an inverse
+		// of a previously added point will remove that point from the checksum. If we've previously
+		// added point (x, y) to the checksum, we will be now adding the inverse (x, -y).
+		hashElement := sc.curve.HashToElement(bytes, sc.dst)
+		hashElement = hashElement.Neg(hashElement)
+
+		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
+		sc.AddToChecksum(hashElement)
+	}(sc, bytes)
+	return nil
+}
+
+// GetChecksum is used to get the checksum elliptic curve element.
+func (sc *StateChecksum) GetChecksum() (group.Element, error) {
+	// To get the checksum we will wait for all the current worker threads to finish.
+	// To do so, we can just try to acquire sc.maxWorkers in the semaphore.
+	if err := sc.semaphore.Acquire(sc.ctx, sc.maxWorkers); err != nil {
+		return nil, errors.Wrapf(err, "StateChecksum.GetChecksum: problem acquiring semaphore")
+	}
+	defer sc.semaphore.Release(sc.maxWorkers)
+
+	// Also acquire the add mutex for good hygiene to make sure the checksum doesn't change.
+	sc.addMutex.Lock()
+	defer sc.addMutex.Unlock()
+
+	// Clone the checksum by adding it to identity. That's faster than doing ToBytes / FromBytes
+	checksumCopy := group.Ristretto255.Identity()
+	checksumCopy.Add(checksumCopy, sc.checksum)
+
+	return checksumCopy, nil
+}
+
+// Wait until there is no checksum workers holding the semaphore.
+func (sc *StateChecksum) Wait() error {
+	if err := sc.semaphore.Acquire(sc.ctx, sc.maxWorkers); err != nil {
+		return errors.Wrapf(err, "StateChecksum.Wait: problem acquiring semaphore")
+	}
+	defer sc.semaphore.Release(sc.maxWorkers)
+	return nil
+}
+
+// ToBytes gets the checksum point encoded in compressed format as a 32 byte array.
+// Note: Don't use this function to deep copy the checksum, use GetChecksum instead.
+// ToBytes is doing an inverse square root, so it is slow.
+func (sc *StateChecksum) ToBytes() ([]byte, error) {
+	// Get the checksum.
+	checksum, err := sc.GetChecksum()
+	if err != nil {
+		return nil, errors.Wrapf(err, "StateChecksum.ToBytes: problem getting checksum")
+	}
+
+	// Encode checksum to bytes.
+	checksumBytes, err := checksum.MarshalBinary()
+	if err != nil {
+		return nil, errors.Wrapf(err, "stateChecksum.ToBytes: error during MarshalBinary")
+	}
+	return checksumBytes, nil
+}
+
+func (sc *StateChecksum) FromBytes(checksumBytes []byte) error {
+	// If we get here, it means we've saved a checksum in the db, so we will set it to the checksum.
+	err := sc.checksum.UnmarshalBinary(checksumBytes)
+	if err != nil {
+		return errors.Wrapf(err, "StateChecksum.FromBytes: Problem setting checksum from bytes")
+	}
+	return nil
+}
+
+// -------------------------------------------------------------------------------------
+// DBEntry
+// -------------------------------------------------------------------------------------
+
+// DBEntry is used to represent a database record. It's more convenient than passing
+// <key, value> everywhere.
+type DBEntry struct {
+	Key   []byte
+	Value []byte
+}
+
+func (entry *DBEntry) ToBytes() []byte {
+	data := []byte{}
+
+	data = append(data, EncodeByteArray(entry.Key)...)
+	data = append(data, EncodeByteArray(entry.Value)...)
+	return data
+}
+
+func (entry *DBEntry) FromBytes(rr *bytes.Reader) error {
+	var err error
+
+	// Decode key.
+	entry.Key, err = DecodeByteArray(rr)
+	if err != nil {
+		return err
+	}
+
+	// Decode value.
+	entry.Value, err = DecodeByteArray(rr)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// KeyValueToDBEntry is used to instantiate db entry from a <key, value> pair.
+func KeyValueToDBEntry(key []byte, value []byte) *DBEntry {
+	dbEntry := &DBEntry{}
+	// Encode the key.
+	dbEntry.Key = make([]byte, len(key))
+	copy(dbEntry.Key, key)
+
+	// Encode the value.
+	dbEntry.Value = make([]byte, len(value))
+	copy(dbEntry.Value, value)
+
+	return dbEntry
+}
+
+// EmptyDBEntry indicates an empty DB entry. It's used for convenience.
+func EmptyDBEntry() *DBEntry {
+	// We do not use prefix 0 for state so we can use it in the empty DBEntry.
+	return &DBEntry{
+		Key:   []byte{0},
+		Value: []byte{},
+	}
+}
+
+// IsEmpty return true if the DBEntry is empty, false otherwise.
+func (entry *DBEntry) IsEmpty() bool {
+	return bytes.Equal(entry.Key, []byte{0})
+}
+
+// -------------------------------------------------------------------------------------
+// SnapshotEpochMetadata
+// -------------------------------------------------------------------------------------
+
+type SnapshotEpochMetadata struct {
+	// SnapshotBlockHeight is the height of the snapshot.
+	SnapshotBlockHeight uint64
+
+	// This is the block height of the very first snapshot this node encountered on its
+	// initial hypersync. This field is distinct from SnapshotBlockHeight, which updates
+	// every time we enter a new snapshot epoch. It is mainly used by Rosetta to determine
+	// where to start returning "real" blocks vs "dummy" blocks. In particular, before the
+	// first snapshot, Rosetta will return dummy blocks that don't have any txn operations
+	// in them, whereas after the first snapshot, Rosetta will "bootstrap" all the balances
+	// in a single mega-block at the snapshot, and then return "real" blocks thereafter.
+	FirstSnapshotBlockHeight uint64
+
+	// CurrentEpochChecksumBytes is the bytes of the state checksum for the snapshot at the epoch.
+	CurrentEpochChecksumBytes []byte
+	// CurrentEpochBlockHash is the hash of the first block of the current epoch. It's used to identify the snapshot.
+	CurrentEpochBlockHash *BlockHash
+
+	snapshotDb      *badger.DB
+	snapshotDbMutex *sync.Mutex
+}
+
+func (metadata *SnapshotEpochMetadata) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
+	metadata.SnapshotBlockHeight = uint64(0)
+	metadata.FirstSnapshotBlockHeight = uint64(0)
+	metadata.CurrentEpochChecksumBytes = []byte{}
+	metadata.CurrentEpochBlockHash = NewBlockHash([]byte{})
+
+	metadata.snapshotDb = snapshotDb
+	metadata.snapshotDbMutex = snapshotDbMutex
+
+	if snapshotDb == nil || snapshotDbMutex == nil {
+		metadata.snapshotDbMutex = &sync.Mutex{}
+		return nil
+	}
+	metadata.snapshotDbMutex.Lock()
+	defer metadata.snapshotDbMutex.Unlock()
+
+	err := snapshotDb.View(func(txn *badger.Txn) error {
+		// Now get the last epoch metadata.
+		item, err := txn.Get(_prefixLastEpochMetadata)
+		if err != nil {
+			return err
+		}
+		value, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		rr := bytes.NewReader(value)
+		return metadata.FromBytes(rr)
+	})
+	// If we're starting the hyper sync node for the first time, then there will be no snapshot saved
+	// and we'll get ErrKeyNotFound error. That's why we don't error when it happens.
+	if err != nil && err != badger.ErrKeyNotFound {
+		return errors.Wrapf(err, "Snapshot.NewSnapshot: Problem retrieving snapshot information from db")
+	}
+	return nil
+}
+
+func (metadata *SnapshotEpochMetadata) ToBytes() []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(metadata.SnapshotBlockHeight)...)
+	data = append(data, UintToBuf(metadata.FirstSnapshotBlockHeight)...)
+	data = append(data, EncodeByteArray(metadata.CurrentEpochChecksumBytes)...)
+	data = append(data, EncodeByteArray(metadata.CurrentEpochBlockHash.ToBytes())...)
+
+	return data
+}
+
+func (metadata *SnapshotEpochMetadata) FromBytes(rr *bytes.Reader) error {
+	var err error
+
+	metadata.SnapshotBlockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+
+	metadata.FirstSnapshotBlockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+
+	metadata.CurrentEpochChecksumBytes, err = DecodeByteArray(rr)
+	if err != nil {
+		return err
+	}
+
+	blockHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return err
+	}
+	metadata.CurrentEpochBlockHash = NewBlockHash(blockHashBytes)
+
+	return nil
+}
+
+// -------------------------------------------------------------------------------------
+// AncestralCache
+// -------------------------------------------------------------------------------------
+
+type AncestralRecordValue struct {
+	// The value we're setting for an ancestral record.
+	Value []byte
+
+	// This is true if the key we're modifying had a pre-existing
+	// value in our state. For example, we if we are updating a profile
+	// then we might have a pre-existing entry for the pubkey->profile
+	// mapping that we're updating. When this value is false, it means
+	// we're setting a key that didn't have an associated value in our
+	// state previously.
+	Existed bool
+}
+
+// AncestralCache is an in-memory structure that helps manage concurrency between node's
+// main db flushes and ancestral records flushes. For each main db flush transaction, we
+// will build an ancestral cache that contains maps of historical values that were in the
+// main db before we flushed. In particular, we distinguish between existing and
+// non-existing records. Existing records are those records that had already been present
+// in the main db prior to the flush. Non-existing records were not present in the main db,
+// and the flush added them for the first time.
+//
+// The AncestralCache is stored in the Snapshot struct in a concurrency-safe deque (bi-directional
+// queue). This deque follows a pub-sub pattern where the main db thread pushes ancestral
+// caches onto the deque. The snapshot thread then consumes these objects and writes to the
+// ancestral records. We decided to use this pattern because it doesn't slow down the main
+// block processing thread. However, to make this fully work, we also need some bookkeeping
+// to ensure the ancestral record flushes are up-to-date with the main db flushes. We
+// solve this with non-blocking counters (MainDBSemaphore, AncestralDBSemaphore) that count
+// the total number of flushes to main db and ancestral records.
+type AncestralCache struct {
+	// id is used to identify the AncestralCache.
+	id uint64
+
+	blockHeight uint64
+
+	// ExistingRecordsMap keeps track of original main db of records that we modified during
+	// UtxoView flush, which is where we're modifying state data. A record for a particular
+	// key was either already existing in our state, or not already existing in our state.
+	//
+	// We store keys as strings because they're easier to store and sort this way.
+	AncestralRecordsMap map[string]*AncestralRecordValue
+}
+
+func NewAncestralCache(id uint64, blockHeight uint64) *AncestralCache {
+	return &AncestralCache{
+		id:                  id,
+		blockHeight:         blockHeight,
+		AncestralRecordsMap: make(map[string]*AncestralRecordValue),
+	}
+}
+
+// -------------------------------------------------------------------------------------
+// SnapshotOperation
+// SnapshotOperationChannel
+// -------------------------------------------------------------------------------------
+
+// SnapshotOperationType define the different operations that can be enqueued to the snapshot's OperationChannel.
+type SnapshotOperationType uint8
+
+const (
+	// SnapshotOperationFlush operation enqueues a flush to the ancestral records.
+	SnapshotOperationFlush SnapshotOperationType = iota
+	// SnapshotOperationProcessBlock operation signals that a new block has been added to the blockchain.
+	SnapshotOperationProcessBlock
+	// SnapshotOperationProcessChunk operation is enqueued when we receive a snapshot chunk during syncing.
+	SnapshotOperationProcessChunk
+	// SnapshotOperationChecksumAdd operation is enqueued when we want to add bytes to the state checksum.
+	SnapshotOperationChecksumAdd
+	// SnapshotOperationChecksumRemove operation is enqueued when we want to remove bytes to the state checksum.
+	SnapshotOperationChecksumRemove
+	// SnapshotOperationChecksumPrint is called when we want to print the state checksum.
+	SnapshotOperationChecksumPrint
+	// SnapshotOperationExit is used to quit the snapshot loop
+	SnapshotOperationExit
+)
+
+// SnapshotOperation is passed in the snapshot's OperationChannel.
+type SnapshotOperation struct {
+	// operationType determines the operation.
+	operationType SnapshotOperationType
+
+	/* SnapshotOperationProcessBlock */
+	// blockNode is the processed block.
+	blockNode *BlockNode
+
+	/* SnapshotOperationProcessChunk */
+	// mainDb is the main db instance.
+	mainDb      *badger.DB
+	mainDbMutex *deadlock.RWMutex
+	// snapshotChunk is the snapshot chunk received from the peer.
+	snapshotChunk []*DBEntry
+
+	/* SnapshotOperationChecksumAdd, SnapshotOperationChecksumRemove */
+	// checksumBytes is the bytes we want to add to the checksum, passed during
+	checksumBytes []byte
+
+	/* SnapshotOperationChecksumPrint */
+	// printText is the text we want to put in the print statement.
+	printText string
+}
+
+type SnapshotOperationChannel struct {
+	OperationChannel chan *SnapshotOperation
+
+	StateSemaphore     int32
+	StateSemaphoreLock sync.Mutex
+
+	snapshotDb      *badger.DB
+	snapshotDbMutex *sync.Mutex
+}
+
+func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
+	opChan.OperationChannel = make(chan *SnapshotOperation, 100000)
+	opChan.StateSemaphore = 0
+
+	opChan.snapshotDb = snapshotDb
+	opChan.snapshotDbMutex = snapshotDbMutex
+
+	if snapshotDb == nil || snapshotDbMutex == nil {
+		opChan.snapshotDbMutex = &sync.Mutex{}
+		return nil
+	}
+	opChan.snapshotDbMutex.Lock()
+	defer opChan.snapshotDbMutex.Unlock()
+	err := snapshotDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(_prefixOperationChannelStatus)
+		if err != nil {
+			return err
+		}
+		stateSemaphoreBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return errors.Wrapf(err, "problem during ValueCopy")
+		}
+		rr := bytes.NewReader(stateSemaphoreBytes)
+		stateSemaphore, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "problem during ReadUvarint")
+		}
+		opChan.StateSemaphore = int32(stateSemaphore)
+		return nil
+	})
+	if err != nil && err != badger.ErrKeyNotFound {
+		return errors.Wrapf(err, "SnapshotOperationChannel.Initialize: Problem reading StateSemaphore from db")
+	}
+
+	return nil
+}
+
+func (opChan *SnapshotOperationChannel) SaveOperationChannel() error {
+	opChan.snapshotDbMutex.Lock()
+	defer opChan.snapshotDbMutex.Unlock()
+
+	return opChan.snapshotDb.Update(func(txn *badger.Txn) error {
+		return txn.Set(_prefixOperationChannelStatus, UintToBuf(uint64(opChan.StateSemaphore)))
+	})
+}
+
+func (opChan *SnapshotOperationChannel) EnqueueOperation(op *SnapshotOperation) {
+	opChan.StateSemaphoreLock.Lock()
+	opChan.StateSemaphore += 1
+	if opChan.StateSemaphore == 1 {
+		if err := opChan.SaveOperationChannel(); err != nil {
+			glog.Errorf("SnapshotOperationChannel.EnqueueOperation: Problem saving StateSemaphore to db")
+		}
+	}
+	opChan.StateSemaphoreLock.Unlock()
+
+	opChan.OperationChannel <- op
+}
+
+func (opChan *SnapshotOperationChannel) DequeueOperationStateless() *SnapshotOperation {
+	return <-opChan.OperationChannel
+}
+
+func (opChan *SnapshotOperationChannel) FinishOperation() {
+	opChan.StateSemaphoreLock.Lock()
+	defer opChan.StateSemaphoreLock.Unlock()
+
+	opChan.StateSemaphore -= 1
+	if opChan.StateSemaphore == 0 {
+		if err := opChan.SaveOperationChannel(); err != nil {
+			glog.Errorf("SnapshotOperationChannel.FinishOperation: Problem saving StateSemaphore to db")
+		}
+	}
+}
+
+func (opChan *SnapshotOperationChannel) GetStatus() int32 {
+	opChan.StateSemaphoreLock.Lock()
+	defer opChan.StateSemaphoreLock.Unlock()
+
+	return opChan.StateSemaphore
+}
+
+// -------------------------------------------------------------------------------------
+// SnapshotStatus
+// -------------------------------------------------------------------------------------
+
+type SnapshotStatus struct {
+	// MainDBSemaphore and AncestralDBSemaphore are atomically accessed counter semaphores that will be
+	// used to control race conditions between main db and ancestral records. They basically manage the concurrency
+	// between writes to the main and ancestral dbs.
+	MainDBSemaphore      uint64
+	AncestralDBSemaphore uint64
+	// MemoryLock is held whenever we modify the MainDBSemaphore or AncestralDBSemaphore.
+	MemoryLock sync.Mutex
+
+	// SnapshotStatus is called concurrently by the Server and Snapshot threads. And badger cannot handle
+	// concurrent writes to the database. To make sure this concurrency doesn't affect general performance,
+	// we use a custom badger.DB to save SnapshotStatus.
+	snapshotDb *badger.DB
+
+	// snapshotDbMutex is held whenever we modify snapshotDb.
+	snapshotDbMutex *sync.Mutex
+}
+
+func (status *SnapshotStatus) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
+	status.MainDBSemaphore = uint64(0)
+	status.AncestralDBSemaphore = uint64(0)
+
+	status.snapshotDb = snapshotDb
+	status.snapshotDbMutex = snapshotDbMutex
+
+	if snapshotDb == nil || snapshotDbMutex == nil {
+		status.snapshotDbMutex = &sync.Mutex{}
+		return nil
+	}
+	if err := status.ReadStatus(); err != nil {
+		return errors.Wrapf(err, "SnapshotStatus.ReadStatus: Can't read snapshot status from db")
+	}
+
+	return nil
+}
+
+func (status *SnapshotStatus) ToBytes() []byte {
+	var data []byte
+	data = append(data, UintToBuf(status.MainDBSemaphore)...)
+	data = append(data, UintToBuf(status.AncestralDBSemaphore)...)
+
+	return data
+}
+
+func (status *SnapshotStatus) FromBytes(rr *bytes.Reader) error {
+	var err error
+	status.MainDBSemaphore, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SnapshotStatus: Problem reading MainDBSemaphore")
+	}
+
+	status.AncestralDBSemaphore, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SnapshotStatus: Problem reading AncestralDBSemaphore")
+	}
+	return nil
+}
+
+func (status *SnapshotStatus) SaveStatus() {
+	status.snapshotDbMutex.Lock()
+	defer status.snapshotDbMutex.Unlock()
+
+	err := status.snapshotDb.Update(func(txn *badger.Txn) error {
+		return txn.Set(_prefixSnapshotStatus, status.ToBytes())
+	})
+	if err != nil {
+		glog.Fatalf("SnapshotStatus.SaveStatus: problem writing snapshot status error (%v)", err)
+	}
+}
+
+func (status *SnapshotStatus) ReadStatus() error {
+	status.snapshotDbMutex.Lock()
+	defer status.snapshotDbMutex.Unlock()
+
+	err := status.snapshotDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(_prefixSnapshotStatus)
+		if err != nil {
+			return err
+		}
+		statusBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return errors.Wrapf(err, "problem calling ValueCopy on the fetched item")
+		}
+		rr := bytes.NewReader(statusBytes)
+		return status.FromBytes(rr)
+	})
+	if err != nil && err != badger.ErrKeyNotFound {
+		return errors.Wrapf(err, "SnapshotStatus.ReadStatus: Problem reading status from db")
+	}
+	return nil
+}
+
+// IncrementMainDbSemaphoreMemoryLockRequired increments the MainDBSemaphore by one, it should be called with MemoryLock.
+func (status *SnapshotStatus) IncrementMainDbSemaphoreMemoryLockRequired() {
+	status.MainDBSemaphore++
+	status.SaveStatus()
+}
+
+// IncrementAncestralDBSemaphoreMemoryLockRequired increments the AncestralDBSemaphore by one, it should be called with MemoryLock.
+func (status *SnapshotStatus) IncrementAncestralDBSemaphoreMemoryLockRequired() {
+	status.AncestralDBSemaphore++
+	status.SaveStatus()
+}
+
+// IsFlushingToMainDBMemoryLockRequired checks if a flush to MainDB takes place. This should be called with MemoryLock.
+func (status *SnapshotStatus) IsFlushingToMainDBMemoryLockRequired() bool {
+	return status.MainDBSemaphore%2 == 1
+}
+
+// IsFlushingToAncestralMemoryLockRequired checks if a flush to AncestralDB takes place. This should be called with MemoryLock.
+func (status *SnapshotStatus) IsFlushingToAncestralMemoryLockRequired() bool {
+	return status.AncestralDBSemaphore%2 == 1
+}
+
+// IsFlushing checks whether a main DB flush or ancestral record flush is taking place.
+func (status *SnapshotStatus) IsFlushing() bool {
+	// We retrieve the ancestral record and main db semaphores.
+	status.MemoryLock.Lock()
+	defer status.MemoryLock.Unlock()
+
+	// Flush is taking place if the semaphores have different counters or if they are odd.
+	// We increment each semaphore whenever we start the flush and when we end it so they are always
+	// even when the DB is not being updated.
+	return status.MainDBSemaphore != status.AncestralDBSemaphore ||
+		(status.MainDBSemaphore|status.AncestralDBSemaphore)%2 == 1
+}
+
+// GetSemaphores retrieves main and ancestral db semaphores.
+func (status *SnapshotStatus) GetSemaphores() (_mainDbSemaphore uint64, _ancestralDBSemaphore uint64) {
+	status.MemoryLock.Lock()
+	defer status.MemoryLock.Unlock()
+
+	return status.MainDBSemaphore, status.AncestralDBSemaphore
 }
 
 // -------------------------------------------------------------------------------------
