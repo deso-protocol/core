@@ -3238,7 +3238,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				lastSeenOrder = order
 			}
 		}
-		metadata.MatchingBidsInputsMap = make(map[PKID][]*DeSoInput)
+
 		for pkid, desoNanosToConsume := range desoNanosToConsumeMap {
 			var inputs []*DeSoInput
 			inputs, err = bc.GetInputsToCoverAmount(utxoView.GetPublicKeyForPKID(&pkid), utxoView, desoNanosToConsume)
@@ -3246,7 +3246,13 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				return nil, 0, 0, 0, errors.Wrapf(err,
 					"Blockchain.CreateDAOCoinLimitOrderTxn: Error getting inputs to cover amount: ")
 			}
-			metadata.MatchingBidsInputsMap[pkid] = inputs
+			metadata.MatchedBidSideTransactors = append(
+				metadata.MatchedBidSideTransactors,
+				&DeSoInputsByTransactorPKID{
+					TransactorPKID: &pkid,
+					Inputs:         inputs,
+				},
+			)
 		}
 	}
 

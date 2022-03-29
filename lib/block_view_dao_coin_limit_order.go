@@ -156,7 +156,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		pkidToLeftoverChangeDESONanos[*bav.GetPKIDForPublicKey(txn.PublicKey).PKID] = totalInput
 	}
 
-	for pkid, matchingBidsInputs := range txMeta.MatchingBidsInputsMap {
+	for _, transactor := range txMeta.MatchedBidSideTransactors {
+		pkid := *transactor.TransactorPKID
+		matchingBidSideInputs := transactor.Inputs
+
 		publicKey := bav.GetPublicKeyForPKID(&pkid)
 
 		// If no balance recorded so far, initialize to zero.
@@ -164,7 +167,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			pkidToLeftoverChangeDESONanos[pkid] = 0
 		}
 
-		for _, matchingBidInput := range matchingBidsInputs {
+		for _, matchingBidInput := range matchingBidSideInputs {
 			utxoKey := UtxoKey(*matchingBidInput)
 			utxoEntry := bav.GetUtxoEntryForUtxoKey(&utxoKey)
 
@@ -933,8 +936,8 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	// Now revert the basic transfer with the remaining operations.
 	numMatchingOrderInputs := 0
 
-	for _, inputs := range txMeta.MatchingBidsInputsMap {
-		numMatchingOrderInputs += len(inputs)
+	for _, transactor := range txMeta.MatchedBidSideTransactors {
+		numMatchingOrderInputs += len(transactor.Inputs)
 	}
 
 	numOrderOperations := (numUtxoAdds - len(currentTxn.TxOutputs) + numMatchingOrderInputs)
