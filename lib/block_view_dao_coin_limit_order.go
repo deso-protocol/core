@@ -620,18 +620,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	} else {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
 	}
+
 	// Iterate over all the UTXOs in the txn and spend them. As we spend each one,
 	// add the amount each account is allowed to spend to our map.
 	spentUtxoEntries := []*UtxoEntry{}
-	publicKeys := []PublicKey{}
-	for publicKey := range txMeta.MatchingBidsInputsMap {
-		publicKeys = append(publicKeys, publicKey)
-	}
-	sort.Slice(publicKeys, func(ii, jj int) bool {
-		return bytes.Compare(publicKeys[ii].ToBytes(), publicKeys[jj].ToBytes()) > 0
-	})
-	for _, publicKey := range publicKeys {
-		matchingBidsInputs := txMeta.MatchingBidsInputsMap[publicKey]
+	for _, transactor := range txMeta.MatchedBidsTransactors {
+		publicKey := *transactor.TransactorPublicKey
+		matchingBidsInputs := transactor.Inputs
+
 		// If no balance recorded so far, initialize to zero.
 		if _, exists := desoAllowedToSpendByPublicKey[publicKey]; !exists {
 			desoAllowedToSpendByPublicKey[publicKey] = 0
@@ -1043,8 +1039,8 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	// Now revert the basic transfer with the remaining operations.
 	numMatchingOrderInputs := 0
 
-	for _, inputs := range txMeta.MatchingBidsInputsMap {
-		numMatchingOrderInputs += len(inputs)
+	for _, transactor := range txMeta.MatchedBidsTransactors {
+		numMatchingOrderInputs += len(transactor.Inputs)
 	}
 
 	numOrderOperations := (numUtxoAdds - len(currentTxn.TxOutputs) + numMatchingOrderInputs)

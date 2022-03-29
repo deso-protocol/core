@@ -5490,6 +5490,11 @@ func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 // DAOCoinLimitOrderMetadata
 // ==================================================================
 
+type DeSoInputsByTransactor struct {
+	TransactorPublicKey *PublicKey
+	Inputs              []*DeSoInput
+}
+
 type DAOCoinLimitOrderMetadata struct {
 	BuyingDAOCoinCreatorPublicKey             *PublicKey
 	SellingDAOCoinCreatorPublicKey            *PublicKey
@@ -5500,9 +5505,11 @@ type DAOCoinLimitOrderMetadata struct {
 	// specified quantity) instead of creating a new one.
 	CancelExistingOrder bool
 
-	// This map is populated with the inputs consumed when a transaction
-	// is an ask offer and there are bids to match immediately.
-	MatchingBidsInputsMap map[PublicKey][]*DeSoInput
+	// This is only populated when this order is selling a DAO coin for
+	// $DESO, and is immediately matched with an existing bid-side order
+	// at time of creation. This field contains the transactor and their
+	// utxo inputs that can be used to immediately execute this trade.
+	MatchedBidsTransactors []*DeSoInputsByTransactor
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
@@ -5515,40 +5522,12 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(txnData.QuantityToBuyInBaseUnits)...)
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
-	data = append(data, UintToBuf(uint64(len(txnData.MatchingBidsInputsMap)))...)
+	data = append(data, UintToBuf(uint64(len(txnData.MatchedBidsTransactors)))...)
 
-	// Maps MUST be iterated in sorted order or else the serialization of the txn
-	// will be non-deterministic. This is very bad because it results in the txn
-	// hash being different each time.
-	//
-	// We sort the keys based on the mainnet string encoding of the public key.
-	sortedBidderPkStrings := []string{}
-	for bidderPkIter, _ := range txnData.MatchingBidsInputsMap {
-		// You must make a copy of the iterator before taking a pointer of it.
-		// If you don't do this, you'll have one of the worst bugs you've ever
-		// had to deal with, where the underlying data of all your pointers is
-		// shifted under your feet. It's not needed here because we're not saving
-		// the pointer, but do it just to be safe.
-		bidderPk := bidderPkIter
-		sortedBidderPkStrings = append(sortedBidderPkStrings, PkToStringMainnet(bidderPk[:]))
-	}
-	for ii, pkStr := range sortedBidderPkStrings {
-		bidderPkBytes, _, err := Base58CheckDecode(pkStr)
-		if err != nil {
-			return nil, errors.Wrapf(err, "DAOCoinLimitOrderMetadata: "+
-				"Error serializing pubkey %v at index %v in MatchingBidsInputsMap",
-				pkStr, ii)
-		}
-		bidderPk := NewPublicKey(bidderPkBytes)
-		inputs, exists := txnData.MatchingBidsInputsMap[*bidderPk]
-		if !exists {
-			return nil, fmt.Errorf("DAOCoinLimitOrderMetadata: Error "+
-				"serializing inputs for pubkey %v at index %v. Map value "+
-				"did not exist. This should never happen", pkStr, ii)
-		}
-		data = append(data, bidderPk[:]...)
-		data = append(data, UintToBuf(uint64(len(inputs)))...)
-		for _, input := range inputs {
+	for _, transactor := range txnData.MatchedBidsTransactors {
+		data = append(data, transactor.TransactorPublicKey[:]...)
+		data = append(data, UintToBuf(uint64(len(transactor.Inputs)))...)
+		for _, input := range transactor.Inputs {
 			data = append(data, input.TxID[:]...)
 			data = append(data, UintToBuf(uint64(input.Index))...)
 		}
@@ -5597,18 +5576,14 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	// Parse CancelExistingOrder
 	ret.CancelExistingOrder = ReadBoolByte(rr)
 
-	// Parse MatchingBidsInputsMap
-	matchingBidsInputsMapLength, err := ReadUvarint(rr)
+	// Parse MatchingBidsTransactors
+	matchingBidsTransactorsLength, err := ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf(
 			"DAOCoinLimitOrderMetadata.FromBytes: Error reading length of matching bids input: %v", err)
 	}
 
-	if matchingBidsInputsMapLength > 0 {
-		ret.MatchingBidsInputsMap = make(map[PublicKey][]*DeSoInput)
-	}
-
-	for ii := uint64(0); ii < matchingBidsInputsMapLength; ii++ {
+	for ii := uint64(0); ii < matchingBidsTransactorsLength; ii++ {
 		pubKey, err := ReadPublicKey(rr)
 		if err != nil {
 			return fmt.Errorf(
@@ -5620,7 +5595,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 			return fmt.Errorf(
 				"DAOCoinLimitOrderMetadata.FromBytes: Error reading inputs length at index %v: %v", ii, err)
 		}
-		ret.MatchingBidsInputsMap[*pubKey] = make([]*DeSoInput, 0, matchingBidsInputsMapLength)
+		inputs := []*DeSoInput{}
 		for jj := uint64(0); jj < inputsLength; jj++ {
 			currentInput := NewDeSoInput()
 			_, err = io.ReadFull(rr, currentInput.TxID[:])
@@ -5643,9 +5618,17 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 			}
 			currentInput.Index = uint32(inputIndex)
 
-			ret.MatchingBidsInputsMap[*pubKey] = append(
-				ret.MatchingBidsInputsMap[*pubKey], currentInput)
+			inputs = append(inputs, currentInput)
 		}
+
+		pubKeyCopy := *pubKey
+		ret.MatchedBidsTransactors = append(
+			ret.MatchedBidsTransactors,
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: &pubKeyCopy,
+				Inputs:              inputs,
+			},
+		)
 	}
 
 	*txnData = ret
