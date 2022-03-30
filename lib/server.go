@@ -2259,17 +2259,21 @@ func (progress *SyncProgress) PrintLoop() {
 
 			for _, prefix := range StatePrefixes.StatePrefixesList {
 				// Check if the prefix has been completed.
+				foundPrefix := false
 				for _, prefixProgress := range progress.PrefixProgress {
 					if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
 						if prefixProgress.Completed {
 							completedPrefixes = append(completedPrefixes, prefix)
 							break
-						} else if len(incompletePrefixes) == 0 {
+						} else {
 							currentPrefix = prefix
 						}
-						incompletePrefixes = append(incompletePrefixes, prefix)
+						foundPrefix = true
 						break
 					}
+				}
+				if !foundPrefix {
+					incompletePrefixes = append(incompletePrefixes, prefix)
 				}
 			}
 			glog.Infof(CLog(Green, fmt.Sprintf("HyperSync: finished downloading prefixes (%v)", completedPrefixes)))

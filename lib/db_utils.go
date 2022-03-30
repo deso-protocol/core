@@ -198,7 +198,7 @@ type DBPrefixes struct {
 	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   []byte `prefix_id:"[47]" is_state:"true"`
 	// Prefixes for NFT ownership:
 	// 	<prefix_id, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
-	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[8]" is_state:"true"`
+	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[48]" is_state:"true"`
 	//  <prefix_id, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
 	PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry []byte `prefix_id:"[49]" is_state:"true"`
 	// Prefixes for NFT bids:
