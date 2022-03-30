@@ -152,8 +152,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// public key so there is no need to verify anything further.
 	}
 
-	// ----- CUSTOM VALIDATIONS
-
 	// Extract the buyCoin and sellCoin PKIDs from the txn's public keys.
 	// Note that if any of these are ZeroPublicKey, then GetPKIDForPublicKey will
 	// return ZeroPKID back to us, which is what we want. Recall that ZeroPKID
@@ -178,55 +176,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			spew.Sdump(transactorPKIDEntry))
 	}
 
-	// Validate buyCoinPKIDEntry != sellCoinPKIDEntry.
-	if *buyCoinPKIDEntry.PKID == *sellCoinPKIDEntry.PKID {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
-	}
-
-	// If buying a DAO coin, validate buyCoinPKIDEntry exists and has a profile.
-	// Note that ZeroPKID indicates that we are buying/selling DESO.
-	transactorIsBuyingDESO := *buyCoinPKIDEntry.PKID == ZeroPKID
-	if !transactorIsBuyingDESO {
-		profileEntry := bav.GetProfileEntryForPKID(buyCoinPKIDEntry.PKID)
-		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
-		}
-	}
-
-	// If selling a DAO coin, validate sellCoinPKIDEntry exists and has a profile.
-	transactorIsSellingDESO := *sellCoinPKIDEntry.PKID == ZeroPKID
-	if !transactorIsSellingDESO {
-		profileEntry := bav.GetProfileEntryForPKID(sellCoinPKIDEntry.PKID)
-		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile
-		}
-	}
-
-	// Validate price > 0.
-	if !txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy.Gt(uint256.NewInt()) {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidExchangeRate
-	}
-
-	// Validate quantity > 0.
-	if !txMeta.QuantityToBuyInBaseUnits.Gt(uint256.NewInt()) {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidQuantity
-	}
-
-	// Calculate order total amount to sell from price and quantity.
-	baseUnitsToSell, err := ComputeBaseUnitsToSellUint256(
-		txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy, txMeta.QuantityToBuyInBaseUnits)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-
-	// If selling $DESO, validate that order total cost is less than the max uint64.
-	if transactorIsSellingDESO && !baseUnitsToSell.IsUint64() {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
-	}
-
-	// FIXME: Validate transfer restriction status, if DAO coin can only be transferred
-	// to whitelisted members.
-
 	// Create entry from txn metadata for the transactor.
 	transactorOrder := &DAOCoinLimitOrderEntry{
 		TransactorPKID:                            transactorPKIDEntry.PKID,
@@ -235,6 +184,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
 		BlockHeight:                               blockHeight,
+	}
+
+	// Validate transactor order.
+	err = bav.IsValidDAOCoinLimitOrder(transactorOrder)
+	if err != nil {
+		return 0, 0, nil, err
 	}
 
 	// Get all existing limit orders:
@@ -273,21 +228,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		})
 
 		return totalInput, totalOutput, utxoOpsForTxn, nil
-	}
-
-	// Make sure that the transactor has enough money to execute the txn
-	transactorBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
-		transactorPKIDEntry.PKID, sellCoinPKIDEntry.PKID, nil)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-	if transactorBalanceBaseUnits.Lt(baseUnitsToSell) {
-		return 0, 0, nil, errors.Wrapf(
-			RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder,
-			"transactorBalance amount: %v, for coin pkid (zero = DESO) %v, "+
-				"baseUnitsToSell: %v",
-			transactorBalanceBaseUnits.Hex(), PkToStringMainnet(sellCoinPKIDEntry.PKID[:]),
-			baseUnitsToSell.Hex())
 	}
 
 	// See if we have an existing limit order at this price and in this block
@@ -391,6 +331,15 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// we're iterating over have the reverse. That means the other person is trying
 		// to (sell buyCoin, buy sellCoin). Hang in there, though. It all makes sense
 		// after you've stared at it for a bit.
+
+		// Validate matching order. Delete from order book if invalid.
+		// It was validated when stored but things could have changed
+		// like the submitter's $DESO and DAO coin balances.
+		err := bav.IsValidDAOCoinLimitOrder(matchingOrder)
+		if err != nil {
+			bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
+			continue
+		}
 
 		// This is the total amount of sellCoin the current order is willing to sell. Note that
 		// the asset the matching order is SELLING is the same asset that the
@@ -865,19 +814,10 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 	// Aggregate matching orders.
 	for _, matchingOrder := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
-		if matchingOrder.isDeleted {
-			continue
-		}
-
-		if bytes.Compare(
-			transactorOrder.BuyingDAOCoinCreatorPKID.ToBytes(),
-			matchingOrder.SellingDAOCoinCreatorPKID.ToBytes()) != 0 {
-			continue
-		}
-
-		if bytes.Compare(
-			transactorOrder.SellingDAOCoinCreatorPKID.ToBytes(),
-			matchingOrder.BuyingDAOCoinCreatorPKID.ToBytes()) != 0 {
+		// This doesn't mean that the matching order is invalid and should be deleted.
+		// It just means that the matching order isn't actually a viable match.
+		err := bav.IsValidDAOCoinLimitOrderMatch(transactorOrder, matchingOrder)
+		if err != nil {
 			continue
 		}
 
@@ -885,8 +825,6 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		if lastSeenOrder != nil && matchingOrder.IsBetterMatchingOrderThan(lastSeenOrder) {
 			continue
 		}
-
-		// TODO: should we also validate that the price is better?
 
 		sortedMatchingOrders = append(sortedMatchingOrders, matchingOrder)
 	}
@@ -1157,4 +1095,137 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrderEntriesForThisTransactorAtThisPrice
 	}
 
 	return outputEntries, nil
+}
+
+func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) error {
+	// Returns an error if the input order is invalid. Otherwise returns nil.
+
+	// Validate not buying and selling the same coin.
+	if bytes.Equal(order.BuyingDAOCoinCreatorPKID.ToBytes(), order.SellingDAOCoinCreatorPKID.ToBytes()) {
+		return RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
+	}
+
+	// If buying a DAO coin, validate buy coin creator exists and has a profile.
+	// Note that ZeroPKID indicates that we are buying $DESO.
+	isBuyingDESO := order.BuyingDAOCoinCreatorPKID.IsZeroPKID()
+	var buyCoinCreatorProfileEntry *ProfileEntry
+
+	if !isBuyingDESO {
+		buyCoinCreatorProfileEntry = bav.GetProfileEntryForPKID(order.BuyingDAOCoinCreatorPKID)
+		if buyCoinCreatorProfileEntry == nil || buyCoinCreatorProfileEntry.isDeleted {
+			return RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
+		}
+	}
+
+	// If selling DAO coins, validate sell coin creator exists and has a profile.
+	// Note that ZeroPKID indicates that we are selling $DESO.
+	isSellingDESO := order.SellingDAOCoinCreatorPKID.IsZeroPKID()
+	var sellCoinCreatorProfileEntry *ProfileEntry
+
+	if !isSellingDESO {
+		sellCoinCreatorProfileEntry = bav.GetProfileEntryForPKID(order.SellingDAOCoinCreatorPKID)
+		if sellCoinCreatorProfileEntry == nil || sellCoinCreatorProfileEntry.isDeleted {
+			return RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile
+		}
+	}
+
+	// Validate price > 0.
+	if !order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Gt(uint256.NewInt()) {
+		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
+	}
+
+	// Validate quantity > 0.
+	if !order.QuantityToBuyInBaseUnits.Gt(uint256.NewInt()) {
+		return RuleErrorDAOCoinLimitOrderInvalidQuantity
+	}
+
+	// Calculate order total amount to sell from price and quantity.
+	baseUnitsToSell, err := ComputeBaseUnitsToSellUint256(
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy, order.QuantityToBuyInBaseUnits)
+	if err != nil {
+		return err
+	}
+
+	// If selling $DESO, validate that order total cost is less than the max uint64.
+	if isSellingDESO && !baseUnitsToSell.IsUint64() {
+		return RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
+	}
+
+	// If selling $DESO, make sure the transactor has enough $DESO to execute the txn.
+	// If selling DAO coins, make sure the transactor has enough DAO coins to execute the txn.
+	transactorBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
+		order.TransactorPKID, order.SellingDAOCoinCreatorPKID, nil)
+	if err != nil {
+		return err
+	}
+
+	if transactorBalanceBaseUnits.Lt(baseUnitsToSell) {
+		if isSellingDESO {
+			return RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
+		}
+
+		return RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
+	}
+
+	return nil
+}
+
+func (bav *UtxoView) IsValidDAOCoinLimitOrderMatch(
+	transactorOrder *DAOCoinLimitOrderEntry, matchingOrder *DAOCoinLimitOrderEntry) error {
+	// Returns an error if the input order is invalid. Otherwise returns nil.
+
+	// Validate matching order exists.
+	if matchingOrder.isDeleted {
+		return RuleErrorDAOCoinLimitOrderMatchingOrderIsDeleted
+	}
+
+	// Validate transactor order buying coin == matching order selling coin and vice versa.
+	if !bytes.Equal(transactorOrder.BuyingDAOCoinCreatorPKID.ToBytes(), matchingOrder.SellingDAOCoinCreatorPKID.ToBytes()) {
+		return RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins
+	}
+
+	if !bytes.Equal(transactorOrder.SellingDAOCoinCreatorPKID.ToBytes(), matchingOrder.BuyingDAOCoinCreatorPKID.ToBytes()) {
+		return RuleErrorDAOCoinLimitOrderMatchingOrderBuyingDifferentCoins
+	}
+
+	// TODO: we should also validate that the price is actually better.
+
+	// Validate DAO coin transfer restriction status, i.e. if the
+	// DAO coin can only be transferred to whitelisted members.
+	transactorPublicKey := bav.GetPublicKeyForPKID(transactorOrder.TransactorPKID)
+	matchingOrderTransactorPublicKey := bav.GetPublicKeyForPKID(matchingOrder.TransactorPKID)
+
+	if !transactorOrder.BuyingDAOCoinCreatorPKID.IsZeroPKID() {
+		// The matching order is selling DAO coin(s) to the transactor.
+		buyCoinCreatorProfileEntry := bav.GetProfileEntryForPKID(transactorOrder.BuyingDAOCoinCreatorPKID)
+
+		if buyCoinCreatorProfileEntry == nil || buyCoinCreatorProfileEntry.isDeleted {
+			return RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
+		}
+
+		err := bav.IsValidDAOCoinTransfer(
+			buyCoinCreatorProfileEntry, matchingOrderTransactorPublicKey, transactorPublicKey)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	if !transactorOrder.SellingDAOCoinCreatorPKID.IsZeroPKID() {
+		// The transactor is selling DAO coin(s) to the matching order.
+		sellCoinCreatorProfileEntry := bav.GetProfileEntryForPKID(transactorOrder.SellingDAOCoinCreatorPKID)
+
+		if sellCoinCreatorProfileEntry == nil || sellCoinCreatorProfileEntry.isDeleted {
+			return RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
+		}
+
+		err := bav.IsValidDAOCoinTransfer(
+			sellCoinCreatorProfileEntry, transactorPublicKey, matchingOrderTransactorPublicKey)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
