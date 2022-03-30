@@ -23,6 +23,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
+const (
+	NodeRestart = iota
+	NodeErase
+)
+
 type Node struct {
 	Server   *lib.Server
 	chainDB  *badger.DB
@@ -34,12 +39,17 @@ type Node struct {
 	// False when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
 	isRunning bool
+
+	exitChan    chan struct{}
+	restartChan chan int
 }
 
 func NewNode(config *Config) *Node {
 	result := Node{}
 	result.Config = config
 	result.Params = config.Params
+	result.exitChan = make(chan struct{})
+	result.restartChan = make(chan int)
 
 	return &result
 }
@@ -203,6 +213,7 @@ func (node *Node) Start() {
 		node.Config.TrustedBlockProducerPublicKeys,
 		node.Config.TrustedBlockProducerStartHeight,
 		eventManager,
+		node.restartChan,
 	)
 	if err != nil {
 		panic(err)
@@ -221,6 +232,7 @@ func (node *Node) Start() {
 	}
 
 	node.isRunning = true
+	go node.listenToRestart()
 }
 
 func (node *Node) Stop() {
@@ -236,6 +248,28 @@ func (node *Node) Stop() {
 
 	node.chainDB.Close()
 	node.isRunning = false
+	node.exitChan <- struct{}{}
+}
+
+func (node *Node) listenToRestart() {
+	select {
+	case <-node.exitChan:
+		break
+	case operation := <-node.restartChan:
+		node.Stop()
+		switch operation {
+		case NodeErase:
+			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
+				glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
+					"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
+					node.Config.DataDirectory, err)))
+				return
+			}
+		}
+		node.exitChan = make(chan struct{})
+		node.restartChan = make(chan int)
+		node.Start()
+	}
 }
 
 func validateParams(params *lib.DeSoParams) {

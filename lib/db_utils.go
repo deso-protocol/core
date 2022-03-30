@@ -609,19 +609,28 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBy
 
 // DBDeleteAllStateRecords is an auxiliary function that is used to clean up the state
 // before starting hyper sync.
-func DBDeleteAllStateRecords(db *badger.DB) error {
+func DBDeleteAllStateRecords(db *badger.DB) (_shouldErase bool, _error error) {
 	maxKeys := 10000
+	shouldErase := false
+
+	go func() {
+		time.Sleep(1 * time.Minute)
+		shouldErase = true
+	}()
 
 	// Iterate over all state prefixes.
 	for _, prefix := range StatePrefixes.StatePrefixesList {
 		startKey := prefix
 		fetchingPrefix := true
 
-		// We will delete all records for a prefix step by step. We do this in chunks of 8MB,
+		// We will delete all records for a prefix step by step. We do this in chunks of 10,000 keys,
 		// to make sure we don't overload badger DB with the size of our queries. Whenever a
 		// chunk is not full, that is isChunkFull = false, it means that we've exhausted all
 		// entries for a prefix.
 		for fetchingPrefix {
+			if shouldErase {
+				return true, nil
+			}
 			var isChunkFull bool
 			var keys [][]byte
 			err := db.View(func(txn *badger.Txn) error {
@@ -643,7 +652,7 @@ func DBDeleteAllStateRecords(db *badger.DB) error {
 				return nil
 			})
 			if err != nil {
-				return errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at "+
+				return true, errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at "+
 					"prefix (%v)", prefix)
 			}
 			fetchingPrefix = isChunkFull
@@ -660,11 +669,11 @@ func DBDeleteAllStateRecords(db *badger.DB) error {
 				return nil
 			})
 			if err != nil {
-				return err
+				return true, err
 			}
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // -------------------------------------------------------------------------------------

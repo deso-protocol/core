@@ -139,6 +139,10 @@ type Server struct {
 
 	Notifier *Notifier
 
+	// restartButton is used to restart the node that's currently running this server.
+	// It is basically a backlink to the node that calls Stop() and Start().
+	restartButton chan int
+
 	shutdown int32
 	// timer is a helper variable that allows timing events for development purposes.
 	// It can be used to find computational bottlenecks.
@@ -317,6 +321,7 @@ func NewServer(
 	_trustedBlockProducerPublicKeys []string,
 	_trustedBlockProducerStartHeight uint64,
 	eventManager *EventManager,
+	_restartChan chan int,
 ) (*Server, error) {
 
 	// Create an empty Server object here so we can pass a reference to it to the
@@ -326,6 +331,7 @@ func NewServer(
 		ReadOnlyMode:                 _readOnlyMode,
 		IgnoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
 		snapshot:                     _snapshot,
+		restartButton:                _restartChan,
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -796,7 +802,18 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
 				// remove these entries from the db because we will receive them during state sync.
 				glog.Infof(CLog(Magenta, "HyperSync: deleting all state records. This can take a while."))
-				DBDeleteAllStateRecords(srv.blockchain.db)
+				shouldErase, err := DBDeleteAllStateRecords(srv.blockchain.db)
+				if err != nil {
+					glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleHeaderBundle: problem while deleting state "+
+						"records, error: %v", err)))
+				}
+				if shouldErase {
+					srv.restartButton <- NodeErase
+					glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleHeaderBundle: Records were found in the node "+
+						"directory, while trying to resync. Now erasing the node directory and restarting the node. "+
+						"That's faster than manually expunging all records from the database.")))
+					return
+				}
 
 				// We set the expected height and hash of the snapshot from our header chain. The snapshots should be
 				// taken on a regular basis every SnapshotBlockHeightPeriod number of blocks. This means we can calculate the
