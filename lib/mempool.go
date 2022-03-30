@@ -1724,8 +1724,55 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		})
 	case TxnTypeDAOCoinLimitOrder:
 		realTxMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-		_ = realTxMeta
-		// TODO
+		if !realTxMeta.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(realTxMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
+				Metadata:             "BuyingDAOCoinCreatorPublicKey",
+			})
+		}
+
+		if !realTxMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(realTxMeta.SellingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
+				Metadata:             "SellingDAOCoinCreatorPublicKey",
+			})
+		}
+
+		utxoOp := utxoOps[len(utxoOps)-1]
+		uniquePKIDMap := make(map[PKID]bool)
+		fulfilledOrderMetadata := []*FulfilledDAOCoinLimitOrderMetadata{}
+		for _, filledOrder := range utxoOp.FulfilledDAOCoinLimitOrders {
+			uniquePKIDMap[*filledOrder.TransactorPKID] = true
+			fulfilledOrderMetadata = append(fulfilledOrderMetadata, &FulfilledDAOCoinLimitOrderMetadata{
+				TransactorPublicKeyBase58Check: PkToString(
+					utxoView.GetPublicKeyForPKID(filledOrder.TransactorPKID), utxoView.Params),
+				BuyingDAOCoinCreatorPublicKey: PkToString(
+					utxoView.GetPublicKeyForPKID(filledOrder.BuyingDAOCoinCreatorPKID), utxoView.Params),
+				SellingDAOCoinCreatorPublicKey: PkToString(
+					utxoView.GetPublicKeyForPKID(filledOrder.SellingDAOCoinCreatorPKID), utxoView.Params),
+				BuyingDAOCoinQuantityPurchased: filledOrder.BuyingDAOCoinQuantityPurchased,
+				BuyingDAOCoinQuantityRequested: filledOrder.BuyingDAOCoinQuantityRequested,
+				SellingDAOCoinQuantitySold:     filledOrder.SellingDAOCoinQuantitySold,
+			})
+		}
+
+		for uniquePKID, _ := range uniquePKIDMap {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&uniquePKID), utxoView.Params),
+				Metadata:             "FilledOrderPublicKey",
+			})
+		}
+
+		txnMeta.DAOCoinLimitOrderTxindexMetadata = &DAOCoinLimitOrderTxindexMetadata{
+			FulfilledDAOCoinLimitOrdersMetadata: fulfilledOrderMetadata,
+			BuyingDAOCoinCreatorPublicKey: PkToString(
+				realTxMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
+			SellingDAOCoinCreatorPublicKey: PkToString(
+				realTxMeta.SellingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: realTxMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			QuantityToBuyInBaseUnits:                  realTxMeta.QuantityToBuyInBaseUnits,
+		}
+
 	}
 	return txnMeta
 }

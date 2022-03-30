@@ -3223,7 +3223,11 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					if transactorOrderBuyingQuantity.Lt(matchingOrderSellingQuantity) {
 						transactorOrderBuyingQuantity = uint256.NewInt()
 					} else {
-						transactorOrderBuyingQuantity = uint256.NewInt().Sub(transactorOrderBuyingQuantity, matchingOrderSellingQuantity)
+						transactorOrderBuyingQuantity, err = SafeUint256().Sub(transactorOrderBuyingQuantity, matchingOrderSellingQuantity)
+						if err != nil {
+							// This should never happen because of the check above.
+							return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: underflow in partial order cost")
+						}
 					}
 
 					if _, exists := desoNanosToConsumeMap[*matchingOrder.TransactorPKID]; !exists {
@@ -3234,8 +3238,13 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateDAOCoinLimitOrderTxn: order cost overflows $DESO")
 					}
 
-					// TODO: check for overflow
-					desoNanosToConsumeMap[*matchingOrder.TransactorPKID] += desoNanosToConsume.Uint64()
+					desoNanosToConsumeMap[*matchingOrder.TransactorPKID], err = SafeUint64().Add(
+						desoNanosToConsumeMap[*matchingOrder.TransactorPKID],
+						desoNanosToConsume.Uint64())
+
+					if err != nil {
+						return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
+					}
 				}
 				lastSeenOrder = matchingOrder
 			}
@@ -4307,12 +4316,17 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 								return 0, 0, 0, 0,
 									errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
 							}
-							requestedOrder.QuantityToBuyInBaseUnits =
-								uint256.NewInt().Sub(
-									requestedOrder.QuantityToBuyInBaseUnits,
-									order.QuantityToBuyInBaseUnits)
+							requestedOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Sub(
+								requestedOrder.QuantityToBuyInBaseUnits,
+								order.QuantityToBuyInBaseUnits)
+							if err != nil {
+								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+							}
 						}
-						nanosToFulfillOrders = uint256.NewInt().Add(nanosToFulfillOrders, nanosToFulfillOrder)
+						nanosToFulfillOrders, err = SafeUint256().Add(nanosToFulfillOrders, nanosToFulfillOrder)
+						if err != nil {
+							return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+						}
 					}
 					lastSeenOrder = order
 				}

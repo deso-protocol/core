@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
+	"math"
 	"math/big"
 )
 
@@ -225,53 +226,82 @@ func GetS256BasePointCompressed() []byte {
 	return basePoint
 }
 
-// ----- CONVERTERS
+// SafeUint256 allows for arithmetic operations that error
+// if an overflow or underflow situation is detected.
+type _SafeUint256 struct{}
 
-func Clone(input *big.Float) *big.Float {
-	// *big.Float => *big.Float
-	output := NewFloat()
-	output.Copy(input)
-	return output
+func SafeUint256() *_SafeUint256 {
+	return &_SafeUint256{}
 }
 
-func ToBigFloat(input *uint256.Int) *big.Float {
-	// *uint256.Int => *big.Float
-	output := NewFloat()
-	output.SetInt(input.ToBig())
-	return output
+func (safeUint256 *_SafeUint256) Add(x *uint256.Int, y *uint256.Int) (*uint256.Int, error) {
+	if uint256.NewInt().Sub(MaxUint256, y).Lt(x) {
+		return nil, fmt.Errorf("addition overflows uint256")
+	}
+
+	return uint256.NewInt().Add(x, y), nil
 }
 
-func ToUint256(input *big.Float) (*uint256.Int, error) {
-	// *big.Float => *uint256.Int
-	if input.Cmp(NewFloat().SetUint64(0)) <= 0 {
-		return uint256.NewInt(), nil
+func (safeUint256 *_SafeUint256) Sub(x *uint256.Int, y *uint256.Int) (*uint256.Int, error) {
+	if x.Lt(y) {
+		return nil, fmt.Errorf("subtraction underflows uint256")
 	}
 
-	output := uint256.NewInt()
-	inputInt, _ := input.Int(nil)
-
-	isOverflow := output.SetFromBig(inputInt)
-	if isOverflow {
-		return nil, fmt.Errorf("Overflow when converting big.Float to uint256")
-	}
-
-	return output, nil
+	return uint256.NewInt().Sub(x, y), nil
 }
 
-func Uint64Pow(base int, power int) uint64 {
-	if base < 0 || power < 0 {
-		panic("Invalid inputs to Uint64Pow")
+func (safeUint256 *_SafeUint256) Mul(x *uint256.Int, y *uint256.Int) (*uint256.Int, error) {
+	if uint256.NewInt().Div(MaxUint256, y).Lt(x) {
+		return nil, fmt.Errorf("multiplication overflows uint256")
 	}
 
-	if power == 0 {
-		return 1
+	return uint256.NewInt().Mul(x, y), nil
+}
+
+func (safeUint256 *_SafeUint256) Div(x *uint256.Int, y *uint256.Int) (*uint256.Int, error) {
+	if y.IsZero() {
+		return nil, fmt.Errorf("division by zero")
 	}
 
-	result := base
+	return uint256.NewInt().Div(x, y), nil
+}
 
-	for i := 2; i <= power; i++ {
-		result *= base
+// SafeUint64 allows for arithmetic operations that error
+// if an overflow or underflow situation is detected.
+type _SafeUint64 struct{}
+
+func SafeUint64() *_SafeUint64 {
+	return &_SafeUint64{}
+}
+
+func (safeUint64 *_SafeUint64) Add(x uint64, y uint64) (uint64, error) {
+	if uint64(math.MaxUint64)-y < x {
+		return 0, fmt.Errorf("addition overflows uint64")
 	}
 
-	return uint64(result)
+	return x + y, nil
+}
+
+func (safeUint64 *_SafeUint64) Sub(x uint64, y uint64) (uint64, error) {
+	if x < y {
+		return 0, fmt.Errorf("subtraction underflows uint64")
+	}
+
+	return x - y, nil
+}
+
+func (safeUint64 *_SafeUint64) Mul(x uint64, y uint64) (uint64, error) {
+	if uint64(math.MaxUint64)/y < x {
+		return 0, fmt.Errorf("multiplication overflows uint64")
+	}
+
+	return x * y, nil
+}
+
+func (safeUint64 *_SafeUint64) Div(x uint64, y uint64) (uint64, error) {
+	if y == 0 {
+		return 0, fmt.Errorf("division by zero")
+	}
+
+	return x / y, nil
 }

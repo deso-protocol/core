@@ -3628,6 +3628,23 @@ type DAOCoinTxindexMetadata struct {
 	TransferRestrictionStatus string
 }
 
+type FulfilledDAOCoinLimitOrderMetadata struct {
+	TransactorPublicKeyBase58Check string
+	BuyingDAOCoinCreatorPublicKey  string
+	SellingDAOCoinCreatorPublicKey string
+	BuyingDAOCoinQuantityPurchased *uint256.Int
+	BuyingDAOCoinQuantityRequested *uint256.Int
+	SellingDAOCoinQuantitySold     *uint256.Int
+}
+
+type DAOCoinLimitOrderTxindexMetadata struct {
+	BuyingDAOCoinCreatorPublicKey             string
+	SellingDAOCoinCreatorPublicKey            string
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	QuantityToBuyInBaseUnits                  *uint256.Int
+	FulfilledDAOCoinLimitOrdersMetadata       []*FulfilledDAOCoinLimitOrderMetadata
+}
+
 type UpdateProfileTxindexMetadata struct {
 	ProfilePublicKeyBase58Check string
 
@@ -3768,6 +3785,7 @@ type TransactionMetadata struct {
 	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
 	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
 	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata   *DAOCoinLimitOrderTxindexMetadata   `json:",omitempty"`
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
@@ -6336,7 +6354,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 		if err != nil {
 			// This should never happen as we validate the
 			// stored orders when they are submitted.
-			return nil, err
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
 		}
 
 		// Reduce requested buying quantity by matching order's selling quantity.
@@ -6344,8 +6362,13 @@ func DBGetMatchingDAOCoinLimitOrders(
 		if queryQuantityToBuy.Lt(matchingOrderQuantityToSell) {
 			queryQuantityToBuy = uint256.NewInt()
 		} else {
-			queryQuantityToBuy = uint256.NewInt().Sub(
+			queryQuantityToBuy, err = SafeUint256().Sub(
 				queryQuantityToBuy, matchingOrderQuantityToSell)
+
+			if err != nil {
+				// This should never happen with the check above.
+				return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
+			}
 		}
 
 		matchingOrders = append(matchingOrders, matchingOrder)

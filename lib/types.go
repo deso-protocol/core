@@ -1,11 +1,13 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
+	"sort"
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -48,6 +50,17 @@ func (pkid *PKID) Encode() []byte {
 	return append(data, pkid[:]...)
 }
 
+func (pkid *PKID) IsZeroPKID() bool {
+	return bytes.Equal(pkid.ToBytes(), ZeroPKID.ToBytes())
+}
+
+func SortPKIDs(pkids []PKID) []PKID {
+	sort.Slice(pkids, func(ii, jj int) bool {
+		return bytes.Compare(pkids[ii].ToBytes(), pkids[jj].ToBytes()) > 0
+	})
+	return pkids
+}
+
 func ReadPublicKey(rr io.Reader) (*PublicKey, error) {
 	valBytes := make([]byte, 33, 33)
 	_, err := io.ReadFull(rr, valBytes)
@@ -82,6 +95,10 @@ func NewPublicKey(publicKeyBytes []byte) *PublicKey {
 
 func (publicKey *PublicKey) ToBytes() []byte {
 	return publicKey[:]
+}
+
+func (publicKey *PublicKey) IsZeroPublicKey() bool {
+	return bytes.Equal(publicKey.ToBytes(), ZeroPublicKey.ToBytes())
 }
 
 func PublicKeyToPKID(publicKey []byte) *PKID {

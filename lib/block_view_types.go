@@ -395,8 +395,9 @@ type UtxoOperation struct {
 	PrevBalanceEntries map[PKID]map[PKID]*BalanceEntry
 	PrevMatchingOrders []*DAOCoinLimitOrderEntry
 	// TODO: I don't think we need this field.
-	// Actually we do need this field. It mirrors NFTSpentUtxoEntries
-	SpentUtxoEntries []*UtxoEntry
+	// Actually we do need this field. It mirrors NFTSpentUtxoEntries?
+	SpentUtxoEntries            []*UtxoEntry
+	FulfilledDAOCoinLimitOrders []*FulfilledDAOCoinLimitOrder
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -1519,6 +1520,17 @@ type DAOCoinLimitOrderEntry struct {
 	isDeleted bool
 }
 
+// FulfilledDAOCoinLimitOrder only exists to support understanding what orders were
+// fulfilled when connecting a DAO Coin Limit Order Txn
+type FulfilledDAOCoinLimitOrder struct {
+	TransactorPKID                 *PKID
+	BuyingDAOCoinCreatorPKID       *PKID
+	SellingDAOCoinCreatorPKID      *PKID
+	BuyingDAOCoinQuantityPurchased *uint256.Int
+	BuyingDAOCoinQuantityRequested *uint256.Int
+	SellingDAOCoinQuantitySold     *uint256.Int
+}
+
 func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
 	bb, err := order.ToBytes()
 	if err != nil {
@@ -1647,7 +1659,7 @@ func ComputeBaseUnitsToSellUint256(
 	if scaledTotalCostBigint.Cmp(MaxUint256.ToBig()) > 0 {
 		return nil, errors.Wrapf(
 			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
-			"OrderCostUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
+			"ComputeBaseUnitsToSellUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
 				"quantityBaseUnits: %v",
 			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
 			quantityToBuyBaseUnits.Hex())
@@ -1655,7 +1667,11 @@ func ComputeBaseUnitsToSellUint256(
 	// We don't trust the overflow checker in uint256. It's too risky because
 	// it could cause a money printer bug if there's a problem with it.
 	scaledTotalCost, _ := uint256.FromBig(scaledTotalCostBigint)
-	unscaledTotalCost := uint256.NewInt().Div(scaledTotalCost, OneUQ128x128)
+	unscaledTotalCost, err := SafeUint256().Div(scaledTotalCost, OneUQ128x128)
+	if err != nil {
+		// This should never happen as we're dividing by a known constant.
+		return nil, errors.Wrapf(err, "ComputeBaseUnitsToSellUint256: ")
+	}
 
 	// TODO: this could be because of overflow.
 	// Alternatively, this could be because exchange * quantity < 1 base units.
