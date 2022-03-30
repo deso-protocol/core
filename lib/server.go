@@ -2224,13 +2224,15 @@ type SyncProgress struct {
 }
 
 func (progress *SyncProgress) PrintLoop() {
-	stallTicker := time.NewTicker(10 * time.Second)
+	progress.printChannel = make(chan struct{})
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-progress.printChannel:
 			return
-		case <-stallTicker.C:
+		case <-ticker.C:
 			var completedPrefixes [][]byte
 			var incompletePrefixes [][]byte
 			var currentPrefix []byte
