@@ -964,18 +964,19 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 
 	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
 
+	// Delete the DAO Coin Limit Order created by this entry. If there was a previous limit order entry,
+	// it will be reset below.
+	bav._deleteDAOCoinLimitOrderEntryMappings(&DAOCoinLimitOrderEntry{
+		TransactorPKID:                            transactorPKID,
+		BuyingDAOCoinCreatorPKID:                  bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		SellingDAOCoinCreatorPKID:                 bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
+		BlockHeight:                               blockHeight,
+	})
+
 	if operationData.PrevTransactorDAOCoinLimitOrderEntry != nil {
 		bav._setDAOCoinLimitOrderEntryMappings(operationData.PrevTransactorDAOCoinLimitOrderEntry)
-	} else {
-		// We have to explicitly delete here so we wipe out the DAO Coin Limit Order we added in the connect logic.
-		bav._deleteDAOCoinLimitOrderEntryMappings(&DAOCoinLimitOrderEntry{
-			TransactorPKID:                            transactorPKID,
-			BuyingDAOCoinCreatorPKID:                  bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-			SellingDAOCoinCreatorPKID:                 bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-			ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-			QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
-			BlockHeight:                               blockHeight,
-		})
 	}
 
 	if len(operationData.PrevBalanceEntries) != 0 {
