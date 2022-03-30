@@ -375,8 +375,7 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 					progress += "█"
 				}
 			}
-			glog.Infof(CLog(Magenta, fmt.Sprintf("Finishing snapshot operations progress: (%v) %s", progress,
-				string(div*10)+"%")))
+			glog.Infof(CLog(Magenta, fmt.Sprintf("Finishing snapshot operations progress: %v", progress)))
 			printMap[div] = true
 		}
 	}

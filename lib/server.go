@@ -2262,13 +2262,13 @@ func (progress *SyncProgress) PrintLoop() {
 				foundPrefix := false
 				for _, prefixProgress := range progress.PrefixProgress {
 					if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
+						foundPrefix = true
 						if prefixProgress.Completed {
 							completedPrefixes = append(completedPrefixes, prefix)
 							break
 						} else {
 							currentPrefix = prefix
 						}
-						foundPrefix = true
 						break
 					}
 				}
@@ -2276,7 +2276,9 @@ func (progress *SyncProgress) PrintLoop() {
 					incompletePrefixes = append(incompletePrefixes, prefix)
 				}
 			}
-			glog.Infof(CLog(Green, fmt.Sprintf("HyperSync: finished downloading prefixes (%v)", completedPrefixes)))
+			if len(completedPrefixes) > 0 {
+				glog.Infof(CLog(Green, fmt.Sprintf("HyperSync: finished downloading prefixes (%v)", completedPrefixes)))
+			}
 			if len(currentPrefix) > 0 {
 				glog.Infof(CLog(Magenta, fmt.Sprintf("HyperSync: currently syncing prefix: (%v)", currentPrefix)))
 			}
