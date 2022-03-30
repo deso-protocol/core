@@ -663,10 +663,14 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 }
 
 func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
+	printHeight := pp.StartingBlockHeight()
+	if srv.blockchain.headerTip().Height > printHeight {
+		printHeight = srv.blockchain.headerTip().Height
+	}
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
 		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, pp.StartingBlockHeight())))
+		srv.blockchain.headerTip().Header.Height, printHeight)))
 
 	// Start by processing all of the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
@@ -807,7 +811,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				}
 				srv.HyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
 				srv.HyperSyncProgress.Completed = false
-				srv.HyperSyncProgress.PrintLoop()
+				go srv.HyperSyncProgress.PrintLoop()
 
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.
