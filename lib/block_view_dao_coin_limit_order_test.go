@@ -27,12 +27,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	utxoView, err := NewUtxoView(db, params, chain.postgres)
 	require.NoError(err)
-
-	// Supports both BadgerDB and Postgres testing.
-	dbAdapter := DbAdapter{
-		badgerDb:   db,
-		postgresDb: chain.postgres,
-	}
+	dbAdapter := utxoView.GetDbAdapter()
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err = miner.MineAndProcessSingleBlock(0, mempool)
