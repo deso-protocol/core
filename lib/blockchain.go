@@ -3250,16 +3250,19 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				return nil, 0, 0, 0, errors.Wrapf(err,
 					"Blockchain.CreateDAOCoinLimitOrderTxn: Error getting inputs to cover amount: ")
 			}
-			publicKeyCopy := *publicKey
 
-			metadata.MatchedBidsTransactors = append(
-				metadata.MatchedBidsTransactors,
-				&DeSoInputsByTransactor{
-					TransactorPublicKey: &publicKeyCopy,
-					Inputs:              inputs,
-				},
-			)
+			inputsByTransactor := DeSoInputsByTransactor{
+				TransactorPublicKey: &(*publicKey), // create a pointer to a copy of the public key
+				Inputs:              inputs,
+			}
+			// Sort Inputs
+			inputsByTransactor.Inputs = inputsByTransactor.GetInputsSorted()
+
+			metadata.MatchedBidsTransactors = append(metadata.MatchedBidsTransactors, &inputsByTransactor)
 		}
+
+		// Sort MatchedBidsTransactors
+		metadata.MatchedBidsTransactors = metadata.GetMatchedBidTransactorsSorted()
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.

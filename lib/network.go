@@ -5495,6 +5495,20 @@ type DeSoInputsByTransactor struct {
 	Inputs              []*DeSoInput
 }
 
+func (inputsByTransactor *DeSoInputsByTransactor) GetInputsSorted() []*DeSoInput {
+	// create a copy of the slice
+	sortedInputs := inputsByTransactor.Inputs
+	// sort the matched bid inputs within a transactor
+	sort.Slice(sortedInputs, func(i int, j int) bool {
+		// compare utxo transaction ids first, and break ties by comparing transaction indices
+		if comp := bytes.Compare(sortedInputs[i].TxID.ToBytes(), sortedInputs[j].TxID.ToBytes()); comp != 0 {
+			return comp < 0
+		}
+		return sortedInputs[i].Index < sortedInputs[j].Index
+	})
+	return sortedInputs
+}
+
 type DAOCoinLimitOrderMetadata struct {
 	BuyingDAOCoinCreatorPublicKey             *PublicKey
 	SellingDAOCoinCreatorPublicKey            *PublicKey
@@ -5516,6 +5530,20 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 	return TxnTypeDAOCoinLimitOrder
 }
 
+func (txnData *DAOCoinLimitOrderMetadata) GetMatchedBidTransactorsSorted() []*DeSoInputsByTransactor {
+	// create a copy of the slice
+	sortedMatchedBidTransactors := txnData.MatchedBidsTransactors
+	// sort matched bid transactors by public key
+	sort.Slice(sortedMatchedBidTransactors, func(i int, j int) bool {
+		// compare utxo transaction ids first, and break ties by comparing transaction indices
+		return bytes.Compare(
+			sortedMatchedBidTransactors[i].TransactorPublicKey.ToBytes(),
+			sortedMatchedBidTransactors[j].TransactorPublicKey.ToBytes(),
+		) < 0
+	})
+	return sortedMatchedBidTransactors
+}
+
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
 	data = append(data, txnData.SellingDAOCoinCreatorPublicKey.ToBytes()...)
@@ -5524,10 +5552,14 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
 	data = append(data, UintToBuf(uint64(len(txnData.MatchedBidsTransactors)))...)
 
-	for _, transactor := range txnData.MatchedBidsTransactors {
+	// we use a sorted copy internally, so we don't modify the original struct from underneath the caller
+	sortedMatchedBidTransactors := txnData.GetMatchedBidTransactorsSorted()
+	for _, transactor := range sortedMatchedBidTransactors {
 		data = append(data, transactor.TransactorPublicKey[:]...)
-		data = append(data, UintToBuf(uint64(len(transactor.Inputs)))...)
-		for _, input := range transactor.Inputs {
+
+		sortedInputs := transactor.GetInputsSorted()
+		data = append(data, UintToBuf(uint64(len(sortedInputs)))...)
+		for _, input := range sortedInputs {
 			data = append(data, input.TxID[:]...)
 			data = append(data, UintToBuf(uint64(input.Index))...)
 		}
