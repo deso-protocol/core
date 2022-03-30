@@ -1198,7 +1198,7 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrderEntriesForThisTransactorAtThisPrice
 	// ever be one transaction that matches for a given transactor PKID.
 	outputEntry, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[inputEntry.ToMapKey()]
 
-	if outputEntry != nil {
+	if outputEntry != nil && !outputEntry.isDeleted {
 		outputEntries = append(outputEntries, outputEntry)
 	}
 
