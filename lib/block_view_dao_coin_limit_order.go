@@ -1079,8 +1079,10 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	}
 
 	for _, orderEntry := range dbOrderEntries {
-		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderEntry.ToMapKey()]; !exists {
-			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderEntry.ToMapKey()] = orderEntry
+		orderMapKey := orderEntry.ToMapKey()
+
+		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey]; !exists {
+			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey] = orderEntry
 		}
 	}
 
@@ -1114,8 +1116,10 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *
 	}
 
 	for _, orderEntry := range dbOrderEntries {
-		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderEntry.ToMapKey()]; !exists {
-			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderEntry.ToMapKey()] = orderEntry
+		orderMapKey := orderEntry.ToMapKey()
+
+		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey]; !exists {
+			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey] = orderEntry
 		}
 	}
 
@@ -1153,8 +1157,10 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 	}
 
 	for _, orderEntry := range dbOrderEntries {
-		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderEntry.ToMapKey()]; !exists {
-			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderEntry.ToMapKey()] = orderEntry
+		orderMapKey := orderEntry.ToMapKey()
+
+		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey]; !exists {
+			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey] = orderEntry
 		}
 	}
 
