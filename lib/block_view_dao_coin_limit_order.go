@@ -633,24 +633,23 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	} else {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
 	}
+
 	// Iterate over all the UTXOs in the txn and spend them. As we spend each one,
 	// add the amount each account is allowed to spend to our map.
 	spentUtxoEntries := []*UtxoEntry{}
-	publicKeys := []PublicKey{}
-	for publicKey := range txMeta.MatchingBidsInputsMap {
-		publicKeys = append(publicKeys, publicKey)
-	}
-	sort.Slice(publicKeys, func(ii, jj int) bool {
-		return bytes.Compare(publicKeys[ii].ToBytes(), publicKeys[jj].ToBytes()) > 0
-	})
-	for _, publicKey := range publicKeys {
-		matchingBidsInputs := txMeta.MatchingBidsInputsMap[publicKey]
+
+	// Get a sorted copy of all of the transactors and their UTXOs
+	sortedMatchedBidsTransactors := txMeta.GetMatchedBidTransactorsSorted()
+	for _, transactor := range sortedMatchedBidsTransactors {
+		publicKey := *transactor.TransactorPublicKey
+
 		// If no balance recorded so far, initialize to zero.
 		if _, exists := desoAllowedToSpendByPublicKey[publicKey]; !exists {
 			desoAllowedToSpendByPublicKey[publicKey] = 0
 		}
 
-		for _, matchingBidInput := range matchingBidsInputs {
+		sortedMatchedBidInputs := transactor.GetInputsSorted()
+		for _, matchingBidInput := range sortedMatchedBidInputs {
 			utxoKey := UtxoKey(*matchingBidInput)
 			utxoEntry := bav.GetUtxoEntryForUtxoKey(&utxoKey)
 			if utxoEntry == nil || utxoEntry.isSpent {
@@ -1065,8 +1064,11 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	// Now revert the basic transfer with the remaining operations.
 	numMatchingOrderInputs := 0
 
-	for _, inputs := range txMeta.MatchingBidsInputsMap {
-		numMatchingOrderInputs += len(inputs)
+	// TODO: @lazynina, @mattfoley8, do we need to iterate through all the matched bids in sorted order
+	// once the disconnect logic is fully implemented?
+
+	for _, transactor := range txMeta.MatchedBidsTransactors {
+		numMatchingOrderInputs += len(transactor.Inputs)
 	}
 
 	numOrderOperations := (numUtxoAdds - len(currentTxn.TxOutputs) + numMatchingOrderInputs)
