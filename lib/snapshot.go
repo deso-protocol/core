@@ -418,9 +418,9 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 			progress := ""
 			for ii := 0; ii <= 9; ii++ {
 				if ii <= div {
-					progress += "▒"
-				} else {
 					progress += "█"
+				} else {
+					progress += "▒"
 				}
 			}
 			glog.Infof(CLog(Magenta, fmt.Sprintf("Finishing snapshot operations progress: %v", progress)))

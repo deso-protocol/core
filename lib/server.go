@@ -801,18 +801,17 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
 
+				srv.blockchain.syncingState = true
+				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
+					srv.GetSnapshot(pp)
+					return
+				}
 				glog.Infof(CLog(Magenta, "---------------------- Starting State Sync ----------------------"))
 				glog.Infof(CLog(Magenta, fmt.Sprintf("Initiating HyperSync after finishing syncing headers. HyperSync "+
 					"quickly syncs the DeSo blockchain by downloading a snapshot of the blockchain taken at height (%v). "+
 					"HyperSync will sync each prefix of the node's KV database. Connected peer (%v). Note: State sync is a new feature and hence might "+
 					"contain some unexpected behavior. If you see an issue, please report it in DeSo Github "+
 					"https://github.com/deso-protocol/core.", expectedSnapshotHeight, pp)))
-
-				srv.blockchain.syncingState = true
-				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
-					srv.GetSnapshot(pp)
-					return
-				}
 
 				// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
 				// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
@@ -1174,7 +1173,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		glog.Errorf("Server._handleSnapshot: Problem getting checksum bytes, error (%v)", err)
 	}
 	if !reflect.DeepEqual(checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
-		// TODO: Disconnect the peer and start syncing from beginning.
+		srv.restartButton <- NodeErase
+		glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleSnapshot: The final db checksum doesn't match the "+
+			"checksum received from the peer. It is likely that HyperSync encountered some unexpected error earlier. "+
+			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
+			"that the peer is misbehaving and sent invalid snapshot chunks. In either way, we'll restart the node and "+
+			"attempt to HyperSync from the beginning.")))
+		return
 	}
 
 	// After syncing state from a snapshot, we will sync remaining blocks. To do so, we will
@@ -2261,7 +2266,7 @@ type SyncProgress struct {
 
 func (progress *SyncProgress) PrintLoop() {
 	progress.printChannel = make(chan struct{})
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	for {
