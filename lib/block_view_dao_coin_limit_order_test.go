@@ -572,8 +572,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM0.CancelExistingOrder = false
 	}
 
-	// Scenario: m0 and m1 both submit open orders buying and selling
-	// the same coins for the same price. Both orders are stored.
+	// Scenario: m0 and m1 both submit identical orders. Both orders are stored.
 	{
 		// Confirm no existing limit orders.
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
@@ -592,26 +591,64 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
 
 		// m1 submits order buying 100 DAO coins @ 0.1 $DESO / DAO coin.
-		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(0.1)
-		metadataM1.QuantityToBuyInBaseUnits = uint256.NewInt().SetUint64(100)
+		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
+		metadataM1.SellingDAOCoinCreatorPublicKey = metadataM0.SellingDAOCoinCreatorPublicKey
+		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy
+		metadataM1.QuantityToBuyInBaseUnits = metadataM0.QuantityToBuyInBaseUnits
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 		// Confirm 2 existing limit orders @ 0.1 $DESO / DAO coin.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+	}
 
-		// m1's order is listed first bc his m1PKID < m0PKID and the key
-		// is identicial for both of these orders other than the PKID.
+	// Scenario: non-matching order.
+	{
+		// m0 cancels their order.
+		metadataM0.CancelExistingOrder = true
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		metadataM0.CancelExistingOrder = false
+
+		// Confirm 1 existing order from m1.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
 		require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
-		require.True(orderEntries[1].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+
+		// m0 submits order for a worse exchange rate than m1 is willing to accept.
+		// Doesn't match m1's order. Stored instead.
+		metadataM0.BuyingDAOCoinCreatorPublicKey = metadataM1.SellingDAOCoinCreatorPublicKey
+		metadataM0.SellingDAOCoinCreatorPublicKey = metadataM1.BuyingDAOCoinCreatorPublicKey
+		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(9)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		// Confirm 2 existing orders.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+
+		// m1 submits order matching their own order. Fails.
+		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
+		metadataM1.SellingDAOCoinCreatorPublicKey = metadataM0.SellingDAOCoinCreatorPublicKey
+		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(10.0)
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists)
+
+		// Confirm 2 existing orders.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
 	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
 	// TODO: maybe test trying to buy more DAO coins than were minted.
-	// TODO: partially fulfilled orders
-	// TODO: two bid orders, different prices, choose high priced one
-	// TODO: two ask orders, different prices, choose lower priced one
 	// TODO: what if someone submits order that matches their own order? Probably fine. Just match them.
 	// TODO: test disconnect logic
 
