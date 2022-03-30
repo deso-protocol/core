@@ -216,7 +216,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM0.QuantityToBuyInBaseUnits = originalQuantity
 	}
 
-	// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
+	// RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
 	{
 		originalPrice := metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy
 		originalQuantity := metadataM0.QuantityToBuyInBaseUnits
@@ -227,7 +227,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder)
 		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy = originalPrice
 		metadataM0.QuantityToBuyInBaseUnits = originalQuantity
 	}
