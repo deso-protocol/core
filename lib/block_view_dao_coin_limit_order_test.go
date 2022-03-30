@@ -25,14 +25,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 
-	// Supports both BadgerDB and Postgres testing.
-	dbAdapter := DbAdapter{
-		badgerDb:   db,
-		postgresDb: chain.postgres,
-	}
+	utxoView, err := NewUtxoView(db, params, chain.postgres)
+	require.NoError(err)
+	dbAdapter := utxoView.GetDbAdapter()
 
 	// Mine a few blocks to give the senderPkString some money.
-	_, err := miner.MineAndProcessSingleBlock(0, mempool)
+	_, err = miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
 	_, err = miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
@@ -250,8 +248,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
 	}
 
-	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair()
+	// Test GetAllDAOCoinLimitOrdersForThisDAOCoinPair()
 	{
+		// Test database query.
 		// Confirm 1 existing limit order, and it's from m0.
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 			toPKID(metadataM0.BuyingDAOCoinCreatorPublicKey),
@@ -260,22 +259,48 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
-	}
 
-	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisTransactor()
-	{
+		// Test UTXO view query.
 		// Confirm 1 existing limit order, and it's from m0.
-		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisDAOCoinPair(
+			toPKID(metadataM0.BuyingDAOCoinCreatorPublicKey),
+			toPKID(metadataM0.SellingDAOCoinCreatorPublicKey))
+
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
 	}
 
-	// Test db_adapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice()
+	// Test GetAllDAOCoinLimitOrdersForThisTransactor()
 	{
+		// Test database query.
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+
+		// Test UTXO view query.
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+	}
+
+	// Test GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice()
+	{
+		// Test database query.
 		// Confirm 1 existing limit order, and it's from m0.
 		orderEntry := metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(orderEntry)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(orderEntry))
+
+		// Test UTXO view query.
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(orderEntry)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		require.True(orderEntries[0].Eq(orderEntry))

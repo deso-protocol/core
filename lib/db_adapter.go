@@ -9,6 +9,13 @@ type DbAdapter struct {
 	postgresDb *Postgres
 }
 
+func (bav *UtxoView) GetDbAdapter() *DbAdapter {
+	return &DbAdapter{
+		badgerDb:   bav.Handle,
+		postgresDb: bav.Postgres,
+	}
+}
+
 //
 // Balance entry
 //

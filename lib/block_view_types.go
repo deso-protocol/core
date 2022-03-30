@@ -1714,6 +1714,7 @@ type DAOCoinLimitOrderMapKey struct {
 	BuyingDAOCoinCreatorPKID                  PKID
 	SellingDAOCoinCreatorPKID                 PKID
 	ScaledExchangeRateCoinsToSellPerCoinToBuy uint256.Int
+	BlockHeight                               uint32
 }
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
@@ -1722,5 +1723,6 @@ func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 		BuyingDAOCoinCreatorPKID:                  *order.BuyingDAOCoinCreatorPKID.NewPKID(),
 		SellingDAOCoinCreatorPKID:                 *order.SellingDAOCoinCreatorPKID.NewPKID(),
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: *order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		BlockHeight:                               order.BlockHeight,
 	}
 }

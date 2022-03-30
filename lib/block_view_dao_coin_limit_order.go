@@ -199,7 +199,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	//   + For this price
 	//   - Any block height
 	existingTransactorOrderss, err :=
-		bav._getAllDAOCoinLimitOrderEntriesForThisTransactorAtThisPrice(transactorOrder)
+		bav._getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(transactorOrder)
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -790,12 +790,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 	transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) (
 	[]*DAOCoinLimitOrderEntry, error) {
 	// Get matching limit order entries from database.
-	dbAdapter := DbAdapter{
-		badgerDb:   bav.Handle,
-		postgresDb: bav.Postgres,
-	}
-
-	matchingOrders, err := dbAdapter.GetMatchingDAOCoinLimitOrders(transactorOrder, lastSeenOrder)
+	matchingOrders, err := bav.GetDbAdapter().GetMatchingDAOCoinLimitOrders(transactorOrder, lastSeenOrder)
 
 	if err != nil {
 		return nil, err
@@ -1040,6 +1035,10 @@ func (bav *UtxoView) _deleteDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOr
 	bav._setDAOCoinLimitOrderEntryMappings(&tombstoneEntry)
 }
 
+// ###########################
+// ## API Getter Functions
+// ###########################
+
 func (bav *UtxoView) _getDAOCoinLimitOrderEntry(inputEntry *DAOCoinLimitOrderEntry) (*DAOCoinLimitOrderEntry, error) {
 	// This function shouldn't be called with nil.
 	if inputEntry == nil {
@@ -1054,50 +1053,139 @@ func (bav *UtxoView) _getDAOCoinLimitOrderEntry(inputEntry *DAOCoinLimitOrderEnt
 	}
 
 	// If not, next check if we have the order entry in the database.
-	dbAdapter := DbAdapter{
-		badgerDb:   bav.Handle,
-		postgresDb: bav.Postgres,
+	return bav.GetDbAdapter().GetDAOCoinLimitOrder(inputEntry)
+}
+
+func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisDAOCoinPair(
+	buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	// This function is used by the API to construct all open
+	// orders for the input buying and selling DAO coins.
+	if buyingDAOCoinCreatorPKID == nil {
+		return nil, errors.Errorf("_getAllDAOCoinLimitOrdersForThisDAOCoinPair: Called with nil buy coin PKID; this should never happen")
+	}
+	if sellingDAOCoinCreatorPKID == nil {
+		return nil, errors.Errorf("_getAllDAOCoinLimitOrdersForThisDAOCoinPair: Called with nil sell coin PKID; this should never happen")
 	}
 
-	return dbAdapter.GetDAOCoinLimitOrder(inputEntry)
+	outputEntries := []*DAOCoinLimitOrderEntry{}
+
+	// Iterate over matching database orders and add them to the
+	// UTXO view if they are not already there. This dedups orders
+	// from the database + orders from the UTXO view as well.
+	dbOrderEntries, err := bav.GetDbAdapter().GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
+		buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, orderEntry := range dbOrderEntries {
+		orderMapKey := orderEntry.ToMapKey()
+
+		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey]; !exists {
+			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey] = orderEntry
+		}
+	}
+
+	// Get matching orders from the UTXO view.
+	//   + BuyingDAOCoinCreatorPKID should match.
+	//   + SellingDAOCoincreatorPKID should match.
+	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		if orderEntry.BuyingDAOCoinCreatorPKID.Eq(buyingDAOCoinCreatorPKID) &&
+			orderEntry.SellingDAOCoinCreatorPKID.Eq(sellingDAOCoinCreatorPKID) {
+			outputEntries = append(outputEntries, orderEntry)
+		}
+	}
+
+	return outputEntries, nil
+}
+
+func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	// This function is used by the API to construct all open orders for the input transactor.
+	if transactorPKID == nil {
+		return nil, errors.Errorf("_getAllDAOCoinLimitOrdersForThisTransactor: Called with nil transactor PKID; this should never happen")
+	}
+
+	outputEntries := []*DAOCoinLimitOrderEntry{}
+
+	// Iterate over matching database orders and add them to the
+	// UTXO view if they are not already there. This dedups orders
+	// from the database + orders from the UTXO view as well.
+	dbOrderEntries, err := bav.GetDbAdapter().GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, orderEntry := range dbOrderEntries {
+		orderMapKey := orderEntry.ToMapKey()
+
+		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey]; !exists {
+			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey] = orderEntry
+		}
+	}
+
+	// Get matching orders from the UTXO view.
+	//   + TransactorPKID should match.
+	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		if transactorPKID.Eq(orderEntry.TransactorPKID) {
+			outputEntries = append(outputEntries, orderEntry)
+		}
+	}
+
+	return outputEntries, nil
 }
 
 // FIXME: Leave a comment here stating in what ORDER these orders are returned.
 // I think they're returned with the latest block height first. This means that
 // cancelling them will deterministically cancel the most recent orders. Seems
 // fine, but double-check that, and document it.
-func (bav *UtxoView) _getAllDAOCoinLimitOrderEntriesForThisTransactorAtThisPrice(
+func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 	inputEntry *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 
 	// This function shouldn't be called with nil.
 	if inputEntry == nil {
-		return nil, errors.Errorf("_getAllDAOCoinLimitOrderEntriesForThisTransactorAtThisPrice: Called with nil entry; this should never happen")
+		return nil, errors.Errorf("_getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice: Called with nil entry; this should never happen")
 	}
 
-	// First, check if we have order entries in the database for this transactor at this price.
-	// There can be multiple here as we include BlockHeight in the index, but here we are
-	// searching for matching orders across block heights.
-	dbAdapter := DbAdapter{
-		badgerDb:   bav.Handle,
-		postgresDb: bav.Postgres,
-	}
+	outputEntries := []*DAOCoinLimitOrderEntry{}
 
-	outputEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputEntry)
+	// Iterate over matching database orders and add them to the
+	// UTXO view if they are not already there. This dedups orders
+	// from the database + orders from the UTXO view as well.
+	dbOrderEntries, err := bav.GetDbAdapter().GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputEntry)
 	if err != nil {
 		return nil, err
 	}
 
-	// Next check the UTXO view. The map key does not include block height as these are
-	// unmined transactions so the block height isn't set yet. So here, there will only
-	// ever be one transaction that matches for a given transactor PKID.
-	outputEntry, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[inputEntry.ToMapKey()]
+	for _, orderEntry := range dbOrderEntries {
+		orderMapKey := orderEntry.ToMapKey()
 
-	if outputEntry != nil {
-		outputEntries = append(outputEntries, outputEntry)
+		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey]; !exists {
+			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey] = orderEntry
+		}
+	}
+
+	// Get matching orders from the UTXO view.
+	//   + TransactorPKIDs should match.
+	//   + BuyingDAOCoinCreatorPKIDs should match.
+	//   + SellingDAOCoinCreatorPKIDs should match.
+	//   + ScaledExchangeRateCoinsToSellPerCoinToBuy should match.
+	//   - QuantityToBuyInBaseUnits does not need to match.
+	//   - BlockHeight does not need to match.
+	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		if inputEntry.TransactorPKID.Eq(orderEntry.TransactorPKID) &&
+			inputEntry.BuyingDAOCoinCreatorPKID.Eq(orderEntry.BuyingDAOCoinCreatorPKID) &&
+			inputEntry.SellingDAOCoinCreatorPKID.Eq(orderEntry.SellingDAOCoinCreatorPKID) &&
+			inputEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy.Eq(orderEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy) {
+			outputEntries = append(outputEntries, orderEntry)
+		}
 	}
 
 	return outputEntries, nil
 }
+
+// ###########################
+// ## VALIDATIONS
+// ###########################
 
 func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) error {
 	// Returns an error if the input order is invalid. Otherwise returns nil.
