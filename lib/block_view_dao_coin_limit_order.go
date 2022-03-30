@@ -872,6 +872,16 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 
 	if operationData.PrevTransactorDAOCoinLimitOrderEntry != nil {
 		bav._setDAOCoinLimitOrderEntryMappings(operationData.PrevTransactorDAOCoinLimitOrderEntry)
+	} else {
+		// We have to explicitly delete here so we wipe out the DAO Coin Limit Order we added in the connect logic.
+		bav._deleteDAOCoinLimitOrderEntryMappings(&DAOCoinLimitOrderEntry{
+			TransactorPKID:                            transactorPKID,
+			BuyingDAOCoinCreatorPKID:                  bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			SellingDAOCoinCreatorPKID:                 bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
+			BlockHeight:                               blockHeight,
+		})
 	}
 
 	if len(operationData.PrevBalanceEntries) != 0 {
@@ -887,6 +897,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 			bav._setDAOCoinLimitOrderEntryMappings(prevMatchingOrder)
 		}
 	}
+
 	//// If buying DAO coins, revert the transactor's buying DAO coin balance entry.
 	//transactorIsBuyingDESO := reflect.DeepEqual(*txMeta.BuyingDAOCoinCreatorPublicKey, ZeroPublicKey)
 	//
@@ -984,6 +995,14 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	//			"this should never happen!")
 	//	}
 	//}
+	for ii := operationIndex; ii > operationIndex-numUtxoAdds+len(currentTxn.TxOutputs); ii-- {
+		utxoOp := utxoOpsForTxn[ii]
+		if err := bav._unAddUtxo(utxoOp.Key); err != nil {
+			return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unAdding UTXO %v: ", utxoOp.Key)
+		}
+	}
+
+	operationIndex = operationIndex - numUtxoAdds + len(currentTxn.TxOutputs)
 
 	// Now revert the basic transfer with the remaining operations.
 	numMatchingOrderInputs := 0
@@ -992,8 +1011,17 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		numMatchingOrderInputs += len(inputs)
 	}
 
-	numOrderOperations := (numUtxoAdds - len(currentTxn.TxOutputs) + numMatchingOrderInputs)
-	operationIndex -= numOrderOperations
+	for jj := operationIndex; jj > operationIndex-numMatchingOrderInputs; jj-- {
+		utxoOp := utxoOpsForTxn[jj]
+		if err := bav._unSpendUtxo(utxoOp.Entry); err != nil {
+			return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpending UTXO %v: ", utxoOp.Entry)
+		}
+	}
+	operationIndex = operationIndex - numMatchingOrderInputs
+	//operationIndex--
+
+	//numOrderOperations := (numUtxoAdds - len(currentTxn.TxOutputs) + numMatchingOrderInputs)
+	//operationIndex -= numOrderOperations
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
 }

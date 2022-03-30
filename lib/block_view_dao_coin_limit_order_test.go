@@ -615,7 +615,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// TODO: what if someone submits order that matches their own order? Probably fine. Just match them.
 	// TODO: test disconnect logic
 
-	//_rollBackTestMetaTxnsAndFlush(testMeta)
+	_rollBackTestMetaTxnsAndFlush(testMeta)
 	//_applyTestMetaTxnsToMempool(testMeta)
 	//_applyTestMetaTxnsToViewAndFlush(testMeta)
 	//_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
