@@ -2598,29 +2598,28 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 }
 
 func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
-	var matchingOrders []*PGDAOCoinLimitOrder
-	order := inputOrder
+	// TODO: for now we just pull all matching orders regardless
+	// of price and rely on the price comparison logic elsewhere.
+	// We do need to make sure we sort by price descending so that
+	// the transactor is reviewing the best-priced orders first.
 
+	// If last seen order is not nil, this means that the transactor
+	// still has quantity to fulfill and is requesting more orders.
+	// In that case, to avoid an infinite loop, we need to say that
+	// there are no more orders that match.
 	if lastSeenOrder != nil {
-		order = lastSeenOrder
+		return []*DAOCoinLimitOrderEntry{}, nil
 	}
 
-	// Invert the input order's ScaledPrice for comparison with the stored orders' prices.
-	// TODO: fix this!
-	//invertedScaledPrice, err := order.InvertedScaledPrice()
-	//if err != nil {
-	//	return nil, err
-	//}
-	invertedScaledPrice := order.ScaledExchangeRateCoinsToSellPerCoinToBuy
+	var matchingOrders []*PGDAOCoinLimitOrder
 
 	// Switch BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
 	err := postgres.db.Model(&matchingOrders).
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
-		Where("scaled_exchange_rate_coins_to_sell_per_coin_to_buy >= ?", Uint256ToLeftPaddedHex(invertedScaledPrice)).
-		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC").
-		Order("block_height ASC").
-		Order("transactor_pkid DESC").
+		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
+		Order("block_height ASC").                                        // Then oldest first (FIFO)
+		Order("transactor_pkid DESC").                                    // To guarantee idempotency
 		Select()
 
 	if err != nil {
