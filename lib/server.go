@@ -295,7 +295,6 @@ func NewServer(
 	_connectIps []string,
 	_db *badger.DB,
 	postgres *Postgres,
-	_snapshot *Snapshot,
 	_targetOutboundPeers uint32,
 	_maxInboundPeers uint32,
 	_minerPublicKeys []string,
@@ -311,6 +310,7 @@ func NewServer(
 	_minBlockUpdateIntervalSeconds uint64,
 	_blockCypherAPIKey string,
 	_runReadOnlyUtxoViewUpdater bool,
+	_snapshotBlockHeightPeriod uint64,
 	_dataDir string,
 	_mempoolDumpDir string,
 	_disableNetworking bool,
@@ -322,7 +322,18 @@ func NewServer(
 	_trustedBlockProducerStartHeight uint64,
 	eventManager *EventManager,
 	_restartChan chan int,
-) (*Server, error) {
+) (_srv *Server, _err error, _shouldRestart bool) {
+	var err error
+
+	// Setup snapshot
+	var _snapshot *Snapshot
+	shouldRestart := false
+	if _hyperSync {
+		_snapshot, err, shouldRestart = NewSnapshot(_dataDir, _snapshotBlockHeightPeriod, false, false)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	// Create an empty Server object here so we can pass a reference to it to the
 	// ConnectionManager.
@@ -367,7 +378,12 @@ func NewServer(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
 		_params, timesource, _db, postgres, eventManager, _snapshot)
 	if err != nil {
-		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain")
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
+	}
+	if shouldRestart {
+		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
+			"properly last time"))
+		_snapshot.ForceReset(_chain)
 	}
 
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
@@ -430,7 +446,7 @@ func NewServer(
 	}
 	_miner, err := NewDeSoMiner(_minerPublicKeys, uint32(_numMiningThreads), _blockProducer, _params)
 	if err != nil {
-		return nil, errors.Wrapf(err, "NewServer: ")
+		return nil, errors.Wrapf(err, "NewServer: "), true
 	}
 	// If we only want to sync to a specific block height, we would disable the miner.
 	// _maxSyncBlockHeight is used for development.
@@ -471,7 +487,7 @@ func NewServer(
 	timer.Initialize()
 	srv.timer = timer
 
-	return srv, nil
+	return srv, nil, shouldRestart
 }
 
 func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {

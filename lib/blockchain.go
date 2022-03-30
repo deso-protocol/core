@@ -2454,6 +2454,80 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	return isMainChain, false, nil
 }
 
+func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
+	// Roll back the block and make sure we don't hit any errors.
+	bc.ChainLock.Lock()
+	defer bc.ChainLock.Unlock()
+
+	if blockHeight < 0 {
+		blockHeight = 0
+	}
+
+	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
+		if uint64(bc.bestChain[ii].Height) > blockHeight {
+			prevHash := *bc.bestChain[ii-1].Hash
+			hash := *bc.bestChain[ii].Hash
+			height := uint64(bc.bestChain[ii].Height)
+			err := bc.db.Update(func(txn *badger.Txn) error {
+				utxoView, err := NewUtxoView(bc.db, bc.params, nil, nil)
+				if err != nil {
+					return err
+				}
+				// Fetch the utxo operations for the block we're detaching. We need these
+				// in order to be able to detach the block.
+				utxoOps, err := GetUtxoOperationsForBlock(bc.db, nil, &hash)
+
+				// Compute the hashes for all the transactions.
+				blockToDetach, err := GetBlock(&hash, bc.db, nil)
+				if err != nil {
+					return err
+				}
+				txHashes, err := ComputeTransactionHashes(blockToDetach.Txns)
+				if err != nil {
+					return err
+				}
+				err = utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps, height)
+				if err != nil {
+					return err
+				}
+
+				// Flushing the view after applying and rolling back should work.
+				err = utxoView.FlushToDb(height)
+				if err != nil {
+					return err
+				}
+
+				// Set the best node hash to the new tip.
+				if err := PutBestHashWithTxn(txn, bc.snapshot, &prevHash, ChainTypeDeSoBlock); err != nil {
+					return err
+				}
+
+				// Delete the utxo operations for the blocks we're detaching since we don't need
+				// them anymore.
+				if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, &hash); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem deleting utxo operations for block")
+				}
+
+				// If we have a Server object then call its function
+				if bc.eventManager != nil {
+					// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
+					// For now it's fine because reorgs are virtually impossible.
+					bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
+				}
+
+				return nil
+			})
+			if err != nil {
+				return errors.Wrapf(err, "Blockchain.DisconnectBlocksToHeight: Problem disconnecting block "+
+					"with hash: (%v) at blockHeight: (%v)", hash, height)
+			}
+		} else {
+			break
+		}
+	}
+	return nil
+}
+
 // ValidateTransaction creates a UtxoView and sees if the transaction can be connected
 // to it. If a mempool is provided, this function tries to find dependencies of the
 // passed-in transaction in the pool and connect them before trying to connect the

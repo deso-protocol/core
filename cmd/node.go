@@ -63,6 +63,9 @@ func (node *Node) Start() {
 	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
 
+	node.restartChan = make(chan int)
+	go node.listenToRestart()
+
 	// Print config
 	node.Config.Print()
 	glog.Infof("Start() | After node config")
@@ -170,24 +173,15 @@ func (node *Node) Start() {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
-	// Setup snapshot
-	var snapshot *lib.Snapshot
-	if node.Config.HyperSync {
-		snapshot, err = lib.NewSnapshot(node.Config.DataDirectory, node.Config.SnapshotBlockHeightPeriod, false, false)
-		if err != nil {
-			panic(err)
-		}
-	}
-
 	// Setup the server
-	node.Server, err = lib.NewServer(
+	shouldRestart := false
+	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,
 		listeners,
 		desoAddrMgr,
 		node.Config.ConnectIPs,
 		node.chainDB,
 		node.Postgres,
-		snapshot,
 		node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers,
 		node.Config.MinerPublicKeys,
@@ -203,6 +197,7 @@ func (node *Node) Start() {
 		node.Config.MinBlockUpdateInterval,
 		node.Config.BlockCypherAPIKey,
 		true,
+		node.Config.SnapshotBlockHeightPeriod,
 		node.Config.DataDirectory,
 		node.Config.MempoolDumpDirectory,
 		node.Config.DisableNetworking,
@@ -219,20 +214,26 @@ func (node *Node) Start() {
 		panic(err)
 	}
 
-	node.Server.Start()
+	if !shouldRestart {
+		node.Server.Start()
 
-	// Setup TXIndex - not compatible with postgres
-	if node.Config.TXIndex && node.Postgres == nil {
-		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
-		if err != nil {
-			glog.Fatal(err)
+		// Setup TXIndex - not compatible with postgres
+		if node.Config.TXIndex && node.Postgres == nil {
+			node.TXIndex, err, shouldRestart = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
+			if err != nil {
+				glog.Fatal(err)
+			}
+			node.Server.TxIndex = node.TXIndex
+			if !shouldRestart {
+				node.TXIndex.Start()
+			}
 		}
-		node.Server.TxIndex = node.TXIndex
-		node.TXIndex.Start()
 	}
-
 	node.isRunning = true
-	go node.listenToRestart()
+
+	if shouldRestart {
+		node.restartChan <- NodeRestart
+	}
 }
 
 func (node *Node) Stop() {
@@ -256,6 +257,9 @@ func (node *Node) listenToRestart() {
 	case <-node.exitChan:
 		break
 	case operation := <-node.restartChan:
+		if !node.isRunning {
+			panic("Node.listenToRestart: Node is currently not running, restartChan should've not been called!")
+		}
 		glog.Infof("Node.listenToRestart: Stopping node")
 		node.Stop()
 		glog.Infof("Node.listenToRestart: Finished stopping node")

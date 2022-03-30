@@ -128,11 +128,6 @@ type Snapshot struct {
 	// down incorrectly.
 	Status *SnapshotStatus
 
-	// brokenSnapshot indicates that we need to rebuild entire snapshot from scratch.
-	// Updates to the snapshot happen in the background, so sometimes they can be broken
-	// if a node stops unexpectedly. Health checks will detect these and set brokenSnapshot.
-	brokenSnapshot bool
-
 	isTxIndex       bool
 	disableChecksum bool
 
@@ -140,13 +135,14 @@ type Snapshot struct {
 	ExitChannel chan bool
 	// updateWaitGroup is used to wait for snapshot loop to finish.
 	updateWaitGroup sync.WaitGroup
+	stopped         bool
 
 	timer *Timer
 }
 
 // NewSnapshot creates a new snapshot instance.
 func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxIndex bool,
-	disableChecksum bool) (*Snapshot, error) {
+	disableChecksum bool) (_snap *Snapshot, _err error, _shouldRestart bool) {
 	// TODO: make sure we don't snapshot when using PG
 	// Initialize the ancestral records database
 	snapshotDir := filepath.Join(GetBadgerDbPath(dataDirectory), "snapshot")
@@ -189,11 +185,15 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	if err := status.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
 		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"))
 	}
-	// TODO: If SnapshotStatus.IsFlushing fails, we should start recovery and rollback blocks to last snapshot epoch.
-	if status.IsFlushing() {
-		//return fmt.Errorf("SnapshotStatus.ReadStatus: Node wasn't closed properly, a recovery process should start")
-		status.MainDBSemaphore = 0
-		status.AncestralDBSemaphore = 0
+
+	// If this condition is true, the snapshot is broken and we need to start the recovery process.
+	// We will revert the blockchain to the last snapshot epoch and restart the node. After the restart,
+	// the node will rebuild snapshot by resyncing blocks up to the tip, starting from last snapshot epoch.
+	shouldRestart := false
+	if operationChannel.StateSemaphore > 0 || status.IsFlushing() {
+		glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Node didn't shut down properly last time. Entering a recovery mode where we roll back "+
+			"to last epoch block height (%v) and hash (%v) then restarting.", metadata.SnapshotBlockHeight, metadata.CurrentEpochBlockHash)))
+		shouldRestart = true
 	}
 
 	// Initialize the timer.
@@ -220,7 +220,7 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	// Run the snapshot main loop.
 	go snap.Run()
 
-	return snap, nil
+	return snap, nil, shouldRestart
 }
 
 // Run is the snapshot main loop. It handles the operations from the OperationChannel.
@@ -279,12 +279,60 @@ func (snap *Snapshot) Run() {
 
 func (snap *Snapshot) Stop() {
 	glog.V(1).Infof("Snapshot.Stop: Stopping the run loop")
+	if snap.stopped {
+		return
+	}
+	snap.stopped = true
 
 	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
 		operationType: SnapshotOperationExit,
 	})
 	snap.WaitForAllOperationsToFinish()
 	snap.updateWaitGroup.Wait()
+
+	if err := snap.SnapshotDb.Close(); err != nil {
+		glog.Errorf("Error closing SnapshotDb, ancestral records can be corrupted, you might need to " +
+			"resync this node.")
+	}
+}
+
+func (snap *Snapshot) ForceReset(chain *Blockchain) {
+	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
+		operationType: SnapshotOperationExit,
+	})
+	snap.WaitForAllOperationsToFinish()
+	snap.updateWaitGroup.Wait()
+	defer snap.SnapshotDb.Close()
+
+	snap.OperationChannel.StateSemaphore = 0
+	snap.Status.MainDBSemaphore = 0
+	snap.Status.AncestralDBSemaphore = 0
+
+	lastEpochHeight := snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight
+	err := chain.DisconnectBlocksToHeight(lastEpochHeight)
+	if err != nil {
+		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem disconnecting blocks"))
+	}
+	if len(snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes) == 0 {
+		snap.Checksum.ResetChecksum()
+	} else {
+		err = snap.Checksum.FromBytes(snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
+		if err != nil {
+			glog.Fatal(errors.Wrapf(err, "NewSnapshot: problem resetting checksum bytes"))
+		}
+		err = snap.Checksum.SaveChecksum()
+		if err != nil {
+			glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem saving checksum"))
+		}
+	}
+	err = snap.OperationChannel.SaveOperationChannel()
+	if err != nil {
+		glog.Fatal(CLog(Red, fmt.Sprintf("NewSnapshot: Problem saving operation channel in database. Error: (%v)", err)))
+	}
+	snap.Status.SaveStatus()
+	if err != nil {
+		glog.Fatal(CLog(Red, fmt.Sprintf("NewSnapshot: Problem saving snapshot status in database. Error: (%v)", err)))
+	}
 
 	if err := snap.SnapshotDb.Close(); err != nil {
 		glog.Errorf("Error closing SnapshotDb, ancestral records can be corrupted, you might need to " +
