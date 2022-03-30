@@ -353,7 +353,12 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 		printMap[ii] = false
 	}
 	printProgress := func(currentLen int32) {
-		div := (10 * int(currentLen)) / initialLen
+		var div int
+		if initialLen > 0 && int(currentLen) < initialLen {
+			div = (10 * int(currentLen)) / initialLen
+		} else {
+			div = 9
+		}
 		if !printMap[div] {
 			progress := ""
 			for ii := 0; ii <= 9; ii++ {
@@ -363,7 +368,7 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 					progress += "█"
 				}
 			}
-			glog.Infof(CLog(Magenta, fmt.Sprintf("Finishing snapshot operations progress: (%v) | (%v)%v", progress, div*10, "%")))
+			glog.Infof(CLog(Magenta, fmt.Sprintf("Finishing snapshot operations progress: (%v) | (%v)%%", progress, div*10)))
 			printMap[div] = true
 		}
 	}
