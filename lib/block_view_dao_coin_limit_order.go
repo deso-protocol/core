@@ -1160,10 +1160,17 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 
 	if transactorBalanceBaseUnits.Lt(baseUnitsToSell) {
 		if isSellingDESO {
-			return RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
+			err = RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
+		} else {
+			err = RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
 		}
 
-		return RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
+		return errors.Wrapf(
+			err,
+			"transactorBalance amount: %v, for coin pkid (zero = DESO) %v, baseUnitsToSell: %v",
+			transactorBalanceBaseUnits.Hex(),
+			PkToStringMainnet(order.SellingDAOCoinCreatorPKID.ToBytes()),
+			baseUnitsToSell.Hex())
 	}
 
 	return nil
