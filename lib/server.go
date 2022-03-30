@@ -45,36 +45,6 @@ type GetDataRequestInfo struct {
 type ServerReply struct {
 }
 
-// SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
-// hyper sync to determine which peer to query about each prefix and also what was the last
-// db key that we've received from that peer. Peers will send us state by chunks. But first we
-// need to tell the peer the starting key for the chunk we want to retrieve.
-type SyncPrefixProgress struct {
-	// Peer assigned for retrieving this particular prefix.
-	PrefixSyncPeer *Peer
-	// DB prefix corresponding to this particular sync progress.
-	Prefix []byte
-	// LastReceivedKey is the last key that we've received from this peer.
-	LastReceivedKey []byte
-
-	// Completed indicates whether we've finished syncing this prefix.
-	Completed bool
-}
-
-// SyncProgress is used to keep track of hyper sync progress. It stores a list of SyncPrefixProgress
-// structs which are used to track progress on each individual prefix. It also has the snapshot block
-// height and block hash of the current snapshot epoch.
-type SyncProgress struct {
-	// PrefixProgress includes a list of SyncPrefixProgress objects, each of which represents a state prefix.
-	PrefixProgress []*SyncPrefixProgress
-
-	// SnapshotMetadata is the information about the snapshot we're downloading.
-	SnapshotMetadata *SnapshotEpochMetadata
-
-	// Completed indicates whether we've finished syncing state.
-	Completed bool
-}
-
 // Server is the core of the DeSo node. It effectively runs a single-threaded
 // main loop that processes transactions from other peers and responds to them
 // accordingly. Probably the best place to start looking is the messageHandler
@@ -808,9 +778,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				glog.Infof(CLog(Magenta, "----------- Starting State Sync -----------"))
 				glog.Infof(CLog(Magenta, "Initiated HyperSync, which quickly downloads the DeSo blockchain state."))
 				glog.Infof(CLog(Magenta, fmt.Sprintf("Node will download a snapshot of the blockchain taken at height (%v). "+
-					"HyperSync will sync each prefix of the node's KV database.", expectedSnapshotHeight)))
-				glog.Infof(CLog(Magenta, "Note: State sync is a new feature and hence might contain some unexpected "+
-					"behavior. If you see an issue, please report it in DeSo Github https://github.com/deso-protocol/core."))
+					"HyperSync will sync each prefix of the node's KV database. Note: State sync is a new feature and hence might "+
+					"contain some unexpected behavior. If you see an issue, please report it in DeSo Github "+
+					"https://github.com/deso-protocol/core.", expectedSnapshotHeight)))
 
 				srv.blockchain.syncingState = true
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
@@ -837,6 +807,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				}
 				srv.HyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
 				srv.HyperSyncProgress.Completed = false
+				srv.HyperSyncProgress.PrintLoop()
 
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.
@@ -1123,7 +1094,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// and see what's left to do.
 
 	var completedPrefixes [][]byte
-	for ii, prefix := range StatePrefixes.StatePrefixesList {
+	for _, prefix := range StatePrefixes.StatePrefixesList {
 		completed := false
 		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
@@ -1133,21 +1104,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			}
 		}
 		if !completed {
-			glog.Infof(CLog(Magenta, fmt.Sprintf("HyperSync currently syncing prefix: (%v)", prefix)))
-			glog.Infof(CLog(Magenta, fmt.Sprintf("Completed prefixes (%v)", completedPrefixes)))
-			var notStartedPrefixes [][]byte
-			for jj := ii + 1; jj < len(StatePrefixes.StatePrefixesList); jj++ {
-				notStartedPrefixes = append(notStartedPrefixes, StatePrefixes.StatePrefixesList[jj])
-			}
-			if len(notStartedPrefixes) > 0 {
-				glog.Infof(CLog(Magenta, fmt.Sprintf("Remaining prefixes (%v)", notStartedPrefixes)))
-			}
 			srv.GetSnapshot(pp)
 			return
 		}
 		completedPrefixes = append(completedPrefixes, prefix)
 	}
 
+	srv.HyperSyncProgress.printChannel <- struct{}{}
 	// Wait for the snapshot thread to process all operations and print the checksum.
 	srv.snapshot.WaitForAllOperationsToFinish()
 
@@ -2221,5 +2184,75 @@ func (srv *Server) Start() {
 
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
+	}
+}
+
+// SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
+// hyper sync to determine which peer to query about each prefix and also what was the last
+// db key that we've received from that peer. Peers will send us state by chunks. But first we
+// need to tell the peer the starting key for the chunk we want to retrieve.
+type SyncPrefixProgress struct {
+	// Peer assigned for retrieving this particular prefix.
+	PrefixSyncPeer *Peer
+	// DB prefix corresponding to this particular sync progress.
+	Prefix []byte
+	// LastReceivedKey is the last key that we've received from this peer.
+	LastReceivedKey []byte
+
+	// Completed indicates whether we've finished syncing this prefix.
+	Completed bool
+}
+
+// SyncProgress is used to keep track of hyper sync progress. It stores a list of SyncPrefixProgress
+// structs which are used to track progress on each individual prefix. It also has the snapshot block
+// height and block hash of the current snapshot epoch.
+type SyncProgress struct {
+	// PrefixProgress includes a list of SyncPrefixProgress objects, each of which represents a state prefix.
+	PrefixProgress []*SyncPrefixProgress
+
+	// SnapshotMetadata is the information about the snapshot we're downloading.
+	SnapshotMetadata *SnapshotEpochMetadata
+
+	// Completed indicates whether we've finished syncing state.
+	Completed bool
+
+	printChannel chan struct{}
+}
+
+func (progress *SyncProgress) PrintLoop() {
+	stallTicker := time.NewTicker(10 * time.Second)
+
+	for {
+		select {
+		case <-progress.printChannel:
+			return
+		case <-stallTicker.C:
+			var completedPrefixes [][]byte
+			var incompletePrefixes [][]byte
+			var currentPrefix []byte
+
+			for _, prefix := range StatePrefixes.StatePrefixesList {
+				// Check if the prefix has been completed.
+				for _, prefixProgress := range progress.PrefixProgress {
+					if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
+						if prefixProgress.Completed {
+							completedPrefixes = append(completedPrefixes, prefix)
+							break
+						} else if len(incompletePrefixes) == 0 {
+							currentPrefix = prefix
+						}
+						incompletePrefixes = append(incompletePrefixes, prefix)
+						break
+					}
+				}
+			}
+			glog.Infof(CLog(Green, fmt.Sprintf("HyperSync: finished downloading prefixes (%v)", completedPrefixes)))
+			if len(currentPrefix) > 0 {
+				glog.Infof(CLog(Magenta, fmt.Sprintf("HyperSync: currently syncing prefix: (%v)", currentPrefix)))
+			}
+			if len(incompletePrefixes) > 0 {
+				glog.Infof("Remaining prefixes (%v)", incompletePrefixes)
+			}
+		}
 	}
 }

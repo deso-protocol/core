@@ -1714,7 +1714,7 @@ var (
 	Magenta = color.New(color.FgMagenta)
 	Yellow  = color.New(color.FgYellow)
 	Green   = color.New(color.FgGreen)
-	Blue    = color.New(color.FgHiBlue)
+	Blue    = color.New(color.FgBlue)
 )
 
 func CLog(c *color.Color, str string) string {
