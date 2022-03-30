@@ -802,6 +802,16 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
 			if srv.cmgr.HyperSync {
+				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
+
+				glog.Infof(CLog(Magenta, "----------- Starting State Sync -----------"))
+				glog.Infof(CLog(Magenta, "Initiated HyperSync, which quickly downloads the DeSo blockchain state."))
+				glog.Infof(CLog(Magenta, fmt.Sprintf("Node will download a snapshot of the blockchain taken at height (%v). "+
+					"HyperSync will sync each prefix of the node's KV database.", expectedSnapshotHeight)))
+				glog.Infof(CLog(Magenta, "Note: State sync is a new feature and hence might contain some unexpected "+
+					"behavior. If you see an issue, please report it in DeSo Github https://github.com/deso-protocol/core."))
+
 				srv.blockchain.syncingState = true
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
 					srv.GetSnapshot(pp)
@@ -819,8 +829,6 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// expected height at which the snapshot should be taking place. We do this to make sure that the
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
-				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
 					SnapshotBlockHeight:       expectedSnapshotHeight,
 					FirstSnapshotBlockHeight:  expectedSnapshotHeight,
@@ -1125,14 +1133,14 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			}
 		}
 		if !completed {
-			glog.Infof(CLog(Magenta, fmt.Sprintf("_handleSnapshot: currently syncing prefix (%v)", prefix)))
-			glog.Infof(CLog(Magenta, fmt.Sprintf("_handleSnapshot: completed prefixes (%v)", completedPrefixes)))
+			glog.Infof(CLog(Magenta, fmt.Sprintf("HyperSync currently syncing prefix: (%v)", prefix)))
+			glog.Infof(CLog(Magenta, fmt.Sprintf("Completed prefixes (%v)", completedPrefixes)))
 			var notStartedPrefixes [][]byte
 			for jj := ii + 1; jj < len(StatePrefixes.StatePrefixesList); jj++ {
 				notStartedPrefixes = append(notStartedPrefixes, StatePrefixes.StatePrefixesList[jj])
 			}
 			if len(notStartedPrefixes) > 0 {
-				glog.Infof("_handleSnapshot: remaining prefixes (%v)", notStartedPrefixes)
+				glog.Infof(CLog(Magenta, fmt.Sprintf("Remaining prefixes (%v)", notStartedPrefixes)))
 			}
 			srv.GetSnapshot(pp)
 			return
@@ -1153,10 +1161,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.Print("Server._handleSnapshot Main")
 	srv.timer.Print("HyperSync")
 	srv.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
-	glog.Infof("Server._handleSnapshot: metadata checksum: (%v)", srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)
+	glog.Infof(CLog(Magenta, fmt.Sprintf("Metadata checksum: (%v)",
+		srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
 
-	glog.Infof("Best header chain %v best block chain %v",
-		srv.blockchain.bestHeaderChain[msg.SnapshotMetadata.SnapshotBlockHeight], srv.blockchain.bestChain)
+	glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
+		srv.blockchain.bestHeaderChain[msg.SnapshotMetadata.SnapshotBlockHeight], srv.blockchain.bestChain)))
 
 	// Verify that the state checksum matches the one in HyperSyncProgress snapshot metadata.
 	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.

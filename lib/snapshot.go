@@ -347,24 +347,23 @@ func (snap *Snapshot) RemoveChecksumBytes(bytes []byte) {
 // current operations. Spinlocks are undesired but it's the easiest solution in this case,
 func (snap *Snapshot) WaitForAllOperationsToFinish() {
 	// Define some helper variables so that the node prints nice logs.
-	initialLen := snap.OperationChannel.GetStatus()
+	initialLen := int(snap.OperationChannel.GetStatus())
 	printMap := make(map[int]bool)
-	for ii := 1; ii <= 10; ii++ {
+	for ii := 0; ii <= 9; ii++ {
 		printMap[ii] = false
 	}
 	printProgress := func(currentLen int32) {
-		div := int(initialLen / currentLen)
+		div := (10 * int(currentLen)) / initialLen
 		if !printMap[div] {
 			progress := ""
-			for ii := 1; ii <= 10; ii++ {
+			for ii := 0; ii <= 9; ii++ {
 				if ii <= div {
-					progress += "⬛"
+					progress += "▒"
 				} else {
-					progress += "⬜"
+					progress += "█"
 				}
 			}
-			glog.Infof(CLog(Magenta, fmt.Sprintf("Snapshot.WaitForAllOperationsToFinish: finishing "+
-				"snapshot operations progress: (%v) | (%v)%", progress, div)))
+			glog.Infof(CLog(Magenta, fmt.Sprintf("Finishing snapshot operations progress: (%v) | (%v)%%", progress, div*10)))
 			printMap[div] = true
 		}
 	}
@@ -1712,7 +1711,7 @@ func (t *Timer) Print(eventName string) {
 
 var (
 	Cyan    = color.New(color.FgCyan)
-	Magenta = color.New(color.FgHiMagenta)
+	Magenta = color.New(color.FgMagenta)
 	Yellow  = color.New(color.FgYellow)
 	Green   = color.New(color.FgGreen)
 	Blue    = color.New(color.FgHiBlue)

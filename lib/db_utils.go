@@ -367,6 +367,18 @@ func GetStatePrefixes() *DBStatePrefixes {
 			statePrefixes.StatePrefixesMap[prefix] = false
 		}
 	}
+	// Sort prefixes.
+	sort.Slice(statePrefixes.StatePrefixesList, func(i int, j int) bool {
+		switch bytes.Compare(statePrefixes.StatePrefixesList[i], statePrefixes.StatePrefixesList[j]) {
+		case 0:
+			return true
+		case -1:
+			return true
+		case 1:
+			return false
+		}
+		return false
+	})
 	return statePrefixes
 }
 
