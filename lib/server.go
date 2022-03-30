@@ -2071,6 +2071,9 @@ func (srv *Server) _getAddrsToBroadcast() []*SingleAddr {
 // and relays our own address to peers once every 24 hours.
 func (srv *Server) _startAddressRelayer() {
 	for numMinutesPassed := 0; ; numMinutesPassed++ {
+		if atomic.LoadInt32(&srv.shutdown) == 1 {
+			break
+		}
 		// For the first ten minutes after the server starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
 		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")

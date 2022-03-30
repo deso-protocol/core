@@ -256,7 +256,9 @@ func (node *Node) listenToRestart() {
 	case <-node.exitChan:
 		break
 	case operation := <-node.restartChan:
+		glog.Infof("Node.listenToRestart: Stopping node")
 		node.Stop()
+		glog.Infof("Node.listenToRestart: Finished stopping node")
 		switch operation {
 		case NodeErase:
 			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
@@ -266,9 +268,11 @@ func (node *Node) listenToRestart() {
 				return
 			}
 		}
+
+		glog.Infof("Node.listenToRestart: Restarting node")
 		node.exitChan = make(chan struct{})
 		node.restartChan = make(chan int)
-		node.Start()
+		go node.Start()
 	}
 }
 
