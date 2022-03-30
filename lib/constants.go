@@ -37,7 +37,9 @@ const (
 	// when getting a user's inbox.
 	MessagesToFetchPerInboxCall = 10000
 	MaxBlocksInView             = 1
+)
 
+const (
 	NodeRestart = iota
 	NodeErase
 )

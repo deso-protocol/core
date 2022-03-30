@@ -248,7 +248,7 @@ func (node *Node) Stop() {
 
 	node.chainDB.Close()
 	node.isRunning = false
-	node.exitChan <- struct{}{}
+	close(node.exitChan)
 }
 
 func (node *Node) listenToRestart() {

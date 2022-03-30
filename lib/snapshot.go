@@ -179,6 +179,10 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	if err := operationChannel.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
 		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"))
 	}
+	if operationChannel.StateSemaphore > 0 {
+		// TODO: We should now revert blocks to the snapshot epoch.
+		operationChannel.StateSemaphore = 0
+	}
 
 	// Retrieve and initialize the snapshot status.
 	status := &SnapshotStatus{}
@@ -188,6 +192,8 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 	// TODO: If SnapshotStatus.IsFlushing fails, we should start recovery and rollback blocks to last snapshot epoch.
 	if status.IsFlushing() {
 		//return fmt.Errorf("SnapshotStatus.ReadStatus: Node wasn't closed properly, a recovery process should start")
+		status.MainDBSemaphore = 0
+		status.AncestralDBSemaphore = 0
 	}
 
 	// Initialize the timer.
@@ -259,6 +265,7 @@ func (snap *Snapshot) Run() {
 			glog.V(2).Infof("Snapshot.Run: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
 
 		case SnapshotOperationExit:
+			glog.V(2).Infof("Snapshot.Run: Exiting the operation loop")
 			if err := snap.Checksum.Wait(); err != nil {
 				glog.Errorf("Snapshot.Run: Problem waiting for the checksum, error (%v)", err)
 			}
@@ -273,10 +280,10 @@ func (snap *Snapshot) Run() {
 func (snap *Snapshot) Stop() {
 	glog.V(1).Infof("Snapshot.Stop: Stopping the run loop")
 
-	snap.WaitForAllOperationsToFinish()
 	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
 		operationType: SnapshotOperationExit,
 	})
+	snap.WaitForAllOperationsToFinish()
 	snap.updateWaitGroup.Wait()
 
 	if err := snap.SnapshotDb.Close(); err != nil {
