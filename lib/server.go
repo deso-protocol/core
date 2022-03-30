@@ -779,12 +779,12 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
 
-				glog.Infof(CLog(Magenta, "----------- Starting State Sync -----------"))
-				glog.Infof(CLog(Magenta, "Initiated HyperSync, which quickly downloads the DeSo blockchain state."))
-				glog.Infof(CLog(Magenta, fmt.Sprintf("Node will download a snapshot of the blockchain taken at height (%v). "+
-					"HyperSync will sync each prefix of the node's KV database. Note: State sync is a new feature and hence might "+
+				glog.Infof(CLog(Magenta, "---------------------- Starting State Sync ----------------------"))
+				glog.Infof(CLog(Magenta, fmt.Sprintf("Initiating HyperSync after finishing syncing headers. HyperSync "+
+					"quickly syncs the DeSo blockchain by downloading a snapshot of the blockchain taken at height (%v). "+
+					"HyperSync will sync each prefix of the node's KV database. Connected peer (%v). Note: State sync is a new feature and hence might "+
 					"contain some unexpected behavior. If you see an issue, please report it in DeSo Github "+
-					"https://github.com/deso-protocol/core.", expectedSnapshotHeight)))
+					"https://github.com/deso-protocol/core.", expectedSnapshotHeight, pp)))
 
 				srv.blockchain.syncingState = true
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
@@ -795,7 +795,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
 				// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
 				// remove these entries from the db because we will receive them during state sync.
-				glog.V(1).Infof("Server._handleHeaderBundle: Starting hyper sync, deleting all state records")
+				glog.Infof(CLog(Magenta, "HyperSync: deleting all state records. This can take a while."))
 				DBDeleteAllStateRecords(srv.blockchain.db)
 
 				// We set the expected height and hash of the snapshot from our header chain. The snapshots should be

@@ -610,6 +610,8 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBy
 // DBDeleteAllStateRecords is an auxiliary function that is used to clean up the state
 // before starting hyper sync.
 func DBDeleteAllStateRecords(db *badger.DB) error {
+	maxKeys := 10000
+
 	// Iterate over all state prefixes.
 	for _, prefix := range StatePrefixes.StatePrefixesList {
 		startKey := prefix
@@ -620,22 +622,39 @@ func DBDeleteAllStateRecords(db *badger.DB) error {
 		// chunk is not full, that is isChunkFull = false, it means that we've exhausted all
 		// entries for a prefix.
 		for fetchingPrefix {
-			// Fetch a chunk of data from the DB.
-			dbEntries, isChunkFull, err := DBIteratePrefixKeys(db, prefix, startKey, SnapshotBatchSize)
-			fetchingPrefix = isChunkFull
+			var isChunkFull bool
+			var keys [][]byte
+			err := db.View(func(txn *badger.Txn) error {
+				totalKeys := 0
+				opts := badger.DefaultIteratorOptions
+				opts.AllVersions = false
+				opts.PrefetchValues = false
+				// Iterate over the prefix as long as there are valid keys in the DB.
+				it := txn.NewIterator(opts)
+				defer it.Close()
+				for it.Seek(startKey); it.ValidForPrefix(prefix) && !isChunkFull; it.Next() {
+					key := it.Item().KeyCopy(nil)
+					keys = append(keys, key)
+					totalKeys += 1
+					if totalKeys > maxKeys {
+						isChunkFull = true
+					}
+				}
+				return nil
+			})
 			if err != nil {
 				return errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at "+
 					"prefix (%v)", prefix)
 			}
-
+			fetchingPrefix = isChunkFull
 			glog.V(1).Infof("DeleteAllStateRecords: Deleting prefix: (%v) with total of (%v) "+
-				"entries", prefix, len(dbEntries))
+				"entries", prefix, len(keys))
 			// Now delete all these keys.
 			err = db.Update(func(txn *badger.Txn) error {
-				for _, dbEntry := range dbEntries {
-					err := txn.Delete(dbEntry.Key)
+				for _, key := range keys {
+					err := txn.Delete(key)
 					if err != nil {
-						return errors.Wrapf(err, "DeleteAllStateRecords: Problem deleting key (%v)", dbEntry.Key)
+						return errors.Wrapf(err, "DeleteAllStateRecords: Problem deleting key (%v)", key)
 					}
 				}
 				return nil
