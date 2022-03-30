@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 )
@@ -28,6 +29,10 @@ var (
 
 func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
+}
+
+func (pkid *PKID) ToHexString() string {
+	return hex.EncodeToString(pkid.ToBytes())
 }
 
 func (pkid *PKID) NewPKID() *PKID {

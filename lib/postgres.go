@@ -1526,16 +1526,14 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 		if len(postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
 			post.AdditionalNFTRoyaltiesToCoinsBasisPoints = make(map[string]uint64)
 			for pkid, bps := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-				pkidHexString := hex.EncodeToString(pkid[:])
-				post.AdditionalNFTRoyaltiesToCoinsBasisPoints[pkidHexString] = bps
+				post.AdditionalNFTRoyaltiesToCoinsBasisPoints[pkid.ToHexString()] = bps
 			}
 		}
 
 		if len(postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints) > 0 {
 			post.AdditionalNFTRoyaltiesToCreatorsBasisPoints = make(map[string]uint64)
 			for pkid, bps := range postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
-				pkidHexString := hex.EncodeToString(pkid[:])
-				post.AdditionalNFTRoyaltiesToCreatorsBasisPoints[pkidHexString] = bps
+				post.AdditionalNFTRoyaltiesToCreatorsBasisPoints[pkid.ToHexString()] = bps
 			}
 		}
 
