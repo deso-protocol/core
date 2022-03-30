@@ -1126,11 +1126,11 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 	//   - QuantityToBuyInBaseUnits does not need to match.
 	//   - BlockHeight does not need to match.
 	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
-		if inputEntry.TransactorPKID.Eq(orderEntry.TransactorPKID) &&
+		if !orderEntry.isDeleted &&
+			inputEntry.TransactorPKID.Eq(orderEntry.TransactorPKID) &&
 			inputEntry.BuyingDAOCoinCreatorPKID.Eq(orderEntry.BuyingDAOCoinCreatorPKID) &&
 			inputEntry.SellingDAOCoinCreatorPKID.Eq(orderEntry.SellingDAOCoinCreatorPKID) &&
-			inputEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy.Eq(orderEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy) &&
-			!orderEntry.isDeleted {
+			inputEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy.Eq(orderEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy) {
 			outputEntries = append(outputEntries, orderEntry)
 		}
 	}
