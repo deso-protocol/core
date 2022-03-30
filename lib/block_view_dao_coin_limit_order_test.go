@@ -463,9 +463,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		originalM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
 		originalM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
 
-		// TODO: delete
-		_, _, _, _ = originalM0DESOBalance, originalM1DESOBalance, originalM0DAOCoinBalance, originalM1DAOCoinBalance
-
 		// Construct metadata for m0's order buying 240 DAO coin nanos @ 1/8 $DESO / DAO coin.
 		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(0.125) // 1.0 / 8.0 = 0.125
 		metadataM0.QuantityToBuyInBaseUnits = uint256.NewInt().SetUint64(240)
@@ -640,14 +637,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// TODO: what if someone submits order that matches their own order? Probably fine. Just match them.
 	// TODO: test disconnect logic
 
-	//_rollBackTestMetaTxnsAndFlush(testMeta)
-	//_applyTestMetaTxnsToMempool(testMeta)
-	//_applyTestMetaTxnsToViewAndFlush(testMeta)
-	//_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 
 	if chain.postgres == nil {
 		// TODO: this step currently only works with Badger.
-		//_connectBlockThenDisconnectBlockAndFlush(testMeta)
+		_connectBlockThenDisconnectBlockAndFlush(testMeta)
 	}
 }
 

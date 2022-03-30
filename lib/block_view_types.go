@@ -395,6 +395,7 @@ type UtxoOperation struct {
 	PrevBalanceEntries map[PKID]map[PKID]*BalanceEntry
 	PrevMatchingOrders []*DAOCoinLimitOrderEntry
 	// TODO: I don't think we need this field.
+	// Actually we do need this field. It mirrors NFTSpentUtxoEntries?
 	SpentUtxoEntries            []*UtxoEntry
 	FulfilledDAOCoinLimitOrders []*FulfilledDAOCoinLimitOrder
 }

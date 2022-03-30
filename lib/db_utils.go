@@ -3093,8 +3093,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5817,7 +5817,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5944,7 +5944,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6325,25 +6325,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem getting limit order")
 		}
 
-		// Break if the price on the order exceeds the value we're looking for. We have
-		// a special formula that allows us to do this without overflowing and without
-		// losing precision. It looks like this:
-		// - Want: 1 / exchangeRatePassed >= exchangeRateFound
-		// -> exchangeRateFound * exchangeRatePassed >= 1
-		//
-		// Because of the quirks of the UQ128x128 format we're using, this formula actually
-		// becomes:
-		// - Start:
-		//   * exchangeRateFound = scaledExchangeRateFound / OneUQ128x128
-		//   * exchangeRatePassed = scaledExchangeRatePassed / OneUQ128x128
-		// -> exchangeRateFound * exchangeRatePassed >= OneUQ128x128 * OneUQ128x128
-		exchangeRateProduct := big.NewInt(0).Mul(
-			inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig(),
-			matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
-		rightHandSide := big.NewInt(0).Mul(
-			OneUQ128x128.ToBig(),
-			OneUQ128x128.ToBig())
-		if exchangeRateProduct.Cmp(rightHandSide) < 0 {
+		if !inputOrder.IsValidMatchingOrderPrice(matchingOrder) {
 			break
 		}
 
