@@ -1035,8 +1035,8 @@ func (bav *UtxoView) DisconnectBlock(
 		if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
 			numMatchingOrderInputs := 0
 
-			for _, inputs := range txn.TxnMeta.(*DAOCoinLimitOrderMetadata).MatchingBidsInputsMap {
-				numMatchingOrderInputs += len(inputs)
+			for _, transactor := range txn.TxnMeta.(*DAOCoinLimitOrderMetadata).MatchedBidsTransactors {
+				numMatchingOrderInputs += len(transactor.Inputs)
 			}
 
 			numInputs += numMatchingOrderInputs

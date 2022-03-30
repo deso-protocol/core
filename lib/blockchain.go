@@ -3249,7 +3249,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				lastSeenOrder = matchingOrder
 			}
 		}
-		metadata.MatchingBidsInputsMap = make(map[PublicKey][]*DeSoInput)
+
 		for pkid, desoNanosToConsume := range desoNanosToConsumeMap {
 			var inputs []*DeSoInput
 			publicKey := NewPublicKey(utxoView.GetPublicKeyForPKID(&pkid))
@@ -3259,8 +3259,19 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				return nil, 0, 0, 0, errors.Wrapf(err,
 					"Blockchain.CreateDAOCoinLimitOrderTxn: Error getting inputs to cover amount: ")
 			}
-			metadata.MatchingBidsInputsMap[*publicKey] = inputs
+
+			inputsByTransactor := DeSoInputsByTransactor{
+				TransactorPublicKey: &(*publicKey), // create a pointer to a copy of the public key
+				Inputs:              inputs,
+			}
+			// Sort Inputs
+			inputsByTransactor.Inputs = inputsByTransactor.GetInputsSorted()
+
+			metadata.MatchedBidsTransactors = append(metadata.MatchedBidsTransactors, &inputsByTransactor)
 		}
+
+		// Sort MatchedBidsTransactors
+		metadata.MatchedBidsTransactors = metadata.GetMatchedBidTransactorsSorted()
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
