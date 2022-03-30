@@ -4630,8 +4630,13 @@ type TransactionSpendingLimit struct {
 
 	// NFTOperationLimitMap is a map with keys composed of
 	// PostHash || Serial Num || NFTLimitOperation to number
-	// of transaction
+	// of transactions
 	NFTOperationLimitMap map[NFTOperationLimitKey]uint64
+
+	// DAOCoinLimitOrderLimitMap is a map with keys composed of
+	// BuyingCreatorPKID || SellingCreatorPKID to number of
+	// transactions
+	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderKey]uint64
 }
 
 func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
@@ -4711,6 +4716,23 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 		for _, key := range keys {
 			data = append(data, key.Encode()...)
 			data = append(data, UintToBuf(tsl.NFTOperationLimitMap[key])...)
+		}
+	}
+
+	// DAOCoinLimitOrderLimitMap
+	daoCoinLimitOrderLimitMapLength := uint64(len(tsl.DAOCoinLimitOrderLimitMap))
+	data = append(data, UintToBuf(daoCoinLimitOrderLimitMapLength)...)
+	if daoCoinLimitOrderLimitMapLength > 0 {
+		keys := make([]DAOCoinLimitOrderKey, 0, daoCoinLimitOrderLimitMapLength)
+		for key := range tsl.DAOCoinLimitOrderLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.DAOCoinLimitOrderLimitMap[key])...)
 		}
 	}
 
@@ -4819,6 +4841,29 @@ func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
 			tsl.NFTOperationLimitMap[*nftOperationLimitMapKey] = operationCount
 		}
 	}
+
+	daoCoinLimitOrderMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.DAOCoinLimitOrderLimitMap = make(map[DAOCoinLimitOrderKey]uint64)
+	if daoCoinLimitOrderMapLen > 0 {
+		for ii := uint64(0); ii < daoCoinLimitOrderMapLen; ii++ {
+			daoCoinLimitOrderKey := &DAOCoinLimitOrderKey{}
+			if err = daoCoinLimitOrderKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding DAO Coin Limit Order Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderKey]; exists {
+				return fmt.Errorf("DAO Coin Limit Order Key already exists in map")
+			}
+			tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderKey] = operationCount
+		}
+	}
 	return nil
 }
 
@@ -4845,6 +4890,10 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 
 	for nftOp, nftOpCount := range tsl.NFTOperationLimitMap {
 		copyTSL.NFTOperationLimitMap[nftOp] = nftOpCount
+	}
+
+	for daoCoinLimitOrderKey, daoCoinLimitOrderCount := range tsl.DAOCoinLimitOrderLimitMap {
+		copyTSL.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderKey] = daoCoinLimitOrderCount
 	}
 
 	return copyTSL
@@ -5192,6 +5241,41 @@ func MakeDAOCoinOperationLimitKey(creatorPKID PKID, operation DAOCoinLimitOperat
 	return DAOCoinOperationLimitKey{
 		creatorPKID,
 		operation,
+	}
+}
+
+type DAOCoinLimitOrderKey struct {
+	// The PKID of coin that we're going to buy
+	BuyingDAOCoinCreatorPKID PKID
+	// The PKID of the coin that we're going to sell
+	SellingDAOCoinCreatorPKID PKID
+}
+
+func (daoCoinLimitOrderKey DAOCoinLimitOrderKey) Encode() []byte {
+	var data []byte
+	data = append(data, daoCoinLimitOrderKey.BuyingDAOCoinCreatorPKID.Encode()...)
+	data = append(data, daoCoinLimitOrderKey.SellingDAOCoinCreatorPKID.Encode()...)
+	return data
+}
+
+func (daoCoinLimitOrderKey *DAOCoinLimitOrderKey) Decode(rr *bytes.Reader) error {
+	buyingDAOCoinCreatorPKID, err := ReadPKID(rr)
+	if err != nil {
+		return err
+	}
+	daoCoinLimitOrderKey.BuyingDAOCoinCreatorPKID = *buyingDAOCoinCreatorPKID
+	sellingDAOCoinCreatorPKID, err := ReadPKID(rr)
+	if err != nil {
+		return err
+	}
+	daoCoinLimitOrderKey.SellingDAOCoinCreatorPKID = *sellingDAOCoinCreatorPKID
+	return nil
+}
+
+func MakeDAOCoinLimitOrderKey(buyingDAOCoinCreatorPKID PKID, sellingDAOCoinCreatorPKID PKID) DAOCoinLimitOrderKey {
+	return DAOCoinLimitOrderKey{
+		BuyingDAOCoinCreatorPKID:  buyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID: sellingDAOCoinCreatorPKID,
 	}
 }
 
