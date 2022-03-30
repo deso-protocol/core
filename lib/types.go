@@ -50,8 +50,12 @@ func (pkid *PKID) Encode() []byte {
 	return append(data, pkid[:]...)
 }
 
+func (pkid *PKID) Eq(other *PKID) bool {
+	return bytes.Equal(pkid.ToBytes(), other.ToBytes())
+}
+
 func (pkid *PKID) IsZeroPKID() bool {
-	return bytes.Equal(pkid.ToBytes(), ZeroPKID.ToBytes())
+	return pkid.Eq(&ZeroPKID)
 }
 
 func SortPKIDs(pkids []PKID) []PKID {

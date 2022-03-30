@@ -1101,7 +1101,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	// Returns an error if the input order is invalid. Otherwise returns nil.
 
 	// Validate not buying and selling the same coin.
-	if bytes.Equal(order.BuyingDAOCoinCreatorPKID.ToBytes(), order.SellingDAOCoinCreatorPKID.ToBytes()) {
+	if order.BuyingDAOCoinCreatorPKID.Eq(order.SellingDAOCoinCreatorPKID) {
 		return RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
 	}
 
@@ -1140,8 +1140,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	}
 
 	// Calculate order total amount to sell from price and quantity.
-	baseUnitsToSell, err := ComputeBaseUnitsToSellUint256(
-		order.ScaledExchangeRateCoinsToSellPerCoinToBuy, order.QuantityToBuyInBaseUnits)
+	baseUnitsToSell, err := order.BaseUnitsToSellUint256()
 	if err != nil {
 		return err
 	}
@@ -1180,11 +1179,11 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMatch(
 	}
 
 	// Validate transactor order buying coin == matching order selling coin and vice versa.
-	if !bytes.Equal(transactorOrder.BuyingDAOCoinCreatorPKID.ToBytes(), matchingOrder.SellingDAOCoinCreatorPKID.ToBytes()) {
+	if !transactorOrder.BuyingDAOCoinCreatorPKID.Eq(matchingOrder.SellingDAOCoinCreatorPKID) {
 		return RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins
 	}
 
-	if !bytes.Equal(transactorOrder.SellingDAOCoinCreatorPKID.ToBytes(), matchingOrder.BuyingDAOCoinCreatorPKID.ToBytes()) {
+	if !transactorOrder.SellingDAOCoinCreatorPKID.Eq(matchingOrder.BuyingDAOCoinCreatorPKID) {
 		return RuleErrorDAOCoinLimitOrderMatchingOrderBuyingDifferentCoins
 	}
 
