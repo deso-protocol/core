@@ -1535,16 +1535,16 @@ type FulfilledDAOCoinLimitOrder struct {
 	SellingDAOCoinQuantitySold     *uint256.Int
 }
 
-func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
-	bb, err := order.ToBytes()
-	if err != nil {
-		return nil, err
+func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
+	return &DAOCoinLimitOrderEntry{
+		TransactorPKID:                            order.TransactorPKID.NewPKID(),
+		BuyingDAOCoinCreatorPKID:                  order.BuyingDAOCoinCreatorPKID.NewPKID(),
+		SellingDAOCoinCreatorPKID:                 order.SellingDAOCoinCreatorPKID.NewPKID(),
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
+		QuantityToBuyInBaseUnits:                  order.QuantityToBuyInBaseUnits.Clone(),
+		BlockHeight:                               order.BlockHeight,
+		isDeleted:                                 order.isDeleted,
 	}
-	newOrder := &DAOCoinLimitOrderEntry{}
-	if err := newOrder.FromBytes(bb); err != nil {
-		return nil, err
-	}
-	return newOrder, nil
 }
 
 func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {

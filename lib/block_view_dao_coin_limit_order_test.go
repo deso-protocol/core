@@ -403,6 +403,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His DAO coin balance decreases.
 		// TODO: these should be equal, but transactor needs to explicitly specify his output $DESO.
 		// So that he can also specify tip that goes to the miners.
+		// FIXME: @diamondhands - the updatedM1DESOBalance is equal to originalM1DESOBalance+desoQuantityChange
+		// so it appears that the transactor didn't pay any fee for the transaction. This seems wrong.
 		require.NotEqual(
 			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(3), // TODO: calculate gas fee instead of hard-coding.
 			updatedM1DESOBalance)
@@ -750,6 +752,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(float64(1) / float64(8))
 		metadataM1.SellingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
 		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.SellingDAOCoinCreatorPublicKey
+
+		// 27
 		_doDAOCoinLimitOrderTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
@@ -763,10 +767,149 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Len(m2Orders, 0)
 	}
 
+	// TODO: test matching multiple orders
+
+	// Let's start fresh and mint some DAO coins for M1
+	{
+		// 28
+		_updateProfileWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb, /*feeRateNanosPerKB*/
+			m1Pub,             /*updaterPkBase58Check*/
+			m1Priv,            /*updaterPrivBase58Check*/
+			[]byte{},          /*profilePubKey*/
+			"m1",              /*newUsername*/
+			"i am the m1",     /*newDescription*/
+			shortPic,          /*newProfilePic*/
+			10*100,            /*newCreatorBasisPoints*/
+			1.25*100*100,      /*newStakeMultipleBasisPoints*/
+			false,             /*isHidden*/
+		)
+
+		// Mint 100k nanos for M1 DAO coin
+		daoCoinMintMetadata := DAOCoinMetadata{
+			ProfilePublicKey: m1PkBytes,
+			OperationType:    DAOCoinOperationTypeMint,
+			CoinsToMintNanos: *uint256.NewInt().SetUint64(1e5),
+		}
+
+		// 29
+		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, daoCoinMintMetadata)
+
+		// Transfer 10K nanos to M2
+		daoCoinTransferMetadata := DAOCoinTransferMetadata{
+			ProfilePublicKey:       m1PkBytes,
+			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1e4),
+			ReceiverPublicKey:      m2PkBytes,
+		}
+
+		// 30
+		_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, daoCoinTransferMetadata)
+	}
+
+	// M1 and M2 submit orders to SELL M1 DAO Coin
+	{
+		// Sell DAO @ 5 DAO / DESO, up to 10 DESO. Max DAO = 50
+		m1OrderMetadata := DAOCoinLimitOrderMetadata{
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(5),
+			QuantityToBuyInBaseUnits:                  uint256.NewInt().SetUint64(10),
+		}
+
+		// 31
+		_doDAOCoinLimitOrderTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			m1OrderMetadata,
+		)
+
+		// Sell DAO @ 2 DAO / DESO, up to 5 DESO. Max DAO = 10
+		m2OrderMetadata := DAOCoinLimitOrderMetadata{
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(2),
+			QuantityToBuyInBaseUnits:                  uint256.NewInt().SetUint64(5),
+		}
+
+		// 32
+		_doDAOCoinLimitOrderTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2OrderMetadata,
+		)
+
+		orders, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(&ZeroPKID, m1PKID.PKID)
+		require.NoError(err)
+		require.Len(orders, 2)
+	}
+
+	// M0 submits order to buy M1 DAO Coin that matches
+	{
+		m0DESOBalanceBefore := _getBalance(t, chain, mempool, m0Pub)
+		m1DESOBalanceBefore := _getBalance(t, chain, mempool, m1Pub)
+		m2DESOBalanceBefore := _getBalance(t, chain, mempool, m2Pub)
+		m1BalanceEntryBefore := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true)
+		m2BalanceEntryBefore := dbAdapter.GetBalanceEntry(m2PKID.PKID, m1PKID.PKID, true)
+
+		// Sell DESO @ 1 DESO / DAO for up to 100 DAO coins. Max DESO: 100 DESO
+		m0OrderMetadata := DAOCoinLimitOrderMetadata{
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(1),
+			QuantityToBuyInBaseUnits:                  uint256.NewInt().SetUint64(300),
+		}
+
+		// 33
+		_doDAOCoinLimitOrderTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			m0OrderMetadata,
+		)
+
+		orders, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(&ZeroPKID, m1PKID.PKID)
+		require.NoError(err)
+		require.Len(orders, 0)
+
+		orders, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m1PKID.PKID, &ZeroPKID)
+		require.NoError(err)
+		require.Len(orders, 1)
+		require.True(orders[0].QuantityToBuyInBaseUnits.Eq(uint256.NewInt().SetUint64(240)))
+
+		// Get balance entries for all users.
+		m0BalanceEntryAfter := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true)
+		m1BalanceEntryAfter := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true)
+		m2BalanceEntryAfter := dbAdapter.GetBalanceEntry(m2PKID.PKID, m1PKID.PKID, true)
+
+		m2Decrease, err := SafeUint256().Sub(&m2BalanceEntryBefore.BalanceNanos, &m2BalanceEntryAfter.BalanceNanos)
+		require.NoError(err)
+		require.True(m2Decrease.Eq(uint256.NewInt().SetUint64(10)))
+
+		m1Decrease, err := SafeUint256().Sub(&m1BalanceEntryBefore.BalanceNanos, &m1BalanceEntryAfter.BalanceNanos)
+		require.NoError(err)
+		require.True(m1Decrease.Eq(uint256.NewInt().SetUint64(50)))
+
+		require.True(m0BalanceEntryAfter.BalanceNanos.Eq(uint256.NewInt().SetUint64(60)))
+
+		m0DESOBalanceAfter := _getBalance(t, chain, mempool, m0Pub)
+		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
+		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
+
+		require.Equal(m0DESOBalanceBefore-15, m0DESOBalanceAfter)
+		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
+		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
+	}
+
 	// TODO: add validation, no DAO coins in circulation for this profile
 	// TODO: maybe test trying to buy more DAO coins than were minted.
 	// TODO: what if someone submits order that matches their own order? Probably fine. Just match them.
-	// TODO: test disconnect logic
+	// TODO: test transfer restriction status
 
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)

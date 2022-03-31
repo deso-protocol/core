@@ -3093,8 +3093,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5817,7 +5817,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5944,7 +5944,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6256,10 +6256,7 @@ func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrde
 func DBGetMatchingDAOCoinLimitOrders(
 	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 
-	queryOrder, err := inputOrder.Copy()
-	if err != nil {
-		return nil, err
-	}
+	queryOrder := inputOrder.Copy()
 	queryQuantityToBuy := queryOrder.QuantityToBuyInBaseUnits
 
 	// Convert the input BID order to the ASK order to query for.
@@ -6286,13 +6283,11 @@ func DBGetMatchingDAOCoinLimitOrders(
 	var startKey []byte
 
 	if lastSeenOrder != nil {
-		copyLastSeenOrder := *lastSeenOrder
-		copyLastSeenOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
-		copyLastSeenOrder.BlockHeight = 0
-		copyLastSeenOrder.TransactorPKID = MaxPKID.NewPKID()
 
-		// We need to pad the key with 0xff in this case.
-		startKey = DBPrefixKeyForDAOCoinLimitOrder(&copyLastSeenOrder)
+		startKey, err = DBKeyForDAOCoinLimitOrder(lastSeenOrder)
+		if err != nil {
+			return nil, err
+		}
 		key = startKey
 	}
 
