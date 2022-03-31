@@ -192,7 +192,7 @@ type DBPrefixes struct {
 	// These indexes are used in order to fetch the pub keys of users that liked or diamonded a post.
 	// 		Reposts: <prefix_id, RepostedPostHash, ReposterPubKey> -> <>
 	// 		Quote Reposts: <prefix_id, RepostedPostHash, ReposterPubKey, RepostPostHash> -> <>
-	// 		Diamonds: <prefix_id, DiamondedPostHash, DiamonderPubKey [33]byte> -> <DiamondLevel (uint64)>
+	// 		Diamonds: <prefix_id, DiamondedPostHash, DiamonderPubKey [33]byte, DiamondLevel (uint64)> -> <>
 	PrefixRepostedPostHashReposterPubKey               []byte `prefix_id:"[45]" is_state:"true"`
 	PrefixRepostedPostHashReposterPubKeyRepostPostHash []byte `prefix_id:"[46]" is_state:"true"`
 	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   []byte `prefix_id:"[47]" is_state:"true"`
@@ -206,11 +206,6 @@ type DBPrefixes struct {
 	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true"`
 	//  <prefix_id, BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
 	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
-	// Prefix for NFT accepted bid entries:
-	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
-	//     not core to consensus and should not be relied upon as it could get inefficient.
-	//   - Schema: <prefix_id>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
-	PrefixPostHashSerialNumberToAcceptedBidEntries []byte `prefix_id:"[54]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
 	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"` // Block reward prefix:
@@ -220,9 +215,11 @@ type DBPrefixes struct {
 	//   - Schema: <prefix_id, hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
 	PrefixPublicKeyBlockHashToBlockReward []byte `prefix_id:"[53]" is_state:"true"`
 
-	// Prefix for Authorize Derived Key transactions:
-	// 		<prefix_id, OwnerPublicKey [33]byte> -> <>
-	PrefixAuthorizeDerivedKey []byte `prefix_id:"[54]" is_state:"true"`
+	// Prefix for NFT accepted bid entries:
+	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
+	//     not core to consensus and should not be relied upon as it could get inefficient.
+	//   - Schema: <prefix_id>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
+	PrefixPostHashSerialNumberToAcceptedBidEntries []byte `prefix_id:"[54]" is_state:"true"`
 
 	// Prefixes for DAO coin fields:
 	// <prefix, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
@@ -275,10 +272,164 @@ type DBPrefixes struct {
 	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
 	PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey []byte `prefix_id:"[58]" is_state:"true"`
 
+	// Prefix for Authorize Derived Key transactions:
+	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
+	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true"`
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 59
+	// NEXT_TAG: 60
+}
+
+// StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
+// In particular, this is used by the EncoderMigration service, and used to determine how to encode/decode db entries.
+func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEncoder) {
+	if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
+		// prefix_id:"[5]"
+		return true, &UtxoEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPubKeyUtxoKey) {
+		// prefix_id:"[7]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoNumEntries) {
+		// prefix_id:"[8]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations) {
+		// prefix_id:"[9]"
+		return true, &UtxoOperationBundle{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixNanosPurchased) {
+		// prefix_id:"[10]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixUSDCentsPerBitcoinExchangeRate) {
+		// prefix_id:"[27]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalParams) {
+		// prefix_id:"[40]"
+		return true, &GlobalParamsEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixBitcoinBurnTxIDs) {
+		// prefix_id:"[11]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyTimestampToPrivateMessage) {
+		// prefix_id:"[12]"
+		return true, &MessageEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashToPostEntry) {
+		// prefix_id:"[17]"
+		return true, &PostEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPosterPublicKeyPostHash) {
+		// prefix_id:"[18]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixTstampNanosPostHash) {
+		// prefix_id:"[19]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixCreatorBpsPostHash) {
+		// prefix_id:"[20]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixMultipleBpsPostHash) {
+		// prefix_id:"[21]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixCommentParentStakeIDToPostHash) {
+		// prefix_id:"[22]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPKIDToProfileEntry) {
+		// prefix_id:"[23]"
+		return true, &ProfileEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixProfileUsernameToPKID) {
+		// prefix_id:"[25]"
+		// This prefix just encodes PKIDs, but it's not using the DeSoEncoder interface so for the sake of simplicity we just skip it.
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID) {
+		// prefix_id:"[32]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeIDTypeAmountStakeIDIndex) {
+		// prefix_id:"[26]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixFollowerPKIDToFollowedPKID) {
+		// prefix_id:"[28]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixFollowedPKIDToFollowerPKID) {
+		// prefix_id:"[29]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixLikerPubKeyToLikedPostHash) {
+		// prefix_id:"[30]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixLikedPostHashToLikerPubKey) {
+		// prefix_id:"[31]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixHODLerPKIDCreatorPKIDToBalanceEntry) {
+		// prefix_id:"[33]"
+		return true, &BalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCreatorPKIDHODLerPKIDToBalanceEntry) {
+		// prefix_id:"[34]"
+		return true, &BalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPosterPublicKeyTimestampPostHash) {
+		// prefix_id:"[35]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyToPKID) {
+		// prefix_id:"[36]"
+		return true, &PKIDEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPKIDToPublicKey) {
+		// prefix_id:"[37]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash) {
+		// prefix_id:"[39]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash) {
+		// prefix_id:"[41]"
+		return true, &DiamondEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash) {
+		// prefix_id:"[43]"
+		return true, &DiamondEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixForbiddenBlockSignaturePubKeys) {
+		// prefix_id:"[44]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixRepostedPostHashReposterPubKey) {
+		// prefix_id:"[45]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixRepostedPostHashReposterPubKeyRepostPostHash) {
+		// prefix_id:"[46]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixDiamondedPostHashDiamonderPKIDDiamondLevel) {
+		// prefix_id:"[47]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashSerialNumberToNFTEntry) {
+		// prefix_id:"[48]"
+		return true, &NFTEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry) {
+		// prefix_id:"[49]"
+		return true, &NFTEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID) {
+		// prefix_id:"[50]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixBidderPKIDPostHashSerialNumberToBidNanos) {
+		// prefix_id:"[51]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashSerialNumberToAcceptedBidEntries) {
+		// prefix_id:"[54]"
+		return true, &NFTBidEntryBundle{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyToDeSoBalanceNanos) {
+		// prefix_id:"[52]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyBlockHashToBlockReward) {
+		// prefix_id:"[53]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry) {
+		// prefix_id:"[55]"
+		return true, &BalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry) {
+		// prefix_id:"[56]"
+		return true, &BalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName) {
+		// prefix_id:"[57]"
+		return true, &MessagingGroupEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey) {
+		// prefix_id:"[58]"
+		return true, &MessagingGroupEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixAuthorizeDerivedKey) {
+		// prefix_id:"[59]"
+		return true, &DerivedKeyEntry{}
+	}
+
+	return true, nil
 }
 
 // getPrefixIdValue parses the DBPrefixes struct tags to fetch the prefix_id values.
@@ -357,6 +508,10 @@ func GetStatePrefixes() *DBStatePrefixes {
 				structFields.Field(i).Name, MaxPrefixLen))
 		}
 		prefix := prefixBytes[0]
+		if statePrefixes.StatePrefixesMap[prefix] {
+			panic(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
+				"prefix overlap, fix it", structFields.Field(i).Name))
+		}
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
 			statePrefixes.StatePrefixesMap[prefix] = true
 			statePrefixes.StatePrefixesList = append(statePrefixes.StatePrefixesList, []byte{prefix})
@@ -2918,48 +3073,6 @@ func PutMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint
 	return nil
 }
 
-func _DecodeUtxoOperations(data []byte) ([][]*UtxoOperation, error) {
-	var ret [][]*UtxoOperation
-
-	rr := bytes.NewReader(data)
-	opListLen, err := ReadUvarint(rr)
-	if err != nil {
-		return nil, err
-	}
-
-	for ; opListLen > 0; opListLen-- {
-		opLen, err := ReadUvarint(rr)
-		if err != nil {
-			return nil, err
-		}
-
-		var opList []*UtxoOperation
-		for ; opLen > 0; opLen-- {
-			op := &UtxoOperation{}
-			if exists, err := DecodeFromBytes(op, rr); !exists || err != nil {
-				return nil, err
-			}
-			opList = append(opList, op)
-		}
-		ret = append(ret, opList)
-	}
-
-	return ret, nil
-}
-
-func _EncodeUtxoOperations(utxoOp [][]*UtxoOperation, blockHeight uint64) []byte {
-	var data []byte
-
-	data = append(data, UintToBuf(uint64(len(utxoOp)))...)
-	for _, opList := range utxoOp {
-		data = append(data, UintToBuf(uint64(len(opList)))...)
-		for _, op := range opList {
-			data = append(data, EncodeToBytes(blockHeight, op)...)
-		}
-	}
-	return data
-}
-
 func _DbKeyForUtxoOps(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, Prefixes.PrefixBlockHashToUtxoOperations...), blockHash[:]...)
 }
@@ -2970,13 +3083,13 @@ func GetUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash
 		return nil, err
 	}
 
-	var retOps [][]*UtxoOperation
-	retOps, err = _DecodeUtxoOperations(utxoOpsBytes)
-	if err != nil {
-		return nil, err
+	utxoOpsBundle := &UtxoOperationBundle{}
+	rr := bytes.NewReader(utxoOpsBytes)
+	if exists, err := DecodeFromBytes(utxoOpsBundle, rr); !exists || err != nil {
+		return nil, errors.Wrapf(err, "GetUtxoOperationsForBlockWithTxn: Problem decoding utxoOpsBundle")
 	}
 
-	return retOps, err
+	return utxoOpsBundle.UtxoOpBundle, nil
 }
 
 func GetUtxoOperationsForBlock(handle *badger.DB, snap *Snapshot, blockHash *BlockHash) ([][]*UtxoOperation, error) {
@@ -2993,7 +3106,10 @@ func GetUtxoOperationsForBlock(handle *badger.DB, snap *Snapshot, blockHash *Blo
 func PutUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	blockHash *BlockHash, utxoOpsForBlock [][]*UtxoOperation) error {
 
-	return DBSetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), _EncodeUtxoOperations(utxoOpsForBlock, blockHeight))
+	opBundle := &UtxoOperationBundle{
+		UtxoOpBundle: utxoOpsForBlock,
+	}
+	return DBSetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), EncodeToBytes(blockHeight, opBundle))
 }
 
 func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash) error {
@@ -5953,37 +6069,6 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 // outside of the protocol layer once update to the creation of TxIndex are complete.
 // =======================================================================================
 
-func EncodeAcceptedNFTBidEntries(nftBidEntries *[]*NFTBidEntry, blockHeight uint64) []byte {
-	var data []byte
-
-	if nftBidEntries != nil {
-		numEntries := uint64(len(*nftBidEntries))
-		data = append(data, UintToBuf(numEntries)...)
-
-		for _, entry := range *nftBidEntries {
-			data = append(data, EncodeToBytes(blockHeight, entry)...)
-		}
-	} else {
-		data = append(data, UintToBuf(0)...)
-	}
-
-	return data
-}
-
-func DecodeAcceptedNFTBidEntries(data []byte) *[]*NFTBidEntry {
-	var bidEntries []*NFTBidEntry
-	rr := bytes.NewReader(data)
-
-	numEntries, _ := ReadUvarint(rr)
-	for ii := uint64(0); ii < numEntries; ii++ {
-		bidEntry := &NFTBidEntry{}
-		DecodeFromBytes(bidEntry, rr)
-		bidEntries = append(bidEntries, bidEntry)
-	}
-
-	return &bidEntries
-}
-
 func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToAcceptedBidEntries...)
 	key := append(prefixCopy, nftPostHash[:]...)
@@ -5995,8 +6080,11 @@ func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, s
 func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
 
+	nftBidEntryBundle := &NFTBidEntryBundle{
+		nftBidEntryBundle: *nftBidEntries,
+	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPostHashSerialNumberToAcceptedBidEntries(
-		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeAcceptedNFTBidEntries(nftBidEntries, blockHeight)); err != nil {
+		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeToBytes(blockHeight, nftBidEntryBundle)); err != nil {
 
 		return errors.Wrapf(err, "DBPutAcceptedNFTBidEntriesMappingWithTxn: Problem "+
 			"adding accepted bid mapping for post: %v, serial number: %d", nftKey.NFTPostHash, nftKey.SerialNumber)
@@ -6021,9 +6109,13 @@ func DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn *badger.Txn, sn
 		return nil
 	}
 
-	var nftBidEntriesObj *[]*NFTBidEntry
-	nftBidEntriesObj = DecodeAcceptedNFTBidEntries(nftBidEntriesBytes)
-	return nftBidEntriesObj
+	nftBidEntriesBundle := &NFTBidEntryBundle{}
+	rr := bytes.NewReader(nftBidEntriesBytes)
+	if exists, err := DecodeFromBytes(nftBidEntriesBundle, rr); !exists || err != nil {
+		glog.Errorf("DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn: Problem reading NFTBidEntryBundle, error: (%v)", err)
+		return nil
+	}
+	return &nftBidEntriesBundle.nftBidEntryBundle
 }
 
 func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, snap *Snapshot,

@@ -998,6 +998,50 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	return nil
 }
 
+type UtxoOperationBundle struct {
+	UtxoOpBundle [][]*UtxoOperation
+}
+
+func (opBundle *UtxoOperationBundle) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(uint64(len(opBundle.UtxoOpBundle)))...)
+	for _, opList := range opBundle.UtxoOpBundle {
+		data = append(data, UintToBuf(uint64(len(opList)))...)
+		for _, op := range opList {
+			data = append(data, EncodeToBytes(blockHeight, op)...)
+		}
+	}
+	return data
+}
+
+func (opBundle *UtxoOperationBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	opBundle.UtxoOpBundle = make([][]*UtxoOperation, 0)
+	opListLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+
+	for ; opListLen > 0; opListLen-- {
+		opLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+
+		var opList []*UtxoOperation
+		for ; opLen > 0; opLen-- {
+			op := &UtxoOperation{}
+			if exists, err := DecodeFromBytes(op, rr); !exists || err != nil {
+				return err
+			}
+			opList = append(opList, op)
+		}
+		opBundle.UtxoOpBundle = append(opBundle.UtxoOpBundle, opList)
+	}
+
+	return nil
+}
+
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
 // This needs to be in-sync with DeSoMainnetParams.MaxUsernameLengthBytes
 type UsernameMapKey [MaxUsernameLengthBytes]byte
@@ -1763,6 +1807,45 @@ func (nftBidEntry *NFTBidEntry) Copy() *NFTBidEntry {
 		*newEntry.AcceptedBlockHeight = *nftBidEntry.AcceptedBlockHeight
 	}
 	return &newEntry
+}
+
+type NFTBidEntryBundle struct {
+	nftBidEntryBundle []*NFTBidEntry
+}
+
+func (bundle *NFTBidEntryBundle) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+	var data []byte
+
+	if bundle.nftBidEntryBundle != nil {
+		numEntries := uint64(len(bundle.nftBidEntryBundle))
+		data = append(data, UintToBuf(numEntries)...)
+
+		for _, entry := range bundle.nftBidEntryBundle {
+			data = append(data, EncodeToBytes(blockHeight, entry)...)
+		}
+	} else {
+		data = append(data, UintToBuf(0)...)
+	}
+
+	return data
+}
+
+func (bundle *NFTBidEntryBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	numEntries, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem decoding number of nft bids")
+	}
+	bundle.nftBidEntryBundle = make([]*NFTBidEntry, numEntries)
+	for ii := uint64(0); ii < numEntries; ii++ {
+		bidEntry := &NFTBidEntry{}
+		if exists, err := DecodeFromBytes(bidEntry, rr); !exists || err != nil {
+			return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem decoding nft bids at index ii: %v", ii)
+		}
+		bundle.nftBidEntryBundle = append(bundle.nftBidEntryBundle, bidEntry)
+	}
+
+	return nil
 }
 
 type DerivedKeyEntry struct {
