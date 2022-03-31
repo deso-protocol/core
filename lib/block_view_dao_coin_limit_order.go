@@ -187,7 +187,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// Validate transactor order.
-	err = bav.IsValidDAOCoinLimitOrder(transactorOrder)
+	err = bav.IsValidDAOCoinLimitOrder(transactorOrder, txMeta.CancelExistingOrder)
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -335,7 +335,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// Validate matching order. Delete from order book if invalid.
 		// It was validated when stored but things could have changed
 		// like the submitter's $DESO and DAO coin balances.
-		err := bav.IsValidDAOCoinLimitOrder(matchingOrder)
+		err := bav.IsValidDAOCoinLimitOrder(matchingOrder, false)
 		if err != nil {
 			bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
 			continue
@@ -816,7 +816,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		}
 
 		// We should have seen this order already.
-		if lastSeenOrder != nil && matchingOrder.IsBetterMatchingOrderThan(lastSeenOrder) {
+		if lastSeenOrder != nil && !lastSeenOrder.IsBetterMatchingOrderThan(matchingOrder) {
 			continue
 		}
 
@@ -1142,7 +1142,7 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 // ## VALIDATIONS
 // ###########################
 
-func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) error {
+func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, isCancelOrder bool) error {
 	// Returns an error if the input order is invalid. Otherwise returns nil.
 
 	// Validate not buying and selling the same coin.
@@ -1195,27 +1195,31 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
 	}
 
-	// If selling $DESO, make sure the transactor has enough $DESO to execute the txn.
-	// If selling DAO coins, make sure the transactor has enough DAO coins to execute the txn.
-	transactorBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
-		order.TransactorPKID, order.SellingDAOCoinCreatorPKID, nil)
-	if err != nil {
-		return err
-	}
-
-	if transactorBalanceBaseUnits.Lt(baseUnitsToSell) {
-		if isSellingDESO {
-			err = RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
-		} else {
-			err = RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
+	// We skip checking if the transactor has sufficient funds to cover the order in
+	// the event that the transactor is cancelling an order.
+	if !isCancelOrder {
+		// If selling $DESO, make sure the transactor has enough $DESO to execute the txn.
+		// If selling DAO coins, make sure the transactor has enough DAO coins to execute the txn.
+		transactorBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
+			order.TransactorPKID, order.SellingDAOCoinCreatorPKID, nil)
+		if err != nil {
+			return err
 		}
 
-		return errors.Wrapf(
-			err,
-			"transactorBalance amount: %v, for coin pkid (zero = DESO) %v, baseUnitsToSell: %v",
-			transactorBalanceBaseUnits.Hex(),
-			PkToStringMainnet(order.SellingDAOCoinCreatorPKID.ToBytes()),
-			baseUnitsToSell.Hex())
+		if transactorBalanceBaseUnits.Lt(baseUnitsToSell) {
+			if isSellingDESO {
+				err = RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder
+			} else {
+				err = RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
+			}
+
+			return errors.Wrapf(
+				err,
+				"transactorBalance amount: %v, for coin pkid (zero = DESO) %v, baseUnitsToSell: %v",
+				transactorBalanceBaseUnits.Hex(),
+				PkToStringMainnet(order.SellingDAOCoinCreatorPKID.ToBytes()),
+				baseUnitsToSell.Hex())
+		}
 	}
 
 	return nil
