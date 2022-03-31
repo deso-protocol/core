@@ -850,6 +850,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// M0 submits order to buy M1 DAO Coin that matches
 	{
+		m0DESOBalanceBefore := _getBalance(t, chain, mempool, m0Pub)
+		m1DESOBalanceBefore := _getBalance(t, chain, mempool, m1Pub)
+		m2DESOBalanceBefore := _getBalance(t, chain, mempool, m2Pub)
+		m1BalanceEntryBefore := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true)
+		m2BalanceEntryBefore := dbAdapter.GetBalanceEntry(m2PKID.PKID, m1PKID.PKID, true)
+
 		// Sell DESO @ 1 DESO / DAO for up to 100 DAO coins. Max DESO: 100 DESO
 		m0OrderMetadata := DAOCoinLimitOrderMetadata{
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
@@ -875,6 +881,29 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Len(orders, 1)
 		require.True(orders[0].QuantityToBuyInBaseUnits.Eq(uint256.NewInt().SetUint64(240)))
+
+		// Get balance entries for all users.
+		m0BalanceEntryAfter := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true)
+		m1BalanceEntryAfter := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true)
+		m2BalanceEntryAfter := dbAdapter.GetBalanceEntry(m2PKID.PKID, m1PKID.PKID, true)
+
+		m2Decrease, err := SafeUint256().Sub(&m2BalanceEntryBefore.BalanceNanos, &m2BalanceEntryAfter.BalanceNanos)
+		require.NoError(err)
+		require.True(m2Decrease.Eq(uint256.NewInt().SetUint64(10)))
+
+		m1Decrease, err := SafeUint256().Sub(&m1BalanceEntryBefore.BalanceNanos, &m1BalanceEntryAfter.BalanceNanos)
+		require.NoError(err)
+		require.True(m1Decrease.Eq(uint256.NewInt().SetUint64(50)))
+
+		require.True(m0BalanceEntryAfter.BalanceNanos.Eq(uint256.NewInt().SetUint64(60)))
+
+		m0DESOBalanceAfter := _getBalance(t, chain, mempool, m0Pub)
+		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
+		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
+
+		require.Equal(m0DESOBalanceBefore-15, m0DESOBalanceAfter)
+		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
+		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
 	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
