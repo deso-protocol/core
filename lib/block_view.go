@@ -1597,10 +1597,11 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		}
 	case TxnTypeDAOCoinLimitOrder:
 		txnMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-		_ = txnMeta
-		// FIXME: Figure out derived key entry logic for DAOCoinLimitOrder
-		// Right now this is a chink in our armor because it allows someone to create this
-		// kind of txn without approval.
+		if derivedKeyEntry, err = bav._checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
+			derivedKeyEntry, txnMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(),
+			txnMeta.SellingDAOCoinCreatorPublicKey.ToBytes()); err != nil {
+			return utxoOpsForTxn, err
+		}
 	case TxnTypeUpdateNFT:
 		txnMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 		if derivedKeyEntry, err = _checkNFTLimitAndUpdateDerivedKeyEntry(
@@ -1862,6 +1863,59 @@ func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 		return derivedKeyEntry, nil
 	}
 	return derivedKeyEntry, RuleErrorDerivedKeyDAOCoinOperationNotAuthorized
+}
+
+// _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry checks if the DAOCoinLimitOrderLimitKey is present
+// in the DerivedKeyEntry's TransactionSpendingLimitTracker's DAOCoinLimitOrderLimitMap.
+// If the key is present, the operation is allowed and we decrement the number of operation remaining.
+// If there are no operation remaining after this one, we delete the key.
+// Returns true if the key was found and the derived key entry was updated.
+func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(key DAOCoinLimitOrderLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	// Check if the key is present in the DAOCoinLimitOrderLimitMap...
+	daoCoinLimitOrderLimit, daoCoinLimitOrderLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]
+	// If the key doesn't exist or the value is 0 or fewer, return false.
+	if !daoCoinLimitOrderLimitExists || daoCoinLimitOrderLimit <= 0 {
+		return false
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if daoCoinLimitOrderLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap, key)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]--
+	}
+	// Return true because we found the key and decremented the remaining operations
+	return true
+}
+
+// _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry checks that the DAO Coin Limit Order being performed has
+// been authorized for this derived key.
+func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
+	derivedKeyEntry DerivedKeyEntry, buyingDAOCoinCreatorPublicKey []byte, sellingDAOCoinCreatorPublicKey []byte) (
+	_derivedKeyEntry DerivedKeyEntry, _err error) {
+	buyingPKIDEntry := bav.GetPKIDForPublicKey(buyingDAOCoinCreatorPublicKey)
+	if buyingPKIDEntry == nil || buyingPKIDEntry.isDeleted {
+		return derivedKeyEntry, fmt.Errorf(
+			"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry: buying pkid is deleted")
+	}
+	sellingPKIDEntry := bav.GetPKIDForPublicKey(sellingDAOCoinCreatorPublicKey)
+	if sellingPKIDEntry == nil || sellingPKIDEntry.isDeleted {
+		return derivedKeyEntry, fmt.Errorf(
+			"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry: selling pkid is deleted")
+	}
+
+	// Check (buying DAO Creator PKID || selling DAO Creator PKID) key
+	buyingAndSellingKey := MakeDAOCoinLimitOrderLimitKey(*buyingPKIDEntry.PKID, *sellingPKIDEntry.PKID)
+	if _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(buyingAndSellingKey, derivedKeyEntry) {
+		return derivedKeyEntry, nil
+	}
+
+	// TODO: How do we want to account for buying ANY creator or selling ANY creator given that we
+	// use the ZeroPKID / ZeroPublicKey to represent buying/selling DESO.
+
+	return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized,
+		"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntr: DAO Coin limit order not authorized: ")
 }
 
 func (bav *UtxoView) _connectUpdateGlobalParams(
