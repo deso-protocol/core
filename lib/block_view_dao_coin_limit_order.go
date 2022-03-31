@@ -198,7 +198,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	//   + For this selling DAO coin PKID
 	//   + For this price
 	//   - Any block height
-	existingTransactorOrderss, err :=
+	existingTransactorOrders, err :=
 		bav._getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(transactorOrder)
 	if err != nil {
 		return 0, 0, nil, err
@@ -207,24 +207,21 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// If the transactor just wants to cancel an existing order(s),
 	// cancel all that match the input order across any block height.
 	if txMeta.CancelExistingOrder {
-		if len(existingTransactorOrderss) == 0 {
+		if len(existingTransactorOrders) == 0 {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderToCancelNotFound
 		}
 
 		prevMatchingOrders := []*DAOCoinLimitOrderEntry{}
 
 		// Delete all existing limit orders for this trans
-		for _, existingTransactorOrder := range existingTransactorOrderss {
+		for _, existingTransactorOrder := range existingTransactorOrders {
 			prevMatchingOrders = append(prevMatchingOrders, existingTransactorOrder)
 			bav._deleteDAOCoinLimitOrderEntryMappings(existingTransactorOrder)
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-			Type:                                 OperationTypeDAOCoinLimitOrder,
-			PrevTransactorDAOCoinLimitOrderEntry: nil,
-			PrevBalanceEntries:                   nil,
-			PrevMatchingOrders:                   prevMatchingOrders,
-			SpentUtxoEntries:                     nil,
+			Type:               OperationTypeDAOCoinLimitOrder,
+			PrevMatchingOrders: prevMatchingOrders,
 		})
 
 		return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -237,7 +234,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// modify the existing order.
 	var prevTransactorOrder *DAOCoinLimitOrderEntry
 
-	for _, existingTransactorOrder := range existingTransactorOrderss {
+	for _, existingTransactorOrder := range existingTransactorOrders {
 		// The existing transactor orders are across any block height.
 		// We would only want to update a order if it occurs at the
 		// current block height. Otherwise, we would be messing up
@@ -248,7 +245,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(
 					err, "Error copying order entry to generate prev order: %v",
-					spew.Sdump(existingTransactorOrderss))
+					spew.Sdump(existingTransactorOrders))
 			}
 		}
 	}
@@ -583,10 +580,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
 	}
 
-	// Iterate over all the UTXOs in the txn and spend them. As we spend each one,
-	// add the amount each account is allowed to spend to our map.
-	spentUtxoEntries := []*UtxoEntry{}
-
 	// Get a sorted copy of all of the transactors and their UTXOs
 	sortedMatchedBidsTransactors := txMeta.GetMatchedBidTransactorsSorted()
 	for _, transactor := range sortedMatchedBidsTransactors {
@@ -629,9 +622,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				return 0, 0, nil, errors.Wrapf(
 					err, "_connectDAOCoinLimitOrder: Problem spending bidder utxo")
 			}
-
-			// Track spent UTXO entries.
-			spentUtxoEntries = append(spentUtxoEntries, utxoEntry)
 
 			// Track the UtxoOperations so we can rollback, and for Rosetta.
 			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
@@ -679,9 +669,30 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return nil
 	}
 
-	// FIXME: Add sanity-check: Make sure that all of the increases and
+	// Sanity-check: Make sure that all of the increases and
 	// decreases sum to zero. If this is the case we're pretty protected
 	// against any money-printer bugs.
+	balanceDeltaSanityCheckMap := make(map[PKID]*big.Int)
+	for _, creatorPKIDMap := range balanceDeltas {
+		for creatorPKIDIter, balanceDelta := range creatorPKIDMap {
+			creatorPKID := creatorPKIDIter
+			if _, exists := balanceDeltaSanityCheckMap[creatorPKID]; !exists {
+				balanceDeltaSanityCheckMap[creatorPKID] = big.NewInt(0)
+			}
+			balanceDeltaSanityCheckMap[creatorPKID] = big.NewInt(0).Add(
+				balanceDeltaSanityCheckMap[creatorPKID],
+				balanceDelta,
+			)
+		}
+	}
+	for creatorPKIDIter, balanceDelta := range balanceDeltaSanityCheckMap {
+		if balanceDelta.Cmp(big.NewInt(0)) != 0 {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero,
+				"_connectDAOCoinLimitOrder: Balance for PKID %v is %v", creatorPKIDIter, balanceDelta.String(),
+			)
+		}
+	}
 
 	// prevBalances will have the previous balances for all users, mapped
 	// by each coin that changed. The values will be incorrect for DESO, but
@@ -748,9 +759,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				prevBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(
 					&userPKID, &daoCoinPKID, true)
 				if prevBalanceEntry == nil || prevBalanceEntry.isDeleted {
-					// FIXME: this isn't a proper error to return.
-					// It's whatever was set above which is most likely nil.
-					return 0, 0, nil, err
+					return 0, 0, nil, RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist
 				}
 				newBalance := big.NewInt(0).Add(prevBalanceEntry.BalanceNanos.ToBig(), delta)
 
@@ -778,14 +787,15 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		PrevTransactorDAOCoinLimitOrderEntry: prevTransactorOrder,
 		PrevBalanceEntries:                   prevBalances,
 		PrevMatchingOrders:                   prevMatchingOrders,
-		SpentUtxoEntries:                     spentUtxoEntries,
 		FulfilledDAOCoinLimitOrders:          fulfilledOrders,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-// FIXME: Add a comment here
+// _getNextLimitOrdersToFill retrieves the next set of candidate DAOCoinLimitOrderEntries
+// to fulfill the quantity specified by the transactorOrder. If lastSeenOrder is specified
+// we will exclude lastSeenOrder and all BETTER orders from the result set.
 func (bav *UtxoView) _getNextLimitOrdersToFill(
 	transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) (
 	[]*DAOCoinLimitOrderEntry, error) {
@@ -1043,8 +1053,10 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	// Get matching orders from the UTXO view.
 	//   + BuyingDAOCoinCreatorPKID should match.
 	//   + SellingDAOCoincreatorPKID should match.
+	//   + orderEntry is not deleted.
 	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
-		if orderEntry.BuyingDAOCoinCreatorPKID.Eq(buyingDAOCoinCreatorPKID) &&
+		if !orderEntry.isDeleted &&
+			orderEntry.BuyingDAOCoinCreatorPKID.Eq(buyingDAOCoinCreatorPKID) &&
 			orderEntry.SellingDAOCoinCreatorPKID.Eq(sellingDAOCoinCreatorPKID) {
 			outputEntries = append(outputEntries, orderEntry)
 		}
@@ -1079,8 +1091,9 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *
 
 	// Get matching orders from the UTXO view.
 	//   + TransactorPKID should match.
+	//   + orderEntry is not deleted.
 	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
-		if transactorPKID.Eq(orderEntry.TransactorPKID) {
+		if !orderEntry.isDeleted && transactorPKID.Eq(orderEntry.TransactorPKID) {
 			outputEntries = append(outputEntries, orderEntry)
 		}
 	}
@@ -1088,10 +1101,9 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *
 	return outputEntries, nil
 }
 
-// FIXME: Leave a comment here stating in what ORDER these orders are returned.
-// I think they're returned with the latest block height first. This means that
-// cancelling them will deterministically cancel the most recent orders. Seems
-// fine, but double-check that, and document it.
+// _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice returns all DAOCoinLimitOrderEntries
+// for a transactor that match the BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID
+// and ScaledExchangeRateCoinsToSellPerCoinToBuy ordered by block height descending.
 func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 	inputEntry *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 
@@ -1119,6 +1131,7 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 	}
 
 	// Get matching orders from the UTXO view.
+	//   + orderEntry is not deleted.
 	//   + TransactorPKIDs should match.
 	//   + BuyingDAOCoinCreatorPKIDs should match.
 	//   + SellingDAOCoinCreatorPKIDs should match.
@@ -1134,6 +1147,11 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 			outputEntries = append(outputEntries, orderEntry)
 		}
 	}
+
+	// Sort the output entries by descending block height.
+	sort.Slice(outputEntries, func(ii, jj int) bool {
+		return outputEntries[ii].BlockHeight > outputEntries[jj].BlockHeight
+	})
 
 	return outputEntries, nil
 }
