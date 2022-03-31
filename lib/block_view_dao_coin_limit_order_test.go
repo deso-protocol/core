@@ -655,6 +655,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
 
 		// m1 submits order matching their own order. Fails.
+		// We should find this case and return a more informative error.
 		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
 		metadataM1.SellingDAOCoinCreatorPublicKey = metadataM0.SellingDAOCoinCreatorPublicKey
 		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(10.0)
@@ -667,6 +668,99 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
+	}
+
+	// Cancel order with insufficient funds to cover the order.
+	{
+		m0BalanceEntry := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
+		// Just a reminder of m0's current balance of their own DAO Coins
+		require.Equal(m0BalanceEntry.BalanceNanos.Uint64(), uint64(7340))
+		// M0 transfers away some of their DAO coin such that they no longer have 100 nanos (to cover their order).
+		_daoCoinTransferTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			DAOCoinTransferMetadata{
+				ProfilePublicKey:       m0PkBytes,
+				ReceiverPublicKey:      m2PkBytes,
+				DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(7339),
+			},
+		)
+
+		metadataM0.CancelExistingOrder = true
+		_doDAOCoinLimitOrderTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			metadataM0,
+		)
+
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Len(orderEntries, 1)
+		require.True(orderEntries[0].TransactorPKID.Eq(m1PKID.PKID))
+
+		// Before we transfer the DAO coins back to m0, let's create an order for m2 that is slightly better
+		// than m0's order. We'll have m1 submit an order that matches this later.
+		metadataM2 := DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             metadataM0.BuyingDAOCoinCreatorPublicKey,
+			SellingDAOCoinCreatorPublicKey:            metadataM0.SellingDAOCoinCreatorPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(9.5),
+			QuantityToBuyInBaseUnits:                  metadataM0.QuantityToBuyInBaseUnits,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			metadataM2,
+		)
+
+		// Okay let's transfer the DAO coins back to m0 and recreate the order
+		_daoCoinTransferTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			DAOCoinTransferMetadata{
+				ProfilePublicKey:       m0PkBytes,
+				ReceiverPublicKey:      m0PkBytes,
+				DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(7339),
+			},
+		)
+		metadataM0.CancelExistingOrder = false
+		_doDAOCoinLimitOrderTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			metadataM0,
+		)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Len(orderEntries, 3)
+	}
+
+	// M1 submits an order that would match both m0 and m2's order. We expect to see m2's order cancelled
+	// and m0's order filled as m2 doesn't have sufficient DAO coins to cover the order they placed.
+	{
+		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(float64(1) / float64(8))
+		metadataM1.SellingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
+		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.SellingDAOCoinCreatorPublicKey
+		_doDAOCoinLimitOrderTxnWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			metadataM1,
+		)
+
+		m2Orders, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m2PKID.PKID)
+		require.NoError(err)
+		require.Len(m2Orders, 0)
 	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
