@@ -403,6 +403,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His DAO coin balance decreases.
 		// TODO: these should be equal, but transactor needs to explicitly specify his output $DESO.
 		// So that he can also specify tip that goes to the miners.
+		// FIXME: @diamondhands - the updatedM1DESOBalance is equal to originalM1DESOBalance+desoQuantityChange
+		// so it appears that the transactor didn't pay any fee for the transaction. This seems wrong.
 		require.NotEqual(
 			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(3), // TODO: calculate gas fee instead of hard-coding.
 			updatedM1DESOBalance)
