@@ -381,22 +381,26 @@ type UtxoOperation struct {
 	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 
 	// DAO coin limit order
-	// FIXME: Annotate all of these fields with comments
+	// PrevTransactorDAOCoinLimitOrderEntry is the previous version of the
+	// transactor's DAO Coin Limit Order before this transaction was connected.
+	// Note: This is only set if the transactor submits multiple limit orders
+	// at the same block height with the same BuyingDAOCoinCreatorPublicKey,
+	// SellingDAOCoinCreatorPublicKey, and ScaledExchangeRateCoinsToSellPerCoinToBuy
 	PrevTransactorDAOCoinLimitOrderEntry *DAOCoinLimitOrderEntry
-	// NOTE(FIXME): I think to disconnect, you can just set all these balance
-	// entries to get the DAO coin balances fixed, and then you go
-	// iterate through the UtxoOps going backwards and call unAdd on
-	// all of the outputs, and unSpend on all of the inputs. You just
-	// need a clever way to determine when you've reached the end of
-	// the BidInputs so you don't eat into the BasicTransfer operations.
-	//
-	// Oh yeah, and to revert the orders it seems like you should just
-	// be able to call set on all the prevMatchingOrders
+
+	// PrevBalanceEntries is a map of User PKID, Creator PKID to DAO Coin Balance
+	// Entry. When disconnecting a DAO Coin Limit Order, we will revert to these
+	// BalanceEntries.
 	PrevBalanceEntries map[PKID]map[PKID]*BalanceEntry
+
+	// PrevMatchingOrder is a slice of DAOCoinLimitOrderEntries that were deleted
+	// in the DAO Coin Limit Order Transaction. In order to revert the state in
+	// the event of a disconnect, we restore all the deleted Order Entries
 	PrevMatchingOrders []*DAOCoinLimitOrderEntry
-	// TODO: I don't think we need this field.
-	// Actually we do need this field. It mirrors NFTSpentUtxoEntries?
-	SpentUtxoEntries            []*UtxoEntry
+
+	// FulfilledDAOCoinLimitOrder is a slice of FulfilledDAOCoinLimitOrder structs
+	// that represent all orders fulfilled by the DAO Coin Limit Order transaction.
+	// These are used to construct notifications for order fulfillment.
 	FulfilledDAOCoinLimitOrders []*FulfilledDAOCoinLimitOrder
 }
 
