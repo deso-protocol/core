@@ -428,15 +428,15 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 		}
 	}
 
-	// FIXME: Spin waiting is bad
+	ticker := time.NewTicker(10 * time.Millisecond)
 	for {
+		<-ticker.C
+
 		operationChannelStatus := snap.OperationChannel.GetStatus()
-		if operationChannelStatus > 0 {
-			printProgress(operationChannelStatus)
-			time.Sleep(10 * time.Millisecond)
-			continue
+		if operationChannelStatus == 0 {
+			break
 		}
-		break
+		printProgress(operationChannelStatus)
 	}
 }
 

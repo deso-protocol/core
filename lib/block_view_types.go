@@ -62,10 +62,182 @@ func (mm UtxoType) String() string {
 	}
 }
 
+type EncoderType uint32
+
+// Block view encoder types
+const (
+	EncoderTypeUtxoEntry EncoderType = iota
+	EncoderTypeUtxoOperation
+	EncoderTypeUtxoOperationBundle
+	EncoderTypeMessageEntry
+	EncoderTypeGroupKeyName
+	EncoderTypeMessagingGroupEntry
+	EncoderTypeMessagingGroupMember
+	EncoderTypeForbiddenPubKeyEntry
+	EncoderTypeLikeEntry
+	EncoderTypeNFTEntry
+	EncoderTypeNFTBidEntry
+	EncoderTypeNFTBidEntryBundle
+	EncoderTypeDerivedKeyEntry
+	EncoderTypeDiamondEntry
+	EncoderTypeRepostEntry
+	EncoderTypeGlobalParamsEntry
+	EncoderTypePostEntry
+	EncoderTypeBalanceEntry
+	EncoderTypeCoinEntry
+	EncoderTypePublicKeyRoyaltyPair
+	EncoderTypePKIDEntry
+	EncoderTypeProfileEntry
+	EncoderTypeAffectedPublicKey
+	EncoderTypeUtxoKey
+	EncoderTypeDeSoOutput
+	EncoderTypePKID
+	EncoderTypePublicKey
+	EncoderTypeBlockHash
+)
+
+// Txindex encoder types
+const (
+	EncoderTypeTransactionMetadata EncoderType = 1000 + iota
+	EncoderTypeBasicTransferTxindexMetadata
+	EncoderTypeBitcoinExchangeTxindexMetadata
+	EncoderTypeCreatorCoinTxindexMetadata
+	EncoderTypeCreatorCoinTransferTxindexMetadata
+	EncoderTypeDAOCoinTransferTxindexMetadata
+	EncoderTypeUpdateProfileTxindexMetadata
+	EncoderTypeSubmitPostTxindexMetadata
+	EncoderTypeLikeTxindexMetadata
+	EncoderTypeFollowTxindexMetadata
+	EncoderTypePrivateMessageTxindexMetadata
+	EncoderTypeSwapIdentityTxindexMetadata
+	EncoderTypeNFTRoyaltiesMetadata
+	EncoderTypeNFTBidTxindexMetadata
+	EncoderTypeAcceptNFTBidTxindexMetadata
+	EncoderTypeNFTTransferTxindexMetadata
+	EncoderTypeAcceptNFTTransferTxindexMetadata
+	EncoderTypeBurnNFTTxindexMetadata
+	EncoderTypeDAOCoinTxindexMetadata
+	EncoderTypeCreateNFTTxindexMetadata
+	EncoderTypeUpdateNFTTxindexMetadata
+)
+
+func (encoderType EncoderType) New() DeSoEncoder {
+	// Block view encoder types
+	switch encoderType {
+	case EncoderTypeUtxoEntry:
+		return &UtxoEntry{}
+	case EncoderTypeUtxoOperation:
+		return &UtxoOperation{}
+	case EncoderTypeUtxoOperationBundle:
+		return &UtxoOperationBundle{}
+	case EncoderTypeMessageEntry:
+		return &MessageEntry{}
+	case EncoderTypeGroupKeyName:
+		return &GroupKeyName{}
+	case EncoderTypeMessagingGroupEntry:
+		return &MessagingGroupEntry{}
+	case EncoderTypeMessagingGroupMember:
+		return &MessagingGroupMember{}
+	case EncoderTypeForbiddenPubKeyEntry:
+		return &ForbiddenPubKeyEntry{}
+	case EncoderTypeLikeEntry:
+		return &LikeEntry{}
+	case EncoderTypeNFTEntry:
+		return &NFTEntry{}
+	case EncoderTypeNFTBidEntry:
+		return &NFTBidEntry{}
+	case EncoderTypeNFTBidEntryBundle:
+		return &NFTBidEntryBundle{}
+	case EncoderTypeDerivedKeyEntry:
+		return &DerivedKeyEntry{}
+	case EncoderTypeDiamondEntry:
+		return &DiamondEntry{}
+	case EncoderTypeRepostEntry:
+		return &RepostEntry{}
+	case EncoderTypeGlobalParamsEntry:
+		return &GlobalParamsEntry{}
+	case EncoderTypePostEntry:
+		return &PostEntry{}
+	case EncoderTypeBalanceEntry:
+		return &BalanceEntry{}
+	case EncoderTypeCoinEntry:
+		return &CoinEntry{}
+	case EncoderTypePublicKeyRoyaltyPair:
+		return &PublicKeyRoyaltyPair{}
+	case EncoderTypePKIDEntry:
+		return &PKIDEntry{}
+	case EncoderTypeProfileEntry:
+		return &ProfileEntry{}
+	case EncoderTypeAffectedPublicKey:
+		return &AffectedPublicKey{}
+	case EncoderTypeUtxoKey:
+		return &UtxoKey{}
+	case EncoderTypeDeSoOutput:
+		return &DeSoOutput{}
+	case EncoderTypePKID:
+		return &PKID{}
+	case EncoderTypePublicKey:
+		return &PublicKey{}
+	case EncoderTypeBlockHash:
+		return &BlockHash{}
+	}
+
+	// Txindex encoder types
+	switch encoderType {
+	case EncoderTypeTransactionMetadata:
+		return &TransactionMetadata{}
+	case EncoderTypeBasicTransferTxindexMetadata:
+		return &BasicTransferTxindexMetadata{}
+	case EncoderTypeBitcoinExchangeTxindexMetadata:
+		return &BitcoinExchangeTxindexMetadata{}
+	case EncoderTypeCreatorCoinTxindexMetadata:
+		return &CreatorCoinTxindexMetadata{}
+	case EncoderTypeCreatorCoinTransferTxindexMetadata:
+		return &CreatorCoinTransferTxindexMetadata{}
+	case EncoderTypeDAOCoinTransferTxindexMetadata:
+		return &DAOCoinTransferTxindexMetadata{}
+	case EncoderTypeUpdateProfileTxindexMetadata:
+		return &UpdateProfileTxindexMetadata{}
+	case EncoderTypeSubmitPostTxindexMetadata:
+		return &SubmitPostTxindexMetadata{}
+	case EncoderTypeLikeTxindexMetadata:
+		return &LikeTxindexMetadata{}
+	case EncoderTypeFollowTxindexMetadata:
+		return &FollowTxindexMetadata{}
+	case EncoderTypePrivateMessageTxindexMetadata:
+		return &PrivateMessageTxindexMetadata{}
+	case EncoderTypeSwapIdentityTxindexMetadata:
+		return &SwapIdentityTxindexMetadata{}
+	case EncoderTypeNFTRoyaltiesMetadata:
+		return &NFTRoyaltiesMetadata{}
+	case EncoderTypeNFTBidTxindexMetadata:
+		return &NFTBidTxindexMetadata{}
+	case EncoderTypeAcceptNFTBidTxindexMetadata:
+		return &AcceptNFTBidTxindexMetadata{}
+	case EncoderTypeNFTTransferTxindexMetadata:
+		return &NFTTransferTxindexMetadata{}
+	case EncoderTypeAcceptNFTTransferTxindexMetadata:
+		return &AcceptNFTTransferTxindexMetadata{}
+	case EncoderTypeBurnNFTTxindexMetadata:
+		return &BurnNFTTxindexMetadata{}
+	case EncoderTypeDAOCoinTxindexMetadata:
+		return &DAOCoinTxindexMetadata{}
+	case EncoderTypeCreateNFTTxindexMetadata:
+		return &CreateNFTTxindexMetadata{}
+	case EncoderTypeUpdateNFTTxindexMetadata:
+		return &UpdateNFTTxindexMetadata{}
+	default:
+		return nil
+	}
+}
+
 // DeSoEncoder represents types that implement custom to/from bytes encoding.
 type DeSoEncoder interface {
 	RawEncodeWithoutMetadata(blockHeight uint64) []byte
 	RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error
+
+	GetVersionByte(blockHeight uint64) byte
+	GetEncoderType() EncoderType
 }
 
 // EncodeToBytes encodes a DeSoEncoder type to bytes, including
@@ -73,10 +245,18 @@ type DeSoEncoder interface {
 func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 	var data []byte
 
+	// We will encode the DeSoEncoder type with some additional metadata. This metadata consists of:
+	// 	<existenceByte [1]byte> <encoderType [4]byte> <encoderVersion [1]byte> <encodedBytes []byte>
+	//
+	// existenceByte  - is a boolean that tells us if the encoder entry was initialized (true) or if it was nil (false)
+	// encoderType    - is a uint32 that encodes information of DeSoEncoder's type.
+	// encoderVersion - is a byte that says which migration was used by the encoder. Migrations increment encoder's version.
+	// encodedBytes   - encoder's bytes
+
 	if encoder != nil && !reflect.ValueOf(encoder).IsNil() {
 		data = append(data, BoolToByte(true))
-		// TODO: Figure out a better way to be forward-compatible with changes to the encoders
-		//data = append(data, UintToBuf(blockHeight)...)
+		data = append(data, _EncodeUint32(uint32(encoder.GetEncoderType()))...)
+		data = append(data, encoder.GetVersionByte(blockHeight))
 		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight)...)
 	} else {
 		data = append(data, BoolToByte(false))
@@ -87,13 +267,27 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 
 // DecodeFromBytes decodes a DeSoEncoder type from bytes. We check
 // for the existence byte, which tells us whether actual data was encoded, or a nil pointer.
-func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (bool, error) {
-	if existByte, err := ReadBoolByte(rr); existByte && err == nil {
-		//blockHeight, err := ReadUvarint(rr)
-		//if err != nil {
-		//	return false, errors.Wrapf(err, "DecodeFromBytes: Problem decoding block height")
-		//}
-		blockHeight := uint64(0)
+func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool, _error error) {
+	if existenceByte, err := ReadBoolByte(rr); existenceByte && err == nil {
+
+		encoderTypeBytes := make([]byte, 4)
+		_, err := io.ReadFull(rr, encoderTypeBytes)
+		if err != nil {
+			return false, errors.Wrapf(err, "DecodeFromBytes: Problem decoding encoder type")
+		}
+		encoderType := EncoderType(DecodeUint32(encoderTypeBytes))
+
+		// Because encoder is provided as a parameter, we just verify that the entry type matches the encoder type.
+		if !reflect.DeepEqual(encoderType, encoder.GetEncoderType()) {
+			return false, fmt.Errorf("DecodeFromBytes: encoder type doesn't match the entry type")
+		}
+
+		versionByte, err := rr.ReadByte()
+		if err != nil {
+			return false, errors.Wrapf(err, "DecodeFromBytes: Problem decoding version bytes")
+		}
+		blockHeight := VersionByteToMigrationHeight(versionByte)
+
 		err = encoder.RawDecodeWithoutMetadata(blockHeight, rr)
 		if err != nil {
 			return false, errors.Wrapf(err, "DecodeFromBytes: Problem reading encoder")
@@ -183,6 +377,14 @@ func (utxo *UtxoEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	}
 
 	return nil
+}
+
+func (utxo *UtxoEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (utxo *UtxoEntry) GetEncoderType() EncoderType {
+	return EncoderTypeUtxoEntry
 }
 
 type OperationType uint
@@ -998,6 +1200,14 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	return nil
 }
 
+func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (op *UtxoOperation) GetEncoderType() EncoderType {
+	return EncoderTypeUtxoOperation
+}
+
 type UtxoOperationBundle struct {
 	UtxoOpBundle [][]*UtxoOperation
 }
@@ -1040,6 +1250,14 @@ func (opBundle *UtxoOperationBundle) RawDecodeWithoutMetadata(blockHeight uint64
 	}
 
 	return nil
+}
+
+func (opBundle *UtxoOperationBundle) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (opBundle *UtxoOperationBundle) GetEncoderType() EncoderType {
+	return EncoderTypeUtxoOperationBundle
 }
 
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
@@ -1228,6 +1446,14 @@ func (message *MessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	return nil
 }
 
+func (message *MessageEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (message *MessageEntry) GetEncoderType() EncoderType {
+	return EncoderTypeMessageEntry
+}
+
 // GroupKeyName helps with handling key names in MessagingGroupKey
 type GroupKeyName [MaxMessagingKeyNameCharacters]byte
 
@@ -1246,6 +1472,14 @@ func (name *GroupKeyName) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes
 	}
 	copy(name[:], nameBytes)
 	return nil
+}
+
+func (name *GroupKeyName) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (name *GroupKeyName) GetEncoderType() EncoderType {
+	return EncoderTypeGroupKeyName
 }
 
 // Encode message key from varying length to a MaxMessagingKeyNameCharacters.
@@ -1432,6 +1666,14 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 	return nil
 }
 
+func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {
+	return EncoderTypeMessagingGroupEntry
+}
+
 // MessagingGroupMember is used to store information about a group chat member.
 type MessagingGroupMember struct {
 	// GroupMemberPublicKey is the main public key of the group chat member.
@@ -1519,6 +1761,14 @@ func (rec *MessagingGroupMember) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	return nil
 }
 
+func (rec *MessagingGroupMember) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (rec *MessagingGroupMember) GetEncoderType() EncoderType {
+	return EncoderTypeMessagingGroupMember
+}
+
 // Entry for a public key forbidden from signing blocks.
 type ForbiddenPubKeyEntry struct {
 	PubKey []byte
@@ -1540,6 +1790,14 @@ func (entry *ForbiddenPubKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, 
 		return errors.Wrapf(err, "ForbiddenPubKeyEntry.Decode: Problem decoding PubKey")
 	}
 	return nil
+}
+
+func (entry *ForbiddenPubKeyEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (entry *ForbiddenPubKeyEntry) GetEncoderType() EncoderType {
+	return EncoderTypeForbiddenPubKeyEntry
 }
 
 func MakeLikeKey(userPk []byte, LikedPostHash BlockHash) LikeKey {
@@ -1585,6 +1843,14 @@ func (likeEntry *LikeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 		return errors.Wrapf(err, "LikeEntry.Decode: problem reading LikedPostHash")
 	}
 	return nil
+}
+
+func (likeEntry *LikeEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (likeEntry *LikeEntry) GetEncoderType() EncoderType {
+	return EncoderTypeLikeEntry
 }
 
 func MakeNFTKey(nftPostHash *BlockHash, serialNumber uint64) NFTKey {
@@ -1717,6 +1983,14 @@ func (nft *NFTEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
+func (nft *NFTEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (nft *NFTEntry) GetEncoderType() EncoderType {
+	return EncoderTypeNFTEntry
+}
+
 func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
 	return NFTBidKey{
 		BidderPKID:   *bidderPKID,
@@ -1796,6 +2070,14 @@ func (be *NFTBidEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	return nil
 }
 
+func (be *NFTBidEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (be *NFTBidEntry) GetEncoderType() EncoderType {
+	return EncoderTypeNFTBidEntry
+}
+
 func (nftBidEntry *NFTBidEntry) Copy() *NFTBidEntry {
 	if nftBidEntry == nil {
 		return nil
@@ -1846,6 +2128,14 @@ func (bundle *NFTBidEntryBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	}
 
 	return nil
+}
+
+func (bundle *NFTBidEntryBundle) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (bundle *NFTBidEntryBundle) GetEncoderType() EncoderType {
+	return EncoderTypeNFTBidEntryBundle
 }
 
 type DerivedKeyEntry struct {
@@ -1946,6 +2236,14 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	}
 
 	return nil
+}
+
+func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (key *DerivedKeyEntry) GetEncoderType() EncoderType {
+	return EncoderTypeDerivedKeyEntry
 }
 
 func (dk *DerivedKeyEntry) Copy() *DerivedKeyEntry {
@@ -2070,6 +2368,14 @@ func (de *DiamondEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	return nil
 }
 
+func (de *DiamondEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (de *DiamondEntry) GetEncoderType() EncoderType {
+	return EncoderTypeDiamondEntry
+}
+
 func MakeRepostKey(userPk []byte, RepostedPostHash BlockHash) RepostKey {
 	return RepostKey{
 		ReposterPubKey:   MakePkMapKey(userPk),
@@ -2132,6 +2438,14 @@ func (re *RepostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	return nil
 }
 
+func (re *RepostEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (re *RepostEntry) GetEncoderType() EncoderType {
+	return EncoderTypeRepostEntry
+}
+
 type GlobalParamsEntry struct {
 	// The new exchange rate to set.
 	USDCentsPerBitcoin uint64
@@ -2186,6 +2500,14 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	}
 
 	return nil
+}
+
+func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
+	return EncoderTypeGlobalParamsEntry
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.
@@ -2485,6 +2807,14 @@ func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
+func (pe *PostEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pe *PostEntry) GetEncoderType() EncoderType {
+	return EncoderTypePostEntry
+}
+
 type BalanceEntryMapKey struct {
 	HODLerPKID  PKID
 	CreatorPKID PKID
@@ -2560,6 +2890,14 @@ func (be *BalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	}
 
 	return nil
+}
+
+func (be *BalanceEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (be *BalanceEntry) GetEncoderType() EncoderType {
+	return EncoderTypeBalanceEntry
 }
 
 type TransferRestrictionStatus uint8
@@ -2702,6 +3040,14 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
+func (ce *CoinEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (ce *CoinEntry) GetEncoderType() EncoderType {
+	return EncoderTypeCoinEntry
+}
+
 type PublicKeyRoyaltyPair struct {
 	PublicKey          []byte
 	RoyaltyAmountNanos uint64
@@ -2728,6 +3074,14 @@ func (pair *PublicKeyRoyaltyPair) RawDecodeWithoutMetadata(blockHeight uint64, r
 		return errors.Wrapf(err, "PublicKeyRoyaltyPair.Decode: problem decoding royalty amount")
 	}
 	return nil
+}
+
+func (pair *PublicKeyRoyaltyPair) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pair *PublicKeyRoyaltyPair) GetEncoderType() EncoderType {
+	return EncoderTypePublicKeyRoyaltyPair
 }
 
 type PKIDEntry struct {
@@ -2768,6 +3122,14 @@ func (pkid *PKIDEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	}
 
 	return nil
+}
+
+func (pkid *PKIDEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pkid *PKIDEntry) GetEncoderType() EncoderType {
+	return EncoderTypePKIDEntry
 }
 
 type ProfileEntry struct {
@@ -2882,6 +3244,14 @@ func (pe *ProfileEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	}
 
 	return nil
+}
+
+func (pe *ProfileEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pe *ProfileEntry) GetEncoderType() EncoderType {
+	return EncoderTypeProfileEntry
 }
 
 func EncodeByteArray(bytes []byte) []byte {

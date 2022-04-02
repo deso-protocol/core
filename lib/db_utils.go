@@ -4037,6 +4037,14 @@ func (pk *AffectedPublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	return nil
 }
 
+func (pk *AffectedPublicKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pk *AffectedPublicKey) GetEncoderType() EncoderType {
+	return EncoderTypeAffectedPublicKey
+}
+
 type BasicTransferTxindexMetadata struct {
 	TotalInputNanos  uint64
 	TotalOutputNanos uint64
@@ -4110,6 +4118,14 @@ func (txnMeta *BasicTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	return nil
 }
 
+func (txnMeta *BasicTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *BasicTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeBasicTransferTxindexMetadata
+}
+
 type BitcoinExchangeTxindexMetadata struct {
 	BitcoinSpendAddress string
 	// DeSoOutputPubKeyBase58Check = TransactorPublicKeyBase58Check
@@ -4171,6 +4187,14 @@ func (txnMeta *BitcoinExchangeTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	return nil
 }
 
+func (txnMeta *BitcoinExchangeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *BitcoinExchangeTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeBitcoinExchangeTxindexMetadata
+}
+
 type CreatorCoinTxindexMetadata struct {
 	OperationType string
 	// TransactorPublicKeyBase58Check = TransactorPublicKeyBase58Check
@@ -4230,6 +4254,14 @@ func (txnMeta *CreatorCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight 
 	return nil
 }
 
+func (txnMeta *CreatorCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *CreatorCoinTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreatorCoinTxindexMetadata
+}
+
 type CreatorCoinTransferTxindexMetadata struct {
 	CreatorUsername            string
 	CreatorCoinToTransferNanos uint64
@@ -4276,6 +4308,14 @@ func (txnMeta *CreatorCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(bloc
 	return nil
 }
 
+func (txnMeta *CreatorCoinTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *CreatorCoinTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreatorCoinTransferTxindexMetadata
+}
+
 type DAOCoinTransferTxindexMetadata struct {
 	CreatorUsername        string
 	DAOCoinToTransferNanos uint256.Int
@@ -4304,6 +4344,14 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	}
 	txnMeta.DAOCoinToTransferNanos = *DAOCoinToTransferNanos
 	return nil
+}
+
+func (txnMeta *DAOCoinTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *DAOCoinTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDAOCoinTransferTxindexMetadata
 }
 
 type DAOCoinTxindexMetadata struct {
@@ -4364,6 +4412,14 @@ func (txnMeta *DAOCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	txnMeta.TransferRestrictionStatus = string(transferRestrictionStatusBytes)
 
 	return nil
+}
+
+func (txnMeta *DAOCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *DAOCoinTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDAOCoinTxindexMetadata
 }
 
 type UpdateProfileTxindexMetadata struct {
@@ -4438,6 +4494,14 @@ func (txnMeta *UpdateProfileTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	return nil
 }
 
+func (txnMeta *UpdateProfileTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *UpdateProfileTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUpdateProfileTxindexMetadata
+}
+
 type SubmitPostTxindexMetadata struct {
 	PostHashBeingModifiedHex string
 	// PosterPublicKeyBase58Check = TransactorPublicKeyBase58Check
@@ -4474,6 +4538,14 @@ func (txnMeta *SubmitPostTxindexMetadata) RawDecodeWithoutMetadata(blockHeight u
 	return nil
 }
 
+func (txnMeta *SubmitPostTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *SubmitPostTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeSubmitPostTxindexMetadata
+}
+
 type LikeTxindexMetadata struct {
 	// LikerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	IsUnlike bool
@@ -4506,6 +4578,14 @@ func (txnMeta *LikeTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	return nil
 }
 
+func (txnMeta *LikeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *LikeTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeLikeTxindexMetadata
+}
+
 type FollowTxindexMetadata struct {
 	// FollowerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	// FollowedPublicKeyBase58Check in AffectedPublicKeys
@@ -4527,6 +4607,14 @@ func (txnMeta *FollowTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint6
 		return errors.Wrapf(err, "FollowTxindexMetadata.Decode: Problem reading IsUnfollow")
 	}
 	return nil
+}
+
+func (txnMeta *FollowTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *FollowTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeFollowTxindexMetadata
 }
 
 type PrivateMessageTxindexMetadata struct {
@@ -4551,6 +4639,14 @@ func (txnMeta *PrivateMessageTxindexMetadata) RawDecodeWithoutMetadata(blockHeig
 		return errors.Wrapf(err, "PrivateMessageTxindexMetadata.Decode: Problem reading TimestampNanos")
 	}
 	return nil
+}
+
+func (txnMeta *PrivateMessageTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *PrivateMessageTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypePrivateMessageTxindexMetadata
 }
 
 type SwapIdentityTxindexMetadata struct {
@@ -4600,6 +4696,14 @@ func (txnMeta *SwapIdentityTxindexMetadata) RawDecodeWithoutMetadata(blockHeight
 	return nil
 }
 
+func (txnMeta *SwapIdentityTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *SwapIdentityTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeSwapIdentityTxindexMetadata
+}
+
 type NFTRoyaltiesMetadata struct {
 	CreatorCoinRoyaltyNanos     uint64
 	CreatorRoyaltyNanos         uint64
@@ -4646,6 +4750,14 @@ func (txnMeta *NFTRoyaltiesMetadata) RawDecodeWithoutMetadata(blockHeight uint64
 		return errors.Wrapf(err, "NFTRoyaltiesMetadata.Decode: Problem reading AdditionalDESORoyaltiesMap")
 	}
 	return nil
+}
+
+func (txnMeta *NFTRoyaltiesMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *NFTRoyaltiesMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeNFTRoyaltiesMetadata
 }
 
 type NFTBidTxindexMetadata struct {
@@ -4707,6 +4819,14 @@ func (txnMeta *NFTBidTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint6
 	return nil
 }
 
+func (txnMeta *NFTBidTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *NFTBidTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeNFTBidTxindexMetadata
+}
+
 type AcceptNFTBidTxindexMetadata struct {
 	NFTPostHashHex       string
 	SerialNumber         uint64
@@ -4749,6 +4869,14 @@ func (txnMeta *AcceptNFTBidTxindexMetadata) RawDecodeWithoutMetadata(blockHeight
 	return nil
 }
 
+func (txnMeta *AcceptNFTBidTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *AcceptNFTBidTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAcceptNFTBidTxindexMetadata
+}
+
 type NFTTransferTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
@@ -4780,6 +4908,14 @@ func (txnMeta *NFTTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeight 
 	return nil
 }
 
+func (txnMeta *NFTTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *NFTTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeNFTTransferTxindexMetadata
+}
+
 type AcceptNFTTransferTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
@@ -4807,6 +4943,14 @@ func (txnMeta *AcceptNFTTransferTxindexMetadata) RawDecodeWithoutMetadata(blockH
 		return errors.Wrapf(err, "AcceptNFTTransferTxindexMetadata.Decode: problem reading SerialNumber")
 	}
 	return nil
+}
+
+func (txnMeta *AcceptNFTTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *AcceptNFTTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAcceptNFTTransferTxindexMetadata
 }
 
 type BurnNFTTxindexMetadata struct {
@@ -4837,6 +4981,14 @@ func (txnMeta *BurnNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 		return errors.Wrapf(err, "BurnNFTTxindexMetadata.Decode: problem reading SerialNumber")
 	}
 	return nil
+}
+
+func (txnMeta *BurnNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *BurnNFTTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeBurnNFTTxindexMetadata
 }
 
 type CreateNFTTxindexMetadata struct {
@@ -4876,6 +5028,14 @@ func (txnMeta *CreateNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight ui
 	return nil
 }
 
+func (txnMeta *CreateNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *CreateNFTTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreateNFTTxindexMetadata
+}
+
 type UpdateNFTTxindexMetadata struct {
 	NFTPostHashHex string
 	IsForSale      bool
@@ -4904,6 +5064,14 @@ func (txnMeta *UpdateNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight ui
 
 	}
 	return nil
+}
+
+func (txnMeta *UpdateNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *UpdateNFTTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUpdateNFTTxindexMetadata
 }
 
 type TransactionMetadata struct {
@@ -5187,6 +5355,14 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	}
 
 	return nil
+}
+
+func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeTransactionMetadata
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, snap *Snapshot, txID *BlockHash) bool {

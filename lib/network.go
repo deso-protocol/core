@@ -2421,6 +2421,14 @@ func (utxoKey *UtxoKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	return nil
 }
 
+func (utxoKey *UtxoKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (utxoKey *UtxoKey) GetEncoderType() EncoderType {
+	return EncoderTypeUtxoKey
+}
+
 const (
 	// MaxDeSoInputSizeBytes is the size required to encode an DeSoInput.
 	// 32 bytes for the TxID and 4 bytes for the Index = 36 bytes. Note
@@ -2483,6 +2491,14 @@ func (desoOutput *DeSoOutput) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading AmountNanos")
 	}
 	return nil
+}
+
+func (desoOutput *DeSoOutput) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (desoOutput *DeSoOutput) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoOutput
 }
 
 type MsgDeSoTxn struct {

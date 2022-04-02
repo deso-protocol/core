@@ -41,6 +41,14 @@ func (pkid *PKID) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader)
 	return nil
 }
 
+func (pkid *PKID) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pkid *PKID) GetEncoderType() EncoderType {
+	return EncoderTypePKID
+}
+
 func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
 }
@@ -81,6 +89,14 @@ func (publicKey *PublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	return nil
 }
 
+func (publicKey *PublicKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (publicKey *PublicKey) GetEncoderType() EncoderType {
+	return EncoderTypePublicKey
+}
+
 func PublicKeyToPKID(publicKey []byte) *PKID {
 	if len(publicKey) == 0 {
 		return nil
@@ -119,6 +135,14 @@ func (bh *BlockHash) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	}
 	copy(bh[:], blockHashBytes)
 	return nil
+}
+
+func (bh *BlockHash) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (bh *BlockHash) GetEncoderType() EncoderType {
+	return EncoderTypeBlockHash
 }
 
 func (bh *BlockHash) String() string {
