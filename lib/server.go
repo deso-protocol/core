@@ -989,9 +989,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		"%v) and metadata (%v) and isEmpty (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
 		len(msg.SnapshotChunk), msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)
 
+	// TODO: reject this message if we're not syncing.
 	// Validate the snapshot chunk message
 
 	// Make sure that the expected snapshot height and blockhash match the ones in received message.
+	// TODO: if the metadata blockheight is greater than hypersync progress snapshot blockheight, restart & erase the node.
 	if msg.SnapshotMetadata.SnapshotBlockHeight != srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
 		!bytes.Equal(msg.SnapshotMetadata.CurrentEpochBlockHash[:], srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash[:]) {
 
@@ -1073,7 +1075,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	dbChunk = append(dbChunk, msg.SnapshotChunk[1:]...)
 
 	if !chunkEmpty {
-		// TODO: This loop skips the first element...
+		// Check that all entries in the chunk contain the prefix, and that they are sorted. We skip the first element,
+		// because we already validated it contains the prefix and we will refer to ii-1 when verifying ordering.
 		for ii := 1; ii < len(dbChunk); ii++ {
 			// Make sure that all dbChunk entries have the same prefix as in the message.
 			if !bytes.HasPrefix(dbChunk[ii].Key, msg.Prefix) {
@@ -1098,7 +1101,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 		// Process the DBEntries from the msg and add them to the db.
 		srv.timer.Start("Server._handleSnapshot Process Snapshot")
-		srv.snapshot.ProcessSnapshotChunk(srv.blockchain.db, &srv.blockchain.ChainLock, dbChunk)
+		srv.snapshot.ProcessSnapshotChunk(srv.blockchain.db, &srv.blockchain.ChainLock, dbChunk,
+			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)
 		srv.timer.End("Server._handleSnapshot Process Snapshot")
 	}
 

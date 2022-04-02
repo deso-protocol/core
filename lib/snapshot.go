@@ -15,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"sync"
@@ -114,6 +115,8 @@ type Snapshot struct {
 	// we are confident that data wasn't tampered with.
 	Checksum *StateChecksum
 
+	MigrationChecksums []*EncoderMigrationChecksum
+
 	// CurrentEpochSnapshotMetadata is the information about the currently stored complete snapshot, which
 	// reflects the state of the blockchain at the largest height divisible by SnapshotBlockHeightPeriod.
 	// The metadata includes the block height and its block hash of when the snapshot was taken, and the
@@ -138,6 +141,11 @@ type Snapshot struct {
 	stopped         bool
 
 	timer *Timer
+}
+
+type EncoderMigrationChecksum struct {
+	checksum    *StateChecksum
+	blockHeight uint64
 }
 
 // NewSnapshot creates a new snapshot instance.
@@ -243,17 +251,20 @@ func (snap *Snapshot) Run() {
 		case SnapshotOperationProcessChunk:
 			glog.V(1).Infof("Snapshot.Run: Number of operations in the operation channel (%v)",
 				snap.OperationChannel.GetStatus())
-			if err := snap.SetSnapshotChunk(operation.mainDb, operation.mainDbMutex, operation.snapshotChunk); err != nil {
+			if err := snap.SetSnapshotChunk(operation.mainDb, operation.mainDbMutex, operation.snapshotChunk,
+				operation.blockHeight); err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
 			}
 
 		case SnapshotOperationChecksumAdd:
-			if err := snap.Checksum.AddBytes(operation.checksumBytes); err != nil {
+			if err := snap.Checksum.AddOrRemoveBytesWithMigrations(operation.checksumKey, operation.checksumValue,
+				snap.Status.currentBlockHeight, snap.MigrationChecksums, true); err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding checksum bytes operation (%v)", operation)
 			}
 
 		case SnapshotOperationChecksumRemove:
-			if err := snap.Checksum.RemoveBytes(operation.checksumBytes); err != nil {
+			if err := snap.Checksum.AddOrRemoveBytesWithMigrations(operation.checksumKey, operation.checksumValue,
+				snap.Status.currentBlockHeight, snap.MigrationChecksums, false); err != nil {
 				glog.Errorf("Snapshot.Run: Problem removing checksum bytes operation (%v)", operation)
 			}
 
@@ -375,26 +386,30 @@ func (snap *Snapshot) FinishProcessBlock(blockNode *BlockNode) {
 	})
 }
 
-func (snap *Snapshot) ProcessSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.RWMutex, snapshotChunk []*DBEntry) {
+func (snap *Snapshot) ProcessSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.RWMutex,
+	snapshotChunk []*DBEntry, blockHeight uint64) {
 	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
 		operationType: SnapshotOperationProcessChunk,
 		mainDb:        mainDb,
 		mainDbMutex:   mainDbMutex,
 		snapshotChunk: snapshotChunk,
+		blockHeight:   blockHeight,
 	})
 }
 
-func (snap *Snapshot) AddChecksumBytes(bytes []byte) {
+func (snap *Snapshot) AddChecksumBytes(key []byte, value []byte) {
 	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
 		operationType: SnapshotOperationChecksumAdd,
-		checksumBytes: bytes,
+		checksumKey:   key,
+		checksumValue: value,
 	})
 }
 
-func (snap *Snapshot) RemoveChecksumBytes(bytes []byte) {
+func (snap *Snapshot) RemoveChecksumBytes(key []byte, value []byte) {
 	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
 		operationType: SnapshotOperationChecksumRemove,
-		checksumBytes: bytes,
+		checksumKey:   key,
+		checksumValue: value,
 	})
 }
 
@@ -695,6 +710,9 @@ func (snap *Snapshot) CheckAnceststralRecordExistenceByte(value []byte) bool {
 // SnapshotProcessBlock updates the snapshot information after a block has been added.
 func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
 	height := uint64(blockNode.Height)
+	if height > snap.Status.currentBlockHeight {
+		snap.Status.currentBlockHeight = height
+	}
 
 	if height%snap.SnapshotBlockHeightPeriod == 0 && height > snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight {
 		var err error
@@ -782,18 +800,18 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
 	}
 
-	// To combine the main DB entries and the ancestral records DB entries, we iterate through the
-	// ancestral records and for each key we add all the main DB keys that are smaller than the
-	// currently processed key. The ancestral records entries have priority over the main DB entries,
-	// so whenever there are entries with the same key among the two DBs, we will only add the
-	// ancestral record entry to our snapshot batch. Also, the loop below might appear like O(n^2)
-	// but it's actually O(n) because the inside loop iterates at most O(n) times in total.
+	// To combine the main DB entries and the ancestral records DB entries, we iterate through the ancestral records and
+	// for each key we add all the main DB keys that are smaller than the currently processed key. The ancestral records
+	// entries have priority over the main DB entries, so whenever there are entries with the same key among the two DBs,
+	// we will only add the ancestral record entry to our snapshot batch. Also, the loop below might appear like O(n^2)
+	// but it's actually O(n) because the inside loop iterates at most O(n) times in total. We call this approach
+	// "the caterpillar" and you should know that it sparked some controversy in the dev community. Some think it's
+	// unintuitive and error-prone and prefer some suboptimal O(nlogn). Others know that the power of O(n) is immense
+	// and worth the tradeoff.
 
 	// Index to keep track of how many main DB entries we've already processed.
 	indexChunk := 0
 	for _, ancestralEntry := range ancestralDbBatchEntries {
-		//var entriesToAppend []*DBEntry
-
 		dbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
 
 		for jj := indexChunk; jj < len(mainDbBatchEntries); {
@@ -806,10 +824,6 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 			jj++
 			indexChunk = jj
 		}
-
-		//for _, entry := range entriesToAppend {
-		//	snapshotEntriesBatch = append(snapshotEntriesBatch, entry)
-		//}
 
 		// If we filled the chunk for main db records, we will return so that there is no
 		// gap between the most recently added DBEntry and the next ancestral record. Otherwise,
@@ -860,7 +874,9 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 }
 
 // SetSnapshotChunk is called to put the snapshot chunk that we've got from a peer in the database.
-func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.RWMutex, chunk []*DBEntry) error {
+func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.RWMutex,
+	chunk []*DBEntry, blockHeight uint64) error {
+
 	var err error
 	var syncGroup sync.WaitGroup
 
@@ -869,7 +885,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	initialChecksumBytes, err := snap.Checksum.ToBytes()
 	if err != nil {
 		glog.Errorf("Snapshot.SetSnapshotChunk: Problem retrieving checksum bytes, error: (%v)", err)
-		snap.ProcessSnapshotChunk(mainDb, mainDbMutex, chunk)
+		snap.ProcessSnapshotChunk(mainDb, mainDbMutex, chunk, blockHeight)
 		return err
 	}
 
@@ -904,7 +920,8 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 
 		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
-			if localErr := snap.Checksum.AddBytes(EncodeKeyValue(dbEntry.Key, dbEntry.Value)); localErr != nil {
+			checksumBytes := EncodeKeyAndValueWithBlockHeight(dbEntry.Key, dbEntry.Value, blockHeight)
+			if localErr := snap.Checksum.AddBytes(checksumBytes); localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem adding checksum")
 				err = localErr
 				return
@@ -930,7 +947,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 			panic(fmt.Errorf("Snapshot.SetSnapshotChunk: Problem resetting checksum. This should never happen, "+
 				"error: (%v)", err))
 		}
-		snap.ProcessSnapshotChunk(mainDb, mainDbMutex, chunk)
+		snap.ProcessSnapshotChunk(mainDb, mainDbMutex, chunk, blockHeight)
 		return err
 	}
 
@@ -1151,6 +1168,74 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 		// Hold the lock on addMutex to add the bytes to the checksum sequentially.
 		sc.AddToChecksum(hashElement)
 	}(sc, bytes)
+	return nil
+}
+
+// AddOrRemoveBytesWithMigrations is used to add or remove (key, value) bytes to the checksum and all encoder migration
+// checksums. Depending on the blockHeight, the (key, value) pair might be encoded differently. This is due to encoder
+// migrations, which allow for modifications to the encoder schemas that come into effect on pre-defined
+// blockHeights. With migrations, nodes won't need to re-sync after a software upgrade. To make migrations work,
+// we need a way to maintain a valid checksum across different encoder migration epochs. We do this by keeping a
+// checksum copy for each migration epoch and add to it with the respective encoder version. This function is
+// called in the context of the snapshot's epoch so that everything happens in sync with the main thread.
+// The parameter addBytes determines if we want to add or remove bytes from the checksums.
+func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(key []byte, value []byte, blockHeight uint64,
+	migrations []*EncoderMigrationChecksum, addBytes bool) error {
+
+	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
+	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
+		return errors.Wrapf(err, " StateChecksum.AddBytesWithMigrations: problem acquiring semaphore")
+	}
+
+	go func() {
+		defer sc.semaphore.Release(1)
+		// Think about disconnects
+
+		// Sometimes, the entry can be encoded identically across different migrations. Because of that, we will skip
+		// the hash_to_curve operation for these bytes to save time. The array encodings keeps a list of all different
+		// encodings, and encodingsMapping points migrations to encodings.
+		var encodings [][]byte
+		var encodingsMapping []int
+
+		// We add the current key, value encoding and encodings for all migrations.
+		encodings = append(encodings, EncodeKeyAndValueWithBlockHeight(key, value, blockHeight))
+		for _, migration := range migrations {
+			added := false
+			migrationEncoding := EncodeKeyAndValueWithBlockHeight(key, value, migration.blockHeight)
+			for index, encoding := range encodings {
+				if reflect.DeepEqual(encoding, migrationEncoding) {
+					encodingsMapping = append(encodingsMapping, index)
+					added = true
+					break
+				}
+			}
+			if !added {
+				encodings = append(encodings, migrationEncoding)
+				encodingsMapping = append(encodingsMapping, len(encodings)-1)
+			}
+		}
+
+		// Compute the hash_to_curve for each encoding.
+		var hashElements []group.Element
+		for _, encoding := range encodings {
+			hashElements = append(hashElements, sc.curve.HashToElement(encoding, sc.dst))
+		}
+
+		// We will now add or remove bytes based to the checksum and all migrations. Removing means we first negate
+		// the curve point.
+		if !addBytes {
+			for ii, hashElement := range hashElements {
+				hashElements[ii] = hashElement.Neg(hashElement)
+			}
+		}
+
+		// Now add everything.
+		sc.AddToChecksum(hashElements[0])
+		for ii, index := range encodingsMapping {
+			migrations[ii].checksum.AddToChecksum(hashElements[index])
+		}
+	}()
+
 	return nil
 }
 
@@ -1471,10 +1556,13 @@ type SnapshotOperation struct {
 	mainDbMutex *deadlock.RWMutex
 	// snapshotChunk is the snapshot chunk received from the peer.
 	snapshotChunk []*DBEntry
+	// snapshot epoch block height.
+	blockHeight uint64
 
 	/* SnapshotOperationChecksumAdd, SnapshotOperationChecksumRemove */
-	// checksumBytes is the bytes we want to add to the checksum, passed during
-	checksumBytes []byte
+	// checksumKey, checksumValue are the bytes we want to add to the state checksum, e.g. when we flush to the db.
+	checksumKey   []byte
+	checksumValue []byte
 
 	/* SnapshotOperationChecksumPrint */
 	// printText is the text we want to put in the print statement.
@@ -1583,6 +1671,9 @@ type SnapshotStatus struct {
 	// between writes to the main and ancestral dbs.
 	MainDBSemaphore      uint64
 	AncestralDBSemaphore uint64
+
+	// currentBlockHeight is the blockheight of the blockchain tip.
+	currentBlockHeight uint64
 	// MemoryLock is held whenever we modify the MainDBSemaphore or AncestralDBSemaphore.
 	MemoryLock sync.Mutex
 
@@ -1725,6 +1816,7 @@ type Timer struct {
 	totalElapsedTimes map[string]float64
 	lastTimes         map[string]time.Time
 	mode              bool
+	mut               sync.RWMutex
 }
 
 func (t *Timer) Initialize() {
@@ -1738,6 +1830,9 @@ func (t *Timer) Start(eventName string) {
 	if t.mode != EnableTimer {
 		return
 	}
+
+	t.mut.Lock()
+	defer t.mut.Unlock()
 	if _, exists := t.lastTimes[eventName]; !exists {
 		t.totalElapsedTimes[eventName] = 0.0
 	}
@@ -1748,6 +1843,9 @@ func (t *Timer) End(eventName string) {
 	if t.mode != EnableTimer {
 		return
 	}
+
+	t.mut.RLock()
+	defer t.mut.RUnlock()
 	if _, exists := t.totalElapsedTimes[eventName]; !exists {
 		glog.Errorf("Timer.End: Error called with non-existent eventName")
 		return
@@ -1759,6 +1857,9 @@ func (t *Timer) Print(eventName string) {
 	if t.mode != EnableTimer {
 		return
 	}
+
+	t.mut.RLock()
+	defer t.mut.RUnlock()
 	if _, exists := t.lastTimes[eventName]; exists {
 		glog.Infof("Timer.End: event (%s) total elapsed time (%v)",
 			eventName, t.totalElapsedTimes[eventName])

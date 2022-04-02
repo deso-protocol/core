@@ -18,6 +18,7 @@ type encoderMigrationProgress struct {
 	completed           bool
 
 	blockHeight uint64
+	checksum    *StateChecksum
 }
 
 type EncoderMigration struct {

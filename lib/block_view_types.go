@@ -265,6 +265,19 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 	return data
 }
 
+func EncodeToBytesWithoutMetadata(blockHeight uint64, encoder DeSoEncoder) []byte {
+	var data []byte
+
+	if encoder != nil && !reflect.ValueOf(encoder).IsNil() {
+		data = append(data, BoolToByte(true))
+		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight)...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+
+	return data
+}
+
 // DecodeFromBytes decodes a DeSoEncoder type from bytes. We check
 // for the existence byte, which tells us whether actual data was encoded, or a nil pointer.
 func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool, _error error) {

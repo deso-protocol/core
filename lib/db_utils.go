@@ -432,6 +432,13 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	return true, nil
 }
 
+func StateKeyToDeSoEncoder(key []byte) (_isEncoder bool, _encoder DeSoEncoder) {
+	if MaxPrefixLen > 1 {
+		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+	}
+	return StatePrefixToDeSoEncoder(key[:1])
+}
+
 // getPrefixIdValue parses the DBPrefixes struct tags to fetch the prefix_id values.
 func getPrefixIdValue(structFields reflect.StructField, fieldType reflect.Type) (prefixId reflect.Value) {
 	var ref reflect.Value
@@ -581,6 +588,20 @@ func EncodeKeyValue(key []byte, value []byte) []byte {
 	return data
 }
 
+func EncodeKeyAndValueWithBlockHeight(key []byte, value []byte, blockHeight uint64) []byte {
+	checksumValue := value[:]
+	if isEncoder, encoder := StateKeyToDeSoEncoder(key); isEncoder {
+		rr := bytes.NewReader(value)
+		if exists, err := DecodeFromBytes(encoder, rr); exists && err == nil {
+			checksumValue = EncodeToBytesWithoutMetadata(blockHeight, encoder)
+		} else if err != nil {
+			panic("AddKeyAndValueWithBlockHeight: The schema is corrupted or value doesn't match the key.")
+		}
+	}
+
+	return EncodeKeyValue(key, checksumValue)
+}
+
 // DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add computation
 // prior to DB writes. In particular, we use it to maintain a dynamic LRU cache, compute the
 // state checksum, and to build DB snapshots with ancestral records.
@@ -626,10 +647,10 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 			// We have to remove the previous value from the state checksum.
 			// Because checksum is commutative, we can safely remove the past value here.
 			if getError == nil {
-				snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
+				snap.RemoveChecksumBytes(key, ancestralValue)
 			}
 			// We also add the new record to the checksum.
-			snap.AddChecksumBytes(EncodeKeyValue(key, value))
+			snap.AddChecksumBytes(key, value)
 		}
 	}
 	return nil
@@ -712,7 +733,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
 		if !snap.disableChecksum {
-			snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
+			snap.RemoveChecksumBytes(key, ancestralValue)
 		}
 	}
 	return nil
