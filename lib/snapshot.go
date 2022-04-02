@@ -920,8 +920,8 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 
 		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
-			checksumBytes := EncodeKeyAndValueWithBlockHeight(dbEntry.Key, dbEntry.Value, blockHeight)
-			if localErr := snap.Checksum.AddBytes(checksumBytes); localErr != nil {
+			if localErr := snap.Checksum.AddOrRemoveBytesWithMigrations(dbEntry.Key, dbEntry.Value, blockHeight,
+				snap.MigrationChecksums, true); localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem adding checksum")
 				err = localErr
 				return
