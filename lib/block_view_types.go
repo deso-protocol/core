@@ -299,7 +299,8 @@ func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool
 		if err != nil {
 			return false, errors.Wrapf(err, "DecodeFromBytes: Problem decoding version bytes")
 		}
-		blockHeight := VersionByteToMigrationHeight(versionByte)
+		// TODO: We should pass DeSoParams to this function instead of using GlobalParams.
+		blockHeight := VersionByteToMigrationHeight(versionByte, &GlobalDeSoParams)
 
 		err = encoder.RawDecodeWithoutMetadata(blockHeight, rr)
 		if err != nil {

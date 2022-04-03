@@ -9,7 +9,9 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -216,6 +218,20 @@ type ForkHeights struct {
 	DerivedKeyTrackSpendingLimitsBlockHeight uint32
 }
 
+// EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
+// you should define a new blockHeight in the EncoderMigrationHeights struct and add a
+type EncoderMigrationHeights struct {
+	TestMigrationHeight uint64 `version:"0"`
+}
+
+var TestnetEncoderMigrationHeights = EncoderMigrationHeights{
+	TestMigrationHeight: uint64(0),
+}
+
+var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
+	TestMigrationHeight: uint64(0),
+}
+
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
 type DeSoParams struct {
@@ -403,6 +419,9 @@ type DeSoParams struct {
 	CreatorCoinAutoSellThresholdNanos uint64
 
 	ForkHeights ForkHeights
+
+	EncoderMigrationHeights    EncoderMigrationHeights
+	EncoderMigrationVersionMap map[byte]uint64
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
@@ -446,6 +465,9 @@ func (params *DeSoParams) EnableRegtest() {
 		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
 		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	}
+
+	params.EncoderMigrationHeights = TestnetEncoderMigrationHeights
+	params.EncoderMigrationVersionMap = GetEncoderMigrationHeightsVersionMapping(&params.EncoderMigrationHeights)
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -494,6 +516,11 @@ var (
 		MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
 	}
 )
+
+// GlobalDeSoParams is a global instance of DeSoParams that can be used inside nested functions, like encoders, without
+// having to pass DeSoParams everywhere. It can be set when node boots. Testnet params are used as default.
+// FIXME: This shouldn't be used a lot.
+var GlobalDeSoParams = DeSoTestnetParams
 
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
 var DeSoMainnetParams = DeSoParams{
@@ -695,6 +722,9 @@ var DeSoMainnetParams = DeSoParams{
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
+	EncoderMigrationHeights: MainnetEncoderMigrationHeights,
+	EncoderMigrationVersionMap: GetEncoderMigrationHeightsVersionMapping(
+		&MainnetEncoderMigrationHeights),
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -887,6 +917,9 @@ var DeSoTestnetParams = DeSoParams{
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
+	EncoderMigrationHeights: TestnetEncoderMigrationHeights,
+	EncoderMigrationVersionMap: GetEncoderMigrationHeightsVersionMapping(
+		&TestnetEncoderMigrationHeights),
 }
 
 // GetDataDir gets the user data directory where we store files
@@ -900,6 +933,64 @@ func GetDataDir(params *DeSoParams) string {
 		log.Fatalf("GetDataDir: Could not create data directories (%s): %v", dataDir, err)
 	}
 	return dataDir
+}
+
+func GetEncoderMigrationHeightsVersionMapping(migrationHeights *EncoderMigrationHeights) (
+	_versionToBlockHeight map[byte]uint64) {
+
+	// Read `version:"x"` tags from the EncoderMigrationHeights struct.
+	versionToBlockHeight := make(map[byte]uint64)
+	elements := reflect.ValueOf(migrationHeights).Elem()
+	structFields := elements.Type()
+	for ii := 0; ii < structFields.NumField(); ii++ {
+		elementField := elements.Field(ii)
+
+		if value := structFields.Field(ii).Tag.Get("version"); value != "" {
+			versionInt, err := strconv.Atoi(value)
+			if err != nil {
+				panic("GetEncoderMigrationHeightsVersionMapping: " +
+					"Problem converting version to byte, seems like EncoderMigrationHeights schema is invalid.")
+			}
+			if _, exists := versionToBlockHeight[byte(versionInt)]; exists {
+				panic("GetEncoderMigrationHeightsVersionMapping: " +
+					"Overlap in versionToBlockHeight, seems like EncoderMigrationHeights schema is invalid.")
+			}
+			versionToBlockHeight[byte(versionInt)] = elementField.Uint()
+		} else {
+			panic("GetEncoderMigrationHeightsVersionMapping: " +
+				"Seems like there's a missing version in EncoderMigrationHeights.")
+		}
+	}
+
+	// Make sure that blockHeights are non-decreasing when ordered by version.
+	var blockHeights []uint64
+	for version := byte(0); version < byte(len(versionToBlockHeight)); version++ {
+		if _, exists := versionToBlockHeight[version]; !exists {
+			panic("GetEncoderMigrationHeightsVersionMapping: Versions should be increasing by +1 starting from 0.")
+		}
+
+		for key, value := range versionToBlockHeight {
+			if key == version {
+				blockHeights = append(blockHeights, value)
+				break
+			}
+		}
+	}
+	for ii := 1; ii < len(blockHeights); ii++ {
+		if blockHeights[ii-1] > blockHeights[ii] {
+			panic("GetEncoderMigrationHeightsVersionMapping: " +
+				"Seems like blockheights isn't a non-decreasing sequence when ordered by version.")
+		}
+	}
+
+	return versionToBlockHeight
+}
+
+func VersionByteToMigrationHeight(version byte, params *DeSoParams) (_blockHeight uint64) {
+	if blockHeight, exists := params.EncoderMigrationVersionMap[version]; exists {
+		return blockHeight
+	}
+	return 0
 }
 
 // Defines keys that may exist in a transaction's ExtraData map

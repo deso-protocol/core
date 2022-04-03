@@ -77,6 +77,7 @@ func (node *Node) Start() {
 
 	// Validate params
 	validateParams(node.Params)
+	lib.GlobalDeSoParams = *node.Params
 
 	// Setup Datadog span tracer and profiler
 	if node.Config.DatadogProfiler {

@@ -48,6 +48,8 @@ var (
 
 	// This prefix saves the status of the operation channel so we know if the node shut down properly last time.
 	_prefixOperationChannelStatus = []byte{4}
+
+	_prefixMigrationStatus = []byte{5}
 )
 
 // -------------------------------------------------------------------------------------
@@ -115,7 +117,7 @@ type Snapshot struct {
 	// we are confident that data wasn't tampered with.
 	Checksum *StateChecksum
 
-	MigrationChecksums []*EncoderMigrationChecksum
+	Migrations *EncoderMigration
 
 	// CurrentEpochSnapshotMetadata is the information about the currently stored complete snapshot, which
 	// reflects the state of the blockchain at the largest height divisible by SnapshotBlockHeightPeriod.
@@ -131,6 +133,8 @@ type Snapshot struct {
 	// down incorrectly.
 	Status *SnapshotStatus
 
+	params *DeSoParams
+
 	isTxIndex       bool
 	disableChecksum bool
 
@@ -143,15 +147,10 @@ type Snapshot struct {
 	timer *Timer
 }
 
-type EncoderMigrationChecksum struct {
-	checksum    *StateChecksum
-	blockHeight uint64
-}
-
 // NewSnapshot creates a new snapshot instance.
 func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxIndex bool,
-	disableChecksum bool) (_snap *Snapshot, _err error, _shouldRestart bool) {
-	// TODO: make sure we don't snapshot when using PG
+	disableChecksum bool, params *DeSoParams) (_snap *Snapshot, _err error, _shouldRestart bool) {
+
 	// Initialize the ancestral records database
 	snapshotDir := filepath.Join(GetBadgerDbPath(dataDirectory), "snapshot")
 	snapshotOpts := PerformanceBadgerOptions(snapshotDir)
@@ -194,6 +193,12 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"))
 	}
 
+	// Retrieve and initialzie snapshot migrations.
+	migrations := &EncoderMigration{}
+	if err := migrations.Initialize(snapshotDb, &snapshotDbMutex, status.CurrentBlockHeight, params); err != nil {
+		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading EncoderMigration"))
+	}
+
 	// If this condition is true, the snapshot is broken and we need to start the recovery process.
 	// We will revert the blockchain to the last snapshot epoch and restart the node. After the restart,
 	// the node will rebuild snapshot by resyncing blocks up to the tip, starting from last snapshot epoch.
@@ -217,9 +222,11 @@ func NewSnapshot(dataDirectory string, snapshotBlockHeightPeriod uint64, isTxInd
 		SnapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
 		Checksum:                     checksum,
+		Migrations:                   migrations,
 		CurrentEpochSnapshotMetadata: metadata,
 		AncestralMemory:              lane.NewDeque(),
 		Status:                       status,
+		params:                       params,
 		isTxIndex:                    isTxIndex,
 		disableChecksum:              disableChecksum,
 		timer:                        timer,
@@ -258,13 +265,13 @@ func (snap *Snapshot) Run() {
 
 		case SnapshotOperationChecksumAdd:
 			if err := snap.Checksum.AddOrRemoveBytesWithMigrations(operation.checksumKey, operation.checksumValue,
-				snap.Status.currentBlockHeight, snap.MigrationChecksums, true); err != nil {
+				snap.Status.CurrentBlockHeight, snap.Migrations, true); err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding checksum bytes operation (%v)", operation)
 			}
 
 		case SnapshotOperationChecksumRemove:
 			if err := snap.Checksum.AddOrRemoveBytesWithMigrations(operation.checksumKey, operation.checksumValue,
-				snap.Status.currentBlockHeight, snap.MigrationChecksums, false); err != nil {
+				snap.Status.CurrentBlockHeight, snap.Migrations, false); err != nil {
 				glog.Errorf("Snapshot.Run: Problem removing checksum bytes operation (%v)", operation)
 			}
 
@@ -331,10 +338,10 @@ func (snap *Snapshot) ForceReset(chain *Blockchain) {
 		if err != nil {
 			glog.Fatal(errors.Wrapf(err, "NewSnapshot: problem resetting checksum bytes"))
 		}
-		err = snap.Checksum.SaveChecksum()
-		if err != nil {
-			glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem saving checksum"))
-		}
+	}
+	err = snap.Checksum.SaveChecksum()
+	if err != nil {
+		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem saving checksum"))
 	}
 	err = snap.OperationChannel.SaveOperationChannel()
 	if err != nil {
@@ -425,9 +432,9 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 	printProgress := func(currentLen int32) {
 		var div int
 		if initialLen > 0 && int(currentLen) < initialLen {
-			div = (10 * int(currentLen)) / initialLen
+			div = 9 - (10*int(currentLen))/initialLen
 		} else {
-			div = 9
+			div = 0
 		}
 		if !printMap[div] {
 			progress := ""
@@ -710,8 +717,8 @@ func (snap *Snapshot) CheckAnceststralRecordExistenceByte(value []byte) bool {
 // SnapshotProcessBlock updates the snapshot information after a block has been added.
 func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
 	height := uint64(blockNode.Height)
-	if height > snap.Status.currentBlockHeight {
-		snap.Status.currentBlockHeight = height
+	if height > snap.Status.CurrentBlockHeight {
+		snap.Status.CurrentBlockHeight = height
 	}
 
 	if height%snap.SnapshotBlockHeightPeriod == 0 && height > snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight {
@@ -921,7 +928,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
 			if localErr := snap.Checksum.AddOrRemoveBytesWithMigrations(dbEntry.Key, dbEntry.Value, blockHeight,
-				snap.MigrationChecksums, true); localErr != nil {
+				snap.Migrations, true); localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem adding checksum")
 				err = localErr
 				return
@@ -1180,7 +1187,7 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 // called in the context of the snapshot's epoch so that everything happens in sync with the main thread.
 // The parameter addBytes determines if we want to add or remove bytes from the checksums.
 func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(key []byte, value []byte, blockHeight uint64,
-	migrations []*EncoderMigrationChecksum, addBytes bool) error {
+	encoderMigration *EncoderMigration, addBytes bool) error {
 
 	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
 	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
@@ -1199,9 +1206,9 @@ func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(key []byte, value []byte
 
 		// We add the current key, value encoding and encodings for all migrations.
 		encodings = append(encodings, EncodeKeyAndValueWithBlockHeight(key, value, blockHeight))
-		for _, migration := range migrations {
+		for _, migration := range encoderMigration.migrationChecksums {
 			added := false
-			migrationEncoding := EncodeKeyAndValueWithBlockHeight(key, value, migration.blockHeight)
+			migrationEncoding := EncodeKeyAndValueWithBlockHeight(key, value, migration.BlockHeight)
 			for index, encoding := range encodings {
 				if reflect.DeepEqual(encoding, migrationEncoding) {
 					encodingsMapping = append(encodingsMapping, index)
@@ -1232,7 +1239,7 @@ func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(key []byte, value []byte
 		// Now add everything.
 		sc.AddToChecksum(hashElements[0])
 		for ii, index := range encodingsMapping {
-			migrations[ii].checksum.AddToChecksum(hashElements[index])
+			encoderMigration.migrationChecksums[ii].Checksum.AddToChecksum(hashElements[index])
 		}
 	}()
 
@@ -1672,8 +1679,8 @@ type SnapshotStatus struct {
 	MainDBSemaphore      uint64
 	AncestralDBSemaphore uint64
 
-	// currentBlockHeight is the blockheight of the blockchain tip.
-	currentBlockHeight uint64
+	// CurrentBlockHeight is the blockheight of the blockchain tip.
+	CurrentBlockHeight uint64
 	// MemoryLock is held whenever we modify the MainDBSemaphore or AncestralDBSemaphore.
 	MemoryLock sync.Mutex
 
@@ -1708,6 +1715,7 @@ func (status *SnapshotStatus) ToBytes() []byte {
 	var data []byte
 	data = append(data, UintToBuf(status.MainDBSemaphore)...)
 	data = append(data, UintToBuf(status.AncestralDBSemaphore)...)
+	data = append(data, UintToBuf(status.CurrentBlockHeight)...)
 
 	return data
 }
@@ -1722,6 +1730,11 @@ func (status *SnapshotStatus) FromBytes(rr *bytes.Reader) error {
 	status.AncestralDBSemaphore, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "SnapshotStatus: Problem reading AncestralDBSemaphore")
+	}
+
+	status.CurrentBlockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SnapshotStatus: Problem reading CurrentBlockHeight")
 	}
 	return nil
 }
@@ -1801,6 +1814,135 @@ func (status *SnapshotStatus) GetSemaphores() (_mainDbSemaphore uint64, _ancestr
 	defer status.MemoryLock.Unlock()
 
 	return status.MainDBSemaphore, status.AncestralDBSemaphore
+}
+
+// -------------------------------------------------------------------------------------
+// EncoderMigrationChecksum, EncoderMigration
+// -------------------------------------------------------------------------------------
+
+type EncoderMigrationChecksum struct {
+	Checksum    *StateChecksum
+	BlockHeight uint64
+
+	Completed bool
+}
+
+type EncoderMigration struct {
+	migrationChecksums []*EncoderMigrationChecksum
+	Completed          bool
+
+	snapshotDb      *badger.DB
+	snapshotDbMutex *sync.Mutex
+	params          *DeSoParams
+}
+
+func (migration *EncoderMigration) Initialize(snapshotDb *badger.DB,
+	snapshotDbMutex *sync.Mutex, blockHeight uint64, params *DeSoParams) error {
+	migration.snapshotDb = snapshotDb
+	migration.snapshotDbMutex = snapshotDbMutex
+	migration.params = params
+
+	if snapshotDb == nil || snapshotDbMutex == nil {
+		migration.snapshotDbMutex = &sync.Mutex{}
+		return nil
+	}
+
+	migration.snapshotDbMutex.Lock()
+	defer migration.snapshotDbMutex.Unlock()
+
+	err := migration.snapshotDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(_prefixMigrationStatus)
+		if err != nil {
+			return err
+		}
+		migrationBytes, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+
+		rr := bytes.NewReader(migrationBytes)
+		migrationLength, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+
+		var migrationChecksums []*EncoderMigrationChecksum
+		for ; migrationLength > 0; migrationLength-- {
+			migrationChecksum := &EncoderMigrationChecksum{}
+			// Initialize an empty checksum struct. We use it to parse checksum bytes.
+			checksum := StateChecksum{}
+			checksum.Initialize(nil, nil)
+			checksumBytes, err := DecodeByteArray(rr)
+			if err != nil {
+				return err
+			}
+
+			if err = checksum.FromBytes(checksumBytes); err != nil {
+				return err
+			}
+			if migrationChecksum.BlockHeight, err = ReadUvarint(rr); err != nil {
+				return err
+			}
+			if migrationChecksum.Completed, err = ReadBoolByte(rr); err != nil {
+				return err
+			}
+
+			if migrationChecksum.BlockHeight > blockHeight {
+				migrationChecksums = append(migrationChecksums, migrationChecksum)
+			}
+		}
+		migration.migrationChecksums = migrationChecksums
+		return nil
+	})
+	if err != nil && err != badger.ErrKeyNotFound {
+		return errors.Wrapf(err, "EncoderMigrationChecksum.Initialize: Problem reading migration from db")
+	}
+
+	for _, migrationHeight := range params.EncoderMigrationVersionMap {
+		if migrationHeight > blockHeight {
+			exists := false
+			for _, migrationChecksum := range migration.migrationChecksums {
+				if migrationChecksum.BlockHeight == migrationHeight {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				checksum := &StateChecksum{}
+				checksum.Initialize(nil, nil)
+				migration.migrationChecksums = append(migration.migrationChecksums, &EncoderMigrationChecksum{
+					Checksum:    checksum,
+					BlockHeight: migrationHeight,
+					Completed:   false,
+				})
+			}
+		}
+	}
+
+	return nil
+}
+
+func (migration *EncoderMigration) SaveMigrations() error {
+	migration.snapshotDbMutex.Lock()
+	defer migration.snapshotDbMutex.Unlock()
+
+	var data []byte
+	data = append(data, UintToBuf(uint64(len(migration.migrationChecksums)))...)
+	for ii := range migration.migrationChecksums {
+		checksumBytes, err := migration.migrationChecksums[ii].Checksum.ToBytes()
+		if err != nil {
+			return errors.Wrapf(err, "EncoderMigration.SaveMigrations: Problem getting migration checksum "+
+				"bytes, ii = (%v)", ii)
+		}
+		data = append(data, EncodeByteArray(checksumBytes)...)
+		data = append(data, UintToBuf(migration.migrationChecksums[ii].BlockHeight)...)
+		data = append(data, BoolToByte(migration.migrationChecksums[ii].Completed))
+	}
+	data = append(data, BoolToByte(migration.Completed))
+
+	return migration.snapshotDb.Update(func(txn *badger.Txn) error {
+		return txn.Set(_prefixMigrationStatus, data)
+	})
 }
 
 // -------------------------------------------------------------------------------------

@@ -38,6 +38,15 @@ const (
 // DB Prefixes
 // -------------------------------------------------------------------------------------
 
+// Prefixes is a static variable that contains all the parsed prefix_id values. We use the
+// Prefixes var when fetching prefixes to avoid parsing the prefix_id tags every time.
+var Prefixes = GetPrefixes()
+
+// StatePrefixes is a static variable that allows us to quickly fetch state-related prefixes. We make
+// the distinction between state and non-state prefixes for hyper sync, where the node is only syncing
+// state prefixes. This significantly speeds up the syncing process and the node will still work properly.
+var StatePrefixes = GetStatePrefixes()
+
 type DBPrefixes struct {
 	// The key prefixes for the key-value database. To store a particular
 	// type of data, we create a key prefix and store all those types of
@@ -457,11 +466,7 @@ func getPrefixIdValue(structFields reflect.StructField, fieldType reflect.Type) 
 	return ref.Elem()
 }
 
-// Prefixes is a static variable that contains all the parsed prefix_id values. We use the
-// Prefixes var when fetching prefixes to avoid parsing the prefix_id tags every time.
-var Prefixes = GetPrefixes()
-
-// GetPrefixes() loads all prefix_id byte array values into a DBPrefixes struct, and returns it.
+// GetPrefixes loads all prefix_id byte array values into a DBPrefixes struct, and returns it.
 func GetPrefixes() *DBPrefixes {
 	prefixes := &DBPrefixes{}
 
@@ -475,11 +480,6 @@ func GetPrefixes() *DBPrefixes {
 	}
 	return prefixes
 }
-
-// StatePrefixes is a static variable that allows us to quickly fetch state-related prefixes. We make
-// the distinction between state and non-state prefixes for hyper sync, where the node is only syncing
-// state prefixes. This significantly speeds up the syncing process and the node will still work properly.
-var StatePrefixes = GetStatePrefixes()
 
 // DBStatePrefixes is a helper struct that stores information about state-related prefixes.
 type DBStatePrefixes struct {
