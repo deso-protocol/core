@@ -329,7 +329,7 @@ func NewServer(
 	var _snapshot *Snapshot
 	shouldRestart := false
 	if _hyperSync {
-		_snapshot, err, shouldRestart = NewSnapshot(_dataDir, _snapshotBlockHeightPeriod,
+		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
 			false, false, _params)
 		if err != nil {
 			panic(err)
