@@ -10,12 +10,14 @@ jobs:
   go-test-postgres:
     name: go-test-postgres
     runs-on: ubuntu-20.04
+    env:
+      POSTGRES_URI: postgresql://admin:admin@postgres:5432/admin
 
     services:
       postgres:
         image: postgres:14.2-alpine3.15
         env:
-          # These dummy values are only used for local testing purposes.
+          # These dummy values are only used for testing purposes.
           POSTGRES_DB: admin
           POSTGRES_PASSWORD: admin
           POSTGRES_USER: admin
@@ -51,7 +53,8 @@ jobs:
       - name: Build package
         run: go build
 
+      - name: Run migrations
+        run: go run scripts/migrate.go migrate
+
       - name: Run go test
-        env:
-          POSTGRES_URI: postgresql://admin:admin@postgres:5432/admin
         run: go test -run TestDAOCoinLimitOrder -v ./lib
