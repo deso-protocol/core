@@ -668,7 +668,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		daoCoinQuantityChange = uint256.NewInt().SetUint64(25)
 		desoQuantityChange := uint256.NewInt().SetUint64(250)
 
-		// m0's BID order is partially fulfilled so:
+		// m0's order buying DAO coins is partially fulfilled so:
 		//   * His $DESO balance decreases and
 		//   * His DAO coin balance increases.
 		require.Equal(
@@ -679,7 +679,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			*uint256.NewInt().Add(&originalM0DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
 			updatedM0DAOCoinBalance.BalanceNanos)
 
-		// m1's ASK order is fulfilled so:
+		// m1's order selling DAO coins is fulfilled so:
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
 		// TODO: these should be equal.
