@@ -11,6 +11,7 @@ import (
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -27,6 +28,23 @@ func NewPostgres(db *pg.DB) *Postgres {
 
 	return &Postgres{
 		db: db,
+	}
+}
+
+func ParsePostgresURI(pgURI string) *pg.Options {
+	// Parse postgres options from a postgres URI string.
+	parsedURI, err := url.Parse(pgURI)
+	if err != nil {
+		return nil
+	}
+
+	pgPassword, _ := parsedURI.User.Password()
+
+	return &pg.Options{
+		Addr:     parsedURI.Host,
+		User:     parsedURI.User.Username(),
+		Database: parsedURI.Path[1:], // Skip one char to avoid the starting slash (/).
+		Password: pgPassword,
 	}
 }
 
