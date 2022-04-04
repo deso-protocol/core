@@ -61,3 +61,6 @@ jobs:
 
       - name: Run go test
         run: go test -run TestDAOCoinLimitOrder -v ./lib
+
+      - name: Rollback migrations
+        run: go run scripts/migrate.go rollback

@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-func TestNewPostgresFromURI(t *testing.T) {
+func TestParsePostgresURI(t *testing.T) {
 	require := require.New(t)
-	_ = require
 
 	// No password.
 	pgURI := "postgresql://testUser@localhost:5432/testDatabase"

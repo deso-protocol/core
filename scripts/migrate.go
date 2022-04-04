@@ -22,21 +22,21 @@ const directory = "migrate"
 
 func main() {
 	migrate.LoadMigrations()
-	var pgOptions *pg.Options
 
+	// Default postgres connection options
+	pgOptions := &pg.Options{
+		Addr:     "localhost:5432",
+		User:     "admin",
+		Database: "admin",
+		Password: "",
+	}
+
+	// If set, use custom postgres connection options.
 	if len(os.Getenv("POSTGRES_URI")) > 0 {
 		pgOptions = lib.ParsePostgresURI(os.Getenv("POSTGRES_URI"))
-	} else {
-		pgOptions = &pg.Options{
-			Addr:     "localhost:5432",
-			User:     "admin",
-			Database: "admin",
-			Password: "",
-		}
 	}
 
 	db := pg.Connect(pgOptions)
-
 	err := migrations.Run(db, directory, os.Args)
 	if err != nil {
 		log.Fatalln(err)
