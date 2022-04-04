@@ -1535,20 +1535,6 @@ type FilledDAOCoinLimitOrder struct {
 	SellingDAOCoinQuantitySold     *uint256.Int
 }
 
-// FIXME(question): Why did we switch away from the tobytes frombytes? Is it because we lost isDeleted?
-// I would do the following instead unless I'm missing something (note the isDeleted line I added):
-//func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
-//	bb, err := order.ToBytes()
-//	if err != nil {
-//		return nil, err
-//	}
-//	newOrder := &DAOCoinLimitOrderEntry{}
-//	if err := newOrder.FromBytes(bb); err != nil {
-//		return nil, err
-//	}
-//  newOrder.isDeleted = order.isDeleted // Note the isDeleted copy here
-//	return newOrder, nil
-//}
 func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	return &DAOCoinLimitOrderEntry{
 		TransactorPKID:                            order.TransactorPKID.NewPKID(),
