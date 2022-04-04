@@ -174,14 +174,8 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	timesource := chainlib.NewMedianTime()
 	var postgresDb *Postgres
 
-	// TODO: convert this from env variable to cmd line flag.
-	if len(os.Getenv("TEST_POSTGRES")) > 0 {
-		postgresDb = NewPostgres(pg.Connect(&pg.Options{
-			Addr:     "localhost:5432",
-			User:     "admin",
-			Database: "admin",
-			Password: "",
-		}))
+	if len(os.Getenv("POSTGRES_URI")) > 0 {
+		postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
 	}
 
 	// Set some special parameters for testing. If the blocks above are changed
