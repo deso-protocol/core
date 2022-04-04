@@ -1756,7 +1756,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			})
 		}
 
-		for uniquePKID, _ := range uniquePKIDMap {
+		for uniquePKID := range uniquePKIDMap {
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&uniquePKID), utxoView.Params),
 				Metadata:             "FilledOrderPublicKey",
