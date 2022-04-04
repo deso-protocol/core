@@ -1038,6 +1038,37 @@ func (bav *UtxoView) _getDAOCoinLimitOrderEntry(inputEntry *DAOCoinLimitOrderEnt
 	return bav.GetDbAdapter().GetDAOCoinLimitOrder(inputEntry)
 }
 
+func (bav *UtxoView) _getAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
+	// This function is used in testing to retrieve all open orders.
+	outputEntries := []*DAOCoinLimitOrderEntry{}
+
+	// Iterate over matching database orders and add them to the
+	// UTXO view if they are not already there. This dedups orders
+	// from the database + orders from the UTXO view as well.
+	dbOrderEntries, err := bav.GetDbAdapter().GetAllDAOCoinLimitOrders()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, orderEntry := range dbOrderEntries {
+		orderMapKey := orderEntry.ToMapKey()
+
+		if _, exists := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey]; !exists {
+			bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[orderMapKey] = orderEntry
+		}
+	}
+
+	// Get matching orders from the UTXO view.
+	//   + orderEntry is not deleted.
+	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		if !orderEntry.isDeleted {
+			outputEntries = append(outputEntries, orderEntry)
+		}
+	}
+
+	return outputEntries, nil
+}
+
 func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 	// This function is used by the API to construct all open
