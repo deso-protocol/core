@@ -156,6 +156,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			}
 			// If the transaction spending limit key exists, parse it and merge it into the existing transaction
 			// spending limit tracker
+			exists := false
 			if transactionSpendingLimitBytes, exists = txn.ExtraData[TransactionSpendingLimitKey]; exists {
 				transactionSpendingLimit = &TransactionSpendingLimit{}
 				if err := transactionSpendingLimit.FromBytes(transactionSpendingLimitBytes); err != nil {
