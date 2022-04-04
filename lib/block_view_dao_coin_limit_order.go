@@ -116,7 +116,6 @@ func (bav *UtxoView) balanceChange(
 				} else {
 					oldBalanceEntry = bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(
 						userPKID, daoCoinPKID, true)
-					// FIXME: Should we be checking isDeleted here? I think we should actually.
 					if oldBalanceEntry == nil || oldBalanceEntry.isDeleted {
 						// In this case, we create a dummy balance entry, so
 						// we can credit the user their money. Otherwise,
@@ -230,7 +229,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 		prevMatchingOrders := []*DAOCoinLimitOrderEntry{}
 
-		// Delete all existing limit orders for this trans
+		// Delete all existing limit orders for this transactor
 		for _, existingTransactorOrder := range existingTransactorOrders {
 			prevMatchingOrders = append(prevMatchingOrders, existingTransactorOrder)
 			bav._deleteDAOCoinLimitOrderEntryMappings(existingTransactorOrder)
@@ -257,9 +256,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// current block height. Otherwise, we would be messing up
 		// the FIFO ordering of the older order being deleted instead
 		// of resolved first.
-		//
-		// FIXME(question): Is this guaranteed to be deterministic? I.e. could there ever be
-		// a case where one node overwrites order A while another node overwrites order B?
+		// This is guaranteed to be deterministic, because there
+		// will only ever be a single order at a specified price
+		// for the Buying || Selling coin pair for this transactor
+		// at a given block height.
 		if existingTransactorOrder.BlockHeight == blockHeight {
 			prevTransactorOrder = existingTransactorOrder.Copy()
 		}
@@ -267,8 +267,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Check to see if we have an existing order. If we do, then update our
 	// transactor order and delete the old one.
-	// FIXME: Do we need to check isDeleted here?
-	if prevTransactorOrder != nil {
+	if prevTransactorOrder != nil && !prevTransactorOrder.isDeleted {
 		// Mark old order for deletion. Note that this order is saved as the
 		// only element in the prevDAOCoinLimitOrders list by the time we get
 		// here.
