@@ -5246,7 +5246,7 @@ func MakeDAOCoinOperationLimitKey(creatorPKID PKID, operation DAOCoinLimitOperat
 }
 
 type DAOCoinLimitOrderLimitKey struct {
-	// The PKID of coin that we're going to buy
+	// The PKID of the coin that we're going to buy
 	BuyingDAOCoinCreatorPKID PKID
 	// The PKID of the coin that we're going to sell
 	SellingDAOCoinCreatorPKID PKID
@@ -5580,20 +5580,6 @@ type DeSoInputsByTransactor struct {
 	Inputs              []*DeSoInput
 }
 
-func (inputsByTransactor *DeSoInputsByTransactor) GetInputsSorted() []*DeSoInput {
-	// create a copy of the slice
-	sortedInputs := inputsByTransactor.Inputs
-	// sort the matched bid inputs within a transactor
-	sort.Slice(sortedInputs, func(i int, j int) bool {
-		// compare utxo transaction ids first, and break ties by comparing transaction indices
-		if comp := bytes.Compare(sortedInputs[i].TxID.ToBytes(), sortedInputs[j].TxID.ToBytes()); comp != 0 {
-			return comp < 0
-		}
-		return sortedInputs[i].Index < sortedInputs[j].Index
-	})
-	return sortedInputs
-}
-
 type DAOCoinLimitOrderMetadata struct {
 	BuyingDAOCoinCreatorPublicKey             *PublicKey
 	SellingDAOCoinCreatorPublicKey            *PublicKey
@@ -5608,25 +5594,11 @@ type DAOCoinLimitOrderMetadata struct {
 	// $DESO, and is immediately matched with an existing bid-side order
 	// at time of creation. This field contains the transactor and their
 	// utxo inputs that can be used to immediately execute this trade.
-	MatchedBidsTransactors []*DeSoInputsByTransactor
+	BidderInputs []*DeSoInputsByTransactor
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 	return TxnTypeDAOCoinLimitOrder
-}
-
-func (txnData *DAOCoinLimitOrderMetadata) GetMatchedBidTransactorsSorted() []*DeSoInputsByTransactor {
-	// create a copy of the slice
-	sortedMatchedBidTransactors := txnData.MatchedBidsTransactors
-	// sort matched bid transactors by public key
-	sort.Slice(sortedMatchedBidTransactors, func(i int, j int) bool {
-		// compare utxo transaction ids first, and break ties by comparing transaction indices
-		return bytes.Compare(
-			sortedMatchedBidTransactors[i].TransactorPublicKey.ToBytes(),
-			sortedMatchedBidTransactors[j].TransactorPublicKey.ToBytes(),
-		) < 0
-	})
-	return sortedMatchedBidTransactors
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
@@ -5635,16 +5607,14 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(txnData.QuantityToBuyInBaseUnits)...)
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
-	data = append(data, UintToBuf(uint64(len(txnData.MatchedBidsTransactors)))...)
+	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
 
 	// we use a sorted copy internally, so we don't modify the original struct from underneath the caller
-	sortedMatchedBidTransactors := txnData.GetMatchedBidTransactorsSorted()
-	for _, transactor := range sortedMatchedBidTransactors {
+	for _, transactor := range txnData.BidderInputs {
 		data = append(data, transactor.TransactorPublicKey[:]...)
 
-		sortedInputs := transactor.GetInputsSorted()
-		data = append(data, UintToBuf(uint64(len(sortedInputs)))...)
-		for _, input := range sortedInputs {
+		data = append(data, UintToBuf(uint64(len(transactor.Inputs)))...)
+		for _, input := range transactor.Inputs {
 			data = append(data, input.TxID[:]...)
 			data = append(data, UintToBuf(uint64(input.Index))...)
 		}
@@ -5739,8 +5709,8 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 		}
 
 		pubKeyCopy := *pubKey
-		ret.MatchedBidsTransactors = append(
-			ret.MatchedBidsTransactors,
+		ret.BidderInputs = append(
+			ret.BidderInputs,
 			&DeSoInputsByTransactor{
 				TransactorPublicKey: &pubKeyCopy,
 				Inputs:              inputs,

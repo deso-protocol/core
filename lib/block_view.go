@@ -1035,7 +1035,7 @@ func (bav *UtxoView) DisconnectBlock(
 		if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
 			numMatchingOrderInputs := 0
 
-			for _, transactor := range txn.TxnMeta.(*DAOCoinLimitOrderMetadata).MatchedBidsTransactors {
+			for _, transactor := range txn.TxnMeta.(*DAOCoinLimitOrderMetadata).BidderInputs {
 				numMatchingOrderInputs += len(transactor.Inputs)
 			}
 
@@ -1867,14 +1867,21 @@ func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 
 // _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry checks if the DAOCoinLimitOrderLimitKey is present
 // in the DerivedKeyEntry's TransactionSpendingLimitTracker's DAOCoinLimitOrderLimitMap.
-// If the key is present, the operation is allowed and we decrement the number of operation remaining.
-// If there are no operation remaining after this one, we delete the key.
+// If the key is present, the operation is allowed and we decrement the number of operations remaining.
+// If there are no operations remaining after this one, we delete the key.
 // Returns true if the key was found and the derived key entry was updated.
-func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(key DAOCoinLimitOrderLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+//
+// TODO: Right now, the "buy" and "sell" DAO coins that the user is transacting must be
+// specified explicitly. There is no way to specify "any" DAO coins in the spending limit
+// because ZeroPKID, which we use to specify "any" in other spending limits, corresponds
+// to DESO for order book operations. We should fix this down the road.
+func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(
+	key DAOCoinLimitOrderLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+
 	// Check if the key is present in the DAOCoinLimitOrderLimitMap...
 	daoCoinLimitOrderLimit, daoCoinLimitOrderLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]
-	// If the key doesn't exist or the value is 0 or fewer, return false.
+	// If the key doesn't exist or the value is <= 0, return false.
 	if !daoCoinLimitOrderLimitExists || daoCoinLimitOrderLimit <= 0 {
 		return false
 	}
@@ -1891,6 +1898,11 @@ func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(key DAOCoinLimitOrd
 
 // _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry checks that the DAO Coin Limit Order being performed has
 // been authorized for this derived key.
+//
+// TODO: Right now, the "buy" and "sell" DAO coins that the user is transacting must be
+// specified explicitly. There is no way to specify "any" DAO coins in the spending limit
+// because ZeroPKID, which we use to specify "any" in other spending limits, corresponds
+// to DESO for order book operations. We should fix this down the road.
 func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
 	derivedKeyEntry DerivedKeyEntry, buyingDAOCoinCreatorPublicKey []byte, sellingDAOCoinCreatorPublicKey []byte) (
 	_derivedKeyEntry DerivedKeyEntry, _err error) {

@@ -398,10 +398,10 @@ type UtxoOperation struct {
 	// the event of a disconnect, we restore all the deleted Order Entries
 	PrevMatchingOrders []*DAOCoinLimitOrderEntry
 
-	// FulfilledDAOCoinLimitOrder is a slice of FulfilledDAOCoinLimitOrder structs
+	// FilledDAOCoinLimitOrder is a slice of FilledDAOCoinLimitOrder structs
 	// that represent all orders fulfilled by the DAO Coin Limit Order transaction.
 	// These are used to construct notifications for order fulfillment.
-	FulfilledDAOCoinLimitOrders []*FulfilledDAOCoinLimitOrder
+	FilledDAOCoinLimitOrders []*FilledDAOCoinLimitOrder
 }
 
 func (utxoEntry *UtxoEntry) String() string {
@@ -1524,9 +1524,9 @@ type DAOCoinLimitOrderEntry struct {
 	isDeleted bool
 }
 
-// FulfilledDAOCoinLimitOrder only exists to support understanding what orders were
+// FilledDAOCoinLimitOrder only exists to support understanding what orders were
 // fulfilled when connecting a DAO Coin Limit Order Txn
-type FulfilledDAOCoinLimitOrder struct {
+type FilledDAOCoinLimitOrder struct {
 	TransactorPKID                 *PKID
 	BuyingDAOCoinCreatorPKID       *PKID
 	SellingDAOCoinCreatorPKID      *PKID
@@ -1535,6 +1535,20 @@ type FulfilledDAOCoinLimitOrder struct {
 	SellingDAOCoinQuantitySold     *uint256.Int
 }
 
+// FIXME(question): Why did we switch away from the tobytes frombytes? Is it because we lost isDeleted?
+// I would do the following instead unless I'm missing something (note the isDeleted line I added):
+//func (order *DAOCoinLimitOrderEntry) Copy() (*DAOCoinLimitOrderEntry, error) {
+//	bb, err := order.ToBytes()
+//	if err != nil {
+//		return nil, err
+//	}
+//	newOrder := &DAOCoinLimitOrderEntry{}
+//	if err := newOrder.FromBytes(bb); err != nil {
+//		return nil, err
+//	}
+//  newOrder.isDeleted = order.isDeleted // Note the isDeleted copy here
+//	return newOrder, nil
+//}
 func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	return &DAOCoinLimitOrderEntry{
 		TransactorPKID:                            order.TransactorPKID.NewPKID(),
@@ -1686,33 +1700,6 @@ func ComputeBaseUnitsToSellUint256(
 
 	return unscaledTotalCost, nil
 }
-
-// FIXME: DELETE ONCE WE CONFIRM THIS ISN'T NEEDED
-//
-//func (order *DAOCoinLimitOrderEntry) TotalCostUint64() (uint64, error) {
-//	// Returns the total cost of this order (price x quantity) as a uint64.
-//	return order.CostUint64(
-//		order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-//		order.QuantityToBuyInBaseUnits)
-//}
-//
-//func (order *DAOCoinLimitOrderEntry) CostUint64(
-//	scaledExchangRateCoinsToSellPerCoinsToBuy *uint256.Int,
-//	quantityNanos *uint256.Int) (uint64, error) {
-//	// Returns the total cost of the inputted price x quantity as a uint64.
-//	cost256, err := order.CostUint256(
-//		scaledExchangRateCoinsToSellPerCoinsToBuy,
-//		quantityNanos)
-//	if err != nil {
-//		return 0, err
-//	}
-//
-//	if !cost256.IsUint64() {
-//		return 0, RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
-//	}
-//
-//	return cost256.Uint64(), nil
-//}
 
 type DAOCoinLimitOrderMapKey struct {
 	TransactorPKID                            PKID
