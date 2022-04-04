@@ -872,8 +872,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Len(m2Orders, 0)
 	}
 
-	// TODO: test matching multiple orders
-
 	// Let's start fresh and mint some DAO coins for M1
 	{
 		// 28
@@ -1009,6 +1007,142 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(m0DESOBalanceBefore-15, m0DESOBalanceAfter)
 		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
 		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
+	}
+
+	{
+		// Current Order Book:
+		//   Transactor: m0
+		//   Buying:     m0 DAO coin
+		//   Selling:    $DESO
+		//   Price:      0.1 $DESO / DAO coin
+		//   Quantity:   100 DAO coin units
+		//
+		//   Transactor: m0
+		//   Buying:     $DESO
+		//   Selling:    m0 DAO coin
+		//   Price:      9 DAO coins / $DESO
+		//   Quantity:   89 $DESO nanos
+		//
+		//   Transactor: m1
+		//   Buying:     m0 DAO coin
+		//   Selling:    $DESO
+		//   Price:      0.1 $DESO / DAO coin
+		//   Quantity:   100 DAO coin units
+		//
+		//   Transactor: m0
+		//   Buying:     m1 DAO coin
+		//   Selling:    $DESO
+		//   Price:      1 $DESO / DAO coin
+		//   Quantity:   240 DAO coin units
+
+		// Test get all DAO coin limit orders.
+		orderEntries, err := utxoView._getAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 4)
+
+		// Test get all DAO coin limit orders for this DAO coin pair.
+		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisDAOCoinPair(m0PKID.PKID, &ZeroPKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// Test get all DAO coin limit orders for this transactor.
+		// Target order:
+		//   Transactor: m1
+		//   Buying:     m0 DAO coin
+		//   Selling:    $DESO
+		//   Price:      0.1 $DESO / DAO coin
+		//   Quantity:   100 DAO coin units
+		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.Equal(orderEntries[0].ScaledExchangeRateCoinsToSellPerCoinToBuy, CalculateScaledExchangeRate(0.1))
+
+		// Test get all DAO coin limit orders for this transactor at this price.
+		// Target order:
+		//   Transactor: m0
+		//   Buying:     $DESO
+		//   Selling:    m0 DAO coin
+		//   Price:      9 DAO coins / $DESO
+		//   Quantity:   89 $DESO nanos
+		queryEntry := &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            m0PKID.PKID,
+			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
+			SellingDAOCoinCreatorPKID:                 m0PKID.PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(9.0),
+			QuantityToBuyInBaseUnits:                  uint256.NewInt(), // ignored
+		}
+
+		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(queryEntry)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.Equal(orderEntries[0].QuantityToBuyInBaseUnits, uint256.NewInt().SetUint64(89))
+
+		// Test get matching DAO coin limit orders.
+		// Target order:
+		//   Transactor: m0
+		//   Buying:     m1 DAO coin
+		//   Selling:    $DESO
+		//   Price:      1 $DESO / DAO coin
+		//   Quantity:   240 DAO coin units
+		queryEntry = &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            m1PKID.PKID,
+			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
+			SellingDAOCoinCreatorPKID:                 m1PKID.PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(0.9),
+			QuantityToBuyInBaseUnits:                  uint256.NewInt().SetUint64(100),
+		}
+
+		orderEntries, err = utxoView._getNextLimitOrdersToFill(queryEntry, nil)
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		queryEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(1.1)
+		orderEntries, err = utxoView._getNextLimitOrdersToFill(queryEntry, nil)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.Equal(orderEntries[0].ScaledExchangeRateCoinsToSellPerCoinToBuy, CalculateScaledExchangeRate(1.0))
+		require.Equal(orderEntries[0].QuantityToBuyInBaseUnits, uint256.NewInt().SetUint64(240))
+
+		// m0 submits another order slightly better than previous.
+		//   Transactor: m0
+		//   Buying:     m1 DAO coin
+		//   Selling:    $DESO
+		//   Price:      1.05 $DESO / DAO coin
+		//   Quantity:   110 DAO coin units
+		metadataM0.BuyingDAOCoinCreatorPublicKey = NewPublicKey(m1PkBytes)
+		metadataM0.SellingDAOCoinCreatorPublicKey = &ZeroPublicKey
+		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(1.05)
+		metadataM0.QuantityToBuyInBaseUnits = uint256.NewInt().SetUint64(110)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		orderEntries, err = utxoView._getAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 5)
+
+		// Test get matching DAO coin limit orders.
+		// Query with identical order as before. Should match m0's new + better order.
+		// Target order:
+		//   Transactor: m0
+		//   Buying:     m1 DAO coin
+		//   Selling:    $DESO
+		//   Price:      1.05 $DESO / DAO coin
+		//   Quantity:   110 DAO coin units
+		orderEntries, err = utxoView._getNextLimitOrdersToFill(queryEntry, nil)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.Equal(orderEntries[0].ScaledExchangeRateCoinsToSellPerCoinToBuy, CalculateScaledExchangeRate(1.05))
+		require.Equal(orderEntries[0].QuantityToBuyInBaseUnits, uint256.NewInt().SetUint64(110))
+
+		// Test get matching DAO coin limit orders.
+		// Query with identical order as before but higher quantity.
+		// Should match both of m0's orders with better listed first.
+		queryEntry.QuantityToBuyInBaseUnits = uint256.NewInt().SetUint64(150)
+		orderEntries, err = utxoView._getNextLimitOrdersToFill(queryEntry, nil)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+		require.Equal(orderEntries[0].ScaledExchangeRateCoinsToSellPerCoinToBuy, CalculateScaledExchangeRate(1.05))
+		require.Equal(orderEntries[0].QuantityToBuyInBaseUnits, uint256.NewInt().SetUint64(110))
+		require.Equal(orderEntries[1].ScaledExchangeRateCoinsToSellPerCoinToBuy, CalculateScaledExchangeRate(1.0))
+		require.Equal(orderEntries[1].QuantityToBuyInBaseUnits, uint256.NewInt().SetUint64(240))
 	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
