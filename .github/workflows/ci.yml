@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  go-fmt:
+    name: go-fmt
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: "1.16"
+
+      - name: Checkout branch
+        uses: actions/checkout@v3
+
+      - name: Run go fmt
+        run: if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then exit 1; fi
+
+  go-test:
+    name: go-test
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: "1.16"
+
+      - name: Checkout branch
+        uses: actions/checkout@v3
+
+      - name: Cache dependencies
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download && go install
+
+      - name: Build package
+        run: go build
+
+      # We split up go test into parts to avoid OOM issues.
+      - name: Run go test pt-1
+        run: go test ./lib -failfast -run="Test[ABCDE]" -v
+
+      - name: Run go test pt-2
+        run: go test ./lib -failfast -run="Test[FGHIJ]" -v
+
+      - name: Run go test pt-3
+        run: go test ./lib -failfast -run="Test[KLMNO]" -v
+
+      - name: Run go test pt-4
+        run: go test ./lib -failfast -run="Test[PQRST]" -v
+
+      - name: Run go test pt-5
+        run: go test ./lib -failfast -run="Test[UVWXYZ]" -v
