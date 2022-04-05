@@ -233,7 +233,7 @@ func (encoderType EncoderType) New() DeSoEncoder {
 
 // DeSoEncoder represents types that implement custom to/from bytes encoding.
 type DeSoEncoder interface {
-	RawEncodeWithoutMetadata(blockHeight uint64) []byte
+	RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte
 	RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error
 
 	GetVersionByte(blockHeight uint64) byte
@@ -242,8 +242,14 @@ type DeSoEncoder interface {
 
 // EncodeToBytes encodes a DeSoEncoder type to bytes, including
 // existence bytes. This byte is used to check if the pointer was nil.
-func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
+func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
 	var data []byte
+
+	// Encoding without metadata is used in the checksum computation. We do this because metadata is kind of arbitrary.
+	shouldSkipMetadata := false
+	if len(skipMetadata) == 1 {
+		shouldSkipMetadata = skipMetadata[0]
+	}
 
 	// We will encode the DeSoEncoder type with some additional metadata. This metadata consists of:
 	// 	<existenceByte [1]byte> <encoderType [4]byte> <encoderVersion [1]byte> <encodedBytes []byte>
@@ -255,21 +261,11 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder) []byte {
 
 	if encoder != nil && !reflect.ValueOf(encoder).IsNil() {
 		data = append(data, BoolToByte(true))
-		data = append(data, _EncodeUint32(uint32(encoder.GetEncoderType()))...)
-		data = append(data, encoder.GetVersionByte(blockHeight))
-		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight)...)
-	} else {
-		data = append(data, BoolToByte(false))
-	}
-
-	return data
-}
-
-func EncodeToBytesWithoutMetadata(blockHeight uint64, encoder DeSoEncoder) []byte {
-	var data []byte
-
-	if encoder != nil && !reflect.ValueOf(encoder).IsNil() {
-		data = append(data, BoolToByte(true))
+		// Encode metadata
+		if !shouldSkipMetadata {
+			data = append(data, _EncodeUint32(uint32(encoder.GetEncoderType()))...)
+			data = append(data, encoder.GetVersionByte(blockHeight))
+		}
 		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight)...)
 	} else {
 		data = append(data, BoolToByte(false))
@@ -292,7 +288,8 @@ func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool
 
 		// Because encoder is provided as a parameter, we just verify that the entry type matches the encoder type.
 		if !reflect.DeepEqual(encoderType, encoder.GetEncoderType()) {
-			return false, fmt.Errorf("DecodeFromBytes: encoder type doesn't match the entry type")
+			return false, fmt.Errorf("DecodeFromBytes: encoder type (%v) doesn't match the "+
+				"entry type (%v)", encoderType, encoder.GetEncoderType())
 		}
 
 		versionByte, err := rr.ReadByte()
@@ -347,14 +344,14 @@ func (utxoEntry *UtxoEntry) String() string {
 		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
 }
 
-func (utxo *UtxoEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (utxo *UtxoEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(utxo.AmountNanos)...)
 	data = append(data, EncodeByteArray(utxo.PublicKey)...)
 	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
 	data = append(data, byte(utxo.UtxoType))
-	data = append(data, EncodeToBytes(blockHeight, utxo.UtxoKey)...)
+	data = append(data, EncodeToBytes(blockHeight, utxo.UtxoKey, skipMetadata...)...)
 
 	return data
 }
@@ -684,64 +681,64 @@ type UtxoOperation struct {
 	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
 }
 
-func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, UintToBuf(uint64(op.Type))...)
 
 	// The op.Entry encoding will be prefixed by a single-byte flag that tells us if it existed.
 	// If the flag is set to 1 then the entry existed, otherwise the flag will be set to 0.
-	data = append(data, EncodeToBytes(blockHeight, op.Entry)...)
-	data = append(data, EncodeToBytes(blockHeight, op.Key)...)
+	data = append(data, EncodeToBytes(blockHeight, op.Entry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, op.Key, skipMetadata...)...)
 
 	data = append(data, UintToBuf(op.PrevNanosPurchased)...)
 	data = append(data, UintToBuf(op.PrevUSDCentsPerBitcoin)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevPostEntry)...)
-	data = append(data, EncodeToBytes(blockHeight, op.PrevParentPostEntry)...)
-	data = append(data, EncodeToBytes(blockHeight, op.PrevGrandparentPostEntry)...)
-	data = append(data, EncodeToBytes(blockHeight, op.PrevRepostedPostEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevPostEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevParentPostEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevGrandparentPostEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevRepostedPostEntry, skipMetadata...)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevProfileEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevProfileEntry, skipMetadata...)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevLikeEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevLikeEntry, skipMetadata...)...)
 	data = append(data, UintToBuf(op.PrevLikeCount)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevDiamondEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevDiamondEntry, skipMetadata...)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevNFTEntry)...)
-	data = append(data, EncodeToBytes(blockHeight, op.PrevNFTBidEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevNFTEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevNFTBidEntry, skipMetadata...)...)
 
 	data = append(data, UintToBuf(uint64(len(op.DeletedNFTBidEntries)))...)
 	for _, bidEntry := range op.DeletedNFTBidEntries {
-		data = append(data, EncodeToBytes(blockHeight, bidEntry)...)
+		data = append(data, EncodeToBytes(blockHeight, bidEntry, skipMetadata...)...)
 	}
 	data = append(data, UintToBuf(uint64(len(op.NFTPaymentUtxoKeys)))...)
 	for _, utxoKey := range op.NFTPaymentUtxoKeys {
-		data = append(data, EncodeToBytes(blockHeight, utxoKey)...)
+		data = append(data, EncodeToBytes(blockHeight, utxoKey, skipMetadata...)...)
 	}
 	data = append(data, UintToBuf(uint64(len(op.NFTSpentUtxoEntries)))...)
 	for _, utxoEntry := range op.NFTSpentUtxoEntries {
-		data = append(data, EncodeToBytes(blockHeight, utxoEntry)...)
+		data = append(data, EncodeToBytes(blockHeight, utxoEntry, skipMetadata...)...)
 	}
 	// Similarly to op.Entry, we encode an existence flag for the PrevAcceptedNFTBidEntries.
 	if op.PrevAcceptedNFTBidEntries != nil {
 		data = append(data, BoolToByte(true))
 		data = append(data, UintToBuf(uint64(len(*op.PrevAcceptedNFTBidEntries)))...)
 		for _, bidEntry := range *op.PrevAcceptedNFTBidEntries {
-			data = append(data, EncodeToBytes(blockHeight, bidEntry)...)
+			data = append(data, EncodeToBytes(blockHeight, bidEntry, skipMetadata...)...)
 		}
 	} else {
 		data = append(data, BoolToByte(false))
 	}
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevDerivedKeyEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevDerivedKeyEntry, skipMetadata...)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevMessagingKeyEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevMessagingKeyEntry, skipMetadata...)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevRepostEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevRepostEntry, skipMetadata...)...)
 	data = append(data, UintToBuf(op.PrevRepostCount)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevCoinEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevCoinEntry, skipMetadata...)...)
 	// Encode the PrevCoinRoyaltyCoinEntries map. We define a helper struct to store the <PKID, CoinEntry>
 	// objects as byte arrays. For coin entry, we first encode the struct, and then encode it as byte array.
 	type royaltyEntry struct {
@@ -762,7 +759,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 			newPKID := pkid
 			royaltyCoinEntries = append(royaltyCoinEntries, &royaltyEntry{
 				pkid:      newPKID.ToBytes(),
-				coinEntry: EncodeToBytes(blockHeight, &coinEntry),
+				coinEntry: EncodeToBytes(blockHeight, &coinEntry, skipMetadata...),
 			})
 		}
 		sort.Slice(royaltyCoinEntries, func(i int, j int) bool {
@@ -783,16 +780,16 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 		data = append(data, BoolToByte(false))
 	}
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorBalanceEntry)...)
-	data = append(data, EncodeToBytes(blockHeight, op.PrevCreatorBalanceEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorBalanceEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevCreatorBalanceEntry, skipMetadata...)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.FounderRewardUtxoKey)...)
+	data = append(data, EncodeToBytes(blockHeight, op.FounderRewardUtxoKey, skipMetadata...)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevSenderBalanceEntry)...)
-	data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverBalanceEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevSenderBalanceEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverBalanceEntry, skipMetadata...)...)
 
-	data = append(data, EncodeToBytes(blockHeight, op.PrevGlobalParamsEntry)...)
-	data = append(data, EncodeToBytes(blockHeight, op.PrevForbiddenPubKeyEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevGlobalParamsEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, op.PrevForbiddenPubKeyEntry, skipMetadata...)...)
 
 	data = append(data, UintToBuf(op.ClobberedProfileBugDESOLockedNanos)...)
 	// Note that int64 is encoded identically to uint64, the sign bit is just interpreted differently.
@@ -808,11 +805,11 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 
 	data = append(data, UintToBuf(uint64(len(op.AcceptNFTBidAdditionalCoinRoyalties)))...)
 	for _, pair := range op.AcceptNFTBidAdditionalCoinRoyalties {
-		data = append(data, EncodeToBytes(blockHeight, pair)...)
+		data = append(data, EncodeToBytes(blockHeight, pair, skipMetadata...)...)
 	}
 	data = append(data, UintToBuf(uint64(len(op.AcceptNFTBidAdditionalDESORoyalties)))...)
 	for _, pair := range op.AcceptNFTBidAdditionalDESORoyalties {
-		data = append(data, EncodeToBytes(blockHeight, pair)...)
+		data = append(data, EncodeToBytes(blockHeight, pair, skipMetadata...)...)
 	}
 
 	data = append(data, EncodeByteArray(op.NFTBidCreatorPublicKey)...)
@@ -822,11 +819,11 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 
 	data = append(data, UintToBuf(uint64(len(op.NFTBidAdditionalCoinRoyalties)))...)
 	for _, pair := range op.NFTBidAdditionalCoinRoyalties {
-		data = append(data, EncodeToBytes(blockHeight, pair)...)
+		data = append(data, EncodeToBytes(blockHeight, pair, skipMetadata...)...)
 	}
 	data = append(data, UintToBuf(uint64(len(op.NFTBidAdditionalDESORoyalties)))...)
 	for _, pair := range op.NFTBidAdditionalDESORoyalties {
-		data = append(data, EncodeToBytes(blockHeight, pair)...)
+		data = append(data, EncodeToBytes(blockHeight, pair, skipMetadata...)...)
 	}
 	return data
 }
@@ -1226,14 +1223,14 @@ type UtxoOperationBundle struct {
 	UtxoOpBundle [][]*UtxoOperation
 }
 
-func (opBundle *UtxoOperationBundle) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (opBundle *UtxoOperationBundle) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(uint64(len(opBundle.UtxoOpBundle)))...)
 	for _, opList := range opBundle.UtxoOpBundle {
 		data = append(data, UintToBuf(uint64(len(opList)))...)
 		for _, op := range opList {
-			data = append(data, EncodeToBytes(blockHeight, op)...)
+			data = append(data, EncodeToBytes(blockHeight, op, skipMetadata...)...)
 		}
 	}
 	return data
@@ -1368,18 +1365,18 @@ type MessageEntry struct {
 	ExtraData map[string][]byte
 }
 
-func (message *MessageEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (message *MessageEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
-	data = append(data, EncodeToBytes(blockHeight, message.SenderPublicKey)...)
-	data = append(data, EncodeToBytes(blockHeight, message.RecipientPublicKey)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientPublicKey, skipMetadata...)...)
 	data = append(data, EncodeByteArray(message.EncryptedText)...)
 	data = append(data, UintToBuf(message.TstampNanos)...)
 	data = append(data, UintToBuf(uint64(message.Version))...)
-	data = append(data, EncodeToBytes(blockHeight, message.SenderMessagingPublicKey)...)
-	data = append(data, EncodeToBytes(blockHeight, message.SenderMessagingGroupKeyName)...)
-	data = append(data, EncodeToBytes(blockHeight, message.RecipientMessagingPublicKey)...)
-	data = append(data, EncodeToBytes(blockHeight, message.RecipientMessagingGroupKeyName)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderMessagingPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderMessagingGroupKeyName, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientMessagingPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientMessagingGroupKeyName, skipMetadata...)...)
 	data = append(data, EncodeExtraData(message.ExtraData)...)
 	return data
 }
@@ -1475,7 +1472,7 @@ func (name *GroupKeyName) ToBytes() []byte {
 	return name[:]
 }
 
-func (name *GroupKeyName) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (name *GroupKeyName) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	return EncodeByteArray(name[:])
 }
 
@@ -1614,18 +1611,18 @@ func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingG
 	return members
 }
 
-func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var entryBytes []byte
 
-	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.GroupOwnerPublicKey)...)
-	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingPublicKey)...)
-	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingGroupKeyName)...)
+	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.GroupOwnerPublicKey, skipMetadata...)...)
+	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingPublicKey, skipMetadata...)...)
+	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingGroupKeyName, skipMetadata...)...)
 	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MessagingGroupMembers)))...)
 	// We sort the MessagingGroupMembers because they can be added while iterating over
 	// a map, which could lead to inconsistent orderings across nodes when encoding.
 	members := sortMessagingGroupMembers(entry.MessagingGroupMembers)
 	for ii := 0; ii < len(members); ii++ {
-		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii])...)
+		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
 	}
 	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
@@ -1738,11 +1735,11 @@ func (rec *MessagingGroupMember) FromBytes(rr *bytes.Reader) error {
 	return nil
 }
 
-func (rec *MessagingGroupMember) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (rec *MessagingGroupMember) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	data := []byte{}
 
-	data = append(data, EncodeToBytes(blockHeight, rec.GroupMemberPublicKey)...)
-	data = append(data, EncodeToBytes(blockHeight, rec.GroupMemberKeyName)...)
+	data = append(data, EncodeToBytes(blockHeight, rec.GroupMemberPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, rec.GroupMemberKeyName, skipMetadata...)...)
 	data = append(data, EncodeByteArray(rec.EncryptedKey)...)
 
 	return data
@@ -1791,7 +1788,7 @@ type ForbiddenPubKeyEntry struct {
 	isDeleted bool
 }
 
-func (entry *ForbiddenPubKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (entry *ForbiddenPubKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray(entry.PubKey)...)
 	return data
@@ -1835,11 +1832,11 @@ type LikeEntry struct {
 	isDeleted bool
 }
 
-func (likeEntry *LikeEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (likeEntry *LikeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(likeEntry.LikerPubKey)...)
-	data = append(data, EncodeToBytes(blockHeight, likeEntry.LikedPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, likeEntry.LikedPostHash, skipMetadata...)...)
 	return data
 }
 
@@ -1907,12 +1904,12 @@ type NFTEntry struct {
 	isDeleted bool
 }
 
-func (nft *NFTEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (nft *NFTEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
-	data = append(data, EncodeToBytes(blockHeight, nft.LastOwnerPKID)...)
-	data = append(data, EncodeToBytes(blockHeight, nft.OwnerPKID)...)
-	data = append(data, EncodeToBytes(blockHeight, nft.NFTPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, nft.LastOwnerPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, nft.OwnerPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, nft.NFTPostHash, skipMetadata...)...)
 	data = append(data, UintToBuf(nft.SerialNumber)...)
 	data = append(data, BoolToByte(nft.IsForSale))
 	data = append(data, UintToBuf(nft.MinBidAmountNanos)...)
@@ -2032,11 +2029,11 @@ type NFTBidEntry struct {
 	isDeleted bool
 }
 
-func (be *NFTBidEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (be *NFTBidEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
-	data = append(data, EncodeToBytes(blockHeight, be.BidderPKID)...)
-	data = append(data, EncodeToBytes(blockHeight, be.NFTPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, be.BidderPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, be.NFTPostHash, skipMetadata...)...)
 	data = append(data, UintToBuf(be.SerialNumber)...)
 	data = append(data, UintToBuf(be.BidAmountNanos)...)
 
@@ -2109,7 +2106,7 @@ type NFTBidEntryBundle struct {
 	nftBidEntryBundle []*NFTBidEntry
 }
 
-func (bundle *NFTBidEntryBundle) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (bundle *NFTBidEntryBundle) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	if bundle.nftBidEntryBundle != nil {
@@ -2117,7 +2114,7 @@ func (bundle *NFTBidEntryBundle) RawEncodeWithoutMetadata(blockHeight uint64) []
 		data = append(data, UintToBuf(numEntries)...)
 
 		for _, entry := range bundle.nftBidEntryBundle {
-			data = append(data, EncodeToBytes(blockHeight, entry)...)
+			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 		}
 	} else {
 		data = append(data, UintToBuf(0)...)
@@ -2180,7 +2177,7 @@ type DerivedKeyEntry struct {
 	isDeleted bool
 }
 
-func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(key.OwnerPublicKey.ToBytes())...)
@@ -2338,12 +2335,12 @@ type DiamondEntry struct {
 	isDeleted bool
 }
 
-func (de *DiamondEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (de *DiamondEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
-	data = append(data, EncodeToBytes(blockHeight, de.SenderPKID)...)
-	data = append(data, EncodeToBytes(blockHeight, de.ReceiverPKID)...)
-	data = append(data, EncodeToBytes(blockHeight, de.DiamondPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, de.SenderPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, de.ReceiverPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, de.DiamondPostHash, skipMetadata...)...)
 	// Encoding as uint64 as it's encoded identically to int64.
 	data = append(data, UintToBuf(uint64(de.DiamondLevel))...)
 
@@ -2417,12 +2414,12 @@ type RepostEntry struct {
 	isDeleted bool
 }
 
-func (re *RepostEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (re *RepostEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(re.ReposterPubKey)...)
-	data = append(data, EncodeToBytes(blockHeight, re.RepostPostHash)...)
-	data = append(data, EncodeToBytes(blockHeight, re.RepostedPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, re.RepostPostHash, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, re.RepostedPostHash, skipMetadata...)...)
 
 	return data
 }
@@ -2477,7 +2474,7 @@ type GlobalParamsEntry struct {
 	MinimumNetworkFeeNanosPerKB uint64
 }
 
-func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(gp.USDCentsPerBitcoin)...)
@@ -2664,14 +2661,14 @@ func IsVanillaRepost(postEntry *PostEntry) bool {
 	return !postEntry.IsQuotedRepost && postEntry.RepostedPostHash != nil
 }
 
-func (pe *PostEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (pe *PostEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
-	data = append(data, EncodeToBytes(blockHeight, pe.PostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, pe.PostHash, skipMetadata...)...)
 	data = append(data, EncodeByteArray(pe.PosterPublicKey)...)
 	data = append(data, EncodeByteArray(pe.ParentStakeID)...)
 	data = append(data, EncodeByteArray(pe.Body)...)
-	data = append(data, EncodeToBytes(blockHeight, pe.RepostedPostHash)...)
+	data = append(data, EncodeToBytes(blockHeight, pe.RepostedPostHash, skipMetadata...)...)
 	data = append(data, BoolToByte(pe.IsQuotedRepost))
 	data = append(data, UintToBuf(pe.CreatorBasisPoints)...)
 	data = append(data, UintToBuf(pe.StakeMultipleBasisPoints)...)
@@ -2866,11 +2863,11 @@ type BalanceEntry struct {
 	isDeleted bool
 }
 
-func (be *BalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (be *BalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
-	data = append(data, EncodeToBytes(blockHeight, be.HODLerPKID)...)
-	data = append(data, EncodeToBytes(blockHeight, be.CreatorPKID)...)
+	data = append(data, EncodeToBytes(blockHeight, be.HODLerPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, be.CreatorPKID, skipMetadata...)...)
 	data = append(data, EncodeUint256(&be.BalanceNanos)...)
 	data = append(data, BoolToByte(be.HasPurchased))
 
@@ -2998,7 +2995,7 @@ type CoinEntry struct {
 	TransferRestrictionStatus TransferRestrictionStatus
 }
 
-func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	// CoinEntry
@@ -3067,7 +3064,7 @@ type PublicKeyRoyaltyPair struct {
 	RoyaltyAmountNanos uint64
 }
 
-func (pair *PublicKeyRoyaltyPair) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (pair *PublicKeyRoyaltyPair) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(pair.PublicKey)...)
@@ -3111,10 +3108,10 @@ func (pkid *PKIDEntry) String() string {
 	return fmt.Sprintf("< PKID: %s, OwnerPublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
 }
 
-func (pkid *PKIDEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (pkid *PKIDEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
-	data = append(data, EncodeToBytes(blockHeight, pkid.PKID)...)
+	data = append(data, EncodeToBytes(blockHeight, pkid.PKID, skipMetadata...)...)
 	data = append(data, EncodeByteArray(pkid.PublicKey)...)
 
 	return data
@@ -3195,7 +3192,7 @@ func (pe *ProfileEntry) IsDeleted() bool {
 	return pe.isDeleted
 }
 
-func (pe *ProfileEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (pe *ProfileEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(pe.PublicKey)...)
@@ -3205,8 +3202,8 @@ func (pe *ProfileEntry) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
 	data = append(data, BoolToByte(pe.IsHidden))
 
 	// CoinEntry
-	data = append(data, EncodeToBytes(blockHeight, &pe.CreatorCoinEntry)...)
-	data = append(data, EncodeToBytes(blockHeight, &pe.DAOCoinEntry)...)
+	data = append(data, EncodeToBytes(blockHeight, &pe.CreatorCoinEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &pe.DAOCoinEntry, skipMetadata...)...)
 
 	data = append(data, EncodeExtraData(pe.ExtraData)...)
 

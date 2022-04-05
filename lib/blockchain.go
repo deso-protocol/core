@@ -2463,68 +2463,90 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		blockHeight = 0
 	}
 
-	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
-		if uint64(bc.bestChain[ii].Height) > blockHeight {
-			prevHash := *bc.bestChain[ii-1].Hash
-			hash := *bc.bestChain[ii].Hash
-			height := uint64(bc.bestChain[ii].Height)
-			err := bc.db.Update(func(txn *badger.Txn) error {
-				utxoView, err := NewUtxoView(bc.db, bc.params, nil, nil)
-				if err != nil {
-					return err
-				}
-				// Fetch the utxo operations for the block we're detaching. We need these
-				// in order to be able to detach the block.
-				utxoOps, err := GetUtxoOperationsForBlock(bc.db, nil, &hash)
-
-				// Compute the hashes for all the transactions.
-				blockToDetach, err := GetBlock(&hash, bc.db, nil)
-				if err != nil {
-					return err
-				}
-				txHashes, err := ComputeTransactionHashes(blockToDetach.Txns)
-				if err != nil {
-					return err
-				}
-				err = utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps, height)
-				if err != nil {
-					return err
-				}
-
-				// Flushing the view after applying and rolling back should work.
-				err = utxoView.FlushToDb(height)
-				if err != nil {
-					return err
-				}
-
-				// Set the best node hash to the new tip.
-				if err := PutBestHashWithTxn(txn, bc.snapshot, &prevHash, ChainTypeDeSoBlock); err != nil {
-					return err
-				}
-
-				// Delete the utxo operations for the blocks we're detaching since we don't need
-				// them anymore.
-				if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, &hash); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem deleting utxo operations for block")
-				}
-
-				// If we have a Server object then call its function
-				if bc.eventManager != nil {
-					// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
-					// For now it's fine because reorgs are virtually impossible.
-					bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
-				}
-
-				return nil
-			})
+	for ii := len(bc.bestChain) - 1; ii > 0 && uint64(bc.bestChain[ii].Height) > blockHeight; ii-- {
+		node := bc.bestChain[ii]
+		prevHash := *bc.bestChain[ii-1].Hash
+		hash := *bc.bestChain[ii].Hash
+		height := uint64(bc.bestChain[ii].Height)
+		err := bc.db.Update(func(txn *badger.Txn) error {
+			utxoView, err := NewUtxoView(bc.db, bc.params, nil, nil)
 			if err != nil {
-				return errors.Wrapf(err, "Blockchain.DisconnectBlocksToHeight: Problem disconnecting block "+
-					"with hash: (%v) at blockHeight: (%v)", hash, height)
+				return err
 			}
-		} else {
-			break
+
+			if *utxoView.TipHash != hash {
+				return fmt.Errorf("DisconnectBlocksToHeight: UtxovView tip hash doesn't match the bestChain hash")
+			}
+			// Fetch the utxo operations for the block we're detaching. We need these
+			// in order to be able to detach the block.
+			utxoOps, err := GetUtxoOperationsForBlock(bc.db, nil, &hash)
+			if err != nil {
+				return err
+			}
+
+			// Compute the hashes for all the transactions.
+			blockToDetach, err := GetBlock(&hash, bc.db, nil)
+			if err != nil {
+				return err
+			}
+			txHashes, err := ComputeTransactionHashes(blockToDetach.Txns)
+			if err != nil {
+				return err
+			}
+			err = utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps, height)
+			if err != nil {
+				return err
+			}
+
+			// Flushing the view after applying and rolling back should work.
+			err = utxoView.FlushToDb(height)
+			if err != nil {
+				return err
+			}
+
+			// Set the best node hash to the new tip.
+			if err := PutBestHashWithTxn(txn, nil, &prevHash, ChainTypeDeSoBlock); err != nil {
+				return err
+			}
+
+			// Delete the utxo operations for the blocks we're detaching since we don't need
+			// them anymore.
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, &hash); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting utxo operations for block")
+			}
+
+			if err := DeleteBlockRewardWithTxn(txn, nil, blockToDetach); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
+			}
+
+			node.Status = StatusHeaderValidated
+			if err := PutHeightHashToNodeInfoWithTxn(txn, nil, node, false); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
+			}
+
+			// If we have a Server object then call its function
+			if bc.eventManager != nil {
+				// We need to add the UtxoOps here to handle reorgs properly in Rosetta
+				// For now it's fine because reorgs are virtually impossible.
+				bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
+			}
+
+			return nil
+		})
+		if err != nil {
+			return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem disconnecting block "+
+				"with hash: (%v) at blockHeight: (%v)", hash, height)
 		}
+
+		bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
+		delete(bc.bestChainMap, hash)
 	}
+	for ii := len(bc.bestHeaderChain) - 1; ii > 0 && uint64(bc.bestHeaderChain[ii].Height) > blockHeight; ii-- {
+		hash := *bc.bestHeaderChain[ii].Hash
+		bc.bestHeaderChain = bc.bestHeaderChain[:len(bc.bestHeaderChain)-1]
+		delete(bc.bestHeaderChainMap, hash)
+	}
+
 	return nil
 }
 

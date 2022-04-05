@@ -28,7 +28,7 @@ func NewPKID(pkidBytes []byte) *PKID {
 	return pkid
 }
 
-func (pkid *PKID) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (pkid *PKID) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	return EncodeByteArray(pkid[:])
 }
 
@@ -76,7 +76,7 @@ func (publicKey *PublicKey) ToBytes() []byte {
 	return publicKey[:]
 }
 
-func (publicKey *PublicKey) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (publicKey *PublicKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	return EncodeByteArray(publicKey[:])
 }
 
@@ -124,7 +124,7 @@ func NewBlockHash(input []byte) *BlockHash {
 	return blockHash
 }
 
-func (bh *BlockHash) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (bh *BlockHash) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	return EncodeByteArray(bh[:])
 }
 

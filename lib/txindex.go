@@ -167,7 +167,9 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	if shouldRestart {
 		glog.Errorf(CLog(Red, "NewTXIndex: Forcing a rollback to the last snapshot epoch because node was not closed "+
 			"properly last time"))
-		snapshot.ForceReset(txIndexChain)
+		if err := snapshot.ForceResetToLastSnapshot(txIndexChain); err != nil {
+			return nil, errors.Wrapf(err, "NewTXIndex: Problem calling ForceResetToLastSnapshot"), true
+		}
 
 	}
 

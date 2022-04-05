@@ -52,7 +52,7 @@ const (
 	GetSnapshotTimeout = 100 * time.Millisecond
 
 	// SnapshotBlockHeightPeriod is the constant height offset between individual snapshot epochs.
-	SnapshotBlockHeightPeriod uint64 = 100
+	SnapshotBlockHeightPeriod uint64 = 1000
 
 	// SnapshotBatchSize is the size in bytes of the snapshot batches sent to peers
 	SnapshotBatchSize uint32 = 8 << 20 // 8MB
@@ -219,17 +219,23 @@ type ForkHeights struct {
 }
 
 // EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
-// you should define a new blockHeight in the EncoderMigrationHeights struct and add a
+// you should:
+//	1. define a new blockHeight in the EncoderMigrationHeights struct
+//	2. add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods
+//	3. add proper condition to GetVersionByte to return version associated with the migration height.
 type EncoderMigrationHeights struct {
-	TestMigrationHeight uint64 `version:"0"`
+	DefaultHeight       uint64 `version:"0"`
+	UtxoEntryTestHeight uint64 `version:"1"`
 }
 
 var TestnetEncoderMigrationHeights = EncoderMigrationHeights{
-	TestMigrationHeight: uint64(0),
+	DefaultHeight:       uint64(0),
+	UtxoEntryTestHeight: uint64(1),
 }
 
 var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
-	TestMigrationHeight: uint64(0),
+	DefaultHeight:       uint64(0),
+	UtxoEntryTestHeight: uint64(1),
 }
 
 // DeSoParams defines the full list of possible parameters for the

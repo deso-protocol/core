@@ -381,11 +381,6 @@ func NewServer(
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}
-	if shouldRestart {
-		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
-			"properly last time"))
-		_snapshot.ForceReset(_chain)
-	}
 
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
 		_chain.headerTip().Height,
@@ -487,6 +482,14 @@ func NewServer(
 	timer := &Timer{}
 	timer.Initialize()
 	srv.timer = timer
+
+	if shouldRestart {
+		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
+			"properly last time"))
+		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {
+			return nil, errors.Wrapf(err, "NewServer: Problem in ForceResetToLastSnapshot"), true
+		}
+	}
 
 	return srv, nil, shouldRestart
 }
