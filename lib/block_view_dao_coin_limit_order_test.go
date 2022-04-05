@@ -417,11 +417,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1's order is fulfilled buying $DESO so:
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
-		// TODO: these should be equal, but transactor needs to explicitly specify his output $DESO.
-		// So that he can also specify tip that goes to the miners.
-		// FIXME: @diamondhands - the updatedM1DESOBalance is equal to originalM1DESOBalance+desoQuantityChange
-		// so it appears that the transactor didn't pay any fee for the transaction. This seems wrong.
-		require.NotEqual(
+		require.Equal(
 			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(3), // TODO: calculate gas fee instead of hard-coding.
 			updatedM1DESOBalance)
 
@@ -522,7 +518,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His $DESO balance decreases and
 		//   * His DAO coin balance increases.
 		// TODO: these should be equal.
-		require.NotEqual(
+		require.Equal(
 			originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(2), // TODO: calculate gas fee instead of hard-coding.
 			updatedM0DESOBalance)
 
@@ -1004,7 +1000,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
 		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
 
-		require.Equal(m0DESOBalanceBefore-15, m0DESOBalanceAfter)
+		require.Equal(m0DESOBalanceBefore-15-3, m0DESOBalanceAfter) // Fee is 3 nanos
 		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
 		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
 	}

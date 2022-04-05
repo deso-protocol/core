@@ -3143,6 +3143,11 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Initialize FeeNanos to the maximum uint64 to provide an upper bound on the size of the transaction.
+	// We will set FeeNanos to it's true value after we add inputs and outputs.
+	metadata.FeeNanos = math.MaxUint64
+
 	// Create a transaction containing the create DAO coin limit order fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,
@@ -3152,35 +3157,37 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		// inputs and change.
 	}
 
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateDAOCoinLimitOrderTxn: Problem creating new utxo view: ")
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateDAOCoinLimitOrderTxn: Problem getting augmented UtxoView from mempool: ")
+
+		}
+	}
+
+	// Construct transactor order
+	transactorOrder := &DAOCoinLimitOrderEntry{
+		TransactorPKID:                            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
+		BuyingDAOCoinCreatorPKID:                  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		SellingDAOCoinCreatorPKID:                 utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
+		QuantityToBuyInBaseUnits:                  metadata.QuantityToBuyInBaseUnits.Clone(),
+		BlockHeight:                               bc.blockTip().Height + 1,
+	}
+
+	// We use "additionalFees" to track how much we need to spend to cover the transactor's bid in DESO.
+	var additionalFees uint64
 	if bytes.Equal(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes(), ZeroPublicKey.ToBytes()) {
 		// If buying $DESO, we need to find inputs from all the orders that match.
 		// This will move to txn construction as this will be put in the metadata.
-
-		// Create a new UtxoView. If we have access to a mempool object, use it to
-		// get an augmented view that factors in pending transactions.
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err,
-				"Blockchain.CreateDAOCoinLimitOrderTxn: Problem creating new utxo view: ")
-		}
-		if mempool != nil {
-			utxoView, err = mempool.GetAugmentedUniversalView()
-			if err != nil {
-				return nil, 0, 0, 0, errors.Wrapf(err,
-					"Blockchain.CreateDAOCoinLimitOrderTxn: Problem getting augmented UtxoView from mempool: ")
-
-			}
-		}
-
-		// Construct transactor order
-		transactorOrder := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
-			BuyingDAOCoinCreatorPKID:                  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-			SellingDAOCoinCreatorPKID:                 utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-			QuantityToBuyInBaseUnits:                  metadata.QuantityToBuyInBaseUnits,
-			BlockHeight:                               bc.blockTip().Height + 1,
-		}
 
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 		desoNanosToConsumeMap := make(map[PKID]uint64)
@@ -3264,21 +3271,85 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				TransactorPublicKey: &(*publicKey), // create a pointer to a copy of the public key
 				Inputs:              inputs,
 			}
-			// Sort Inputs
-			// FIXME(question): Are we going to get screwed by not doing a copy here?
-			inputsByTransactor.Inputs = inputsByTransactor.Inputs
 
 			metadata.BidderInputs = append(metadata.BidderInputs, &inputsByTransactor)
 		}
+	} else if bytes.Equal(metadata.SellingDAOCoinCreatorPublicKey.ToBytes(), ZeroPublicKey.ToBytes()) {
+		// If selling DESO for DAO coins, we need to find the matching orders
+		// and add that as an additional fee when adding inputs and outputs.
+		var lastSeenOrder *DAOCoinLimitOrderEntry
+
+		nanosToFulfillOrders := uint256.NewInt()
+		quantityToBuyInBaseUnits := metadata.QuantityToBuyInBaseUnits.Clone()
+
+		for !quantityToBuyInBaseUnits.IsZero() {
+			var matchingOrderEntries []*DAOCoinLimitOrderEntry
+			matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(transactorOrder, lastSeenOrder)
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(
+					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting orders to match: ")
+			}
+			if len(matchingOrderEntries) == 0 {
+				break
+			}
+			for _, order := range matchingOrderEntries {
+				balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
+					order.TransactorPKID, order.SellingDAOCoinCreatorPKID, true)
+				lastSeenOrder = order
+				if balanceEntry != nil && !balanceEntry.isDeleted &&
+					!balanceEntry.BalanceNanos.Lt(order.QuantityToBuyInBaseUnits) {
+
+					var nanosToFulfillOrder *uint256.Int
+					if quantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
+						nanosToFulfillOrder, err = ComputeBaseUnitsToSellUint256(
+							order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+							quantityToBuyInBaseUnits)
+						if err != nil {
+							return nil, 0, 0, 0,
+								errors.Wrapf(err,
+									"Blockchain.CreateDAOCoinLimitOrderTxn: Error computing base units to sell: ")
+						}
+						quantityToBuyInBaseUnits = uint256.NewInt()
+					} else {
+						nanosToFulfillOrder, err = order.BaseUnitsToSellUint256()
+						if err != nil {
+							return nil, 0, 0, 0,
+								errors.Wrapf(err,
+									"Blockchain.CreateDAOCoinLimitOrderTxn: Error computing base units to sell: ")
+						}
+						quantityToBuyInBaseUnits, err = SafeUint256().Sub(
+							quantityToBuyInBaseUnits,
+							order.QuantityToBuyInBaseUnits)
+						if err != nil {
+							return nil, 0, 0, 0, errors.Wrapf(err,
+								"Blockchain.CreateDAOCoinLimitOrderTxn: Underflow uint256 when subtracting quantity")
+						}
+					}
+					nanosToFulfillOrders, err = SafeUint256().Add(nanosToFulfillOrders, nanosToFulfillOrder)
+					if err != nil {
+						return nil,0, 0, 0, errors.Wrapf(err,
+							"Blockchain.CreateDAOCoinLimitOrderTxn: overflow when adding nanos to fill orders")
+					}
+				}
+			}
+		}
+		if !nanosToFulfillOrders.IsUint64() {
+			return nil, 0, 0, 0, fmt.Errorf(
+				"Blockchain.CreateDAOCoinLimitOrderTxn: fulfilling order exceeds uint64")
+		}
+
+		additionalFees = nanosToFulfillOrders.Uint64()
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, additionalFees)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"CreateDAOCoinLimitOrderTxn: Problem adding inputs: ")
 	}
+	// Set fee to its actual value now that we've added inputs and outputs.
+	txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos = fees
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -4218,131 +4289,6 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= txMeta.BidAmountNanos {
 			spendAmount += txMeta.BidAmountNanos
-		}
-	}
-
-	if txArg.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
-		txMeta := txArg.TxnMeta.(*DAOCoinLimitOrderMetadata)
-
-		utxoView, err := getUtxoView()
-		if err != nil {
-			return 0, 0, 0, 0, err
-		}
-
-		// Construct requested order
-		sellCoinPKIDEntry := utxoView.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey[:])
-		if sellCoinPKIDEntry == nil || sellCoinPKIDEntry.isDeleted {
-			return 0, 0, 0, 0, fmt.Errorf(
-				"_computeInputsForTxn: sellCoinPKIDEntry is deleted: %v",
-				spew.Sdump(sellCoinPKIDEntry))
-		}
-		buyCoinPKIDEntry := utxoView.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey[:])
-		if buyCoinPKIDEntry == nil || buyCoinPKIDEntry.isDeleted {
-			return 0, 0, 0, 0, fmt.Errorf(
-				"_computeInputsForTxn: buyCoinPKIDEntry is deleted: %v",
-				spew.Sdump(buyCoinPKIDEntry))
-		}
-		transactorPKIDEntry := utxoView.GetPKIDForPublicKey(txArg.PublicKey[:])
-		if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-			return 0, 0, 0, 0, fmt.Errorf(
-				"_computeInputsForTxn: transactorPKIDEntry is deleted: %v",
-				spew.Sdump(transactorPKIDEntry))
-		}
-
-		// It's better to use == for fixed-size slice rather than reflect.DeepEqual because
-		// the compiler will type-check you.
-		if bytes.Equal(sellCoinPKIDEntry.PKID.ToBytes(), ZeroPKID.ToBytes()) {
-			// If buying a DAO coin with $DESO, we need to add inputs from the transactor
-			// to cover all the ask orders that will match in the connect logic.
-
-			// Construct requested order
-			requestedOrder := &DAOCoinLimitOrderEntry{
-				TransactorPKID:                            transactorPKIDEntry.PKID,
-				BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
-				SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
-				ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-				QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
-				BlockHeight:                               bc.blockTip().Height + 1,
-			}
-
-			var lastSeenOrder *DAOCoinLimitOrderEntry
-
-			nanosToFulfillOrders := uint256.NewInt()
-			// FIXME: nit: I don't like the idea of modifying object fields in a loop. We
-			// do this here and in db_utils.
-			// I think the reason why is it's error-prone because the scope of the variable
-			// lives beyond the scope of
-			// the loop when you do it this way, and it's hard for the reader to guage where
-			// this variable is going to stop mattering. Additionally, if someone doesn't notice
-			// that the object field is being modified in this loop, they might accidentally
-			// use it, introducing a bug. In general, I like it when variables have the minimum
-			// possible scope they can have, and using object members as variables causes scope
-			// expansion so often that I tend to avoid it at all costs.
-			//
-			// The other reason why it's weird is because the loop variables aren't clearly defined
-			// in one place. When you write a for loop and you define all the variables you're
-			// looping outside of it, it's very easy for the reader to go "oh ok, these four things
-			// are what are being modified in here." When you do the object approach here, it's
-			// harder to see that.
-			//
-			// I would define a quantityToBuyInBaseUnits right outside of this loop and iterate
-			// that rather than using a field on an object. Same for any other variables. Just
-			// pull them out of the object at the top of the loop, or just don't use the secondary
-			// object at all.
-			for !requestedOrder.QuantityToBuyInBaseUnits.IsZero() {
-				var matchingOrderEntries []*DAOCoinLimitOrderEntry
-				matchingOrderEntries, err = utxoView._getNextLimitOrdersToFill(requestedOrder, lastSeenOrder)
-				if err != nil {
-					return 0, 0, 0, 0, errors.Wrapf(
-						err, "AddInputsAndChangeToTransaction: ")
-				}
-				if len(matchingOrderEntries) == 0 {
-					break
-				}
-				for _, order := range matchingOrderEntries {
-					balanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
-						order.TransactorPKID, order.SellingDAOCoinCreatorPKID, true)
-					lastSeenOrder = order
-					if balanceEntry != nil && !balanceEntry.isDeleted &&
-						!balanceEntry.BalanceNanos.Lt(order.QuantityToBuyInBaseUnits) {
-
-						var nanosToFulfillOrder *uint256.Int
-						if requestedOrder.QuantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
-							nanosToFulfillOrder, err = ComputeBaseUnitsToSellUint256(
-								order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-								requestedOrder.QuantityToBuyInBaseUnits)
-							if err != nil {
-								return 0, 0, 0, 0,
-									errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
-							}
-							requestedOrder.QuantityToBuyInBaseUnits = uint256.NewInt()
-						} else {
-							nanosToFulfillOrder, err = order.BaseUnitsToSellUint256()
-							if err != nil {
-								// TODO: confirm error message.
-								return 0, 0, 0, 0,
-									errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
-							}
-							requestedOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Sub(
-								requestedOrder.QuantityToBuyInBaseUnits,
-								order.QuantityToBuyInBaseUnits)
-							if err != nil {
-								return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
-							}
-						}
-						nanosToFulfillOrders, err = SafeUint256().Add(nanosToFulfillOrders, nanosToFulfillOrder)
-						if err != nil {
-							return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
-						}
-					}
-				}
-			}
-			if !nanosToFulfillOrders.IsUint64() {
-				return 0, 0, 0, 0, fmt.Errorf(
-					"AddInputsAndChangeToTransaction: fulfilling order exceeds uint64")
-			}
-			// Increment spendAmount by amount transactor will spend fulfilling orders
-			spendAmount += nanosToFulfillOrders.Uint64()
 		}
 	}
 

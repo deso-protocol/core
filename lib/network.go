@@ -5595,6 +5595,13 @@ type DAOCoinLimitOrderMetadata struct {
 	// at time of creation. This field contains the transactor and their
 	// utxo inputs that can be used to immediately execute this trade.
 	BidderInputs []*DeSoInputsByTransactor
+
+	// Since a DAO Coin Limit Order may spend DESO or yield DESO to the
+	// transactor, we specify FeeNanos in the transaction metadata in
+	// order to ensure the transactor pays the standard fee rate for the size
+	// of the transaction AND ensures the internal balance model of the
+	// DAO Coin Limit Order transaction connection logic remains valid.
+	FeeNanos uint64
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {

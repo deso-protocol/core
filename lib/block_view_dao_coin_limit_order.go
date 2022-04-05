@@ -739,6 +739,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				newDESOSurplus := big.NewInt(0).Add(
 					delta, big.NewInt(0).SetUint64(desoSurplus))
 
+				// If the current delta is for the transactor, we need
+				// to deduct the fees specified in the metadata from the output
+				// we will create.
+				if transactorPKIDEntry.PKID.Eq(&userPKID) && txMeta.FeeNanos > 0 {
+					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
+				}
+
 				// Check that we didn't overflow or underflow the DESO surplus
 				// Note that if we ever go negative then that's an error because
 				// we already maxed out the DESO we're allowed to spend before

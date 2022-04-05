@@ -415,12 +415,22 @@ type PGMetadataDerivedKey struct {
 type PGMetadataDAOCoinLimitOrder struct {
 	tableName struct{} `pg:"pg_metadata_dao_coin_limit_order"`
 
-	TransactionHash                           *BlockHash `pg:",pk,type:bytea"`
-	BuyingDAOCoinCreatorPublicKey             *PublicKey `pg:"buying_dao_coin_creator_public_key,type:bytea"`
-	SellingDAOCoinCreatorPublicKey            *PublicKey `pg:"selling_dao_coin_creator_public_key,type:bytea"`
-	ScaledExchangeRateCoinsToSellPerCoinToBuy string     `pg:",use_zero"`
-	QuantityToBuyInBaseUnits                  string     `pg:",use_zero"`
-	CancelExistingOrder                       bool       `pg:",use_zero"`
+	TransactionHash                           *BlockHash                                 `pg:",pk,type:bytea"`
+	BuyingDAOCoinCreatorPublicKey             *PublicKey                                 `pg:"buying_dao_coin_creator_public_key,type:bytea"`
+	SellingDAOCoinCreatorPublicKey            *PublicKey                                 `pg:"selling_dao_coin_creator_public_key,type:bytea"`
+	ScaledExchangeRateCoinsToSellPerCoinToBuy string                                     `pg:",use_zero"`
+	QuantityToBuyInBaseUnits                  string                                     `pg:",use_zero"`
+	CancelExistingOrder                       bool                                       `pg:",use_zero"`
+	FeeNanos                                  uint64                                     `pg:",use_zero"`
+	BidderInputs                              []*PGMetadataDAOCoinLimitOrderBidderInputs `pg:"rel:has-many,join_fk:transaction_hash"`
+}
+
+type PGMetadataDAOCoinLimitOrderBidderInputs struct {
+	tableName struct{} `pg:"pg_metadata_dao_coin_limit_order_bidder_inputs"`
+
+	TransactionHash *BlockHash `pg:",pk,type:bytea"`
+	InputHash       *BlockHash `pg:",pk,type:bytea"`
+	InputIndex      uint32     `pg:",pk,use_zero"`
 }
 
 type PGNotification struct {
@@ -1005,6 +1015,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataDAOCoin []*PGMetadataDAOCoin
 	var metadataDAOCoinTransfer []*PGMetadataDAOCoinTransfer
 	var metadataDAOCoinLimitOrder []*PGMetadataDAOCoinLimitOrder
+	var metadataDAOCoinLimitOrderBidderInputs []*PGMetadataDAOCoinLimitOrderBidderInputs
 
 	blockHash := blockNode.Hash
 
@@ -1265,8 +1276,26 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
 			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-			_, _ = txMeta, metadataDAOCoinLimitOrder
-			// TODO
+			metadataDAOCoinLimitOrder = append(metadataDAOCoinLimitOrder, &PGMetadataDAOCoinLimitOrder{
+				TransactionHash:                           txnHash,
+				BuyingDAOCoinCreatorPublicKey:             txMeta.BuyingDAOCoinCreatorPublicKey,
+				SellingDAOCoinCreatorPublicKey:            txMeta.SellingDAOCoinCreatorPublicKey,
+				ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
+				QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits.Hex(),
+				CancelExistingOrder:                       txMeta.CancelExistingOrder,
+				FeeNanos:                                  txMeta.FeeNanos,
+			})
+
+			for _, inputsByTransactor := range txMeta.BidderInputs {
+				for _, input := range inputsByTransactor.Inputs {
+					metadataDAOCoinLimitOrderBidderInputs = append(metadataDAOCoinLimitOrderBidderInputs,
+						&PGMetadataDAOCoinLimitOrderBidderInputs{
+							TransactionHash: txnHash,
+							InputHash:       input.TxID.NewBlockHash(),
+							InputIndex:      input.Index,
+						})
+				}
+			}
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
 
@@ -1431,6 +1460,12 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 
 	if len(metadataDAOCoinLimitOrder) > 0 {
 		if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataDAOCoinLimitOrderBidderInputs) > 0 {
+		if _, err := tx.Model(&metadataDAOCoinLimitOrderBidderInputs).Returning("NULL").Insert(); err != nil {
 			return err
 		}
 	}

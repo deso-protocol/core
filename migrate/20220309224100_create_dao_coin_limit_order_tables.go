@@ -7,7 +7,6 @@ import (
 
 func init() {
 	up := func(db orm.DB) error {
-		// TODO: what indices should we add?
 		// Create pg_metadata_dao_coin_limit_orders table.
 		_, err := db.Exec(`
 			CREATE TABLE pg_metadata_dao_coin_limit_orders (
@@ -16,10 +15,25 @@ func init() {
 				selling_dao_coin_creator_public_key                BYTEA NOT NULL,
 				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT NOT NULL,
 				quantity_to_buy_in_base_units                      TEXT NOT NULL,
-				cancel_existing_order                              BOOL NOT NULL
+				cancel_existing_order                              BOOL NOT NULL,
+				fee_nanos                                          BIGINT NOT NULL
 			);
 		`)
 
+		if err != nil {
+			return err
+		}
+
+		// Create the bidder inputs table.
+		_, err = db.Exec(`
+			CREATE TABLE pg_metadata_dao_coin_limit_order_bidder_inputs (
+				transaction_hash BYTEA NOT NULL,
+				input_hash       BYTEA NOT NULL,
+				input_index      BIGINT NOT NULL,
+
+				PRIMARY KEY (transaction_hash, input_hash, input_index)
+			);
+		`)
 		if err != nil {
 			return err
 		}
@@ -54,6 +68,7 @@ func init() {
 	down := func(db orm.DB) error {
 		_, err := db.Exec(`
 			DROP TABLE pg_dao_coin_limit_orders;
+			DROP TABLE pg_metadata_dao_coin_limit_order_bidder_inputs; 
 			DROP TABLE pg_metadata_dao_coin_limit_orders;
 		`)
 		return err
