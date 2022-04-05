@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"math/big"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -68,7 +67,11 @@ func GetTestParamsCopy(
 }
 
 func _dumpAndLoadMempool(mempool *DeSoMempool) {
-	mempoolDir := os.TempDir()
+	mempoolDir, err := ioutil.TempDir("", "mempool")
+	if err != nil {
+		panic(err)
+	}
+
 	mempool.mempoolDir = mempoolDir
 	mempool.DumpTxnsToDB()
 	newMempool := NewDeSoMempool(
