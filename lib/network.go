@@ -5627,6 +5627,8 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 		}
 	}
 
+	data = append(data, UintToBuf(txnData.FeeNanos)...)
+
 	return data, nil
 }
 
@@ -5723,6 +5725,11 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 				Inputs:              inputs,
 			},
 		)
+	}
+
+	ret.FeeNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FeeNanos: %v", err)
 	}
 
 	*txnData = ret
