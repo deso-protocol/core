@@ -52,9 +52,18 @@ jobs:
       - name: Build package
         run: go build
 
-      # We split up go test into two parts to avoid OOM issues.
+      # We split up go test into parts to avoid OOM issues.
       - name: Run go test pt-1
-        run: go test ./lib -failfast -run="Test[A-L]" -v
+        run: go test ./lib -failfast -run="Test[ABCDE]" -v
 
       - name: Run go test pt-2
-        run: go test ./lib -failfast -run="Test[M-Z]" -v
+        run: go test ./lib -failfast -run="Test[FGHIJ]" -v
+
+      - name: Run go test pt-3
+        run: go test ./lib -failfast -run="Test[KLMNO]" -v
+
+      - name: Run go test pt-4
+        run: go test ./lib -failfast -run="Test[PQRST]" -v
+
+      - name: Run go test pt-5
+        run: go test ./lib -failfast -run="Test[UVWXYZ]" -v
