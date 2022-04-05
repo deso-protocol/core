@@ -54,7 +54,7 @@ jobs:
 
       # We split up go test into two parts to avoid OOM issues.
       - name: Run go test pt-1
-        run: go test ./lib -run="Test[A-L]" -v
+        run: go test ./lib -failfast -run="Test[A-L]" -v
 
       - name: Run go test pt-2
-        run: go test ./lib -run="Test[M-Z]" -v
+        run: go test ./lib -failfast -run="Test[M-Z]" -v
