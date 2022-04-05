@@ -413,7 +413,7 @@ type PGMetadataDerivedKey struct {
 
 // PGMetadataDAOCoinLimitOrder represents DAOCoinLimitOrderMetadata
 type PGMetadataDAOCoinLimitOrder struct {
-	tableName struct{} `pg:"pg_metadata_dao_coin_limit_order"`
+	tableName struct{} `pg:"pg_metadata_dao_coin_limit_orders"`
 
 	TransactionHash                           *BlockHash                                 `pg:",pk,type:bytea"`
 	BuyingDAOCoinCreatorPublicKey             *PublicKey                                 `pg:"buying_dao_coin_creator_public_key,type:bytea"`
