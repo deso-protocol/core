@@ -1149,11 +1149,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-
-	if chain.postgres == nil {
-		// TODO: this step currently only works with Badger.
-		_connectBlockThenDisconnectBlockAndFlush(testMeta)
-	}
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
 //

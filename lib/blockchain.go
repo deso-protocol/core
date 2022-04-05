@@ -1943,6 +1943,14 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			if err := utxoView.FlushToDb(); err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem flushing view to db")
 			}
+
+			// Since we don't have utxo operations in postgres, always write UTXO operations for the block to badger
+			err = bc.db.Update(func(txn *badger.Txn) error {
+				if err = PutUtxoOperationsForBlockWithTxn(txn, blockHash, utxoOpsForBlock); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				}
+				return nil
+			})
 		} else {
 			err = bc.db.Update(func(txn *badger.Txn) error {
 				// This will update the node's status.
