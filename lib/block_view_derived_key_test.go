@@ -233,6 +233,8 @@ func _doTxn(
 		if realTxMeta.OperationType == AuthorizeDerivedKeyOperationNotValid {
 			deleteKey = true
 		}
+		transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+		require.NoError(err)
 		txn, totalInputMake, changeAmountMake, feesMake, err = chain.CreateAuthorizeDerivedKeyTxn(
 			transactorPublicKey,
 			realTxMeta.DerivedPublicKey,
@@ -242,7 +244,7 @@ func _doTxn(
 			false,
 			nil,
 			memo,
-			transactionSpendingLimit,
+			hex.EncodeToString(transactionSpendingLimitBytes),
 			feeRateNanosPerKB,
 			nil,
 			nil,
@@ -553,6 +555,8 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 	_ = assert
 	_ = require
 
+	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+	require.NoError(err)
 	txn, totalInput, changeAmount, fees, err := chain.CreateAuthorizeDerivedKeyTxn(
 		ownerPublicKey,
 		derivedPublicKey,
@@ -562,7 +566,7 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 		false,
 		extraData,
 		memo,
-		transactionSpendingLimit,
+		hex.EncodeToString(transactionSpendingLimitBytes),
 		feeRateNanosPerKB,
 		nil, /*mempool*/
 		[]*DeSoOutput{})
