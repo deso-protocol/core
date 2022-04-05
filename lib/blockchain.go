@@ -3191,7 +3191,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 		desoNanosToConsumeMap := make(map[PKID]uint64)
-		transactorOrderBuyingQuantity := transactorOrder.QuantityToBuyInBaseUnits
+		transactorOrderBuyingQuantity := transactorOrder.QuantityToBuyInBaseUnits.Clone()
 
 		for transactorOrderBuyingQuantity.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
