@@ -3327,7 +3327,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					}
 					nanosToFulfillOrders, err = SafeUint256().Add(nanosToFulfillOrders, nanosToFulfillOrder)
 					if err != nil {
-						return nil,0, 0, 0, errors.Wrapf(err,
+						return nil, 0, 0, 0, errors.Wrapf(err,
 							"Blockchain.CreateDAOCoinLimitOrderTxn: overflow when adding nanos to fill orders")
 					}
 				}
