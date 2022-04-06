@@ -826,6 +826,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			SellingDAOCoinCreatorPublicKey:            metadataM0.SellingDAOCoinCreatorPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(9.5),
 			QuantityToFillInBaseUnits:                 metadataM0.QuantityToFillInBaseUnits,
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(
@@ -928,6 +929,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(5),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}
 
 		// 31
@@ -945,6 +947,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(2),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(5),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}
 
 		// 32
@@ -975,6 +978,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(1),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(300),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}
 
 		// 33
@@ -1153,6 +1157,83 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(orderEntries[0].QuantityToFillInBaseUnits, uint256.NewInt().SetUint64(110))
 		require.Equal(orderEntries[1].ScaledExchangeRateCoinsToSellPerCoinToBuy, CalculateScaledExchangeRate(1.0))
 		require.Equal(orderEntries[1].QuantityToFillInBaseUnits, uint256.NewInt().SetUint64(240))
+	}
+
+	// Test CalculateDAOCoinsTransferredInLimitOrderMatch()
+	{
+		// Scenario 1: exact match orders
+		// m0 sells 100 DAO coins for 10 $DESO.
+		m0Order := &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            m0PKID.PKID,
+			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
+			SellingDAOCoinCreatorPKID:                 m0PKID.PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(10.0),
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		// m1 buys 100 DAO coins for 10 $DESO.
+		m1Order := &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            m1PKID.PKID,
+			BuyingDAOCoinCreatorPKID:                  m0PKID.PKID,
+			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(0.1),
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		// m0 = transactor, m1 = matching order
+		result, err := utxoView.CalculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order)
+		require.NoError(err)
+		require.Equal(result.UpdatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
+		require.Equal(result.UpdatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
+		require.Equal(result.TransactorBuyingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(10))
+		require.Equal(result.TransactorSellingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(100))
+
+		// m1 = transactor, m0 = matching order
+		result, err = utxoView.CalculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order)
+		require.NoError(err)
+		require.Equal(result.UpdatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
+		require.Equal(result.UpdatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
+		require.Equal(result.TransactorBuyingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(100))
+		require.Equal(result.TransactorSellingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(10))
+
+		// Scenario 2: m1 sells DAO coins at a premium
+		// m0 buys 10 DAO coins for 10 $DESO / DAO coin.
+		m0Order = &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            m0PKID.PKID,
+			BuyingDAOCoinCreatorPKID:                  m0PKID.PKID,
+			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(10.0),
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		// m1 sells 5 DAO coins for 5 $DESO / DAO coin.
+		m1Order = &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            m1PKID.PKID,
+			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
+			SellingDAOCoinCreatorPKID:                 m0PKID.PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(0.2),
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(5),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		// m0 = transactor, m1 = matching order
+		result, err = utxoView.CalculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order)
+		require.NoError(err)
+		require.Equal(result.UpdatedTransactorQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(5))
+		require.Equal(result.UpdatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
+		//require.Equal(result.TransactorBuyingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(5))
+		//require.Equal(result.TransactorSellingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(50))
+
+		// m1 = transactor, m0 = matching order
+		result, err = utxoView.CalculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order)
+		require.NoError(err)
+		require.Equal(result.UpdatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
+		require.Equal(result.UpdatedMatchingQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(5))
+		require.Equal(result.TransactorBuyingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(50))
+		require.Equal(result.TransactorSellingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(5))
 	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile

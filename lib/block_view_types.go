@@ -1533,8 +1533,9 @@ type DAOCoinLimitOrderEntry struct {
 type DAOCoinLimitOrderOperationType uint64
 
 const (
-	DAOCoinLimitOrderOperationTypeASK DAOCoinLimitOrderOperationType = 0
-	DAOCoinLimitOrderOperationTypeBID DAOCoinLimitOrderOperationType = 1
+	// We intentionally skip zero as otherwise that would be the default value.
+	DAOCoinLimitOrderOperationTypeASK DAOCoinLimitOrderOperationType = 1
+	DAOCoinLimitOrderOperationTypeBID DAOCoinLimitOrderOperationType = 2
 )
 
 // FilledDAOCoinLimitOrder only exists to support understanding what orders were
@@ -1680,11 +1681,11 @@ func ComputeBaseUnitsToBuyUint256(
 	scaledQuantityToSell := big.NewInt(0).Mul(
 		OneUQ128x128.ToBig(), quantityToSellBaseUnits.ToBig())
 
-	quantityToSell := big.NewInt(0).Div(
+	quantityToBuy := big.NewInt(0).Div(
 		scaledQuantityToSell, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
 
 	// Check for overflow.
-	if quantityToSell.Cmp(MaxUint256.ToBig()) > 0 {
+	if quantityToBuy.Cmp(MaxUint256.ToBig()) > 0 {
 		return nil, errors.Wrapf(
 			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
 			"ComputeBaseUnitsToBuyUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
@@ -1696,16 +1697,16 @@ func ComputeBaseUnitsToBuyUint256(
 	// We don't trust the overflow checker in uint256. It's too risky because
 	// it could cause a money printer bug if there's a problem with it. We
 	// manually check for overflow above.
-	quantityToSellUint256, _ := uint256.FromBig(quantityToSell)
+	quantityToBuyUint256, _ := uint256.FromBig(quantityToBuy)
 
 	// TODO: this could be because of overflow.
 	// Alternatively, this could be because exchange * quantity < 1 base units.
 	// We should differentiate between the two errors.
-	if quantityToSellUint256.IsZero() {
+	if quantityToBuyUint256.IsZero() {
 		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}
 
-	return quantityToSellUint256, nil
+	return quantityToBuyUint256, nil
 }
 
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, error) {

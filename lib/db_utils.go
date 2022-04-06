@@ -6324,7 +6324,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 		}
 
 		// If the input order and the matching order have different operation types,
-		// i.e. one is an ASK and one is a BID or vice versa, then the buying coin
+		// i.e. one is an ASK and one is a BID or vice versa, since the buying coin
 		// of the input order matches the selling coin of the matching order or vice
 		// versa and so we can compare the quantity fields directly. This is treated
 		// as the default case.
@@ -6344,6 +6344,8 @@ func DBGetMatchingDAOCoinLimitOrders(
 				// order's buying quantity.
 				matchingOrderQuantity, err = matchingOrder.BaseUnitsToSellUint256()
 			} else {
+				// This should never happen as we validate
+				// the matching order prior to storing.
 				err = fmt.Errorf("DBGetMatchingDAOCoinLimitOrders: invalid order operation type")
 			}
 
