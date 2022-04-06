@@ -93,6 +93,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(0.1),
 		QuantityToFillInBaseUnits:                 daoCoinQuantityChange,
+		OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 	}
 
 	// RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
@@ -332,6 +333,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		SellingDAOCoinCreatorPublicKey:            metadataM0.BuyingDAOCoinCreatorPublicKey,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(10.0),
 		QuantityToFillInBaseUnits:                 desoQuantityChange,
+		OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 	}
 
 	// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
@@ -1265,6 +1267,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
 		SellingDAOCoinCreatorPKID:                 toPKID(txnData.SellingDAOCoinCreatorPublicKey),
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 txnData.QuantityToFillInBaseUnits,
+		OperationType:                             txnData.OperationType,
 		BlockHeight:                               blockHeight,
 	}
 }

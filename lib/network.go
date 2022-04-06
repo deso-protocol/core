@@ -5614,6 +5614,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, txnData.SellingDAOCoinCreatorPublicKey.ToBytes()...)
 	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(txnData.QuantityToFillInBaseUnits)...)
+	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
 	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
 
@@ -5669,6 +5670,13 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
 	}
+
+	// Parse OperationType
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading OperationType: %v", err)
+	}
+	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
 
 	// Parse CancelExistingOrder
 	ret.CancelExistingOrder = ReadBoolByte(rr)

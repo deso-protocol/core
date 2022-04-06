@@ -6283,7 +6283,6 @@ func DBGetMatchingDAOCoinLimitOrders(
 	var startKey []byte
 
 	if lastSeenOrder != nil {
-
 		startKey, err = DBKeyForDAOCoinLimitOrder(lastSeenOrder)
 		if err != nil {
 			return nil, err
@@ -6324,23 +6323,42 @@ func DBGetMatchingDAOCoinLimitOrders(
 			break
 		}
 
-		// To properly compare quantities, we need to compare the quantity
-		// that the input order is interested in buying to the quantity the
-		// matching order is interested in selling.
-		matchingOrderQuantityToSell, err := matchingOrder.BaseUnitsToSellUint256()
-		if err != nil {
-			// This should never happen as we validate the
-			// stored orders when they are submitted.
-			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
+		// If the input order and the matching order have different operation types,
+		// i.e. one is an ASK and one is a BID or vice versa, then the buying coin
+		// of the input order matches the selling coin of the matching order or vice
+		// versa and so we can compare the quantity fields directly. This is treated
+		// as the default case.
+		matchingOrderQuantity := matchingOrder.QuantityToFillInBaseUnits
+
+		if inputOrder.OperationType == matchingOrder.OperationType {
+			var err error
+
+			if matchingOrder.OperationType == DAOCoinLimitOrderOperationTypeASK {
+				// If both orders are ASKs, we need to convert the matching order's
+				// selling quantity to a buying quantity to compare with the input
+				// order's selling quantity.
+				matchingOrderQuantity, err = matchingOrder.BaseUnitsToBuyUint256()
+			} else if matchingOrder.OperationType == DAOCoinLimitOrderOperationTypeBID {
+				// If both orders are BIDs, we need to convert the matching order's
+				// buying quantity to a selling quantity to compare with the input
+				// order's buying quantity.
+				matchingOrderQuantity, err = matchingOrder.BaseUnitsToSellUint256()
+			} else {
+				err = fmt.Errorf("DBGetMatchingDAOCoinLimitOrders: invalid order operation type")
+			}
+
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		// Reduce requested buying quantity by matching order's selling quantity.
 		// Set to zero if this order covers how much we want to buy.
-		if queryQuantityToBuy.Lt(matchingOrderQuantityToSell) {
+		if queryQuantityToBuy.Lt(matchingOrderQuantity) {
 			queryQuantityToBuy = uint256.NewInt()
 		} else {
 			queryQuantityToBuy, err = SafeUint256().Sub(
-				queryQuantityToBuy, matchingOrderQuantityToSell)
+				queryQuantityToBuy, matchingOrderQuantity)
 
 			if err != nil {
 				// This should never happen with the check above.

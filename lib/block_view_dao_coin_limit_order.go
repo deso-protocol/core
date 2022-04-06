@@ -199,6 +199,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
+		OperationType:                             txMeta.OperationType,
 		BlockHeight:                               blockHeight,
 	}
 

@@ -1530,7 +1530,7 @@ type DAOCoinLimitOrderEntry struct {
 	isDeleted bool
 }
 
-type DAOCoinLimitOrderOperationType uint8
+type DAOCoinLimitOrderOperationType uint64
 
 const (
 	DAOCoinLimitOrderOperationTypeASK DAOCoinLimitOrderOperationType = 0
@@ -1555,6 +1555,7 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 		SellingDAOCoinCreatorPKID:                 order.SellingDAOCoinCreatorPKID.NewPKID(),
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
 		QuantityToFillInBaseUnits:                 order.QuantityToFillInBaseUnits.Clone(),
+		OperationType:                             order.OperationType,
 		BlockHeight:                               order.BlockHeight,
 		isDeleted:                                 order.isDeleted,
 	}
@@ -1566,6 +1567,7 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data = append(data, order.SellingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(order.QuantityToFillInBaseUnits)...)
+	data = append(data, UintToBuf(uint64(order.OperationType))...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	return data, nil
 }
@@ -1609,6 +1611,13 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
 	}
 
+	// Parse OperationType
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OperationType: %v", err)
+	}
+	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
+
 	// Parse BlockHeight
 	var blockHeight uint64
 	blockHeight, err = ReadUvarint(rr)
@@ -1651,8 +1660,56 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
 }
 
+func (order *DAOCoinLimitOrderEntry) BaseUnitsToBuyUint256() (*uint256.Int, error) {
+	// Converts the quantity to sell to a quantity to buy.
+	return ComputeBaseUnitsToBuyUint256(
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		order.QuantityToFillInBaseUnits)
+}
+
+func ComputeBaseUnitsToBuyUint256(
+	scaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int,
+	quantityToSellBaseUnits *uint256.Int) (*uint256.Int, error) {
+	// Converts quantity to sell to quantity to buy according to the given exchange rate.
+	// Quantity to buy
+	//	 = Scaling factor * Quantity to sell / Scaled exchange rate coins to sell per coin to buy
+	//	 = Scaling factor * Quantity to sell / (Scaling factor * Quantity to sell / Quantity to Buy)
+	//	 = 1 / (1 / Quantity to buy)
+	//	 = Quantity to buy
+
+	scaledQuantityToSell := big.NewInt(0).Mul(
+		OneUQ128x128.ToBig(), quantityToSellBaseUnits.ToBig())
+
+	quantityToSell := big.NewInt(0).Div(
+		scaledQuantityToSell, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
+
+	// Check for overflow.
+	if quantityToSell.Cmp(MaxUint256.ToBig()) > 0 {
+		return nil, errors.Wrapf(
+			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
+			"ComputeBaseUnitsToBuyUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
+				"quantityBaseUnits: %v",
+			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
+			quantityToSellBaseUnits.Hex())
+	}
+
+	// We don't trust the overflow checker in uint256. It's too risky because
+	// it could cause a money printer bug if there's a problem with it. We
+	// manually check for overflow above.
+	quantityToSellUint256, _ := uint256.FromBig(quantityToSell)
+
+	// TODO: this could be because of overflow.
+	// Alternatively, this could be because exchange * quantity < 1 base units.
+	// We should differentiate between the two errors.
+	if quantityToSellUint256.IsZero() {
+		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
+	}
+
+	return quantityToSellUint256, nil
+}
+
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, error) {
-	// Returns the total cost of this order (price x quantity) as a uint256.
+	// Converts the quantity to buy to a quantity to sell.
 	return ComputeBaseUnitsToSellUint256(
 		order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		order.QuantityToFillInBaseUnits)
@@ -1661,6 +1718,11 @@ func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, err
 func ComputeBaseUnitsToSellUint256(
 	scaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int,
 	quantityToBuyBaseUnits *uint256.Int) (*uint256.Int, error) {
+	// Converts quantity to buy to quantity to sell according to the given exchange rate.
+	// Quantity to sell
+	//   = Scaled exchange rate coins to sell per coin to buy * Quantity to buy / Scaling factor
+	//   = (Scaling factor * Quantity to sell / Quantity to buy) * Quantity to buy / Scaling factor
+	//   = Quantity to sell
 
 	// Note that we account for overflow here. Not doing this could result
 	// in a money printer bug. You need to check the following:
