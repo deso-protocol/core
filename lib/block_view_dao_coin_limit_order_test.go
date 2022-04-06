@@ -109,6 +109,19 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM0.BuyingDAOCoinCreatorPublicKey = originalValue
 	}
 
+	// RuleErrorDAOCoinLimitOrderInvalidOperationType
+	{
+		originalValue := metadataM0.OperationType
+		metadataM0.OperationType = 99
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidOperationType)
+		metadataM0.OperationType = originalValue
+	}
+
 	// RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
 	{
 		_, _, _, err = _doDAOCoinLimitOrderTxn(

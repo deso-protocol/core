@@ -420,6 +420,7 @@ type PGMetadataDAOCoinLimitOrder struct {
 	SellingDAOCoinCreatorPublicKey            *PublicKey                                 `pg:"selling_dao_coin_creator_public_key,type:bytea"`
 	ScaledExchangeRateCoinsToSellPerCoinToBuy string                                     `pg:",use_zero"`
 	QuantityToFillInBaseUnits                 string                                     `pg:",use_zero"`
+	OperationType                             uint64                                     `pg:",use_zero"`
 	CancelExistingOrder                       bool                                       `pg:",use_zero"`
 	FeeNanos                                  uint64                                     `pg:",use_zero"`
 	BidderInputs                              []*PGMetadataDAOCoinLimitOrderBidderInputs `pg:"rel:has-many,join_fk:transaction_hash"`
@@ -694,6 +695,7 @@ type PGDAOCoinLimitOrder struct {
 	SellingDAOCoinCreatorPKID                 *PKID  `pg:"selling_dao_coin_creator_pkid,pk,type:bytea"`
 	ScaledExchangeRateCoinsToSellPerCoinToBuy string `pg:",pk,use_zero"`
 	QuantityToFillInBaseUnits                 string `pg:",use_zero"`
+	OperationType                             uint32 `pg:",use_zero"`
 	BlockHeight                               uint32 `pg:",pk,use_zero"`
 }
 
@@ -703,6 +705,7 @@ func (order *PGDAOCoinLimitOrder) FromDAOCoinLimitOrderEntry(orderEntry *DAOCoin
 	order.SellingDAOCoinCreatorPKID = orderEntry.SellingDAOCoinCreatorPKID
 	order.ScaledExchangeRateCoinsToSellPerCoinToBuy = Uint256ToLeftPaddedHex(orderEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy)
 	order.QuantityToFillInBaseUnits = Uint256ToLeftPaddedHex(orderEntry.QuantityToFillInBaseUnits)
+	order.OperationType = uint32(orderEntry.OperationType)
 	order.BlockHeight = orderEntry.BlockHeight
 }
 
@@ -713,6 +716,7 @@ func (order *PGDAOCoinLimitOrder) ToDAOCoinLimitOrderEntry() *DAOCoinLimitOrderE
 		SellingDAOCoinCreatorPKID:                 order.SellingDAOCoinCreatorPKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: LeftPaddedHexToUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy),
 		QuantityToFillInBaseUnits:                 LeftPaddedHexToUint256(order.QuantityToFillInBaseUnits),
+		OperationType:                             DAOCoinLimitOrderOperationType(order.OperationType),
 		BlockHeight:                               order.BlockHeight,
 	}
 }
