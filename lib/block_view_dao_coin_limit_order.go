@@ -1081,15 +1081,15 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, err
 	return outputEntries, nil
 }
 
-func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisDAOCoinPair(
+func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 	// This function is used by the API to construct all open
 	// orders for the input buying and selling DAO coins.
 	if buyingDAOCoinCreatorPKID == nil {
-		return nil, errors.Errorf("_getAllDAOCoinLimitOrdersForThisDAOCoinPair: Called with nil buy coin PKID; this should never happen")
+		return nil, errors.Errorf("GetAllDAOCoinLimitOrdersForThisDAOCoinPair: Called with nil buy coin PKID; this should never happen")
 	}
 	if sellingDAOCoinCreatorPKID == nil {
-		return nil, errors.Errorf("_getAllDAOCoinLimitOrdersForThisDAOCoinPair: Called with nil sell coin PKID; this should never happen")
+		return nil, errors.Errorf("GetAllDAOCoinLimitOrdersForThisDAOCoinPair: Called with nil sell coin PKID; this should never happen")
 	}
 
 	outputEntries := []*DAOCoinLimitOrderEntry{}
@@ -1126,10 +1126,10 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	return outputEntries, nil
 }
 
-func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 	// This function is used by the API to construct all open orders for the input transactor.
 	if transactorPKID == nil {
-		return nil, errors.Errorf("_getAllDAOCoinLimitOrdersForThisTransactor: Called with nil transactor PKID; this should never happen")
+		return nil, errors.Errorf("GetAllDAOCoinLimitOrdersForThisTransactor: Called with nil transactor PKID; this should never happen")
 	}
 
 	outputEntries := []*DAOCoinLimitOrderEntry{}

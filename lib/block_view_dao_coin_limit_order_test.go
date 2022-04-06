@@ -278,7 +278,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// Test UTXO view query.
 		// Confirm 1 existing limit order, and it's from m0.
-		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisDAOCoinPair(
+		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 			toPKID(metadataM0.BuyingDAOCoinCreatorPublicKey),
 			toPKID(metadataM0.SellingDAOCoinCreatorPublicKey))
 
@@ -298,7 +298,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// Test UTXO view query.
 		// Confirm 1 existing limit order, and it's from m0.
-		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
@@ -1036,7 +1036,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 4)
 
 		// Test get all DAO coin limit orders for this DAO coin pair.
-		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisDAOCoinPair(m0PKID.PKID, &ZeroPKID)
+		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m0PKID.PKID, &ZeroPKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
@@ -1047,7 +1047,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   Selling:    $DESO
 		//   Price:      0.1 $DESO / DAO coin
 		//   Quantity:   100 DAO coin units
-		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		require.Equal(orderEntries[0].ScaledExchangeRateCoinsToSellPerCoinToBuy, CalculateScaledExchangeRate(0.1))
