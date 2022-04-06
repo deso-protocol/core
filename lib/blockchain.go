@@ -1093,6 +1093,10 @@ func (ss SyncState) String() string {
 func (bc *Blockchain) chainState() SyncState {
 	// If the header is not current, then we're in the SyncStateSyncingHeaders.
 	headerTip := bc.headerTip()
+	if headerTip == nil {
+		return SyncStateSyncingHeaders
+	}
+
 	if !bc.isTipCurrent(headerTip) {
 		return SyncStateSyncingHeaders
 	}
