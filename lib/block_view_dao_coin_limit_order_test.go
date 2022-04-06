@@ -339,7 +339,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
 	{
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM1)
+			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder)
@@ -760,14 +760,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
 
 		// m1 submits order matching their own order. Fails.
-		// We should find this case and return a more informative error.
 		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
 		metadataM1.SellingDAOCoinCreatorPublicKey = metadataM0.SellingDAOCoinCreatorPublicKey
 		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(10.0)
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderMatchingOwnOrder)
 
 		// Confirm 2 existing orders.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
