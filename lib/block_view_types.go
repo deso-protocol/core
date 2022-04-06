@@ -247,7 +247,7 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool
 
 	// Encoding without metadata is used in the checksum computation. We do this because metadata is kind of arbitrary.
 	shouldSkipMetadata := false
-	if len(skipMetadata) == 1 {
+	if len(skipMetadata) > 0 {
 		shouldSkipMetadata = skipMetadata[0]
 	}
 
@@ -266,7 +266,7 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool
 			data = append(data, _EncodeUint32(uint32(encoder.GetEncoderType()))...)
 			data = append(data, encoder.GetVersionByte(blockHeight))
 		}
-		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight)...)
+		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight, skipMetadata...)...)
 	} else {
 		data = append(data, BoolToByte(false))
 	}
@@ -352,9 +352,9 @@ func (utxo *UtxoEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata
 	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
 	data = append(data, byte(utxo.UtxoType))
 	data = append(data, EncodeToBytes(blockHeight, utxo.UtxoKey, skipMetadata...)...)
-	if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-		data = append(data, byte(127))
-	}
+	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+	//	data = append(data, byte(127))
+	//}
 
 	return data
 }
@@ -390,20 +390,20 @@ func (utxo *UtxoEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading UtxoKey")
 	}
 
-	if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-		_, err = rr.ReadByte()
-		if err != nil {
-			return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
-		}
-	}
+	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+	//	_, err = rr.ReadByte()
+	//	if err != nil {
+	//		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
+	//	}
+	//}
 
 	return nil
 }
 
 func (utxo *UtxoEntry) GetVersionByte(blockHeight uint64) byte {
-	if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-		return GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Version
-	}
+	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+	//	return GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Version
+	//}
 	return 0
 }
 

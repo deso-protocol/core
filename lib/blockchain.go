@@ -2463,6 +2463,8 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		blockHeight = 0
 	}
 
+	// NOTE: This function doesn't maintain the snapshot. The checksum should be recalculated after this.
+
 	// There is this edge-case where a partial blockProcess can skew the state. This is because of block reward entries,
 	// which are stored along with the block. In particular, if we've stored the block at blockTipHeight + 1, and the node
 	// crashed in the middle of ProcessBlock, then the reward entry will be stored in the state, even thought the block tip

@@ -359,13 +359,14 @@ func (snap *Snapshot) ForceResetToLastSnapshot(chain *Blockchain) error {
 		return errors.Wrapf(err, "ForceResetToLastSnapshot: Problem saving migrations")
 	}
 
-	err = snap.OperationChannel.SaveOperationChannel()
-	if err != nil {
+	if err = snap.OperationChannel.SaveOperationChannel(); err != nil {
 		return errors.Errorf("ForceResetToLastSnapshot: Problem saving operation channel in database. Error: (%v)", err)
 	}
+
 	snap.Status.SaveStatus()
-	if err != nil {
-		return errors.Errorf("ForceResetToLastSnapshot: Problem saving snapshot status in database. Error: (%v)", err)
+
+	if err = snap.DeleteAncestralRecords(lastEpochHeight); err != nil {
+		return errors.Wrapf(err, "ForceResetToLastSnapshot: Problem deleting ancestral records at height (%v)", lastEpochHeight)
 	}
 
 	// Now we'll verify that the final state checksum matches the last snapshot checksum.
@@ -689,20 +690,50 @@ func (snap *Snapshot) FlushAncestralRecords() {
 }
 
 // DeleteAncestralRecords is used to delete ancestral records for the provided height.
-func (snap *Snapshot) DeleteAncestralRecords(height uint64) {
+func (snap *Snapshot) DeleteAncestralRecords(height uint64) error {
 	glog.V(2).Infof("Snapshot.DeleteAncestralRecords: Deleting snapshotDb for height (%v)", height)
 
 	snap.timer.Start("Snapshot.DeleteAncestralRecords")
 	var prefix []byte
+	prefix = append(prefix, _prefixAncestralRecord...)
 	prefix = append(prefix, EncodeUint64(height)...)
-	// Don't delete.
-	//err := snap.SnapshotDb.DropPrefix(prefix)
-	//if err != nil {
-	//	glog.Errorf("Snapshot.DeleteAncestralRecords: Problem deleting ancestral records error (%v)", err)
-	//	return
-	//}
+
+	snap.SnapshotDbMutex.Lock()
+	defer snap.SnapshotDbMutex.Unlock()
+
+	var keys [][]byte
+	err := snap.SnapshotDb.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.AllVersions = false
+		opts.PrefetchValues = false
+		// Iterate over the prefix as long as there are valid keys in the DB.
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			key := it.Item().KeyCopy(nil)
+			keys = append(keys, key)
+		}
+		return nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DeleteAncestralRecords: Problem iterating through the height")
+	}
+	err = snap.SnapshotDb.Update(func(txn *badger.Txn) error {
+		for _, key := range keys {
+			err := txn.Delete(key)
+			if err != nil {
+				return errors.Wrapf(err, "DeleteAncestralRecords: Problem deleting key (%v)", key)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DeleteAncestralRecords: Problem deleting the entries")
+	}
 	snap.timer.End("Snapshot.DeleteAncestralRecords")
 	snap.timer.Print("Snapshot.DeleteAncestralRecords")
+	return nil
 }
 
 // GetAncestralRecordsKey is used to get an ancestral record key from a main DB key.

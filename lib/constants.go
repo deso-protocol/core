@@ -230,18 +230,18 @@ type MigrationHeight struct {
 	Version byte
 }
 type EncoderMigrationHeights struct {
-	DefaultHeight       MigrationHeight
-	UtxoEntryTestHeight MigrationHeight
+	DefaultHeight MigrationHeight
+	//UtxoEntryTestHeight MigrationHeight
 }
 
 var TestnetEncoderMigrationHeights = EncoderMigrationHeights{
-	DefaultHeight:       MigrationHeight{0, 0},
-	UtxoEntryTestHeight: MigrationHeight{1200, 1},
+	DefaultHeight: MigrationHeight{0, 0},
+	//UtxoEntryTestHeight: MigrationHeight{1200, 1},
 }
 
 var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
-	DefaultHeight:       MigrationHeight{0, 0},
-	UtxoEntryTestHeight: MigrationHeight{1200, 1},
+	DefaultHeight: MigrationHeight{0, 0},
+	//UtxoEntryTestHeight: MigrationHeight{1200, 1},
 }
 
 // So for example, let's say you want to add a migration for UtxoEntry at height 1200.
