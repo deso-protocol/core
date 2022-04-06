@@ -847,6 +847,11 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 		// It just means that the matching order isn't actually a viable match.
 		err := bav.IsValidDAOCoinLimitOrderMatch(transactorOrder, matchingOrder)
 		if err != nil {
+			// If matching own order, fail immediately. Otherwise just skip this order.
+			if err == RuleErrorDAOCoinLimitOrderMatchingOwnOrder {
+				return nil, err
+			}
+
 			continue
 		}
 
@@ -1340,6 +1345,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMatch(
 		return RuleErrorDAOCoinLimitOrderMatchingOrderBuyingDifferentCoins
 	}
 
+	// Validate price.
 	if !transactorOrder.IsValidMatchingOrderPrice(matchingOrder) {
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
@@ -1379,6 +1385,13 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMatch(
 		if err != nil {
 			return err
 		}
+	}
+
+	// Validate transactor != matching order transactor. This should be the last validation we do
+	// as it's a failing validation whereas the other validations are just skipping validations,
+	// and we only want to fail if the matching order is valid and would have otherwise matched.
+	if transactorOrder.TransactorPKID.Eq(matchingOrder.TransactorPKID) {
+		return RuleErrorDAOCoinLimitOrderMatchingOwnOrder
 	}
 
 	return nil
