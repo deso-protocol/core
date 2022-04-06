@@ -259,6 +259,8 @@ func (node *Node) Stop() {
 	if !node.isRunning {
 		return
 	}
+	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
+		"close the node now or else you might corrupt the state."))
 
 	node.Server.Stop()
 
