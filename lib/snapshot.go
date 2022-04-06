@@ -353,6 +353,12 @@ func (snap *Snapshot) ForceResetToLastSnapshot(chain *Blockchain) error {
 	if err != nil {
 		return errors.Wrapf(err, "ForceResetToLastSnapshot: Problem saving checksum")
 	}
+
+	snap.Migrations.ResetChecksums()
+	if err = snap.Migrations.SaveMigrations(); err != nil {
+		return errors.Wrapf(err, "ForceResetToLastSnapshot: Problem saving migrations")
+	}
+
 	err = snap.OperationChannel.SaveOperationChannel()
 	if err != nil {
 		return errors.Errorf("ForceResetToLastSnapshot: Problem saving operation channel in database. Error: (%v)", err)
@@ -1377,6 +1383,11 @@ func (sc *StateChecksum) ToBytes() ([]byte, error) {
 
 func (sc *StateChecksum) FromBytes(checksumBytes []byte) error {
 	// If we get here, it means we've saved a checksum in the db, so we will set it to the checksum.
+	if err := sc.semaphore.Acquire(sc.ctx, sc.maxWorkers); err != nil {
+		return errors.Wrapf(err, "StateChecksum.Wait: problem acquiring semaphore")
+	}
+	defer sc.semaphore.Release(sc.maxWorkers)
+
 	err := sc.checksum.UnmarshalBinary(checksumBytes)
 	if err != nil {
 		return errors.Wrapf(err, "StateChecksum.FromBytes: Problem setting checksum from bytes")
@@ -1961,14 +1972,15 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 		for ; migrationLength > 0; migrationLength-- {
 			migrationChecksum := &EncoderMigrationChecksum{}
 			// Initialize an empty checksum struct. We use it to parse checksum bytes.
-			checksum := StateChecksum{}
-			checksum.Initialize(nil, nil)
+			migrationChecksum.Checksum = &StateChecksum{}
+			migrationChecksum.Checksum.Initialize(nil, nil)
+
 			checksumBytes, err := DecodeByteArray(rr)
 			if err != nil {
 				return err
 			}
 
-			if err = checksum.FromBytes(checksumBytes); err != nil {
+			if err = migrationChecksum.Checksum.FromBytes(checksumBytes); err != nil {
 				return err
 			}
 			if migrationChecksum.BlockHeight, err = ReadUvarint(rr); err != nil {
@@ -1983,13 +1995,14 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 
 			// sanity-check that node has the same "version" of migration version map.
 			exists := false
-			for version, migrationHeight := range params.EncoderMigrationVersionMap {
-				if migrationChecksum.BlockHeight == migrationHeight && migrationChecksum.Version == version {
+			for _, migrationHeight := range params.EncoderMigrationHeightsList {
+				if migrationChecksum.BlockHeight == migrationHeight.Height &&
+					migrationChecksum.Version == migrationHeight.Version {
 					exists = true
 				}
 			}
 			if !exists {
-				return fmt.Errorf("there is no migration in EncoderMigrationVersionMap, seems like a schema error")
+				return fmt.Errorf("there is no migration in EncoderMigrationHeightsList, seems like a schema error")
 			}
 
 			if migrationChecksum.BlockHeight > blockHeight {
@@ -2005,11 +2018,11 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 
 	// Check if there are any outstanding migrations apart from the migrations we've saved in the db.
 	// If so, add them to the migrationChecksums.
-	for version, migrationHeight := range params.EncoderMigrationVersionMap {
-		if migrationHeight > blockHeight {
+	for _, migrationHeight := range params.EncoderMigrationHeightsList {
+		if migrationHeight.Height > blockHeight {
 			exists := false
 			for _, migrationChecksum := range migration.migrationChecksums {
-				if migrationChecksum.BlockHeight == migrationHeight {
+				if migrationChecksum.BlockHeight == migrationHeight.Height {
 					exists = true
 					break
 				}
@@ -2019,8 +2032,8 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 				checksum.Initialize(nil, nil)
 				migration.migrationChecksums = append(migration.migrationChecksums, &EncoderMigrationChecksum{
 					Checksum:    checksum,
-					BlockHeight: migrationHeight,
-					Version:     version,
+					BlockHeight: migrationHeight.Height,
+					Version:     migrationHeight.Version,
 					Completed:   false,
 				})
 			}
@@ -2079,7 +2092,7 @@ func (migration *EncoderMigration) StartMigrations() error {
 
 	// Look for any outstanding encoder migrations. These migrations
 	for _, migrationChecksum := range migration.migrationChecksums {
-		if migrationChecksum.Completed {
+		if migrationChecksum.Completed && !migrationChecksum.Checksum.checksum.IsIdentity() {
 			continue
 		}
 
@@ -2194,6 +2207,13 @@ func (migration *EncoderMigration) GetMigrationChecksumAtBlockheight(blockHeight
 		}
 	}
 	return nil
+}
+
+func (migration *EncoderMigration) ResetChecksums() {
+	for _, migrationChecksum := range migration.migrationChecksums {
+		migrationChecksum.Checksum.ResetChecksum()
+		migrationChecksum.Completed = false
+	}
 }
 
 // -------------------------------------------------------------------------------------

@@ -2463,6 +2463,31 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		blockHeight = 0
 	}
 
+	// There is this edge-case where a partial blockProcess can skew the state. This is because of block reward entries,
+	// which are stored along with the block. In particular, if we've stored the block at blockTipHeight + 1, and the node
+	// crashed in the middle of ProcessBlock, then the reward entry will be stored in the state, even thought the block tip
+	// is at blockTipHeight. So we delete the block reward at the blockTipHeight + 1 to make sure the state is correct.
+	// TODO: decouple block reward from PutBlockWithTxn.
+	blockTipHeight := bc.bestChain[len(bc.bestChain)-1].Height
+	for hashIter, node := range bc.blockIndex {
+		hash := hashIter.NewBlockHash()
+		if node.Height > blockTipHeight {
+			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndex with "+
+				"larger height than the current block tip. Deleting the corresponding block reward. Node: (%v)", node)))
+			blockToDetach, err := GetBlock(hash, bc.db, nil)
+			if err != nil && err != badger.ErrKeyNotFound {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem getting block with hash: (%v) and "+
+					"at height: (%v)", hash, node.Height)
+			}
+			if blockToDetach != nil {
+				if err = DeleteBlockReward(bc.db, nil, blockToDetach); err != nil {
+					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
+						"(%v) and at height: (%v)", hash, node.Height)
+				}
+			}
+		}
+	}
+
 	for ii := len(bc.bestChain) - 1; ii > 0 && uint64(bc.bestChain[ii].Height) > blockHeight; ii-- {
 		node := bc.bestChain[ii]
 		prevHash := *bc.bestChain[ii-1].Hash
@@ -2541,6 +2566,8 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
 		delete(bc.bestChainMap, hash)
 	}
+
+	// Remove blocks we've disconnected from the bestHeaderChain.
 	for ii := len(bc.bestHeaderChain) - 1; ii > 0 && uint64(bc.bestHeaderChain[ii].Height) > blockHeight; ii-- {
 		hash := *bc.bestHeaderChain[ii].Hash
 		bc.bestHeaderChain = bc.bestHeaderChain[:len(bc.bestHeaderChain)-1]

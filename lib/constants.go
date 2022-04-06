@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"strconv"
+	"sort"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -41,8 +41,10 @@ const (
 	MaxBlocksInView             = 1
 )
 
+type NodeMessage uint32
+
 const (
-	NodeRestart = iota
+	NodeRestart NodeMessage = iota
 	NodeErase
 )
 
@@ -223,20 +225,51 @@ type ForkHeights struct {
 //	1. define a new blockHeight in the EncoderMigrationHeights struct
 //	2. add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods
 //	3. add proper condition to GetVersionByte to return version associated with the migration height.
+type MigrationHeight struct {
+	Height  uint64
+	Version byte
+}
 type EncoderMigrationHeights struct {
-	DefaultHeight       uint64 `version:"0"`
-	UtxoEntryTestHeight uint64 `version:"1"`
+	DefaultHeight       MigrationHeight
+	UtxoEntryTestHeight MigrationHeight
 }
 
 var TestnetEncoderMigrationHeights = EncoderMigrationHeights{
-	DefaultHeight:       uint64(0),
-	UtxoEntryTestHeight: uint64(1),
+	DefaultHeight:       MigrationHeight{0, 0},
+	UtxoEntryTestHeight: MigrationHeight{1200, 1},
 }
 
 var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
-	DefaultHeight:       uint64(0),
-	UtxoEntryTestHeight: uint64(1),
+	DefaultHeight:       MigrationHeight{0, 0},
+	UtxoEntryTestHeight: MigrationHeight{1200, 1},
 }
+
+// So for example, let's say you want to add a migration for UtxoEntry at height 1200.
+// 1. Add a field to the EncoderMigrationHeights that looks like this:
+//		UtxoEntryTestHeight MigrationHeight
+//	Then, we would set them in TestnetEncoderMigrationHeights, MainnetEncoderMigrationHeights with desired heights and versions.
+// 	The heights are supposed to form a non-decreasing sequence, and versions are supposed to form a +1 sequence.
+//
+// 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
+//	end of RawEncodeWithoutMetadata:
+//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+//			data = append(data, byte(127))
+//		}
+//	And this at the end of RawDecodeWithoutMetadata:
+//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+//			_, err = rr.ReadByte()
+//			if err != nil {
+//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
+//			}
+//		}
+//	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
+//
+// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height.
+//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+//			return GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Version
+//		}
+//
+// That's it!
 
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
@@ -426,8 +459,8 @@ type DeSoParams struct {
 
 	ForkHeights ForkHeights
 
-	EncoderMigrationHeights    EncoderMigrationHeights
-	EncoderMigrationVersionMap map[byte]uint64
+	EncoderMigrationHeights     EncoderMigrationHeights
+	EncoderMigrationHeightsList []*MigrationHeight
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
@@ -473,7 +506,7 @@ func (params *DeSoParams) EnableRegtest() {
 	}
 
 	params.EncoderMigrationHeights = TestnetEncoderMigrationHeights
-	params.EncoderMigrationVersionMap = GetEncoderMigrationHeightsVersionMapping(&params.EncoderMigrationHeights)
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.EncoderMigrationHeights)
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -728,9 +761,8 @@ var DeSoMainnetParams = DeSoParams{
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
-	EncoderMigrationHeights: MainnetEncoderMigrationHeights,
-	EncoderMigrationVersionMap: GetEncoderMigrationHeightsVersionMapping(
-		&MainnetEncoderMigrationHeights),
+	EncoderMigrationHeights:     MainnetEncoderMigrationHeights,
+	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetEncoderMigrationHeights),
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -923,9 +955,8 @@ var DeSoTestnetParams = DeSoParams{
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
-	EncoderMigrationHeights: TestnetEncoderMigrationHeights,
-	EncoderMigrationVersionMap: GetEncoderMigrationHeightsVersionMapping(
-		&TestnetEncoderMigrationHeights),
+	EncoderMigrationHeights:     TestnetEncoderMigrationHeights,
+	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetEncoderMigrationHeights),
 }
 
 // GetDataDir gets the user data directory where we store files
@@ -941,60 +972,31 @@ func GetDataDir(params *DeSoParams) string {
 	return dataDir
 }
 
-func GetEncoderMigrationHeightsVersionMapping(migrationHeights *EncoderMigrationHeights) (
-	_versionToBlockHeight map[byte]uint64) {
+func GetEncoderMigrationHeightsList(migrationHeights *EncoderMigrationHeights) (
+	_migrationHeightsList []*MigrationHeight) {
 
 	// Read `version:"x"` tags from the EncoderMigrationHeights struct.
-	versionToBlockHeight := make(map[byte]uint64)
+	var migrationHeightsList []*MigrationHeight
 	elements := reflect.ValueOf(migrationHeights).Elem()
 	structFields := elements.Type()
 	for ii := 0; ii < structFields.NumField(); ii++ {
 		elementField := elements.Field(ii)
-
-		if value := structFields.Field(ii).Tag.Get("version"); value != "" {
-			versionInt, err := strconv.Atoi(value)
-			if err != nil {
-				panic("GetEncoderMigrationHeightsVersionMapping: " +
-					"Problem converting version to byte, seems like EncoderMigrationHeights schema is invalid.")
-			}
-			if _, exists := versionToBlockHeight[byte(versionInt)]; exists {
-				panic("GetEncoderMigrationHeightsVersionMapping: " +
-					"Overlap in versionToBlockHeight, seems like EncoderMigrationHeights schema is invalid.")
-			}
-			versionToBlockHeight[byte(versionInt)] = elementField.Uint()
-		} else {
-			panic("GetEncoderMigrationHeightsVersionMapping: " +
-				"Seems like there's a missing version in EncoderMigrationHeights.")
-		}
+		mig := elementField.Interface().(MigrationHeight)
+		migCopy := mig
+		migrationHeightsList = append(migrationHeightsList, &migCopy)
 	}
 
-	// Make sure that blockHeights are non-decreasing when ordered by version.
-	var blockHeights []uint64
-	for version := byte(0); version < byte(len(versionToBlockHeight)); version++ {
-		if _, exists := versionToBlockHeight[version]; !exists {
-			panic("GetEncoderMigrationHeightsVersionMapping: Versions should be increasing by +1 starting from 0.")
-		}
-
-		for key, value := range versionToBlockHeight {
-			if key == version {
-				blockHeights = append(blockHeights, value)
-				break
-			}
-		}
-	}
-	for ii := 1; ii < len(blockHeights); ii++ {
-		if blockHeights[ii-1] > blockHeights[ii] {
-			panic("GetEncoderMigrationHeightsVersionMapping: " +
-				"Seems like blockheights isn't a non-decreasing sequence when ordered by version.")
-		}
-	}
-
-	return versionToBlockHeight
+	sort.Slice(migrationHeightsList, func(i int, j int) bool {
+		return migrationHeightsList[i].Height < migrationHeightsList[j].Height
+	})
+	return migrationHeightsList
 }
 
 func VersionByteToMigrationHeight(version byte, params *DeSoParams) (_blockHeight uint64) {
-	if blockHeight, exists := params.EncoderMigrationVersionMap[version]; exists {
-		return blockHeight
+	for _, migrationHeight := range params.EncoderMigrationHeightsList {
+		if migrationHeight.Version == version {
+			return migrationHeight.Height
+		}
 	}
 	return 0
 }

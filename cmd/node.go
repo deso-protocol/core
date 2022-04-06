@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -23,11 +25,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-const (
-	NodeRestart = iota
-	NodeErase
-)
-
 type Node struct {
 	Server   *lib.Server
 	chainDB  *badger.DB
@@ -40,21 +37,21 @@ type Node struct {
 	// after Stop() is called. Mainly used in testing.
 	isRunning bool
 
-	exitChan    chan struct{}
-	restartChan chan int
+	internalExitChan chan os.Signal
+	nodeMessageChan  chan lib.NodeMessage
 }
 
 func NewNode(config *Config) *Node {
 	result := Node{}
 	result.Config = config
 	result.Params = config.Params
-	result.exitChan = make(chan struct{})
-	result.restartChan = make(chan int)
+	result.internalExitChan = make(chan os.Signal)
+	result.nodeMessageChan = make(chan lib.NodeMessage)
 
 	return &result
 }
 
-func (node *Node) Start() {
+func (node *Node) Start(exitChannels ...*chan os.Signal) {
 	// TODO: Replace glog with logrus so we can also get rid of flag library
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
@@ -63,7 +60,10 @@ func (node *Node) Start() {
 	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
 
-	node.restartChan = make(chan int)
+	node.internalExitChan = make(chan os.Signal)
+	node.nodeMessageChan = make(chan lib.NodeMessage)
+	signal.Notify(node.internalExitChan, syscall.SIGINT, syscall.SIGTERM)
+
 	go node.listenToRestart()
 
 	// Print config
@@ -209,7 +209,7 @@ func (node *Node) Start() {
 		node.Config.TrustedBlockProducerPublicKeys,
 		node.Config.TrustedBlockProducerStartHeight,
 		eventManager,
-		node.restartChan,
+		node.nodeMessageChan,
 	)
 	if err != nil {
 		panic(err)
@@ -233,11 +233,33 @@ func (node *Node) Start() {
 	node.isRunning = true
 
 	if shouldRestart {
-		node.restartChan <- NodeRestart
+		if node.nodeMessageChan != nil {
+			node.nodeMessageChan <- lib.NodeRestart
+		}
 	}
+
+	go func() {
+		<-node.internalExitChan
+		node.Stop()
+		if node.internalExitChan != nil {
+			close(node.internalExitChan)
+			node.internalExitChan = nil
+		}
+		for _, channel := range exitChannels {
+			if *channel != nil {
+				close(*channel)
+				*channel = nil
+			}
+		}
+		glog.Info(lib.CLog(lib.Yellow, "Core node shutdown complete"))
+	}()
 }
 
 func (node *Node) Stop() {
+	if !node.isRunning {
+		return
+	}
+
 	node.Server.Stop()
 
 	if node.Server.GetBlockchain().Snapshot() != nil {
@@ -250,22 +272,26 @@ func (node *Node) Stop() {
 
 	node.chainDB.Close()
 	node.isRunning = false
-	close(node.exitChan)
+
+	if node.internalExitChan != nil {
+		close(node.internalExitChan)
+		node.internalExitChan = nil
+	}
 }
 
 func (node *Node) listenToRestart() {
 	select {
-	case <-node.exitChan:
+	case <-node.internalExitChan:
 		break
-	case operation := <-node.restartChan:
+	case operation := <-node.nodeMessageChan:
 		if !node.isRunning {
-			panic("Node.listenToRestart: Node is currently not running, restartChan should've not been called!")
+			panic("Node.listenToRestart: Node is currently not running, nodeMessageChan should've not been called!")
 		}
 		glog.Infof("Node.listenToRestart: Stopping node")
 		node.Stop()
 		glog.Infof("Node.listenToRestart: Finished stopping node")
 		switch operation {
-		case NodeErase:
+		case lib.NodeErase:
 			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
 				glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
 					"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
@@ -275,9 +301,8 @@ func (node *Node) listenToRestart() {
 		}
 
 		glog.Infof("Node.listenToRestart: Restarting node")
-		node.exitChan = make(chan struct{})
-		node.restartChan = make(chan int)
 		go node.Start()
+		break
 	}
 }
 

@@ -352,6 +352,9 @@ func (utxo *UtxoEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata
 	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
 	data = append(data, byte(utxo.UtxoType))
 	data = append(data, EncodeToBytes(blockHeight, utxo.UtxoKey, skipMetadata...)...)
+	if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+		data = append(data, byte(127))
+	}
 
 	return data
 }
@@ -387,10 +390,20 @@ func (utxo *UtxoEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading UtxoKey")
 	}
 
+	if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+		_, err = rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
+		}
+	}
+
 	return nil
 }
 
 func (utxo *UtxoEntry) GetVersionByte(blockHeight uint64) byte {
+	if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+		return GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Version
+	}
 	return 0
 }
 

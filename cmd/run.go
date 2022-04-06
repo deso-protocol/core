@@ -6,8 +6,6 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"os"
-	"os/signal"
-	"syscall"
 )
 
 var runCmd = &cobra.Command{
@@ -27,16 +25,14 @@ func Run(cmd *cobra.Command, args []string) {
 	config := LoadConfig()
 
 	// Start the deso node
-	node := NewNode(config)
-	go node.Start()
-
 	shutdownListener := make(chan os.Signal)
-	signal.Notify(shutdownListener, syscall.SIGINT, syscall.SIGTERM)
+	node := NewNode(config)
+	node.Start(&shutdownListener)
+
 	defer func() {
 		node.Stop()
 		glog.Info("Shutdown complete")
 	}()
-
 	<-shutdownListener
 }
 

@@ -3418,6 +3418,12 @@ func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error 
 	return nil
 }
 
+func DeleteBlockReward(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DeleteBlockRewardWithTxn(txn, snap, desoBlock)
+	})
+}
+
 func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
 	blockHash, err := desoBlock.Header.Hash()
 	if err != nil {

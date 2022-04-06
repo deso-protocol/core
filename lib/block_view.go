@@ -1052,7 +1052,6 @@ func (bav *UtxoView) DisconnectBlock(
 		currentTxn := desoBlock.Txns[txnIndex]
 		txnHash := txHashes[txnIndex]
 		utxoOpsForTxn := utxoOps[txnIndex]
-		blockHeight := desoBlock.Header.Height
 
 		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(blockHeight))
 		if err != nil {

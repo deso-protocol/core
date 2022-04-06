@@ -139,9 +139,9 @@ type Server struct {
 
 	Notifier *Notifier
 
-	// restartButton is used to restart the node that's currently running this server.
+	// nodeMessageChannel is used to restart the node that's currently running this server.
 	// It is basically a backlink to the node that calls Stop() and Start().
-	restartButton chan int
+	nodeMessageChannel chan NodeMessage
 
 	shutdown int32
 	// timer is a helper variable that allows timing events for development purposes.
@@ -321,7 +321,7 @@ func NewServer(
 	_trustedBlockProducerPublicKeys []string,
 	_trustedBlockProducerStartHeight uint64,
 	eventManager *EventManager,
-	_restartChan chan int,
+	_nodeMessageChan chan NodeMessage,
 ) (_srv *Server, _err error, _shouldRestart bool) {
 	var err error
 
@@ -343,7 +343,7 @@ func NewServer(
 		ReadOnlyMode:                 _readOnlyMode,
 		IgnoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
 		snapshot:                     _snapshot,
-		restartButton:                _restartChan,
+		nodeMessageChannel:           _nodeMessageChan,
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -827,7 +827,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 						"records, error: %v", err)))
 				}
 				if shouldErase {
-					srv.restartButton <- NodeErase
+					if srv.nodeMessageChannel != nil {
+						srv.nodeMessageChannel <- NodeErase
+					}
 					glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleHeaderBundle: Records were found in the node "+
 						"directory, while trying to resync. Now erasing the node directory and restarting the node. "+
 						"That's faster than manually expunging all records from the database.")))
@@ -854,6 +856,11 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				srv.snapshot.Checksum.ResetChecksum()
 				if err := srv.snapshot.Checksum.SaveChecksum(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving snapshot to database, error (%v)", err)
+				}
+				// Reset the migrations along with the main checksum.
+				srv.snapshot.Migrations.ResetChecksums()
+				if err := srv.snapshot.Migrations.SaveMigrations(); err != nil {
+					glog.Errorf("Server._handleHeaderBundle: Problem saving migration checksums to database, error (%v)", err)
 				}
 
 				// Start a timer for hyper sync. This keeps track of how long hyper sync takes in total.
@@ -1181,7 +1188,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		glog.Errorf("Server._handleSnapshot: Problem getting checksum bytes, error (%v)", err)
 	}
 	if !reflect.DeepEqual(checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
-		srv.restartButton <- NodeErase
+		if srv.nodeMessageChannel != nil {
+			srv.nodeMessageChannel <- NodeErase
+		}
 		glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleSnapshot: The final db checksum doesn't match the "+
 			"checksum received from the peer. It is likely that HyperSync encountered some unexpected error earlier. "+
 			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
