@@ -1227,6 +1227,17 @@ func (bav *UtxoView) CalculateDAOCoinsTransferredInLimitOrderMatch(
 			return nil, err
 		}
 
+		// The matching order is fulfilled so its quantity to sell is equal
+		// to the quantity bought by the transactor.
+		result.TransactorBuyingCoinBaseUnitsTransferred = matchingOrderQuantityToSell
+
+		// And its quantity bought is equal to the quantity sold by the transactor.
+		result.TransactorSellingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToBuyUint256(
+			matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy, matchingOrderQuantityToSell)
+		if err != nil {
+			return nil, err
+		}
+
 		return result, nil
 	}
 
