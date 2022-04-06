@@ -3129,7 +3129,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(0.1),
-			QuantityToBuyInBaseUnits:                  uint256.NewInt().SetUint64(100),
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 		}
 		_, _, _, err = _doTxn(
 			testMeta,
@@ -3204,7 +3204,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			BuyingDAOCoinCreatorPKID:                  m1PKID,
 			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-			QuantityToBuyInBaseUnits:                  metadata.QuantityToBuyInBaseUnits,
+			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
 			BlockHeight:                               savedHeight,
 		})
 	}

@@ -1515,7 +1515,13 @@ type DAOCoinLimitOrderEntry struct {
 	// "base unit" rather than nano because other DAO coins might decide to use a
 	// different scheme than nanos for their base unit. For example, someone could
 	// arbitrarily define 1e12 base units equaling one DAO coin if they felt like it.
-	QuantityToBuyInBaseUnits *uint256.Int
+	QuantityToFillInBaseUnits *uint256.Int
+	// This is one of ASK or BID. If the operation type is an ASK, then the quantity
+	// column applies to the selling coin. I.e. the order is considered fulfilled
+	// once the selling coin quantity to fill is zero. If the operation type is a BID,
+	// then quantity column applies to the buying coin. I.e. the order is considered
+	// fulfilled once the buying coin quantity to fill is zero.
+	OperationType DAOCoinLimitOrderOperationType
 	// This is the block height at which the order was placed. We use the block height
 	// to break ties between orders. If there are two orders that could be filled, we
 	// pick the one that was submitted earlier.
@@ -1523,6 +1529,13 @@ type DAOCoinLimitOrderEntry struct {
 
 	isDeleted bool
 }
+
+type DAOCoinLimitOrderOperationType uint8
+
+const (
+	DAOCoinLimitOrderOperationTypeASK DAOCoinLimitOrderOperationType = 0
+	DAOCoinLimitOrderOperationTypeBID DAOCoinLimitOrderOperationType = 1
+)
 
 // FilledDAOCoinLimitOrder only exists to support understanding what orders were
 // fulfilled when connecting a DAO Coin Limit Order Txn
@@ -1541,7 +1554,7 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 		BuyingDAOCoinCreatorPKID:                  order.BuyingDAOCoinCreatorPKID.NewPKID(),
 		SellingDAOCoinCreatorPKID:                 order.SellingDAOCoinCreatorPKID.NewPKID(),
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
-		QuantityToBuyInBaseUnits:                  order.QuantityToBuyInBaseUnits.Clone(),
+		QuantityToFillInBaseUnits:                 order.QuantityToFillInBaseUnits.Clone(),
 		BlockHeight:                               order.BlockHeight,
 		isDeleted:                                 order.isDeleted,
 	}
@@ -1552,7 +1565,7 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data = append(data, order.BuyingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, order.SellingDAOCoinCreatorPKID.Encode()...)
 	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeUint256(order.QuantityToBuyInBaseUnits)...)
+	data = append(data, EncodeUint256(order.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	return data, nil
 }
@@ -1590,10 +1603,10 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
-	// Parse QuantityToBuyInBaseUnits
-	ret.QuantityToBuyInBaseUnits, err = ReadUint256(rr)
+	// Parse QuantityToFillInBaseUnits
+	ret.QuantityToFillInBaseUnits, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading QuantityToBuyInBaseUnits: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
 	}
 
 	// Parse BlockHeight
@@ -1629,8 +1642,8 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 	}
 
 	// Prefer lower-quantity orders first.
-	if order.QuantityToBuyInBaseUnits.Eq(other.QuantityToBuyInBaseUnits) {
-		return order.QuantityToBuyInBaseUnits.Lt(other.QuantityToBuyInBaseUnits)
+	if order.QuantityToFillInBaseUnits.Eq(other.QuantityToFillInBaseUnits) {
+		return order.QuantityToFillInBaseUnits.Lt(other.QuantityToFillInBaseUnits)
 	}
 
 	// To break a tie and guarantee idempotency in sorting,
@@ -1642,7 +1655,7 @@ func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, err
 	// Returns the total cost of this order (price x quantity) as a uint256.
 	return ComputeBaseUnitsToSellUint256(
 		order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		order.QuantityToBuyInBaseUnits)
+		order.QuantityToFillInBaseUnits)
 }
 
 func ComputeBaseUnitsToSellUint256(

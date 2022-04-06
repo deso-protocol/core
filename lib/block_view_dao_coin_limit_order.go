@@ -198,7 +198,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
 		SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
+		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
 		BlockHeight:                               blockHeight,
 	}
 
@@ -274,9 +274,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		bav._deleteDAOCoinLimitOrderEntryMappings(prevTransactorOrder)
 
 		// Update quantity to add that of the previous order at this level.
-		transactorOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Add(
-			transactorOrder.QuantityToBuyInBaseUnits,
-			prevTransactorOrder.QuantityToBuyInBaseUnits)
+		transactorOrder.QuantityToFillInBaseUnits, err = SafeUint256().Add(
+			transactorOrder.QuantityToFillInBaseUnits,
+			prevTransactorOrder.QuantityToFillInBaseUnits)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 		}
@@ -381,14 +381,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// matching order and continue matching.
 			var buyCoinBaseUnitsBought *uint256.Int
 			var sellCoinBaseUnitsSold *uint256.Int
-			if transactorOrder.QuantityToBuyInBaseUnits.Lt(matchingOrderTotalBuyCoinToSell) {
+			if transactorOrder.QuantityToFillInBaseUnits.Lt(matchingOrderTotalBuyCoinToSell) {
 				// Since the transactor order's quantity is less than the amount the matching
 				// order is willing to sell, we buy just the transactor order's quantity.
-				buyCoinBaseUnitsBought = transactorOrder.QuantityToBuyInBaseUnits
+				buyCoinBaseUnitsBought = transactorOrder.QuantityToFillInBaseUnits
 
 				// The transactor is going (sell A, buy B) whereas the matching order is doing
 				// (sell B, buy A). Thus to convert daoCoinBaseUnitsBought into
-				// matchingOrder.QuantityToBuyInBaseUnits, we need to do the following (note that
+				// matchingOrder.QuantityToFillInBaseUnits, we need to do the following (note that
 				// we use an underscore to denote the UNITS of each value:
 				// - daoCoinBaseUnitsBought_B / matchingOrderExhangeRate_BPerA = daoCoinBaseUnitsToDeductFromOrder_A
 				//
@@ -408,25 +408,25 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// Ensure the number of coins we're selling is non-zero. This prevents an edge case
 				// whereby someone can put in teeny orders and drain the seller's order without
 				// actually having to transfer anything.
-				if sellCoinBaseUnitsSold.IsZero() && !matchingOrder.QuantityToBuyInBaseUnits.IsZero() {
+				if sellCoinBaseUnitsSold.IsZero() && !matchingOrder.QuantityToFillInBaseUnits.IsZero() {
 					sellCoinBaseUnitsSold, _ = uint256.FromBig(bigOneInt)
 				}
 
 				// Sanity-check that this amount is always less than the matching order's quantity
 				// to buy.
-				if sellCoinBaseUnitsSold.Cmp(matchingOrder.QuantityToBuyInBaseUnits) > 0 {
+				if sellCoinBaseUnitsSold.Cmp(matchingOrder.QuantityToFillInBaseUnits) > 0 {
 					return 0, 0, nil, fmt.Errorf(
 						"Sanity-check failed. sellCoinBaseUnitsSold %v is "+
-							"more than matchingOrder.QuantityToBuyInBaseUnits %v", sellCoinBaseUnitsSold,
-						matchingOrder.QuantityToBuyInBaseUnits)
+							"more than matchingOrder.QuantityToFillInBaseUnits %v", sellCoinBaseUnitsSold,
+						matchingOrder.QuantityToFillInBaseUnits)
 
 				}
 
 				// Update matching order's quantity by deducting the number of dao coins
 				// sold from the order quantity.
-				originalQuantityToBuyInBaseUnits := matchingOrder.QuantityToBuyInBaseUnits
-				matchingOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Sub(
-					originalQuantityToBuyInBaseUnits, sellCoinBaseUnitsSold)
+				originalQuantityToFillInBaseUnits := matchingOrder.QuantityToFillInBaseUnits
+				matchingOrder.QuantityToFillInBaseUnits, err = SafeUint256().Sub(
+					originalQuantityToFillInBaseUnits, sellCoinBaseUnitsSold)
 				if err != nil {
 					return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 				}
@@ -438,26 +438,26 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					BuyingDAOCoinCreatorPKID:       matchingOrder.BuyingDAOCoinCreatorPKID,
 					SellingDAOCoinCreatorPKID:      matchingOrder.SellingDAOCoinCreatorPKID,
 					BuyingDAOCoinQuantityPurchased: sellCoinBaseUnitsSold,
-					BuyingDAOCoinQuantityRequested: originalQuantityToBuyInBaseUnits,
+					BuyingDAOCoinQuantityRequested: originalQuantityToFillInBaseUnits,
 					SellingDAOCoinQuantitySold:     buyCoinBaseUnitsBought,
 				})
 
 				// Set the updated order in the db. It should replace the existing order.
 				bav._setDAOCoinLimitOrderEntryMappings(matchingOrder)
 
-				transactorOriginalQuantityToBuyInBaseUnits := transactorOrder.QuantityToBuyInBaseUnits
+				transactorOriginalQuantityToFillInBaseUnits := transactorOrder.QuantityToFillInBaseUnits
 				// Decrement the transactor's order and sanity-check that its new value is zero.
-				transactorOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Sub(
-					transactorOriginalQuantityToBuyInBaseUnits, buyCoinBaseUnitsBought)
+				transactorOrder.QuantityToFillInBaseUnits, err = SafeUint256().Sub(
+					transactorOriginalQuantityToFillInBaseUnits, buyCoinBaseUnitsBought)
 				if err != nil {
 					return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 				}
 
-				if !transactorOrder.QuantityToBuyInBaseUnits.IsZero() {
+				if !transactorOrder.QuantityToFillInBaseUnits.IsZero() {
 					return 0, 0, nil, fmt.Errorf(
-						"Sanity-check failed. transactorOrder.QuantityToBuyInBaseUnits %v is "+
+						"Sanity-check failed. transactorOrder.QuantityToFillInBaseUnits %v is "+
 							"not zero. This should never happen %v",
-						transactorOrder.QuantityToBuyInBaseUnits, buyCoinBaseUnitsBought)
+						transactorOrder.QuantityToFillInBaseUnits, buyCoinBaseUnitsBought)
 				}
 
 				// Append a DAOCoinLimitOrderEntry to the slice of filled orders representing the
@@ -467,7 +467,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					BuyingDAOCoinCreatorPKID:       buyCoinPKIDEntry.PKID,
 					SellingDAOCoinCreatorPKID:      sellCoinPKIDEntry.PKID,
 					BuyingDAOCoinQuantityPurchased: buyCoinBaseUnitsBought,
-					BuyingDAOCoinQuantityRequested: transactorOriginalQuantityToBuyInBaseUnits,
+					BuyingDAOCoinQuantityRequested: transactorOriginalQuantityToFillInBaseUnits,
 					SellingDAOCoinQuantitySold:     sellCoinBaseUnitsSold,
 				})
 
@@ -484,9 +484,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// actually the number of B units that the matching order is SELLING.
 				buyCoinBaseUnitsBought = matchingOrderTotalBuyCoinToSell
 
-				transactorOriginalQuanityToBuyInBaseUnits := transactorOrder.QuantityToBuyInBaseUnits
+				transactorOriginalQuanityToBuyInBaseUnits := transactorOrder.QuantityToFillInBaseUnits
 				// Update transactor order's quantity.
-				transactorOrder.QuantityToBuyInBaseUnits, err = SafeUint256().Sub(
+				transactorOrder.QuantityToFillInBaseUnits, err = SafeUint256().Sub(
 					transactorOriginalQuanityToBuyInBaseUnits, matchingOrderTotalBuyCoinToSell)
 				if err != nil {
 					return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
@@ -494,7 +494,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 				// Save the quantity of the matching order. This is the number of coins
 				// the transactor is selling.
-				sellCoinBaseUnitsSold = matchingOrder.QuantityToBuyInBaseUnits
+				sellCoinBaseUnitsSold = matchingOrder.QuantityToFillInBaseUnits
 
 				// Mark matching order for deletion.
 				bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
@@ -524,7 +524,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// In the case where the transactor and matching order's quantities were
 				// equal to each other, mark transactor's order as complete so that this
 				// is our last iteration of this loop.
-				if transactorOrder.QuantityToBuyInBaseUnits.IsZero() {
+				if transactorOrder.QuantityToFillInBaseUnits.IsZero() {
 					orderFilled = true
 				}
 			}
@@ -565,7 +565,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// After iterating through all potential matching orders, if transactor's order
 	// is still not fully fulfilled, submit it to be stored.
-	if !transactorOrder.QuantityToBuyInBaseUnits.IsZero() {
+	if !transactorOrder.QuantityToFillInBaseUnits.IsZero() {
 		bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 	}
 
@@ -866,7 +866,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 	// Pull orders up to when the quantity is filled or we run out of orders.
 	outputMatchingOrders := []*DAOCoinLimitOrderEntry{}
-	transactorOrderBuyingQuantity := transactorOrder.QuantityToBuyInBaseUnits
+	transactorOrderBuyingQuantity := transactorOrder.QuantityToFillInBaseUnits
 
 	for _, matchingOrder := range sortedMatchingOrders {
 		outputMatchingOrders = append(outputMatchingOrders, matchingOrder)
@@ -927,7 +927,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		BuyingDAOCoinCreatorPKID:                  bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
 		SellingDAOCoinCreatorPKID:                 bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		QuantityToBuyInBaseUnits:                  txMeta.QuantityToBuyInBaseUnits,
+		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
 		BlockHeight:                               blockHeight,
 	})
 
@@ -1192,7 +1192,7 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 	//   + BuyingDAOCoinCreatorPKIDs should match.
 	//   + SellingDAOCoinCreatorPKIDs should match.
 	//   + ScaledExchangeRateCoinsToSellPerCoinToBuy should match.
-	//   - QuantityToBuyInBaseUnits does not need to match.
+	//   - QuantityToFillInBaseUnits does not need to match.
 	//   - BlockHeight does not need to match.
 	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
 		if !orderEntry.isDeleted &&
@@ -1252,7 +1252,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, isC
 	}
 
 	// Validate quantity > 0.
-	if !order.QuantityToBuyInBaseUnits.Gt(uint256.NewInt()) {
+	if !order.QuantityToFillInBaseUnits.Gt(uint256.NewInt()) {
 		return RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 

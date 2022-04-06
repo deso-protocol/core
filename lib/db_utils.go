@@ -3641,7 +3641,7 @@ type DAOCoinLimitOrderTxindexMetadata struct {
 	BuyingDAOCoinCreatorPublicKey             string
 	SellingDAOCoinCreatorPublicKey            string
 	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
-	QuantityToBuyInBaseUnits                  *uint256.Int
+	QuantityToFillInBaseUnits                 *uint256.Int
 	FilledDAOCoinLimitOrdersMetadata          []*FilledDAOCoinLimitOrderMetadata
 }
 
@@ -6257,7 +6257,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 
 	queryOrder := inputOrder.Copy()
-	queryQuantityToBuy := queryOrder.QuantityToBuyInBaseUnits
+	queryQuantityToBuy := queryOrder.QuantityToFillInBaseUnits
 
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.

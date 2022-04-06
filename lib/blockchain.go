@@ -3187,7 +3187,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		BuyingDAOCoinCreatorPKID:                  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
 		SellingDAOCoinCreatorPKID:                 utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
-		QuantityToBuyInBaseUnits:                  metadata.QuantityToBuyInBaseUnits.Clone(),
+		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
 		BlockHeight:                               bc.blockTip().Height + 1,
 	}
 
@@ -3199,7 +3199,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 		desoNanosToConsumeMap := make(map[PKID]uint64)
-		transactorOrderBuyingQuantity := transactorOrder.QuantityToBuyInBaseUnits.Clone()
+		transactorOrderBuyingQuantity := transactorOrder.QuantityToFillInBaseUnits.Clone()
 
 		for transactorOrderBuyingQuantity.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
@@ -3230,7 +3230,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					var desoNanosToConsume *uint256.Int
 
 					desoNanosToConsume, err = ComputeBaseUnitsToSellUint256(
-						matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy, transactorOrder.QuantityToBuyInBaseUnits)
+						matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy, transactorOrder.QuantityToFillInBaseUnits)
 					if err != nil {
 						return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: overflow in partial order cost")
 					}
@@ -3288,7 +3288,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		var lastSeenOrder *DAOCoinLimitOrderEntry
 
 		nanosToFulfillOrders := uint256.NewInt()
-		quantityToBuyInBaseUnits := metadata.QuantityToBuyInBaseUnits.Clone()
+		quantityToBuyInBaseUnits := metadata.QuantityToFillInBaseUnits.Clone()
 
 		for !quantityToBuyInBaseUnits.IsZero() {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
@@ -3305,10 +3305,10 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					order.TransactorPKID, order.SellingDAOCoinCreatorPKID, true)
 				lastSeenOrder = order
 				if balanceEntry != nil && !balanceEntry.isDeleted &&
-					!balanceEntry.BalanceNanos.Lt(order.QuantityToBuyInBaseUnits) {
+					!balanceEntry.BalanceNanos.Lt(order.QuantityToFillInBaseUnits) {
 
 					var nanosToFulfillOrder *uint256.Int
-					if quantityToBuyInBaseUnits.Lt(order.QuantityToBuyInBaseUnits) {
+					if quantityToBuyInBaseUnits.Lt(order.QuantityToFillInBaseUnits) {
 						nanosToFulfillOrder, err = ComputeBaseUnitsToSellUint256(
 							order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 							quantityToBuyInBaseUnits)
@@ -3327,7 +3327,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 						}
 						quantityToBuyInBaseUnits, err = SafeUint256().Sub(
 							quantityToBuyInBaseUnits,
-							order.QuantityToBuyInBaseUnits)
+							order.QuantityToFillInBaseUnits)
 						if err != nil {
 							return nil, 0, 0, 0, errors.Wrapf(err,
 								"Blockchain.CreateDAOCoinLimitOrderTxn: Underflow uint256 when subtracting quantity")
