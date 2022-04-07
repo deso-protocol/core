@@ -3130,6 +3130,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(0.1),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}
 		_, _, _, err = _doTxn(
 			testMeta,
@@ -3206,6 +3207,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
 			BlockHeight:                               savedHeight,
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		})
 	}
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
