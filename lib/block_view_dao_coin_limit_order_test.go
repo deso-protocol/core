@@ -1159,6 +1159,33 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(orderEntries[1].QuantityToFillInBaseUnits, uint256.NewInt().SetUint64(240))
 	}
 
+	// RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType
+	{
+		// Scenario: m0 updates an existing order of his, but
+		// with a different operation type. This fails.
+		m0OrderMetadata := DAOCoinLimitOrderMetadata{
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(1),
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(300),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		// Confirm existing order with matching metadata.
+		existingOrder, err := utxoView._getDAOCoinLimitOrderEntry(m0OrderMetadata.ToEntry(m0PKID.PKID, savedHeight, toPKID))
+		require.NoError(err)
+		require.NotNil(existingOrder)
+
+		// Switch operation type from BID to ASK.
+		m0OrderMetadata.OperationType = DAOCoinLimitOrderOperationTypeASK
+
+		// Submit transaction. Verify error.
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, m0OrderMetadata)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType)
+	}
+
 	// TODO: add validation, no DAO coins in circulation for this profile
 	// TODO: maybe test trying to buy more DAO coins than were minted.
 	// TODO: test transfer restriction status

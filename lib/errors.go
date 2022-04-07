@@ -270,6 +270,7 @@ const (
 	RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins  RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins"
 	RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist            RuleError = "RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist"
 	RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero                RuleError = "RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero"
+	RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType RuleError = "RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"

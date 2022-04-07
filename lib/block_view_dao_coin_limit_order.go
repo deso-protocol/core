@@ -276,40 +276,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 		// Update quantity to add that of the previous order at this level.
 		// If the operation types are equivalent, then we can just add the quantities
-		// as expected. This is the default case. If the operation types differ, then
-		// we need to convert the quantities to match. This is a weird case, but it
-		// would technically be possible for a transactor to specify two valid orders
-		// buying and selling the same coins, but specifying different quantities,
-		// one in the buying coin and one in the selling coin. In that case, we
-		// combine both orders into one, specifying the quantity to match the current
-		// order's operation type.
-		prevTransactorOrderQuantity := prevTransactorOrder.QuantityToFillInBaseUnits
-
+		// as expected. If the operation types differ, then we throw an error.
 		if transactorOrder.OperationType != prevTransactorOrder.OperationType {
-			if prevTransactorOrder.OperationType == DAOCoinLimitOrderOperationTypeASK {
-				// If the previous order specified a quantity to sell and the current
-				// order specifies a quantity to buy, we need to convert the previous
-				// order's quantity to a quantity to buy.
-				prevTransactorOrderQuantity, err = prevTransactorOrder.BaseUnitsToBuyUint256()
-				if err != nil {
-					return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
-				}
-			} else if prevTransactorOrder.OperationType == DAOCoinLimitOrderOperationTypeBID {
-				// If the previous order specified a quantity to buy and the current
-				// order specifies a quantity to sell, we need to convert the previous
-				// order's quantity to a quantity to sell.
-				prevTransactorOrderQuantity, err = prevTransactorOrder.BaseUnitsToSellUint256()
-				if err != nil {
-					return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
-				}
-			} else {
-				// This should never happen as we validate prior to storing.
-				return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidOperationType
-			}
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType
 		}
 
 		transactorOrder.QuantityToFillInBaseUnits, err = SafeUint256().Add(
-			transactorOrder.QuantityToFillInBaseUnits, prevTransactorOrderQuantity)
+			transactorOrder.QuantityToFillInBaseUnits,
+			prevTransactorOrder.QuantityToFillInBaseUnits)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "Error updating order quantity: ")
 		}
