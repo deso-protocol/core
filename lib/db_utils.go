@@ -38,6 +38,15 @@ const (
 // DB Prefixes
 // -------------------------------------------------------------------------------------
 
+// Prefixes is a static variable that contains all the parsed prefix_id values. We use the
+// Prefixes var when fetching prefixes to avoid parsing the prefix_id tags every time.
+var Prefixes = GetPrefixes()
+
+// StatePrefixes is a static variable that allows us to quickly fetch state-related prefixes. We make
+// the distinction between state and non-state prefixes for hyper sync, where the node is only syncing
+// state prefixes. This significantly speeds up the syncing process and the node will still work properly.
+var StatePrefixes = GetStatePrefixes()
+
 type DBPrefixes struct {
 	// The key prefixes for the key-value database. To store a particular
 	// type of data, we create a key prefix and store all those types of
@@ -192,13 +201,13 @@ type DBPrefixes struct {
 	// These indexes are used in order to fetch the pub keys of users that liked or diamonded a post.
 	// 		Reposts: <prefix_id, RepostedPostHash, ReposterPubKey> -> <>
 	// 		Quote Reposts: <prefix_id, RepostedPostHash, ReposterPubKey, RepostPostHash> -> <>
-	// 		Diamonds: <prefix_id, DiamondedPostHash, DiamonderPubKey [33]byte> -> <DiamondLevel (uint64)>
+	// 		Diamonds: <prefix_id, DiamondedPostHash, DiamonderPubKey [33]byte, DiamondLevel (uint64)> -> <>
 	PrefixRepostedPostHashReposterPubKey               []byte `prefix_id:"[45]" is_state:"true"`
 	PrefixRepostedPostHashReposterPubKeyRepostPostHash []byte `prefix_id:"[46]" is_state:"true"`
 	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   []byte `prefix_id:"[47]" is_state:"true"`
 	// Prefixes for NFT ownership:
 	// 	<prefix_id, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
-	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[8]" is_state:"true"`
+	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[48]" is_state:"true"`
 	//  <prefix_id, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
 	PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry []byte `prefix_id:"[49]" is_state:"true"`
 	// Prefixes for NFT bids:
@@ -206,11 +215,6 @@ type DBPrefixes struct {
 	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true"`
 	//  <prefix_id, BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
 	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
-	// Prefix for NFT accepted bid entries:
-	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
-	//     not core to consensus and should not be relied upon as it could get inefficient.
-	//   - Schema: <prefix_id>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
-	PrefixPostHashSerialNumberToAcceptedBidEntries []byte `prefix_id:"[54]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
 	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"` // Block reward prefix:
@@ -220,9 +224,11 @@ type DBPrefixes struct {
 	//   - Schema: <prefix_id, hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
 	PrefixPublicKeyBlockHashToBlockReward []byte `prefix_id:"[53]" is_state:"true"`
 
-	// Prefix for Authorize Derived Key transactions:
-	// 		<prefix_id, OwnerPublicKey [33]byte> -> <>
-	PrefixAuthorizeDerivedKey []byte `prefix_id:"[54]" is_state:"true"`
+	// Prefix for NFT accepted bid entries:
+	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
+	//     not core to consensus and should not be relied upon as it could get inefficient.
+	//   - Schema: <prefix_id>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
+	PrefixPostHashSerialNumberToAcceptedBidEntries []byte `prefix_id:"[54]" is_state:"true"`
 
 	// Prefixes for DAO coin fields:
 	// <prefix, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
@@ -275,10 +281,174 @@ type DBPrefixes struct {
 	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
 	PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey []byte `prefix_id:"[58]" is_state:"true"`
 
+	// Prefix for Authorize Derived Key transactions:
+	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
+	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true"`
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 59
+	// NEXT_TAG: 60
+}
+
+// StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
+// In particular, this is used by the EncoderMigration service, and used to determine how to encode/decode db entries.
+func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEncoder) {
+	if len(prefix) > MaxPrefixLen {
+		panic(fmt.Sprintf("Called with prefix longer than MaxPrefixLen, prefix: (%v), MaxPrefixLen: (%v)", prefix, MaxPrefixLen))
+	}
+	if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
+		// prefix_id:"[5]"
+		return true, &UtxoEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPubKeyUtxoKey) {
+		// prefix_id:"[7]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoNumEntries) {
+		// prefix_id:"[8]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations) {
+		// prefix_id:"[9]"
+		return true, &UtxoOperationBundle{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixNanosPurchased) {
+		// prefix_id:"[10]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixUSDCentsPerBitcoinExchangeRate) {
+		// prefix_id:"[27]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalParams) {
+		// prefix_id:"[40]"
+		return true, &GlobalParamsEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixBitcoinBurnTxIDs) {
+		// prefix_id:"[11]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyTimestampToPrivateMessage) {
+		// prefix_id:"[12]"
+		return true, &MessageEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashToPostEntry) {
+		// prefix_id:"[17]"
+		return true, &PostEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPosterPublicKeyPostHash) {
+		// prefix_id:"[18]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixTstampNanosPostHash) {
+		// prefix_id:"[19]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixCreatorBpsPostHash) {
+		// prefix_id:"[20]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixMultipleBpsPostHash) {
+		// prefix_id:"[21]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixCommentParentStakeIDToPostHash) {
+		// prefix_id:"[22]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPKIDToProfileEntry) {
+		// prefix_id:"[23]"
+		return true, &ProfileEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixProfileUsernameToPKID) {
+		// prefix_id:"[25]"
+		// This prefix just encodes PKIDs, but it's not using the DeSoEncoder interface so for the sake of simplicity we just skip it.
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID) {
+		// prefix_id:"[32]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeIDTypeAmountStakeIDIndex) {
+		// prefix_id:"[26]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixFollowerPKIDToFollowedPKID) {
+		// prefix_id:"[28]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixFollowedPKIDToFollowerPKID) {
+		// prefix_id:"[29]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixLikerPubKeyToLikedPostHash) {
+		// prefix_id:"[30]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixLikedPostHashToLikerPubKey) {
+		// prefix_id:"[31]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixHODLerPKIDCreatorPKIDToBalanceEntry) {
+		// prefix_id:"[33]"
+		return true, &BalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCreatorPKIDHODLerPKIDToBalanceEntry) {
+		// prefix_id:"[34]"
+		return true, &BalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPosterPublicKeyTimestampPostHash) {
+		// prefix_id:"[35]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyToPKID) {
+		// prefix_id:"[36]"
+		return true, &PKIDEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPKIDToPublicKey) {
+		// prefix_id:"[37]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash) {
+		// prefix_id:"[39]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash) {
+		// prefix_id:"[41]"
+		return true, &DiamondEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash) {
+		// prefix_id:"[43]"
+		return true, &DiamondEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixForbiddenBlockSignaturePubKeys) {
+		// prefix_id:"[44]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixRepostedPostHashReposterPubKey) {
+		// prefix_id:"[45]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixRepostedPostHashReposterPubKeyRepostPostHash) {
+		// prefix_id:"[46]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixDiamondedPostHashDiamonderPKIDDiamondLevel) {
+		// prefix_id:"[47]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashSerialNumberToNFTEntry) {
+		// prefix_id:"[48]"
+		return true, &NFTEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry) {
+		// prefix_id:"[49]"
+		return true, &NFTEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID) {
+		// prefix_id:"[50]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixBidderPKIDPostHashSerialNumberToBidNanos) {
+		// prefix_id:"[51]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashSerialNumberToAcceptedBidEntries) {
+		// prefix_id:"[54]"
+		return true, &NFTBidEntryBundle{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyToDeSoBalanceNanos) {
+		// prefix_id:"[52]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyBlockHashToBlockReward) {
+		// prefix_id:"[53]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry) {
+		// prefix_id:"[55]"
+		return true, &BalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry) {
+		// prefix_id:"[56]"
+		return true, &BalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName) {
+		// prefix_id:"[57]"
+		return true, &MessagingGroupEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey) {
+		// prefix_id:"[58]"
+		return true, &MessagingGroupEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixAuthorizeDerivedKey) {
+		// prefix_id:"[59]"
+		return true, &DerivedKeyEntry{}
+	}
+
+	return true, nil
+}
+
+func StateKeyToDeSoEncoder(key []byte) (_isEncoder bool, _encoder DeSoEncoder) {
+	if MaxPrefixLen > 1 {
+		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+	}
+	return StatePrefixToDeSoEncoder(key[:1])
 }
 
 // getPrefixIdValue parses the DBPrefixes struct tags to fetch the prefix_id values.
@@ -299,11 +469,7 @@ func getPrefixIdValue(structFields reflect.StructField, fieldType reflect.Type) 
 	return ref.Elem()
 }
 
-// Prefixes is a static variable that contains all the parsed prefix_id values. We use the
-// Prefixes var when fetching prefixes to avoid parsing the prefix_id tags every time.
-var Prefixes = GetPrefixes()
-
-// GetPrefixes() loads all prefix_id byte array values into a DBPrefixes struct, and returns it.
+// GetPrefixes loads all prefix_id byte array values into a DBPrefixes struct, and returns it.
 func GetPrefixes() *DBPrefixes {
 	prefixes := &DBPrefixes{}
 
@@ -317,11 +483,6 @@ func GetPrefixes() *DBPrefixes {
 	}
 	return prefixes
 }
-
-// StatePrefixes is a static variable that allows us to quickly fetch state-related prefixes. We make
-// the distinction between state and non-state prefixes for hyper sync, where the node is only syncing
-// state prefixes. This significantly speeds up the syncing process and the node will still work properly.
-var StatePrefixes = GetStatePrefixes()
 
 // DBStatePrefixes is a helper struct that stores information about state-related prefixes.
 type DBStatePrefixes struct {
@@ -357,6 +518,10 @@ func GetStatePrefixes() *DBStatePrefixes {
 				structFields.Field(i).Name, MaxPrefixLen))
 		}
 		prefix := prefixBytes[0]
+		if statePrefixes.StatePrefixesMap[prefix] {
+			panic(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
+				"prefix overlap, fix it", structFields.Field(i).Name))
+		}
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
 			statePrefixes.StatePrefixesMap[prefix] = true
 			statePrefixes.StatePrefixesList = append(statePrefixes.StatePrefixesList, []byte{prefix})
@@ -367,6 +532,18 @@ func GetStatePrefixes() *DBStatePrefixes {
 			statePrefixes.StatePrefixesMap[prefix] = false
 		}
 	}
+	// Sort prefixes.
+	sort.Slice(statePrefixes.StatePrefixesList, func(i int, j int) bool {
+		switch bytes.Compare(statePrefixes.StatePrefixesList[i], statePrefixes.StatePrefixesList[j]) {
+		case 0:
+			return true
+		case -1:
+			return true
+		case 1:
+			return false
+		}
+		return false
+	})
 	return statePrefixes
 }
 
@@ -414,6 +591,23 @@ func EncodeKeyValue(key []byte, value []byte) []byte {
 	return data
 }
 
+func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) []byte {
+	checksumValue := value[:]
+	if isEncoder, encoder := StateKeyToDeSoEncoder(key); isEncoder && encoder != nil {
+		rr := bytes.NewReader(checksumValue)
+		if exists, err := DecodeFromBytes(encoder, rr); exists && err == nil {
+			// We skip metadata in checksum computation.
+			checksumValue = EncodeToBytes(blockHeight, encoder, true)
+		} else if err != nil {
+			glog.Errorf("Some odd problem: isEncoder %v encoder %v, key bytes (%v), value bytes (%v), blockHeight (%v)",
+				isEncoder, encoder, key, value, blockHeight)
+			panic(errors.Wrapf(err, "EncodeKeyAndValueForChecksum: The schema is corrupted or value doesn't match the key"))
+		}
+	}
+
+	return EncodeKeyValue(key, checksumValue)
+}
+
 // DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add computation
 // prior to DB writes. In particular, we use it to maintain a dynamic LRU cache, compute the
 // state checksum, and to build DB snapshots with ancestral records.
@@ -459,10 +653,10 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 			// We have to remove the previous value from the state checksum.
 			// Because checksum is commutative, we can safely remove the past value here.
 			if getError == nil {
-				snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
+				snap.RemoveChecksumBytes(key, ancestralValue)
 			}
 			// We also add the new record to the checksum.
-			snap.AddChecksumBytes(EncodeKeyValue(key, value))
+			snap.AddChecksumBytes(key, value)
 		}
 	}
 	return nil
@@ -545,7 +739,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
 		if !snap.disableChecksum {
-			snap.RemoveChecksumBytes(EncodeKeyValue(key, ancestralValue))
+			snap.RemoveChecksumBytes(key, ancestralValue)
 		}
 	}
 	return nil
@@ -596,44 +790,73 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBy
 }
 
 // DBDeleteAllStateRecords is an auxiliary function that is used to clean up the state
-// before starting hyper sync.
-func DBDeleteAllStateRecords(db *badger.DB) error {
+// before starting hyper sync. _shouldErase = true is returned when it is faster to use
+// os.RemoveAll(dbDir) instead of deleting records manually.
+func DBDeleteAllStateRecords(db *badger.DB) (_shouldErase bool, _error error) {
+	maxKeys := 10000
+	shouldErase := false
+
+	go func() {
+		time.Sleep(1 * time.Minute)
+		shouldErase = true
+	}()
+
 	// Iterate over all state prefixes.
 	for _, prefix := range StatePrefixes.StatePrefixesList {
 		startKey := prefix
 		fetchingPrefix := true
 
-		// We will delete all records for a prefix step by step. We do this in chunks of 8MB,
+		// We will delete all records for a prefix step by step. We do this in chunks of 10,000 keys,
 		// to make sure we don't overload badger DB with the size of our queries. Whenever a
 		// chunk is not full, that is isChunkFull = false, it means that we've exhausted all
 		// entries for a prefix.
 		for fetchingPrefix {
-			// Fetch a chunk of data from the DB.
-			dbEntries, isChunkFull, err := DBIteratePrefixKeys(db, prefix, startKey, SnapshotBatchSize)
-			fetchingPrefix = isChunkFull
-			if err != nil {
-				return errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at "+
-					"prefix (%v)", prefix)
+			if shouldErase {
+				return true, nil
 			}
-
-			glog.V(1).Infof("DeleteAllStateRecords: Deleting prefix: (%v) with total of (%v) "+
-				"entries", prefix, len(dbEntries))
-			// Now delete all these keys.
-			err = db.Update(func(txn *badger.Txn) error {
-				for _, dbEntry := range dbEntries {
-					err := txn.Delete(dbEntry.Key)
-					if err != nil {
-						return errors.Wrapf(err, "DeleteAllStateRecords: Problem deleting key (%v)", dbEntry.Key)
+			var isChunkFull bool
+			var keys [][]byte
+			err := db.View(func(txn *badger.Txn) error {
+				totalKeys := 0
+				opts := badger.DefaultIteratorOptions
+				opts.AllVersions = false
+				opts.PrefetchValues = false
+				// Iterate over the prefix as long as there are valid keys in the DB.
+				it := txn.NewIterator(opts)
+				defer it.Close()
+				for it.Seek(startKey); it.ValidForPrefix(prefix) && !isChunkFull; it.Next() {
+					key := it.Item().KeyCopy(nil)
+					keys = append(keys, key)
+					totalKeys += 1
+					if totalKeys > maxKeys {
+						isChunkFull = true
 					}
 				}
 				return nil
 			})
 			if err != nil {
-				return err
+				return true, errors.Wrapf(err, "DBDeleteAllStateRecords: problem fetching entries from the db at "+
+					"prefix (%v)", prefix)
+			}
+			fetchingPrefix = isChunkFull
+			glog.V(1).Infof("DeleteAllStateRecords: Deleting prefix: (%v) with total of (%v) "+
+				"entries", prefix, len(keys))
+			// Now delete all these keys.
+			err = db.Update(func(txn *badger.Txn) error {
+				for _, key := range keys {
+					err := txn.Delete(key)
+					if err != nil {
+						return errors.Wrapf(err, "DeleteAllStateRecords: Problem deleting key (%v)", key)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				return true, err
 			}
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // -------------------------------------------------------------------------------------
@@ -683,7 +906,8 @@ func DBGetPublicKeyForPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkidd *PKID) 
 	if err != nil {
 		// If we don't have a mapping in the db then return the pkid itself
 		// as the public key.
-		return pkidd[:]
+		pkid := pkidd.NewPKID()
+		return pkid[:]
 	}
 
 	// If we get here then it means we actually had a public key mapping in the DB.
@@ -703,6 +927,12 @@ func DBGetPublicKeyForPKID(db *badger.DB, snap *Snapshot, pkidd *PKID) []byte {
 
 func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	publicKey []byte, pkidEntry *PKIDEntry, params *DeSoParams) error {
+
+	// If the PKID entry is identical to the public key, there's no point in saving it in the DB.
+	// All functions fetching PKID will already return the public key if PKID was unset.
+	if reflect.DeepEqual(publicKey, pkidEntry.PKID.ToBytes()) {
+		return nil
+	}
 
 	// Set the main pub key -> pkid mapping.
 	{
@@ -2878,48 +3108,6 @@ func PutMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint
 	return nil
 }
 
-func _DecodeUtxoOperations(data []byte) ([][]*UtxoOperation, error) {
-	var ret [][]*UtxoOperation
-
-	rr := bytes.NewReader(data)
-	opListLen, err := ReadUvarint(rr)
-	if err != nil {
-		return nil, err
-	}
-
-	for ; opListLen > 0; opListLen-- {
-		opLen, err := ReadUvarint(rr)
-		if err != nil {
-			return nil, err
-		}
-
-		var opList []*UtxoOperation
-		for ; opLen > 0; opLen-- {
-			op := &UtxoOperation{}
-			if exists, err := DecodeFromBytes(op, rr); !exists || err != nil {
-				return nil, err
-			}
-			opList = append(opList, op)
-		}
-		ret = append(ret, opList)
-	}
-
-	return ret, nil
-}
-
-func _EncodeUtxoOperations(utxoOp [][]*UtxoOperation, blockHeight uint64) []byte {
-	var data []byte
-
-	data = append(data, UintToBuf(uint64(len(utxoOp)))...)
-	for _, opList := range utxoOp {
-		data = append(data, UintToBuf(uint64(len(opList)))...)
-		for _, op := range opList {
-			data = append(data, EncodeToBytes(blockHeight, op)...)
-		}
-	}
-	return data
-}
-
 func _DbKeyForUtxoOps(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, Prefixes.PrefixBlockHashToUtxoOperations...), blockHash[:]...)
 }
@@ -2930,13 +3118,13 @@ func GetUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash
 		return nil, err
 	}
 
-	var retOps [][]*UtxoOperation
-	retOps, err = _DecodeUtxoOperations(utxoOpsBytes)
-	if err != nil {
-		return nil, err
+	utxoOpsBundle := &UtxoOperationBundle{}
+	rr := bytes.NewReader(utxoOpsBytes)
+	if exists, err := DecodeFromBytes(utxoOpsBundle, rr); !exists || err != nil {
+		return nil, errors.Wrapf(err, "GetUtxoOperationsForBlockWithTxn: Problem decoding utxoOpsBundle")
 	}
 
-	return retOps, err
+	return utxoOpsBundle.UtxoOpBundle, nil
 }
 
 func GetUtxoOperationsForBlock(handle *badger.DB, snap *Snapshot, blockHash *BlockHash) ([][]*UtxoOperation, error) {
@@ -2953,7 +3141,10 @@ func GetUtxoOperationsForBlock(handle *badger.DB, snap *Snapshot, blockHash *Blo
 func PutUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	blockHash *BlockHash, utxoOpsForBlock [][]*UtxoOperation) error {
 
-	return DBSetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), _EncodeUtxoOperations(utxoOpsForBlock, blockHeight))
+	opBundle := &UtxoOperationBundle{
+		UtxoOpBundle: utxoOpsForBlock,
+	}
+	return DBSetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), EncodeToBytes(blockHeight, opBundle))
 }
 
 func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash) error {
@@ -3222,6 +3413,44 @@ func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error 
 	})
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func DeleteBlockReward(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DeleteBlockRewardWithTxn(txn, snap, desoBlock)
+	})
+}
+
+func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+	blockHash, err := desoBlock.Header.Hash()
+	if err != nil {
+		return errors.Wrapf(err, "DeleteBlockRewardWithTxn: Problem hashing header: ")
+	}
+
+	// Index the block reward. Used for deducting immature block rewards from user balances.
+	if len(desoBlock.Txns) == 0 {
+		return fmt.Errorf("DeleteBlockRewardWithTxn: Got block without any txns %v", desoBlock)
+	}
+	blockRewardTxn := desoBlock.Txns[0]
+	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return fmt.Errorf("DeleteBlockRewardWithTxn: Got block without block reward as first txn %v", desoBlock)
+	}
+	// It's possible the block reward is split across multiple public keys.
+	blockRewardPublicKeys := make(map[PkMapKey]bool)
+	for _, bro := range desoBlock.Txns[0].TxOutputs {
+		pkMapKey := MakePkMapKey(bro.PublicKey)
+		blockRewardPublicKeys[pkMapKey] = true
+	}
+	for pkMapKeyIter, _ := range blockRewardPublicKeys {
+		pkMapKey := pkMapKeyIter
+
+		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
+		if err := DBDeleteWithTxn(txn, snap, blockRewardKey); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -3856,7 +4085,7 @@ type AffectedPublicKey struct {
 	Metadata string
 }
 
-func (pk *AffectedPublicKey) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (pk *AffectedPublicKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(pk.PublicKeyBase58Check))...)
@@ -3881,6 +4110,14 @@ func (pk *AffectedPublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	return nil
 }
 
+func (pk *AffectedPublicKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pk *AffectedPublicKey) GetEncoderType() EncoderType {
+	return EncoderTypeAffectedPublicKey
+}
+
 type BasicTransferTxindexMetadata struct {
 	TotalInputNanos  uint64
 	TotalOutputNanos uint64
@@ -3891,7 +4128,7 @@ type BasicTransferTxindexMetadata struct {
 	PostHashHex      string
 }
 
-func (txnMeta *BasicTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *BasicTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(txnMeta.TotalInputNanos)...)
@@ -3902,7 +4139,7 @@ func (txnMeta *BasicTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeigh
 
 	data = append(data, UintToBuf(uint64(len(txnMeta.UtxoOps)))...)
 	for _, utxoOp := range txnMeta.UtxoOps {
-		data = append(data, EncodeToBytes(blockHeight, utxoOp)...)
+		data = append(data, EncodeToBytes(blockHeight, utxoOp, skipMetadata...)...)
 	}
 	data = append(data, UintToBuf(uint64(txnMeta.DiamondLevel))...)
 	data = append(data, EncodeByteArray([]byte(txnMeta.PostHashHex))...)
@@ -3954,6 +4191,14 @@ func (txnMeta *BasicTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	return nil
 }
 
+func (txnMeta *BasicTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *BasicTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeBasicTransferTxindexMetadata
+}
+
 type BitcoinExchangeTxindexMetadata struct {
 	BitcoinSpendAddress string
 	// DeSoOutputPubKeyBase58Check = TransactorPublicKeyBase58Check
@@ -3966,7 +4211,7 @@ type BitcoinExchangeTxindexMetadata struct {
 	BitcoinTxnHash            string
 }
 
-func (txnMeta *BitcoinExchangeTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *BitcoinExchangeTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.BitcoinSpendAddress))...)
@@ -4015,6 +4260,14 @@ func (txnMeta *BitcoinExchangeTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	return nil
 }
 
+func (txnMeta *BitcoinExchangeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *BitcoinExchangeTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeBitcoinExchangeTxindexMetadata
+}
+
 type CreatorCoinTxindexMetadata struct {
 	OperationType string
 	// TransactorPublicKeyBase58Check = TransactorPublicKeyBase58Check
@@ -4030,7 +4283,7 @@ type CreatorCoinTxindexMetadata struct {
 	DESOLockedNanosDiff int64
 }
 
-func (txnMeta *CreatorCoinTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *CreatorCoinTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.OperationType))...)
@@ -4074,6 +4327,14 @@ func (txnMeta *CreatorCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight 
 	return nil
 }
 
+func (txnMeta *CreatorCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *CreatorCoinTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreatorCoinTxindexMetadata
+}
+
 type CreatorCoinTransferTxindexMetadata struct {
 	CreatorUsername            string
 	CreatorCoinToTransferNanos uint64
@@ -4081,7 +4342,7 @@ type CreatorCoinTransferTxindexMetadata struct {
 	PostHashHex                string
 }
 
-func (txnMeta *CreatorCoinTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *CreatorCoinTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
@@ -4120,12 +4381,20 @@ func (txnMeta *CreatorCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(bloc
 	return nil
 }
 
+func (txnMeta *CreatorCoinTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *CreatorCoinTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreatorCoinTransferTxindexMetadata
+}
+
 type DAOCoinTransferTxindexMetadata struct {
 	CreatorUsername        string
 	DAOCoinToTransferNanos uint256.Int
 }
 
-func (txnMeta *DAOCoinTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *DAOCoinTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
@@ -4150,6 +4419,14 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	return nil
 }
 
+func (txnMeta *DAOCoinTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *DAOCoinTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDAOCoinTransferTxindexMetadata
+}
+
 type DAOCoinTxindexMetadata struct {
 	CreatorUsername           string
 	OperationType             string
@@ -4158,7 +4435,7 @@ type DAOCoinTxindexMetadata struct {
 	TransferRestrictionStatus string
 }
 
-func (txnMeta *DAOCoinTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *DAOCoinTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
@@ -4210,6 +4487,14 @@ func (txnMeta *DAOCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	return nil
 }
 
+func (txnMeta *DAOCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *DAOCoinTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDAOCoinTxindexMetadata
+}
+
 type UpdateProfileTxindexMetadata struct {
 	ProfilePublicKeyBase58Check string
 
@@ -4224,7 +4509,7 @@ type UpdateProfileTxindexMetadata struct {
 	IsHidden bool
 }
 
-func (txnMeta *UpdateProfileTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *UpdateProfileTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.ProfilePublicKeyBase58Check))...)
@@ -4282,6 +4567,14 @@ func (txnMeta *UpdateProfileTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	return nil
 }
 
+func (txnMeta *UpdateProfileTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *UpdateProfileTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUpdateProfileTxindexMetadata
+}
+
 type SubmitPostTxindexMetadata struct {
 	PostHashBeingModifiedHex string
 	// PosterPublicKeyBase58Check = TransactorPublicKeyBase58Check
@@ -4294,7 +4587,7 @@ type SubmitPostTxindexMetadata struct {
 	// MentionedPublicKeyBase58Check in AffectedPublicKeys
 }
 
-func (txnMeta *SubmitPostTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *SubmitPostTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.PostHashBeingModifiedHex))...)
@@ -4318,6 +4611,14 @@ func (txnMeta *SubmitPostTxindexMetadata) RawDecodeWithoutMetadata(blockHeight u
 	return nil
 }
 
+func (txnMeta *SubmitPostTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *SubmitPostTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeSubmitPostTxindexMetadata
+}
+
 type LikeTxindexMetadata struct {
 	// LikerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	IsUnlike bool
@@ -4326,7 +4627,7 @@ type LikeTxindexMetadata struct {
 	// PosterPublicKeyBase58Check in AffectedPublicKeys
 }
 
-func (txnMeta *LikeTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *LikeTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, BoolToByte(txnMeta.IsUnlike))
@@ -4350,6 +4651,14 @@ func (txnMeta *LikeTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	return nil
 }
 
+func (txnMeta *LikeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *LikeTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeLikeTxindexMetadata
+}
+
 type FollowTxindexMetadata struct {
 	// FollowerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	// FollowedPublicKeyBase58Check in AffectedPublicKeys
@@ -4357,7 +4666,7 @@ type FollowTxindexMetadata struct {
 	IsUnfollow bool
 }
 
-func (txnMeta *FollowTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *FollowTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, BoolToByte(txnMeta.IsUnfollow))
@@ -4373,6 +4682,14 @@ func (txnMeta *FollowTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint6
 	return nil
 }
 
+func (txnMeta *FollowTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *FollowTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeFollowTxindexMetadata
+}
+
 type PrivateMessageTxindexMetadata struct {
 	// SenderPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	// RecipientPublicKeyBase58Check in AffectedPublicKeys
@@ -4380,7 +4697,7 @@ type PrivateMessageTxindexMetadata struct {
 	TimestampNanos uint64
 }
 
-func (txnMeta *PrivateMessageTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *PrivateMessageTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(txnMeta.TimestampNanos)...)
@@ -4397,6 +4714,14 @@ func (txnMeta *PrivateMessageTxindexMetadata) RawDecodeWithoutMetadata(blockHeig
 	return nil
 }
 
+func (txnMeta *PrivateMessageTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *PrivateMessageTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypePrivateMessageTxindexMetadata
+}
+
 type SwapIdentityTxindexMetadata struct {
 	// ParamUpdater = TransactorPublicKeyBase58Check
 
@@ -4408,7 +4733,7 @@ type SwapIdentityTxindexMetadata struct {
 	ToDeSoLockedNanos   uint64
 }
 
-func (txnMeta *SwapIdentityTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *SwapIdentityTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.FromPublicKeyBase58Check))...)
@@ -4444,6 +4769,14 @@ func (txnMeta *SwapIdentityTxindexMetadata) RawDecodeWithoutMetadata(blockHeight
 	return nil
 }
 
+func (txnMeta *SwapIdentityTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *SwapIdentityTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeSwapIdentityTxindexMetadata
+}
+
 type NFTRoyaltiesMetadata struct {
 	CreatorCoinRoyaltyNanos     uint64
 	CreatorRoyaltyNanos         uint64
@@ -4453,7 +4786,7 @@ type NFTRoyaltiesMetadata struct {
 	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
 }
 
-func (txnMeta *NFTRoyaltiesMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *NFTRoyaltiesMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, UintToBuf(txnMeta.CreatorRoyaltyNanos)...)
@@ -4492,6 +4825,14 @@ func (txnMeta *NFTRoyaltiesMetadata) RawDecodeWithoutMetadata(blockHeight uint64
 	return nil
 }
 
+func (txnMeta *NFTRoyaltiesMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *NFTRoyaltiesMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeNFTRoyaltiesMetadata
+}
+
 type NFTBidTxindexMetadata struct {
 	NFTPostHashHex            string
 	SerialNumber              uint64
@@ -4503,7 +4844,7 @@ type NFTBidTxindexMetadata struct {
 }
 
 // TODO: Understand the omitempty thing
-func (txnMeta *NFTBidTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *NFTBidTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
@@ -4511,7 +4852,7 @@ func (txnMeta *NFTBidTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint6
 	data = append(data, UintToBuf(txnMeta.BidAmountNanos)...)
 	data = append(data, BoolToByte(txnMeta.IsBuyNowBid))
 	data = append(data, EncodeByteArray([]byte(txnMeta.OwnerPublicKeyBase58Check))...)
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.NFTRoyaltiesMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.NFTRoyaltiesMetadata, skipMetadata...)...)
 	return data
 }
 
@@ -4551,6 +4892,14 @@ func (txnMeta *NFTBidTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint6
 	return nil
 }
 
+func (txnMeta *NFTBidTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *NFTBidTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeNFTBidTxindexMetadata
+}
+
 type AcceptNFTBidTxindexMetadata struct {
 	NFTPostHashHex       string
 	SerialNumber         uint64
@@ -4558,13 +4907,13 @@ type AcceptNFTBidTxindexMetadata struct {
 	NFTRoyaltiesMetadata *NFTRoyaltiesMetadata
 }
 
-func (txnMeta *AcceptNFTBidTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *AcceptNFTBidTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
 	data = append(data, UintToBuf(txnMeta.SerialNumber)...)
 	data = append(data, UintToBuf(txnMeta.BidAmountNanos)...)
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.NFTRoyaltiesMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.NFTRoyaltiesMetadata, skipMetadata...)...)
 
 	return data
 }
@@ -4593,12 +4942,20 @@ func (txnMeta *AcceptNFTBidTxindexMetadata) RawDecodeWithoutMetadata(blockHeight
 	return nil
 }
 
+func (txnMeta *AcceptNFTBidTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *AcceptNFTBidTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAcceptNFTBidTxindexMetadata
+}
+
 type NFTTransferTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
 }
 
-func (txnMeta *NFTTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *NFTTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
@@ -4624,12 +4981,20 @@ func (txnMeta *NFTTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeight 
 	return nil
 }
 
+func (txnMeta *NFTTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *NFTTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeNFTTransferTxindexMetadata
+}
+
 type AcceptNFTTransferTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
 }
 
-func (txnMeta *AcceptNFTTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *AcceptNFTTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
@@ -4653,12 +5018,20 @@ func (txnMeta *AcceptNFTTransferTxindexMetadata) RawDecodeWithoutMetadata(blockH
 	return nil
 }
 
+func (txnMeta *AcceptNFTTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *AcceptNFTTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAcceptNFTTransferTxindexMetadata
+}
+
 type BurnNFTTxindexMetadata struct {
 	NFTPostHashHex string
 	SerialNumber   uint64
 }
 
-func (txnMeta *BurnNFTTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *BurnNFTTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
@@ -4683,13 +5056,21 @@ func (txnMeta *BurnNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	return nil
 }
 
+func (txnMeta *BurnNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *BurnNFTTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeBurnNFTTxindexMetadata
+}
+
 type CreateNFTTxindexMetadata struct {
 	NFTPostHashHex             string
 	AdditionalCoinRoyaltiesMap map[string]uint64 `json:",omitempty"`
 	AdditionalDESORoyaltiesMap map[string]uint64 `json:",omitempty"`
 }
 
-func (txnMeta *CreateNFTTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *CreateNFTTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
@@ -4720,12 +5101,20 @@ func (txnMeta *CreateNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight ui
 	return nil
 }
 
+func (txnMeta *CreateNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *CreateNFTTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreateNFTTxindexMetadata
+}
+
 type UpdateNFTTxindexMetadata struct {
 	NFTPostHashHex string
 	IsForSale      bool
 }
 
-func (txnMeta *UpdateNFTTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *UpdateNFTTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.NFTPostHashHex))...)
@@ -4748,6 +5137,14 @@ func (txnMeta *UpdateNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight ui
 
 	}
 	return nil
+}
+
+func (txnMeta *UpdateNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *UpdateNFTTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUpdateNFTTxindexMetadata
 }
 
 type TransactionMetadata struct {
@@ -4786,7 +5183,7 @@ type TransactionMetadata struct {
 	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
 }
 
-func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.BlockHashHex))...)
@@ -4796,52 +5193,52 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64)
 
 	data = append(data, UintToBuf(uint64(len(txnMeta.AffectedPublicKeys)))...)
 	for _, affectedKey := range txnMeta.AffectedPublicKeys {
-		data = append(data, EncodeToBytes(blockHeight, affectedKey)...)
+		data = append(data, EncodeToBytes(blockHeight, affectedKey, skipMetadata...)...)
 	}
 
 	data = append(data, UintToBuf(uint64(len(txnMeta.TxnOutputs)))...)
 	for _, output := range txnMeta.TxnOutputs {
-		data = append(data, EncodeToBytes(blockHeight, output)...)
+		data = append(data, EncodeToBytes(blockHeight, output, skipMetadata...)...)
 	}
 
 	// encoding BasicTransferTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.BasicTransferTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.BasicTransferTxindexMetadata, skipMetadata...)...)
 	// encoding BitcoinExchangeTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.BitcoinExchangeTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.BitcoinExchangeTxindexMetadata, skipMetadata...)...)
 	// encoding CreatorCoinTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatorCoinTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatorCoinTxindexMetadata, skipMetadata...)...)
 	// encoding CreatorCoinTransferTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatorCoinTransferTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatorCoinTransferTxindexMetadata, skipMetadata...)...)
 	// encoding UpdateProfileTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateProfileTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateProfileTxindexMetadata, skipMetadata...)...)
 	// encoding SubmitPostTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.SubmitPostTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.SubmitPostTxindexMetadata, skipMetadata...)...)
 	// encoding LikeTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.LikeTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.LikeTxindexMetadata, skipMetadata...)...)
 	// encoding FollowTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.FollowTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.FollowTxindexMetadata, skipMetadata...)...)
 	// encoding PrivateMessageTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.PrivateMessageTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.PrivateMessageTxindexMetadata, skipMetadata...)...)
 	// encoding SwapIdentityTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.SwapIdentityTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.SwapIdentityTxindexMetadata, skipMetadata...)...)
 	// encoding NFTBidTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.NFTBidTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.NFTBidTxindexMetadata, skipMetadata...)...)
 	// encoding AcceptNFTBidTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.AcceptNFTBidTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.AcceptNFTBidTxindexMetadata, skipMetadata...)...)
 	// encoding NFTTransferTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.NFTTransferTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.NFTTransferTxindexMetadata, skipMetadata...)...)
 	// encoding AcceptNFTTransferTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.AcceptNFTTransferTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.AcceptNFTTransferTxindexMetadata, skipMetadata...)...)
 	// encoding BurnNFTTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.BurnNFTTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.BurnNFTTxindexMetadata, skipMetadata...)...)
 	// encoding DAOCoinTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinTxindexMetadata, skipMetadata...)...)
 	// encoding DAOCoinTransferTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinTransferTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinTransferTxindexMetadata, skipMetadata...)...)
 	// encoding CreateNFTTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateNFTTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateNFTTxindexMetadata, skipMetadata...)...)
 	// encoding UpdateNFTTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateNFTTxindexMetadata)...)
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateNFTTxindexMetadata, skipMetadata...)...)
 
 	return data
 }
@@ -5031,6 +5428,14 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	}
 
 	return nil
+}
+
+func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeTransactionMetadata
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, snap *Snapshot, txID *BlockHash) bool {
@@ -5913,37 +6318,6 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 // outside of the protocol layer once update to the creation of TxIndex are complete.
 // =======================================================================================
 
-func EncodeAcceptedNFTBidEntries(nftBidEntries *[]*NFTBidEntry, blockHeight uint64) []byte {
-	var data []byte
-
-	if nftBidEntries != nil {
-		numEntries := uint64(len(*nftBidEntries))
-		data = append(data, UintToBuf(numEntries)...)
-
-		for _, entry := range *nftBidEntries {
-			data = append(data, EncodeToBytes(blockHeight, entry)...)
-		}
-	} else {
-		data = append(data, UintToBuf(0)...)
-	}
-
-	return data
-}
-
-func DecodeAcceptedNFTBidEntries(data []byte) *[]*NFTBidEntry {
-	var bidEntries []*NFTBidEntry
-	rr := bytes.NewReader(data)
-
-	numEntries, _ := ReadUvarint(rr)
-	for ii := uint64(0); ii < numEntries; ii++ {
-		bidEntry := &NFTBidEntry{}
-		DecodeFromBytes(bidEntry, rr)
-		bidEntries = append(bidEntries, bidEntry)
-	}
-
-	return &bidEntries
-}
-
 func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToAcceptedBidEntries...)
 	key := append(prefixCopy, nftPostHash[:]...)
@@ -5955,8 +6329,11 @@ func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, s
 func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
 
+	nftBidEntryBundle := &NFTBidEntryBundle{
+		nftBidEntryBundle: *nftBidEntries,
+	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPostHashSerialNumberToAcceptedBidEntries(
-		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeAcceptedNFTBidEntries(nftBidEntries, blockHeight)); err != nil {
+		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeToBytes(blockHeight, nftBidEntryBundle)); err != nil {
 
 		return errors.Wrapf(err, "DBPutAcceptedNFTBidEntriesMappingWithTxn: Problem "+
 			"adding accepted bid mapping for post: %v, serial number: %d", nftKey.NFTPostHash, nftKey.SerialNumber)
@@ -5981,9 +6358,13 @@ func DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn *badger.Txn, sn
 		return nil
 	}
 
-	var nftBidEntriesObj *[]*NFTBidEntry
-	nftBidEntriesObj = DecodeAcceptedNFTBidEntries(nftBidEntriesBytes)
-	return nftBidEntriesObj
+	nftBidEntriesBundle := &NFTBidEntryBundle{}
+	rr := bytes.NewReader(nftBidEntriesBytes)
+	if exists, err := DecodeFromBytes(nftBidEntriesBundle, rr); !exists || err != nil {
+		glog.Errorf("DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn: Problem reading NFTBidEntryBundle, error: (%v)", err)
+		return nil
+	}
+	return &nftBidEntriesBundle.nftBidEntryBundle
 }
 
 func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, snap *Snapshot,
@@ -6662,7 +7043,11 @@ func DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(txn *badger.Txn, snap *Sna
 	key := _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID, isDAOCoin)
 	balanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
-		return nil
+		return &BalanceEntry{
+			HODLerPKID:   hodlerPKID.NewPKID(),
+			CreatorPKID:  creatorPKID.NewPKID(),
+			BalanceNanos: *uint256.NewInt(),
+		}
 	}
 	balanceEntryObj := &BalanceEntry{}
 	rr := bytes.NewReader(balanceEntryBytes)
@@ -6738,6 +7123,12 @@ func DBDeleteBalanceEntryMappings(handle *badger.DB, snap *Snapshot,
 
 func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	balanceEntry *BalanceEntry, isDAOCoin bool) error {
+
+	// If the balance is zero, then there is no point in storing this entry.
+	// We already placeholder a "zero" balance entry in connect logic.
+	if balanceEntry.BalanceNanos.Eq(uint256.NewInt()) && !balanceEntry.HasPurchased {
+		return nil
+	}
 
 	balanceEntryBytes := EncodeToBytes(blockHeight, balanceEntry)
 	// Set the forward direction for the HODLer
@@ -6818,7 +7209,11 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, snap *Snap
 	key := _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creator, holder, isDAOCoin)
 	balanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
-		return nil
+		return &BalanceEntry{
+			HODLerPKID:   holder.NewPKID(),
+			CreatorPKID:  creator.NewPKID(),
+			BalanceNanos: *uint256.NewInt(),
+		}
 	}
 
 	balanceEntryObj := &BalanceEntry{}

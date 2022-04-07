@@ -2396,7 +2396,7 @@ func (utxoKey *UtxoKey) String() string {
 	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
 }
 
-func (utxoKey *UtxoKey) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (utxoKey *UtxoKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, utxoKey.TxID.ToBytes()...)
 	data = append(data, UintToBuf(uint64(utxoKey.Index))...)
@@ -2419,6 +2419,14 @@ func (utxoKey *UtxoKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	utxoKey.Index = uint32(index)
 
 	return nil
+}
+
+func (utxoKey *UtxoKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (utxoKey *UtxoKey) GetEncoderType() EncoderType {
+	return EncoderTypeUtxoKey
 }
 
 const (
@@ -2461,7 +2469,7 @@ func (desoOutput *DeSoOutput) String() string {
 		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
 }
 
-func (desoOutput *DeSoOutput) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (desoOutput *DeSoOutput) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(desoOutput.PublicKey)...)
@@ -2483,6 +2491,14 @@ func (desoOutput *DeSoOutput) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading AmountNanos")
 	}
 	return nil
+}
+
+func (desoOutput *DeSoOutput) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (desoOutput *DeSoOutput) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoOutput
 }
 
 type MsgDeSoTxn struct {

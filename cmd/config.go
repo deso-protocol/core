@@ -60,6 +60,7 @@ type Config struct {
 	GlogVmodule           string
 	LogDBSummarySnapshots bool
 	DatadogProfiler       bool
+	TimeEvents            bool
 }
 
 func LoadConfig() *Config {
@@ -135,6 +136,7 @@ func LoadConfig() *Config {
 	config.GlogVmodule = viper.GetString("glog-vmodule")
 	config.LogDBSummarySnapshots = viper.GetBool("log-db-summary-snapshots")
 	config.DatadogProfiler = viper.GetBool("datadog-profiler")
+	config.TimeEvents = viper.GetBool("time-events")
 
 	return &config
 }

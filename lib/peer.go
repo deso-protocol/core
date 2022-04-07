@@ -419,7 +419,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 
 	// Ignore GetSnapshot requests if we're still syncing. We will only serve snapshot chunk when our
 	// blockchain state is fully current.
-	if pp.srv.blockchain.snapshot == nil {
+	if pp.srv.snapshot == nil {
 		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"and disconnecting because node doesn't support HyperSync", pp)
 		pp.Disconnect()
@@ -468,9 +468,9 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	}
 	if isStateKey(msg.GetPrefix()) {
 		snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
-			pp.srv.blockchain.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.GetPrefix(), msg.SnapshotStartKey)
+			pp.srv.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.GetPrefix(), msg.SnapshotStartKey)
 
-		snapshotDataMsg.SnapshotMetadata = pp.srv.blockchain.snapshot.CurrentEpochSnapshotMetadata
+		snapshotDataMsg.SnapshotMetadata = pp.srv.snapshot.CurrentEpochSnapshotMetadata
 	} else if isTxIndexKey(msg.GetPrefix()) {
 		if pp.srv.TxIndex != nil && pp.srv.TxIndex.FinishedSyncing() {
 			snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
@@ -509,7 +509,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 
 	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) "+
 		"with SnapshotHeight (%v) and CurrentEpochChecksumBytes (%v) and Snapshotdata length (%v)", pp,
-		pp.srv.blockchain.snapshot.CurrentEpochSnapshotMetadata.SnapshotBlockHeight,
+		pp.srv.snapshot.CurrentEpochSnapshotMetadata.SnapshotBlockHeight,
 		snapshotDataMsg.SnapshotMetadata, len(snapshotDataMsg.SnapshotChunk))
 }
 
@@ -774,7 +774,6 @@ func (pp *Peer) IsOutbound() bool {
 
 func (pp *Peer) QueueMessage(desoMessage DeSoMessage) {
 	// If the peer is disconnected, don't queue anything.
-	glog.Infof("QueueMessage: connected (%v)", pp.Connected())
 	if !pp.Connected() {
 		return
 	}
@@ -1434,6 +1433,7 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 // Disconnect closes a peer's network connection.
 func (pp *Peer) Disconnect() {
 	// Only run the logic the first time Disconnect is called.
+	glog.V(1).Infof(CLog(Yellow, "Peer.Disconnect: Starting"))
 	if atomic.AddInt32(&pp.disconnected, 1) != 1 {
 		glog.V(1).Infof("Peer.Disconnect: Disconnect call ignored since it was already called before for Peer %v", pp)
 		return

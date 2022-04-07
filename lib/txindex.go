@@ -37,7 +37,8 @@ type TXIndex struct {
 	stopUpdateChannel chan struct{}
 }
 
-func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (*TXIndex, error) {
+func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (
+	_txindex *TXIndex, _error error, _shouldRestart bool) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
 	txIndexOpts := PerformanceBadgerOptions(txIndexDir)
@@ -54,10 +55,12 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 
 	// Setup snapshot
 	var snapshot *Snapshot
+	shouldRestart := false
 	if coreChain.Snapshot() != nil {
-		snapshot, err = NewSnapshot(txIndexDir, coreChain.Snapshot().SnapshotBlockHeightPeriod, true, true)
+		snapshot, err, shouldRestart = NewSnapshot(txIndexDb, txIndexDir, coreChain.Snapshot().SnapshotBlockHeightPeriod,
+			true, true, params)
 		if err != nil {
-			return nil, errors.Wrapf(err, "NewTXIndex: Problem creating snapshot")
+			return nil, errors.Wrapf(err, "NewTXIndex: Problem creating snapshot"), true
 		}
 	}
 
@@ -103,7 +106,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				if snapshot != nil {
 					snapshot.StartAncestralRecordsFlush(true)
 				}
-				return nil, fmt.Errorf("NewTXIndex: Error initializing seed balances in txindex: %v", err)
+				return nil, fmt.Errorf("NewTXIndex: Error initializing seed balances in txindex: %v", err), true
 			}
 		}
 
@@ -114,14 +117,14 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				if snapshot != nil {
 					snapshot.StartAncestralRecordsFlush(true)
 				}
-				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn HEX: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
+				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn HEX: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex), true
 			}
 			txn := &MsgDeSoTxn{}
 			if err := txn.FromBytes(txnBytes); err != nil {
 				if snapshot != nil {
 					snapshot.StartAncestralRecordsFlush(true)
 				}
-				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
+				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex), true
 			}
 			err = DbPutTxindexTransactionMappings(txIndexDb, snapshot, 0, txn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: PkToString(txn.PublicKey, params),
@@ -136,7 +139,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				},
 			})
 			if err != nil {
-				return nil, fmt.Errorf("NewTXIndex: Error initializing seed txn %v in txindex: %v", txn, err)
+				return nil, fmt.Errorf("NewTXIndex: Error initializing seed txn %v in txindex: %v", txn, err), true
 			}
 		}
 		if snapshot != nil {
@@ -158,7 +161,16 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		[]string{}, 0, coreChain.MaxSyncBlockHeight, params, chainlib.NewMedianTime(),
 		txIndexDb, nil, nil, snapshot)
 	if err != nil {
-		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err)
+		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err), true
+	}
+
+	if shouldRestart {
+		glog.Errorf(CLog(Red, "NewTXIndex: Forcing a rollback to the last snapshot epoch because node was not closed "+
+			"properly last time"))
+		if err := snapshot.ForceResetToLastSnapshot(txIndexChain); err != nil {
+			return nil, errors.Wrapf(err, "NewTXIndex: Problem calling ForceResetToLastSnapshot"), true
+		}
+
 	}
 
 	// At this point, we should have set up a blockchain object for our
@@ -171,7 +183,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		CoreChain:         coreChain,
 		Params:            params,
 		stopUpdateChannel: make(chan struct{}),
-	}, nil
+	}, nil, shouldRestart
 }
 
 func (txi *TXIndex) FinishedSyncing() bool {
@@ -213,13 +225,14 @@ func (txi *TXIndex) Start() {
 	}()
 }
 
+// Stop TXIndex node. This method doesn't close the txindex db, make sure to call in the parent context:
+// 	txi.TXIndexChain.DB().Close()
+// It's important!!! Do it after the txi.updateWaitGroup.Wait().
 func (txi *TXIndex) Stop() {
 	glog.Info("TXIndex: Stopping updates and closing database")
 
 	txi.stopUpdateChannel <- struct{}{}
 	txi.updateWaitGroup.Wait()
-
-	txi.TXIndexChain.DB().Close()
 }
 
 // GetTxindexUpdateBlockNodes ...

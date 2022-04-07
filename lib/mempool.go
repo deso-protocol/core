@@ -152,7 +152,8 @@ type UnconnectedTx struct {
 // to aggregate transactions and mine them into blocks.
 type DeSoMempool struct {
 	// Stops the mempool's services.
-	quit chan struct{}
+	quit    chan struct{}
+	stopped bool
 
 	// A reference to a blockchain object that can be used to validate transactions before
 	// adding them to the pool.
@@ -904,6 +905,9 @@ func (mp *DeSoMempool) GetAugmentedUtxoViewForPublicKey(pkBytes []byte, optional
 // TODO(performance): We should make a read-only version of the universal view that
 // you can get from the mempool.
 func (mp *DeSoMempool) GetAugmentedUniversalView() (*UtxoView, error) {
+	if mp.stopped {
+		return nil, fmt.Errorf("GetAugmentedUniversalView: Problem getting UtxoView, Mempool is closed")
+	}
 	newView, err := mp.readOnlyUtxoView.CopyUtxoView()
 	if err != nil {
 		return nil, err
@@ -2351,6 +2355,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 
 func (mp *DeSoMempool) Stop() {
 	close(mp.quit)
+	mp.stopped = true
 }
 
 // Create a new pool with no transactions in it.

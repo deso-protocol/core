@@ -6,8 +6,6 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"os"
-	"os/signal"
-	"syscall"
 )
 
 var runCmd = &cobra.Command{
@@ -27,16 +25,14 @@ func Run(cmd *cobra.Command, args []string) {
 	config := LoadConfig()
 
 	// Start the deso node
-	node := NewNode(config)
-	go node.Start()
-
 	shutdownListener := make(chan os.Signal)
-	signal.Notify(shutdownListener, syscall.SIGINT, syscall.SIGTERM)
+	node := NewNode(config)
+	node.Start(&shutdownListener)
+
 	defer func() {
 		node.Stop()
 		glog.Info("Shutdown complete")
 	}()
-
 	<-shutdownListener
 }
 
@@ -178,6 +174,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"level to 3 in all Go files whose names begin \"gopher\".")
 	cmd.PersistentFlags().Bool("log-db-summary-snapshots", false, "The node will log a snapshot of all DB keys every 30s.")
 	cmd.PersistentFlags().Bool("datadog-profiler", false, "Enable the DataDog profiler for performance testing")
+	cmd.PersistentFlags().Bool("time-events", false, "Enable simple event timer, helpful in hands-on performance testing")
 
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)

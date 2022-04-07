@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"io/ioutil"
@@ -14,13 +15,14 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 )
 
-const HyperSyncSnapshotPeriod = 90
+const HyperSyncSnapshotPeriod = 1000
 
 // ConnectionBridge is a bidirectional communication channel between two nodes.
 // A bridge creates a pair of inbound and outbound peers for each of the nodes to handle communication.
@@ -282,16 +284,16 @@ func (bridge *ConnectionBridge) RouteTraffic(source *lib.Peer, destination *lib.
 				source.Conn.LocalAddr().String(), destination.Conn.LocalAddr().String())
 			panic(err)
 		}
-		fmt.Printf("Reading message: type: (%v) at source with local addr: (%v) and remote addr: (%v)\n",
-			/*inMsg, */ inMsg.GetMsgType(), source.Conn.LocalAddr().String(), source.Conn.RemoteAddr().String())
+		//fmt.Printf("Reading message: type: (%v) at source with local addr: (%v) and remote addr: (%v)\n",
+		//	/*inMsg, */ inMsg.GetMsgType(), source.Conn.LocalAddr().String(), source.Conn.RemoteAddr().String())
 		switch inMsg.(type) {
 		case *lib.MsgDeSoAddr:
 		case *lib.MsgDeSoGetAddr:
 			continue
 		default:
 			// Send the message to the destination connection.
-			fmt.Printf("Redirecting the message: type: (%v) to destination with local addr: (%v) and remote addr: (%v)\n",
-				/*inMsg, */ inMsg.GetMsgType(), destination.Conn.LocalAddr().String(), destination.Conn.RemoteAddr().String())
+			//fmt.Printf("Redirecting the message: type: (%v) to destination with local addr: (%v) and remote addr: (%v)\n",
+			//	/*inMsg, */ inMsg.GetMsgType(), destination.Conn.LocalAddr().String(), destination.Conn.RemoteAddr().String())
 			if err := destination.WriteDeSoMessage(inMsg); err != nil {
 				panic(err)
 			}
@@ -428,6 +430,9 @@ func waitForNodeToFullySync(node *Node) {
 		<-ticker.C
 
 		if node.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent {
+			if node.Server.GetBlockchain().Snapshot() != nil {
+				node.Server.GetBlockchain().Snapshot().WaitForAllOperationsToFinish()
+			}
 			return
 		}
 	}
@@ -439,6 +444,9 @@ func waitForNodeToFullySyncAndStoreAllBlocks(node *Node) {
 		<-ticker.C
 
 		if node.Server.GetBlockchain().IsFullyStored() {
+			if node.Server.GetBlockchain().Snapshot() != nil {
+				node.Server.GetBlockchain().Snapshot().WaitForAllOperationsToFinish()
+			}
 			return
 		}
 	}
@@ -450,6 +458,9 @@ func waitForNodeToFullySyncTxIndex(node *Node) {
 		<-ticker.C
 
 		if node.TXIndex.FinishedSyncing() && node.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent {
+			if node.Server.GetBlockchain().Snapshot() != nil {
+				node.Server.GetBlockchain().Snapshot().WaitForAllOperationsToFinish()
+			}
 			return
 		}
 	}
@@ -472,33 +483,38 @@ func compareNodesByChecksum(t *testing.T, nodeA *Node, nodeB *Node) {
 
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
-func compareNodesByState(t *testing.T, nodeA *Node, nodeB *Node) {
-	compareNodesByStateWithPrefixList(t, nodeA.chainDB, nodeB.chainDB, lib.StatePrefixes.StatePrefixesList)
+func compareNodesByState(t *testing.T, nodeA *Node, nodeB *Node, verbose int) {
+	compareNodesByStateWithPrefixList(t, nodeA.chainDB, nodeB.chainDB, lib.StatePrefixes.StatePrefixesList, verbose)
 }
-func compareNodesByDB(t *testing.T, nodeA *Node, nodeB *Node) {
+func compareNodesByDB(t *testing.T, nodeA *Node, nodeB *Node, verbose int) {
 	var prefixList [][]byte
 	for prefix := range lib.StatePrefixes.StatePrefixesMap {
 		prefixList = append(prefixList, []byte{prefix})
 	}
-	compareNodesByStateWithPrefixList(t, nodeA.chainDB, nodeB.chainDB, prefixList)
+	compareNodesByStateWithPrefixList(t, nodeA.chainDB, nodeB.chainDB, prefixList, verbose)
 }
-func compareNodesByTxIndex(t *testing.T, nodeA *Node, nodeB *Node) {
+func compareNodesByTxIndex(t *testing.T, nodeA *Node, nodeB *Node, verbose int) {
 	var prefixList [][]byte
 	for prefix := range lib.StatePrefixes.StatePrefixesMap {
 		prefixList = append(prefixList, []byte{prefix})
 	}
-	compareNodesByStateWithPrefixList(t, nodeA.TXIndex.TXIndexChain.DB(), nodeB.TXIndex.TXIndexChain.DB(), prefixList)
+	compareNodesByStateWithPrefixList(t, nodeA.TXIndex.TXIndexChain.DB(), nodeB.TXIndex.TXIndexChain.DB(), prefixList, verbose)
 }
-func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger.DB, prefixList [][]byte) {
+func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger.DB, prefixList [][]byte, verbose int) {
 	maxBytes := lib.SnapshotBatchSize
-	var allPrefixes [][]byte
+	var brokenPrefixes [][]byte
+	var broken bool
+	sort.Slice(prefixList, func(ii, jj int) bool {
+		return prefixList[ii][0] < prefixList[jj][0]
+	})
 	for _, prefix := range prefixList {
-		allPrefixes = append(allPrefixes, prefix)
 		lastPrefix := prefix
+		invalidLengths := false
+		invalidKeys := false
+		invalidValues := false
+		invalidFull := false
+		existingEntriesDb0 := make(map[string][]byte)
 		for {
-			existingValuesA := make(map[string]string)
-			existingValuesB := make(map[string]string)
-
 			// Fetch a state chunk from nodeA database.
 			dbEntriesA, isChunkFullA, err := lib.DBIteratePrefixKeys(dbA, prefix, lastPrefix, maxBytes)
 			if err != nil {
@@ -506,9 +522,7 @@ func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger
 					prefix, lastPrefix))
 			}
 			for _, entry := range dbEntriesA {
-				keyHex := hex.EncodeToString(entry.Key)
-				valueHex := hex.EncodeToString(entry.Value)
-				existingValuesA[keyHex] = valueHex
+				existingEntriesDb0[hex.EncodeToString(entry.Key)] = entry.Value
 			}
 
 			// Fetch a state chunk from nodeB database.
@@ -518,36 +532,67 @@ func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger
 					prefix, lastPrefix))
 			}
 			for _, entry := range dbEntriesB {
-				keyHex := hex.EncodeToString(entry.Key)
-				valueHex := hex.EncodeToString(entry.Value)
-				existingValuesB[keyHex] = valueHex
+				key := hex.EncodeToString(entry.Key)
+				if _, exists := existingEntriesDb0[key]; exists {
+					if !reflect.DeepEqual(entry.Value, existingEntriesDb0[key]) {
+						if !invalidValues || verbose >= 1 {
+							glog.Errorf("Databases not equal on prefix: %v, the key is (%v); "+
+								"unequal values (db0, db1) : (%v, %v)\n", prefix, entry.Key,
+								entry.Value, existingEntriesDb0[key])
+							invalidValues = true
+						}
+					}
+					delete(existingEntriesDb0, key)
+				} else {
+					glog.Errorf("Databases not equal on prefix: %v, and key: %v; the entry in database B "+
+						"was not found in the existingEntriesMap, and has value: %v\n", prefix, key, entry.Value)
+				}
 			}
 
 			// Make sure we've fetched the same number of entries for nodeA and nodeB.
 			if len(dbEntriesA) != len(dbEntriesB) {
-				t.Fatal(fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
-					"varying lengths (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, len(dbEntriesA), len(dbEntriesB)))
+				invalidLengths = true
+				glog.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
+					"varying lengths (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, len(dbEntriesA), len(dbEntriesB))
 			}
 
 			// It doesn't matter which map we iterate through, since if we got here it means they have
 			// an identical number of unique keys. So we will choose dbEntriesA for convenience.
 			for ii, entry := range dbEntriesA {
+				if ii >= len(dbEntriesB) {
+					break
+				}
 				if !reflect.DeepEqual(entry.Key, dbEntriesB[ii].Key) {
-					t.Fatal(fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal keys "+
-						"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Key, dbEntriesB[ii].Key))
+					if !invalidKeys || verbose >= 1 {
+						glog.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal keys "+
+							"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Key, dbEntriesB[ii].Key)
+						invalidKeys = true
+					}
 				}
 			}
-			for ii, entry := range dbEntriesA {
-				if !reflect.DeepEqual(entry.Value, dbEntriesB[ii].Value) {
-					t.Fatal(fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal values "+
-						"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Value, dbEntriesB[ii].Value))
-				}
-			}
+			//for ii, entry := range dbEntriesA {
+			//	if ii >= len(dbEntriesB) {
+			//		break
+			//	}
+			//	if !reflect.DeepEqual(entry.Value, dbEntriesB[ii].Value) {
+			//		if !invalidValues || verbose >= 1 {
+			//			glog.Errorf("Databases not equal on prefix: %v, and key: %v; the key is (%v); "+
+			//				"unequal values len (db0, db1) : (%v, %v)\n", prefix, entry.Key, entry.Key,
+			//				len(entry.Value), len(dbEntriesB[ii].Value))
+			//			glog.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v; unequal values "+
+			//				"(nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, entry.Value, dbEntriesB[ii].Value)
+			//			invalidValues = true
+			//		}
+			//	}
+			//}
 
 			// Make sure the isChunkFull match for both chunks.
 			if isChunkFullA != isChunkFullB {
-				t.Fatal(fmt.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
-					"unequal fulls (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, isChunkFullA, isChunkFullB))
+				if !invalidFull || verbose >= 1 {
+					glog.Errorf("Databases not equal on prefix: %v, and lastPrefix: %v;"+
+						"unequal fulls (nodeA, nodeB) : (%v, %v)\n", prefix, lastPrefix, isChunkFullA, isChunkFullB)
+					invalidFull = true
+				}
 			}
 
 			if len(dbEntriesA) > 0 {
@@ -560,8 +605,65 @@ func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger
 				break
 			}
 		}
-		fmt.Printf("MATCH: Prefix (%v)\n", allPrefixes)
+		status := "PASS"
+		if invalidLengths || invalidKeys || invalidValues || invalidFull {
+			status = "FAIL"
+			brokenPrefixes = append(brokenPrefixes, prefix)
+			broken = true
+		}
+		glog.Infof("The number of entries in existsMap for prefix (%v) is (%v)\n", prefix, len(existingEntriesDb0))
+		for key, entry := range existingEntriesDb0 {
+			glog.Infof("ExistingMape entry: (key, len(value) : (%v, %v)\n", key, len(entry))
+		}
+		glog.Infof("Status for prefix (%v): (%s)\n invalidLengths: (%v); invalidKeys: (%v); invalidValues: "+
+			"(%v); invalidFull: (%v)\n\n", prefix, status, invalidLengths, invalidKeys, invalidValues, invalidFull)
 	}
+	if broken {
+		t.Fatalf("Databases differ! Broken prefixes: %v", brokenPrefixes)
+	}
+}
+
+func computeNodeStateChecksum(t *testing.T, node *Node, blockHeight uint64) *lib.StateChecksum {
+	require := require.New(t)
+
+	// Get all state prefixes and sort them.
+	var prefixes [][]byte
+	for prefix, isState := range lib.StatePrefixes.StatePrefixesMap {
+		if !isState {
+			continue
+		}
+		prefixes = append(prefixes, []byte{prefix})
+	}
+	sort.Slice(prefixes, func(ii, jj int) bool {
+		return prefixes[ii][0] < prefixes[jj][0]
+	})
+
+	carrierChecksum := &lib.StateChecksum{}
+	carrierChecksum.Initialize(nil, nil)
+
+	err := node.Server.GetBlockchain().DB().View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		for _, prefix := range prefixes {
+			it := txn.NewIterator(opts)
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				item := it.Item()
+				key := item.Key()
+				err := item.Value(func(value []byte) error {
+					return carrierChecksum.AddOrRemoveBytesWithMigrations(key, value, blockHeight,
+						nil, true)
+				})
+				if err != nil {
+					return err
+				}
+			}
+			it.Close()
+		}
+		return nil
+	})
+	require.NoError(err)
+	require.NoError(carrierChecksum.Wait())
+
+	return carrierChecksum
 }
 
 func shutdownNode(t *testing.T, node *Node) *Node {
@@ -686,6 +788,8 @@ func TestSimpleBlockSync(t *testing.T) {
 	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
@@ -712,7 +816,7 @@ func TestSimpleBlockSync(t *testing.T) {
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
-	compareNodesByState(t, node1, node2)
+	compareNodesByState(t, node1, node2, 0)
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
@@ -733,6 +837,8 @@ func TestSimpleSyncRestart(t *testing.T) {
 	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
@@ -762,7 +868,7 @@ func TestSimpleSyncRestart(t *testing.T) {
 	node2, bridge = restartAtHeightAndReconnectNode(t, node2, node1, bridge, randomHeight)
 	waitForNodeToFullySync(node2)
 
-	compareNodesByDB(t, node1, node2)
+	compareNodesByDB(t, node1, node2, 0)
 	fmt.Println("Random restart successful! Random height was", randomHeight)
 	fmt.Println("Databases match!")
 	node1.Stop()
@@ -785,6 +891,9 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	dbDir3 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
+	defer os.RemoveAll(dbDir3)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
@@ -828,7 +937,7 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	//node2, bridge12 = restartAtHeightAndReconnectNode(t, node2, node1, bridge12, randomHeight)
 	waitForNodeToFullySync(node2)
 
-	compareNodesByDB(t, node1, node2)
+	compareNodesByDB(t, node1, node2, 0)
 	fmt.Println("Random restart successful! Random height was", randomHeight)
 	fmt.Println("Databases match!")
 	node1.Stop()
@@ -849,12 +958,14 @@ func TestSimpleHyperSync(t *testing.T) {
 	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
+	config1.MaxSyncBlockHeight = 5000
+	config2.MaxSyncBlockHeight = 5000
 	config1.HyperSync = true
 	config2.HyperSync = true
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
@@ -877,8 +988,8 @@ func TestSimpleHyperSync(t *testing.T) {
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySyncAndStoreAllBlocks(node2)
 
-	compareNodesByState(t, node1, node2)
-	compareNodesByDB(t, node1, node2)
+	compareNodesByState(t, node1, node2, 0)
+	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Databases match!")
 	node1.Stop()
@@ -893,6 +1004,9 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	dbDir3 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
+	defer os.RemoveAll(dbDir3)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
@@ -935,11 +1049,11 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	waitForNodeToFullySyncAndStoreAllBlocks(node3)
 
 	// Make sure node1 has the same database as node2
-	compareNodesByState(t, node1, node2)
-	compareNodesByDB(t, node1, node2)
+	compareNodesByState(t, node1, node2, 0)
+	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
 	// Make sure node2 has the same database as node3
-	compareNodesByDB(t, node2, node3)
+	compareNodesByDB(t, node2, node3, 0)
 	compareNodesByChecksum(t, node2, node3)
 
 	fmt.Println("Databases match!")
@@ -963,6 +1077,8 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
@@ -996,8 +1112,8 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySyncAndStoreAllBlocks(node2)
 
-	compareNodesByState(t, node1, node2)
-	compareNodesByDB(t, node1, node2)
+	compareNodesByState(t, node1, node2, 0)
+	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
 	fmt.Println("Databases match!")
@@ -1021,6 +1137,9 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	dbDir3 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
+	defer os.RemoveAll(dbDir3)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
@@ -1069,8 +1188,8 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySyncAndStoreAllBlocks(node2)
 
-	compareNodesByState(t, node1, node2)
-	compareNodesByDB(t, node1, node2)
+	compareNodesByState(t, node1, node2, 0)
+	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
 	fmt.Println("Databases match!")
@@ -1092,6 +1211,8 @@ func TestSimpleTxIndex(t *testing.T) {
 	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
@@ -1123,63 +1244,148 @@ func TestSimpleTxIndex(t *testing.T) {
 	waitForNodeToFullySyncTxIndex(node1)
 	waitForNodeToFullySyncTxIndex(node2)
 
-	compareNodesByDB(t, node1, node2)
-	compareNodesByTxIndex(t, node1, node2)
+	compareNodesByDB(t, node1, node2, 0)
+	compareNodesByTxIndex(t, node1, node2, 0)
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
 }
 
-// TestSimpleBlockSync test if a node can successfully sync from another node:
-//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
-//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
-//	3. bridge node1 and node2
-//	4. node2 syncs 50 blocks from node1.
-//	5. compare node1 state matches node2 state.
-func TestSimpleHyperSyncTxIndex(t *testing.T) {
+func TestEncoderMigrationBasic(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
+	dbDir1 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+
+	config1.MaxSyncBlockHeight = 1500
+	config1.HyperSync = true
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node1 := NewNode(config1)
+
+	_ = node1
+	node1 = startNode(t, node1)
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
+
+	checksumBytes, err := node1.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
+	require.NoError(err)
+	realChecksum, err := computeNodeStateChecksum(t, node1, 1500).ToBytes()
+	require.NoError(err)
+	require.Equal(true, reflect.DeepEqual(checksumBytes, realChecksum))
+	fmt.Println(checksumBytes)
+
+	node1.Stop()
+	//node2 = startNode(t, node2)
+}
+
+// Connect blocks to height 5000 and then disconnect
+func TestStateRollback(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
+	config1.MaxSyncBlockHeight = 5000
+	config2.MaxSyncBlockHeight = 5689
 	config1.HyperSync = true
 	config2.HyperSync = true
-	config1.TXIndex = true
-	config2.TXIndex = true
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+	config2.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
 
-	// wait for node1 to sync blocks
+	// wait for node1, node2 to sync blocks
 	waitForNodeToFullySync(node1)
-
-	// bridge the nodes together.
-	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Connect())
-
-	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
-	waitForNodeToFullySyncTxIndex(node1)
-	waitForNodeToFullySyncTxIndex(node2)
+	/* This code is no longer needed, but it was really useful in testing disconnect. Basically it goes transaction by
+	transaction and compares that connecting/disconnecting the transaction gives the same state at the end. The check
+	on the state is pretty hardcore. We checksum the entire database before the first connect and then compare it
+	to the checksum of the db after applying the connect/disconnect. */
+	//bestChain := node2.Server.GetBlockchain().BestChain()
+	//lastNode := bestChain[len(bestChain)-1]
+	//lastBlock, err := lib.GetBlock(lastNode.Hash, node2.Server.GetBlockchain().DB(), nil)
+	//require.NoError(err)
+	//height := lastBlock.Header.Height
+	//_, txHashes, err := lib.ComputeMerkleRoot(lastBlock.Txns)
+	//require.NoError(err)
+	//
+	//utxoOps := [][]*lib.UtxoOperation{}
+	////howMany := 3
+	//initialChecksum := computeNodeStateChecksum(t, node1, height)
+	//checksumsBeforeTransactions := []*lib.StateChecksum{initialChecksum}
+	////I0404 20:00:03.139818   76191 run_test.go:1280] checksumAfterTransactionBytes: ([8 89 214 239 199 116 26 139 218 1 24 67 190 194 178 16 137 186 76 7 124 98 185 77 198 214 201 50 248 152 75 4]), current txIndex (0), current txn (< TxHash: 4be39648eba47f54baa62e77e2423d57d12ed779d5e4b0044064a99ed5ba18b0, TxnType: BLOCK_REWARD, PubKey: 8mkU8yaVLs >)
+	////I0404 20:00:06.246344   76191 run_test.go:1280] checksumAfterTransactionBytes: ([26 238 98 178 174 72 123 173 5 191 100 244 94 58 94 75 10 76 3 19 146 252 225 150 107 231 82 224 49 46 132 117]), current txIndex (1), current txn (< TxHash: 07a5ac6b44f8f5f91caf502465bfbd60324ee319140a76a2a3a01fe0609d258f, TxnType: BASIC_TRANSFER, PubKey: BC1YLhSkfH28QrMAVkbejMUZELwkAEMwr2FFwhEtofHvzHRtP6rd7s6 >)
+	////I0404 20:00:17.912611   76191 run_test.go:1280] checksumAfterTransactionBytes: ([244 163 221 45 233 134 83 142 148 232 191 244 88 253 9 15 66 56 21 36 88 57 108 211 78 195 7 81 143 143 112 96]), current txIndex (2), current txn (< TxHash: 12e9af008054e4107c903e980149245149bc565b33d76b4a3c19cd68ee7ad485, TxnType: UPDATE_PROFILE, PubKey: BC1YLiMxepKu2kLBZssC2hQBahsjcg9Aat4ttsBZYy2WCnUE2WyrNzZ >)
+	////   run_test.go:1291:
+	//// 76390 db_utils.go:619] Getting into a set: key ([40]) value (11)
+	//
+	//for txIndex, txn := range lastBlock.Txns {
+	//	initialChecksumBytes, err := checksumsBeforeTransactions[txIndex].ToBytes()
+	//	require.NoError(err)
+	//	blockView, err := lib.NewUtxoView(node1.Server.GetBlockchain().DB(), node1.Params, nil, nil)
+	//	require.NoError(err)
+	//
+	//	txHash := txHashes[txIndex]
+	//	utxoOpsForTxn, _, _, _, err := blockView.ConnectTransaction(txn, txHash,
+	//		0, uint32(height), true, false)
+	//	require.NoError(err)
+	//	utxoOps = append(utxoOps, utxoOpsForTxn)
+	//	glog.Infof(lib.CLog(lib.Red, "RIGHT BEFORE FLUSH TO DB"))
+	//	require.NoError(blockView.FlushToDb(height))
+	//	checksumAfterTransaction := computeNodeStateChecksum(t, node1, height)
+	//	checksumsBeforeTransactions = append(checksumsBeforeTransactions, checksumAfterTransaction)
+	//	checksumAfterTransactionBytes, err := checksumAfterTransaction.ToBytes()
+	//	require.NoError(err)
+	//	glog.Infof("checksumAfterTransactionBytes: (%v), current txIndex (%v), current txn (%v)",
+	//		checksumAfterTransactionBytes, txIndex, txn)
+	//
+	//	blockView, err = lib.NewUtxoView(node1.Server.GetBlockchain().DB(), node1.Params, nil, nil)
+	//	require.NoError(err)
+	//	err = blockView.DisconnectTransaction(txn, txHash, utxoOpsForTxn, uint32(height))
+	//	require.NoError(err)
+	//	glog.Infof(lib.CLog(lib.Red, "RIGHT BEFORE DISCONNECT TO DB"))
+	//	require.NoError(blockView.FlushToDb(height))
+	//	afterDisconnectChecksum := computeNodeStateChecksum(t, node1, height)
+	//	afterDisconnectBytes, err := afterDisconnectChecksum.ToBytes()
+	//	require.NoError(err)
+	//	require.Equal(true, reflect.DeepEqual(initialChecksumBytes, afterDisconnectBytes))
+	//
+	//	blockView, err = lib.NewUtxoView(node1.Server.GetBlockchain().DB(), node1.Params, nil, nil)
+	//	require.NoError(err)
+	//	utxoOpsForTxn, _, _, _, err = blockView.ConnectTransaction(txn, txHash,
+	//		0, uint32(height), true, false)
+	//	require.NoError(err)
+	//	require.NoError(blockView.FlushToDb(height))
+	//	checksumFinal := computeNodeStateChecksum(t, node1, height)
+	//	checksumFinalFinalBytes, err := checksumFinal.ToBytes()
+	//	require.NoError(err)
+	//	require.Equal(true, reflect.DeepEqual(checksumAfterTransactionBytes, checksumFinalFinalBytes))
+	//}
 
-	compareNodesByDB(t, node1, node2)
-	compareNodesByTxIndex(t, node1, node2)
-	compareNodesByStateWithPrefixList(t, node2.chainDB, node2.TXIndex.TXIndexChain.DB(), lib.StatePrefixes.StatePrefixesList)
-	fmt.Println("Databases match!")
+	require.NoError(node2.Server.GetBlockchain().DisconnectBlocksToHeight(5000))
+	//compareNodesByState(t, node1, node2, 0)
+
+	node1Bytes, err := computeNodeStateChecksum(t, node1, 5000).ToBytes()
+	require.NoError(err)
+	node2Bytes, err := computeNodeStateChecksum(t, node2, 5000).ToBytes()
+	require.NoError(err)
+	require.Equal(true, reflect.DeepEqual(node1Bytes, node2Bytes))
+
 	node1.Stop()
 	node2.Stop()
 }

@@ -15,6 +15,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Check that all state db prefixes have been correctly mapped to DeSoEncoder types via StatePrefixToDeSoEncoder
+func TestStatePrefixToDeSoEncoder(t *testing.T) {
+	for prefixByte, isState := range StatePrefixes.StatePrefixesMap {
+		prefix := []byte{prefixByte}
+		isEncoder, encoder := StatePrefixToDeSoEncoder(prefix)
+		if isState {
+			if isEncoder && encoder == nil {
+				t.Fatalf("State prefix (%v) mapped to an incorrect encoder, isEncoder is true and encoder is nil", prefix)
+			} else if !isEncoder && encoder != nil {
+				t.Fatalf("State prefix (%v) mapped to an incorrect encoder, isEncoder is false and encoder is not nil", prefix)
+			}
+		} else {
+			if !isEncoder || (isEncoder && encoder != nil) {
+				t.Fatalf("Non-state prefix (%v) mapped to an incorrect encoder", prefix)
+			}
+		}
+	}
+}
+
 func TestEmptyMetadataEncoders(t *testing.T) {
 	require := require.New(t)
 	testCases := []DeSoEncoder{

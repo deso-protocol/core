@@ -506,7 +506,7 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	_ = require
 
 	z := StateChecksum{}
-	z.Initialize()
+	z.Initialize(nil, nil)
 	identity := group.Ristretto255.Identity()
 	bytesA := []byte("This is a test data")
 	bytesB := []byte("This is another test")
@@ -667,7 +667,7 @@ func TestStateChecksumBirthdayParadox(t *testing.T) {
 	_ = require
 
 	z := StateChecksum{}
-	z.Initialize()
+	z.Initialize(nil, nil)
 
 	iterationNumber := 1
 	testNumber := 1000
