@@ -1052,8 +1052,9 @@ func (bav *UtxoView) DisconnectBlock(
 		currentTxn := desoBlock.Txns[txnIndex]
 		txnHash := txHashes[txnIndex]
 		utxoOpsForTxn := utxoOps[txnIndex]
+		desoBlockHeight := desoBlock.Header.Height
 
-		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(blockHeight))
+		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(desoBlockHeight))
 		if err != nil {
 			return errors.Wrapf(err, "DisconnectBlock: Problem disconnecting transaction: %v", currentTxn)
 		}
