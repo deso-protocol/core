@@ -272,6 +272,7 @@ const (
 	RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist            RuleError = "RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist"
 	RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero                RuleError = "RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero"
 	RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee               RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee"
+	RuleErrorDAOCoinLimitOrderFeeNanosOverflow                    RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosOverflow"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
