@@ -1187,7 +1187,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err := utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order)
+			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1199,7 +1199,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1233,7 +1233,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(500))
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1246,7 +1246,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(500))
@@ -1280,7 +1280,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1293,7 +1293,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1328,7 +1328,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(50))
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1341,7 +1341,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(75))
@@ -1375,7 +1375,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1388,7 +1388,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1423,7 +1423,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(750))
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1436,7 +1436,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = utxoView._calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(500))
