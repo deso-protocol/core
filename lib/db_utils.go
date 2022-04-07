@@ -6257,7 +6257,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 
 	queryOrder := inputOrder.Copy()
-	queryQuantityToBuy := queryOrder.QuantityToFillInBaseUnits
+	queryQuantityToFill := queryOrder.QuantityToFillInBaseUnits.Clone()
 
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.
@@ -6300,7 +6300,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 	// Seek first matching order.
 	matchingOrders := []*DAOCoinLimitOrderEntry{}
 
-	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityToBuy.GtUint64(0); iterator.Next() {
+	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityToFill.GtUint64(0); iterator.Next() {
 		// If picking up from where you left off, skip the first order which
 		// has already been processed previously.
 		if len(startKey) != 0 && bytes.Equal(key, startKey) {
@@ -6319,53 +6319,18 @@ func DBGetMatchingDAOCoinLimitOrders(
 			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem getting limit order")
 		}
 
+		// Validate matching order's price.
 		if !inputOrder.IsValidMatchingOrderPrice(matchingOrder) {
 			break
 		}
 
-		// If the input order and the matching order have different operation types,
-		// i.e. one is an ASK and one is a BID or vice versa, since the buying coin
-		// of the input order matches the selling coin of the matching order or vice
-		// versa and so we can compare the quantity fields directly. This is treated
-		// as the default case.
-		matchingOrderQuantity := matchingOrder.QuantityToFillInBaseUnits
-
-		if inputOrder.OperationType == matchingOrder.OperationType {
-			var err error
-
-			if matchingOrder.OperationType == DAOCoinLimitOrderOperationTypeASK {
-				// If both orders are ASKs, we need to convert the matching order's
-				// selling quantity to a buying quantity to compare with the input
-				// order's selling quantity.
-				matchingOrderQuantity, err = matchingOrder.BaseUnitsToBuyUint256()
-			} else if matchingOrder.OperationType == DAOCoinLimitOrderOperationTypeBID {
-				// If both orders are BIDs, we need to convert the matching order's
-				// buying quantity to a selling quantity to compare with the input
-				// order's buying quantity.
-				matchingOrderQuantity, err = matchingOrder.BaseUnitsToSellUint256()
-			} else {
-				// This should never happen as we validate
-				// the matching order prior to storing.
-				err = fmt.Errorf("DBGetMatchingDAOCoinLimitOrders: invalid order operation type")
-			}
-
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		// Reduce requested buying quantity by matching order's selling quantity.
-		// Set to zero if this order covers how much we want to buy.
-		if queryQuantityToBuy.Lt(matchingOrderQuantity) {
-			queryQuantityToBuy = uint256.NewInt()
-		} else {
-			queryQuantityToBuy, err = SafeUint256().Sub(
-				queryQuantityToBuy, matchingOrderQuantity)
-
-			if err != nil {
-				// This should never happen with the check above.
-				return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
-			}
+		// Calculate how the transactor's quantity to fill will change
+		// after being matched with this order. If the transactor still
+		// has quantity to fill, we loop.
+		queryQuantityToFill, _, _, _, err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+			queryOrder, matchingOrder, queryQuantityToFill)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
 		}
 
 		matchingOrders = append(matchingOrders, matchingOrder)

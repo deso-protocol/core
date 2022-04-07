@@ -3188,6 +3188,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		SellingDAOCoinCreatorPKID:                 utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
 		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
+		OperationType:                             metadata.OperationType,
 		BlockHeight:                               bc.blockTip().Height + 1,
 	}
 
