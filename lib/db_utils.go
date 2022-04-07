@@ -3629,12 +3629,12 @@ type DAOCoinTxindexMetadata struct {
 }
 
 type FilledDAOCoinLimitOrderMetadata struct {
-	TransactorPublicKeyBase58Check string
-	BuyingDAOCoinCreatorPublicKey  string
-	SellingDAOCoinCreatorPublicKey string
-	BuyingDAOCoinQuantityPurchased *uint256.Int
-	BuyingDAOCoinQuantityRequested *uint256.Int
-	SellingDAOCoinQuantitySold     *uint256.Int
+	TransactorPublicKeyBase58Check            string
+	BuyingDAOCoinCreatorPublicKey             string
+	SellingDAOCoinCreatorPublicKey            string
+	BuyingDAOCoinQuantityInBaseUnitsPurchased *uint256.Int
+	SellingDAOCoinQuantityInBaseUnitsSold     *uint256.Int
+	IsFulfilled                               bool
 }
 
 type DAOCoinLimitOrderTxindexMetadata struct {
