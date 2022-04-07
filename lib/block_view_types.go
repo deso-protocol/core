@@ -1680,8 +1680,19 @@ func ComputeBaseUnitsToBuyUint256(
 	scaledQuantityToSell := big.NewInt(0).Mul(
 		OneUQ128x128.ToBig(), quantityToSellBaseUnits.ToBig())
 
+	quantityToBuy := big.NewInt(0).Div(
+		scaledQuantityToSell, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
+
+	// There is an off-by-one error in the integer division if the exchange
+	// rate is less than 1.0, i.e. the scaled exchange rate is less than
+	// our scaling factor. We correct that here. This looks weird, but
+	// we have fairly good testing coverage around this.
+	if scaledExchangeRateCoinsToSellPerCoinToBuy.Lt(OneUQ128x128) {
+		quantityToBuy = big.NewInt(0).Add(quantityToBuy, bigOneInt)
+	}
+
 	// Check for overflow.
-	if scaledQuantityToSell.Cmp(MaxUint256.ToBig()) > 0 {
+	if quantityToBuy.Cmp(MaxUint256.ToBig()) > 0 {
 		return nil, errors.Wrapf(
 			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
 			"ComputeBaseUnitsToBuyUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
@@ -1693,23 +1704,16 @@ func ComputeBaseUnitsToBuyUint256(
 	// We don't trust the overflow checker in uint256. It's too risky because
 	// it could cause a money printer bug if there's a problem with it. We
 	// manually check for overflow above.
-	scaledQuantityToSellUint256, _ := uint256.FromBig(scaledQuantityToSell)
-
-	quantityToBuy, err := SafeUint256().Div(
-		scaledQuantityToSellUint256, scaledExchangeRateCoinsToSellPerCoinToBuy)
-	if err != nil {
-		// This should never happen as the exchange rate shouldn't be zero.
-		return nil, errors.Wrapf(err, "ComputeBaseUnitsToBuyUint256: ")
-	}
+	quantityToBuyUint256, _ := uint256.FromBig(quantityToBuy)
 
 	// TODO: this could be because of overflow.
 	// Alternatively, this could be because exchange * quantity < 1 base units.
 	// We should differentiate between the two errors.
-	if quantityToBuy.IsZero() {
+	if quantityToBuyUint256.IsZero() {
 		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}
 
-	return quantityToBuy, nil
+	return quantityToBuyUint256, nil
 }
 
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, error) {
