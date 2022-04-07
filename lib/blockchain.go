@@ -2548,6 +2548,19 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	return maxSizeBytes * minFeeRateNanosPerKB / 1000
 }
 
+// Computing maximum fee for tx that doesn't include change output yet.
+func _computeMaxTxFeeWithMaxChange(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
+	maxSizeBytes := _computeMaxTxSize(_tx)
+	res := (maxSizeBytes + MaxDeSoOutputSizeBytes) * minFeeRateNanosPerKB / 1000
+	// In the event that there is a remainder, we need to round up to
+	// ensure that the fee EXCEEDS the min fee rate.
+	// We skip this check if the networkMinFeeRate is zero to keep existing tests working.
+	if (maxSizeBytes+MaxDeSoOutputSizeBytes)*minFeeRateNanosPerKB%1000 > 0 {
+		res++
+	}
+	return res
+}
+
 func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderPublicKey []byte, recipientPublicKey []byte,
 	unencryptedMessageText string, encryptedMessageText string,
@@ -2769,10 +2782,15 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 		TxOutputs: additionalOutputs,
 	}
 
+	minFeeRateToUse := minFeeRateNanosPerKB
+	if minimumNetworkFeeNanosPerKb > 0 && uint64(minimumNetworkFeeNanosPerKb) > minFeeRateToUse {
+		minFeeRateToUse = uint64(minimumNetworkFeeNanosPerKb)
+	}
+
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateToUse, mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateGlobalParamsTxn: Problem adding inputs: ")
 	}
@@ -4261,32 +4279,28 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		}
 	}
 
-	// Create a new UtxoView. If we have access to a mempool object, use it to
-	// get an augmented view that factors in pending transactions.
-	getUtxoView := func() (*UtxoView, error) {
-		if mempool != nil {
-			utxoView, err := mempool.GetAugmentedUniversalView()
-			if err != nil {
-				return nil, errors.Wrapf(err,
-					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
-			}
-			return utxoView, nil
-		} else {
-			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
-			if err != nil {
-				return nil, errors.Wrapf(err, "_computeInputsForTxn: Problem creating new utxo view: ")
-			}
-			return utxoView, nil
-		}
-	}
-
 	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
 	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
-		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
-		utxoView, err := getUtxoView()
-		if err != nil {
-			return 0, 0, 0, 0, err
+		// Create a new UtxoView. If we have access to a mempool object, use it to
+		// get an augmented view that factors in pending transactions.
+		var utxoView *UtxoView
+		if mempool != nil {
+			var err error
+			utxoView, err = mempool.GetAugmentedUniversalView()
+			if err != nil {
+				return 0, 0, 0, 0, errors.Wrapf(err,
+					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
+			}
+		} else {
+			var err error
+			utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres)
+			if err != nil {
+				return 0, 0, 0, 0, errors.Wrapf(err,
+					"_computeInputsForTxn: Problem creating new utxo view: ")
+			}
 		}
+
+		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
 
 		nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 		nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
@@ -4381,8 +4395,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	for _, utxoEntry := range utxoEntriesBeingUsed {
 		finalTxCopy.TxInputs = append(finalTxCopy.TxInputs, (*DeSoInput)(utxoEntry.UtxoKey))
 	}
-	maxFeeWithoutChange := _computeMaxTxFee(finalTxCopy, minFeeRateNanosPerKB)
-	if totalInput < (spendAmount + maxFeeWithoutChange) {
+	maxFeeWithMaxChange := _computeMaxTxFeeWithMaxChange(finalTxCopy, minFeeRateNanosPerKB)
+	if totalInput < (spendAmount + maxFeeWithMaxChange) {
 		// In this case the total input we were able to gather for the
 		// transaction is insufficient to cover the amount we want to
 		// spend plus the fee. Return an error in this case so that
@@ -4390,8 +4404,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: Sanity check failed: Total "+
 			"input %d is not sufficient to "+
 			"cover the spend amount (=%d) plus the fee (=%d, feerate=%d, txsize=%d), "+
-			"total=%d", totalInput, spendAmount, maxFeeWithoutChange, minFeeRateNanosPerKB,
-			_computeMaxTxSize(finalTxCopy), spendAmount+maxFeeWithoutChange)
+			"total=%d", totalInput, spendAmount, maxFeeWithMaxChange, minFeeRateNanosPerKB,
+			_computeMaxTxSize(finalTxCopy), spendAmount+maxFeeWithMaxChange)
 	}
 
 	// Now that we know the input will cover the spend amount plus the fee, add
@@ -4403,8 +4417,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	// at the maximum size but that seems OK as well. In all of these circumstances
 	// the user will get a slightly higher feerate than they asked for which isn't
 	// really a problem.
-	maxChangeFee := MaxDeSoOutputSizeBytes * minFeeRateNanosPerKB / 1000
-	changeAmount := int64(totalInput) - int64(spendAmount) - int64(maxFeeWithoutChange) - int64(maxChangeFee)
+	changeAmount := int64(totalInput) - int64(spendAmount) - int64(maxFeeWithMaxChange)
 	if changeAmount > 0 {
 		finalTxCopy.TxOutputs = append(finalTxCopy.TxOutputs, &DeSoOutput{
 			PublicKey:   spendPublicKeyBytes,

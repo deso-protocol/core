@@ -60,11 +60,22 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
 
+	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	// Param Updater set min fee rate to 10 nanos per KB
+	{
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			20,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1, int64(feeRateNanosPerKb), -1, -1,
+			-1, /*maxCopiesPerNFT*/
+		)
+	}
+
 	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
 	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
 	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
-	m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
-	_, _, _, _ = m0PKID, m1PKID, m2PKID, m4PKID // TODO: delete
 
 	// -----------------------
 	// Helpers
@@ -418,7 +429,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
 		require.Equal(
-			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(3), // TODO: calculate gas fee instead of hard-coding.
+			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(4), // TODO: calculate gas fee instead of hard-coding.
 			updatedM1DESOBalance)
 
 		require.Equal(
@@ -519,7 +530,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His DAO coin balance increases.
 		// TODO: these should be equal.
 		require.Equal(
-			originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(2), // TODO: calculate gas fee instead of hard-coding.
+			originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(4), // TODO: calculate gas fee instead of hard-coding.
 			updatedM0DESOBalance)
 
 		require.Equal(
@@ -1000,7 +1011,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
 		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
 
-		require.Equal(m0DESOBalanceBefore-15-3, m0DESOBalanceAfter) // Fee is 3 nanos
+		require.Equal(m0DESOBalanceBefore-15-4, m0DESOBalanceAfter) // Fee is 3 nanos
 		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
 		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
 	}
