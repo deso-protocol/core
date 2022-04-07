@@ -45,36 +45,6 @@ type GetDataRequestInfo struct {
 type ServerReply struct {
 }
 
-// SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
-// hyper sync to determine which peer to query about each prefix and also what was the last
-// db key that we've received from that peer. Peers will send us state by chunks. But first we
-// need to tell the peer the starting key for the chunk we want to retrieve.
-type SyncPrefixProgress struct {
-	// Peer assigned for retrieving this particular prefix.
-	PrefixSyncPeer *Peer
-	// DB prefix corresponding to this particular sync progress.
-	Prefix []byte
-	// LastReceivedKey is the last key that we've received from this peer.
-	LastReceivedKey []byte
-
-	// Completed indicates whether we've finished syncing this prefix.
-	Completed bool
-}
-
-// SyncProgress is used to keep track of hyper sync progress. It stores a list of SyncPrefixProgress
-// structs which are used to track progress on each individual prefix. It also has the snapshot block
-// height and block hash of the current snapshot epoch.
-type SyncProgress struct {
-	// PrefixProgress includes a list of SyncPrefixProgress objects, each of which represents a state prefix.
-	PrefixProgress []*SyncPrefixProgress
-
-	// SnapshotMetadata is the information about the snapshot we're downloading.
-	SnapshotMetadata *SnapshotEpochMetadata
-
-	// Completed indicates whether we've finished syncing state.
-	Completed bool
-}
-
 // Server is the core of the DeSo node. It effectively runs a single-threaded
 // main loop that processes transactions from other peers and responds to them
 // accordingly. Probably the best place to start looking is the messageHandler
@@ -168,6 +138,10 @@ type Server struct {
 	statsdClient *statsd.Client
 
 	Notifier *Notifier
+
+	// nodeMessageChannel is used to restart the node that's currently running this server.
+	// It is basically a backlink to the node that calls Stop() and Start().
+	nodeMessageChannel chan NodeMessage
 
 	shutdown int32
 	// timer is a helper variable that allows timing events for development purposes.
@@ -321,7 +295,6 @@ func NewServer(
 	_connectIps []string,
 	_db *badger.DB,
 	postgres *Postgres,
-	_snapshot *Snapshot,
 	_targetOutboundPeers uint32,
 	_maxInboundPeers uint32,
 	_minerPublicKeys []string,
@@ -337,6 +310,7 @@ func NewServer(
 	_minBlockUpdateIntervalSeconds uint64,
 	_blockCypherAPIKey string,
 	_runReadOnlyUtxoViewUpdater bool,
+	_snapshotBlockHeightPeriod uint64,
 	_dataDir string,
 	_mempoolDumpDir string,
 	_disableNetworking bool,
@@ -347,7 +321,20 @@ func NewServer(
 	_trustedBlockProducerPublicKeys []string,
 	_trustedBlockProducerStartHeight uint64,
 	eventManager *EventManager,
-) (*Server, error) {
+	_nodeMessageChan chan NodeMessage,
+) (_srv *Server, _err error, _shouldRestart bool) {
+	var err error
+
+	// Setup snapshot
+	var _snapshot *Snapshot
+	shouldRestart := false
+	if _hyperSync {
+		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
+			false, false, _params)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	// Create an empty Server object here so we can pass a reference to it to the
 	// ConnectionManager.
@@ -356,6 +343,7 @@ func NewServer(
 		ReadOnlyMode:                 _readOnlyMode,
 		IgnoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
 		snapshot:                     _snapshot,
+		nodeMessageChannel:           _nodeMessageChan,
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -391,7 +379,7 @@ func NewServer(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
 		_params, timesource, _db, postgres, eventManager, _snapshot)
 	if err != nil {
-		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain")
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}
 
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
@@ -454,7 +442,7 @@ func NewServer(
 	}
 	_miner, err := NewDeSoMiner(_minerPublicKeys, uint32(_numMiningThreads), _blockProducer, _params)
 	if err != nil {
-		return nil, errors.Wrapf(err, "NewServer: ")
+		return nil, errors.Wrapf(err, "NewServer: "), true
 	}
 	// If we only want to sync to a specific block height, we would disable the miner.
 	// _maxSyncBlockHeight is used for development.
@@ -495,7 +483,15 @@ func NewServer(
 	timer.Initialize()
 	srv.timer = timer
 
-	return srv, nil
+	if shouldRestart {
+		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
+			"properly last time"))
+		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {
+			return nil, errors.Wrapf(err, "NewServer: Problem in ForceResetToLastSnapshot"), true
+		}
+	}
+
+	return srv, nil, shouldRestart
 }
 
 func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
@@ -693,10 +689,14 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 }
 
 func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
-	glog.Infof("Received header bundle with %v headers "+
+	printHeight := pp.StartingBlockHeight()
+	if srv.blockchain.headerTip().Height > printHeight {
+		printHeight = srv.blockchain.headerTip().Height
+	}
+	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
 		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, pp.StartingBlockHeight())
+		srv.blockchain.headerTip().Header.Height, printHeight)))
 
 	// Start by processing all of the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
@@ -794,33 +794,52 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// If we get here it means that we've just finished syncing headers and we will proceed to
 		// syncing state either through hyper sync or block sync. First let's check if the peer
 		// supports hyper sync.
-		if (pp.serviceFlags & SFHyperSync) != 0 {
+		if (pp.serviceFlags&SFHyperSync) != 0 && srv.blockchain.isSyncing() {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at "+
 				"height %v from peer %v", srv.blockchain.headerTip().Header.Height, pp)
 			// TODO: Handle a case where the node has synced during some previous snapshot epoch,
 			// and it has been re-run with a new snapshot epoch.
 
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
-			if srv.cmgr.HyperSync && !srv.blockchain.finishedSyncing {
+			if srv.cmgr.HyperSync {
+				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
+
 				srv.blockchain.syncingState = true
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
 					srv.GetSnapshot(pp)
 					return
 				}
+				glog.Infof(CLog(Magenta, fmt.Sprintf("Initiating HyperSync after finishing downloading headers. Node "+
+					"will quickly download a snapshot of the blockchain taken at height (%v). "+
+					"HyperSync will sync each prefix of the node's KV database. Connected peer (%v). Note: State sync is a new feature and hence might "+
+					"contain some unexpected behavior. If you see an issue, please report it in DeSo Github "+
+					"https://github.com/deso-protocol/core.", expectedSnapshotHeight, pp)))
 
 				// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
 				// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
 				// remove these entries from the db because we will receive them during state sync.
-				glog.V(1).Infof("Server._handleHeaderBundle: Starting hyper sync, deleting all state records")
-				DBDeleteAllStateRecords(srv.blockchain.db)
+				glog.Infof(CLog(Magenta, "HyperSync: deleting all state records. This can take a while."))
+				shouldErase, err := DBDeleteAllStateRecords(srv.blockchain.db)
+				if err != nil {
+					glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleHeaderBundle: problem while deleting state "+
+						"records, error: %v", err)))
+				}
+				if shouldErase {
+					if srv.nodeMessageChannel != nil {
+						srv.nodeMessageChannel <- NodeErase
+					}
+					glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleHeaderBundle: Records were found in the node "+
+						"directory, while trying to resync. Now erasing the node directory and restarting the node. "+
+						"That's faster than manually expunging all records from the database.")))
+					return
+				}
 
 				// We set the expected height and hash of the snapshot from our header chain. The snapshots should be
 				// taken on a regular basis every SnapshotBlockHeightPeriod number of blocks. This means we can calculate the
 				// expected height at which the snapshot should be taking place. We do this to make sure that the
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
-				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.blockchain.snapshot.SnapshotBlockHeightPeriod)
 				srv.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
 					SnapshotBlockHeight:       expectedSnapshotHeight,
 					FirstSnapshotBlockHeight:  expectedSnapshotHeight,
@@ -829,10 +848,19 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				}
 				srv.HyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
 				srv.HyperSyncProgress.Completed = false
+				go srv.HyperSyncProgress.PrintLoop()
 
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.
-				srv.blockchain.snapshot.Checksum.Initialize()
+				srv.snapshot.Checksum.ResetChecksum()
+				if err := srv.snapshot.Checksum.SaveChecksum(); err != nil {
+					glog.Errorf("Server._handleHeaderBundle: Problem saving snapshot to database, error (%v)", err)
+				}
+				// Reset the migrations along with the main checksum.
+				srv.snapshot.Migrations.ResetChecksums()
+				if err := srv.snapshot.Migrations.SaveMigrations(); err != nil {
+					glog.Errorf("Server._handleHeaderBundle: Problem saving migration checksums to database, error (%v)", err)
+				}
 
 				// Start a timer for hyper sync. This keeps track of how long hyper sync takes in total.
 				srv.timer.Start("HyperSync")
@@ -953,6 +981,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.Start("Server._handleSnapshot Main")
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
+	if srv.snapshot == nil {
+		glog.Errorf("srv_handleSnapshot: Received a snapshot message from a peer but srv.snapshot is nil. " +
+			"This peer shouldn't send us snapshot messages because we didn't pass the SFHyperSync flag.")
+		pp.Disconnect()
+		return
+	}
+
 	if len(msg.SnapshotChunk) == 0 {
 		// We should disconnect the peer because he is misbehaving or doesn't have the snapshot.
 		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk "+
@@ -960,13 +995,16 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		pp.Disconnect()
 		return
 	}
-	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: "+
-		"%v) and metadata (%v) and isEmpty (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
-		len(msg.SnapshotChunk), msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)
+	glog.V(1).Infof(CLog(Yellow, fmt.Sprintf("Received a snapshot message with entry keys (First entry: "+
+		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
+		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
+		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
 
+	// TODO: reject this message if we're not syncing.
 	// Validate the snapshot chunk message
 
 	// Make sure that the expected snapshot height and blockhash match the ones in received message.
+	// TODO: if the metadata blockheight is greater than hypersync progress snapshot blockheight, restart & erase the node.
 	if msg.SnapshotMetadata.SnapshotBlockHeight != srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
 		!bytes.Equal(msg.SnapshotMetadata.CurrentEpochBlockHash[:], srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash[:]) {
 
@@ -1048,7 +1086,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	dbChunk = append(dbChunk, msg.SnapshotChunk[1:]...)
 
 	if !chunkEmpty {
-		// TODO: This loop skips the first element...
+		// Check that all entries in the chunk contain the prefix, and that they are sorted. We skip the first element,
+		// because we already validated it contains the prefix and we will refer to ii-1 when verifying ordering.
 		for ii := 1; ii < len(dbChunk); ii++ {
 			// Make sure that all dbChunk entries have the same prefix as in the message.
 			if !bytes.HasPrefix(dbChunk[ii].Key, msg.Prefix) {
@@ -1073,7 +1112,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 		// Process the DBEntries from the msg and add them to the db.
 		srv.timer.Start("Server._handleSnapshot Process Snapshot")
-		srv.blockchain.snapshot.ProcessSnapshotChunk(srv.blockchain.db, dbChunk)
+		srv.snapshot.ProcessSnapshotChunk(srv.blockchain.db, &srv.blockchain.ChainLock, dbChunk,
+			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)
 		srv.timer.End("Server._handleSnapshot Process Snapshot")
 	}
 
@@ -1115,16 +1155,15 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			}
 		}
 		if !completed {
-			glog.Infof("Server._handleSnapshot: completed: prefixes (%v)", completedPrefixes)
-			glog.Infof("srv._handleSnapshot: not completed, calling GetSnapshot, prefix (%v)", prefix)
 			srv.GetSnapshot(pp)
 			return
 		}
 		completedPrefixes = append(completedPrefixes, prefix)
 	}
 
+	srv.HyperSyncProgress.printChannel <- struct{}{}
 	// Wait for the snapshot thread to process all operations and print the checksum.
-	srv.blockchain.snapshot.WaitForAllOperationsToFinish()
+	srv.snapshot.WaitForAllOperationsToFinish()
 
 	// If we get to this point it means we synced all db prefixes, therefore finishing hyper sync.
 	// Do some logging.
@@ -1135,20 +1174,29 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.Print("Server._handleSnapshot prefix progress")
 	srv.timer.Print("Server._handleSnapshot Main")
 	srv.timer.Print("HyperSync")
-	srv.blockchain.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
-	glog.Infof("Server._handleSnapshot: metadata checksum: (%v)", srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)
+	srv.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
+	glog.Infof(CLog(Magenta, fmt.Sprintf("Metadata checksum: (%v)",
+		srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
 
-	glog.Infof("Best header chain %v best block chain %v",
-		srv.blockchain.bestHeaderChain[msg.SnapshotMetadata.SnapshotBlockHeight], srv.blockchain.bestChain)
+	glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
+		srv.blockchain.bestHeaderChain[msg.SnapshotMetadata.SnapshotBlockHeight], srv.blockchain.bestChain)))
 
 	// Verify that the state checksum matches the one in HyperSyncProgress snapshot metadata.
 	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.
-	checksumBytes, err := srv.blockchain.snapshot.Checksum.ToBytes()
+	checksumBytes, err := srv.snapshot.Checksum.ToBytes()
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem getting checksum bytes, error (%v)", err)
 	}
 	if !reflect.DeepEqual(checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
-		// TODO: Disconnect the peer and start syncing from beginning.
+		if srv.nodeMessageChannel != nil {
+			srv.nodeMessageChannel <- NodeErase
+		}
+		glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleSnapshot: The final db checksum doesn't match the "+
+			"checksum received from the peer. It is likely that HyperSync encountered some unexpected error earlier. "+
+			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
+			"that the peer is misbehaving and sent invalid snapshot chunks. In either way, we'll restart the node and "+
+			"attempt to HyperSync from the beginning.")))
+		return
 	}
 
 	// After syncing state from a snapshot, we will sync remaining blocks. To do so, we will
@@ -1165,13 +1213,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
 			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
 			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
-			err := PutHeightHashToNodeInfoWithTxn(txn, srv.blockchain.snapshot, curretNode, false /*bitcoinNodes*/)
+			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/)
 			if err != nil {
 				return err
 			}
 		}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err := PutBestHashWithTxn(txn, srv.blockchain.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock)
+		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock)
 		return err
 	})
 	if err != nil {
@@ -1179,12 +1227,30 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
-	srv.blockchain.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
+	srv.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.finishedSyncing = true
 	srv.blockchain.syncingState = false
 	srv.blockchain.snapshot.CurrentEpochSnapshotMetadata = srv.HyperSyncProgress.SnapshotMetadata
+
+	// Update the snapshot epoch metadata in the snapshot DB.
+	for ii := 0; ii < MetadataRetryCount; ii++ {
+		srv.snapshot.SnapshotDbMutex.Lock()
+		err = srv.snapshot.SnapshotDb.Update(func(txn *badger.Txn) error {
+			return txn.Set(_prefixLastEpochMetadata, srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
+		})
+		srv.snapshot.SnapshotDbMutex.Unlock()
+		if err != nil {
+			glog.Errorf("server._handleSnapshot: Problem setting snapshot epoch metadata in snapshot db, error (%v)", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break
+	}
+
+	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v)",
+		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
 
 	// Take care of any callbacks that need to run once the snapshot is completed.
 	srv.eventManager.snapshotCompleted()
@@ -1262,6 +1328,10 @@ func (srv *Server) _startSync() {
 	}, false)
 	glog.V(1).Infof("Server._startSync: Downloading headers for blocks starting at "+
 		"header tip height %v from peer %v", bestHeight, bestPeer)
+
+	if bestPeer.cmgr.HyperSync && !srv.blockchain.isSyncing() {
+		srv.GetBlockToStore(bestPeer)
+	}
 
 	srv.SyncPeer = bestPeer
 }
@@ -1547,8 +1617,8 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 }
 
 func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
-	glog.Infof("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
-		blk.Header.Height, srv.blockchain.headerTip().Height, pp)
+	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
+		blk.Header.Height, srv.blockchain.headerTip().Height, pp)))
 
 	srv.timer.Start("Server._handleBlock: General")
 	// Pull out the header for easy access.
@@ -1609,18 +1679,18 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	// Only verify signatures for recent blocks.
 	var isOrphan bool
 	if srv.blockchain.isSyncing() {
-		glog.V(1).Infof("Server._handleBlock: Processing block %v WITHOUT "+
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)
+			blk, srv.blockchain.chainState(), pp)))
 		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, false)
 
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
 		// ChainLock, which is what Bitcoin Core does.
-		glog.V(1).Infof("Server._handleBlock: Processing block %v WITH "+
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITH "+
 			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)
+			blk, srv.blockchain.chainState(), pp)))
 		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, true)
 	}
 
@@ -1694,12 +1764,18 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	if srv.cmgr.HyperSync && srv.blockchain.finishedSyncing {
+	if srv.cmgr.HyperSync && !srv.blockchain.isSyncing() {
 		srv.GetBlockToStore(pp)
+		// FIXME: Check that we have blocks with StatusBlockStored == false
 	}
 
 	// If we get here, it means we're in SyncStateFullySynced, which is great.
 	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
+	//
+	// FIXME: In the hypersync case we're hammering the node with mempool requests every
+	// single time. We need to fix this by having a way to checking whether we have any
+	// blocks left with StatusBlockStored, and only request this if we no longer have such
+	// blocks.
 	srv._maybeRequestSync(pp)
 }
 
@@ -1954,7 +2030,7 @@ func (srv *Server) messageHandler() {
 		// TODO: This is used instead of the shouldQuit control message exist mechanism below.
 		// 	shouldQuit will be true only when all incoming messages have been processed, on
 		// 	the other hand this shutdown will quit immediately.
-		if atomic.LoadInt32(&srv.shutdown) == 1 {
+		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
 		serverMessage := <-srv.incomingMessages
@@ -2033,6 +2109,9 @@ func (srv *Server) _getAddrsToBroadcast() []*SingleAddr {
 // and relays our own address to peers once every 24 hours.
 func (srv *Server) _startAddressRelayer() {
 	for numMinutesPassed := 0; ; numMinutesPassed++ {
+		if atomic.LoadInt32(&srv.shutdown) >= 1 {
+			break
+		}
 		// For the first ten minutes after the server starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
 		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
@@ -2099,10 +2178,12 @@ func (srv *Server) Stop() {
 
 	// Stop the ConnectionManager
 	srv.cmgr.Stop()
+	glog.Infof(CLog(Yellow, "Server.Stop: Closed the ConnectionManger"))
 
 	// Stop the miner if we have one running.
 	if srv.miner != nil {
 		srv.miner.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
 	}
 
 	if srv.mempool != nil {
@@ -2115,6 +2196,7 @@ func (srv *Server) Stop() {
 		}
 
 		srv.mempool.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
 	}
 
 	// Stop the block producer
@@ -2122,6 +2204,7 @@ func (srv *Server) Stop() {
 		if srv.blockchain.MaxSyncBlockHeight == 0 {
 			srv.blockProducer.Stop()
 		}
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed BlockProducer"))
 	}
 
 	// This will signal any goroutines to quit. Note that enqueing this after stopping
@@ -2167,5 +2250,83 @@ func (srv *Server) Start() {
 
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
+	}
+}
+
+// SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
+// hyper sync to determine which peer to query about each prefix and also what was the last
+// db key that we've received from that peer. Peers will send us state by chunks. But first we
+// need to tell the peer the starting key for the chunk we want to retrieve.
+type SyncPrefixProgress struct {
+	// Peer assigned for retrieving this particular prefix.
+	PrefixSyncPeer *Peer
+	// DB prefix corresponding to this particular sync progress.
+	Prefix []byte
+	// LastReceivedKey is the last key that we've received from this peer.
+	LastReceivedKey []byte
+
+	// Completed indicates whether we've finished syncing this prefix.
+	Completed bool
+}
+
+// SyncProgress is used to keep track of hyper sync progress. It stores a list of SyncPrefixProgress
+// structs which are used to track progress on each individual prefix. It also has the snapshot block
+// height and block hash of the current snapshot epoch.
+type SyncProgress struct {
+	// PrefixProgress includes a list of SyncPrefixProgress objects, each of which represents a state prefix.
+	PrefixProgress []*SyncPrefixProgress
+
+	// SnapshotMetadata is the information about the snapshot we're downloading.
+	SnapshotMetadata *SnapshotEpochMetadata
+
+	// Completed indicates whether we've finished syncing state.
+	Completed bool
+
+	printChannel chan struct{}
+}
+
+func (progress *SyncProgress) PrintLoop() {
+	progress.printChannel = make(chan struct{})
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-progress.printChannel:
+			return
+		case <-ticker.C:
+			var completedPrefixes [][]byte
+			var incompletePrefixes [][]byte
+			var currentPrefix []byte
+
+			for _, prefix := range StatePrefixes.StatePrefixesList {
+				// Check if the prefix has been completed.
+				foundPrefix := false
+				for _, prefixProgress := range progress.PrefixProgress {
+					if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
+						foundPrefix = true
+						if prefixProgress.Completed {
+							completedPrefixes = append(completedPrefixes, prefix)
+							break
+						} else {
+							currentPrefix = prefix
+						}
+						break
+					}
+				}
+				if !foundPrefix {
+					incompletePrefixes = append(incompletePrefixes, prefix)
+				}
+			}
+			if len(completedPrefixes) > 0 {
+				glog.Infof(CLog(Green, fmt.Sprintf("HyperSync: finished downloading prefixes (%v)", completedPrefixes)))
+			}
+			if len(currentPrefix) > 0 {
+				glog.Infof(CLog(Magenta, fmt.Sprintf("HyperSync: currently syncing prefix: (%v)", currentPrefix)))
+			}
+			if len(incompletePrefixes) > 0 {
+				glog.Infof("Remaining prefixes (%v)", incompletePrefixes)
+			}
+		}
 	}
 }

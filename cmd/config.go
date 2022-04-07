@@ -9,17 +9,13 @@ import (
 
 type Config struct {
 	// Core
-	Params                    *lib.DeSoParams
-	ProtocolPort              uint16
-	DataDirectory             string
-	MempoolDumpDirectory      string
-	TXIndex                   bool
-	Regtest                   bool
-	PostgresURI               string
-	HyperSync                 bool
-	DisableSlowSync           bool
-	MaxSyncBlockHeight        uint32
-	SnapshotBlockHeightPeriod uint64
+	Params               *lib.DeSoParams
+	ProtocolPort         uint16
+	DataDirectory        string
+	MempoolDumpDirectory string
+	TXIndex              bool
+	Regtest              bool
+	PostgresURI          string
 
 	// Peers
 	ConnectIPs          []string
@@ -35,6 +31,12 @@ type Config struct {
 	IgnoreInboundInvs bool
 	MaxInboundPeers   uint32
 	OneInboundPerIp   bool
+
+	// Snapshot
+	HyperSync                 bool
+	DisableSlowSync           bool
+	MaxSyncBlockHeight        uint32
+	SnapshotBlockHeightPeriod uint64
 
 	// Mining
 	MinerPublicKeys  []string
@@ -58,6 +60,7 @@ type Config struct {
 	GlogVmodule           string
 	LogDBSummarySnapshots bool
 	DatadogProfiler       bool
+	TimeEvents            bool
 }
 
 func LoadConfig() *Config {
@@ -88,9 +91,10 @@ func LoadConfig() *Config {
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
-	config.HyperSync = viper.GetBool("hyper-sync")
+	config.HyperSync = viper.GetBool("hypersync")
 	config.DisableSlowSync = viper.GetBool("disable-slow-sync")
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
+	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
@@ -132,6 +136,7 @@ func LoadConfig() *Config {
 	config.GlogVmodule = viper.GetString("glog-vmodule")
 	config.LogDBSummarySnapshots = viper.GetBool("log-db-summary-snapshots")
 	config.DatadogProfiler = viper.GetBool("datadog-profiler")
+	config.TimeEvents = viper.GetBool("time-events")
 
 	return &config
 }
@@ -151,6 +156,10 @@ func (config *Config) Print() {
 
 	if config.HyperSync {
 		glog.Infof("HyperSync: ON")
+	}
+
+	if config.SnapshotBlockHeightPeriod > 0 {
+		glog.Infof("SnapshotBlockHeightPeriod: %v", config.SnapshotBlockHeightPeriod)
 	}
 
 	if config.DisableSlowSync {

@@ -9,7 +9,9 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"sort"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -39,16 +41,23 @@ const (
 	MaxBlocksInView             = 1
 )
 
+type NodeMessage uint32
+
+const (
+	NodeRestart NodeMessage = iota
+	NodeErase
+)
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
 	GetSnapshotTimeout = 100 * time.Millisecond
 
 	// SnapshotBlockHeightPeriod is the constant height offset between individual snapshot epochs.
-	SnapshotBlockHeightPeriod uint64 = 100
+	SnapshotBlockHeightPeriod uint64 = 1000
 
 	// SnapshotBatchSize is the size in bytes of the snapshot batches sent to peers
-	SnapshotBatchSize uint32 = 8 << 20 // 80MB
+	SnapshotBatchSize uint32 = 100 << 20 // 100MB
 
 	// DatabaseCacheSize is used to save read operations when fetching records from the main Db.
 	DatabaseCacheSize uint = 1000000 // 1M
@@ -56,8 +65,12 @@ const (
 	// HashToCurveCache is used to save computation on hashing to curve.
 	HashToCurveCache uint = 10000 // 10K
 
+	// MetadataRetryCount is used to retry updating data in badger just in case.
+	MetadataRetryCount int = 5
+
 	// EnableTimer
-	EnableTimer = true
+	EnableTimer  = true
+	DisableTimer = false
 )
 
 type NetworkType uint64
@@ -206,6 +219,57 @@ type ForkHeights struct {
 	// be greater than or equal to DerivedKeySetSpendingLimitsBlockHeight.
 	DerivedKeyTrackSpendingLimitsBlockHeight uint32
 }
+
+// EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
+// you should:
+//	1. define a new blockHeight in the EncoderMigrationHeights struct
+//	2. add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods
+//	3. add proper condition to GetVersionByte to return version associated with the migration height.
+type MigrationHeight struct {
+	Height  uint64
+	Version byte
+}
+type EncoderMigrationHeights struct {
+	DefaultHeight MigrationHeight
+	//UtxoEntryTestHeight MigrationHeight
+}
+
+var TestnetEncoderMigrationHeights = EncoderMigrationHeights{
+	DefaultHeight: MigrationHeight{0, 0},
+	//UtxoEntryTestHeight: MigrationHeight{1200, 1},
+}
+
+var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
+	DefaultHeight: MigrationHeight{0, 0},
+	//UtxoEntryTestHeight: MigrationHeight{1200, 1},
+}
+
+// So for example, let's say you want to add a migration for UtxoEntry at height 1200.
+// 1. Add a field to the EncoderMigrationHeights that looks like this:
+//		UtxoEntryTestHeight MigrationHeight
+//	Then, we would set them in TestnetEncoderMigrationHeights, MainnetEncoderMigrationHeights with desired heights and versions.
+// 	The heights are supposed to form a non-decreasing sequence, and versions are supposed to form a +1 sequence.
+//
+// 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
+//	end of RawEncodeWithoutMetadata:
+//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+//			data = append(data, byte(127))
+//		}
+//	And this at the end of RawDecodeWithoutMetadata:
+//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+//			_, err = rr.ReadByte()
+//			if err != nil {
+//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
+//			}
+//		}
+//	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
+//
+// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height.
+//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+//			return GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Version
+//		}
+//
+// That's it!
 
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
@@ -394,6 +458,9 @@ type DeSoParams struct {
 	CreatorCoinAutoSellThresholdNanos uint64
 
 	ForkHeights ForkHeights
+
+	EncoderMigrationHeights     EncoderMigrationHeights
+	EncoderMigrationHeightsList []*MigrationHeight
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
@@ -437,6 +504,9 @@ func (params *DeSoParams) EnableRegtest() {
 		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
 		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	}
+
+	params.EncoderMigrationHeights = TestnetEncoderMigrationHeights
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.EncoderMigrationHeights)
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -485,6 +555,11 @@ var (
 		MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
 	}
 )
+
+// GlobalDeSoParams is a global instance of DeSoParams that can be used inside nested functions, like encoders, without
+// having to pass DeSoParams everywhere. It can be set when node boots. Testnet params are used as default.
+// FIXME: This shouldn't be used a lot.
+var GlobalDeSoParams = DeSoTestnetParams
 
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
 var DeSoMainnetParams = DeSoParams{
@@ -686,6 +761,8 @@ var DeSoMainnetParams = DeSoParams{
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
+	EncoderMigrationHeights:     MainnetEncoderMigrationHeights,
+	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetEncoderMigrationHeights),
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -878,6 +955,8 @@ var DeSoTestnetParams = DeSoParams{
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
 	},
+	EncoderMigrationHeights:     TestnetEncoderMigrationHeights,
+	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetEncoderMigrationHeights),
 }
 
 // GetDataDir gets the user data directory where we store files
@@ -891,6 +970,35 @@ func GetDataDir(params *DeSoParams) string {
 		log.Fatalf("GetDataDir: Could not create data directories (%s): %v", dataDir, err)
 	}
 	return dataDir
+}
+
+func GetEncoderMigrationHeightsList(migrationHeights *EncoderMigrationHeights) (
+	_migrationHeightsList []*MigrationHeight) {
+
+	// Read `version:"x"` tags from the EncoderMigrationHeights struct.
+	var migrationHeightsList []*MigrationHeight
+	elements := reflect.ValueOf(migrationHeights).Elem()
+	structFields := elements.Type()
+	for ii := 0; ii < structFields.NumField(); ii++ {
+		elementField := elements.Field(ii)
+		mig := elementField.Interface().(MigrationHeight)
+		migCopy := mig
+		migrationHeightsList = append(migrationHeightsList, &migCopy)
+	}
+
+	sort.Slice(migrationHeightsList, func(i int, j int) bool {
+		return migrationHeightsList[i].Height < migrationHeightsList[j].Height
+	})
+	return migrationHeightsList
+}
+
+func VersionByteToMigrationHeight(version byte, params *DeSoParams) (_blockHeight uint64) {
+	for _, migrationHeight := range params.EncoderMigrationHeightsList {
+		if migrationHeight.Version == version {
+			return migrationHeight.Height
+		}
+	}
+	return 0
 }
 
 // Defines keys that may exist in a transaction's ExtraData map

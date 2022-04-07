@@ -152,7 +152,8 @@ type UnconnectedTx struct {
 // to aggregate transactions and mine them into blocks.
 type DeSoMempool struct {
 	// Stops the mempool's services.
-	quit chan struct{}
+	quit    chan struct{}
+	stopped bool
 
 	// A reference to a blockchain object that can be used to validate transactions before
 	// adding them to the pool.
@@ -766,9 +767,8 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	if err != nil {
 		return fmt.Errorf("OpenTempDBAndDumpTxns: Error making top-level dir: %v", err)
 	}
-	tempMempoolDBOpts := badger.DefaultOptions(tempMempoolDBDir)
+	tempMempoolDBOpts := PerformanceBadgerOptions(tempMempoolDBDir)
 	tempMempoolDBOpts.ValueDir = tempMempoolDBDir
-	tempMempoolDBOpts.MemTableSize = 1024 << 20
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
 		return fmt.Errorf("OpenTempDBAndDumpTxns: Could not open temp db to dump mempool: %v", err)
@@ -905,6 +905,9 @@ func (mp *DeSoMempool) GetAugmentedUtxoViewForPublicKey(pkBytes []byte, optional
 // TODO(performance): We should make a read-only version of the universal view that
 // you can get from the mempool.
 func (mp *DeSoMempool) GetAugmentedUniversalView() (*UtxoView, error) {
+	if mp.stopped {
+		return nil, fmt.Errorf("GetAugmentedUniversalView: Problem getting UtxoView, Mempool is closed")
+	}
 	newView, err := mp.readOnlyUtxoView.CopyUtxoView()
 	if err != nil {
 		return nil, err
@@ -2320,9 +2323,8 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 	}
 
 	// If we make it this far, we found a mempool dump to load.  Woohoo!
-	tempMempoolDBOpts := badger.DefaultOptions(savedTxnsDir)
+	tempMempoolDBOpts := PerformanceBadgerOptions(savedTxnsDir)
 	tempMempoolDBOpts.ValueDir = savedTxnsDir
-	tempMempoolDBOpts.MemTableSize = 1024 << 20
 	glog.Infof("LoadTxnsFrom: Opening new temp db %v", savedTxnsDir)
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
@@ -2353,6 +2355,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 
 func (mp *DeSoMempool) Stop() {
 	close(mp.quit)
+	mp.stopped = true
 }
 
 // Create a new pool with no transactions in it.

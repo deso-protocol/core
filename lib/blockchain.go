@@ -597,7 +597,7 @@ func (bc *Blockchain) _initChain() error {
 // NewBlockchain returns a new blockchain object. It initializes some in-memory
 // data structures by reading from the db. It also initializes the db if it hasn't
 // been initialized in the past. This function should only be called once per
-// db, and one should never run two blockhain objects over the same db at the same
+// db, and one should never run two blockchain objects over the same db at the same
 // time as they will likely step on each other and become inconsistent.
 func NewBlockchain(
 	trustedBlockProducerPublicKeyStrs []string,
@@ -1093,6 +1093,10 @@ func (ss SyncState) String() string {
 func (bc *Blockchain) chainState() SyncState {
 	// If the header is not current, then we're in the SyncStateSyncingHeaders.
 	headerTip := bc.headerTip()
+	if headerTip == nil {
+		return SyncStateSyncingHeaders
+	}
+
 	if !bc.isTipCurrent(headerTip) {
 		return SyncStateSyncingHeaders
 	}
@@ -1932,19 +1936,16 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		}
 	} else {
 		err = bc.db.Update(func(txn *badger.Txn) error {
+			if bc.snapshot != nil {
+				bc.snapshot.PrepareAncestralRecordsFlush()
+				defer bc.snapshot.StartAncestralRecordsFlush(true)
+				glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
+			}
 			// Store the new block in the db under the
 			//   <blockHash> -> <serialized block>
 			// index.
-			if bc.snapshot != nil {
-				bc.snapshot.PrepareAncestralRecordsFlush()
-				glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
-			}
 			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
-			}
-			if bc.snapshot != nil {
-				glog.V(2).Infof("ProcessBlock: Snapshot flushing")
-				bc.snapshot.StartAncestralRecordsFlush()
 			}
 
 			// Store the new block's node in our node index in the db under the
@@ -2072,13 +2073,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				// ability to roll it back in the future.
 				if bc.snapshot != nil {
 					bc.snapshot.PrepareAncestralRecordsFlush()
+					defer bc.snapshot.StartAncestralRecordsFlush(true)
 				}
 				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
-				}
-				if bc.snapshot != nil {
-					bc.snapshot.StartAncestralRecordsFlush()
-					bc.snapshot.PrintChecksum("Checksum after flush")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
 
@@ -2342,6 +2340,9 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				// Delete the utxo operations for the blocks we're detaching since we don't need
 				// them anymore.
 				if err := DeleteUtxoOperationsForBlockWithTxn(txn, bc.snapshot, detachNode.Hash); err != nil {
+					if bc.snapshot != nil {
+						bc.snapshot.StartAncestralRecordsFlush(true)
+					}
 					return errors.Wrapf(err, "ProcessBlock: Problem deleting utxo operations for block")
 				}
 
@@ -2355,11 +2356,14 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				// Add the utxo operations for the blocks we're attaching so we can roll them back
 				// in the future if necessary.
 				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
+					if bc.snapshot != nil {
+						bc.snapshot.StartAncestralRecordsFlush(true)
+					}
 					return errors.Wrapf(err, "ProcessBlock: Problem putting utxo operations for block")
 				}
 			}
 			if bc.snapshot != nil {
-				bc.snapshot.StartAncestralRecordsFlush()
+				bc.snapshot.StartAncestralRecordsFlush(true)
 				bc.snapshot.PrintChecksum("Checksum after flush")
 			}
 
@@ -2452,6 +2456,131 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// to our data structures and any unconnectedTxns that are no longer unconnectedTxns should have
 	// also been processed.
 	return isMainChain, false, nil
+}
+
+func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
+	// Roll back the block and make sure we don't hit any errors.
+	bc.ChainLock.Lock()
+	defer bc.ChainLock.Unlock()
+
+	if blockHeight < 0 {
+		blockHeight = 0
+	}
+
+	// NOTE: This function doesn't maintain the snapshot. The checksum should be recalculated after this.
+
+	// There is this edge-case where a partial blockProcess can skew the state. This is because of block reward entries,
+	// which are stored along with the block. In particular, if we've stored the block at blockTipHeight + 1, and the node
+	// crashed in the middle of ProcessBlock, then the reward entry will be stored in the state, even thought the block tip
+	// is at blockTipHeight. So we delete the block reward at the blockTipHeight + 1 to make sure the state is correct.
+	// TODO: decouple block reward from PutBlockWithTxn.
+	blockTipHeight := bc.bestChain[len(bc.bestChain)-1].Height
+	for hashIter, node := range bc.blockIndex {
+		hash := hashIter.NewBlockHash()
+		if node.Height > blockTipHeight {
+			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndex with "+
+				"larger height than the current block tip. Deleting the corresponding block reward. Node: (%v)", node)))
+			blockToDetach, err := GetBlock(hash, bc.db, nil)
+			if err != nil && err != badger.ErrKeyNotFound {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem getting block with hash: (%v) and "+
+					"at height: (%v)", hash, node.Height)
+			}
+			if blockToDetach != nil {
+				if err = DeleteBlockReward(bc.db, nil, blockToDetach); err != nil {
+					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
+						"(%v) and at height: (%v)", hash, node.Height)
+				}
+			}
+		}
+	}
+
+	for ii := len(bc.bestChain) - 1; ii > 0 && uint64(bc.bestChain[ii].Height) > blockHeight; ii-- {
+		node := bc.bestChain[ii]
+		prevHash := *bc.bestChain[ii-1].Hash
+		hash := *bc.bestChain[ii].Hash
+		height := uint64(bc.bestChain[ii].Height)
+		err := bc.db.Update(func(txn *badger.Txn) error {
+			utxoView, err := NewUtxoView(bc.db, bc.params, nil, nil)
+			if err != nil {
+				return err
+			}
+
+			if *utxoView.TipHash != hash {
+				return fmt.Errorf("DisconnectBlocksToHeight: UtxovView tip hash doesn't match the bestChain hash")
+			}
+			// Fetch the utxo operations for the block we're detaching. We need these
+			// in order to be able to detach the block.
+			utxoOps, err := GetUtxoOperationsForBlock(bc.db, nil, &hash)
+			if err != nil {
+				return err
+			}
+
+			// Compute the hashes for all the transactions.
+			blockToDetach, err := GetBlock(&hash, bc.db, nil)
+			if err != nil {
+				return err
+			}
+			txHashes, err := ComputeTransactionHashes(blockToDetach.Txns)
+			if err != nil {
+				return err
+			}
+			err = utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps, height)
+			if err != nil {
+				return err
+			}
+
+			// Flushing the view after applying and rolling back should work.
+			err = utxoView.FlushToDb(height)
+			if err != nil {
+				return err
+			}
+
+			// Set the best node hash to the new tip.
+			if err := PutBestHashWithTxn(txn, nil, &prevHash, ChainTypeDeSoBlock); err != nil {
+				return err
+			}
+
+			// Delete the utxo operations for the blocks we're detaching since we don't need
+			// them anymore.
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, &hash); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting utxo operations for block")
+			}
+
+			if err := DeleteBlockRewardWithTxn(txn, nil, blockToDetach); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
+			}
+
+			node.Status = StatusHeaderValidated
+			if err := PutHeightHashToNodeInfoWithTxn(txn, nil, node, false); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
+			}
+
+			// If we have a Server object then call its function
+			if bc.eventManager != nil {
+				// We need to add the UtxoOps here to handle reorgs properly in Rosetta
+				// For now it's fine because reorgs are virtually impossible.
+				bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
+			}
+
+			return nil
+		})
+		if err != nil {
+			return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem disconnecting block "+
+				"with hash: (%v) at blockHeight: (%v)", hash, height)
+		}
+
+		bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
+		delete(bc.bestChainMap, hash)
+	}
+
+	// Remove blocks we've disconnected from the bestHeaderChain.
+	for ii := len(bc.bestHeaderChain) - 1; ii > 0 && uint64(bc.bestHeaderChain[ii].Height) > blockHeight; ii-- {
+		hash := *bc.bestHeaderChain[ii].Hash
+		bc.bestHeaderChain = bc.bestHeaderChain[:len(bc.bestHeaderChain)-1]
+		delete(bc.bestHeaderChainMap, hash)
+	}
+
+	return nil
 }
 
 // ValidateTransaction creates a UtxoView and sees if the transaction can be connected

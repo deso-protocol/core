@@ -28,7 +28,7 @@ func NewPKID(pkidBytes []byte) *PKID {
 	return pkid
 }
 
-func (pkid *PKID) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (pkid *PKID) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	return EncodeByteArray(pkid[:])
 }
 
@@ -39,6 +39,14 @@ func (pkid *PKID) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader)
 	}
 	copy(pkid[:], pkidBytes)
 	return nil
+}
+
+func (pkid *PKID) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pkid *PKID) GetEncoderType() EncoderType {
+	return EncoderTypePKID
 }
 
 func (pkid *PKID) ToBytes() []byte {
@@ -68,7 +76,7 @@ func (publicKey *PublicKey) ToBytes() []byte {
 	return publicKey[:]
 }
 
-func (publicKey *PublicKey) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (publicKey *PublicKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	return EncodeByteArray(publicKey[:])
 }
 
@@ -79,6 +87,14 @@ func (publicKey *PublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	}
 	copy(publicKey[:], publicKeyBytes)
 	return nil
+}
+
+func (publicKey *PublicKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (publicKey *PublicKey) GetEncoderType() EncoderType {
+	return EncoderTypePublicKey
 }
 
 func PublicKeyToPKID(publicKey []byte) *PKID {
@@ -108,7 +124,7 @@ func NewBlockHash(input []byte) *BlockHash {
 	return blockHash
 }
 
-func (bh *BlockHash) RawEncodeWithoutMetadata(blockHeight uint64) []byte {
+func (bh *BlockHash) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	return EncodeByteArray(bh[:])
 }
 
@@ -119,6 +135,14 @@ func (bh *BlockHash) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	}
 	copy(bh[:], blockHashBytes)
 	return nil
+}
+
+func (bh *BlockHash) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (bh *BlockHash) GetEncoderType() EncoderType {
+	return EncoderTypeBlockHash
 }
 
 func (bh *BlockHash) String() string {

@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -33,18 +36,25 @@ type Node struct {
 
 	// False when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
-	isRunning bool
+	isRunning    bool
+	runningMutex sync.Mutex
+
+	internalExitChan chan os.Signal
+	nodeMessageChan  chan lib.NodeMessage
+	stopWaitGroup    sync.WaitGroup
 }
 
 func NewNode(config *Config) *Node {
 	result := Node{}
 	result.Config = config
 	result.Params = config.Params
+	result.internalExitChan = make(chan os.Signal)
+	result.nodeMessageChan = make(chan lib.NodeMessage)
 
 	return &result
 }
 
-func (node *Node) Start() {
+func (node *Node) Start(exitChannels ...*chan os.Signal) {
 	// TODO: Replace glog with logrus so we can also get rid of flag library
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
@@ -52,6 +62,13 @@ func (node *Node) Start() {
 	flag.Set("alsologtostderr", "true")
 	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
+	node.runningMutex.Lock()
+	defer node.runningMutex.Unlock()
+
+	node.internalExitChan = make(chan os.Signal)
+	node.nodeMessageChan = make(chan lib.NodeMessage)
+
+	go node.listenToRestart()
 
 	// Print config
 	node.Config.Print()
@@ -64,6 +81,7 @@ func (node *Node) Start() {
 
 	// Validate params
 	validateParams(node.Params)
+	lib.GlobalDeSoParams = *node.Params
 
 	// Setup Datadog span tracer and profiler
 	if node.Config.DatadogProfiler {
@@ -72,6 +90,10 @@ func (node *Node) Start() {
 		if err != nil {
 			glog.Fatal(err)
 		}
+	}
+
+	if node.Config.TimeEvents {
+		lib.Mode = lib.EnableTimer
 	}
 
 	// Setup statsd
@@ -110,10 +132,8 @@ func (node *Node) Start() {
 
 	// Setup chain database
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
-	opts := badger.DefaultOptions(dbDir)
+	opts := lib.PerformanceBadgerOptions(dbDir)
 	opts.ValueDir = dbDir
-	opts.MemTableSize = 4000000000 // 4gb
-	//opts.PerformanceMemTableSize = 3072 << 20
 	node.chainDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)
@@ -158,24 +178,15 @@ func (node *Node) Start() {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
-	// Setup snapshot
-	var snapshot *lib.Snapshot
-	if node.Config.HyperSync {
-		snapshot, err = lib.NewSnapshot(node.Config.DataDirectory, node.Config.SnapshotBlockHeightPeriod, false, false)
-		if err != nil {
-			panic(err)
-		}
-	}
-
 	// Setup the server
-	node.Server, err = lib.NewServer(
+	shouldRestart := false
+	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,
 		listeners,
 		desoAddrMgr,
 		node.Config.ConnectIPs,
 		node.chainDB,
 		node.Postgres,
-		snapshot,
 		node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers,
 		node.Config.MinerPublicKeys,
@@ -191,6 +202,7 @@ func (node *Node) Start() {
 		node.Config.MinBlockUpdateInterval,
 		node.Config.BlockCypherAPIKey,
 		true,
+		node.Config.SnapshotBlockHeightPeriod,
 		node.Config.DataDirectory,
 		node.Config.MempoolDumpDirectory,
 		node.Config.DisableNetworking,
@@ -201,39 +213,143 @@ func (node *Node) Start() {
 		node.Config.TrustedBlockProducerPublicKeys,
 		node.Config.TrustedBlockProducerStartHeight,
 		eventManager,
+		node.nodeMessageChan,
 	)
 	if err != nil {
 		panic(err)
 	}
 
-	node.Server.Start()
+	if !shouldRestart {
+		node.Server.Start()
 
-	// Setup TXIndex - not compatible with postgres
-	if node.Config.TXIndex && node.Postgres == nil {
-		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
-		if err != nil {
-			glog.Fatal(err)
+		// Setup TXIndex - not compatible with postgres
+		if node.Config.TXIndex && node.Postgres == nil {
+			node.TXIndex, err, shouldRestart = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
+			if err != nil {
+				glog.Fatal(err)
+			}
+			node.Server.TxIndex = node.TXIndex
+			if !shouldRestart {
+				node.TXIndex.Start()
+			}
 		}
-		node.Server.TxIndex = node.TXIndex
-		node.TXIndex.Start()
+	}
+	node.isRunning = true
+
+	if shouldRestart {
+		if node.nodeMessageChan != nil {
+			node.nodeMessageChan <- lib.NodeRestart
+		}
 	}
 
-	node.isRunning = true
+	syscallChannel := make(chan os.Signal)
+	signal.Notify(syscallChannel, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		select {
+		case _, open := <-node.internalExitChan:
+			if !open {
+				return
+			}
+		case <-syscallChannel:
+		}
+
+		node.Stop()
+		for _, channel := range exitChannels {
+			if *channel != nil {
+				close(*channel)
+				*channel = nil
+			}
+		}
+		glog.Info(lib.CLog(lib.Yellow, "Core node shutdown complete"))
+	}()
 }
 
 func (node *Node) Stop() {
-	node.Server.Stop()
+	node.runningMutex.Lock()
+	defer node.runningMutex.Unlock()
 
-	if node.Server.GetBlockchain().Snapshot() != nil {
-		node.Server.GetBlockchain().Snapshot().Stop()
+	if !node.isRunning {
+		return
 	}
-
-	if node.TXIndex != nil {
-		node.TXIndex.Stop()
-	}
-
-	node.chainDB.Close()
 	node.isRunning = false
+	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
+		"close the node now or else you might corrupt the state."))
+
+	// Server
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping server..."))
+	node.Server.Stop()
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Server successfully stopped."))
+
+	// Snapshot
+	snap := node.Server.GetBlockchain().Snapshot()
+	if snap != nil {
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping snapshot..."))
+		snap.Stop()
+		node.closeDb(snap.SnapshotDb, "snapshot")
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Snapshot successfully stopped."))
+	}
+
+	// TXIndex
+	if node.TXIndex != nil {
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping TXIndex..."))
+		node.TXIndex.Stop()
+		node.closeDb(node.TXIndex.TXIndexChain.DB(), "txindex")
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: TXIndex successfully stopped."))
+	}
+
+	// Databases
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closing all databases..."))
+	node.closeDb(node.chainDB, "chain")
+	node.stopWaitGroup.Wait()
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Databases successfully closed."))
+
+	if node.internalExitChan != nil {
+		close(node.internalExitChan)
+		node.internalExitChan = nil
+	}
+}
+
+// Close a database and handle the stopWaitGroup accordingly.
+func (node *Node) closeDb(db *badger.DB, dbName string) {
+	node.stopWaitGroup.Add(1)
+
+	glog.Infof("Node.closeDb: Preparing to close %v db", dbName)
+	go func() {
+		defer node.stopWaitGroup.Done()
+		if err := db.Close(); err != nil {
+			glog.Fatalf(lib.CLog(lib.Red, fmt.Sprintf("Node.Stop: Problem closing %v db: err: (%v)", dbName, err)))
+		} else {
+			glog.Infof(lib.CLog(lib.Yellow, fmt.Sprintf("Node.closeDb: Closed %v Db", dbName)))
+		}
+	}()
+}
+
+func (node *Node) listenToRestart(exitChannels ...*chan os.Signal) {
+	select {
+	case <-node.internalExitChan:
+		break
+	case operation := <-node.nodeMessageChan:
+		if !node.isRunning {
+			panic("Node.listenToRestart: Node is currently not running, nodeMessageChan should've not been called!")
+		}
+		glog.Infof("Node.listenToRestart: Stopping node")
+		node.Stop()
+		glog.Infof("Node.listenToRestart: Finished stopping node")
+		switch operation {
+		case lib.NodeErase:
+			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
+				glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
+					"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
+					node.Config.DataDirectory, err)))
+				return
+			}
+		}
+
+		glog.Infof("Node.listenToRestart: Restarting node")
+		// Wait a few seconds so that all peer messages we've sent while closing the node get propagated in the network.
+		go node.Start(exitChannels...)
+		break
+	}
 }
 
 func validateParams(params *lib.DeSoParams) {

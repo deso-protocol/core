@@ -244,14 +244,14 @@ func TestDeque(t *testing.T) {
 	}
 	tester.arr = append(tester.arr, 8)
 	tester.arr = append(tester.arr, 20)
-	fmt.Println(tester)
+	fmt.Println("tester", tester)
 	deque.Append(tester)
 	tester.arr = append(tester.arr, 11)
-	fmt.Println(deque.Last())
+	fmt.Println("deque.Last()", deque.Last())
 	zz := deque.Last().(*x)
 	zz.arr = append(zz.arr, 18)
-	fmt.Println(deque.Last())
-	fmt.Println(tester)
+	fmt.Println("deque.Last()", deque.Last())
+	fmt.Println("tester", tester)
 }
 
 func TestChannelThingy(t *testing.T) {
@@ -506,7 +506,7 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	_ = require
 
 	z := StateChecksum{}
-	z.Initialize()
+	z.Initialize(nil, nil)
 	identity := group.Ristretto255.Identity()
 	bytesA := []byte("This is a test data")
 	bytesB := []byte("This is another test")
@@ -667,7 +667,7 @@ func TestStateChecksumBirthdayParadox(t *testing.T) {
 	_ = require
 
 	z := StateChecksum{}
-	z.Initialize()
+	z.Initialize(nil, nil)
 
 	iterationNumber := 1
 	testNumber := 1000

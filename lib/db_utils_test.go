@@ -15,6 +15,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Check that all state db prefixes have been correctly mapped to DeSoEncoder types via StatePrefixToDeSoEncoder
+func TestStatePrefixToDeSoEncoder(t *testing.T) {
+	for prefixByte, isState := range StatePrefixes.StatePrefixesMap {
+		prefix := []byte{prefixByte}
+		isEncoder, encoder := StatePrefixToDeSoEncoder(prefix)
+		if isState {
+			if isEncoder && encoder == nil {
+				t.Fatalf("State prefix (%v) mapped to an incorrect encoder, isEncoder is true and encoder is nil", prefix)
+			} else if !isEncoder && encoder != nil {
+				t.Fatalf("State prefix (%v) mapped to an incorrect encoder, isEncoder is false and encoder is not nil", prefix)
+			}
+		} else {
+			if !isEncoder || (isEncoder && encoder != nil) {
+				t.Fatalf("Non-state prefix (%v) mapped to an incorrect encoder", prefix)
+			}
+		}
+	}
+}
+
 func TestEmptyMetadataEncoders(t *testing.T) {
 	require := require.New(t)
 	testCases := []DeSoEncoder{
@@ -91,10 +110,9 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	}
 
 	// Open a badgerdb in a temporary directory.
-	opts := badger.DefaultOptions(dir)
+	opts := PerformanceBadgerOptions(dir)
 	opts.Dir = dir
 	opts.ValueDir = dir
-	opts.MemTableSize = 1024 << 20
 	db, err := badger.Open(opts)
 	if err != nil {
 		log.Fatal(err)
