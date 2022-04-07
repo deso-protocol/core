@@ -1320,8 +1320,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		require.Equal(transactorSellingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(100))
 	}
 
-	// Scenario 4: m0 and m1 both submit BIDs that match
-	// 			   m1 gets a better price than expected
+	// Scenario 4: m0 and m1 both submit BIDs that match, m1 gets a better price than expected
 	{
 		// m0 buys 100 DAO coin base units @ 10 $DESO / DAO coin.
 		m0Order := &DAOCoinLimitOrderEntry{
@@ -1419,8 +1418,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		require.Equal(transactorSellingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(100))
 	}
 
-	// Scenario 6: m0 and m1 both submit ASKs that match
-	// 			   m1 gets a better price than expected
+	// Scenario 6: m0 and m1 both submit ASKs that match, m1 gets a better price than expected
 	{
 		// m0 sells 1000 $DESO @ 10 $DESO / DAO coin.
 		m0Order := &DAOCoinLimitOrderEntry{
