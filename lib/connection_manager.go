@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"math"
 	"net"
 	"strconv"
@@ -775,7 +776,21 @@ func (cmgr *ConnectionManager) Stop() {
 			"shutting down")
 		return
 	}
-	glog.Info("ConnectionManager.Stop: Gracefully shutting down ConnectionManager")
+	glog.Infof("ConnectionManager: Stopping, number of inbound peers (%v), number of outbound "+
+		"peers (%v), number of persistent peers (%v).", len(cmgr.inboundPeers), len(cmgr.outboundPeers),
+		len(cmgr.persistentPeers))
+	for _, peer := range cmgr.inboundPeers {
+		glog.V(1).Infof(CLog(Red, fmt.Sprintf("ConnectionManager.Stop: Inbound peer (%v)", peer)))
+		peer.Disconnect()
+	}
+	for _, peer := range cmgr.outboundPeers {
+		glog.V(1).Infof("ConnectionManager.Stop: Outbound peer (%v)", peer)
+		peer.Disconnect()
+	}
+	for _, peer := range cmgr.persistentPeers {
+		glog.V(1).Infof("ConnectionManager.Stop: Persistent peer (%v)", peer)
+		peer.Disconnect()
+	}
 
 	// Close all of the listeners.
 	for _, listener := range cmgr.listeners {

@@ -36,7 +36,8 @@ type Node struct {
 
 	// False when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
-	isRunning bool
+	isRunning    bool
+	runningMutex sync.Mutex
 
 	internalExitChan chan os.Signal
 	nodeMessageChan  chan lib.NodeMessage
@@ -61,10 +62,11 @@ func (node *Node) Start(exitChannels ...*chan os.Signal) {
 	flag.Set("alsologtostderr", "true")
 	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
+	node.runningMutex.Lock()
+	defer node.runningMutex.Unlock()
 
 	node.internalExitChan = make(chan os.Signal)
 	node.nodeMessageChan = make(chan lib.NodeMessage)
-	signal.Notify(node.internalExitChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go node.listenToRestart()
 
@@ -240,13 +242,18 @@ func (node *Node) Start(exitChannels ...*chan os.Signal) {
 		}
 	}
 
+	syscallChannel := make(chan os.Signal)
+	signal.Notify(syscallChannel, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-node.internalExitChan
-		node.Stop()
-		if node.internalExitChan != nil {
-			close(node.internalExitChan)
-			node.internalExitChan = nil
+		select {
+		case _, open := <-node.internalExitChan:
+			if !open {
+				return
+			}
+		case <-syscallChannel:
 		}
+
+		node.Stop()
 		for _, channel := range exitChannels {
 			if *channel != nil {
 				close(*channel)
@@ -258,9 +265,13 @@ func (node *Node) Start(exitChannels ...*chan os.Signal) {
 }
 
 func (node *Node) Stop() {
+	node.runningMutex.Lock()
+	defer node.runningMutex.Unlock()
+
 	if !node.isRunning {
 		return
 	}
+	node.isRunning = false
 	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
 		"close the node now or else you might corrupt the state."))
 
@@ -292,8 +303,6 @@ func (node *Node) Stop() {
 	node.stopWaitGroup.Wait()
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Databases successfully closed."))
 
-	node.isRunning = false
-
 	if node.internalExitChan != nil {
 		close(node.internalExitChan)
 		node.internalExitChan = nil
@@ -315,7 +324,7 @@ func (node *Node) closeDb(db *badger.DB, dbName string) {
 	}()
 }
 
-func (node *Node) listenToRestart() {
+func (node *Node) listenToRestart(exitChannels ...*chan os.Signal) {
 	select {
 	case <-node.internalExitChan:
 		break
@@ -337,7 +346,8 @@ func (node *Node) listenToRestart() {
 		}
 
 		glog.Infof("Node.listenToRestart: Restarting node")
-		go node.Start()
+		// Wait a few seconds so that all peer messages we've sent while closing the node get propagated in the network.
+		go node.Start(exitChannels...)
 		break
 	}
 }

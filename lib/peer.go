@@ -1433,6 +1433,7 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 // Disconnect closes a peer's network connection.
 func (pp *Peer) Disconnect() {
 	// Only run the logic the first time Disconnect is called.
+	glog.V(1).Infof(CLog(Yellow, "Peer.Disconnect: Starting"))
 	if atomic.AddInt32(&pp.disconnected, 1) != 1 {
 		glog.V(1).Infof("Peer.Disconnect: Disconnect call ignored since it was already called before for Peer %v", pp)
 		return

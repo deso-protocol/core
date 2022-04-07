@@ -810,9 +810,8 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 					srv.GetSnapshot(pp)
 					return
 				}
-				glog.Infof(CLog(Magenta, "---------------------- Starting State Sync ----------------------"))
-				glog.Infof(CLog(Magenta, fmt.Sprintf("Initiating HyperSync after finishing syncing headers. HyperSync "+
-					"quickly syncs the DeSo blockchain by downloading a snapshot of the blockchain taken at height (%v). "+
+				glog.Infof(CLog(Magenta, fmt.Sprintf("Initiating HyperSync after finishing downloading headers. Node "+
+					"will quickly download a snapshot of the blockchain taken at height (%v). "+
 					"HyperSync will sync each prefix of the node's KV database. Connected peer (%v). Note: State sync is a new feature and hence might "+
 					"contain some unexpected behavior. If you see an issue, please report it in DeSo Github "+
 					"https://github.com/deso-protocol/core.", expectedSnapshotHeight, pp)))
@@ -996,9 +995,10 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		pp.Disconnect()
 		return
 	}
-	glog.V(1).Infof("srv._handleSnapshot: Called with message (First: <%v>, Last: <%v>), (number of entries: "+
-		"%v) and metadata (%v) and isEmpty (%v) from Peer %v", msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key,
-		len(msg.SnapshotChunk), msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)
+	glog.V(1).Infof(CLog(Yellow, fmt.Sprintf("Received a snapshot message with entry keys (First entry: "+
+		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
+		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
+		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
 
 	// TODO: reject this message if we're not syncing.
 	// Validate the snapshot chunk message

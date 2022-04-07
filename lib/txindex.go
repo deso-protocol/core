@@ -225,15 +225,14 @@ func (txi *TXIndex) Start() {
 	}()
 }
 
+// Stop TXIndex node. This method doesn't close the txindex db, make sure to call in the parent context:
+// 	txi.TXIndexChain.DB().Close()
+// It's important!!! Do it after the txi.updateWaitGroup.Wait().
 func (txi *TXIndex) Stop() {
 	glog.Info("TXIndex: Stopping updates and closing database")
 
 	txi.stopUpdateChannel <- struct{}{}
 	txi.updateWaitGroup.Wait()
-
-	// This method doesn't close the txindex db, make sure to call in the parent context:
-	// 	txi.TXIndexChain.DB().Close()
-	// It's important!!!
 }
 
 // GetTxindexUpdateBlockNodes ...
