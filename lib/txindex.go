@@ -231,7 +231,9 @@ func (txi *TXIndex) Stop() {
 	txi.stopUpdateChannel <- struct{}{}
 	txi.updateWaitGroup.Wait()
 
-	txi.TXIndexChain.DB().Close()
+	// This method doesn't close the txindex db, make sure to call in the parent context:
+	// 	txi.TXIndexChain.DB().Close()
+	// It's important!!!
 }
 
 // GetTxindexUpdateBlockNodes ...

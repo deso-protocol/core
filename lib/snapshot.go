@@ -317,10 +317,9 @@ func (snap *Snapshot) Stop() {
 	snap.WaitForAllOperationsToFinish()
 	snap.updateWaitGroup.Wait()
 
-	if err := snap.SnapshotDb.Close(); err != nil {
-		glog.Errorf("Error closing SnapshotDb, ancestral records can be corrupted, you might need to " +
-			"resync this node.")
-	}
+	// This method doesn't close the snapshot db, make sure to call in the parent context:
+	// 	snap.SnapshotDb.Close()
+	// It's important!!!
 }
 
 func (snap *Snapshot) ForceResetToLastSnapshot(chain *Blockchain) error {

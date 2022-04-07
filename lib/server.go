@@ -2030,7 +2030,7 @@ func (srv *Server) messageHandler() {
 		// TODO: This is used instead of the shouldQuit control message exist mechanism below.
 		// 	shouldQuit will be true only when all incoming messages have been processed, on
 		// 	the other hand this shutdown will quit immediately.
-		if atomic.LoadInt32(&srv.shutdown) == 1 {
+		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
 		serverMessage := <-srv.incomingMessages
@@ -2109,7 +2109,7 @@ func (srv *Server) _getAddrsToBroadcast() []*SingleAddr {
 // and relays our own address to peers once every 24 hours.
 func (srv *Server) _startAddressRelayer() {
 	for numMinutesPassed := 0; ; numMinutesPassed++ {
-		if atomic.LoadInt32(&srv.shutdown) == 1 {
+		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
 		// For the first ten minutes after the server starts, relay our address to all
@@ -2178,10 +2178,12 @@ func (srv *Server) Stop() {
 
 	// Stop the ConnectionManager
 	srv.cmgr.Stop()
+	glog.Infof(CLog(Yellow, "Server.Stop: Closed the ConnectionManger"))
 
 	// Stop the miner if we have one running.
 	if srv.miner != nil {
 		srv.miner.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
 	}
 
 	if srv.mempool != nil {
@@ -2194,6 +2196,7 @@ func (srv *Server) Stop() {
 		}
 
 		srv.mempool.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
 	}
 
 	// Stop the block producer
@@ -2201,6 +2204,7 @@ func (srv *Server) Stop() {
 		if srv.blockchain.MaxSyncBlockHeight == 0 {
 			srv.blockProducer.Stop()
 		}
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed BlockProducer"))
 	}
 
 	// This will signal any goroutines to quit. Note that enqueing this after stopping

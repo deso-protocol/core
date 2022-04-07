@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,6 +40,7 @@ type Node struct {
 
 	internalExitChan chan os.Signal
 	nodeMessageChan  chan lib.NodeMessage
+	stopWaitGroup    sync.WaitGroup
 }
 
 func NewNode(config *Config) *Node {
@@ -262,23 +264,55 @@ func (node *Node) Stop() {
 	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
 		"close the node now or else you might corrupt the state."))
 
+	// Server
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping server..."))
 	node.Server.Stop()
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Server successfully stopped."))
 
-	if node.Server.GetBlockchain().Snapshot() != nil {
-		node.Server.GetBlockchain().Snapshot().Stop()
+	// Snapshot
+	snap := node.Server.GetBlockchain().Snapshot()
+	if snap != nil {
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping snapshot..."))
+		snap.Stop()
+		node.closeDb(snap.SnapshotDb, "snapshot")
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Snapshot successfully stopped."))
 	}
 
+	// TXIndex
 	if node.TXIndex != nil {
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping TXIndex..."))
 		node.TXIndex.Stop()
+		node.closeDb(node.TXIndex.TXIndexChain.DB(), "txindex")
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: TXIndex successfully stopped."))
 	}
 
-	node.chainDB.Close()
+	// Databases
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closing all databases..."))
+	node.closeDb(node.chainDB, "chain")
+	node.stopWaitGroup.Wait()
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Databases successfully closed."))
+
 	node.isRunning = false
 
 	if node.internalExitChan != nil {
 		close(node.internalExitChan)
 		node.internalExitChan = nil
 	}
+}
+
+// Close a database and handle the stopWaitGroup accordingly.
+func (node *Node) closeDb(db *badger.DB, dbName string) {
+	node.stopWaitGroup.Add(1)
+
+	glog.Infof("Node.closeDb: Preparing to close %v db", dbName)
+	go func() {
+		defer node.stopWaitGroup.Done()
+		if err := db.Close(); err != nil {
+			glog.Fatalf(lib.CLog(lib.Red, fmt.Sprintf("Node.Stop: Problem closing %v db: err: (%v)", dbName, err)))
+		} else {
+			glog.Infof(lib.CLog(lib.Yellow, fmt.Sprintf("Node.closeDb: Closed %v Db", dbName)))
+		}
+	}()
 }
 
 func (node *Node) listenToRestart() {

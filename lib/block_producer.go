@@ -7,6 +7,7 @@ import (
 	"github.com/tyler-smith/go-bip39"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -43,10 +44,10 @@ type DeSoBlockProducer struct {
 	chain   *Blockchain
 	params  *DeSoParams
 
-	producerWaitGroup   sync.WaitGroup
-	stopProducerChannel chan struct{}
-
-	postgres *Postgres
+	producerWaitGroup sync.WaitGroup
+	exit              int32
+	isAsleep          int32
+	postgres          *Postgres
 }
 
 type BlockTemplateStats struct {
@@ -93,11 +94,12 @@ func NewDeSoBlockProducer(
 		blockProducerPrivateKey:       privKey,
 		recentBlockTemplatesProduced:  make(map[BlockHash]*MsgDeSoBlock),
 
-		mempool:             mempool,
-		chain:               chain,
-		params:              params,
-		stopProducerChannel: make(chan struct{}),
-		postgres:            postgres,
+		mempool:  mempool,
+		chain:    chain,
+		params:   params,
+		exit:     0,
+		isAsleep: 0,
+		postgres: postgres,
 	}, nil
 }
 
@@ -332,8 +334,10 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 }
 
 func (desoBlockProducer *DeSoBlockProducer) Stop() {
-	desoBlockProducer.stopProducerChannel <- struct{}{}
-	desoBlockProducer.producerWaitGroup.Wait()
+	atomic.AddInt32(&desoBlockProducer.exit, 1)
+	if atomic.LoadInt32(&desoBlockProducer.isAsleep) == 0 {
+		desoBlockProducer.producerWaitGroup.Wait()
+	}
 }
 
 func (desoBlockProducer *DeSoBlockProducer) GetRecentBlock(blockHash *BlockHash) *MsgDeSoBlock {
@@ -541,31 +545,30 @@ func (desoBlockProducer *DeSoBlockProducer) Start() {
 	desoBlockProducer.producerWaitGroup.Add(1)
 
 	for {
-		select {
-		case <-desoBlockProducer.stopProducerChannel:
+		if atomic.LoadInt32(&desoBlockProducer.exit) >= 0 {
 			desoBlockProducer.producerWaitGroup.Done()
 			return
-		default:
-			secondsLeft := float64(desoBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
-			if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
-				glog.V(1).Infof("Sleeping for %v seconds before producing next block template...", secondsLeft)
-				time.Sleep(time.Duration(math.Ceil(secondsLeft)) * time.Second)
-				continue
-			}
+		}
 
-			// Update the time so start the clock for the next iteration.
-			lastBlockUpdate = time.Now()
+		secondsLeft := float64(desoBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
+		if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
+			glog.V(1).Infof("Sleeping for %v seconds before producing next block template...", secondsLeft)
+			atomic.AddInt32(&desoBlockProducer.isAsleep, 1)
+			time.Sleep(time.Duration(math.Ceil(secondsLeft)) * time.Second)
+			atomic.AddInt32(&desoBlockProducer.isAsleep, -1)
+			continue
+		}
 
-			glog.V(1).Infof("Producing block template...")
-			err := desoBlockProducer.UpdateLatestBlockTemplate()
-			if err != nil {
-				// If we hit an error, log it and sleep for a second. This could happen due to us
-				// being in the middle of processing a block or something.
-				glog.Errorf("Error producing block template: %v", err)
-				time.Sleep(time.Second)
-				continue
-			}
+		// Update the time so start the clock for the next iteration.
+		lastBlockUpdate = time.Now()
 
+		glog.V(1).Infof("Producing block template...")
+		err := desoBlockProducer.UpdateLatestBlockTemplate()
+		if err != nil {
+			// If we hit an error, log it and sleep for a second. This could happen due to us
+			// being in the middle of processing a block or something.
+			glog.Errorf("Error producing block template: %v", err)
+			time.Sleep(time.Second)
 		}
 	}
 }
