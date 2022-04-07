@@ -1683,10 +1683,8 @@ func ComputeBaseUnitsToBuyUint256(
 	quantityToBuy := big.NewInt(0).Div(
 		scaledQuantityToSell, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
 
-	// There is an off-by-one error in the integer division if the exchange
-	// rate is less than 1.0, i.e. the scaled exchange rate is less than
-	// our scaling factor. We correct that here. This looks weird, but
-	// we have fairly good testing coverage around this.
+	// FIXME: There is an off-by-one error here sometimes. This logic is
+	// just a patch to make some tests pass until we can figure out why.
 	if scaledExchangeRateCoinsToSellPerCoinToBuy.Lt(OneUQ128x128) {
 		quantityToBuy = big.NewInt(0).Add(quantityToBuy, bigOneInt)
 	}
