@@ -389,11 +389,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Update quantity for transactor's order.
 			transactorOrderFilledOrder := &FilledDAOCoinLimitOrder{
-				TransactorPKID:                            transactorOrder.TransactorPKID,
-				BuyingDAOCoinCreatorPKID:                  transactorOrder.BuyingDAOCoinCreatorPKID,
-				SellingDAOCoinCreatorPKID:                 transactorOrder.SellingDAOCoinCreatorPKID,
-				BuyingDAOCoinQuantityInBaseUnitsPurchased: coinBaseUnitsBoughtByTransactor,
-				SellingDAOCoinQuantityInBaseUnitsSold:     coinBaseUnitsSoldByTransactor,
+				TransactorPKID:                transactorOrder.TransactorPKID,
+				BuyingDAOCoinCreatorPKID:      transactorOrder.BuyingDAOCoinCreatorPKID,
+				SellingDAOCoinCreatorPKID:     transactorOrder.SellingDAOCoinCreatorPKID,
+				CoinQuantityInBaseUnitsBought: coinBaseUnitsBoughtByTransactor,
+				CoinQuantityInBaseUnitsSold:   coinBaseUnitsSoldByTransactor,
 			}
 
 			if updatedTransactorOrderQuantityToFill.IsZero() {
@@ -413,11 +413,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Update quantity for matching order.
 			matchingOrderFilledOrder := &FilledDAOCoinLimitOrder{
-				TransactorPKID:                            matchingOrder.TransactorPKID,
-				BuyingDAOCoinCreatorPKID:                  matchingOrder.BuyingDAOCoinCreatorPKID,
-				SellingDAOCoinCreatorPKID:                 matchingOrder.SellingDAOCoinCreatorPKID,
-				BuyingDAOCoinQuantityInBaseUnitsPurchased: coinBaseUnitsSoldByTransactor,
-				SellingDAOCoinQuantityInBaseUnitsSold:     coinBaseUnitsBoughtByTransactor,
+				TransactorPKID:                matchingOrder.TransactorPKID,
+				BuyingDAOCoinCreatorPKID:      matchingOrder.BuyingDAOCoinCreatorPKID,
+				SellingDAOCoinCreatorPKID:     matchingOrder.SellingDAOCoinCreatorPKID,
+				CoinQuantityInBaseUnitsBought: coinBaseUnitsSoldByTransactor,
+				CoinQuantityInBaseUnitsSold:   coinBaseUnitsBoughtByTransactor,
 			}
 
 			if updatedMatchingOrderQuantityToFill.IsZero() {

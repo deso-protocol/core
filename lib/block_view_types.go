@@ -1541,12 +1541,12 @@ const (
 // FilledDAOCoinLimitOrder only exists to support understanding what orders were
 // fulfilled when connecting a DAO Coin Limit Order Txn
 type FilledDAOCoinLimitOrder struct {
-	TransactorPKID                            *PKID
-	BuyingDAOCoinCreatorPKID                  *PKID
-	SellingDAOCoinCreatorPKID                 *PKID
-	BuyingDAOCoinQuantityInBaseUnitsPurchased *uint256.Int
-	SellingDAOCoinQuantityInBaseUnitsSold     *uint256.Int
-	IsFulfilled                               bool
+	TransactorPKID                *PKID
+	BuyingDAOCoinCreatorPKID      *PKID
+	SellingDAOCoinCreatorPKID     *PKID
+	CoinQuantityInBaseUnitsBought *uint256.Int
+	CoinQuantityInBaseUnitsSold   *uint256.Int
+	IsFulfilled                   bool
 }
 
 func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
