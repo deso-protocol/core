@@ -1677,24 +1677,38 @@ func ComputeBaseUnitsToBuyUint256(
 	//	 = Scaling factor * Quantity to sell / (Scaling factor * Quantity to sell / Quantity to Buy)
 	//	 = 1 / (1 / Quantity to buy)
 	//	 = Quantity to buy
-	scaledQuantityToSell := big.NewInt(0).Mul(
+
+	// Perform a few validations.
+	if scaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
+		scaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		// This should never happen.
+		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid exchange rate")
+	}
+
+	if quantityToSellBaseUnits == nil || quantityToSellBaseUnits.IsZero() {
+		// This should never happen.
+		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid quantity to sell")
+	}
+
+	// Perform calculation.
+	scaledQuantityToSellBigInt := big.NewInt(0).Mul(
 		OneUQ128x128.ToBig(), quantityToSellBaseUnits.ToBig())
 
-	quantityToBuy := big.NewInt(0).Div(
-		scaledQuantityToSell, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
+	quantityToBuyBigInt := big.NewInt(0).Div(
+		scaledQuantityToSellBigInt, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
 
-	// FIXME: There is an off-by-one error here sometimes. This logic is
-	// just a patch to make some tests pass until we can figure out why.
+	// FIXME: There is an off-by-one error here sometimes.
+	// This logic is just a patch to make some tests pass until we can figure out why.
 	if scaledExchangeRateCoinsToSellPerCoinToBuy.Lt(OneUQ128x128) {
-		quantityToBuy = big.NewInt(0).Add(quantityToBuy, bigOneInt)
+		quantityToBuyBigInt = big.NewInt(0).Add(quantityToBuyBigInt, bigOneInt)
 	}
 
 	// Check for overflow.
-	if quantityToBuy.Cmp(MaxUint256.ToBig()) > 0 {
+	if quantityToBuyBigInt.Cmp(MaxUint256.ToBig()) > 0 {
 		return nil, errors.Wrapf(
 			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
 			"ComputeBaseUnitsToBuyUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
-				"quantityBaseUnits: %v",
+				"quantityToSellBaseUnits: %v",
 			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
 			quantityToSellBaseUnits.Hex())
 	}
@@ -1702,11 +1716,9 @@ func ComputeBaseUnitsToBuyUint256(
 	// We don't trust the overflow checker in uint256. It's too risky because
 	// it could cause a money printer bug if there's a problem with it. We
 	// manually check for overflow above.
-	quantityToBuyUint256, _ := uint256.FromBig(quantityToBuy)
+	quantityToBuyUint256, _ := uint256.FromBig(quantityToBuyBigInt)
 
-	// TODO: this could be because of overflow.
-	// Alternatively, this could be because exchange * quantity < 1 base units.
-	// We should differentiate between the two errors.
+	// Error if resulting quantity to buy is < 1 base unit.
 	if quantityToBuyUint256.IsZero() {
 		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}
@@ -1730,6 +1742,19 @@ func ComputeBaseUnitsToSellUint256(
 	//   = (Scaling factor * Quantity to sell / Quantity to buy) * Quantity to buy / Scaling factor
 	//   = Quantity to sell
 
+	// Perform a few validations.
+	if scaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
+		scaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		// This should never happen.
+		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid exchange rate")
+	}
+
+	if quantityToBuyBaseUnits == nil || quantityToBuyBaseUnits.IsZero() {
+		// This should never happen.
+		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid quantity to buy")
+	}
+
+	// Perform calculation.
 	// Note that we account for overflow here. Not doing this could result
 	// in a money printer bug. You need to check the following:
 	// scaledExchangeRateCoinsToSellPerCoinToBuy * quantityToBuyBaseUnits < uint256max
@@ -1738,34 +1763,36 @@ func ComputeBaseUnitsToSellUint256(
 	// The division afterward is inherently safe so no need to check it.
 
 	// Returns the total cost of the inputted price x quantity as a uint256.
-	scaledTotalCostBigint := big.NewInt(0).Mul(
+	scaledQuantityToSellBigint := big.NewInt(0).Mul(
 		scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig(),
 		quantityToBuyBaseUnits.ToBig())
-	if scaledTotalCostBigint.Cmp(MaxUint256.ToBig()) > 0 {
+
+	// Check for overflow.
+	if scaledQuantityToSellBigint.Cmp(MaxUint256.ToBig()) > 0 {
 		return nil, errors.Wrapf(
 			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
 			"ComputeBaseUnitsToSellUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
-				"quantityBaseUnits: %v",
+				"quantityToBuyBaseUnits: %v",
 			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
 			quantityToBuyBaseUnits.Hex())
 	}
+
 	// We don't trust the overflow checker in uint256. It's too risky because
-	// it could cause a money printer bug if there's a problem with it.
-	scaledTotalCost, _ := uint256.FromBig(scaledTotalCostBigint)
-	unscaledTotalCost, err := SafeUint256().Div(scaledTotalCost, OneUQ128x128)
+	// it could cause a money printer bug if there's a problem with it. We
+	// manually check for overflow above.
+	scaledQuantityToSellUint256, _ := uint256.FromBig(scaledQuantityToSellBigint)
+	quantityToSellUint256, err := SafeUint256().Div(scaledQuantityToSellUint256, OneUQ128x128)
 	if err != nil {
 		// This should never happen as we're dividing by a known constant.
 		return nil, errors.Wrapf(err, "ComputeBaseUnitsToSellUint256: ")
 	}
 
-	// TODO: this could be because of overflow.
-	// Alternatively, this could be because exchange * quantity < 1 base units.
-	// We should differentiate between the two errors.
-	if unscaledTotalCost.IsZero() {
+	// Error if resulting quantity to sell is < 1 base unit.
+	if quantityToSellUint256.IsZero() {
 		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}
 
-	return unscaledTotalCost, nil
+	return quantityToSellUint256, nil
 }
 
 type DAOCoinLimitOrderMapKey struct {
