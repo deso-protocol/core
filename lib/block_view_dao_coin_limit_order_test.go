@@ -514,8 +514,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = CalculateScaledExchangeRate(11.0)
-		// TODO: off-by-1, 10 vs 9
-		metadataM1.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(9)
+		metadataM1.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(10)
 		require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
 
 		// Calculate updated $DESO balances.
@@ -533,7 +532,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0's order to buy DAO coins is fulfilled so:
 		//   * His $DESO balance decreases and
 		//   * His DAO coin balance increases.
-		// TODO: these should be equal.
 		require.Equal(
 			originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(2), // TODO: calculate gas fee instead of hard-coding.
 			updatedM0DESOBalance)
@@ -694,9 +692,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1's order selling DAO coins is fulfilled so:
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
-		// TODO: these should be equal.
-		require.NotEqual(
-			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(2), updatedM1DESOBalance) // TODO: calculate gas fee instead of hard-coding.
+		require.Equal(
+			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(3), updatedM1DESOBalance) // TODO: calculate gas fee instead of hard-coding.
 
 		require.Equal(
 			*uint256.NewInt().Sub(&originalM1DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
@@ -1090,8 +1087,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = utxoView._getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(queryEntry)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		// TODO: off-by-1 error 88 vs 89
-		require.Equal(orderEntries[0].QuantityToFillInBaseUnits, uint256.NewInt().SetUint64(88))
+		require.Equal(orderEntries[0].QuantityToFillInBaseUnits, uint256.NewInt().SetUint64(89))
 
 		// Test get matching DAO coin limit orders.
 		// Target order:
@@ -1512,22 +1508,21 @@ func TestComputeBaseUnitsToBuyUint256(t *testing.T) {
 	// exchange rate = # coins to sell / # coins to buy
 	//   => exchange rate * # coins to buy = # coins to sell
 	//   => # coins to buy = # coins to sell / exchange rate
-	// FIXME: I commented out the tests that are failing due to the off-by-1 bug.
-	//assertEqual(0.001, 100, 100000) // 99999
-	//assertEqual(0.002, 100, 50000) // 49999
-	//assertEqual(0.1, 100, 1000) // 999
-	//assertEqual(0.15, 100, 666)
-	//assertEqual(0.16, 100, 625) // 624
-	//assertEqual(0.2, 100, 500) // 499
-	//assertEqual(0.3, 100, 333)
-	//assertEqual(0.32, 100, 312)
-	//assertEqual(0.4, 100, 250) // 249
-	//assertEqual(0.5, 100, 200)
-	//assertEqual(0.6, 100, 166)
-	//assertEqual(0.64, 100, 156)
-	//assertEqual(0.7, 100, 142)
-	//assertEqual(0.8, 100, 125) // 124
-	//assertEqual(0.9, 100, 111)
+	assertEqual(0.001, 100, 100000)
+	assertEqual(0.002, 100, 50000)
+	assertEqual(0.1, 100, 1000)
+	assertEqual(0.15, 100, 666)
+	assertEqual(0.16, 100, 625)
+	assertEqual(0.2, 100, 500)
+	assertEqual(0.3, 100, 333)
+	assertEqual(0.32, 100, 312)
+	assertEqual(0.4, 100, 250)
+	assertEqual(0.5, 100, 200)
+	assertEqual(0.6, 100, 166)
+	assertEqual(0.64, 100, 156)
+	assertEqual(0.7, 100, 142)
+	assertEqual(0.8, 100, 125)
+	assertEqual(0.9, 100, 111)
 	assertEqual(1.0, 100, 100)
 	assertEqual(1.1, 100, 90)
 	assertEqual(1.2, 100, 83)
@@ -1536,16 +1531,22 @@ func TestComputeBaseUnitsToBuyUint256(t *testing.T) {
 	assertEqual(2.0, 100, 50)
 	assertEqual(4.0, 100, 25)
 	assertEqual(10.0, 100, 10)
-	//assertEqual(0.25, 100, 400)
+	assertEqual(0.25, 100, 400)
 	assertEqual(3.0, 100, 33)
-	//assertEqual(0.2, 25000, 125000) // 124999
+	assertEqual(0.2, 25000, 125000)
 	assertEqual(1.75, 100, 57)
-	//assertEqual(0.6, 115, 191)
+	assertEqual(0.6, 115, 191)
 	assertEqual(2.3, 250, 108)
-	//assertEqual(0.01, 100, 10000) // 9999
-	//assertEqual(0.01, 37, 3700) // 3699
-	//assertEqual(0.3, 100, 333)
-	//assertEqual(0.115, 259, 2252)
+	assertEqual(0.01, 100, 10000)
+	assertEqual(0.01, 37, 3700)
+	assertEqual(0.3, 100, 333)
+	assertEqual(0.115, 259, 2252)
+
+	// Note: integer division isn't exact if the numbers don't divide evenly.
+	// 120 / 12.0 is 10 exact.
+	assertEqual(12.0, 120, 10)
+	// 120 / 11.0 is about 10.9. This becomes 10 in integer division.
+	assertEqual(11.0, 120, 10)
 }
 
 //

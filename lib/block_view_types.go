@@ -1697,9 +1697,18 @@ func ComputeBaseUnitsToBuyUint256(
 	quantityToBuyBigInt := big.NewInt(0).Div(
 		scaledQuantityToSellBigInt, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
 
-	// FIXME: There is an off-by-one error here sometimes.
-	// This logic is just a patch to make some tests pass until we can figure out why.
-	if scaledExchangeRateCoinsToSellPerCoinToBuy.Lt(OneUQ128x128) {
+	// There is a possible off-by-one base unit bug in the integer division. We
+	// double-check the math using float division then take the floor of the float.
+	// If the truncated float is greater than the integer quotient, then we know we
+	// have hit an off-by-one-error. We don't use the float division value for
+	// anything else but this check.
+	quantityToBuyBigFloat := Div(
+		NewFloat().SetInt(scaledQuantityToSellBigInt),
+		NewFloat().SetInt(scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig()))
+
+	quantityToBuyBigIntFloor, _ := quantityToBuyBigFloat.Int(nil)
+
+	if quantityToBuyBigInt.Cmp(quantityToBuyBigIntFloor) < 0 {
 		quantityToBuyBigInt = big.NewInt(0).Add(quantityToBuyBigInt, bigOneInt)
 	}
 
