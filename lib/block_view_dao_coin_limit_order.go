@@ -358,8 +358,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// as well as the number of coins exchanged.
 			updatedTransactorOrderQuantityToFill,
 				updatedMatchingOrderQuantityToFill,
-				daoCoinBaseUnitsBoughtByTransactor,
-				daoCoinBaseUnitsSoldByTransactor,
+				coinBaseUnitsBoughtByTransactor,
+				coinBaseUnitsSoldByTransactor,
 				err := _calculateDAOCoinsTransferredInLimitOrderMatch(
 				transactorOrder, matchingOrder, transactorOrder.QuantityToFillInBaseUnits)
 			if err != nil {
@@ -379,7 +379,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Sanity-check the order, and potentially cancel it if the matching order
 			// doesn't have enough coins to sell to the transactor as promised.
-			if sellerBuyCoinBalanceBaseUnits.Lt(daoCoinBaseUnitsBoughtByTransactor) {
+			if sellerBuyCoinBalanceBaseUnits.Lt(coinBaseUnitsBoughtByTransactor) {
 				bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
 				continue
 			}
@@ -392,8 +392,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				TransactorPKID:                            transactorOrder.TransactorPKID,
 				BuyingDAOCoinCreatorPKID:                  transactorOrder.BuyingDAOCoinCreatorPKID,
 				SellingDAOCoinCreatorPKID:                 transactorOrder.SellingDAOCoinCreatorPKID,
-				BuyingDAOCoinQuantityInBaseUnitsPurchased: daoCoinBaseUnitsBoughtByTransactor,
-				SellingDAOCoinQuantityInBaseUnitsSold:     daoCoinBaseUnitsSoldByTransactor,
+				BuyingDAOCoinQuantityInBaseUnitsPurchased: coinBaseUnitsBoughtByTransactor,
+				SellingDAOCoinQuantityInBaseUnitsSold:     coinBaseUnitsSoldByTransactor,
 			}
 
 			if updatedTransactorOrderQuantityToFill.IsZero() {
@@ -416,8 +416,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				TransactorPKID:                            matchingOrder.TransactorPKID,
 				BuyingDAOCoinCreatorPKID:                  matchingOrder.BuyingDAOCoinCreatorPKID,
 				SellingDAOCoinCreatorPKID:                 matchingOrder.SellingDAOCoinCreatorPKID,
-				BuyingDAOCoinQuantityInBaseUnitsPurchased: daoCoinBaseUnitsSoldByTransactor,
-				SellingDAOCoinQuantityInBaseUnitsSold:     daoCoinBaseUnitsBoughtByTransactor,
+				BuyingDAOCoinQuantityInBaseUnitsPurchased: coinBaseUnitsSoldByTransactor,
+				SellingDAOCoinQuantityInBaseUnitsSold:     coinBaseUnitsBoughtByTransactor,
 			}
 
 			if updatedMatchingOrderQuantityToFill.IsZero() {
@@ -439,17 +439,17 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Now adjust the balances in our maps to reflect the coins that just changed hands.
 			// Transactor got buyCoins
 			bav.balanceChange(transactorPKIDEntry.PKID, buyCoinPKIDEntry.PKID,
-				daoCoinBaseUnitsBoughtByTransactor.ToBig(), balanceDeltas, prevBalances)
+				coinBaseUnitsBoughtByTransactor.ToBig(), balanceDeltas, prevBalances)
 			// Seller lost buyCoins
 			bav.balanceChange(matchingOrder.TransactorPKID, buyCoinPKIDEntry.PKID,
-				big.NewInt(0).Neg(daoCoinBaseUnitsBoughtByTransactor.ToBig()),
+				big.NewInt(0).Neg(coinBaseUnitsBoughtByTransactor.ToBig()),
 				balanceDeltas, prevBalances)
 			// Seller got sellCoins
 			bav.balanceChange(matchingOrder.TransactorPKID, sellCoinPKIDEntry.PKID,
-				daoCoinBaseUnitsSoldByTransactor.ToBig(), balanceDeltas, prevBalances)
+				coinBaseUnitsSoldByTransactor.ToBig(), balanceDeltas, prevBalances)
 			// Transactor lost sellCoins
 			bav.balanceChange(transactorPKIDEntry.PKID, sellCoinPKIDEntry.PKID,
-				big.NewInt(0).Neg(daoCoinBaseUnitsSoldByTransactor.ToBig()),
+				big.NewInt(0).Neg(coinBaseUnitsSoldByTransactor.ToBig()),
 				balanceDeltas, prevBalances)
 
 			if orderFilled {
@@ -940,11 +940,11 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 	transactorOrder *DAOCoinLimitOrderEntry,
 	matchingOrder *DAOCoinLimitOrderEntry,
 	transactorQuantityToFillInBaseUnits *uint256.Int) (
-	updatedTransactorQuantityToFillInBaseUnits *uint256.Int,
-	updatedMatchingQuantityToFillInBaseUnits *uint256.Int,
-	transactorBuyingCoinBaseUnitsTransferred *uint256.Int,
-	transactorSellingCoinBaseUnitsTransferred *uint256.Int,
-	err error) {
+	_updatedTransactorQuantityToFillInBaseUnits *uint256.Int,
+	_updatedMatchingQuantityToFillInBaseUnits *uint256.Int,
+	_transactorBuyingCoinBaseUnitsTransferred *uint256.Int,
+	_transactorSellingCoinBaseUnitsTransferred *uint256.Int,
+	_err error) {
 	// Calculate coins transferred between two matching orders.
 	// Note: we assume that the input orders are a valid match
 	// so those should be validated elsewhere.
@@ -957,37 +957,37 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 		// to compare these two quantities, we need to convert the matching order's
 		// quantity to the amount they would like to buy.
 		var matchingOrderQuantityToBuy *uint256.Int
-		matchingOrderQuantityToBuy, err = matchingOrder.BaseUnitsToBuyUint256()
-		if err != nil {
-			return nil, nil, nil, nil, err
+		matchingOrderQuantityToBuy, _err = matchingOrder.BaseUnitsToBuyUint256()
+		if _err != nil {
+			return nil, nil, nil, nil, _err
 		}
 
 		if transactorQuantityToFillInBaseUnits.Lt(matchingOrderQuantityToBuy) ||
 			transactorQuantityToFillInBaseUnits.Eq(matchingOrderQuantityToBuy) {
 			// The matching order fulfills the transactor's order.
-			updatedTransactorQuantityToFillInBaseUnits = uint256.NewInt()
+			_updatedTransactorQuantityToFillInBaseUnits = uint256.NewInt()
 
 			// We calculate what is left over for the matching order. We calculate
 			// it first in their matching quantity to buy. Then we have to convert
 			// it back to their designated quantity to sell, as their quantity field
 			// specifies their quantity to sell.
 			var leftoverMatchingQuantityToBuy *uint256.Int
-			leftoverMatchingQuantityToBuy, err = SafeUint256().Sub(
+			leftoverMatchingQuantityToBuy, _err = SafeUint256().Sub(
 				matchingOrderQuantityToBuy, transactorQuantityToFillInBaseUnits)
-			if err != nil {
-				return nil, nil, nil, nil, err
+			if _err != nil {
+				return nil, nil, nil, nil, _err
 			}
 
 			if leftoverMatchingQuantityToBuy.IsZero() {
 				// If the transactor and matching order's quantities are equal, then the
 				// leftover matching quantity to buy will be zero. This means the converted
 				// quantity is zero as well.
-				updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
+				_updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
 			} else {
-				updatedMatchingQuantityToFillInBaseUnits, err = ComputeBaseUnitsToSellUint256(
+				_updatedMatchingQuantityToFillInBaseUnits, _err = ComputeBaseUnitsToSellUint256(
 					matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy, leftoverMatchingQuantityToBuy)
-				if err != nil {
-					return nil, nil, nil, nil, err
+				if _err != nil {
+					return nil, nil, nil, nil, _err
 				}
 			}
 
@@ -995,40 +995,50 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 			// and their order is fully fulfilled. We use the matching order's exchange
 			// rate and the transactor's quantity to calculate how many coins were
 			// bought by the transactor.
-			transactorBuyingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToSellUint256(
+			_transactorBuyingCoinBaseUnitsTransferred, _err = ComputeBaseUnitsToSellUint256(
 				matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 				transactorQuantityToFillInBaseUnits)
-			if err != nil {
-				return nil, nil, nil, nil, err
+			if _err != nil {
+				return nil, nil, nil, nil, _err
 			}
 
 			// We use the transactor's quantity as-is as the number
 			// of coins that were sold by the transactor.
-			transactorSellingCoinBaseUnitsTransferred = transactorQuantityToFillInBaseUnits
-			return
+			_transactorSellingCoinBaseUnitsTransferred = transactorQuantityToFillInBaseUnits
+
+			return _updatedTransactorQuantityToFillInBaseUnits,
+				_updatedMatchingQuantityToFillInBaseUnits,
+				_transactorBuyingCoinBaseUnitsTransferred,
+				_transactorSellingCoinBaseUnitsTransferred,
+				nil
 		}
 
 		// Else, the transactor's order fulfills the matching order.
-		updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
+		_updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
 
 		// We calculate what is left over for the transactor's order.
-		updatedTransactorQuantityToFillInBaseUnits, err = SafeUint256().Sub(
+		_updatedTransactorQuantityToFillInBaseUnits, _err = SafeUint256().Sub(
 			transactorQuantityToFillInBaseUnits, matchingOrderQuantityToBuy)
-		if err != nil {
-			return nil, nil, nil, nil, err
+		if _err != nil {
+			return nil, nil, nil, nil, _err
 		}
 
 		// The matching order is fulfilled, so its quantity sold is equal to
 		// the quantity bought by the transactor.
-		transactorBuyingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToSellUint256(
+		_transactorBuyingCoinBaseUnitsTransferred, _err = ComputeBaseUnitsToSellUint256(
 			matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy, matchingOrderQuantityToBuy)
-		if err != nil {
-			return nil, nil, nil, nil, err
+		if _err != nil {
+			return nil, nil, nil, nil, _err
 		}
 
 		// And its quantity to buy is equal to the quantity sold by the transactor.
-		transactorSellingCoinBaseUnitsTransferred = matchingOrderQuantityToBuy
-		return
+		_transactorSellingCoinBaseUnitsTransferred = matchingOrderQuantityToBuy
+
+		return _updatedTransactorQuantityToFillInBaseUnits,
+			_updatedMatchingQuantityToFillInBaseUnits,
+			_transactorBuyingCoinBaseUnitsTransferred,
+			_transactorSellingCoinBaseUnitsTransferred,
+			nil
 	}
 
 	if transactorOrder.OperationType == DAOCoinLimitOrderOperationTypeBID &&
@@ -1039,76 +1049,84 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 		// to compare these two quantities, we need to convert the matching order's
 		// quantity to the amount they would like to sell.
 		var matchingOrderQuantityToSell *uint256.Int
-		matchingOrderQuantityToSell, err = matchingOrder.BaseUnitsToSellUint256()
-		if err != nil {
-			return nil, nil, nil, nil, err
+		matchingOrderQuantityToSell, _err = matchingOrder.BaseUnitsToSellUint256()
+		if _err != nil {
+			return nil, nil, nil, nil, _err
 		}
 
 		if transactorQuantityToFillInBaseUnits.Lt(matchingOrderQuantityToSell) ||
 			transactorQuantityToFillInBaseUnits.Eq(matchingOrderQuantityToSell) {
 			// The matching order fulfills the transactor's order.
-			updatedTransactorQuantityToFillInBaseUnits = uint256.NewInt()
+			_updatedTransactorQuantityToFillInBaseUnits = uint256.NewInt()
 
 			// We calculate what is left over for the matching order. We calculate
 			// it first in their matching quantity to sell. Then we have to convert
 			// it back to their designated quantity to buy as their quantity field
 			// specifies their quantity to buy.
 			var leftoverMatchingQuantityToSell *uint256.Int
-			leftoverMatchingQuantityToSell, err = SafeUint256().Sub(
+			leftoverMatchingQuantityToSell, _err = SafeUint256().Sub(
 				matchingOrderQuantityToSell, transactorQuantityToFillInBaseUnits)
-			if err != nil {
-				return nil, nil, nil, nil, err
+			if _err != nil {
+				return nil, nil, nil, nil, _err
 			}
 
 			if leftoverMatchingQuantityToSell.IsZero() {
 				// If the transactor and matching order's quantities are equal, then the
 				// leftover matching quantity to sell will be zero. This means the converted
 				// quantity is zero as well.
-				updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
+				_updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
 			} else {
-				updatedMatchingQuantityToFillInBaseUnits, err = ComputeBaseUnitsToBuyUint256(
+				_updatedMatchingQuantityToFillInBaseUnits, _err = ComputeBaseUnitsToBuyUint256(
 					matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy, leftoverMatchingQuantityToSell)
-				if err != nil {
-					return nil, nil, nil, nil, err
+				if _err != nil {
+					return nil, nil, nil, nil, _err
 				}
 			}
 
 			// The transactor quantity specifies the amount of coin they want to buy
 			// and their order is fully fulfilled.
-			transactorBuyingCoinBaseUnitsTransferred = transactorQuantityToFillInBaseUnits
+			_transactorBuyingCoinBaseUnitsTransferred = transactorQuantityToFillInBaseUnits
 
-			transactorSellingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToBuyUint256(
+			_transactorSellingCoinBaseUnitsTransferred, _err = ComputeBaseUnitsToBuyUint256(
 				matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 				transactorQuantityToFillInBaseUnits)
-			if err != nil {
-				return nil, nil, nil, nil, err
+			if _err != nil {
+				return nil, nil, nil, nil, _err
 			}
 
-			return
+			return _updatedTransactorQuantityToFillInBaseUnits,
+				_updatedMatchingQuantityToFillInBaseUnits,
+				_transactorBuyingCoinBaseUnitsTransferred,
+				_transactorSellingCoinBaseUnitsTransferred,
+				nil
 		}
 
 		// Else, the transactor's order fulfills the matching order.
-		updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
+		_updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
 
 		// We calculate what is left over for the transactor's order.
-		updatedTransactorQuantityToFillInBaseUnits, err = SafeUint256().Sub(
+		_updatedTransactorQuantityToFillInBaseUnits, _err = SafeUint256().Sub(
 			transactorQuantityToFillInBaseUnits, matchingOrderQuantityToSell)
-		if err != nil {
-			return nil, nil, nil, nil, err
+		if _err != nil {
+			return nil, nil, nil, nil, _err
 		}
 
 		// The matching order is fulfilled so its quantity to sell is equal
 		// to the quantity bought by the transactor.
-		transactorBuyingCoinBaseUnitsTransferred = matchingOrderQuantityToSell
+		_transactorBuyingCoinBaseUnitsTransferred = matchingOrderQuantityToSell
 
 		// And its quantity bought is equal to the quantity sold by the transactor.
-		transactorSellingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToBuyUint256(
+		_transactorSellingCoinBaseUnitsTransferred, _err = ComputeBaseUnitsToBuyUint256(
 			matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy, matchingOrderQuantityToSell)
-		if err != nil {
-			return nil, nil, nil, nil, err
+		if _err != nil {
+			return nil, nil, nil, nil, _err
 		}
 
-		return
+		return _updatedTransactorQuantityToFillInBaseUnits,
+			_updatedMatchingQuantityToFillInBaseUnits,
+			_transactorBuyingCoinBaseUnitsTransferred,
+			_transactorSellingCoinBaseUnitsTransferred,
+			nil
 	}
 
 	// Else, the transactor and matching order have opposite operation types,
@@ -1118,75 +1136,96 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 	if transactorQuantityToFillInBaseUnits.Lt(matchingOrder.QuantityToFillInBaseUnits) ||
 		transactorQuantityToFillInBaseUnits.Eq(matchingOrder.QuantityToFillInBaseUnits) {
 		// The matching order will fulfill the transactor's order.
-		updatedTransactorQuantityToFillInBaseUnits = uint256.NewInt()
+		_updatedTransactorQuantityToFillInBaseUnits = uint256.NewInt()
 
 		// We calculate what is left for the matching order.
-		updatedMatchingQuantityToFillInBaseUnits, err = SafeUint256().Sub(
+		_updatedMatchingQuantityToFillInBaseUnits, _err = SafeUint256().Sub(
 			matchingOrder.QuantityToFillInBaseUnits, transactorQuantityToFillInBaseUnits)
+		if _err != nil {
+			return nil, nil, nil, nil, _err
+		}
 
 		if transactorOrder.OperationType == DAOCoinLimitOrderOperationTypeASK {
 			// The transactor's quantity represents their selling coin.
-			transactorBuyingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToSellUint256(
+			_transactorBuyingCoinBaseUnitsTransferred, _err = ComputeBaseUnitsToSellUint256(
 				matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 				transactorQuantityToFillInBaseUnits)
-			if err != nil {
-				return nil, nil, nil, nil, err
+			if _err != nil {
+				return nil, nil, nil, nil, _err
 			}
 
-			transactorSellingCoinBaseUnitsTransferred = transactorQuantityToFillInBaseUnits
-			return
+			_transactorSellingCoinBaseUnitsTransferred = transactorQuantityToFillInBaseUnits
+
+			return _updatedTransactorQuantityToFillInBaseUnits,
+				_updatedMatchingQuantityToFillInBaseUnits,
+				_transactorBuyingCoinBaseUnitsTransferred,
+				_transactorSellingCoinBaseUnitsTransferred,
+				nil
 		}
 
 		// Else, the transactor's quantity represents their buying coin.
-		transactorBuyingCoinBaseUnitsTransferred = transactorQuantityToFillInBaseUnits
+		_transactorBuyingCoinBaseUnitsTransferred = transactorQuantityToFillInBaseUnits
 
-		transactorSellingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToBuyUint256(
+		_transactorSellingCoinBaseUnitsTransferred, _err = ComputeBaseUnitsToBuyUint256(
 			matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			transactorQuantityToFillInBaseUnits)
-		if err != nil {
-			return nil, nil, nil, nil, err
+		if _err != nil {
+			return nil, nil, nil, nil, _err
 		}
 
-		return
+		return _updatedTransactorQuantityToFillInBaseUnits,
+			_updatedMatchingQuantityToFillInBaseUnits,
+			_transactorBuyingCoinBaseUnitsTransferred,
+			_transactorSellingCoinBaseUnitsTransferred,
+			nil
 	}
 
 	// Else, the transactor's order will fulfill the matching order, but the matching
 	// order is insufficient to fulfill the transactor's order.
-	updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
+	_updatedMatchingQuantityToFillInBaseUnits = uint256.NewInt()
 
 	// We calculate what is left for the transactor.
-	updatedTransactorQuantityToFillInBaseUnits, err = SafeUint256().Sub(
+	_updatedTransactorQuantityToFillInBaseUnits, _err = SafeUint256().Sub(
 		transactorQuantityToFillInBaseUnits, matchingOrder.QuantityToFillInBaseUnits)
-	if err != nil {
-		return nil, nil, nil, nil, err
+	if _err != nil {
+		return nil, nil, nil, nil, _err
 	}
 
 	if matchingOrder.OperationType == DAOCoinLimitOrderOperationTypeASK {
 		// The matching order's quantity represents their selling coin.
 		// Which is equivalent to the transactor's buying coin.
-		transactorBuyingCoinBaseUnitsTransferred = matchingOrder.QuantityToFillInBaseUnits
+		_transactorBuyingCoinBaseUnitsTransferred = matchingOrder.QuantityToFillInBaseUnits
 
-		transactorSellingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToBuyUint256(
+		_transactorSellingCoinBaseUnitsTransferred, _err = ComputeBaseUnitsToBuyUint256(
 			matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			matchingOrder.QuantityToFillInBaseUnits)
-		if err != nil {
-			return nil, nil, nil, nil, err
+		if _err != nil {
+			return nil, nil, nil, nil, _err
 		}
 
-		return
+		return _updatedTransactorQuantityToFillInBaseUnits,
+			_updatedMatchingQuantityToFillInBaseUnits,
+			_transactorBuyingCoinBaseUnitsTransferred,
+			_transactorSellingCoinBaseUnitsTransferred,
+			nil
 	}
 
 	// Else, the matching order's quantity represents their buying coin.
 	// Which is equivalent to the transactor's selling coin.
-	transactorBuyingCoinBaseUnitsTransferred, err = ComputeBaseUnitsToBuyUint256(
+	_transactorBuyingCoinBaseUnitsTransferred, _err = ComputeBaseUnitsToBuyUint256(
 		matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		matchingOrder.QuantityToFillInBaseUnits)
-	if err != nil {
-		return nil, nil, nil, nil, err
+	if _err != nil {
+		return nil, nil, nil, nil, _err
 	}
 
-	transactorSellingCoinBaseUnitsTransferred = matchingOrder.QuantityToFillInBaseUnits
-	return
+	_transactorSellingCoinBaseUnitsTransferred = matchingOrder.QuantityToFillInBaseUnits
+
+	return _updatedTransactorQuantityToFillInBaseUnits,
+		_updatedMatchingQuantityToFillInBaseUnits,
+		_transactorBuyingCoinBaseUnitsTransferred,
+		_transactorSellingCoinBaseUnitsTransferred,
+		nil
 }
 
 // ###########################
@@ -1418,12 +1457,12 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, isC
 	}
 
 	// Validate price > 0.
-	if !order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Gt(uint256.NewInt()) {
+	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
 	// Validate quantity > 0.
-	if !order.QuantityToFillInBaseUnits.Gt(uint256.NewInt()) {
+	if order.QuantityToFillInBaseUnits.IsZero() {
 		return RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
