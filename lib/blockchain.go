@@ -2782,15 +2782,10 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 		TxOutputs: additionalOutputs,
 	}
 
-	minFeeRateToUse := minFeeRateNanosPerKB
-	if minimumNetworkFeeNanosPerKb > 0 && uint64(minimumNetworkFeeNanosPerKb) > minFeeRateToUse {
-		minFeeRateToUse = uint64(minimumNetworkFeeNanosPerKb)
-	}
-
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateToUse, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateGlobalParamsTxn: Problem adding inputs: ")
 	}
