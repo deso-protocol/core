@@ -79,30 +79,20 @@ type ConnectionBridge struct {
 
 	waitGroup   sync.WaitGroup
 	newPeerChan chan *lib.Peer
+
+	connectionAttempt int
 }
 
 // NewConnectionBridge creates an instance of ConnectionBridge that's ready to be connected.
-// This function is usually followed by ConnectionBridge.Connect()
+// This function is usually followed by ConnectionBridge.Start()
 func NewConnectionBridge(nodeA *Node, nodeB *Node) *ConnectionBridge {
-
-	// Start the outbound listener for A.
-	listenerA, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		panic(err)
-	}
-	// Start the outbound listener for B.
-	listenerB, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		panic(err)
-	}
 
 	bridge := &ConnectionBridge{
 		nodeA:             nodeA,
-		outboundListenerA: listenerA,
 		nodeB:             nodeB,
-		outboundListenerB: listenerB,
 		disabled:          false,
 		newPeerChan:       make(chan *lib.Peer),
+		connectionAttempt: 0,
 	}
 	return bridge
 }
@@ -142,7 +132,7 @@ func (bridge *ConnectionBridge) createInboundConnection(node *Node) *lib.Peer {
 // To do this, we setup an auxiliary listener and make the provided node connect to that listener.
 // We will then wrap this connection in a Peer object and return it in the newPeerChan channel.
 // The peer is returned through the channel due to the concurrency. This function doesn't initiate
-// the version exchange, this should be handled through ConnectionBridge.StartConnection()
+// the version exchange, this should be handled through ConnectionBridge.startConnection()
 func (bridge *ConnectionBridge) createOutboundConnection(node *Node, otherNode *Node, ll net.Listener) {
 
 	// Setup a listener to intercept the traffic from the node.
@@ -190,9 +180,9 @@ func (bridge *ConnectionBridge) getVersionMessage(node *Node) *lib.MsgDeSoVersio
 	return ver
 }
 
-// StartConnection starts the connection by performing version and verack exchange with
+// startConnection starts the connection by performing version and verack exchange with
 // the provided connection, pretending to be the otherNode.
-func (bridge *ConnectionBridge) StartConnection(connection *lib.Peer, otherNode *Node) error {
+func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode *Node) error {
 	// Prepare the version message.
 	versionMessage := bridge.getVersionMessage(otherNode)
 	connection.VersionNonceSent = versionMessage.Nonce
@@ -260,10 +250,10 @@ func (bridge *ConnectionBridge) StartConnection(connection *lib.Peer, otherNode 
 	return nil
 }
 
-// RouteTraffic routes all messages sent to the source connection and redirects it to the destination connection.
-// This communication tunnel is one-directional, so normally we would also call RouteTraffic(destination, source)
+// routeTraffic routes all messages sent to the source connection and redirects it to the destination connection.
+// This communication tunnel is one-directional, so normally we would also call routeTraffic(destination, source)
 // to make it bidirectional.
-func (bridge *ConnectionBridge) RouteTraffic(source *lib.Peer, destination *lib.Peer) {
+func (bridge *ConnectionBridge) routeTraffic(source *lib.Peer, destination *lib.Peer) {
 	bridge.waitGroup.Add(1)
 	for {
 		if bridge.disabled {
@@ -280,9 +270,10 @@ func (bridge *ConnectionBridge) RouteTraffic(source *lib.Peer, destination *lib.
 			break
 		}
 		if err != nil {
-			fmt.Printf("Peer disconencted with source: (%v), destination: (%v)",
+			fmt.Printf("routeTraffic: Peer disconnected with source: (%v), destination: (%v)",
 				source.Conn.LocalAddr().String(), destination.Conn.LocalAddr().String())
-			panic(err)
+			bridge.Restart()
+			return
 		}
 		//fmt.Printf("Reading message: type: (%v) at source with local addr: (%v) and remote addr: (%v)\n",
 		//	/*inMsg, */ inMsg.GetMsgType(), source.Conn.LocalAddr().String(), source.Conn.RemoteAddr().String())
@@ -295,7 +286,11 @@ func (bridge *ConnectionBridge) RouteTraffic(source *lib.Peer, destination *lib.
 			//fmt.Printf("Redirecting the message: type: (%v) to destination with local addr: (%v) and remote addr: (%v)\n",
 			//	/*inMsg, */ inMsg.GetMsgType(), destination.Conn.LocalAddr().String(), destination.Conn.RemoteAddr().String())
 			if err := destination.WriteDeSoMessage(inMsg); err != nil {
-				panic(err)
+				fmt.Printf("routeTraffic: Problem writing message to peer with source: (%v), destination: (%v), "+
+					"error: (%v), msg: (%v)", source.Conn.LocalAddr().String(), destination.Conn.LocalAddr().String(),
+					err, inMsg)
+				bridge.Restart()
+				return
 			}
 		}
 	}
@@ -312,18 +307,32 @@ func (bridge *ConnectionBridge) waitForConnection() (*lib.Peer, error) {
 	}
 }
 
-func (bridge *ConnectionBridge) Connect() error {
+func (bridge *ConnectionBridge) Start() error {
 	var err error
+	bridge.disabled = false
+
+	// Start the outbound listener for A. The 127.0.0.1:0 pattern selects a random port.
+	listenerA, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	// Start the outbound listener for B. The 127.0.0.1:0 pattern selects a random port.
+	listenerB, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	bridge.outboundListenerA = listenerA
+	bridge.outboundListenerB = listenerB
 
 	// Initialize inbound connections to nodes.
 	bridge.connectionInboundA = bridge.createInboundConnection(bridge.nodeA)
 	bridge.connectionInboundB = bridge.createInboundConnection(bridge.nodeB)
 
 	// Start the inbound connections.
-	if err := bridge.StartConnection(bridge.connectionInboundA, bridge.nodeB); err != nil {
+	if err := bridge.startConnection(bridge.connectionInboundA, bridge.nodeB); err != nil {
 		return err
 	}
-	if err := bridge.StartConnection(bridge.connectionInboundB, bridge.nodeA); err != nil {
+	if err := bridge.startConnection(bridge.connectionInboundB, bridge.nodeA); err != nil {
 		return err
 	}
 
@@ -338,10 +347,10 @@ func (bridge *ConnectionBridge) Connect() error {
 	}
 
 	// Start the outbound connections from nodes.
-	if err := bridge.StartConnection(bridge.connectionOutboundA, bridge.nodeB); err != nil {
+	if err := bridge.startConnection(bridge.connectionOutboundA, bridge.nodeB); err != nil {
 		return err
 	}
-	if err := bridge.StartConnection(bridge.connectionOutboundB, bridge.nodeB); err != nil {
+	if err := bridge.startConnection(bridge.connectionOutboundB, bridge.nodeB); err != nil {
 		return err
 	}
 
@@ -357,20 +366,32 @@ func (bridge *ConnectionBridge) Connect() error {
 
 	// Start the communication routing between the two nodes. Basically we tunnel all the
 	// node communication to happen through the bridge.
-	go bridge.RouteTraffic(bridge.connectionOutboundA, bridge.connectionInboundB)
-	go bridge.RouteTraffic(bridge.connectionInboundB, bridge.connectionOutboundA)
-	go bridge.RouteTraffic(bridge.connectionOutboundB, bridge.connectionInboundA)
-	go bridge.RouteTraffic(bridge.connectionInboundA, bridge.connectionOutboundB)
+	go bridge.routeTraffic(bridge.connectionOutboundA, bridge.connectionInboundB)
+	go bridge.routeTraffic(bridge.connectionInboundB, bridge.connectionOutboundA)
+	go bridge.routeTraffic(bridge.connectionOutboundB, bridge.connectionInboundA)
+	go bridge.routeTraffic(bridge.connectionInboundA, bridge.connectionOutboundB)
 
 	return nil
 }
 
+func (bridge *ConnectionBridge) Restart() {
+	bridge.Disconnect()
+	bridge.Start()
+}
+
 func (bridge *ConnectionBridge) Disconnect() {
+	if bridge.disabled {
+		fmt.Println("ConnectionBridge.Disconnect: Doing nothing, bridge is already disconnected.")
+		return
+	}
+
 	bridge.disabled = true
 	bridge.connectionInboundA.Disconnect()
 	bridge.connectionInboundB.Disconnect()
 	bridge.connectionOutboundA.Disconnect()
 	bridge.connectionOutboundB.Disconnect()
+	bridge.outboundListenerA.Close()
+	bridge.outboundListenerB.Close()
 
 	bridge.waitGroup.Wait()
 }
@@ -725,7 +746,7 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *Node, source *Node, cur
 
 	// bridge the nodes together.
 	bridge := NewConnectionBridge(newNode, source)
-	require.NoError(bridge.Connect())
+	require.NoError(bridge.Start())
 	return newNode, bridge
 }
 
@@ -763,7 +784,7 @@ func restartAtSyncPrefixAndReconnectNode(t *testing.T, node *Node, source *Node,
 
 	// bridge the nodes together.
 	bridge := NewConnectionBridge(newNode, source)
-	require.NoError(bridge.Connect())
+	require.NoError(bridge.Start())
 	return newNode, bridge
 }
 
@@ -811,7 +832,7 @@ func TestSimpleBlockSync(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Connect())
+	require.NoError(bridge.Start())
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
@@ -860,7 +881,7 @@ func TestSimpleSyncRestart(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Connect())
+	require.NoError(bridge.Start())
 
 	randomHeight := randomUint32Between(t, 10, config2.MaxSyncBlockHeight)
 	fmt.Println("Random height for a restart (re-use if test failed):", randomHeight)
@@ -923,7 +944,7 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge12 := NewConnectionBridge(node1, node2)
-	require.NoError(bridge12.Connect())
+	require.NoError(bridge12.Start())
 
 	randomHeight := randomUint32Between(t, 10, config2.MaxSyncBlockHeight)
 	fmt.Println("Random height for a restart (re-use if test failed):", randomHeight)
@@ -931,7 +952,7 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge23 := NewConnectionBridge(node2, node3)
-	require.NoError(bridge23.Connect())
+	require.NoError(bridge23.Start())
 
 	// Reboot node2 at a specific height and reconnect it with node1
 	//node2, bridge12 = restartAtHeightAndReconnectNode(t, node2, node1, bridge12, randomHeight)
@@ -983,7 +1004,7 @@ func TestSimpleHyperSync(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Connect())
+	require.NoError(bridge.Start())
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySyncAndStoreAllBlocks(node2)
@@ -1036,14 +1057,14 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge12 := NewConnectionBridge(node1, node2)
-	require.NoError(bridge12.Connect())
+	require.NoError(bridge12.Start())
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySyncAndStoreAllBlocks(node2)
 
 	// bridge node3 to node2 to kick off hyper sync from a hyper synced node
 	bridge23 := NewConnectionBridge(node2, node3)
-	require.NoError(bridge23.Connect())
+	require.NoError(bridge23.Start())
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySyncAndStoreAllBlocks(node3)
@@ -1102,7 +1123,7 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Connect())
+	require.NoError(bridge.Start())
 
 	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
 	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
@@ -1172,7 +1193,7 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge12 := NewConnectionBridge(node1, node2)
-	require.NoError(bridge12.Connect())
+	require.NoError(bridge12.Start())
 
 	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
 	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
@@ -1181,7 +1202,7 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge23 := NewConnectionBridge(node2, node3)
-	require.NoError(bridge23.Connect())
+	require.NoError(bridge23.Start())
 
 	// Reboot node2 at a specific height and reconnect it with node1
 	//node2, bridge12 = restartAtHeightAndReconnectNode(t, node2, node1, bridge12, randomHeight)
@@ -1236,7 +1257,7 @@ func TestSimpleTxIndex(t *testing.T) {
 
 	// bridge the nodes together.
 	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Connect())
+	require.NoError(bridge.Start())
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
@@ -1282,7 +1303,7 @@ func TestEncoderMigrationBasic(t *testing.T) {
 	//node2 = startNode(t, node2)
 }
 
-// Connect blocks to height 5000 and then disconnect
+// Start blocks to height 5000 and then disconnect
 func TestStateRollback(t *testing.T) {
 	require := require.New(t)
 	_ = require
