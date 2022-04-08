@@ -592,15 +592,15 @@ func EncodeKeyValue(key []byte, value []byte) []byte {
 }
 
 func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) []byte {
-	checksumValue := value[:]
+	checksumValue := value
 	if isEncoder, encoder := StateKeyToDeSoEncoder(key); isEncoder && encoder != nil {
-		rr := bytes.NewReader(checksumValue)
+		rr := bytes.NewReader(value)
 		if exists, err := DecodeFromBytes(encoder, rr); exists && err == nil {
 			// We skip metadata in checksum computation.
 			checksumValue = EncodeToBytes(blockHeight, encoder, true)
 		} else if err != nil {
 			glog.Errorf("Some odd problem: isEncoder %v encoder %v, key bytes (%v), value bytes (%v), blockHeight (%v)",
-				isEncoder, encoder, key, value, blockHeight)
+				isEncoder, encoder, key, checksumValue, blockHeight)
 			panic(errors.Wrapf(err, "EncodeKeyAndValueForChecksum: The schema is corrupted or value doesn't match the key"))
 		}
 	}
