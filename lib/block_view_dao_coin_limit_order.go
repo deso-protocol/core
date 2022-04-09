@@ -1500,8 +1500,8 @@ func (order *DAOCoinLimitOrderEntry) IsValidMatchingOrderPrice(matchingOrder *DA
 		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig(),
 		matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
 	rightHandSide := big.NewInt(0).Mul(
-		OneUQ128x128.ToBig(),
-		OneUQ128x128.ToBig())
+		OneE38.ToBig(),
+		OneE38.ToBig())
 	if exchangeRateProduct.Cmp(rightHandSide) < 0 {
 		return false
 	}

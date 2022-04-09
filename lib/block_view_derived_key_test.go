@@ -3125,10 +3125,12 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	// DAO Coin Limit Orders
 	{
 		// Can't submit order if not authorized
+		exchangeRate, err := CalculateScaledExchangeRate(0.1)
+		require.NoError(err)
 		metadata := &DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
-			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(0.1),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}

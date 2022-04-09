@@ -1487,21 +1487,22 @@ type DAOCoinLimitOrderEntry struct {
 	// 2, then we would need to convert 2 SellingDAOCoinCreatorPKID
 	// coins to get 1 BuyingDAOCoinCreatorPKID. Note, however, that to represent
 	// 2, we would actually have to set ScaledExchangeRateCoinsToSellPerCoinToBuy to
-	// be equal to 2*2^128 because of the representation format we describe
+	// be equal to 2*1e38 because of the representation format we describe
 	// below.
 	//
-	// The exchange rate is represented as a UQ128x128, which works
+	// The exchange rate is represented as a fixed-point value, which works
 	// as follows:
 	// - Whenever we reference an exchange rate, call it Y, we pass it
 	//   around as a uint256 BUT we consider it to be implicitly divided
-	//   by 2^128.
+	//   by 1e38.
 	// - For example, to represent a decimal number like 123456789.987654321,
-	//   call it X, we would pass around Y = X*2^128 = 4.2010169e+46 as a uint256.
+	//   call it X, we would pass around Y = X*1e38 = 1234567899876543210000000000000000000000000000
+	//   as a uint256.
 	//   Then, to do operations with Y, we would make sure to always divide by
-	//   2^128 before returning a final quantity.
+	//   1e38 before returning a final quantity.
 	// - We will refer to Y as "scaled." The value of ScaledExchangeRateCoinsToSellPerCoinToBuy
 	//   will always be scaled, meaning it is a uint256 that we implicitly
-	//   assume represents a number that is divided by 2^128.
+	//   assume represents a number that is divided by 1e38.
 	//
 	// This scheme is also referred to as "fixed point," and a similar scheme
 	// is utilized by Uniswap. You can learn more about how this works here:
@@ -1692,25 +1693,10 @@ func ComputeBaseUnitsToBuyUint256(
 
 	// Perform calculation.
 	scaledQuantityToSellBigInt := big.NewInt(0).Mul(
-		OneUQ128x128.ToBig(), quantityToSellBaseUnits.ToBig())
+		OneE38.ToBig(), quantityToSellBaseUnits.ToBig())
 
 	quantityToBuyBigInt := big.NewInt(0).Div(
 		scaledQuantityToSellBigInt, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
-
-	// There is a possible off-by-one base unit bug in the integer division. We
-	// double-check the math using float division then take the floor of the float.
-	// If the truncated float is greater than the integer quotient, then we know we
-	// have hit an off-by-one-error. We don't use the float division value for
-	// anything else but this check.
-	quantityToBuyBigFloat := Div(
-		NewFloat().SetInt(scaledQuantityToSellBigInt),
-		NewFloat().SetInt(scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig()))
-
-	quantityToBuyBigIntFloor, _ := quantityToBuyBigFloat.Int(nil)
-
-	if quantityToBuyBigInt.Cmp(quantityToBuyBigIntFloor) < 0 {
-		quantityToBuyBigInt = big.NewInt(0).Add(quantityToBuyBigInt, bigOneInt)
-	}
 
 	// Check for overflow.
 	if quantityToBuyBigInt.Cmp(MaxUint256.ToBig()) > 0 {
@@ -1790,7 +1776,7 @@ func ComputeBaseUnitsToSellUint256(
 	// it could cause a money printer bug if there's a problem with it. We
 	// manually check for overflow above.
 	scaledQuantityToSellUint256, _ := uint256.FromBig(scaledQuantityToSellBigint)
-	quantityToSellUint256, err := SafeUint256().Div(scaledQuantityToSellUint256, OneUQ128x128)
+	quantityToSellUint256, err := SafeUint256().Div(scaledQuantityToSellUint256, OneE38)
 	if err != nil {
 		// This should never happen as we're dividing by a known constant.
 		return nil, errors.Wrapf(err, "ComputeBaseUnitsToSellUint256: ")
