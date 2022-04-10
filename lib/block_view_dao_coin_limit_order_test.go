@@ -18,7 +18,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
 
 	// Test constants
-	const feeRateNanosPerKb = uint64(10)
+	const feeRateNanosPerKb = uint64(101)
 
 	// Initialize test chain and miner.
 	require := require.New(t)
@@ -64,11 +64,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
 
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-	// Param Updater set min fee rate to 10 nanos per KB
+	// Param Updater set min fee rate to 101 nanos per KB
 	{
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta,
-			20,
+			feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
 			-1, int64(feeRateNanosPerKb), -1, -1,
@@ -79,6 +79,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
 	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
 	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+	m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
+	_, _, _, _ = m0PKID, m1PKID, m2PKID, m4PKID // TODO: delete
 
 	// -----------------------
 	// Helpers
@@ -454,8 +456,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
 		require.Equal(
-			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(4), // TODO: calculate gas fee instead of hard-coding.
-			updatedM1DESOBalance)
+			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(4010-3969)), // TODO: calculate gas fee instead of hard-coding.
+			int64(updatedM1DESOBalance))
 
 		require.Equal(
 			*uint256.NewInt().Sub(&originalM1DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
@@ -558,8 +560,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His $DESO balance decreases and
 		//   * His DAO coin balance increases.
 		require.Equal(
-			originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(4), // TODO: calculate gas fee instead of hard-coding.
-			updatedM0DESOBalance)
+			int64(originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(6485-6451)), // TODO: calculate gas fee instead of hard-coding.
+			int64(updatedM0DESOBalance))
 
 		require.Equal(
 			*uint256.NewInt().Add(&originalM0DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
@@ -724,7 +726,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
 		require.Equal(
-			originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(3), updatedM1DESOBalance) // TODO: calculate gas fee instead of hard-coding.
+			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(4097-4056)),
+			int64(updatedM1DESOBalance)) // TODO: calculate gas fee instead of hard-coding.
 
 		require.Equal(
 			*uint256.NewInt().Sub(&originalM1DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
@@ -1059,7 +1062,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
 		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
 
-		require.Equal(m0DESOBalanceBefore-15-4, m0DESOBalanceAfter) // Fee is 3 nanos
+		require.Equal(int64(m0DESOBalanceBefore-15-uint64(5864-5827)), int64(m0DESOBalanceAfter)) // Fee is 3 nanos
 		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
 		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
 	}

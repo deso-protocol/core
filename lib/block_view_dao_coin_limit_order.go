@@ -257,7 +257,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, err
 	}
 	// Validate FeeNanos is a valid value
-	if txMeta.FeeNanos != ((txMeta.FeeNanos * 1000) / 1000) {
+	if (txMeta.FeeNanos * 1000) <= txMeta.FeeNanos {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosOverflow
 	}
 	if (txMeta.FeeNanos*1000)/uint64(len(txnBytes)) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB ||
