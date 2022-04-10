@@ -1,8 +1,9 @@
 package lib
 
 import (
-	"github.com/btcsuite/btcd/btcec"
 	"strings"
+
+	"github.com/btcsuite/btcd/btcec"
 )
 
 // RuleError is an error type that specifies an error occurred during
@@ -271,6 +272,8 @@ const (
 	RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist            RuleError = "RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist"
 	RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero                RuleError = "RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero"
 	RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType RuleError = "RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType"
+	RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee               RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee"
+	RuleErrorDAOCoinLimitOrderFeeNanosOverflow                    RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosOverflow"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"

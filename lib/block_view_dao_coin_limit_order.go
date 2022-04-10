@@ -252,6 +252,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// public key so there is no need to verify anything further.
 	}
 
+	txnBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	// Validate FeeNanos is a valid value
+	if txMeta.FeeNanos != ((txMeta.FeeNanos * 1000) / 1000) {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosOverflow
+	}
+	if (txMeta.FeeNanos*1000)/uint64(len(txnBytes)) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB ||
+		txMeta.FeeNanos == 0 {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee
+	}
+
 	// Extract the buyCoin and sellCoin PKIDs from the txn's public keys.
 	// Note that if any of these are ZeroPublicKey, then GetPKIDForPublicKey will
 	// return ZeroPKID back to us, which is what we want. Recall that ZeroPKID
@@ -747,7 +760,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// If the current delta is for the transactor, we need
 				// to deduct the fees specified in the metadata from the output
 				// we will create.
-				if transactorPKIDEntry.PKID.Eq(&userPKID) && txMeta.FeeNanos > 0 {
+				if transactorPKIDEntry.PKID.Eq(&userPKID) {
 					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
 				}
 
