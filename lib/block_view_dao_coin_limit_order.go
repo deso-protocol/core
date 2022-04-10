@@ -96,6 +96,7 @@ func (bav *UtxoView) balanceChange(
 		if _, exists := prevBalances[*userPKID]; !exists {
 			prevBalances[*userPKID] = make(map[PKID]*BalanceEntry)
 		}
+<<<<<<< HEAD
 
 		// This inner if statement only executes if we do NOT have a balance in
 		// this map yet.
@@ -107,6 +108,19 @@ func (bav *UtxoView) balanceChange(
 				return
 			}
 
+=======
+
+		// This inner if statement only executes if we do NOT have a balance in
+		// this map yet.
+		if _, innerExists := prevBalances[*userPKID][*daoCoinPKID]; !innerExists {
+			oldBalance, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
+				userPKID, daoCoinPKID, nil)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+>>>>>>> 6a87a16d70c58b54fadb3859415e408c50c218da
 			var oldBalanceEntry *BalanceEntry
 			if *daoCoinPKID == ZeroPKID {
 				// When we're dealing with DESO we use a dummy BalanceEntry
@@ -135,11 +149,69 @@ func (bav *UtxoView) balanceChange(
 			newMap, newMapExists := prevBalances[*userPKID]
 			if !newMapExists {
 				newMap = make(map[PKID]*BalanceEntry)
+<<<<<<< HEAD
+=======
 			}
 			newMap[*daoCoinPKID] = oldBalanceEntry
 			prevBalances[*userPKID] = newMap
 		}
 	}
+}
+
+func (bav *UtxoView) _sanityCheckLimitOrderMoneyPrinting(
+	prevBalances map[PKID]map[PKID]*BalanceEntry) error {
+
+	// We include a more hardcore balance check to make sure that we are not printing money.
+	// For each item in our prevBalance map, we go through it and verify that the new balance
+	// minus the previous balance sums to <= zero. First, we create a finalDeltasMap which maps a
+	// coin creatorPKID to the delta in base units for that particular PKID in this transaction.
+	finalDeltasMap := make(map[PKID]*big.Int)
+
+	// Next, we loop through all the original coin base unit balances in prevBalances and
+	// compute the delta between the original balance in prevBalances and the new balance
+	// for that creatorPKID. Note that prevBalances is a nested map, with
+	// {userPKID: {creatorPKID: *BalanceEntry}}, so we use nested loops here. We want to
+	// calculate the delta for each creatorPKID across all userPKIDs in this transaction.
+	for userPKID, prevBalancesPerCreatorPKID := range prevBalances {
+		for creatorPKID, prevBalanceBaseUnits := range prevBalancesPerCreatorPKID {
+			// Calculate new balance in base units for this userPKID, creatorPKID.
+			newBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
+				&userPKID, &creatorPKID, nil)
+			if err != nil {
+				return errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
+			}
+
+			// Calculate the delta in balance base units using a big.Int.
+			// delta balance = new balance - old balance
+			thisDelta := big.NewInt(0).Sub(
+				newBalanceBaseUnits.ToBig(), prevBalanceBaseUnits.BalanceNanos.ToBig())
+
+			// Update the finalDeltasMap with this delta balance.
+			if _, exists := finalDeltasMap[creatorPKID]; !exists {
+				finalDeltasMap[creatorPKID] = thisDelta
+			} else {
+				finalDeltasMap[creatorPKID] = big.NewInt(0).Add(
+					finalDeltasMap[creatorPKID], thisDelta)
+>>>>>>> 6a87a16d70c58b54fadb3859415e408c50c218da
+			}
+			newMap[*daoCoinPKID] = oldBalanceEntry
+			prevBalances[*userPKID] = newMap
+		}
+	}
+
+	// Loop through all the coin base unit deltas in finalDeltasMap and confirm that
+	// they are <= 0. As long as this is the case, then we are guaranteed that
+	// we did not print money.
+	for creatorPKID, deltaBalanceBaseUnits := range finalDeltasMap {
+		// If delta is > 0, throw an error.
+		if deltaBalanceBaseUnits.Cmp(big.NewInt(0)) > 0 {
+			return fmt.Errorf(
+				"_connectDAOCoinLimitOrder: printing %v new coin base units for creatorPKID %v",
+				deltaBalanceBaseUnits, creatorPKID)
+		}
+	}
+
+	return nil
 }
 
 func (bav *UtxoView) _sanityCheckLimitOrderMoneyPrinting(
@@ -220,6 +292,35 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
+	// Get the transactor PKID and validate it.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectDAOCoinLimitOrder: transactorPKIDEntry is deleted: %v",
+			spew.Sdump(transactorPKIDEntry))
+	}
+
+	// Define the prevBalances map, and initialize the balances for all public keys involved in
+	// inputs and outputs of the txn. If we wait until after _connectBasicTransfer to do this,
+	// then the balances will be messed up. Note that we don't really need to do this for the
+	// output pubkeys, but it's just a little safer and more future-proof to grab their balances
+	// now vs later.
+	//
+	// We save the pre-existing balances of both DESO and DAO coins as we modify
+	// other bookkeeping maps. This makes it easy to sanity-check and revert things in
+	// disconnect.
+	prevBalances := make(map[PKID]map[PKID]*BalanceEntry)
+	bav.balanceChange(transactorPKIDEntry.PKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
+	for _, txOutput := range txn.TxOutputs {
+		pkidEntry := bav.GetPKIDForPublicKey(txOutput.PublicKey)
+		if pkidEntry == nil || pkidEntry.isDeleted {
+			return 0, 0, nil, fmt.Errorf(
+				"_connectDAOCoinLimitOrder: outputPKIDEntry is deleted: %v",
+				spew.Sdump(pkidEntry))
+		}
+		bav.balanceChange(pkidEntry.PKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
+	}
+
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
@@ -251,12 +352,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoinLimitOrder: buyCoinPKIDEntry is deleted: %v",
 			spew.Sdump(buyCoinPKIDEntry))
-	}
-	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
-	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return 0, 0, nil, fmt.Errorf(
-			"_connectDAOCoinLimitOrder: transactorPKIDEntry is deleted: %v",
-			spew.Sdump(transactorPKIDEntry))
 	}
 
 	// Create entry from txn metadata for the transactor.
@@ -372,10 +467,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// The schema is (user PKID, dao coin PKID) -> balance change
 	// Note that DESO is just dao coin PKID = ZeroPKID
 	balanceDeltas := make(map[PKID]map[PKID]*big.Int)
-	// We also save the pre-existing balances of both DESO and DAO coins as we modify
-	// the above maps. This makes it easy to sanity-check and revert things in
-	// disconnect.
-	prevBalances := make(map[PKID]map[PKID]*BalanceEntry)
 
 	// Now, we find all the orders that we can match against the seller, and adjust the
 	// increase and decrease maps accordingly.
@@ -755,9 +846,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					return 0, 0, nil, RuleErrorDAOCoinLimitOrderOverflowsDESO
 				}
 
-				// Now create an implicit output for whatever surplus remains.
-				if err = createUTXO(newDESOSurplus.Uint64(), pubKey, UtxoTypeDAOCoinLimitOrderPayout); err != nil {
-					return 0, 0, nil, err
+				// Now create an implicit output for whatever surplus remains, if any.
+				if newDESOSurplus.Uint64() != 0 {
+					if err = createUTXO(newDESOSurplus.Uint64(), pubKey, UtxoTypeDAOCoinLimitOrderPayout); err != nil {
+						return 0, 0, nil, err
+					}
 				}
 			} else {
 				// In this case we're dealing with a DAO coin so simply
@@ -802,7 +895,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
+<<<<<<< HEAD
 	fmt.Println("DELETEME START - COINS INVOLVED: ", PkToStringMainnet(sellCoinPKIDEntry.PKID[:]), " - ", PkToStringMainnet(buyCoinPKIDEntry.PKID[:]))
+=======
+>>>>>>> 6a87a16d70c58b54fadb3859415e408c50c218da
 	if err := bav._sanityCheckLimitOrderMoneyPrinting(prevBalances); err != nil {
 		return 0, 0, nil, err
 	}
