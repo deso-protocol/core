@@ -96,7 +96,6 @@ func (bav *UtxoView) balanceChange(
 		if _, exists := prevBalances[*userPKID]; !exists {
 			prevBalances[*userPKID] = make(map[PKID]*BalanceEntry)
 		}
-<<<<<<< HEAD
 
 		// This inner if statement only executes if we do NOT have a balance in
 		// this map yet.
@@ -108,19 +107,6 @@ func (bav *UtxoView) balanceChange(
 				return
 			}
 
-=======
-
-		// This inner if statement only executes if we do NOT have a balance in
-		// this map yet.
-		if _, innerExists := prevBalances[*userPKID][*daoCoinPKID]; !innerExists {
-			oldBalance, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
-				userPKID, daoCoinPKID, nil)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
->>>>>>> 6a87a16d70c58b54fadb3859415e408c50c218da
 			var oldBalanceEntry *BalanceEntry
 			if *daoCoinPKID == ZeroPKID {
 				// When we're dealing with DESO we use a dummy BalanceEntry
@@ -149,8 +135,6 @@ func (bav *UtxoView) balanceChange(
 			newMap, newMapExists := prevBalances[*userPKID]
 			if !newMapExists {
 				newMap = make(map[PKID]*BalanceEntry)
-<<<<<<< HEAD
-=======
 			}
 			newMap[*daoCoinPKID] = oldBalanceEntry
 			prevBalances[*userPKID] = newMap
@@ -192,75 +176,7 @@ func (bav *UtxoView) _sanityCheckLimitOrderMoneyPrinting(
 			} else {
 				finalDeltasMap[creatorPKID] = big.NewInt(0).Add(
 					finalDeltasMap[creatorPKID], thisDelta)
->>>>>>> 6a87a16d70c58b54fadb3859415e408c50c218da
 			}
-			newMap[*daoCoinPKID] = oldBalanceEntry
-			prevBalances[*userPKID] = newMap
-		}
-	}
-
-	// Loop through all the coin base unit deltas in finalDeltasMap and confirm that
-	// they are <= 0. As long as this is the case, then we are guaranteed that
-	// we did not print money.
-	for creatorPKID, deltaBalanceBaseUnits := range finalDeltasMap {
-		// If delta is > 0, throw an error.
-		if deltaBalanceBaseUnits.Cmp(big.NewInt(0)) > 0 {
-			return fmt.Errorf(
-				"_connectDAOCoinLimitOrder: printing %v new coin base units for creatorPKID %v",
-				deltaBalanceBaseUnits, creatorPKID)
-		}
-	}
-
-	return nil
-}
-
-func (bav *UtxoView) _sanityCheckLimitOrderMoneyPrinting(
-	prevBalances map[PKID]map[PKID]*BalanceEntry) error {
-
-	// We include a more hardcore balance check to make sure that we are not printing money.
-	// For each item in our prevBalance map, we go through it and verify that the new balance
-	// minus the previous balance sums to <= zero. First, we create a finalDeltasMap which maps a
-	// coin creatorPKID to the delta in base units for that particular PKID in this transaction.
-	finalDeltasMap := make(map[PKID]*big.Int)
-
-	// Next, we loop through all the original coin base unit balances in prevBalances and
-	// compute the delta between the original balance in prevBalances and the new balance
-	// for that creatorPKID. Note that prevBalances is a nested map, with
-	// {userPKID: {creatorPKID: *BalanceEntry}}, so we use nested loops here. We want to
-	// calculate the delta for each creatorPKID across all userPKIDs in this transaction.
-	for userPKID, prevBalancesPerCreatorPKID := range prevBalances {
-		for creatorPKID, prevBalanceBaseUnits := range prevBalancesPerCreatorPKID {
-			// Calculate new balance in base units for this userPKID, creatorPKID.
-			newBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
-				&userPKID, &creatorPKID, nil)
-			if err != nil {
-				return errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
-			}
-
-			fmt.Println("DELETEME NEW BALANCES: ", PkToStringMainnet(userPKID[:]), " - ", PkToStringMainnet(creatorPKID[:]), newBalanceBaseUnits.ToBig().Int64())
-
-			// Calculate the delta in balance base units using a big.Int.
-			// delta balance = new balance - old balance
-			thisDelta := big.NewInt(0).Sub(
-				newBalanceBaseUnits.ToBig(), prevBalanceBaseUnits.BalanceNanos.ToBig())
-
-			// Update the finalDeltasMap with this delta balance.
-			if _, exists := finalDeltasMap[creatorPKID]; !exists {
-				finalDeltasMap[creatorPKID] = thisDelta
-			} else {
-				finalDeltasMap[creatorPKID] = big.NewInt(0).Add(
-					finalDeltasMap[creatorPKID], thisDelta)
-			}
-		}
-	}
-
-	// DELETEME this whole section
-	for kk, vv := range finalDeltasMap {
-		fmt.Println("Final deltas: ", PkToStringMainnet(kk[:]), ": ", vv.Int64())
-	}
-	for kk, vv := range prevBalances {
-		for kk2, vv2 := range vv {
-			fmt.Println("DELETEME PREV BALANCES: ", PkToStringMainnet(kk[:]), " - ", PkToStringMainnet(kk2[:]), ": ", vv2.BalanceNanos.ToBig().Int64())
 		}
 	}
 
@@ -895,10 +811,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
-<<<<<<< HEAD
-	fmt.Println("DELETEME START - COINS INVOLVED: ", PkToStringMainnet(sellCoinPKIDEntry.PKID[:]), " - ", PkToStringMainnet(buyCoinPKIDEntry.PKID[:]))
-=======
->>>>>>> 6a87a16d70c58b54fadb3859415e408c50c218da
 	if err := bav._sanityCheckLimitOrderMoneyPrinting(prevBalances); err != nil {
 		return 0, 0, nil, err
 	}
