@@ -1108,15 +1108,21 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			//check if is buy now and BidAmountNanos > then BuyNowPriceNanos
 			if pgBidNft != nil && pgBidNft.IsBuyNow && txMeta.BidAmountNanos >= pgBidNft.BuyNowPriceNanos {
 
+				// Initialize bidderPKID with naive NewPKID from txn.PublicKey
+				bidderPKID := NewPKID(txn.PublicKey)
 				//get related profile
 				pgBidProfile := postgres.GetProfileForPublicKey(txn.PublicKey)
+				// If profile is non-nil, update bidderPKID to value from pgBidProfile
+				if pgBidProfile != nil {
+					bidderPKID = pgBidProfile.PKID
+				}
 
 				//add to accept bids as well
 				metadataAcceptNFTBids = append(metadataAcceptNFTBids, &PGMetadataAcceptNFTBid{
 					TransactionHash: txnHash,
 					NFTPostHash:     txMeta.NFTPostHash,
 					SerialNumber:    txMeta.SerialNumber,
-					BidderPKID:      pgBidProfile.PKID,
+					BidderPKID:      bidderPKID,
 					BidAmountNanos:  txMeta.BidAmountNanos,
 					UnlockableText:  []byte{},
 				})
