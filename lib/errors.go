@@ -247,6 +247,7 @@ const (
 	RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus           RuleError = "RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus"
 
 	// DAO Coin Limit Orders
+	RuleErrorDAOCoinLimitOrderBeforeBlockHeight                   RuleError = "RuleErrorDAOCoinLimitOrderBeforeBlockHeight"
 	RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin            RuleError = "RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin"
 	RuleErrorDAOCoinLimitOrderInvalidOperationType                RuleError = "RuleErrorDAOCoinLimitOrderInvalidOperationType"
 	RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile  RuleError = "RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile"
