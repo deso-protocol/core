@@ -200,6 +200,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
+	if blockHeight < bav.Params.ForkHeights.DAOCoinLimitOrderBlockHeight {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderBeforeBlockHeight
+	}
+
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeDAOCoinLimitOrder {
 		return 0, 0, nil, fmt.Errorf("_connectDAOCoinLimitOrder: called with bad TxnType %s",
