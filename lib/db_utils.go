@@ -3632,16 +3632,16 @@ type FilledDAOCoinLimitOrderMetadata struct {
 	TransactorPublicKeyBase58Check string
 	BuyingDAOCoinCreatorPublicKey  string
 	SellingDAOCoinCreatorPublicKey string
-	BuyingDAOCoinQuantityPurchased *uint256.Int
-	BuyingDAOCoinQuantityRequested *uint256.Int
-	SellingDAOCoinQuantitySold     *uint256.Int
+	CoinQuantityInBaseUnitsBought  *uint256.Int
+	CoinQuantityInBaseUnitsSold    *uint256.Int
+	IsFulfilled                    bool
 }
 
 type DAOCoinLimitOrderTxindexMetadata struct {
 	BuyingDAOCoinCreatorPublicKey             string
 	SellingDAOCoinCreatorPublicKey            string
 	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
-	QuantityToBuyInBaseUnits                  *uint256.Int
+	QuantityToFillInBaseUnits                 *uint256.Int
 	FilledDAOCoinLimitOrdersMetadata          []*FilledDAOCoinLimitOrderMetadata
 }
 
@@ -6257,7 +6257,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 
 	queryOrder := inputOrder.Copy()
-	queryQuantityToBuy := queryOrder.QuantityToBuyInBaseUnits
+	queryQuantityToFill := queryOrder.QuantityToFillInBaseUnits.Clone()
 
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.
@@ -6283,7 +6283,6 @@ func DBGetMatchingDAOCoinLimitOrders(
 	var startKey []byte
 
 	if lastSeenOrder != nil {
-
 		startKey, err = DBKeyForDAOCoinLimitOrder(lastSeenOrder)
 		if err != nil {
 			return nil, err
@@ -6301,7 +6300,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 	// Seek first matching order.
 	matchingOrders := []*DAOCoinLimitOrderEntry{}
 
-	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityToBuy.GtUint64(0); iterator.Next() {
+	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityToFill.GtUint64(0); iterator.Next() {
 		// If picking up from where you left off, skip the first order which
 		// has already been processed previously.
 		if len(startKey) != 0 && bytes.Equal(key, startKey) {
@@ -6320,32 +6319,18 @@ func DBGetMatchingDAOCoinLimitOrders(
 			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem getting limit order")
 		}
 
+		// Validate matching order's price.
 		if !inputOrder.IsValidMatchingOrderPrice(matchingOrder) {
 			break
 		}
 
-		// To properly compare quantities, we need to compare the quantity
-		// that the input order is interested in buying to the quantity the
-		// matching order is interested in selling.
-		matchingOrderQuantityToSell, err := matchingOrder.BaseUnitsToSellUint256()
+		// Calculate how the transactor's quantity to fill will change
+		// after being matched with this order. If the transactor still
+		// has quantity to fill, we loop.
+		queryQuantityToFill, _, _, _, err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+			matchingOrder, queryOrder.OperationType, queryQuantityToFill)
 		if err != nil {
-			// This should never happen as we validate the
-			// stored orders when they are submitted.
 			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
-		}
-
-		// Reduce requested buying quantity by matching order's selling quantity.
-		// Set to zero if this order covers how much we want to buy.
-		if queryQuantityToBuy.Lt(matchingOrderQuantityToSell) {
-			queryQuantityToBuy = uint256.NewInt()
-		} else {
-			queryQuantityToBuy, err = SafeUint256().Sub(
-				queryQuantityToBuy, matchingOrderQuantityToSell)
-
-			if err != nil {
-				// This should never happen with the check above.
-				return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
-			}
 		}
 
 		matchingOrders = append(matchingOrders, matchingOrder)

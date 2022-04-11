@@ -3125,11 +3125,14 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	// DAO Coin Limit Orders
 	{
 		// Can't submit order if not authorized
+		exchangeRate, err := CalculateScaledExchangeRate(0.1)
+		require.NoError(err)
 		metadata := &DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
-			ScaledExchangeRateCoinsToSellPerCoinToBuy: CalculateScaledExchangeRate(0.1),
-			QuantityToBuyInBaseUnits:                  uint256.NewInt().SetUint64(100),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}
 		_, _, _, err = _doTxn(
 			testMeta,
@@ -3204,8 +3207,9 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			BuyingDAOCoinCreatorPKID:                  m1PKID,
 			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-			QuantityToBuyInBaseUnits:                  metadata.QuantityToBuyInBaseUnits,
+			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
 			BlockHeight:                               savedHeight,
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		})
 	}
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.

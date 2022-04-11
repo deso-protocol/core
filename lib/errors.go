@@ -1,8 +1,9 @@
 package lib
 
 import (
-	"github.com/btcsuite/btcd/btcec"
 	"strings"
+
+	"github.com/btcsuite/btcd/btcec"
 )
 
 // RuleError is an error type that specifies an error occurred during
@@ -247,6 +248,7 @@ const (
 
 	// DAO Coin Limit Orders
 	RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin            RuleError = "RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin"
+	RuleErrorDAOCoinLimitOrderInvalidOperationType                RuleError = "RuleErrorDAOCoinLimitOrderInvalidOperationType"
 	RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile  RuleError = "RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile"
 	RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile RuleError = "RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile"
 	RuleErrorDAOCoinLimitOrderInvalidExchangeRate                 RuleError = "RuleErrorDAOCoinLimitOrderInvalidExchangeRate"
@@ -269,6 +271,9 @@ const (
 	RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins  RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins"
 	RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist            RuleError = "RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist"
 	RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero                RuleError = "RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero"
+	RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType RuleError = "RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType"
+	RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee               RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee"
+	RuleErrorDAOCoinLimitOrderFeeNanosOverflow                    RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosOverflow"
 
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"

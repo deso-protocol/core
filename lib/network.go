@@ -5584,10 +5584,11 @@ type DAOCoinLimitOrderMetadata struct {
 	BuyingDAOCoinCreatorPublicKey             *PublicKey
 	SellingDAOCoinCreatorPublicKey            *PublicKey
 	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
-	QuantityToBuyInBaseUnits                  *uint256.Int
+	QuantityToFillInBaseUnits                 *uint256.Int
+	OperationType                             DAOCoinLimitOrderOperationType
 
-	// If set to true, we will cancel an existing order (up to the
-	// specified quantity) instead of creating a new one.
+	// If set to true, we will cancel an existing
+	// order instead of creating a new one.
 	CancelExistingOrder bool
 
 	// This is only populated when this order is selling a DAO coin for
@@ -5612,7 +5613,8 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
 	data = append(data, txnData.SellingDAOCoinCreatorPublicKey.ToBytes()...)
 	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeUint256(txnData.QuantityToBuyInBaseUnits)...)
+	data = append(data, EncodeUint256(txnData.QuantityToFillInBaseUnits)...)
+	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
 	data = append(data, BoolToByte(txnData.CancelExistingOrder))
 	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
 
@@ -5663,11 +5665,18 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
-	// Parse QuantityToBuyInBaseUnits
-	ret.QuantityToBuyInBaseUnits, err = ReadUint256(rr)
+	// Parse QuantityToFillInBaseUnits
+	ret.QuantityToFillInBaseUnits, err = ReadUint256(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToBuyInBaseUnits: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
 	}
+
+	// Parse OperationType
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading OperationType: %v", err)
+	}
+	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
 
 	// Parse CancelExistingOrder
 	ret.CancelExistingOrder = ReadBoolByte(rr)

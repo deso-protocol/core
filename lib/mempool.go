@@ -1750,9 +1750,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 					utxoView.GetPublicKeyForPKID(filledOrder.BuyingDAOCoinCreatorPKID), utxoView.Params),
 				SellingDAOCoinCreatorPublicKey: PkToString(
 					utxoView.GetPublicKeyForPKID(filledOrder.SellingDAOCoinCreatorPKID), utxoView.Params),
-				BuyingDAOCoinQuantityPurchased: filledOrder.BuyingDAOCoinQuantityPurchased,
-				BuyingDAOCoinQuantityRequested: filledOrder.BuyingDAOCoinQuantityRequested,
-				SellingDAOCoinQuantitySold:     filledOrder.SellingDAOCoinQuantitySold,
+				CoinQuantityInBaseUnitsBought: filledOrder.CoinQuantityInBaseUnitsBought,
+				CoinQuantityInBaseUnitsSold:   filledOrder.CoinQuantityInBaseUnitsSold,
+				IsFulfilled:                   filledOrder.IsFulfilled,
 			})
 		}
 
@@ -1770,7 +1770,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			SellingDAOCoinCreatorPublicKey: PkToString(
 				realTxMeta.SellingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: realTxMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-			QuantityToBuyInBaseUnits:                  realTxMeta.QuantityToBuyInBaseUnits,
+			QuantityToFillInBaseUnits:                 realTxMeta.QuantityToFillInBaseUnits,
 		}
 
 	}
