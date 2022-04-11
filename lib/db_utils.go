@@ -217,7 +217,9 @@ type DBPrefixes struct {
 	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
-	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"` // Block reward prefix:
+	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"`
+
+	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
 	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
@@ -592,15 +594,15 @@ func EncodeKeyValue(key []byte, value []byte) []byte {
 }
 
 func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) []byte {
-	checksumValue := value[:]
+	checksumValue := value
 	if isEncoder, encoder := StateKeyToDeSoEncoder(key); isEncoder && encoder != nil {
-		rr := bytes.NewReader(checksumValue)
+		rr := bytes.NewReader(value)
 		if exists, err := DecodeFromBytes(encoder, rr); exists && err == nil {
 			// We skip metadata in checksum computation.
 			checksumValue = EncodeToBytes(blockHeight, encoder, true)
 		} else if err != nil {
 			glog.Errorf("Some odd problem: isEncoder %v encoder %v, key bytes (%v), value bytes (%v), blockHeight (%v)",
-				isEncoder, encoder, key, value, blockHeight)
+				isEncoder, encoder, key, checksumValue, blockHeight)
 			panic(errors.Wrapf(err, "EncodeKeyAndValueForChecksum: The schema is corrupted or value doesn't match the key"))
 		}
 	}
