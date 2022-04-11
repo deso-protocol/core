@@ -163,7 +163,7 @@ func (bav *UtxoView) _sanityCheckLimitOrderMoneyPrinting(
 			newBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
 				&userPKID, &creatorPKID, nil)
 			if err != nil {
-				return errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
+				return errors.Wrapf(err, "_sanityCheckLimitOrderMoneyPrinting: ")
 			}
 
 			// Calculate the delta in balance base units using a big.Int.
