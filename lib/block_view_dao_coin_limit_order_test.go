@@ -1979,7 +1979,8 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
+	// Total input will be greater than totalInputMake since we add bidder inputs to totalInput
+	require.True(totalInput >= totalInputMake)
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one OperationTypeDAOCoin operation at the end.
