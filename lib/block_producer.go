@@ -97,8 +97,6 @@ func NewDeSoBlockProducer(
 		mempool:  mempool,
 		chain:    chain,
 		params:   params,
-		exit:     0,
-		isAsleep: 0,
 		postgres: postgres,
 	}, nil
 }

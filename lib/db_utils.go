@@ -217,7 +217,9 @@ type DBPrefixes struct {
 	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
-	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"` // Block reward prefix:
+	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"`
+
+	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
 	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
