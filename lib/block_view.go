@@ -2303,6 +2303,12 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		}
 		fees = totalInput - totalOutput
 	}
+	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
+	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		if totalInput-totalOutput != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
+			return nil, 0, 0, 0, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
+		}
+	}
 
 	// BitcoinExchange transactions have their own special fee that is computed as a function of how much
 	// DeSo is being minted. They do not need to abide by the global minimum fee check, since if they had
