@@ -78,11 +78,11 @@ var (
 	// This value is a uint256 form of 1e38, or 10^38. We mainly use it to represent a
 	// "fixed-point" exchange rate when processing limit orders. See the comment on
 	// DAOCoinLimitOrderEntry for more info.
-	OneE38, _ = uint256.FromHex("0x4b3b4ca85a86c47a098a224000000000")
+	OneE38, _ = uint256.FromHex("0x4b3b4ca85a86c47a098a224000000000") // 1e38
 	// This is the number of base units within a single "coin". It is mainly used to
 	// convert from base units, which is what we deal with in core, to a human-readable
-	// value in the UI.
-	BaseUnitsPerCoin, _ = uint256.FromHex("0xde0b6b3a7640000")
+	// value in the UI. It is equal to 1e18.
+	BaseUnitsPerCoin, _ = uint256.FromHex("0xde0b6b3a7640000") // 1e18
 )
 
 func (nt NetworkType) String() string {

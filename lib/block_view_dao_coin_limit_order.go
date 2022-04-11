@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strings"
 )
 
 func adjustBalance(
@@ -198,7 +199,6 @@ func (bav *UtxoView) _sanityCheckLimitOrderMoneyPrinting(
 func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
-	// ----- BOILER-PLATE VALIDATIONS
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeDAOCoinLimitOrder {
@@ -206,6 +206,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			txn.TxnMeta.GetTxnType().String())
 	}
 
+	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
 	// Get the transactor PKID and validate it.
@@ -241,7 +242,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// considering the transaction metadata.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
-
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
 	}
@@ -252,11 +252,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// public key so there is no need to verify anything further.
 	}
 
+	// Validate FeeNanos is a valid value, and is more than the minimum fee rate allowed
 	txnBytes, err := txn.ToBytes(false)
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	// Validate FeeNanos is a valid value
 	if (txMeta.FeeNanos * 1000) <= txMeta.FeeNanos {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosOverflow
 	}
@@ -319,6 +319,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderToCancelNotFound
 		}
 
+		// Save the previous matching orders in case we need to revert.
 		prevMatchingOrders := []*DAOCoinLimitOrderEntry{}
 
 		// Delete all existing limit orders for this transactor
@@ -341,13 +342,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// fresh order if one already exists. Rather, in this case we'll just
 	// modify the existing order.
 	var prevTransactorOrder *DAOCoinLimitOrderEntry
-
 	for _, existingTransactorOrder := range existingTransactorOrders {
 		// The existing transactor orders are across any block height.
 		// We would only want to update an order if it occurs at the
 		// current block height. Otherwise, we would be messing up
 		// the FIFO ordering of the older order being deleted instead
 		// of resolved first.
+		//
 		// This is guaranteed to be deterministic, because there
 		// will only ever be a single order at a specified price
 		// for the Buying || Selling coin pair for this transactor
@@ -383,9 +384,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// These maps contain all of the balance changes that this transaction
 	// demands, including DESO ones. We update these balance changes as we
 	// iterate through all the
-	// matching orders and adjust them. Because we're using uint256 to store balances,
-	// we use two maps: One to store balance increases and one to store balance
-	// decreases. Once we're at the end, we're going to use these increases
+	// matching orders and adjust them. We use a bigint to store the deltas because
+	// there could be negative balance changes, indicating that someone's balance
+	// decreased. Once we're at the end, we're going to use these increases
 	// and decreases to compute deltas that will allow us to debit and credit
 	// all the right accounts. Note that a ZeroPKID corresponds to DESO.
 	//
@@ -408,6 +409,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			err, "Error getting next limit orders to fill: ")
 	}
 	prevMatchingOrders := []*DAOCoinLimitOrderEntry{}
+	// We track a lastSeenOrder in order to fetch more orders to iterate over. This is
+	// a bit complicated, but what can happen is that if we CANCEL a matching order
+	// because the seller's balance is below what the order is offering, then we will
+	// need to query the DB again for *more* matching orders. When we do this, we use
+	// lastSeenOrder to mark the beginning of this iteration.
 	var lastSeenOrder *DAOCoinLimitOrderEntry
 	// Track all orders that get filled for notification purposes.
 	//
@@ -448,12 +454,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				coinBaseUnitsBoughtByTransactor,
 				coinBaseUnitsSoldByTransactor,
 				err := _calculateDAOCoinsTransferredInLimitOrderMatch(
-				transactorOrder, matchingOrder, transactorOrder.QuantityToFillInBaseUnits)
+				matchingOrder, transactorOrder.OperationType, transactorOrder.QuantityToFillInBaseUnits)
 			if err != nil {
 				return 0, 0, nil, err
 			}
 
-			// Compute the amount of the asset that the seller currently has. Factor in
+			// Compute the amount of the buyCoin that the seller currently has. Factor in
 			// all balance increases and decreases that we've applied.
 			sellerBuyCoinBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
 				matchingOrder.TransactorPKID,
@@ -465,13 +471,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 
 			// Sanity-check the order, and potentially cancel it if the matching order
-			// doesn't have enough coins to sell to the transactor as promised.
+			// doesn't have enough coins to give the transactor as promised.
 			if sellerBuyCoinBalanceBaseUnits.Lt(coinBaseUnitsBoughtByTransactor) {
 				bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
 				continue
 			}
 			// If we get here, we know that the person who placed the matching order has enough
-			// of a balance of the "sell coin" to cover it, even after matching all previous
+			// of a balance of the "buy coin" to cover it, even after matching all previous
 			// orders.
 
 			// Sanity-check to make sure that the transactor has enough to cover the amount that
@@ -499,7 +505,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				CoinQuantityInBaseUnitsBought: coinBaseUnitsBoughtByTransactor,
 				CoinQuantityInBaseUnitsSold:   coinBaseUnitsSoldByTransactor,
 			}
-
 			if updatedTransactorOrderQuantityToFill.IsZero() {
 				// Transactor's order was fully filled.
 				transactorOrder.QuantityToFillInBaseUnits = uint256.NewInt()
@@ -512,7 +517,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				transactorOrder.QuantityToFillInBaseUnits = updatedTransactorOrderQuantityToFill
 				transactorOrderFilledOrder.IsFulfilled = false
 			}
-
 			filledOrders = append(filledOrders, transactorOrderFilledOrder)
 
 			// Update quantity for matching order.
@@ -523,7 +527,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				CoinQuantityInBaseUnitsBought: coinBaseUnitsSoldByTransactor,
 				CoinQuantityInBaseUnitsSold:   coinBaseUnitsBoughtByTransactor,
 			}
-
 			if updatedMatchingOrderQuantityToFill.IsZero() {
 				// Matching order was fulfilled. Mark for deletion.
 				bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
@@ -537,7 +540,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// It should replace the existing order.
 				bav._setDAOCoinLimitOrderEntryMappings(matchingOrder)
 			}
-
 			filledOrders = append(filledOrders, matchingOrderFilledOrder)
 
 			// Now adjust the balances in our maps to reflect the coins that just changed hands.
@@ -580,14 +582,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 	}
 
-	// Now, we need to update all the balanced of all the users who were involved in
+	// Now, we need to update all the balances of all the users who were involved in
 	// all of the matching that we did above. We do this via the following steps:
 	//
 	// 1. We aggregate all the DESO we have as input for all the accounts
 	//    that the transaction included. We spend all the UTXOs as we do this
 	//    so that, once we're done, it's as if we've converted all that DESO
 	//    into a set of internal balances.
-	// 2. Then we iterate over the increases+decreases maps and adjust the dao
+	// 2. Then we iterate over the deltas in our map and adjust the dao
 	//    coin and the deso balances as we go. This will leave us with:
 	//     - dao coin balances fully up-to-date
 	//     - all of the balances in the deso map being "change" amounts
@@ -600,23 +602,22 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// for everyone and create "implicit outputs" using whatever is left over.
 	desoAllowedToSpendByPublicKey := make(map[PublicKey]uint64)
 	// Start by adding the output minus input for the transactor, since they can
-	// technically spend this amount if they want (and the amount that's left over
-	// goes to miners).
-	// TODO: confirm we want to subtract totalInput - totalOutput because that's
-	// the amount of $DESO the transactor has to spend in this transaction.
+	// technically spend this amount if they want. Later on, we'll make sure that
+	// we're accounting for the fee as well.
 	if totalInput > totalOutput {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = totalInput - totalOutput
 	} else {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
 	}
-
+	// Iterate through all the inputs and spend them. Any amount we don't use will be returned
+	// as change.
 	for _, transactor := range txMeta.BidderInputs {
 		publicKey := *transactor.TransactorPublicKey
 
 		// Do a noop balanceChange to save the prevBalance for this pubkey. We need this
 		// prevBalance for our sanity-scheck at the end. We use ZeroPKID for DESO. Note that
 		// balanceChange is smart, and only saves the prevBalance the FIRST time we call it
-		// for a particular pubkey.
+		// for a particular pkid.
 		pkid := bav.GetPKIDForPublicKey(publicKey.ToBytes())
 		bav.balanceChange(pkid.PKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
 
@@ -703,7 +704,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Sanity-check: Make sure that all of the increases and
 	// decreases sum to zero. If this is the case we're pretty protected
-	// against any money-printer bugs.
+	// against any money-printer bugs. We do a second check later on that is a
+	// bit redundant, but that's OK.
 	balanceDeltaSanityCheckMap := make(map[PKID]*big.Int)
 	for _, creatorPKIDMap := range balanceDeltas {
 		for creatorPKIDIter, balanceDelta := range creatorPKIDMap {
@@ -727,9 +729,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// prevBalances will have the previous balances for all users, mapped
-	// by each coin that changed. The values will be incorrect for DESO, but
-	// that's OK because we don't need the balances for DESO in the disconnect
-	// logic because simply reverting the UTXOs will be sufficient.
+	// by each coin that changed, including DESO that changed.
+	//
+	// Note that we need to sort the map so that iteration remains deterministic!
+	// Not doing this could break our hypersync checksum.
 	userPKIDs := []PKID{}
 	for userPKIDIter := range balanceDeltas {
 		userPKID := userPKIDIter
@@ -764,7 +767,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
 				}
 
-				// Check that we didn't overflow or underflow the DESO surplus
+				// Check that we didn't overflow or underflow the DESO surplus.
 				// Note that if we ever go negative then that's an error because
 				// we already maxed out the DESO we're allowed to spend before
 				// entering this loop.
@@ -850,7 +853,6 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 	[]*DAOCoinLimitOrderEntry, error) {
 	// Get matching limit order entries from database.
 	matchingOrders, err := bav.GetDbAdapter().GetMatchingDAOCoinLimitOrders(transactorOrder, lastSeenOrder)
-
 	if err != nil {
 		return nil, err
 	}
@@ -1054,8 +1056,8 @@ func (bav *UtxoView) _deleteDAOCoinLimitOrderEntryMappings(entry *DAOCoinLimitOr
 }
 
 func _calculateDAOCoinsTransferredInLimitOrderMatch(
-	transactorOrder *DAOCoinLimitOrderEntry,
 	matchingOrder *DAOCoinLimitOrderEntry,
+	transactorOrderOperationType DAOCoinLimitOrderOperationType,
 	transactorQuantityToFillInBaseUnits *uint256.Int) (
 	__updatedTransactorQuantityToFillInBaseUnits *uint256.Int,
 	__updatedMatchingQuantityToFillInBaseUnits *uint256.Int,
@@ -1063,10 +1065,9 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 	__transactorSellingCoinBaseUnitsTransferred *uint256.Int,
 	__err error) {
 	// Calculate coins transferred between two matching orders.
-	// Note: we assume that the input orders are a valid match
-	// so those should be validated elsewhere.
+	// Note: we assume that the input orders are a valid match, and we validate this below.
 
-	if transactorOrder.OperationType == DAOCoinLimitOrderOperationTypeASK &&
+	if transactorOrderOperationType == DAOCoinLimitOrderOperationTypeASK &&
 		matchingOrder.OperationType == DAOCoinLimitOrderOperationTypeASK {
 		// The transactor quantity specifies the amount of coin they want to sell.
 		// The matching order's quantity specifies the amount of coin they want to sell.
@@ -1150,7 +1151,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 			nil
 	}
 
-	if transactorOrder.OperationType == DAOCoinLimitOrderOperationTypeBID &&
+	if transactorOrderOperationType == DAOCoinLimitOrderOperationTypeBID &&
 		matchingOrder.OperationType == DAOCoinLimitOrderOperationTypeBID {
 		// The transactor quantity specifies the amount of coin they want to buy.
 		// The matching order's quantity specifies the amount of coin they want to buy.
@@ -1239,7 +1240,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 			return nil, nil, nil, nil, err
 		}
 
-		if transactorOrder.OperationType == DAOCoinLimitOrderOperationTypeASK {
+		if transactorOrderOperationType == DAOCoinLimitOrderOperationTypeASK {
 			// The transactor's quantity represents their selling coin.
 			transactorBuyingCoinBaseUnitsTransferred, err := ComputeBaseUnitsToSellUint256(
 				matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
@@ -1693,4 +1694,66 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMatch(
 	}
 
 	return nil
+}
+
+// The most accurate way we've found to convert a decimal price into a
+// "scaled" price is to parse a string representation into a "whole" bigint
+// and a "decimal" bigint. Once we have these two pieces of the number, we
+// can scale the value without losing any precision.
+//
+// In contrast, note that performing these operaitons on a big.Float results
+// in an immediate loss of precision.
+func CalculateScaledExchangeRateFromString(priceStr string) (*uint256.Int, error) {
+	vals := strings.Split(priceStr, ".")
+	if len(vals) == 0 {
+		vals = []string{"0", "0"}
+	}
+	// In this case, we had a whole number like 123, with no decimal
+	// so we add a "0" as the decimal.
+	if len(vals) != 2 {
+		vals = append(vals, "0")
+	}
+	// This can happen if we have something like ".123"
+	if vals[0] == "" {
+		vals[0] = "0"
+	}
+	// This can happen if we have something like "123."
+	if vals[1] == "" {
+		vals[1] = "0"
+	}
+
+	// The first value is the integer part, the second value is the
+	// decimal part. We multiply both by 1e38 and add
+	wholePart, worked := big.NewInt(0).SetString(vals[0], 10)
+	if !worked {
+		return nil, fmt.Errorf("Failed to convert whole part %v to bigint for price %v", wholePart, priceStr)
+	}
+	decimalPartStr := vals[1]
+	numDecimals := len(OneE38.ToBig().String()) - 1
+	decimalExponent := numDecimals - len(decimalPartStr)
+	if decimalExponent < 0 {
+		// If the decimal portion is too large then truncate it
+		decimalExponent = 0
+		decimalPartStr = decimalPartStr[:numDecimals]
+	}
+	decimalPart, worked := big.NewInt(0).SetString(decimalPartStr, 10)
+	if !worked {
+		return nil, fmt.Errorf("Failed to convert decimal part %v to bigint for price %v", decimalPartStr, priceStr)
+	}
+	newWholePart := big.NewInt(0).Mul(wholePart, OneE38.ToBig())
+	newDecimalPart := big.NewInt(0).Mul(decimalPart, big.NewInt(0).Exp(
+		big.NewInt(0).SetUint64(10), big.NewInt(0).SetUint64(uint64(decimalExponent)), nil))
+
+	sumBig := big.NewInt(0).Add(newWholePart, newDecimalPart)
+	ret, overflow := uint256.FromBig(sumBig)
+	if overflow {
+		return nil, fmt.Errorf("Sum of whole part %v and decimal part %v overflows with value %v for price %v",
+			wholePart, decimalPart, sumBig, priceStr)
+	}
+
+	return ret, nil
+}
+
+func CalculateScaledExchangeRate(price float64) (*uint256.Int, error) {
+	return CalculateScaledExchangeRateFromString(fmt.Sprintf("%v", price))
 }

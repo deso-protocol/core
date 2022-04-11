@@ -34,9 +34,8 @@ const (
 	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
 	UtxoTypeNFTAdditionalDESORoyalty UtxoType = 9
 	UtxoTypeDAOCoinLimitOrderPayout  UtxoType = 10
-	UtxoTypeDAOCoinLimitOrderChange  UtxoType = 11
 
-	// NEXT_TAG = 12
+	// NEXT_TAG = 11
 )
 
 func (mm UtxoType) String() string {
@@ -1514,8 +1513,8 @@ type DAOCoinLimitOrderEntry struct {
 	// buying. Note that we could have called this QuantityToBuyNanos, and in the
 	// case where we're buying DESO, the base unit is a "nano." However, we call it
 	// "base unit" rather than nano because other DAO coins might decide to use a
-	// different scheme than nanos for their base unit. For example, someone could
-	// arbitrarily define 1e12 base units equaling one DAO coin if they felt like it.
+	// different scheme than nanos for their base unit. In particular, we expect 1e18
+	// base units to equal 1 DAO coin, rather than using nanos.
 	QuantityToFillInBaseUnits *uint256.Int
 	// This is one of ASK or BID. If the operation type is an ASK, then the quantity
 	// column applies to the selling coin. I.e. the order is considered fulfilled

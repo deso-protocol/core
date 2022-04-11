@@ -6328,7 +6328,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 		// after being matched with this order. If the transactor still
 		// has quantity to fill, we loop.
 		queryQuantityToFill, _, _, _, err = _calculateDAOCoinsTransferredInLimitOrderMatch(
-			queryOrder, matchingOrder, queryQuantityToFill)
+			matchingOrder, queryOrder.OperationType, queryQuantityToFill)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
 		}

@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"math"
 	"math/big"
-	"strings"
 	"testing"
 )
 
@@ -1295,7 +1294,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
+			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order.OperationType, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1307,7 +1306,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order.OperationType, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1347,7 +1346,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
+			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order.OperationType, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(500))
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1360,7 +1359,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order.OperationType, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(500))
@@ -1400,7 +1399,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
+			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order.OperationType, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1413,7 +1412,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order.OperationType, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1453,7 +1452,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
+			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order.OperationType, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(50))
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1466,7 +1465,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order.OperationType, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(75))
@@ -1506,7 +1505,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
+			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order.OperationType, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1519,7 +1518,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order.OperationType, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1559,7 +1558,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order, m0Order.QuantityToFillInBaseUnits)
+			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order.OperationType, m0Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(750))
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
@@ -1572,7 +1571,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
 			transactorSellingCoinBaseUnitsTransferred,
-			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order, m1Order.QuantityToFillInBaseUnits)
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order.OperationType, m1Order.QuantityToFillInBaseUnits)
 		require.NoError(err)
 		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
 		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(500))
@@ -1833,68 +1832,6 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(utxoView.FlushToDb())
 
 	return utxoOps, txn, blockHeight, nil
-}
-
-// The most accurate way we've found to convert a decimal price into a
-// "scaled" price is to parse a string representation into a "whole" bigint
-// and a "decimal" bigint. Once we have these two pieces of the number, we
-// can scale the value without losing any precision.
-//
-// In contrast, note that performing these operaitons on a big.Float results
-// in an immediate loss of precision.
-func CalculateScaledExchangeRateFromString(priceStr string) (*uint256.Int, error) {
-	vals := strings.Split(priceStr, ".")
-	if len(vals) == 0 {
-		vals = []string{"0", "0"}
-	}
-	// In this case, we had a whole number like 123, with no decimal
-	// so we add a "0" as the decimal.
-	if len(vals) != 2 {
-		vals = append(vals, "0")
-	}
-	// This can happen if we have something like ".123"
-	if vals[0] == "" {
-		vals[0] = "0"
-	}
-	// This can happen if we have something like "123."
-	if vals[1] == "" {
-		vals[1] = "0"
-	}
-
-	// The first value is the integer part, the second value is the
-	// decimal part. We multiply both by 1e38 and add
-	wholePart, worked := big.NewInt(0).SetString(vals[0], 10)
-	if !worked {
-		return nil, fmt.Errorf("Failed to convert whole part %v to bigint for price %v", wholePart, priceStr)
-	}
-	decimalPartStr := vals[1]
-	numDecimals := len(OneE38.ToBig().String()) - 1
-	decimalExponent := numDecimals - len(decimalPartStr)
-	if decimalExponent < 0 {
-		// If the decimal portion is too large then truncate it
-		decimalExponent = 0
-		decimalPartStr = decimalPartStr[:numDecimals]
-	}
-	decimalPart, worked := big.NewInt(0).SetString(decimalPartStr, 10)
-	if !worked {
-		return nil, fmt.Errorf("Failed to convert decimal part %v to bigint for price %v", decimalPartStr, priceStr)
-	}
-	newWholePart := big.NewInt(0).Mul(wholePart, OneE38.ToBig())
-	newDecimalPart := big.NewInt(0).Mul(decimalPart, big.NewInt(0).Exp(
-		big.NewInt(0).SetUint64(10), big.NewInt(0).SetUint64(uint64(decimalExponent)), nil))
-
-	sumBig := big.NewInt(0).Add(newWholePart, newDecimalPart)
-	ret, overflow := uint256.FromBig(sumBig)
-	if overflow {
-		return nil, fmt.Errorf("Sum of whole part %v and decimal part %v overflows with value %v for price %v",
-			wholePart, decimalPart, sumBig, priceStr)
-	}
-
-	return ret, nil
-}
-
-func CalculateScaledExchangeRate(price float64) (*uint256.Int, error) {
-	return CalculateScaledExchangeRateFromString(fmt.Sprintf("%v", price))
 }
 
 func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {

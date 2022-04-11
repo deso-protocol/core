@@ -3253,7 +3253,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					desoNanosExchanged,
 					_, // dao coin nanos exchanged, not used here
 					err = _calculateDAOCoinsTransferredInLimitOrderMatch(
-					transactorOrder, matchingOrder, transactorQuantityToFill)
+					matchingOrder, transactorOrder.OperationType, transactorQuantityToFill)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
 				}
@@ -3341,7 +3341,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					daoCoinNanosExchanged,
 					desoNanosExchanged,
 					err = _calculateDAOCoinsTransferredInLimitOrderMatch(
-					transactorOrder, matchingOrder, transactorQuantityToFill)
+					matchingOrder, transactorOrder.OperationType, transactorQuantityToFill)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
 				}

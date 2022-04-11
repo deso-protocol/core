@@ -1896,8 +1896,8 @@ func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(
 	return true
 }
 
-// _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry checks that the DAO Coin Limit Order being performed has
-// been authorized for this derived key.
+// _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry checks that the DAO Coin Limit Order
+// being performed has been authorized for this derived key.
 //
 // TODO: Right now, the "buy" and "sell" DAO coins that the user is transacting must be
 // specified explicitly. There is no way to specify "any" DAO coins in the spending limit
@@ -2283,6 +2283,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
+
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
