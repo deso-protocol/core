@@ -860,7 +860,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		FilledDAOCoinLimitOrders:             filledOrders,
 	})
 
-	// Just to be safe, we confirm that totalInput doesn't exceed totalOutput.
+	// Just to be safe, we confirm that totalOutput doesn't exceed totalInput.
 	if totalInput < totalOutput {
 		return 0, 0, nil, RuleErrorTxnOutputExceedsInput
 	}
