@@ -1298,7 +1298,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 
 	// Else, the matching order's quantity represents their buying coin.
 	// Which is equivalent to the transactor's selling coin.
-	transactorBuyingCoinBaseUnitsTransferred, err := ComputeBaseUnitsToBuyUint256(
+	transactorBuyingCoinBaseUnitsTransferred, err := ComputeBaseUnitsToSellUint256(
 		matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		matchingOrder.QuantityToFillInBaseUnits)
 	if err != nil {
