@@ -3216,7 +3216,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	// We use "additionalFees" to track how much we need to spend to cover the transactor's bid in DESO.
 	var additionalFees uint64
-	if bytes.Equal(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes(), ZeroPublicKey.ToBytes()) {
+	if metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 		// If buying $DESO, we need to find inputs from all the orders that match.
 		// This will move to txn construction as this will be put in the metadata.
 		var lastSeenOrder *DAOCoinLimitOrderEntry
@@ -3302,7 +3302,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 			metadata.BidderInputs = append(metadata.BidderInputs, &inputsByTransactor)
 		}
-	} else if bytes.Equal(metadata.SellingDAOCoinCreatorPublicKey.ToBytes(), ZeroPublicKey.ToBytes()) {
+	} else if metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 		// If selling $DESO for DAO coins, we need to find the matching orders
 		// and add that as an additional fee when adding inputs and outputs.
 		var lastSeenOrder *DAOCoinLimitOrderEntry

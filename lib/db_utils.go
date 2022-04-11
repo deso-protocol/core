@@ -6264,12 +6264,11 @@ func DBGetMatchingDAOCoinLimitOrders(
 	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
 	//   * Set ScaledPrice to MaxUint256.
 	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
-	//   * Set TransactorPKID to ZeroPKID. This isn't used but it's safer not to be nil.
+	//   * Set TransactorPKID to MaxPKID to make sure we seek from just beyond the last entry.
 	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
 	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID
 	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 	queryOrder.BlockHeight = uint32(0)
-	// Set this to 0xff to make sure we seek from *just beyond* the last entry.
 	queryOrder.TransactorPKID = MaxPKID.NewPKID()
 
 	key, err := DBKeyForDAOCoinLimitOrder(queryOrder)
@@ -6291,7 +6290,8 @@ func DBGetMatchingDAOCoinLimitOrders(
 	}
 
 	// Go in reverse order to find the highest prices first.
-	// We break once we hit the input order's invertedScaledPrice.
+	// We break once we hit the input order's inverted scaled
+	// price or the input order's quantity is fulfilled.
 	opts := badger.DefaultIteratorOptions
 	opts.Reverse = true
 	iterator := txn.NewIterator(opts)
@@ -6350,7 +6350,7 @@ func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	buyingDAOCoinCreatorPKID *PKID,
 	sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 
-	// Get all DAO coin limit orders for this transactor.
+	// Get all DAO coin limit orders for this DAO coin pair.
 	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
 	key = append(key, buyingDAOCoinCreatorPKID.Encode()...)
 	key = append(key, sellingDAOCoinCreatorPKID.Encode()...)
@@ -6401,7 +6401,6 @@ func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderEntr
 	}
 
 	orderBytes, err := order.ToBytes()
-
 	if err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
 	}

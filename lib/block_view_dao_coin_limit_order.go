@@ -163,7 +163,7 @@ func (bav *UtxoView) _sanityCheckLimitOrderMoneyPrinting(
 			newBalanceBaseUnits, err := bav.getAdjustedDAOCoinBalanceForUserInBaseUnits(
 				&userPKID, &creatorPKID, nil)
 			if err != nil {
-				return errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
+				return errors.Wrapf(err, "_sanityCheckLimitOrderMoneyPrinting: ")
 			}
 
 			// Calculate the delta in balance base units using a big.Int.
@@ -926,34 +926,22 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 	// Pull orders up to when the quantity is filled or we run out of orders.
 	outputMatchingOrders := []*DAOCoinLimitOrderEntry{}
-	transactorOrderBuyingQuantity := transactorOrder.QuantityToFillInBaseUnits
+	transactorOrderQuantityToFill := transactorOrder.QuantityToFillInBaseUnits
 
 	for _, matchingOrder := range sortedMatchingOrders {
 		outputMatchingOrders = append(outputMatchingOrders, matchingOrder)
 
-		// To properly compare quantities, we need to compare the quantity
-		// that the transactor order is interested in buying to the quantity
-		// the matching order is interested in selling.
-		matchingOrderSellingQuantity, err := matchingOrder.BaseUnitsToSellUint256()
+		// Calculate transactor's updated quantity
+		// to fill after matching with this order.
+		transactorOrderQuantityToFill, _, _, _, err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+			matchingOrder, transactorOrder.OperationType, transactorOrderQuantityToFill)
 		if err != nil {
-			// This should never happen as we validate the
-			// stored orders when they are submitted.
 			return nil, err
 		}
 
-		// Break once the transactor's buying quantity is <= this matching
-		// order's selling quantity or their buying quantity is <= 0.
-		if transactorOrderBuyingQuantity.Eq(matchingOrderSellingQuantity) ||
-			transactorOrderBuyingQuantity.Lt(matchingOrderSellingQuantity) ||
-			transactorOrderBuyingQuantity.LtUint64(1) {
+		// Break once the transactor's quantity to fill is zero.
+		if transactorOrderQuantityToFill.IsZero() {
 			break
-		}
-
-		transactorOrderBuyingQuantity, err = SafeUint256().Sub(
-			transactorOrderBuyingQuantity, matchingOrderSellingQuantity)
-		if err != nil {
-			// This should never happen because of the check above.
-			return nil, errors.Wrapf(err, "Error updating order quantity: ")
 		}
 	}
 

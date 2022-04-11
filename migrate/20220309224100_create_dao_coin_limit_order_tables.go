@@ -20,7 +20,6 @@ func init() {
 				fee_nanos                                          BIGINT NOT NULL
 			);
 		`)
-
 		if err != nil {
 			return err
 		}
@@ -59,7 +58,6 @@ func init() {
 				)
 			);
 		`)
-
 		if err != nil {
 			return err
 		}
@@ -77,6 +75,5 @@ func init() {
 	}
 
 	opts := migrations.MigrationOptions{}
-
 	migrations.Register("20220309224100_create_dao_coin_limit_order_tables", up, down, opts)
 }
