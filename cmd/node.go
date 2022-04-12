@@ -34,27 +34,33 @@ type Node struct {
 	Config   *Config
 	Postgres *lib.Postgres
 
-	// False when a NewNode is created, set to true on Start(), set to false
+	// isRunning is false when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
-	isRunning    bool
+	isRunning bool
+	// runningMutex is held whenever we call Start() or Stop() on the node.
 	runningMutex sync.Mutex
 
-	internalExitChan chan os.Signal
-	nodeMessageChan  chan lib.NodeMessage
-	stopWaitGroup    sync.WaitGroup
+	// internalExitChan is used internally to signal that a node should close.
+	internalExitChan chan struct{}
+	// nodeMessageChan is passed to the core engine and used to trigger node actions such as a restart or database reset.
+	nodeMessageChan chan lib.NodeMessage
+	// stopWaitGroup allows us to wait for the node to fully close.
+	stopWaitGroup sync.WaitGroup
 }
 
 func NewNode(config *Config) *Node {
 	result := Node{}
 	result.Config = config
 	result.Params = config.Params
-	result.internalExitChan = make(chan os.Signal)
+	result.internalExitChan = make(chan struct{})
 	result.nodeMessageChan = make(chan lib.NodeMessage)
 
 	return &result
 }
 
-func (node *Node) Start(exitChannels ...*chan os.Signal) {
+// Start is the main function used to kick off the node. The exitChannels are optionally passed by the caller to receive
+// signals from the node. In particular, exitChannels will be closed by the node when the node is shutting down for good.
+func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// TODO: Replace glog with logrus so we can also get rid of flag library
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
@@ -65,14 +71,14 @@ func (node *Node) Start(exitChannels ...*chan os.Signal) {
 	node.runningMutex.Lock()
 	defer node.runningMutex.Unlock()
 
-	node.internalExitChan = make(chan os.Signal)
+	node.internalExitChan = make(chan struct{})
 	node.nodeMessageChan = make(chan lib.NodeMessage)
 
-	go node.listenToRestart()
+	// listenToNodeMessages handles the messages received from the engine through the nodeMessageChan.
+	go node.listenToNodeMessages()
 
 	// Print config
 	node.Config.Print()
-	glog.Infof("Start() | After node config")
 
 	// Check for regtest mode
 	if node.Config.Regtest {
@@ -81,6 +87,9 @@ func (node *Node) Start(exitChannels ...*chan os.Signal) {
 
 	// Validate params
 	validateParams(node.Params)
+	// This is a bit of a hack, and we should deprecate this. We rely on GlobalDeSoParams static variable in only one
+	// place in the core code, namely in encoder migrations. Encoder migrations allow us to update the core database
+	// schema without requiring a resync. GlobalDeSoParams is used so that encoders know if we're on mainnet or testnet.
 	lib.GlobalDeSoParams = *node.Params
 
 	// Setup Datadog span tracer and profiler
@@ -144,8 +153,7 @@ func (node *Node) Start(exitChannels ...*chan os.Signal) {
 		lib.StartDBSummarySnapshots(node.chainDB)
 	}
 
-	// Setup postgres using a remote URI. Postgres is not currently supported
-	// when we're in hypersync mode.
+	// Setup postgres using a remote URI. Postgres is not currently supported when we're in hypersync mode.
 	if node.Config.HyperSync && node.Config.PostgresURI != "" {
 		glog.Fatal("--postgres-uri is not supported when --hypersync=true. We're " +
 			"working on Hypersync support for Postgres though!")
@@ -178,7 +186,9 @@ func (node *Node) Start(exitChannels ...*chan os.Signal) {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
-	// Setup the server
+	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
+	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
+	// performs regular health checks to detect whenever this occurs.
 	shouldRestart := false
 	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,
@@ -242,9 +252,12 @@ func (node *Node) Start(exitChannels ...*chan os.Signal) {
 		}
 	}
 
+	// Detect whenever an interrupt (Ctrl-c) or termination signals are sent.
 	syscallChannel := make(chan os.Signal)
 	signal.Notify(syscallChannel, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
+		// If an internalExitChan is triggered then we won't immediately signal a shutdown to the parent context through
+		// the exitChannels. When internal exit is called, we will just restart the node in the background.
 		select {
 		case _, open := <-node.internalExitChan:
 			if !open {
@@ -309,7 +322,7 @@ func (node *Node) Stop() {
 	}
 }
 
-// Close a database and handle the stopWaitGroup accordingly.
+// Close a database and handle the stopWaitGroup accordingly. We close databases in a go routine to speed up the process.
 func (node *Node) closeDb(db *badger.DB, dbName string) {
 	node.stopWaitGroup.Add(1)
 
@@ -324,17 +337,21 @@ func (node *Node) closeDb(db *badger.DB, dbName string) {
 	}()
 }
 
-func (node *Node) listenToRestart(exitChannels ...*chan os.Signal) {
+// listenToNodeMessages listens to the communication from the engine through the nodeMessageChan. There are currently
+// two main operations that the engine can request. These are a regular node restart, and a restart with a database
+// erase. The latter may seem a little harsh, but it is only triggered when the node is really broken and there's
+// no way we can recover.
+func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
 	select {
 	case <-node.internalExitChan:
 		break
 	case operation := <-node.nodeMessageChan:
 		if !node.isRunning {
-			panic("Node.listenToRestart: Node is currently not running, nodeMessageChan should've not been called!")
+			panic("Node.listenToNodeMessages: Node is currently not running, nodeMessageChan should've not been called!")
 		}
-		glog.Infof("Node.listenToRestart: Stopping node")
+		glog.Infof("Node.listenToNodeMessages: Stopping node")
 		node.Stop()
-		glog.Infof("Node.listenToRestart: Finished stopping node")
+		glog.Infof("Node.listenToNodeMessages: Finished stopping node")
 		switch operation {
 		case lib.NodeErase:
 			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
@@ -345,7 +362,7 @@ func (node *Node) listenToRestart(exitChannels ...*chan os.Signal) {
 			}
 		}
 
-		glog.Infof("Node.listenToRestart: Restarting node")
+		glog.Infof("Node.listenToNodeMessages: Restarting node")
 		// Wait a few seconds so that all peer messages we've sent while closing the node get propagated in the network.
 		go node.Start(exitChannels...)
 		break

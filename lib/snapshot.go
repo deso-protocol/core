@@ -2287,8 +2287,8 @@ func (t *Timer) End(eventName string) {
 		return
 	}
 
-	t.mut.RLock()
-	defer t.mut.RUnlock()
+	t.mut.Lock()
+	defer t.mut.Unlock()
 	if _, exists := t.totalElapsedTimes[eventName]; !exists {
 		glog.Errorf("Timer.End: Error called with non-existent eventName")
 		return

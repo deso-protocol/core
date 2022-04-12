@@ -5,7 +5,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"os"
 )
 
 var runCmd = &cobra.Command{
@@ -25,7 +24,7 @@ func Run(cmd *cobra.Command, args []string) {
 	config := LoadConfig()
 
 	// Start the deso node
-	shutdownListener := make(chan os.Signal)
+	shutdownListener := make(chan struct{})
 	node := NewNode(config)
 	node.Start(&shutdownListener)
 

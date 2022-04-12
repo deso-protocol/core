@@ -4758,6 +4758,10 @@ type TransactionSpendingLimit struct {
 func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 	data := []byte{}
 
+	if tsl == nil {
+		return data, nil
+	}
+
 	// GlobalDESOLimit
 	data = append(data, UintToBuf(tsl.GlobalDESOLimit)...)
 

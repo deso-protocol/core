@@ -22,35 +22,56 @@ import (
 	"time"
 )
 
+// This testing suite is the first serious attempt at making a comprehensive functional testing framework for DeSo nodes.
+// To accomplish this, we want to be able to simulate any network topology, as well as network conditions such as
+// asynchronous communication, disconnects, partitions, etc. The main toolbox used to make this happen is the
+// ConnectionBridge struct, which simulates a node-to-node network connection. More on this later.
+//
+// Then, we also need some validation tools so we can compare node state during our test cases. For instance, we can
+// compare nodes by their databases with compareNodesByDB to check if two nodes have identical databases. We can also
+// compare nodes by database checksums via compareNodesByChecksum. It is a good practice to verify both states and checksums.
+//
+// Finally, we have wrappers around general node behavior, such as startNode, restartNode, etc. We can also wait until
+// a node is synced to a certain height with listenForBlockHeight, or until hypersync has begun syncing a certain prefix
+// via listenForSyncPrefix.
+//
+// Summarizing, the node testing framework is intentionally lightweight and general so that we can test a wide range of
+// node behaviors. Check out
+
+// Global variable that determines the max tip blockheight of syncing nodes throughout test cases.
+const MaxSyncBlockHeight = 1500
+
+// Global variable that allows setting node configuration hypersync snapshot period.
 const HyperSyncSnapshotPeriod = 1000
 
-// ConnectionBridge is a bidirectional communication channel between two nodes.
-// A bridge creates a pair of inbound and outbound peers for each of the nodes to handle communication.
+// ConnectionBridge is a bidirectional communication channel between two nodes. A bridge creates a pair of inbound and
+// outbound peers for each of the nodes to handle communication. In total, it creates four peers.
+//
 // An inbound Peer represents incoming communication to a node, and an outbound Peer represents outgoing communication.
 // To disambiguate, a "Peer" in this context is basically a wrapper around inter-node communication that allows
-// receiving and sending messages between the two nodes. Importantly, a Peer supports bidirectional communication.
+// receiving and sending messages between the two nodes.
+//
 // As mentioned, our bridge creates an inbound and outbound Peers for both nodes A and B. Now, you might be perplexed
-// as to why we would need both of these Peers, as opposed to just one. The reason is that inbound and outbound peers
+// as to why we would need both of these peers, as opposed to just one. The reason is that inbound and outbound peers
 // differ in a crucial aspect, which is, who creates them. Inbound Peers are created whenever any node on the network
 // initiates a communication with our node - meaning a node has no control over the communication partner. On the other
-// hand, outbound Peers are created by the node itself, so they can be considered more trusted than inbound peers.
-// As a result, certain communication is only sent to outbound peers. To give a more concrete example, a node will,
-// for instance, never ask an inbound Peer for headers or blocks, it can ask an outbound Peer though. At the same time,
-// a node will respond with headers/blocks if asked by an inbound Peer. Finally, whenever node 1 creates an outbound
-// peer and communicates with another node 2, the node 2 will add node 1 as an inbound peer.
+// hand, outbound peers are created by the node itself, so they can be considered more trusted than inbound peers.
+// As a result, certain communication is only sent to outbound peers. For instance, we never ask an inbound Peer
+// for headers or blocks, but we can ask an outbound Peer. At the same time, a node will respond with headers/blocks
+// if asked by an inbound Peer.
 //
-// A bridge then will simulate the creation of two outbound node connections:
+// Let's say we have two nodes, nodeA and nodeB, that we want to bridge together. The connection bridge will then
+// simulate the creation of two outbound and two inbound node connections:
 //	nodeA : connectionOutboundA -> connectionInboundB : nodeB
 //	nodeB : connectionOutboundB -> connectionInboundA : nodeA
 // For example, let's say nodeA wants to send a GET_HEADERS message to nodeB, the traffic will look like this:
 // 	GET_HEADERS: nodeA -> connectionOutboundA -> connectionInboundB -> nodeB
 //  HEADER_BUNDLE: nodeB -> connectionInboundB -> connectionOutboundA -> nodeA
 //
-// This middleware design of our the ConnectionBridge allows us to have much higher control over the communication
+// This middleware design of the ConnectionBridge allows us to have much higher control over the communication
 // between the two nodes. In particular, we have full control over the `connectionOutboundA -> connectionInboundB`
 // steps, which allows us to make sure nodes act predictably and deterministically in our tests. Moreover, we can
 // simulate real-world network links by doing things like faking delays, dropping messages, partitioning networks, etc.
-// Nodes will be disallowed from connecting to other nodes outside of bridges.
 type ConnectionBridge struct {
 	// nodeA is one end of the bridge.
 	nodeA *Node
@@ -140,7 +161,8 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *Node, otherNode *
 		//for {
 		conn, err := ll.Accept()
 		if err != nil {
-			panic(err)
+			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Problem in createOutboundConnection: Error: (%v)", err)))
+			return
 		}
 		fmt.Println("createOutboundConnection: Got a connection from remote:", conn.RemoteAddr().String(),
 			"on listener:", ll.Addr().String())
@@ -297,6 +319,7 @@ func (bridge *ConnectionBridge) routeTraffic(source *lib.Peer, destination *lib.
 	bridge.waitGroup.Done()
 }
 
+// waitForConnection will wait for 30 seconds to get a new connection, otherwise it will return an error.
 func (bridge *ConnectionBridge) waitForConnection() (*lib.Peer, error) {
 	timeoutTicker := time.NewTicker(30 * time.Second)
 	select {
@@ -374,11 +397,13 @@ func (bridge *ConnectionBridge) Start() error {
 	return nil
 }
 
+// Stop and start the connection bridge.
 func (bridge *ConnectionBridge) Restart() {
 	bridge.Disconnect()
 	bridge.Start()
 }
 
+// Disconnect stops the connection bridge.
 func (bridge *ConnectionBridge) Disconnect() {
 	if bridge.disabled {
 		fmt.Println("ConnectionBridge.Disconnect: Doing nothing, bridge is already disconnected.")
@@ -394,10 +419,6 @@ func (bridge *ConnectionBridge) Disconnect() {
 	bridge.outboundListenerB.Close()
 
 	bridge.waitGroup.Wait()
-}
-
-type ConnectionRouter struct {
-	nodes []*Node
 }
 
 // get a random temporary directory.
@@ -440,6 +461,7 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MaxSyncBlockHeight = 100
 	config.MinBlockUpdateInterval = 10
 	config.SnapshotBlockHeightPeriod = HyperSyncSnapshotPeriod
+	config.MaxSyncBlockHeight = MaxSyncBlockHeight
 
 	return config
 }
@@ -459,6 +481,7 @@ func waitForNodeToFullySync(node *Node) {
 	}
 }
 
+// waitForNodeToFullySyncAndStoreAllBlocks will busy-wait until node is fully current and all blocks have been stored.
 func waitForNodeToFullySyncAndStoreAllBlocks(node *Node) {
 	ticker := time.NewTicker(5 * time.Millisecond)
 	for {
@@ -473,6 +496,7 @@ func waitForNodeToFullySyncAndStoreAllBlocks(node *Node) {
 	}
 }
 
+// waitForNodeToFullySyncTxIndex will busy-wait until node is fully current and txindex has finished syncing.
 func waitForNodeToFullySyncTxIndex(node *Node) {
 	ticker := time.NewTicker(5 * time.Millisecond)
 	for {
@@ -507,6 +531,9 @@ func compareNodesByChecksum(t *testing.T, nodeA *Node, nodeB *Node) {
 func compareNodesByState(t *testing.T, nodeA *Node, nodeB *Node, verbose int) {
 	compareNodesByStateWithPrefixList(t, nodeA.chainDB, nodeB.chainDB, lib.StatePrefixes.StatePrefixesList, verbose)
 }
+
+// compareNodesByDB will look through all records in nodeA and nodeB databases and will compare them.
+// The nodes pass this comparison iff they have identical states.
 func compareNodesByDB(t *testing.T, nodeA *Node, nodeB *Node, verbose int) {
 	var prefixList [][]byte
 	for prefix := range lib.StatePrefixes.StatePrefixesMap {
@@ -514,6 +541,9 @@ func compareNodesByDB(t *testing.T, nodeA *Node, nodeB *Node, verbose int) {
 	}
 	compareNodesByStateWithPrefixList(t, nodeA.chainDB, nodeB.chainDB, prefixList, verbose)
 }
+
+// compareNodesByDB will look through all records in nodeA and nodeB txindex databases and will compare them.
+// The nodes pass this comparison iff they have identical states.
 func compareNodesByTxIndex(t *testing.T, nodeA *Node, nodeB *Node, verbose int) {
 	var prefixList [][]byte
 	for prefix := range lib.StatePrefixes.StatePrefixesMap {
@@ -521,6 +551,9 @@ func compareNodesByTxIndex(t *testing.T, nodeA *Node, nodeB *Node, verbose int) 
 	}
 	compareNodesByStateWithPrefixList(t, nodeA.TXIndex.TXIndexChain.DB(), nodeB.TXIndex.TXIndexChain.DB(), prefixList, verbose)
 }
+
+// compareNodesByDB will look through all records in provided prefixList in nodeA and nodeB databases and will compare them.
+// The nodes pass this comparison iff they have identical states.
 func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger.DB, prefixList [][]byte, verbose int) {
 	maxBytes := lib.SnapshotBatchSize
 	var brokenPrefixes [][]byte
@@ -644,6 +677,7 @@ func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger
 	}
 }
 
+// computeNodeStateChecksum goes through node's state records and computes the checksum.
 func computeNodeStateChecksum(t *testing.T, node *Node, blockHeight uint64) *lib.StateChecksum {
 	require := require.New(t)
 
@@ -687,6 +721,7 @@ func computeNodeStateChecksum(t *testing.T, node *Node, blockHeight uint64) *lib
 	return carrierChecksum
 }
 
+// Stop the provided node.
 func shutdownNode(t *testing.T, node *Node) *Node {
 	if !node.isRunning {
 		t.Fatalf("shutdownNode: can't shutdown, node is already down")
@@ -697,6 +732,7 @@ func shutdownNode(t *testing.T, node *Node) *Node {
 	return NewNode(config)
 }
 
+// Start the provided node.
 func startNode(t *testing.T, node *Node) *Node {
 	if node.isRunning {
 		t.Fatalf("startNode: node is already running")
@@ -706,6 +742,7 @@ func startNode(t *testing.T, node *Node) *Node {
 	return node
 }
 
+// Restart the provided node.A
 func restartNode(t *testing.T, node *Node) *Node {
 	if !node.isRunning {
 		t.Fatalf("shutdownNode: can't restart, node already down")
@@ -715,6 +752,7 @@ func restartNode(t *testing.T, node *Node) *Node {
 	return startNode(t, newNode)
 }
 
+// listenForBlockHeight busy-waits until the node's block tip reaches provided height.
 func listenForBlockHeight(t *testing.T, node *Node, height uint32, signal chan<- bool) {
 	ticker := time.NewTicker(1 * time.Millisecond)
 	go func() {
@@ -728,6 +766,7 @@ func listenForBlockHeight(t *testing.T, node *Node, height uint32, signal chan<-
 	}()
 }
 
+// listenForBlockHeight busy-waits until the node's block tip reaches provided height.
 func disconnectAtBlockHeight(t *testing.T, syncingNode *Node, bridge *ConnectionBridge, height uint32) {
 	listener := make(chan bool)
 	listenForBlockHeight(t, syncingNode, height, listener)
@@ -735,6 +774,8 @@ func disconnectAtBlockHeight(t *testing.T, syncingNode *Node, bridge *Connection
 	bridge.Disconnect()
 }
 
+// restartAtHeightAndReconnectNode will restart the node once it syncs to the provided height, and then reconnects
+// the node to the source.
 func restartAtHeightAndReconnectNode(t *testing.T, node *Node, source *Node, currentBridge *ConnectionBridge,
 	height uint32) (_node *Node, _bridge *ConnectionBridge) {
 
@@ -743,13 +784,15 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *Node, source *Node, cur
 	newNode := restartNode(t, node)
 	// Wait after the restart.
 	time.Sleep(1 * time.Second)
-
+	fmt.Println("Restarted")
 	// bridge the nodes together.
 	bridge := NewConnectionBridge(newNode, source)
 	require.NoError(bridge.Start())
 	return newNode, bridge
 }
 
+// listenForSyncPrefix will wait until the node starts downloading the provided syncPrefix in hypersync, and then sends
+// a message to the provided signal channel.
 func listenForSyncPrefix(t *testing.T, node *Node, syncPrefix []byte, signal chan<- bool) {
 	ticker := time.NewTicker(1 * time.Millisecond)
 	go func() {
@@ -768,6 +811,8 @@ func listenForSyncPrefix(t *testing.T, node *Node, syncPrefix []byte, signal cha
 	}()
 }
 
+// disconnectAtSyncPrefix will busy-wait until node starts downloading the provided syncPrefix in hypersync, and then
+// it will disconnect the node from the provided bridge.
 func disconnectAtSyncPrefix(t *testing.T, syncingNode *Node, bridge *ConnectionBridge, syncPrefix []byte) {
 	listener := make(chan bool)
 	listenForSyncPrefix(t, syncingNode, syncPrefix, listener)
@@ -775,6 +820,7 @@ func disconnectAtSyncPrefix(t *testing.T, syncingNode *Node, bridge *ConnectionB
 	bridge.Disconnect()
 }
 
+// restartAtSyncPrefixAndReconnectNode will
 func restartAtSyncPrefixAndReconnectNode(t *testing.T, node *Node, source *Node, currentBridge *ConnectionBridge,
 	syncPrefix []byte) (_node *Node, _bridge *ConnectionBridge) {
 
@@ -797,16 +843,15 @@ func randomUint32Between(t *testing.T, min, max uint32) uint32 {
 }
 
 // TestSimpleBlockSync test if a node can successfully sync from another node:
-//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
-//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
 //	3. bridge node1 and node2
-//	4. node2 syncs 50 blocks from node1.
-//	5. compare node1 state matches node2 state.
+//	4. node2 syncs MaxSyncBlockHeight blocks from node1.
+//	5. compare node1 db matches node2 db.
 func TestSimpleBlockSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
@@ -815,14 +860,10 @@ func TestSimpleBlockSync(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -837,25 +878,24 @@ func TestSimpleBlockSync(t *testing.T) {
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
-	compareNodesByState(t, node1, node2, 0)
+	compareNodesByDB(t, node1, node2, 0)
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
 }
 
 // TestSimpleSyncRestart tests if a node can successfully restart while syncing blocks.
-//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
-//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
 //	3. bridge node1 and node2
-//	4. node2 syncs between 10 and 50 blocks from node1.
+//	4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
 //  5. node2 disconnects from node1 and reboots.
 //  6. node2 reconnects with node1 and syncs remaining blocks.
-//	7. compare node1 state matches node2 state.
+//	7. compare node1 db matches node2 db.
 func TestSimpleSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
@@ -864,14 +904,10 @@ func TestSimpleSyncRestart(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -896,19 +932,20 @@ func TestSimpleSyncRestart(t *testing.T) {
 	node2.Stop()
 }
 
-// TestSimpleSyncRestart tests if a node can successfully restart while syncing blocks.
-//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
-//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+// TestSimpleSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while syncing blocks, and
+// then connect to a different node and sync the remaining blocks.
+//	1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1 and node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
 //	3. bridge node1 and node2
-//	4. node2 syncs between 10 and 50 blocks from node1.
+//	4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
 //  5. node2 disconnects from node1 and reboots.
-//  6. node2 reconnects with node1 and syncs remaining blocks.
-//	5. compare node1 state matches node2 state.
+//  6. node2 reconnects with node3 and syncs remaining blocks.
+//	7. compare node1 state matches node2 state.
+//	8. compare node3 state matches node2 state.
 func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	dbDir3 := getDirectory(t)
@@ -920,18 +957,12 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 	config3 := generateConfig(t, 18002, dbDir3, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
-	config3.MaxSyncBlockHeight = 1500
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
 	node3 := NewNode(config3)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
-	router.nodes = append(router.nodes, node3)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -959,6 +990,7 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	waitForNodeToFullySync(node2)
 
 	compareNodesByDB(t, node1, node2, 0)
+	compareNodesByDB(t, node3, node2, 0)
 	fmt.Println("Random restart successful! Random height was", randomHeight)
 	fmt.Println("Databases match!")
 	node1.Stop()
@@ -967,16 +999,15 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 }
 
 // TestSimpleHyperSync test if a node can successfully hyper sync from another node:
-//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
-//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
 //	3. bridge node1 and node2.
-//	4. node2 hyper syncs [0,40] blocks from node1, and block syncs [41, 50] remaining blocks.
-//	5. compare node1 state matches node2 state.
+//	4. node2 hypersyncs from node1
+//	5. once done, compare node1 state, db, and checksum matches node2.
 func TestSimpleHyperSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
@@ -985,16 +1016,12 @@ func TestSimpleHyperSync(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 5000
-	config2.MaxSyncBlockHeight = 5000
 	config1.HyperSync = true
 	config2.HyperSync = true
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -1017,11 +1044,17 @@ func TestSimpleHyperSync(t *testing.T) {
 	node2.Stop()
 }
 
+// TestHyperSyncFromHyperSyncedNode test if a node can successfully hypersync from another hypersynced node:
+//	1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//	3. bridge node1 and node2.
+//	4. node2 hypersyncs state.
+//	5. once done, bridge node3 and node2 so that node3 hypersyncs from node2.
+//	6. compare node1 state, db, and checksum matches node2, and node3.
 func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	dbDir3 := getDirectory(t)
@@ -1033,9 +1066,6 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 	config3 := generateConfig(t, 18002, dbDir3, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
-	config3.MaxSyncBlockHeight = 1500
 	config1.HyperSync = true
 	config2.HyperSync = true
 	config3.HyperSync = true
@@ -1044,9 +1074,6 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
 	node3 := NewNode(config3)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
-	router.nodes = append(router.nodes, node3)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -1074,6 +1101,7 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
 	// Make sure node2 has the same database as node3
+	compareNodesByState(t, node2, node3, 0)
 	compareNodesByDB(t, node2, node3, 0)
 	compareNodesByChecksum(t, node2, node3)
 
@@ -1083,19 +1111,17 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	node3.Stop()
 }
 
-// TestSimpleHyperSyncRestart tests if a node can successfully restart while syncing blocks.
-//	1. Spawn two nodes node1, node2 with max block height of 50 blocks, hyper sync on, with snapshot period 40 blocks.
-//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator, it will also be building ancestral records.
+// TestSimpleHyperSyncRestart test if a node can successfully hyper sync from another node:
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
 //	3. bridge node1 and node2.
-//	4. node2 syncs state from node1, until it reaches a certain random sync prefix.
-//  5. node2 disconnects from node1 and reboots.
-//  6. node2 reconnects with node1 and syncs remaining state & blocks.
-//	5. compare node1 state matches node2 state.
+//	4. node2 hyper syncs a portion of the state from node1 and then restarts.
+//	5. node2 reconnects to node1 and hypersyncs again.
+//	6. Once node2 finishes sync, compare node1 state, db, and checksum matches node2.
 func TestSimpleHyperSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
@@ -1104,16 +1130,12 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
 	config1.HyperSync = true
 	config2.HyperSync = true
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -1142,19 +1164,17 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	node2.Stop()
 }
 
-// TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while syncing blocks.
-//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
-//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+// TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while hypersyncing.
+//	1. Spawn three nodes node1, node2, and node3 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1, node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
 //	3. bridge node1 and node2
-//	4. node2 syncs between 10 and 50 blocks from node1.
-//  5. node2 disconnects from node1 and reboots.
-//  6. node2 reconnects with node1 and syncs remaining blocks.
-//	5. compare node1 state matches node2 state.
+//	4. node2 hypersyncs from node1 but we restart node2 midway.
+//	5. after restart, bridge node2 with node3 and resume hypersync.
+//	6. once node2 finishes, compare node1, node2, node3 state, db, and checksums are identical.
 func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	dbDir3 := getDirectory(t)
@@ -1166,9 +1186,6 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 	config3 := generateConfig(t, 18002, dbDir3, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
-	config3.MaxSyncBlockHeight = 1500
 	config1.HyperSync = true
 	config2.HyperSync = true
 	config3.HyperSync = true
@@ -1178,9 +1195,6 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
 	node3 := NewNode(config3)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
-	router.nodes = append(router.nodes, node3)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -1209,6 +1223,12 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySyncAndStoreAllBlocks(node2)
 
+	// Compare node2 with node3.
+	compareNodesByState(t, node2, node3, 0)
+	compareNodesByDB(t, node2, node3, 0)
+	compareNodesByChecksum(t, node2, node3)
+
+	// Compare node1 with node2.
 	compareNodesByState(t, node1, node2, 0)
 	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
@@ -1219,17 +1239,16 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	node3.Stop()
 }
 
-// TestSimpleBlockSync test if a node can successfully sync from another node:
-//	1. Spawn two nodes node1, node2 with max block height of 50 blocks.
-//	2. node1 syncs 50 blocks from the "deso-seed-2.io" generator.
+// TestSimpleTxIndex test if a node can successfully build txindex after block syncing from another node:
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator, and builds txindex afterwards.
 //	3. bridge node1 and node2
-//	4. node2 syncs 50 blocks from node1.
-//	5. compare node1 state matches node2 state.
+//	4. node2 syncs MaxSyncBlockHeight blocks from node1, and builds txindex afterwards.
+//	5. compare node1 db and txindex matches node2.
 func TestSimpleTxIndex(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	router := &ConnectionRouter{}
 	dbDir1 := getDirectory(t)
 	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
@@ -1238,16 +1257,12 @@ func TestSimpleTxIndex(t *testing.T) {
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config2 := generateConfig(t, 18001, dbDir2, 10)
 
-	config1.MaxSyncBlockHeight = 1500
-	config2.MaxSyncBlockHeight = 1500
 	config1.TXIndex = true
 	config2.TXIndex = true
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
 	node1 := NewNode(config1)
 	node2 := NewNode(config2)
-	router.nodes = append(router.nodes, node1)
-	router.nodes = append(router.nodes, node2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -1270,37 +1285,6 @@ func TestSimpleTxIndex(t *testing.T) {
 	fmt.Println("Databases match!")
 	node1.Stop()
 	node2.Stop()
-}
-
-func TestEncoderMigrationBasic(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-
-	config1.MaxSyncBlockHeight = 1500
-	config1.HyperSync = true
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-
-	node1 := NewNode(config1)
-
-	_ = node1
-	node1 = startNode(t, node1)
-	// wait for node1 to sync blocks
-	waitForNodeToFullySync(node1)
-
-	checksumBytes, err := node1.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
-	require.NoError(err)
-	realChecksum, err := computeNodeStateChecksum(t, node1, 1500).ToBytes()
-	require.NoError(err)
-	require.Equal(true, reflect.DeepEqual(checksumBytes, realChecksum))
-	fmt.Println(checksumBytes)
-
-	node1.Stop()
-	//node2 = startNode(t, node2)
 }
 
 // Start blocks to height 5000 and then disconnect
@@ -1337,6 +1321,7 @@ func TestStateRollback(t *testing.T) {
 	transaction and compares that connecting/disconnecting the transaction gives the same state at the end. The check
 	on the state is pretty hardcore. We checksum the entire database before the first connect and then compare it
 	to the checksum of the db after applying the connect/disconnect. */
+
 	//bestChain := node2.Server.GetBlockchain().BestChain()
 	//lastNode := bestChain[len(bestChain)-1]
 	//lastBlock, err := lib.GetBlock(lastNode.Hash, node2.Server.GetBlockchain().DB(), nil)
