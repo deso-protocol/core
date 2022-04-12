@@ -140,6 +140,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+			DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			newTransactionSpendingLimit = prevDerivedKeyEntry.TransactionSpendingLimitTracker
@@ -193,6 +194,13 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						delete(newTransactionSpendingLimit.NFTOperationLimitMap, nftLimitKey)
 					} else {
 						newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
+					}
+				}
+				for daoCoinLimitOrderLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinLimitOrderLimitMap {
+					if transactionCount == 0 {
+						delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
+					} else {
+						newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
 					}
 				}
 			}

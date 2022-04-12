@@ -85,6 +85,9 @@ type UtxoView struct {
 	// Derived Key entries. Map key is a combination of owner and derived public keys.
 	DerivedKeyToDerivedEntry map[DerivedKeyMapKey]*DerivedKeyEntry
 
+	// DAO coin limit order entry mapping.
+	DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -151,6 +154,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Derived Key entries
 	bav.DerivedKeyToDerivedEntry = make(map[DerivedKeyMapKey]*DerivedKeyEntry)
+
+	// DAO Coin Limit Order Entries
+	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -338,6 +344,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.DerivedKeyToDerivedEntry[entryKey] = &newEntry
 	}
 
+	// Copy the DAO Coin Limit Order Entries
+	newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry,
+		len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
+	for entryKey, entry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		newEntry := *entry
+		newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[entryKey] = &newEntry
+	}
 	return newView, nil
 }
 
@@ -947,6 +960,10 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectDAOCoinTransfer(
 			OperationTypeDAOCoinTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		return bav._disconnectDAOCoinLimitOrder(
+			OperationTypeDAOCoinLimitOrder, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
 		return bav._disconnectSwapIdentity(
 			OperationTypeSwapIdentity, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
@@ -1014,6 +1031,15 @@ func (bav *UtxoView) DisconnectBlock(
 		numInputs += len(txn.TxInputs)
 		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 			numInputs += len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
+		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+			numMatchingOrderInputs := 0
+
+			for _, transactor := range txn.TxnMeta.(*DAOCoinLimitOrderMetadata).BidderInputs {
+				numMatchingOrderInputs += len(transactor.Inputs)
+			}
+
+			numInputs += numMatchingOrderInputs
 		}
 		numOutputs += len(txn.TxOutputs)
 	}
@@ -1569,6 +1595,13 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta.ProfilePublicKey, TransferDAOCoinOperation); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeDAOCoinLimitOrder:
+		txnMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+		if derivedKeyEntry, err = bav._checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
+			derivedKeyEntry, txnMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(),
+			txnMeta.SellingDAOCoinCreatorPublicKey.ToBytes()); err != nil {
+			return utxoOpsForTxn, err
+		}
 	case TxnTypeUpdateNFT:
 		txnMeta := txn.TxnMeta.(*UpdateNFTMetadata)
 		if derivedKeyEntry, err = _checkNFTLimitAndUpdateDerivedKeyEntry(
@@ -1830,6 +1863,71 @@ func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 		return derivedKeyEntry, nil
 	}
 	return derivedKeyEntry, RuleErrorDerivedKeyDAOCoinOperationNotAuthorized
+}
+
+// _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry checks if the DAOCoinLimitOrderLimitKey is present
+// in the DerivedKeyEntry's TransactionSpendingLimitTracker's DAOCoinLimitOrderLimitMap.
+// If the key is present, the operation is allowed and we decrement the number of operations remaining.
+// If there are no operations remaining after this one, we delete the key.
+// Returns true if the key was found and the derived key entry was updated.
+//
+// TODO: Right now, the "buy" and "sell" DAO coins that the user is transacting must be
+// specified explicitly. There is no way to specify "any" DAO coins in the spending limit
+// because ZeroPKID, which we use to specify "any" in other spending limits, corresponds
+// to DESO for order book operations. We should fix this down the road.
+func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(
+	key DAOCoinLimitOrderLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+
+	// Check if the key is present in the DAOCoinLimitOrderLimitMap...
+	daoCoinLimitOrderLimit, daoCoinLimitOrderLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]
+	// If the key doesn't exist or the value is <= 0, return false.
+	if !daoCoinLimitOrderLimitExists || daoCoinLimitOrderLimit <= 0 {
+		return false
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if daoCoinLimitOrderLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap, key)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]--
+	}
+	// Return true because we found the key and decremented the remaining operations
+	return true
+}
+
+// _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry checks that the DAO Coin Limit Order
+// being performed has been authorized for this derived key.
+//
+// TODO: Right now, the "buy" and "sell" DAO coins that the user is transacting must be
+// specified explicitly. There is no way to specify "any" DAO coins in the spending limit
+// because ZeroPKID, which we use to specify "any" in other spending limits, corresponds
+// to DESO for order book operations. We should fix this down the road.
+func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
+	derivedKeyEntry DerivedKeyEntry, buyingDAOCoinCreatorPublicKey []byte, sellingDAOCoinCreatorPublicKey []byte) (
+	_derivedKeyEntry DerivedKeyEntry, _err error) {
+	buyingPKIDEntry := bav.GetPKIDForPublicKey(buyingDAOCoinCreatorPublicKey)
+	if buyingPKIDEntry == nil || buyingPKIDEntry.isDeleted {
+		return derivedKeyEntry, fmt.Errorf(
+			"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry: buying pkid is deleted")
+	}
+	sellingPKIDEntry := bav.GetPKIDForPublicKey(sellingDAOCoinCreatorPublicKey)
+	if sellingPKIDEntry == nil || sellingPKIDEntry.isDeleted {
+		return derivedKeyEntry, fmt.Errorf(
+			"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry: selling pkid is deleted")
+	}
+
+	// Check (buying DAO Creator PKID || selling DAO Creator PKID) key
+	buyingAndSellingKey := MakeDAOCoinLimitOrderLimitKey(*buyingPKIDEntry.PKID, *sellingPKIDEntry.PKID)
+	if _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(buyingAndSellingKey, derivedKeyEntry) {
+		return derivedKeyEntry, nil
+	}
+
+	// TODO: How do we want to account for buying ANY creator or selling ANY creator given that we
+	// use the ZeroPKID / ZeroPublicKey to represent buying/selling DESO.
+
+	return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized,
+		"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntr: DAO Coin limit order not authorized: ")
 }
 
 func (bav *UtxoView) _connectUpdateGlobalParams(
@@ -2136,6 +2234,11 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectDAOCoinTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectDAOCoinLimitOrder(
+				txn, txHash, blockHeight, verifySignatures)
+
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSwapIdentity(
@@ -2199,6 +2302,12 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			return nil, 0, 0, 0, RuleErrorTxnOutputExceedsInput
 		}
 		fees = totalInput - totalOutput
+	}
+	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
+	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		if totalInput-totalOutput != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
+			return nil, 0, 0, 0, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
+		}
 	}
 
 	// BitcoinExchange transactions have their own special fee that is computed as a function of how much
@@ -2632,11 +2741,12 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	immatureBlockRewards := uint64(0)
 
 	if bav.Postgres != nil {
-		// TODO: Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
-		//outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), tipHeight-numImmatureBlocks, tipHeight)
-		//for _, output := range outputs {
-		//	immatureBlockRewards += output.AmountNanos
-		//}
+		// Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
+		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), tipHeight-numImmatureBlocks, tipHeight)
+
+		for _, output := range outputs {
+			immatureBlockRewards += output.AmountNanos
+		}
 	} else {
 		for ii := uint64(1); ii < uint64(numImmatureBlocks); ii++ {
 			// Don't look up the genesis block since it isn't in the DB.

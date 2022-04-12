@@ -285,10 +285,33 @@ var (
 	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
 	_PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey = []byte{58}
 
+	// Prefixes for DAO coin limit orders
+	// This index powers the order book.
+	// <
+	//   _PrefixDAOCoinLimitOrder
+	//   BuyingDAOCoinCreatorPKID [33]byte
+	//   SellingDAOCoinCReatorPKID [33]byte
+	//   ScaledPrice [256]byte
+	//   BlockHeight [32]byte
+	//   TransactorPKID [33]byte
+	// > -> <DAOCoinLimitOrderEntry>
+	//
+	// This index allows users to query for their open orders.
+	// <
+	//   _PrefixDAOCoinLimitOrderByTransactorPKID
+	//   TransactorPKID [33]byte
+	//   BuyingDAOCoinCreatorPKID [33]byte
+	//   SellingDAOCoinCReatorPKID [33]byte
+	//   ScaledPrice [256]byte
+	//   BlockHeight [32]byte
+	// > -> <DAOCoinLimitOrder>
+	_PrefixDAOCoinLimitOrder                 = []byte{59}
+	_PrefixDAOCoinLimitOrderByTransactorPKID = []byte{60}
+
 	// TODO: This process is a bit error-prone. We should come up with a test or
 	// something to at least catch cases where people have two prefixes with the
 	// same ID.
-	// NEXT_TAG: 59
+	// NEXT_TAG: 61
 )
 
 func DBGetPKIDEntryForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) *PKIDEntry {
@@ -3605,6 +3628,23 @@ type DAOCoinTxindexMetadata struct {
 	TransferRestrictionStatus string
 }
 
+type FilledDAOCoinLimitOrderMetadata struct {
+	TransactorPublicKeyBase58Check string
+	BuyingDAOCoinCreatorPublicKey  string
+	SellingDAOCoinCreatorPublicKey string
+	CoinQuantityInBaseUnitsBought  *uint256.Int
+	CoinQuantityInBaseUnitsSold    *uint256.Int
+	IsFulfilled                    bool
+}
+
+type DAOCoinLimitOrderTxindexMetadata struct {
+	BuyingDAOCoinCreatorPublicKey             string
+	SellingDAOCoinCreatorPublicKey            string
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	QuantityToFillInBaseUnits                 *uint256.Int
+	FilledDAOCoinLimitOrdersMetadata          []*FilledDAOCoinLimitOrderMetadata
+}
+
 type UpdateProfileTxindexMetadata struct {
 	ProfilePublicKeyBase58Check string
 
@@ -3745,6 +3785,7 @@ type TransactionMetadata struct {
 	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
 	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
 	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata   *DAOCoinLimitOrderTxindexMetadata   `json:",omitempty"`
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, txID *BlockHash) bool {
@@ -6129,4 +6170,267 @@ func StartDBSummarySnapshots(db *badger.DB) {
 			time.Sleep(30 * time.Second)
 		}
 	}()
+}
+
+// ---------------------------------------------
+// DAO coin limit order
+// ---------------------------------------------
+
+func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+	key := DBPrefixKeyForDAOCoinLimitOrder(order)
+	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+
+	// Store MaxUint32 - block height to guarantee FIFO
+	// orders as we seek in reverse order.
+	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
+
+	key = append(key, order.TransactorPKID[:]...)
+	return key
+}
+
+func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, order.SellingDAOCoinCreatorPKID.Encode()...)
+	return key
+}
+
+func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) []byte {
+	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key = append(key, order.TransactorPKID[:]...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, order.SellingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
+	return key
+}
+
+func DBGetDAOCoinLimitOrder(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry) (
+	*DAOCoinLimitOrderEntry, error) {
+
+	var ret *DAOCoinLimitOrderEntry
+	var err error
+
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetDAOCoinLimitOrderWithTxn(txn, inputOrder)
+		return nil
+	})
+
+	return ret, err
+}
+
+func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry) (*DAOCoinLimitOrderEntry, error) {
+	key := DBKeyForDAOCoinLimitOrder(inputOrder)
+
+	orderItem, err := txn.Get(key)
+
+	if err != nil {
+		// We don't want to error if the key isn't found.
+		// Instead, we just want to return nil.
+		if err.Error() == "Key not found" {
+			return nil, nil
+		}
+
+		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
+	}
+
+	orderBytes, err := orderItem.ValueCopy(nil)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
+	}
+
+	order := &DAOCoinLimitOrderEntry{}
+	err = order.FromBytes(orderBytes)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
+	}
+
+	return order, nil
+}
+
+func DBGetMatchingDAOCoinLimitOrders(
+	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+
+	queryOrder := inputOrder.Copy()
+	queryQuantityToFill := queryOrder.QuantityToFillInBaseUnits.Clone()
+
+	// Convert the input BID order to the ASK order to query for.
+	// Note that we seek in reverse for the best matching orders.
+	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
+	//   * Set ScaledPrice to MaxUint256.
+	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
+	//   * Set TransactorPKID to MaxPKID to make sure we seek from just beyond the last entry.
+	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
+	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID
+	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
+	queryOrder.BlockHeight = uint32(0)
+	queryOrder.TransactorPKID = MaxPKID.NewPKID()
+
+	key := DBKeyForDAOCoinLimitOrder(queryOrder)
+
+	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder)
+
+	// If passed a last seen order, start seeking from there.
+	var startKey []byte
+
+	if lastSeenOrder != nil {
+		startKey = DBKeyForDAOCoinLimitOrder(lastSeenOrder)
+		key = startKey
+	}
+
+	// Go in reverse order to find the highest prices first.
+	// We break once we hit the input order's inverted scaled
+	// price or the input order's quantity is fulfilled.
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Seek first matching order.
+	matchingOrders := []*DAOCoinLimitOrderEntry{}
+
+	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityToFill.GtUint64(0); iterator.Next() {
+		// If picking up from where you left off, skip the first order which
+		// has already been processed previously.
+		if len(startKey) != 0 && bytes.Equal(key, startKey) {
+			startKey = nil
+			continue
+		}
+
+		matchingOrderBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem getting limit order")
+		}
+
+		matchingOrder := &DAOCoinLimitOrderEntry{}
+		err = matchingOrder.FromBytes(matchingOrderBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem getting limit order")
+		}
+
+		// Validate matching order's price.
+		if !inputOrder.IsValidMatchingOrderPrice(matchingOrder) {
+			break
+		}
+
+		// Calculate how the transactor's quantity to fill will change
+		// after being matched with this order. If the transactor still
+		// has quantity to fill, we loop.
+		queryQuantityToFill, _, _, _, err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+			matchingOrder, queryOrder.OperationType, queryQuantityToFill)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
+		}
+
+		matchingOrders = append(matchingOrders, matchingOrder)
+	}
+
+	return matchingOrders, nil
+}
+
+func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, error) {
+	// Get all DAO Coin limit orders.
+	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
+	handle *badger.DB,
+	buyingDAOCoinCreatorPKID *PKID,
+	sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+
+	// Get all DAO coin limit orders for this DAO coin pair.
+	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
+	key = append(key, buyingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, sellingDAOCoinCreatorPKID.Encode()...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+func DBGetAllDAOCoinLimitOrdersForThisTransactor(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	// Get all DAO coin limit orders for this transactor.
+	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key = append(key, transactorPKID[:]...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+func DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+	// Get all DAO coin limit orders for this transactor PKID at this price.
+	// This key is identical to the DBKeyForDAOCoinLimitOrderByTransactorPKID()
+	// key except we omit BlockHeight as we want value across all block heights.
+	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key = append(key, inputOrder.TransactorPKID[:]...)
+	key = append(key, inputOrder.BuyingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, inputOrder.SellingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, EncodeUint256(inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+	// Get all DAO coin limit orders containing this prefix.
+	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey)
+	orders := []*DAOCoinLimitOrderEntry{}
+
+	// Cast resulting values from bytes to order entries.
+	for _, valBytes := range valsFound {
+		order := &DAOCoinLimitOrderEntry{}
+		err := order.FromBytes(valBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrdersByPrefixKey: problem getting limit orders")
+		}
+
+		orders = append(orders, order)
+	}
+
+	return orders, nil
+}
+
+func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
+
+	orderBytes, err := order.ToBytes()
+	if err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	// Store in index: _PrefixDAOCoinLimitOrderByTransactorPKID
+	key := DBKeyForDAOCoinLimitOrder(order)
+
+	if err = txn.Set(key, orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	// Store in index: _PrefixDAOCoinLimitOrderByTransactorPKID
+	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
+
+	if err = txn.Set(key, orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	return nil
+}
+
+func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
+
+	// Delete from index: _PrefixDAOCoinLimitOrder
+	key := DBKeyForDAOCoinLimitOrder(order)
+
+	if err := txn.Delete(key); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+	}
+
+	// Delete from index: _PrefixDAOCoinLimitOrderByTransactorPKID
+	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
+
+	if err := txn.Delete(key); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+	}
+
+	return nil
 }

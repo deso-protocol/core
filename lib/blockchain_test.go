@@ -4,8 +4,10 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -170,6 +172,11 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 
 	db, _ := GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
+	var postgresDb *Postgres
+
+	if len(os.Getenv("POSTGRES_URI")) > 0 {
+		postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
+	}
 
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
@@ -216,7 +223,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Temporarily modify the seed balances to make a specific public
 	// key have some DeSo
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0,
-		&paramsCopy, timesource, db, nil, nil)
+		&paramsCopy, timesource, db, postgresDb, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -245,7 +252,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 		0, 1,
 		blockSignerSeed,
 		mempool, chain,
-		params, nil)
+		params, chain.postgres)
 	require.NoError(err)
 
 	newMiner, err := NewDeSoMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
@@ -265,7 +272,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
 
-	utxoView, err := NewUtxoView(chain.db, chain.params, nil)
+	utxoView, err := NewUtxoView(chain.db, chain.params, chain.postgres)
 	require.NoError(t, err)
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()

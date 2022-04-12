@@ -1,0 +1,14 @@
+version: "3"
+
+services:
+  postgres:
+    image: postgres:14.2-alpine3.15
+    container_name: postgres
+    environment:
+      # These dummy values are used for local testing purposes only.
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: admin
+      POSTGRES_PASSWORD: ""
+      POSTGRES_USER: admin
+    ports:
+      - "5432:5432"

@@ -1,8 +1,13 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
+	"github.com/pkg/errors"
+	"io"
+	"sort"
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -23,11 +28,58 @@ func NewPKID(pkidBytes []byte) *PKID {
 
 var (
 	ZeroPKID      = PKID{}
+	ZeroPublicKey = PublicKey{
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00}
 	ZeroBlockHash = BlockHash{}
+	MaxPKID       = PKID{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff}
 )
 
 func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
+}
+
+func (pkid *PKID) Encode() []byte {
+	data := append([]byte{}, UintToBuf(uint64(len(pkid[:])))...)
+	return append(data, pkid[:]...)
+}
+
+func (pkid *PKID) Eq(other *PKID) bool {
+	return bytes.Equal(pkid.ToBytes(), other.ToBytes())
+}
+
+func (pkid *PKID) IsZeroPKID() bool {
+	return pkid.Eq(&ZeroPKID)
+}
+
+func SortPKIDs(pkids []PKID) []PKID {
+	sort.Slice(pkids, func(ii, jj int) bool {
+		return bytes.Compare(pkids[ii].ToBytes(), pkids[jj].ToBytes()) > 0
+	})
+	return pkids
+}
+
+func ReadPublicKey(rr io.Reader) (*PublicKey, error) {
+	valBytes := make([]byte, 33, 33)
+	_, err := io.ReadFull(rr, valBytes)
+	if err != nil {
+		return nil, errors.Wrapf(err, "ReadPublicKey: Error reading public key")
+	}
+	return NewPublicKey(valBytes), nil
+}
+
+func ReadPKID(rr io.Reader) (*PKID, error) {
+	pkidBytes, err := ReadVarString(rr)
+	if err != nil {
+		return nil, err
+	}
+	return PublicKeyToPKID(pkidBytes), nil
 }
 
 func (pkid *PKID) NewPKID() *PKID {
@@ -47,6 +99,10 @@ func NewPublicKey(publicKeyBytes []byte) *PublicKey {
 
 func (publicKey *PublicKey) ToBytes() []byte {
 	return publicKey[:]
+}
+
+func (publicKey *PublicKey) IsZeroPublicKey() bool {
+	return bytes.Equal(publicKey.ToBytes(), ZeroPublicKey.ToBytes())
 }
 
 func PublicKeyToPKID(publicKey []byte) *PKID {
@@ -101,6 +157,22 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	newBlockhash := &BlockHash{}
 	copy(newBlockhash[:], bh[:])
 	return newBlockhash
+}
+
+func EncodeUint256(val *uint256.Int) []byte {
+	valBytes := val.Bytes()
+	data := make([]byte, 32, 32)
+	//data := append([]byte{}, UintToBuf(uint64(len(valBytes)))...)
+	return append(data, valBytes...)[len(valBytes):]
+}
+
+func ReadUint256(rr io.Reader) (*uint256.Int, error) {
+	valBytes := make([]byte, 32, 32)
+	_, err := io.ReadFull(rr, valBytes)
+	if err != nil {
+		return uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
+	}
+	return uint256.NewInt().SetBytes(valBytes), nil
 }
 
 //var _ sql.Scanner = (*BlockHash)(nil)

@@ -70,6 +70,19 @@ const (
 
 var (
 	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+
+	// These values are used by the DAOCoinLimitOrder logic in order to convert
+	// fixed-point numbers to and from their exponentiated representation. For
+	// more info on how this works, see the comment on DAOCoinLimitOrderEntry.
+	//
+	// This value is a uint256 form of 1e38, or 10^38. We mainly use it to represent a
+	// "fixed-point" exchange rate when processing limit orders. See the comment on
+	// DAOCoinLimitOrderEntry for more info.
+	OneE38, _ = uint256.FromHex("0x4b3b4ca85a86c47a098a224000000000") // 1e38
+	// This is the number of base units within a single "coin". It is mainly used to
+	// convert from base units, which is what we deal with in core, to a human-readable
+	// value in the UI. It is equal to 1e18.
+	BaseUnitsPerCoin, _ = uint256.FromHex("0xde0b6b3a7640000") // 1e18
 )
 
 func (nt NetworkType) String() string {
@@ -183,6 +196,9 @@ type ForkHeights struct {
 	// are separated to allow developers time to generate new derived keys for their users. NOTE: this must always
 	// be greater than or equal to DerivedKeySetSpendingLimitsBlockHeight.
 	DerivedKeyTrackSpendingLimitsBlockHeight uint32
+
+	// DAOCoinLimitOrderBlockHeight defines the height at which DAO Coin Limit Order transactions will be accepted.
+	DAOCoinLimitOrderBlockHeight uint32
 }
 
 // DeSoParams defines the full list of possible parameters for the
@@ -414,6 +430,7 @@ func (params *DeSoParams) EnableRegtest() {
 		ExtraDataOnEntriesBlockHeight:                        uint32(0),
 		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
 		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
+		DAOCoinLimitOrderBlockHeight:                         uint32(0),
 	}
 }
 
@@ -663,6 +680,9 @@ var DeSoMainnetParams = DeSoParams{
 		// FIXME: Set these values when we're ready for the next fork.
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
+
+		// FIXME: Set to real block height when we're ready.
+		DAOCoinLimitOrderBlockHeight: math.MaxUint32,
 	},
 }
 
@@ -855,6 +875,9 @@ var DeSoTestnetParams = DeSoParams{
 		// FIXME: Set these values when we're ready for the next fork.
 		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
 		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
+
+		// FIXME: Set to real block height when we're ready.
+		DAOCoinLimitOrderBlockHeight: math.MaxUint32,
 	},
 }
 
