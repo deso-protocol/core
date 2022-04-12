@@ -55,11 +55,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		savedHeight: savedHeight,
 	}
 
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 7000)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 4000)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 140)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 210)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 7000)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 4000)
+	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 140)
+	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 210)
+	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 100)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
 
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -84,6 +84,37 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
 	// Helpers
 	// -----------------------
+
+	// Helper function to print a DAOCoinLimitOrderEntry.
+	// Useful for debugging.
+	printOrder := func(orderEntry *DAOCoinLimitOrderEntry) string {
+		transactor := utxoView.GetProfileEntryForPKID(orderEntry.TransactorPKID).Username
+		buyingCoin := " $" // $DESO
+		if !orderEntry.BuyingDAOCoinCreatorPKID.IsZeroPKID() {
+			buyingCoin = string(utxoView.GetProfileEntryForPKID(orderEntry.BuyingDAOCoinCreatorPKID).Username)
+		}
+
+		sellingCoin := " $" // $DESO
+		if !orderEntry.SellingDAOCoinCreatorPKID.IsZeroPKID() {
+			sellingCoin = string(utxoView.GetProfileEntryForPKID(orderEntry.SellingDAOCoinCreatorPKID).Username)
+		}
+
+		price := Div(
+			NewFloat().SetInt(orderEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig()),
+			NewFloat().SetInt(OneE38.ToBig()))
+
+		quantity := orderEntry.QuantityToFillInBaseUnits.Uint64()
+
+		operationType := "ASK"
+		if orderEntry.OperationType == DAOCoinLimitOrderOperationTypeBID {
+			operationType = "BID"
+		}
+
+		return fmt.Sprintf(
+			"transactor: %s, buying: %s, selling: %s, price: %s, quantity: %d, type: %s",
+			transactor, buyingCoin, sellingCoin, price.String(), quantity, operationType)
+	}
+	_ = printOrder
 
 	// Helper function to convert PublicKeys to PKIDs.
 	toPKID := func(inputPK *PublicKey) *PKID {
@@ -1245,6 +1276,136 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, m0OrderMetadata)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType)
+	}
+
+	{
+		// Check what open DAO coin limit orders are in the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		// transactor: m1, buying: m0, selling:  $, price: 0.1, quantity: 100, type: BID
+		// transactor: m0, buying: m1, selling:  $, price: 1, quantity: 240, type: BID
+		// transactor: m0, buying: m1, selling:  $, price: 1.05, quantity: 110, type: BID
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 4)
+
+		// m1 cancels open order.
+		exchangeRate, err := CalculateScaledExchangeRate(0.1)
+		require.NoError(err)
+
+		metadataM1 := DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0PkBytes),
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+			CancelExistingOrder:                       true,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Total # of orders decreases by 1.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 3)
+
+		// m0 has 3 open orders.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 3)
+
+		// No open orders for m1.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// m1 submits ASK order selling m1 DAO coins that is fulfilled by m0's open limit orders.
+		// transactor: m0, buying: m1, selling:  $, price: 1, quantity: 240, type: BID
+		// transactor: m0, buying: m1, selling:  $, price: 1.05, quantity: 110, type: BID
+		m0DESOBalanceBefore := _getBalance(t, chain, mempool, m0Pub)
+		m1DESOBalanceBefore := _getBalance(t, chain, mempool, m1Pub)
+		m0DAOCoinBalanceBefore := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
+		m1DAOCoinBalanceBefore := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
+
+		exchangeRate, err = CalculateScaledExchangeRate(1.0)
+		require.NoError(err)
+
+		// transactor: m1, buying:  $, selling: m1, price: 1.0, quantity: 160, type: ASK
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(160),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		m0DESOBalanceAfter := _getBalance(t, chain, mempool, m0Pub)
+		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
+		m0DAOCoinBalanceAfter := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
+		m1DAOCoinBalanceAfter := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
+
+		// 110 DAO coin base units transferred @ 1.05 $DESO per DAO coin.
+		//  50 DAO coin base units transferred @ 1.0  $DESO per DAO coin.
+		// TOTAL = 160 DAO coin base units transferred, 165 $DESO transferred.
+		require.Equal(m0DAOCoinBalanceBefore.Uint64()+uint64(160), m0DAOCoinBalanceAfter.Uint64())
+		require.Equal(m0DESOBalanceBefore-uint64(165), m0DESOBalanceAfter)
+		require.Equal(m1DAOCoinBalanceBefore.Uint64()-uint64(160), m1DAOCoinBalanceAfter.Uint64())
+		require.Equal(m1DESOBalanceBefore+uint64(165)-uint64(41), m1DESOBalanceAfter) // Hard-coded fees.
+
+		// Total # of orders decreases by 1.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// m0 has 2 remaining open orders.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// m1 submits ASK order selling m1 DAO coins that fulfills m0's open limit order.
+		// transactor: m0, buying: m1, selling:  $, price: 1, quantity: 200, type: BID
+		m0DESOBalanceBefore = m0DESOBalanceAfter
+		m1DESOBalanceBefore = m1DESOBalanceAfter
+		m0DAOCoinBalanceBefore = m0DAOCoinBalanceAfter
+		m1DAOCoinBalanceBefore = m1DAOCoinBalanceAfter
+
+		// m1 would be ok selling 1.2 DAO coins / $DESO.
+		// m0 has a better offer willing to buy 1.0 DAO coins / $DESO.
+		exchangeRate, err = CalculateScaledExchangeRate(1.2)
+		require.NoError(err)
+
+		// transactor: m1, buying:  $, selling: m1, price: 0.9, quantity: 250, type: ASK
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(250),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		m0DESOBalanceAfter = _getBalance(t, chain, mempool, m0Pub)
+		m1DESOBalanceAfter = _getBalance(t, chain, mempool, m1Pub)
+		m0DAOCoinBalanceAfter = dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
+		m1DAOCoinBalanceAfter = dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
+
+		// 190 DAO coin base units transferred @ 1.0  $DESO per DAO coin.
+		// TOTAL = 190 DAO coin base units transferred, 190 $DESO transferred.
+		require.Equal(m0DAOCoinBalanceBefore.Uint64()+uint64(190), m0DAOCoinBalanceAfter.Uint64())
+		require.Equal(m0DESOBalanceBefore-uint64(190), m0DESOBalanceAfter)
+		require.Equal(m1DAOCoinBalanceBefore.Uint64()-uint64(190), m1DAOCoinBalanceAfter.Uint64())
+		require.Equal(m1DESOBalanceBefore+uint64(190)-uint64(41), m1DESOBalanceAfter) // Hard-coded fees.
+
+		// m1's limit order is left open with 60 DAO coin base units left to be fulfilled.
+		storedEntry, err := dbAdapter.GetDAOCoinLimitOrder(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID))
+		require.Equal(storedEntry.QuantityToFillInBaseUnits, uint256.NewInt().SetUint64(60))
+
+		// m0 has 1 remaining open orders.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
 	}
 
 	// TODO: add validation, no DAO coins in circulation for this profile
