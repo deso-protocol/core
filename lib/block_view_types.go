@@ -1663,13 +1663,14 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToBuyUint256() (*uint256.Int, error) {
 	if order.OperationType == DAOCoinLimitOrderOperationTypeASK {
-		// In this case, the quantity in the order is the amount to sell, so we return that.
+		// In this case, the quantity specified in the order is the amount to sell,
+		// so needs to be converted.
 		return ComputeBaseUnitsToBuyUint256(
 			order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			order.QuantityToFillInBaseUnits)
 	} else if order.OperationType == DAOCoinLimitOrderOperationTypeBID {
-		// In this case, the order is a bid, which means the quantity specified is the
-		// amount the transactor wants to buy.
+		// In this case, the quantity specified in the order is the amount to buy,
+		// so can be returned as-is.
 		return order.QuantityToFillInBaseUnits, nil
 	} else {
 		return nil, fmt.Errorf("Invalid OperationType %v", order.OperationType)
@@ -1730,12 +1731,14 @@ func ComputeBaseUnitsToBuyUint256(
 
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, error) {
 	if order.OperationType == DAOCoinLimitOrderOperationTypeBID {
-		// If we're dealing with a bid, then the quantity specified is amount to "buy" and
-		// needs to be converted.
+		// In this case, the quantity specified in the order is the amount to buy,
+		// so needs to be converted.
 		return ComputeBaseUnitsToSellUint256(
 			order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			order.QuantityToFillInBaseUnits)
 	} else if order.OperationType == DAOCoinLimitOrderOperationTypeASK {
+		// In this case, the quantity specified in the order is the amount to sell,
+		// so can be returned as-is.
 		return order.QuantityToFillInBaseUnits, nil
 	} else {
 		return nil, fmt.Errorf("Invalid OperationType %v", order.OperationType)
