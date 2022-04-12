@@ -1408,9 +1408,88 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 1)
 	}
 
-	// TODO: add validation, no DAO coins in circulation for this profile
-	// TODO: maybe test trying to buy more DAO coins than were minted.
-	// TODO: test transfer restriction status
+	{
+		// Scenario: matching orders buying/selling m0 DAO coin <--> m1 DAO coin
+		// Confirm no existing orders for m0 DAO coin <--> m1 DAO coin.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m0PKID.PKID, m1PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m1PKID.PKID, m0PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// m0 submits BID order buying m1 coins and selling m0 coins.
+		exchangeRate, err := CalculateScaledExchangeRate(0.5)
+		require.NoError(err)
+
+		metadataM0 := DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m1PKID.PKID, m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+
+		// m1 submits BID order buying m0 coins and selling m1 coins.
+		// Orders match for 100 m0 DAO coin units <--> 200 m1 DAO coin units.
+		m0DAOCoinBalanceM0Before := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true).BalanceNanos
+		m0DAOCoinBalanceM1Before := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
+		m1DAOCoinBalanceM0Before := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true).BalanceNanos
+		m1DAOCoinBalanceM1Before := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
+
+		exchangeRate, err = CalculateScaledExchangeRate(2.0)
+		require.NoError(err)
+
+		metadataM1 := DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0PkBytes),
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Orders match so are removed from the order book.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m0PKID.PKID, m1PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m1PKID.PKID, m0PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// 100 m0 DAO coin units are transferred in exchange for 200 m1 DAO coin units.
+		m0DAOCoinBalanceM0After := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true).BalanceNanos
+		m0DAOCoinBalanceM1After := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
+		m1DAOCoinBalanceM0After := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true).BalanceNanos
+		m1DAOCoinBalanceM1After := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
+
+		daoCoinM0Transferred := uint256.NewInt().SetUint64(100)
+		daoCoinM1Transferred := uint256.NewInt().SetUint64(200)
+
+		m0DAOCoinM0Decrease, err := SafeUint256().Sub(&m0DAOCoinBalanceM0Before, &m0DAOCoinBalanceM0After)
+		require.NoError(err)
+		require.Equal(m0DAOCoinM0Decrease, daoCoinM0Transferred)
+
+		m0DAOCoinM1Increase, err := SafeUint256().Sub(&m0DAOCoinBalanceM1After, &m0DAOCoinBalanceM1Before)
+		require.NoError(err)
+		require.Equal(m0DAOCoinM1Increase, daoCoinM1Transferred)
+
+		m1DAOCoinM0Increase, err := SafeUint256().Sub(&m1DAOCoinBalanceM0After, &m1DAOCoinBalanceM0Before)
+		require.NoError(err)
+		require.Equal(m1DAOCoinM0Increase, daoCoinM0Transferred)
+
+		m1DAOCoinM1Decrease, err := SafeUint256().Sub(&m1DAOCoinBalanceM1Before, &m1DAOCoinBalanceM1After)
+		require.NoError(err)
+		require.Equal(m1DAOCoinM1Decrease, daoCoinM1Transferred)
+	}
 
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
