@@ -926,7 +926,7 @@ func (bav *UtxoView) _getNextLimitOrdersToFill(
 
 	// Pull orders up to when the quantity is filled or we run out of orders.
 	outputMatchingOrders := []*DAOCoinLimitOrderEntry{}
-	transactorOrderQuantityToFill := transactorOrder.QuantityToFillInBaseUnits
+	transactorOrderQuantityToFill := transactorOrder.QuantityToFillInBaseUnits.Clone()
 
 	for _, matchingOrder := range sortedMatchingOrders {
 		outputMatchingOrders = append(outputMatchingOrders, matchingOrder)
@@ -1232,7 +1232,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 		transactorBuyingCoinBaseUnitsTransferred := matchingOrderQuantityToSell
 
 		// And its quantity bought is equal to the quantity sold by the transactor.
-		transactorSellingCoinBaseUnitsTransferred := matchingOrder.QuantityToFillInBaseUnits
+		transactorSellingCoinBaseUnitsTransferred := matchingOrder.QuantityToFillInBaseUnits.Clone()
 
 		return updatedTransactorQuantityToFillInBaseUnits,
 			updatedMatchingQuantityToFillInBaseUnits,
@@ -1305,11 +1305,9 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 	if matchingOrder.OperationType == DAOCoinLimitOrderOperationTypeASK {
 		// The matching order's quantity represents their selling coin.
 		// Which is equivalent to the transactor's buying coin.
-		transactorBuyingCoinBaseUnitsTransferred := matchingOrder.QuantityToFillInBaseUnits
+		transactorBuyingCoinBaseUnitsTransferred := matchingOrder.QuantityToFillInBaseUnits.Clone()
 
-		transactorSellingCoinBaseUnitsTransferred, err := ComputeBaseUnitsToBuyUint256(
-			matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-			matchingOrder.QuantityToFillInBaseUnits)
+		transactorSellingCoinBaseUnitsTransferred, err := matchingOrder.BaseUnitsToBuyUint256()
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -1323,14 +1321,12 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 
 	// Else, the matching order's quantity represents their buying coin.
 	// Which is equivalent to the transactor's selling coin.
-	transactorBuyingCoinBaseUnitsTransferred, err := ComputeBaseUnitsToSellUint256(
-		matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		matchingOrder.QuantityToFillInBaseUnits)
+	transactorBuyingCoinBaseUnitsTransferred, err := matchingOrder.BaseUnitsToSellUint256()
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	transactorSellingCoinBaseUnitsTransferred := matchingOrder.QuantityToFillInBaseUnits
+	transactorSellingCoinBaseUnitsTransferred := matchingOrder.QuantityToFillInBaseUnits.Clone()
 
 	return updatedTransactorQuantityToFillInBaseUnits,
 		updatedMatchingQuantityToFillInBaseUnits,

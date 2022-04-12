@@ -1408,10 +1408,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 1)
 	}
 
-	// TODO: add validation, no DAO coins in circulation for this profile
-	// TODO: maybe test trying to buy more DAO coins than were minted.
-	// TODO: test transfer restriction status
-
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
@@ -1728,6 +1724,61 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 
 		// m1 = transactor, m0 = matching order
 		// m1 sells 50 DAO coin units for 0.1 DAO coin / $DESO.
+		updatedTransactorQuantityToFillInBaseUnits,
+			updatedMatchingQuantityToFillInBaseUnits,
+			transactorBuyingCoinBaseUnitsTransferred,
+			transactorSellingCoinBaseUnitsTransferred,
+			err = _calculateDAOCoinsTransferredInLimitOrderMatch(m0Order, m1Order.OperationType, m1Order.QuantityToFillInBaseUnits)
+		require.NoError(err)
+		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt())
+		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(500))
+		require.Equal(transactorBuyingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(500))
+		require.Equal(transactorSellingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(50))
+	}
+
+	// Scenario 7:
+	//   * Transactor submits ASK matching existing BID.
+	//   * Transactor order quantity is greater than matching order's quantity.
+	{
+		// m0 sells 1000 DAO coin units @ 10 DAO coin / $DESO.
+		exchangeRate, err := CalculateScaledExchangeRate(10.0)
+		require.NoError(err)
+		m0Order := &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            m0PKID,
+			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
+			SellingDAOCoinCreatorPKID:                 m0PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		// m1 buys 500 DAO coin units for 0.2 $DESO / DAO coin.
+		exchangeRate, err = CalculateScaledExchangeRate(0.2)
+		require.NoError(err)
+		m1Order := &DAOCoinLimitOrderEntry{
+			TransactorPKID:                            m1PKID,
+			BuyingDAOCoinCreatorPKID:                  m0PKID,
+			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(500),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		// m0 = transactor, m1 = matching order
+		// m0 sells 500 DAO coin units @ 0.2 $DESO / DAO coin.
+		updatedTransactorQuantityToFillInBaseUnits,
+			updatedMatchingQuantityToFillInBaseUnits,
+			transactorBuyingCoinBaseUnitsTransferred,
+			transactorSellingCoinBaseUnitsTransferred,
+			err := _calculateDAOCoinsTransferredInLimitOrderMatch(m1Order, m0Order.OperationType, m0Order.QuantityToFillInBaseUnits)
+		require.NoError(err)
+		require.Equal(updatedTransactorQuantityToFillInBaseUnits, uint256.NewInt().SetUint64(500))
+		require.Equal(updatedMatchingQuantityToFillInBaseUnits, uint256.NewInt())
+		require.Equal(transactorBuyingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(100))
+		require.Equal(transactorSellingCoinBaseUnitsTransferred, uint256.NewInt().SetUint64(500))
+
+		// m1 = transactor, m0 = matching order
+		// m1 buys 500 DAO coin units @ 10 DAO coin / $DESO.
 		updatedTransactorQuantityToFillInBaseUnits,
 			updatedMatchingQuantityToFillInBaseUnits,
 			transactorBuyingCoinBaseUnitsTransferred,
