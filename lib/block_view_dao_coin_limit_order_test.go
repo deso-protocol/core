@@ -1471,24 +1471,24 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		m1DAOCoinBalanceM0After := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true).BalanceNanos
 		m1DAOCoinBalanceM1After := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
 
-		daoCoinM0Transferred := uint256.NewInt().SetUint64(100)
-		daoCoinM1Transferred := uint256.NewInt().SetUint64(200)
+		daoCoinM0UnitsTransferred := uint256.NewInt().SetUint64(100)
+		daoCoinM1UnitsTransferred := uint256.NewInt().SetUint64(200)
 
 		m0DAOCoinM0Decrease, err := SafeUint256().Sub(&m0DAOCoinBalanceM0Before, &m0DAOCoinBalanceM0After)
 		require.NoError(err)
-		require.Equal(m0DAOCoinM0Decrease, daoCoinM0Transferred)
+		require.Equal(m0DAOCoinM0Decrease, daoCoinM0UnitsTransferred)
 
 		m0DAOCoinM1Increase, err := SafeUint256().Sub(&m0DAOCoinBalanceM1After, &m0DAOCoinBalanceM1Before)
 		require.NoError(err)
-		require.Equal(m0DAOCoinM1Increase, daoCoinM1Transferred)
+		require.Equal(m0DAOCoinM1Increase, daoCoinM1UnitsTransferred)
 
 		m1DAOCoinM0Increase, err := SafeUint256().Sub(&m1DAOCoinBalanceM0After, &m1DAOCoinBalanceM0Before)
 		require.NoError(err)
-		require.Equal(m1DAOCoinM0Increase, daoCoinM0Transferred)
+		require.Equal(m1DAOCoinM0Increase, daoCoinM0UnitsTransferred)
 
 		m1DAOCoinM1Decrease, err := SafeUint256().Sub(&m1DAOCoinBalanceM1Before, &m1DAOCoinBalanceM1After)
 		require.NoError(err)
-		require.Equal(m1DAOCoinM1Decrease, daoCoinM1Transferred)
+		require.Equal(m1DAOCoinM1Decrease, daoCoinM1UnitsTransferred)
 	}
 
 	_rollBackTestMetaTxnsAndFlush(testMeta)
