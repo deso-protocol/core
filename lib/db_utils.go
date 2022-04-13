@@ -6279,12 +6279,14 @@ func DBGetMatchingDAOCoinLimitOrders(
 	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
 	//   * Set ScaledPrice to MaxUint256.
 	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
-	//   * Set TransactorPKID to MaxPKID to make sure we seek from just beyond the last entry.
+	//   * Set TransactorPKID to MaxPKID.
+	//   * Set OrderID to MaxBlockHash.
 	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
 	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID
 	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 	queryOrder.BlockHeight = uint32(0)
 	queryOrder.TransactorPKID = MaxPKID.NewPKID()
+	queryOrder.OrderID = NewBlockHash(MaxUint256.Bytes())
 
 	key := DBKeyForDAOCoinLimitOrder(queryOrder)
 
