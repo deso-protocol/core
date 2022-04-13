@@ -3178,11 +3178,6 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 	// We will set FeeNanos to it's true value after we add inputs and outputs.
 	metadata.FeeNanos = math.MaxUint64
 
-	// Initialize CancelOrderID to the ZeroBlockHash if nil.
-	if metadata.CancelOrderID == nil {
-		metadata.CancelOrderID = &ZeroBlockHash
-	}
-
 	// Create a transaction containing the create DAO coin limit order fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: UpdaterPublicKey,

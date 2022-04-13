@@ -159,10 +159,6 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	return newBlockhash
 }
 
-func (bh *BlockHash) IsZeroBlockHash() bool {
-	return bh.IsEqual(&ZeroBlockHash)
-}
-
 func ReadBlockHash(rr io.Reader) (*BlockHash, error) {
 	valBytes := make([]byte, HashSizeBytes, HashSizeBytes)
 	_, err := io.ReadFull(rr, valBytes)

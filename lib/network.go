@@ -5618,7 +5618,17 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(txnData.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
-	data = append(data, txnData.CancelOrderID.ToBytes()...)
+
+	// CancelOrderID is an optional BlockHash field. To get around that,
+	// we first store a binary byte set to true if CancelOrderID is
+	// provided and false if it is nil.
+	if txnData.CancelOrderID != nil {
+		data = append(data, BoolToByte(true))
+		data = append(data, txnData.CancelOrderID.ToBytes()...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+
 	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
 
 	// we use a sorted copy internally, so we don't modify the original struct from underneath the caller
@@ -5681,10 +5691,16 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
 
-	// Parse CancelOrderID
-	ret.CancelOrderID, err = ReadBlockHash(rr)
-	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
+	// Parse CancelOrderID. Note: CancelOrderID is an optional field,
+	// so we first check a boolean byte to see if it is present or not.
+	// If true, set CancelOrderID. If false, leave uninitialized as nil.
+	isCancellation := ReadBoolByte(rr)
+
+	if isCancellation {
+		ret.CancelOrderID, err = ReadBlockHash(rr)
+		if err != nil {
+			return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
+		}
 	}
 
 	// Parse MatchingBidsTransactors

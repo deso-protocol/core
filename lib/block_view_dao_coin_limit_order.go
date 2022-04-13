@@ -271,7 +271,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// If the transactor just wants to cancel an
 	// existing order, find and delete by OrderID.
-	if !txMeta.CancelOrderID.IsZeroBlockHash() {
+	if txMeta.CancelOrderID != nil {
 		// Search for an existing order by OrderID.
 		existingTransactorOrder, err := bav._getDAOCoinLimitOrderEntry(txMeta.CancelOrderID)
 		if err != nil {
@@ -1425,7 +1425,10 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	// Returns an error if the input order is invalid. Otherwise returns nil.
 
 	// Validate OrderID.
-	if order.OrderID == nil || order.OrderID.IsZeroBlockHash() {
+	if order.OrderID == nil || order.OrderID.IsEqual(&ZeroBlockHash) {
+		// This should never happen. OrderID is set automatically
+		// to the txn hash and isn't specified by the user. But
+		// double-checking doesn't hurt!
 		return RuleErrorDAOCoinLimitOrderInvalidOrderID
 	}
 
