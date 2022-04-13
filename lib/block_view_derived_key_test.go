@@ -338,6 +338,16 @@ func _doTxn(
 		totalInputMake, _, changeAmountMake, feesMake, err = chain.AddInputsAndChangeToTransaction(
 			txn, feeRateNanosPerKB, nil)
 		operationType = OperationTypeSpendUtxo
+	case TxnTypeDAOCoinLimitOrder:
+		realTxMeta := txnMeta.(*DAOCoinLimitOrderMetadata)
+		txn, totalInputMake, changeAmountMake, feesMake, err = chain.CreateDAOCoinLimitOrderTxn(
+			transactorPublicKey,
+			realTxMeta,
+			feeRateNanosPerKB,
+			nil,
+			nil,
+		)
+		operationType = OperationTypeDAOCoinLimitOrder
 	default:
 		return nil, nil, 0, fmt.Errorf("Unsupported Txn Type")
 	}
@@ -2435,6 +2445,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
+	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -3110,6 +3121,97 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			})
 		derivedKeyEntryAfter := DBGetOwnerToDerivedKeyMapping(db, chain.snapshot, *NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
 		require.Equal(derivedKeyEntryBefore.TransactionSpendingLimitTracker.GlobalDESOLimit, derivedKeyEntryAfter.TransactionSpendingLimitTracker.GlobalDESOLimit)
+	}
+
+	// DAO Coin Limit Orders
+	{
+		// Can't submit order if not authorized
+		exchangeRate, err := CalculateScaledExchangeRate(0.1)
+		require.NoError(err)
+		metadata := &DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeDAOCoinLimitOrder,
+			metadata,
+			nil,
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized)
+
+		globalDESOSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: 6,
+			DAOCoinLimitOrderLimitMap: map[DAOCoinLimitOrderLimitKey]uint64{
+				MakeDAOCoinLimitOrderLimitKey(*m1PKID, ZeroPKID): 1,
+			},
+		}
+		m0AuthTxnMetaWithGlobalDESOLimitTxn, _ := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivateKey(t, m0PrivateKey, 6, globalDESOSpendingLimit, derived0Priv, false)
+
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			false,
+			TxnTypeAuthorizeDerivedKey,
+			m0AuthTxnMetaWithGlobalDESOLimitTxn,
+			map[string]interface{}{
+				TransactionSpendingLimitKey: globalDESOSpendingLimit,
+			},
+		)
+
+		// Submitting a Limit Order with the buyer and seller reversed won't work.
+		metadata.BuyingDAOCoinCreatorPublicKey = &ZeroPublicKey
+		metadata.SellingDAOCoinCreatorPublicKey = NewPublicKey(m1PkBytes)
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeDAOCoinLimitOrder,
+			metadata,
+			nil,
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized)
+
+		// Submitting with the authorized buyer and seller should work
+		metadata.SellingDAOCoinCreatorPublicKey = &ZeroPublicKey
+		metadata.BuyingDAOCoinCreatorPublicKey = NewPublicKey(m1PkBytes)
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeDAOCoinLimitOrder,
+			metadata,
+			nil,
+		)
+
+		var orders []*DAOCoinLimitOrderEntry
+		orders, err = DBGetAllDAOCoinLimitOrders(db)
+		require.NoError(err)
+		require.Len(orders, 1)
+		require.Equal(*orders[0], DAOCoinLimitOrderEntry{
+			TransactorPKID:                            utxoView.GetPKIDForPublicKey(m0PkBytes).PKID,
+			BuyingDAOCoinCreatorPKID:                  m1PKID,
+			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
+			BlockHeight:                               savedHeight,
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		})
 	}
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_executeAllTestRollbackAndFlush(testMeta)

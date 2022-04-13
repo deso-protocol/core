@@ -3,21 +3,19 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/pkg/errors"
+	"io"
+	"sort"
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
 // indexed using the PKID rather than the user's public key directly in order to
 // create one layer of indirection between the public key and the user's data. This
 // makes it easy for the user to transfer certain data to a new public key.
-type PKID [33]byte
-type PublicKey [33]byte
+const PublicKeyLenCompressed int = 33
 
-var (
-	ZeroPKID      = PKID{}
-	ZeroBlockHash = BlockHash{}
-)
+type PKID [PublicKeyLenCompressed]byte
+type PublicKey [PublicKeyLenCompressed]byte
 
 func NewPKID(pkidBytes []byte) *PKID {
 	if len(pkidBytes) == 0 {
@@ -26,6 +24,27 @@ func NewPKID(pkidBytes []byte) *PKID {
 	pkid := &PKID{}
 	copy(pkid[:], pkidBytes)
 	return pkid
+}
+
+var (
+	ZeroPKID      = PKID{}
+	ZeroPublicKey = PublicKey{
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00}
+	ZeroBlockHash = BlockHash{}
+	MaxPKID       = PKID{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff}
+)
+
+func (pkid *PKID) NewPKID() *PKID {
+	newPkid := &PKID{}
+	copy(newPkid[:], pkid[:])
+	return newPkid
 }
 
 func (pkid *PKID) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -53,18 +72,36 @@ func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
 }
 
+func (pkid *PKID) FromBytes(rr *bytes.Reader) error {
+	pkidBytes := make([]byte, PublicKeyLenCompressed)
+	if _, err := io.ReadFull(rr, pkidBytes); err != nil {
+		return errors.Wrapf(err, "PKID.FromBytes: Problem reading PKID")
+	}
+	copy(pkid[:], pkidBytes)
+	return nil
+}
+
 func (pkid *PKID) ToString() string {
 	return string(pkid.ToBytes())
 }
 
-func (pkid *PKID) NewPKID() *PKID {
-	newPkid := &PKID{}
-	copy(newPkid[:], pkid[:])
-	return newPkid
+func (pkid *PKID) Eq(other *PKID) bool {
+	return bytes.Equal(pkid.ToBytes(), other.ToBytes())
+}
+
+func (pkid *PKID) IsZeroPKID() bool {
+	return pkid.Eq(&ZeroPKID)
+}
+
+func SortPKIDs(pkids []PKID) []PKID {
+	sort.Slice(pkids, func(ii, jj int) bool {
+		return bytes.Compare(pkids[ii].ToBytes(), pkids[jj].ToBytes()) > 0
+	})
+	return pkids
 }
 
 func NewPublicKey(publicKeyBytes []byte) *PublicKey {
-	if len(publicKeyBytes) != btcec.PubKeyBytesLenCompressed {
+	if len(publicKeyBytes) != PublicKeyLenCompressed {
 		return nil
 	}
 	publicKey := &PublicKey{}
@@ -74,6 +111,15 @@ func NewPublicKey(publicKeyBytes []byte) *PublicKey {
 
 func (publicKey *PublicKey) ToBytes() []byte {
 	return publicKey[:]
+}
+
+func ReadPublicKey(rr io.Reader) (*PublicKey, error) {
+	valBytes := make([]byte, PublicKeyLenCompressed, PublicKeyLenCompressed)
+	_, err := io.ReadFull(rr, valBytes)
+	if err != nil {
+		return nil, errors.Wrapf(err, "ReadPublicKey: Error reading public key")
+	}
+	return NewPublicKey(valBytes), nil
 }
 
 func (publicKey *PublicKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -95,6 +141,10 @@ func (publicKey *PublicKey) GetVersionByte(blockHeight uint64) byte {
 
 func (publicKey *PublicKey) GetEncoderType() EncoderType {
 	return EncoderTypePublicKey
+}
+
+func (publicKey *PublicKey) IsZeroPublicKey() bool {
+	return bytes.Equal(publicKey.ToBytes(), ZeroPublicKey.ToBytes())
 }
 
 func PublicKeyToPKID(publicKey []byte) *PKID {
