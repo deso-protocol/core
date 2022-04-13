@@ -690,7 +690,7 @@ func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
 type PGDAOCoinLimitOrder struct {
 	tableName struct{} `pg:"pg_dao_coin_limit_orders"`
 
-	OrderID                                   *BlockHash `pg:",type:bytea"`
+	OrderID                                   *BlockHash `pg:",pk,type:bytea"`
 	TransactorPKID                            *PKID      `pg:",pk,type:bytea"`
 	BuyingDAOCoinCreatorPKID                  *PKID      `pg:"buying_dao_coin_creator_pkid,pk,type:bytea"`
 	SellingDAOCoinCreatorPKID                 *PKID      `pg:"selling_dao_coin_creator_pkid,pk,type:bytea"`
@@ -2168,7 +2168,7 @@ func (postgres *Postgres) flushDAOCoinLimitOrders(tx *pg.Tx, view *UtxoView) err
 	if len(insertOrders) > 0 {
 		_, err := tx.Model(&insertOrders).
 			WherePK().
-			OnConflict("(transactor_pkid, buying_dao_coin_creator_pkid, selling_dao_coin_creator_pkid, scaled_exchange_rate_coins_to_sell_per_coin_to_buy, block_height) DO UPDATE").
+			OnConflict("(order_id, transactor_pkid, buying_dao_coin_creator_pkid, selling_dao_coin_creator_pkid, scaled_exchange_rate_coins_to_sell_per_coin_to_buy, block_height) DO UPDATE").
 			Returning("NULL").
 			Insert()
 
@@ -2546,7 +2546,7 @@ func (postgres *Postgres) GetDAOCoinLimitOrder(orderID *BlockHash) (*DAOCoinLimi
 
 	if err != nil {
 		// If we don't find anything, don't error. Just return nil.
-		if err.Error() == "pg: no rows in result set" {
+		if err.Error() == "pg: Model(nil)" {
 			return nil, nil
 		}
 

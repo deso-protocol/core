@@ -16,7 +16,7 @@ func init() {
 				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT NOT NULL,
 				quantity_to_fill_in_base_units                     TEXT NOT NULL,
 				operation_type                                     BIGINT NOT NULL,
-				cancel_existing_order                              BOOL NOT NULL,
+				cancel_order_id                                    BYTEA NOT NULL,
 				fee_nanos                                          BIGINT NOT NULL
 			);
 		`)
@@ -51,6 +51,7 @@ func init() {
 				block_height                                       BIGINT NOT NULL,
 
 				PRIMARY KEY (
+					order_id,
 					transactor_pkid,
 					buying_dao_coin_creator_pkid,
 					selling_dao_coin_creator_pkid,
@@ -58,8 +59,6 @@ func init() {
 					block_height
 				)
 			);
-
-			CREATE INDEX pg_dao_coin_limit_orders_order_id ON pg_dao_coin_limit_orders(order_id);
 		`)
 		if err != nil {
 			return err

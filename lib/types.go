@@ -138,9 +138,7 @@ func (bh *BlockHash) String() string {
 
 func (bh *BlockHash) ToBytes() []byte {
 	res := make([]byte, HashSizeBytes)
-	if bh != nil {
-		copy(res, bh[:])
-	}
+	copy(res, bh[:])
 	return res
 }
 
@@ -157,10 +155,12 @@ func (bh *BlockHash) IsEqual(target *BlockHash) bool {
 
 func (bh *BlockHash) NewBlockHash() *BlockHash {
 	newBlockhash := &BlockHash{}
-	if bh != nil {
-		copy(newBlockhash[:], bh[:])
-	}
+	copy(newBlockhash[:], bh[:])
 	return newBlockhash
+}
+
+func (bh *BlockHash) IsZeroBlockHash() bool {
+	return bh.IsEqual(&ZeroBlockHash)
 }
 
 func ReadBlockHash(rr io.Reader) (*BlockHash, error) {
