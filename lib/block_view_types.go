@@ -382,7 +382,7 @@ type UtxoOperation struct {
 	// DAO coin limit order
 	// PrevTransactorDAOCoinLimitOrderEntry is the previous version of the
 	// transactor's DAO Coin Limit Order before this transaction was connected.
-	// Note: This is only set if the transactor cancelled an existing order.
+	// Note: This is only set if the transactor is cancelling an existing order.
 	PrevTransactorDAOCoinLimitOrderEntry *DAOCoinLimitOrderEntry
 
 	// PrevBalanceEntries is a map of User PKID, Creator PKID to DAO Coin Balance
@@ -1472,7 +1472,7 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 // -----------------------------------
 
 type DAOCoinLimitOrderEntry struct {
-	// OrderID is the txn hash of this order, uniquely identifying this order.
+	// OrderID is the txn hash (unique identifier) for this order.
 	OrderID *BlockHash
 	// TransactorPKID is the PKID of the user who created this order.
 	TransactorPKID *PKID

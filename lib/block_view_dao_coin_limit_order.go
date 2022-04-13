@@ -284,7 +284,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 
 		// Save the existing order in case we need to revert.
-		prevTransactorOrder := existingTransactorOrder
+		prevTransactorOrder := existingTransactorOrder.Copy()
 
 		// Delete existing limit order for this transactor.
 		bav._deleteDAOCoinLimitOrderEntryMappings(existingTransactorOrder)

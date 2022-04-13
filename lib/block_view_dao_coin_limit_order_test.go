@@ -2254,8 +2254,8 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {
-	// Skip comparing OrderID values as those are
-	// tricky to know before submitting the txn.
+	// Skip comparing OrderID values as those
+	// aren't known before submitting the txn.
 	other.OrderID = order.OrderID
 
 	// Convert both order entries to bytes and compare bytes.
