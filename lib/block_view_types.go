@@ -1541,6 +1541,7 @@ const (
 // FilledDAOCoinLimitOrder only exists to support understanding what orders were
 // fulfilled when connecting a DAO Coin Limit Order Txn
 type FilledDAOCoinLimitOrder struct {
+	OrderID                       *BlockHash
 	TransactorPKID                *PKID
 	BuyingDAOCoinCreatorPKID      *PKID
 	SellingDAOCoinCreatorPKID     *PKID

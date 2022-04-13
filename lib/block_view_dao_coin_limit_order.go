@@ -451,6 +451,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Update quantity for transactor's order.
 			transactorOrderFilledOrder := &FilledDAOCoinLimitOrder{
+				OrderID:                       transactorOrder.OrderID,
 				TransactorPKID:                transactorOrder.TransactorPKID,
 				BuyingDAOCoinCreatorPKID:      transactorOrder.BuyingDAOCoinCreatorPKID,
 				SellingDAOCoinCreatorPKID:     transactorOrder.SellingDAOCoinCreatorPKID,
@@ -473,6 +474,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Update quantity for matching order.
 			matchingOrderFilledOrder := &FilledDAOCoinLimitOrder{
+				OrderID:                       matchingOrder.OrderID,
 				TransactorPKID:                matchingOrder.TransactorPKID,
 				BuyingDAOCoinCreatorPKID:      matchingOrder.BuyingDAOCoinCreatorPKID,
 				SellingDAOCoinCreatorPKID:     matchingOrder.SellingDAOCoinCreatorPKID,
