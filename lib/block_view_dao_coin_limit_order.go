@@ -269,18 +269,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee
 	}
 
-	// If the transactor just wants to cancel an existing order, find and delete by OrderID.
+	// If the transactor just wants to cancel an
+	// existing order, find and delete by OrderID.
 	if !txMeta.CancelOrderID.IsZeroBlockHash() {
-		// Search for an existing order by OrderID belonging to this TransactorPKID.
-		existingTransactorOrder, err := bav._getDAOCoinLimitOrderEntry(&DAOCoinLimitOrderEntry{
-			OrderID:        txMeta.CancelOrderID,
-			TransactorPKID: transactorPKIDEntry.PKID,
-		})
+		// Search for an existing order by OrderID.
+		existingTransactorOrder, err := bav._getDAOCoinLimitOrderEntry(txMeta.CancelOrderID)
 		if err != nil {
 			return 0, 0, nil, err
 		}
 		if existingTransactorOrder == nil {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderToCancelNotFound
+		}
+		if !transactorPKIDEntry.PKID.Eq(existingTransactorOrder.TransactorPKID) {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderToCancelNotYours
 		}
 
 		// Save the existing order in case we need to revert.
@@ -1287,37 +1288,21 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 // ## API Getter Functions
 // ###########################
 
-func (bav *UtxoView) _getDAOCoinLimitOrderEntry(inputEntry *DAOCoinLimitOrderEntry) (*DAOCoinLimitOrderEntry, error) {
+func (bav *UtxoView) _getDAOCoinLimitOrderEntry(orderID *BlockHash) (*DAOCoinLimitOrderEntry, error) {
 	// This function shouldn't be called with nil.
-	if inputEntry == nil {
-		return nil, errors.Errorf("_getDAOCoinLimitOrderEntry: Called with nil entry; this should never happen")
+	if orderID == nil {
+		return nil, errors.Errorf("_getDAOCoinLimitOrderEntry: Called with nil orderID; this should never happen")
 	}
 
 	// First check if we have the order entry in the UTXO view.
-	outputEntry, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[inputEntry.ToMapKey()]
+	mapKey := DAOCoinLimitOrderMapKey{OrderID: *orderID.NewBlockHash()}
+	outputEntry, _ := bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[mapKey]
 	if outputEntry != nil {
 		return outputEntry, nil
 	}
 
 	// If not, next check if we have the order entry in the database.
-	var err error
-	outputEntry, err = bav.GetDbAdapter().GetDAOCoinLimitOrder(inputEntry.OrderID)
-	if err != nil {
-		return nil, err
-	}
-	if outputEntry == nil {
-		return nil, nil
-	}
-
-	// Confirm that the existing order entry in the database found by OrderID
-	// was created by this transactor. Otherwise, it would be possible for a
-	// user to delete an order created by another user! In this case, we don't
-	// throw an error but instead just return nil, i.e. no order found.
-	if !inputEntry.TransactorPKID.Eq(outputEntry.TransactorPKID) {
-		return nil, nil
-	}
-
-	return outputEntry, nil
+	return bav.GetDbAdapter().GetDAOCoinLimitOrder(orderID)
 }
 
 func (bav *UtxoView) _getAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {

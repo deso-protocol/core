@@ -262,6 +262,7 @@ const (
 	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder         RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder"
 	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists               RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
 	RuleErrorDAOCoinLimitOrderToCancelNotFound                        RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotFound"
+	RuleErrorDAOCoinLimitOrderToCancelNotYours                        RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotYours"
 	RuleErrorDAOCoinLimitOrderOverspendingDESO                        RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDESO"
 	RuleErrorDAOCoinLimitOrderOverflowsDESO                           RuleError = "RuleErrorDAOCoinLimitOrderOverflowsDESO"
 	RuleErrorDAOCoinLimitOrderOverspendingDAOCoin                     RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDAOCoin"

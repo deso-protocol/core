@@ -1818,17 +1818,13 @@ func ComputeBaseUnitsToSellUint256(
 	return quantityToSellUint256, nil
 }
 
-// An OrderID uniquely identifies an order, but we also include
-// TransactorPKID as a safe-guard to ensure that the transactor
-// can only modify their own orders.
 type DAOCoinLimitOrderMapKey struct {
-	OrderID        BlockHash
-	TransactorPKID PKID
+	// An OrderID uniquely identifies an order
+	OrderID BlockHash
 }
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	return DAOCoinLimitOrderMapKey{
-		OrderID:        *order.OrderID.NewBlockHash(),
-		TransactorPKID: *order.TransactorPKID.NewPKID(),
+		OrderID: *order.OrderID.NewBlockHash(),
 	}
 }

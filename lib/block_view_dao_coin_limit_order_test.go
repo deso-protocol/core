@@ -614,7 +614,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM1)
 
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderToCancelNotFound)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderToCancelNotYours)
 
 		// m1 cancels their open order.
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -1115,9 +1115,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.9)
 		require.NoError(err)
 		queryEntry := &DAOCoinLimitOrderEntry{
-			// We use an arbitrary non-zero OrderID here as
-			// it can't be nil but is ignored in this test.
-			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
 			TransactorPKID:            m1PKID.PKID,
 			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
 			SellingDAOCoinCreatorPKID: m1PKID.PKID,
@@ -1632,9 +1630,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(10.0)
 		require.NoError(err)
 		m0Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m0PKID,
-			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
-			SellingDAOCoinCreatorPKID:                 m0PKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m0PKID,
+			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
+			SellingDAOCoinCreatorPKID: m0PKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1644,9 +1643,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.1)
 		require.NoError(err)
 		m1Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m1PKID,
-			BuyingDAOCoinCreatorPKID:                  m0PKID,
-			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m1PKID,
+			BuyingDAOCoinCreatorPKID:  m0PKID,
+			SellingDAOCoinCreatorPKID: &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
@@ -1683,9 +1683,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(10.0)
 		require.NoError(err)
 		m0Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m0PKID,
-			BuyingDAOCoinCreatorPKID:                  m0PKID,
-			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m0PKID,
+			BuyingDAOCoinCreatorPKID:  m0PKID,
+			SellingDAOCoinCreatorPKID: &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
@@ -1695,9 +1696,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.2)
 		require.NoError(err)
 		m1Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m1PKID,
-			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
-			SellingDAOCoinCreatorPKID:                 m0PKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m1PKID,
+			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
+			SellingDAOCoinCreatorPKID: m0PKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(500),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1736,9 +1738,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(10.0)
 		require.NoError(err)
 		m0Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m0PKID,
-			BuyingDAOCoinCreatorPKID:                  m0PKID,
-			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m0PKID,
+			BuyingDAOCoinCreatorPKID:  m0PKID,
+			SellingDAOCoinCreatorPKID: &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
@@ -1748,9 +1751,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.1)
 		require.NoError(err)
 		m1Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m1PKID,
-			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
-			SellingDAOCoinCreatorPKID:                 m0PKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m1PKID,
+			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
+			SellingDAOCoinCreatorPKID: m0PKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
@@ -1789,9 +1793,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(10.0)
 		require.NoError(err)
 		m0Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m0PKID,
-			BuyingDAOCoinCreatorPKID:                  m0PKID,
-			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m0PKID,
+			BuyingDAOCoinCreatorPKID:  m0PKID,
+			SellingDAOCoinCreatorPKID: &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
@@ -1801,9 +1806,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.2)
 		require.NoError(err)
 		m1Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m1PKID,
-			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
-			SellingDAOCoinCreatorPKID:                 m0PKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m1PKID,
+			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
+			SellingDAOCoinCreatorPKID: m0PKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(250),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
@@ -1842,9 +1848,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(10.0)
 		require.NoError(err)
 		m0Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m0PKID,
-			BuyingDAOCoinCreatorPKID:                  m0PKID,
-			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m0PKID,
+			BuyingDAOCoinCreatorPKID:  m0PKID,
+			SellingDAOCoinCreatorPKID: &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1854,9 +1861,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.1)
 		require.NoError(err)
 		m1Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m1PKID,
-			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
-			SellingDAOCoinCreatorPKID:                 m0PKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m1PKID,
+			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
+			SellingDAOCoinCreatorPKID: m0PKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1895,9 +1903,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(10.0)
 		require.NoError(err)
 		m0Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m0PKID,
-			BuyingDAOCoinCreatorPKID:                  m0PKID,
-			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m0PKID,
+			BuyingDAOCoinCreatorPKID:  m0PKID,
+			SellingDAOCoinCreatorPKID: &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1907,9 +1916,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.2)
 		require.NoError(err)
 		m1Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m1PKID,
-			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
-			SellingDAOCoinCreatorPKID:                 m0PKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m1PKID,
+			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
+			SellingDAOCoinCreatorPKID: m0PKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1950,9 +1960,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(10.0)
 		require.NoError(err)
 		m0Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m0PKID,
-			BuyingDAOCoinCreatorPKID:                  &ZeroPKID,
-			SellingDAOCoinCreatorPKID:                 m0PKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m0PKID,
+			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
+			SellingDAOCoinCreatorPKID: m0PKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1962,9 +1973,10 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.2)
 		require.NoError(err)
 		m1Order := &DAOCoinLimitOrderEntry{
-			TransactorPKID:                            m1PKID,
-			BuyingDAOCoinCreatorPKID:                  m0PKID,
-			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()), // Not used
+			TransactorPKID:            m1PKID,
+			BuyingDAOCoinCreatorPKID:  m0PKID,
+			SellingDAOCoinCreatorPKID: &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(500),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,

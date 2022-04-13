@@ -6404,25 +6404,25 @@ func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderEntr
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
 	}
 
-	// Store in index: _PrefixDAOCoinLimitOrderByTransactorPKID
+	// Store in index: _PrefixDAOCoinLimitOrder
 	key := DBKeyForDAOCoinLimitOrder(order)
 
 	if err = txn.Set(key, orderBytes); err != nil {
-		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing order in index _PrefixDAOCoinLimitOrder")
 	}
 
 	// Store in index: _PrefixDAOCoinLimitOrderByTransactorPKID
 	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
 
 	if err = txn.Set(key, orderBytes); err != nil {
-		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing order in index _PrefixDAOCoinLimitOrderByTransactorPKID")
 	}
 
 	// Store in index: _PrefixDAOCoinLimitOrderByOrderID
 	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
 
 	if err = txn.Set(key, orderBytes); err != nil {
-		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing order in index _PrefixDAOCoinLimitOrderByOrderID")
 	}
 
 	return nil
@@ -6437,21 +6437,21 @@ func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderE
 	key := DBKeyForDAOCoinLimitOrder(order)
 
 	if err := txn.Delete(key); err != nil {
-		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting order from index _PrefixDAOCoinLimitOrder")
 	}
 
 	// Delete from index: _PrefixDAOCoinLimitOrderByTransactorPKID
 	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
 
 	if err := txn.Delete(key); err != nil {
-		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting order from index _PrefixDAOCoinLimitOrderByTransactorPKID")
 	}
 
 	// Delete from index: _PrefixDAOCoinLimitOrderByOrderID
 	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
 
 	if err := txn.Delete(key); err != nil {
-		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting order from index _PrefixDAOCoinLimitOrderByOrderID")
 	}
 
 	return nil
