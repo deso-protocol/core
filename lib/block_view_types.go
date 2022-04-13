@@ -1666,7 +1666,7 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 
 	// To break a tie and guarantee idempotency in sorting,
 	// prefer lower OrderIDs.
-	return bytes.Compare(order.OrderID[:], other.OrderID[:]) < 0
+	return bytes.Compare(order.OrderID.ToBytes(), other.OrderID.ToBytes()) < 0
 }
 
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToBuyUint256() (*uint256.Int, error) {
@@ -1816,8 +1816,8 @@ func ComputeBaseUnitsToSellUint256(
 }
 
 // An OrderID uniquely identifies an order, but we also include
-// TransactorPKID to ensure that the transactor can only modify
-// their own orders.
+// TransactorPKID as a safe-guard to ensure that the transactor
+// can only modify their own orders.
 type DAOCoinLimitOrderMapKey struct {
 	OrderID        BlockHash
 	TransactorPKID PKID

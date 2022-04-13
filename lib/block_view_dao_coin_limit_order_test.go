@@ -588,9 +588,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	}
 
 	// Scenario: cancel an open order.
-	// m1 tries to cancel non-existent order.
-	// m0 tries to cancel m1's order. Errors.
-	// m1 cancels their open order.
+	// m1 tries to cancel non-existent order. Fails.
+	// m0 tries to cancel m1's order. Fails.
+	// m1 cancels their open order. Succeeds.
 	{
 		// Confirm 1 existing limit order from m1.
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
@@ -1115,7 +1115,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.9)
 		require.NoError(err)
 		queryEntry := &DAOCoinLimitOrderEntry{
-			// We use an arbitrary non-zero OrderID as this can't be nil but is ignored.
+			// We use an arbitrary non-zero OrderID here as
+			// it can't be nil but is ignored in this test.
 			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
 			TransactorPKID:            m1PKID.PKID,
 			BuyingDAOCoinCreatorPKID:  &ZeroPKID,
@@ -2253,7 +2254,7 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {
-	// Don't compare OrderID values as those are
+	// Skip comparing OrderID values as those are
 	// tricky to know before submitting the txn.
 	other.OrderID = order.OrderID
 
@@ -2274,16 +2275,14 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
 	transactorPKID *PKID, blockHeight uint32, toPKID func(*PublicKey) *PKID) *DAOCoinLimitOrderEntry {
 
-	// We don't know which OrderId BlockHash will be generated
-	// for this metadata, so we generate an arbitrary non-zero
-	// one here for testing purposes as OrderID can't be nil.
-	// Note: the OrderID is skipped when we compare if two
-	// order entries are equal in these tests for this reason.
-	arbitraryBlockHash := NewBlockHash(uint256.NewInt().SetUint64(1).Bytes())
-
 	// Convert *DAOCoinLimitOrderMetadata to *DAOCoinLimitOrderEntry.
 	return &DAOCoinLimitOrderEntry{
-		OrderID:                   arbitraryBlockHash,
+		// We don't know which OrderId BlockHash will be generated
+		// from this metadata, so we generate an arbitrary non-zero
+		// one here for testing purposes as OrderID can't be nil.
+		// Note: the OrderID is skipped when we compare if two
+		// order entries are equal in these tests for this reason.
+		OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
 		TransactorPKID:            transactorPKID,
 		BuyingDAOCoinCreatorPKID:  toPKID(txnData.BuyingDAOCoinCreatorPublicKey),
 		SellingDAOCoinCreatorPKID: toPKID(txnData.SellingDAOCoinCreatorPublicKey),
