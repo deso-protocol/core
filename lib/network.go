@@ -4868,6 +4868,9 @@ func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
 }
 
 func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
+	if tsl == nil {
+		return nil
+	}
 	copyTSL := &TransactionSpendingLimit{
 		GlobalDESOLimit:              tsl.GlobalDESOLimit,
 		TransactionCountLimitMap:     make(map[TxnType]uint64),

@@ -983,7 +983,9 @@ func (dk *DerivedKeyEntry) Copy() *DerivedKeyEntry {
 		return nil
 	}
 	newEntry := *dk
-	newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	if dk.TransactionSpendingLimitTracker != nil {
+		newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	}
 	return &newEntry
 }
 
