@@ -50,6 +50,12 @@ func init() {
 				operation_type                                     BIGINT NOT NULL,
 				block_height                                       BIGINT NOT NULL
 			);
+
+			CREATE INDEX pg_dao_coin_limit_orders_transactor_pkid
+			ON pg_dao_coin_limit_orders(transactor_pkid);
+
+			CREATE INDEX pg_dao_coin_limit_orders_dao_coin_pair
+			ON pg_dao_coin_limit_orders(buying_dao_coin_creator_pkid, selling_dao_coin_creator_pkid);
 		`)
 		if err != nil {
 			return err
