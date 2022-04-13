@@ -41,23 +41,14 @@ func init() {
 		// Create pg_dao_coin_limit_orders table.
 		_, err = db.Exec(`
 			CREATE TABLE pg_dao_coin_limit_orders (
-				order_id                                           BYTEA NOT NULL,
+				order_id                                           BYTEA PRIMARY KEY,
 				transactor_pkid                                    BYTEA NOT NULL,
 				buying_dao_coin_creator_pkid                       BYTEA NOT NULL,
 				selling_dao_coin_creator_pkid                      BYTEA NOT NULL,
 				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT NOT NULL,
 				quantity_to_fill_in_base_units                     TEXT NOT NULL,
 				operation_type                                     BIGINT NOT NULL,
-				block_height                                       BIGINT NOT NULL,
-
-				PRIMARY KEY (
-					order_id,
-					transactor_pkid,
-					buying_dao_coin_creator_pkid,
-					selling_dao_coin_creator_pkid,
-					scaled_exchange_rate_coins_to_sell_per_coin_to_buy,
-					block_height
-				)
+				block_height                                       BIGINT NOT NULL
 			);
 		`)
 		if err != nil {

@@ -691,13 +691,13 @@ type PGDAOCoinLimitOrder struct {
 	tableName struct{} `pg:"pg_dao_coin_limit_orders"`
 
 	OrderID                                   *BlockHash `pg:",pk,type:bytea"`
-	TransactorPKID                            *PKID      `pg:",pk,type:bytea"`
-	BuyingDAOCoinCreatorPKID                  *PKID      `pg:"buying_dao_coin_creator_pkid,pk,type:bytea"`
-	SellingDAOCoinCreatorPKID                 *PKID      `pg:"selling_dao_coin_creator_pkid,pk,type:bytea"`
-	ScaledExchangeRateCoinsToSellPerCoinToBuy string     `pg:",pk,use_zero"`
+	TransactorPKID                            *PKID      `pg:",type:bytea"`
+	BuyingDAOCoinCreatorPKID                  *PKID      `pg:"buying_dao_coin_creator_pkid,type:bytea"`
+	SellingDAOCoinCreatorPKID                 *PKID      `pg:"selling_dao_coin_creator_pkid,type:bytea"`
+	ScaledExchangeRateCoinsToSellPerCoinToBuy string     `pg:",use_zero"`
 	QuantityToFillInBaseUnits                 string     `pg:",use_zero"`
 	OperationType                             uint32     `pg:",use_zero"`
-	BlockHeight                               uint32     `pg:",pk,use_zero"`
+	BlockHeight                               uint32     `pg:",use_zero"`
 }
 
 func (order *PGDAOCoinLimitOrder) FromDAOCoinLimitOrderEntry(orderEntry *DAOCoinLimitOrderEntry) {
@@ -2168,7 +2168,7 @@ func (postgres *Postgres) flushDAOCoinLimitOrders(tx *pg.Tx, view *UtxoView) err
 	if len(insertOrders) > 0 {
 		_, err := tx.Model(&insertOrders).
 			WherePK().
-			OnConflict("(order_id, transactor_pkid, buying_dao_coin_creator_pkid, selling_dao_coin_creator_pkid, scaled_exchange_rate_coins_to_sell_per_coin_to_buy, block_height) DO UPDATE").
+			OnConflict("(order_id) DO UPDATE").
 			Returning("NULL").
 			Insert()
 
@@ -2541,12 +2541,12 @@ func (postgres *Postgres) GetDAOCoinHolders(pkid *PKID) []*PGDAOCoinBalance {
 //
 
 func (postgres *Postgres) GetDAOCoinLimitOrder(orderID *BlockHash) (*DAOCoinLimitOrderEntry, error) {
-	var order *PGDAOCoinLimitOrder
-	err := postgres.db.Model(order).Where("order_id = ?", orderID).First()
+	order := PGDAOCoinLimitOrder{OrderID: orderID}
+	err := postgres.db.Model(&order).WherePK().First()
 
 	if err != nil {
 		// If we don't find anything, don't error. Just return nil.
-		if err.Error() == "pg: Model(nil)" {
+		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
 

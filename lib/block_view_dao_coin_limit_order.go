@@ -802,7 +802,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// a separate place, but here it makes sense.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                                 OperationTypeDAOCoinLimitOrder,
-		PrevTransactorDAOCoinLimitOrderEntry: nil, // This is only used in cancelling an order.
+		PrevTransactorDAOCoinLimitOrderEntry: nil, // prevTransactorOrder is only used in cancelling an order.
 		PrevBalanceEntries:                   prevBalances,
 		PrevMatchingOrders:                   prevMatchingOrders,
 		FilledDAOCoinLimitOrders:             filledOrders,
