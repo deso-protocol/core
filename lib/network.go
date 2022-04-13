@@ -5679,11 +5679,10 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
 
 	// Parse CancelOrderID
-	// TODO: how do we read a BlockHash from bytes?
-	//ret.CancelOrderID = ReadBoolByte(rr)
-	//if err != nil {
-	//	return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
-	//}
+	ret.CancelOrderID, err = ReadBlockHash(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
+	}
 
 	// Parse MatchingBidsTransactors
 	matchingBidsTransactorsLength, err := ReadUvarint(rr)

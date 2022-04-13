@@ -58,6 +58,8 @@ func init() {
 					block_height
 				)
 			);
+
+			CREATE INDEX pg_dao_coin_limit_orders_order_id ON pg_dao_coin_limit_orders(order_id);
 		`)
 		if err != nil {
 			return err

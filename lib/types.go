@@ -138,7 +138,9 @@ func (bh *BlockHash) String() string {
 
 func (bh *BlockHash) ToBytes() []byte {
 	res := make([]byte, HashSizeBytes)
-	copy(res, bh[:])
+	if bh != nil {
+		copy(res, bh[:])
+	}
 	return res
 }
 
@@ -155,8 +157,19 @@ func (bh *BlockHash) IsEqual(target *BlockHash) bool {
 
 func (bh *BlockHash) NewBlockHash() *BlockHash {
 	newBlockhash := &BlockHash{}
-	copy(newBlockhash[:], bh[:])
+	if bh != nil {
+		copy(newBlockhash[:], bh[:])
+	}
 	return newBlockhash
+}
+
+func ReadBlockHash(rr io.Reader) (*BlockHash, error) {
+	valBytes := make([]byte, HashSizeBytes, HashSizeBytes)
+	_, err := io.ReadFull(rr, valBytes)
+	if err != nil {
+		return nil, fmt.Errorf("ReadBlockHash: Error reading value bytes: %v", err)
+	}
+	return NewBlockHash(valBytes), nil
 }
 
 func EncodeUint256(val *uint256.Int) []byte {

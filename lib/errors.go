@@ -272,7 +272,6 @@ const (
 	RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins      RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins"
 	RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist                RuleError = "RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist"
 	RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero                    RuleError = "RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero"
-	RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType     RuleError = "RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType"
 	RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee                   RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee"
 	RuleErrorDAOCoinLimitOrderFeeNanosOverflow                        RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosOverflow"
 	RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee RuleError = "RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee"

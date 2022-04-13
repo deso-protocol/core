@@ -69,14 +69,6 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPK
 	return DBGetAllDAOCoinLimitOrdersForThisTransactor(adapter.badgerDb, transactorPKID)
 }
 
-func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
-	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(inputOrder)
-	}
-
-	return DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(adapter.badgerDb, inputOrder)
-}
-
 func (adapter *DbAdapter) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetMatchingDAOCoinLimitOrders(inputOrder, lastSeenOrder)

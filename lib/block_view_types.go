@@ -382,9 +382,7 @@ type UtxoOperation struct {
 	// DAO coin limit order
 	// PrevTransactorDAOCoinLimitOrderEntry is the previous version of the
 	// transactor's DAO Coin Limit Order before this transaction was connected.
-	// Note: This is only set if the transactor submits multiple limit orders
-	// at the same block height with the same BuyingDAOCoinCreatorPublicKey,
-	// SellingDAOCoinCreatorPublicKey, and ScaledExchangeRateCoinsToSellPerCoinToBuy
+	// Note: This is only set if the transactor cancelled an existing order.
 	PrevTransactorDAOCoinLimitOrderEntry *DAOCoinLimitOrderEntry
 
 	// PrevBalanceEntries is a map of User PKID, Creator PKID to DAO Coin Balance
@@ -1588,11 +1586,10 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	var err error
 
 	// Parse OrderID
-	// TODO: how do we read a BlockHash?
-	//ret.OrderID, err = ReadPKID(rr)
-	//if err != nil {
-	//	return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OrderID: %v", err)
-	//}
+	ret.OrderID, err = ReadBlockHash(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OrderID: %v", err)
+	}
 
 	// Parse TransactorPKID
 	ret.TransactorPKID, err = ReadPKID(rr)

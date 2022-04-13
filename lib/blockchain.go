@@ -3205,9 +3205,10 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	// Construct transactor order
 	transactorOrder := &DAOCoinLimitOrderEntry{
-		TransactorPKID:                            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
-		BuyingDAOCoinCreatorPKID:                  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-		SellingDAOCoinCreatorPKID:                 utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		OrderID:                   txn.Hash(),
+		TransactorPKID:            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
+		BuyingDAOCoinCreatorPKID:  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		SellingDAOCoinCreatorPKID: utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
 		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
 		OperationType:                             metadata.OperationType,

@@ -294,6 +294,7 @@ var (
 	//   ScaledPrice [256]byte
 	//   BlockHeight [32]byte
 	//   TransactorPKID [33]byte
+	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
 	//
 	// This index allows users to query for their open orders.
@@ -304,13 +305,14 @@ var (
 	//   SellingDAOCoinCReatorPKID [33]byte
 	//   ScaledPrice [256]byte
 	//   BlockHeight [32]byte
+	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
 	//
 	// This index allows users to query for a single order by ID.
 	// This is useful in e.g. cancelling an order.
 	// <
 	//   _PrefixDAOCoinLimitOrderByOrderID
-	//   OrderID [33]byte
+	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
 	_PrefixDAOCoinLimitOrder                 = []byte{59}
 	_PrefixDAOCoinLimitOrderByTransactorPKID = []byte{60}
@@ -3101,8 +3103,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB, eventMana
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -5825,7 +5827,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, _PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(_PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                 /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -5952,7 +5954,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, _PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -6193,6 +6195,7 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
 
 	key = append(key, order.TransactorPKID[:]...)
+	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }
 
@@ -6210,6 +6213,7 @@ func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) []
 	key = append(key, order.SellingDAOCoinCreatorPKID.Encode()...)
 	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
+	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }
 
@@ -6366,18 +6370,6 @@ func DBGetAllDAOCoinLimitOrdersForThisTransactor(handle *badger.DB, transactorPK
 	// Get all DAO coin limit orders for this transactor.
 	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, transactorPKID[:]...)
-	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
-}
-
-func DBGetAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(handle *badger.DB, inputOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
-	// Get all DAO coin limit orders for this transactor PKID at this price.
-	// This key is identical to the DBKeyForDAOCoinLimitOrderByTransactorPKID()
-	// key except we omit BlockHeight as we want value across all block heights.
-	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
-	key = append(key, inputOrder.TransactorPKID[:]...)
-	key = append(key, inputOrder.BuyingDAOCoinCreatorPKID.Encode()...)
-	key = append(key, inputOrder.SellingDAOCoinCreatorPKID.Encode()...)
-	key = append(key, EncodeUint256(inputOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
