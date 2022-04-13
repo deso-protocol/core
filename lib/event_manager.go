@@ -18,6 +18,13 @@ type BlockEvent struct {
 	// Optional
 	UtxoView *UtxoView
 	UtxoOps  [][]*UtxoOperation
+
+	// Optional
+	Server *Server
+
+	// We allow the caller to pass arbitrary params at the end of the
+	// sync. This can be used to initialize a new type of db, for example.
+	ExtraParams map[string]string
 }
 
 type EventManager struct {
