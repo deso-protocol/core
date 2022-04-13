@@ -289,9 +289,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Create entry from txn metadata for the transactor.
 	transactorOrder := &DAOCoinLimitOrderEntry{
-		TransactorPKID:                            transactorPKIDEntry.PKID,
-		BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
-		SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
+		OrderID:                   txHash,
+		TransactorPKID:            transactorPKIDEntry.PKID,
+		BuyingDAOCoinCreatorPKID:  buyCoinPKIDEntry.PKID,
+		SellingDAOCoinCreatorPKID: sellCoinPKIDEntry.PKID,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
 		OperationType:                             txMeta.OperationType,
@@ -1022,9 +1023,6 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	// Set operation index to end of implicit output utxos
 	operationIndex = operationIndex - numUtxoAdds + len(currentTxn.TxOutputs)
 
-	// TODO: @lazynina, @mattfoley8, do we need to iterate through all the matched bids in sorted order
-	// once the disconnect logic is fully implemented?
-
 	// We will have additional spend utxo operations for each matching order input.
 	numMatchingOrderInputs := 0
 
@@ -1533,6 +1531,11 @@ func (bav *UtxoView) _getAllDAOCoinLimitOrdersForThisTransactorAtThisPrice(
 
 func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry, isCancelOrder bool) error {
 	// Returns an error if the input order is invalid. Otherwise returns nil.
+
+	// Validate non-nil OrderID.
+	if order.OrderID == nil {
+		return RuleErrorDAOCoinLimitOrderInvalidOrderID
+	}
 
 	// Validate not buying and selling the same coin.
 	if order.BuyingDAOCoinCreatorPKID.Eq(order.SellingDAOCoinCreatorPKID) {

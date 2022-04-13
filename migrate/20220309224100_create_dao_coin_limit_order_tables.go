@@ -41,6 +41,7 @@ func init() {
 		// Create pg_dao_coin_limit_orders table.
 		_, err = db.Exec(`
 			CREATE TABLE pg_dao_coin_limit_orders (
+				order_id                                           BYTEA NOT NULL,
 				transactor_pkid                                    BYTEA NOT NULL,
 				buying_dao_coin_creator_pkid                       BYTEA NOT NULL,
 				selling_dao_coin_creator_pkid                      BYTEA NOT NULL,

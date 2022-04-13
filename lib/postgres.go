@@ -2537,10 +2537,9 @@ func (postgres *Postgres) GetDAOCoinHolders(pkid *PKID) []*PGDAOCoinBalance {
 // DAO Coin Limit Orders
 //
 
-func (postgres *Postgres) GetDAOCoinLimitOrder(inputOrder *DAOCoinLimitOrderEntry) (*DAOCoinLimitOrderEntry, error) {
-	order := &PGDAOCoinLimitOrder{}
-	order.FromDAOCoinLimitOrderEntry(inputOrder)
-	err := postgres.db.Model(order).WherePK().First()
+func (postgres *Postgres) GetDAOCoinLimitOrder(orderID *BlockHash) (*DAOCoinLimitOrderEntry, error) {
+	var order *PGDAOCoinLimitOrder
+	err := postgres.db.Model(order).Where("order_id = ?", orderID).First()
 
 	if err != nil {
 		// If we don't find anything, don't error. Just return nil.

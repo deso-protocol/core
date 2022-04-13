@@ -248,6 +248,7 @@ const (
 
 	// DAO Coin Limit Orders
 	RuleErrorDAOCoinLimitOrderBeforeBlockHeight                       RuleError = "RuleErrorDAOCoinLimitOrderBeforeBlockHeight"
+	RuleErrorDAOCoinLimitOrderInvalidOrderID                          RuleError = "RuleErrorDAOCoinLimitOrderInvalidOrderID"
 	RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin                RuleError = "RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin"
 	RuleErrorDAOCoinLimitOrderInvalidOperationType                    RuleError = "RuleErrorDAOCoinLimitOrderInvalidOperationType"
 	RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile      RuleError = "RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile"
