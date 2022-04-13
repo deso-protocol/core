@@ -11,10 +11,14 @@ type DbAdapter struct {
 }
 
 func (bav *UtxoView) GetDbAdapter() *DbAdapter {
+	snap := bav.Snapshot
+	if bav.Postgres != nil {
+		snap = nil
+	}
 	return &DbAdapter{
 		badgerDb:   bav.Handle,
 		postgresDb: bav.Postgres,
-		snapshot:   bav.Snapshot,
+		snapshot:   snap,
 	}
 }
 
