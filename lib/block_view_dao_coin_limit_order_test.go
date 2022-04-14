@@ -1612,6 +1612,71 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(m2DAOCoinUnitsDecrease, uint256.NewInt().SetUint64(900))
 	}
 
+	{
+		// Scenario: swapping identity
+
+		// Confirm existing orders in the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// m1 submits order selling m0 DAO coins.
+		exchangeRate, err := CalculateScaledExchangeRate(8.0)
+		require.NoError(err)
+
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Confirm order is added to the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		// transactor: m1, buying:  $, selling: m0, price: 8, quantity: 100, type: ASK
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// Confirm 1 order belonging to m0.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// Confirm 1 order belonging to m1.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// Confirm 0 orders belonging to m3.
+		m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// Swap m0's and m3's identities.
+		_swapIdentityWithTestMeta(testMeta, feeRateNanosPerKb, paramUpdaterPub, paramUpdaterPriv, m0PkBytes, m3PkBytes)
+		m3PKID = DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+		require.True(m0PKID.PKID.Eq(m3PKID.PKID))
+
+		// Validate m0's existing order also present for m3.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// Validate if m3 submits an order, they can't match to themselves.
+		// Validate m3 can cancel their open orders.
+		// Validate m1's orders for my m3 DAO coin still persist.
+		// Validate m1 can still open an order for m3 DAO coin.
+	}
+
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
