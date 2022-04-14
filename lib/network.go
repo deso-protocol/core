@@ -5613,40 +5613,12 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	// All the fields in DAOCoinLimitOrderMetadata are optional.
-	// If you're submitting an order, the following fields are required:
-	//   * BuyingDAOCoinCreatorPublicKey
-	//   * SellingDAOCoinCreatorPublicKey
-	//   * ScaledExchangeRateCoinsToSellPerCoinToBuy
-	//   * QuantityToFillInBaseUnits
-	//   * OperationType
-	//   * BidderInputs
-	//   * FeeNanos
-	// If you're cancelling an order, the following fields are required:
-	//   * CancelOrderID
-	//   * FeeNanos
-	// We use the first byte here as a boolean to indicate whether we are submitting
-	// a new order (TRUE) or cancelling an existing order (FALSE). This can be known
-	// by whether CancelOrderID is provided.
-
-	// FeeNanos is required both if submitting a
-	// new order or cancelling an existing order.
-	data := append([]byte{}, UintToBuf(txnData.FeeNanos)...)
-
-	if txnData.CancelOrderID != nil {
-		// We are cancelling an existing order.
-		data = append(data, BoolToByte(false))
-		data = append(data, txnData.CancelOrderID.ToBytes()...)
-		return data, nil
-	}
-
-	// We are submitting a new order.
-	data = append(data, BoolToByte(true))
-	data = append(data, txnData.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
-	data = append(data, txnData.SellingDAOCoinCreatorPublicKey.ToBytes()...)
-	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeUint256(txnData.QuantityToFillInBaseUnits)...)
+	data := append([]byte{}, EncodeOptionalPublicKey(txnData.BuyingDAOCoinCreatorPublicKey)...)
+	data = append(data, EncodeOptionalPublicKey(txnData.SellingDAOCoinCreatorPublicKey)...)
+	data = append(data, EncodeOptionalUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, EncodeOptionalUint256(txnData.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
+	data = append(data, EncodeOptionalBlockHash(txnData.CancelOrderID)...)
 	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
 
 	// we use a sorted copy internally, so we don't modify the original struct from underneath the caller
@@ -5660,6 +5632,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 		}
 	}
 
+	data = append(data, UintToBuf(txnData.FeeNanos)...)
 	return data, nil
 }
 
@@ -5672,52 +5645,28 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 	var err error
 
-	// FeeNanos is required both if submitting a
-	// new order or cancelling an existing order.
-	ret.FeeNanos, err = ReadUvarint(rr)
-	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FeeNanos: %v", err)
-	}
-
-	// Check prefix boolean byte to see if submitting a new order (TRUE)
-	// or cancelling an existing order (FALSE).
-	isNewOrder := ReadBoolByte(rr)
-
-	if !isNewOrder {
-		// Cancelling an existing order.
-		ret.CancelOrderID, err = ReadBlockHash(rr)
-		if err != nil {
-			return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
-		}
-		*txnData = ret
-		return nil
-	}
-
-	// Submitting a new order.
 	// Parse BuyingDAOCoinCreatorPublicKey
-	ret.BuyingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
+	ret.BuyingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"DAOCoinLimitOrderMetadata.FromBytes: Error "+
-				"reading BuyingDAOCoinCreatorPublicKey: %v", err)
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading BuyingDAOCoinCreatorPublicKey: %v", err)
 	}
 
 	// Parse SellingDAOCoinCreatorPublicKey
-	ret.SellingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
+	ret.SellingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"DAOCoinLimitOrderMetadata.FromBytes: Error reading "+
-				"SellingDAOCoinCreatorPKID: %v", err)
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
 	}
 
 	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
-	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = ReadUint256(rr)
+	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = ReadOptionalUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
 	// Parse QuantityToFillInBaseUnits
-	ret.QuantityToFillInBaseUnits, err = ReadUint256(rr)
+	ret.QuantityToFillInBaseUnits, err = ReadOptionalUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
 	}
@@ -5728,6 +5677,12 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading OperationType: %v", err)
 	}
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
+
+	// Parse CancelOrderID
+	ret.CancelOrderID, err = ReadOptionalBlockHash(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
+	}
 
 	// Parse MatchingBidsTransactors
 	matchingBidsTransactorsLength, err := ReadUvarint(rr)
@@ -5782,6 +5737,12 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 				Inputs:              inputs,
 			},
 		)
+	}
+
+	// Parse FeeNanos
+	ret.FeeNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FeeNanos: %v", err)
 	}
 
 	*txnData = ret

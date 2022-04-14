@@ -1047,7 +1047,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
 		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
 
-		require.Equal(int64(m0DESOBalanceBefore-15-uint64(5864-5827)), int64(m0DESOBalanceAfter)) // Fee is 3 nanos
+		require.Equal(int64(m0DESOBalanceBefore-15-uint64(5864-5826)), int64(m0DESOBalanceAfter)) // Fee is 3 nanos
 		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
 		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
 	}
@@ -1497,7 +1497,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m2's accounting
 		m2DESONanosDecrease := m2DESOBalanceNanosBefore - m2DESOBalanceNanosAfter
-		require.Equal(m2DESONanosDecrease, uint64(95)+uint64(37)) // 95: cost of coins, 37: hard-coded fees.
+		require.Equal(m2DESONanosDecrease, uint64(95)+uint64(38)) // 95: cost of coins, 38: hard-coded fees.
 		m2DAOCoinUnitsIncrease, err := SafeUint256().Sub(&m2DAOCoinBalanceUnitsAfter, &m2DAOCoinBalanceUnitsBefore)
 		require.NoError(err)
 		require.Equal(m2DAOCoinUnitsIncrease, uint256.NewInt().SetUint64(110))

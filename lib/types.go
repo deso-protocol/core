@@ -121,6 +121,25 @@ func PKIDToPublicKey(pkid *PKID) []byte {
 	return pkid[:]
 }
 
+func EncodeOptionalPublicKey(val *PublicKey) []byte {
+	if val == nil {
+		return UintToBuf(uint64(0))
+	}
+	encodedVal := val.ToBytes()
+	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
+}
+
+func ReadOptionalPublicKey(rr *bytes.Reader) (*PublicKey, error) {
+	byteCount, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, err
+	}
+	if byteCount > uint64(0) {
+		return ReadPublicKey(rr)
+	}
+	return nil, nil
+}
+
 const HashSizeBytes = 32
 
 // BlockHash is a convenient alias for a block hash.
@@ -168,10 +187,28 @@ func ReadBlockHash(rr io.Reader) (*BlockHash, error) {
 	return NewBlockHash(valBytes), nil
 }
 
+func EncodeOptionalBlockHash(val *BlockHash) []byte {
+	if val == nil {
+		return UintToBuf(uint64(0))
+	}
+	encodedVal := val.ToBytes()
+	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
+}
+
+func ReadOptionalBlockHash(rr *bytes.Reader) (*BlockHash, error) {
+	byteCount, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, err
+	}
+	if byteCount > uint64(0) {
+		return ReadBlockHash(rr)
+	}
+	return nil, nil
+}
+
 func EncodeUint256(val *uint256.Int) []byte {
 	valBytes := val.Bytes()
 	data := make([]byte, 32, 32)
-	//data := append([]byte{}, UintToBuf(uint64(len(valBytes)))...)
 	return append(data, valBytes...)[len(valBytes):]
 }
 
@@ -182,6 +219,25 @@ func ReadUint256(rr io.Reader) (*uint256.Int, error) {
 		return uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
 	}
 	return uint256.NewInt().SetBytes(valBytes), nil
+}
+
+func EncodeOptionalUint256(val *uint256.Int) []byte {
+	if val == nil {
+		return UintToBuf(uint64(0))
+	}
+	encodedVal := EncodeUint256(val)
+	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
+}
+
+func ReadOptionalUint256(rr *bytes.Reader) (*uint256.Int, error) {
+	byteCount, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, err
+	}
+	if byteCount > uint64(0) {
+		return ReadUint256(rr)
+	}
+	return nil, nil
 }
 
 //var _ sql.Scanner = (*BlockHash)(nil)
