@@ -6286,7 +6286,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 	queryOrder.BlockHeight = uint32(0)
 	queryOrder.TransactorPKID = MaxPKID.NewPKID()
-	queryOrder.OrderID = NewBlockHash(MaxUint256.Bytes())
+	queryOrder.OrderID = maxHash.NewBlockHash()
 
 	key := DBKeyForDAOCoinLimitOrder(queryOrder)
 
