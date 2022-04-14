@@ -919,21 +919,24 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 
 	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
 
-	// First, delete the DAO Coin Limit Order created by this entry. If there was a previous limit order entry,
-	// it will be reset below.
-	bav._deleteDAOCoinLimitOrderEntryMappings(&DAOCoinLimitOrderEntry{
-		OrderID:                   txnHash,
-		TransactorPKID:            transactorPKID,
-		BuyingDAOCoinCreatorPKID:  bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-		SellingDAOCoinCreatorPKID: bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
-		BlockHeight:                               blockHeight,
-	})
-
-	// Revert the Previous Transactor DAO Coin Limit Order entry if it exists
+	// PrevTransactorDAOCoinLimitOrderEntry is only set if this transaction
+	// cancelled an existing order. If there is a previous transactor order,
+	// we want to un-cancel it. If there is not, that means the transactor
+	// submitted a new order which needs to be deleted.
 	if operationData.PrevTransactorDAOCoinLimitOrderEntry != nil {
+		// Replace cancelled order.
 		bav._setDAOCoinLimitOrderEntryMappings(operationData.PrevTransactorDAOCoinLimitOrderEntry)
+	} else {
+		// Delete submitted order.
+		bav._deleteDAOCoinLimitOrderEntryMappings(&DAOCoinLimitOrderEntry{
+			OrderID:                   txnHash,
+			TransactorPKID:            transactorPKID,
+			BuyingDAOCoinCreatorPKID:  bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			SellingDAOCoinCreatorPKID: bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
+			BlockHeight:                               blockHeight,
+		})
 	}
 
 	// Revert DAO Coin balance entries
@@ -1428,8 +1431,20 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	if order.OrderID == nil || order.OrderID.IsEqual(&ZeroBlockHash) {
 		// This should never happen. OrderID is set automatically
 		// to the txn hash and isn't specified by the user. But
-		// double-checking doesn't hurt!
+		// worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidOrderID
+	}
+
+	// Validate BuyingDAOCoinCreatorPKID.
+	if order.BuyingDAOCoinCreatorPKID == nil {
+		// This should never happen but worth double-checking.
+		return RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID
+	}
+
+	// Validate SellingDAOCoinCreatorPKID.
+	if order.BuyingDAOCoinCreatorPKID == nil {
+		// This should never happen but worth double-checking.
+		return RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID
 	}
 
 	// Validate not buying and selling the same coin.
@@ -1440,6 +1455,8 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	// Validate operation type.
 	if order.OperationType != DAOCoinLimitOrderOperationTypeASK &&
 		order.OperationType != DAOCoinLimitOrderOperationTypeBID {
+		// OperationType can't be nil but worth double-checking.
+		// This check will fail if it's nil.
 		return RuleErrorDAOCoinLimitOrderInvalidOperationType
 	}
 
@@ -1466,12 +1483,16 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	}
 
 	// Validate price > 0.
-	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		// ScaledExchangeRateCoinsToSellPerCoinToBuy can't be nil but worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
 	// Validate quantity > 0.
-	if order.QuantityToFillInBaseUnits.IsZero() {
+	if order.QuantityToFillInBaseUnits == nil ||
+		order.QuantityToFillInBaseUnits.IsZero() {
+		// QuantityToFillInBaseUnits can't be nil but worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 

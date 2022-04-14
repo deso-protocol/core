@@ -1289,13 +1289,25 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
 			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+			if txMeta.CancelOrderID != nil {
+				// Transactor is cancelling an existing order.
+				metadataDAOCoinLimitOrder = append(metadataDAOCoinLimitOrder, &PGMetadataDAOCoinLimitOrder{
+					TransactionHash: txnHash,
+					CancelOrderID:   txMeta.CancelOrderID,
+					FeeNanos:        txMeta.FeeNanos,
+				})
+
+				break
+			}
+
+			// Transactor is submitting a new order.
 			metadataDAOCoinLimitOrder = append(metadataDAOCoinLimitOrder, &PGMetadataDAOCoinLimitOrder{
 				TransactionHash:                           txnHash,
 				BuyingDAOCoinCreatorPublicKey:             txMeta.BuyingDAOCoinCreatorPublicKey,
 				SellingDAOCoinCreatorPublicKey:            txMeta.SellingDAOCoinCreatorPublicKey,
 				ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
 				QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits.Hex(),
-				CancelOrderID:                             txMeta.CancelOrderID,
 				FeeNanos:                                  txMeta.FeeNanos,
 			})
 

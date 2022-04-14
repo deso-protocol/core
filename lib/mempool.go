@@ -1724,6 +1724,13 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		})
 	case TxnTypeDAOCoinLimitOrder:
 		realTxMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+		// We only update the mempool if transactor submitted a new order.
+		// Not if the transactor cancelled an existing order.
+		if realTxMeta.CancelOrderID != nil {
+			break
+		}
+
 		if !realTxMeta.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: PkToString(realTxMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),

@@ -3205,19 +3205,24 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	// Construct transactor order
 	transactorOrder := &DAOCoinLimitOrderEntry{
-		OrderID:                   txn.Hash(),
-		TransactorPKID:            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
-		BuyingDAOCoinCreatorPKID:  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-		SellingDAOCoinCreatorPKID: utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
-		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
-		OperationType:                             metadata.OperationType,
-		BlockHeight:                               bc.blockTip().Height + 1,
+		OrderID:        txn.Hash(),
+		TransactorPKID: utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
+		BlockHeight:    bc.blockTip().Height + 1,
+	}
+
+	if metadata.CancelOrderID == nil {
+		// Submitting a new order.
+		transactorOrder.BuyingDAOCoinCreatorPKID = utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID
+		transactorOrder.SellingDAOCoinCreatorPKID = utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID
+		transactorOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone()
+		transactorOrder.QuantityToFillInBaseUnits = metadata.QuantityToFillInBaseUnits.Clone()
+		transactorOrder.OperationType = metadata.OperationType
 	}
 
 	// We use "additionalFees" to track how much we need to spend to cover the transactor's bid in DESO.
 	var additionalFees uint64
-	if metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+	if metadata.CancelOrderID == nil &&
+		metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 		// If buying $DESO, we need to find inputs from all the orders that match.
 		// This will move to txn construction as this will be put in the metadata.
 		var lastSeenOrder *DAOCoinLimitOrderEntry
@@ -3303,7 +3308,8 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 			metadata.BidderInputs = append(metadata.BidderInputs, &inputsByTransactor)
 		}
-	} else if metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+	} else if metadata.CancelOrderID == nil &&
+		metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 		// If selling $DESO for DAO coins, we need to find the matching orders
 		// and add that as an additional fee when adding inputs and outputs.
 		var lastSeenOrder *DAOCoinLimitOrderEntry
