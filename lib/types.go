@@ -159,6 +159,15 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	return newBlockhash
 }
 
+func ReadBlockHash(rr io.Reader) (*BlockHash, error) {
+	valBytes := make([]byte, HashSizeBytes, HashSizeBytes)
+	_, err := io.ReadFull(rr, valBytes)
+	if err != nil {
+		return nil, fmt.Errorf("ReadBlockHash: Error reading value bytes: %v", err)
+	}
+	return NewBlockHash(valBytes), nil
+}
+
 func EncodeUint256(val *uint256.Int) []byte {
 	valBytes := val.Bytes()
 	data := make([]byte, 32, 32)

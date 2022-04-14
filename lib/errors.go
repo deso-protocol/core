@@ -248,6 +248,7 @@ const (
 
 	// DAO Coin Limit Orders
 	RuleErrorDAOCoinLimitOrderBeforeBlockHeight                       RuleError = "RuleErrorDAOCoinLimitOrderBeforeBlockHeight"
+	RuleErrorDAOCoinLimitOrderInvalidOrderID                          RuleError = "RuleErrorDAOCoinLimitOrderInvalidOrderID"
 	RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin                RuleError = "RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin"
 	RuleErrorDAOCoinLimitOrderInvalidOperationType                    RuleError = "RuleErrorDAOCoinLimitOrderInvalidOperationType"
 	RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile      RuleError = "RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile"
@@ -261,6 +262,7 @@ const (
 	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder         RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder"
 	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists               RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
 	RuleErrorDAOCoinLimitOrderToCancelNotFound                        RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotFound"
+	RuleErrorDAOCoinLimitOrderToCancelNotYours                        RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotYours"
 	RuleErrorDAOCoinLimitOrderOverspendingDESO                        RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDESO"
 	RuleErrorDAOCoinLimitOrderOverflowsDESO                           RuleError = "RuleErrorDAOCoinLimitOrderOverflowsDESO"
 	RuleErrorDAOCoinLimitOrderOverspendingDAOCoin                     RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDAOCoin"
@@ -271,7 +273,6 @@ const (
 	RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins      RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins"
 	RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist                RuleError = "RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist"
 	RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero                    RuleError = "RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero"
-	RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType     RuleError = "RuleErrorDAOCoinLimitOrderExistingOrderDifferentOperationType"
 	RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee                   RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee"
 	RuleErrorDAOCoinLimitOrderFeeNanosOverflow                        RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosOverflow"
 	RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee RuleError = "RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee"
