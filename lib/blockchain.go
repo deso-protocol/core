@@ -410,6 +410,14 @@ type Blockchain struct {
 	MaxSyncBlockHeight              uint32
 	params                          *DeSoParams
 	eventManager                    *EventManager
+
+	// Archival mode determines if we'll be downloading historical blocks after finishing hypersync.
+	// It is turned off by default, meaning we won't be downloading blocks prior to the first snapshot
+	// height, nor we'll be downloading utxoops for these blocks. This is OK because we're assuming a
+	// reorg reverting a last snapshot is extremely unlikely. If it does happen, it would require the
+	// syncing node to re-run hypersync, which is a tiny overhead. Moreover, we are moving away from
+	// utxoops overall. They'll only be needed close to the tip to handle reorgs and nowhere else.
+	archivalMode bool
 	// Returns true once all of the housekeeping in creating the
 	// blockchain is complete. This includes setting up the genesis block.
 	isInitialized bool
@@ -443,8 +451,9 @@ type Blockchain struct {
 	//
 	// TODO: These could be rolled into SyncState, or at least into a single
 	// variable.
-	syncingState    bool
-	finishedSyncing bool
+	syncingState                bool
+	finishedSyncing             bool
+	downloadingHistoricalBlocks bool
 
 	timer *Timer
 }
@@ -610,6 +619,7 @@ func NewBlockchain(
 	postgres *Postgres,
 	eventManager *EventManager,
 	snapshot *Snapshot,
+	archivalMode bool,
 ) (*Blockchain, error) {
 
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
@@ -634,6 +644,7 @@ func NewBlockchain(
 		MaxSyncBlockHeight:              maxSyncBlockHeight,
 		params:                          params,
 		eventManager:                    eventManager,
+		archivalMode:                    archivalMode,
 
 		blockIndex:   make(map[BlockHash]*BlockNode),
 		bestChainMap: make(map[BlockHash]*BlockNode),
@@ -1065,6 +1076,9 @@ const (
 	// block chain is current but that there are headers in our main chain for
 	// which we have not yet processed blocks.
 	SyncStateNeedBlocksss
+	// SyncStateSyncingHistoricalBlocks indicates that our node was bootstrapped using
+	// hypersync and that we're currently downloading historical blocks
+	SyncStateSyncingHistoricalBlocks
 	// SyncStateFullyCurrent indicates that our header chain is current and that
 	// we've fetched all the blocks corresponding to this chain.
 	SyncStateFullyCurrent
@@ -1080,6 +1094,8 @@ func (ss SyncState) String() string {
 		return "SYNCING_BLOCKS"
 	case SyncStateNeedBlocksss:
 		return "NEED_BLOCKS"
+	case SyncStateSyncingHistoricalBlocks:
+		return "SYNCING_HISTORICAL_BLOCKS"
 	case SyncStateFullyCurrent:
 		return "FULLY_CURRENT"
 	default:
@@ -1108,6 +1124,12 @@ func (bc *Blockchain) chainState() SyncState {
 		return SyncStateSyncingSnapshot
 	}
 
+	// If the node is the archival mode and we're downloading historical blocks,
+	// then we're in the SyncStateSyncingHistoricalBlocks state.
+	if bc.downloadingHistoricalBlocks {
+		return SyncStateSyncingHistoricalBlocks
+	}
+
 	// If the header tip is current but the block tip isn't then we're in
 	// the SyncStateSyncingBlocks state.
 	blockTip := bc.blockTip()
@@ -1132,7 +1154,7 @@ func (bc *Blockchain) ChainState() SyncState {
 func (bc *Blockchain) isSyncing() bool {
 	syncState := bc.chainState()
 	return syncState == SyncStateSyncingHeaders || syncState == SyncStateSyncingBlocks ||
-		syncState == SyncStateSyncingSnapshot
+		syncState == SyncStateSyncingSnapshot || syncState == SyncStateSyncingHistoricalBlocks
 }
 
 func (bc *Blockchain) ChainFullyStored() bool {
@@ -1142,6 +1164,38 @@ func (bc *Blockchain) ChainFullyStored() bool {
 		}
 	}
 	return true
+}
+
+func (bc *Blockchain) checkArchivalMode() bool {
+	// If node is not in the archival mode or if snapshot is nil then there is nothing to check.
+	if !bc.archivalMode || bc.snapshot == nil {
+		return false
+	}
+
+	// If for some reason snapshot metadata is not initialized then we should also return false.
+	if bc.snapshot.CurrentEpochSnapshotMetadata == nil {
+		glog.Errorf("checkArchivalMode: Snapshot epoch metadata is nil, this should generally not happen.")
+		return false
+	}
+
+	firstSnapshotHeight := bc.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight
+	for _, blockNode := range bc.bestChain {
+		if uint64(blockNode.Height) > firstSnapshotHeight {
+			return false
+		}
+
+		// Check if we have blocks that have been processed and validated but not stored. This would indicate that there
+		// are historical blocks that we are yet to download.
+		if (blockNode.Status&StatusBlockProcessed) == 1 &&
+			(blockNode.Status&StatusBlockValidated) == 1 &&
+			(blockNode.Status&StatusBlockStored) == 0 {
+
+			return true
+		}
+	}
+
+	// If we get here, it means that all blocks have been processed and stored, so there is nothing to do.
+	return false
 }
 
 // headerTip returns the tip of the header chain. Because we fetch headers

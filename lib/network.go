@@ -1289,6 +1289,9 @@ const (
 	SFFullNode ServiceFlag = 1 << iota
 	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
 	SFHyperSync
+	// SFArchivalNode is a flag complementary to SFHyperSync. If node is a hypersync node then
+	// it might not be able to support block sync anymore, unless it has archival mode turned on.
+	SFArchivalNode
 )
 
 type MsgDeSoVersion struct {
