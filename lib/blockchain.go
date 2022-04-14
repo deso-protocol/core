@@ -3203,20 +3203,23 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		}
 	}
 
-	// Construct transactor order
-	transactorOrder := &DAOCoinLimitOrderEntry{
-		OrderID:        txn.Hash(),
-		TransactorPKID: utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
-		BlockHeight:    bc.blockTip().Height + 1,
-	}
+	// Construct transactor order if submitting a new order so
+	// we can calculate BidderInputs and additional $DESO fees
+	// This is not necessary if cancelling an existing order.
+	var transactorOrder *DAOCoinLimitOrderEntry
 
 	if metadata.CancelOrderID == nil {
-		// Submitting a new order.
-		transactorOrder.BuyingDAOCoinCreatorPKID = utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID
-		transactorOrder.SellingDAOCoinCreatorPKID = utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID
-		transactorOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone()
-		transactorOrder.QuantityToFillInBaseUnits = metadata.QuantityToFillInBaseUnits.Clone()
-		transactorOrder.OperationType = metadata.OperationType
+		// CancelOrderID is nil, so we know we're submitting a new order.
+		transactorOrder = &DAOCoinLimitOrderEntry{
+			OrderID:                   txn.Hash(),
+			TransactorPKID:            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
+			BuyingDAOCoinCreatorPKID:  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			SellingDAOCoinCreatorPKID: utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
+			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
+			OperationType:                             metadata.OperationType,
+			BlockHeight:                               bc.blockTip().Height + 1,
+		}
 	}
 
 	// We use "additionalFees" to track how much we need to spend to cover the transactor's bid in DESO.
