@@ -8,8 +8,8 @@ import (
 func init() {
 	up := func(db orm.DB) error {
 		// Create pg_metadata_dao_coin_limit_orders table.
-		// Note: all fields are optional other than fee_nanos
-		// as they depend on whether we are submitting a new
+		// Note: all fields are optional other than transaction_hash and
+		// fee_nanos as they depend on whether we are submitting a new
 		// order or cancelling an existing order.
 		_, err := db.Exec(`
 			CREATE TABLE pg_metadata_dao_coin_limit_orders (

@@ -3204,7 +3204,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 	}
 
 	// Construct transactor order if submitting a new order so
-	// we can calculate BidderInputs and additional $DESO fees
+	// we can calculate BidderInputs and additional $DESO fees.
 	// This is not necessary if cancelling an existing order.
 	var transactorOrder *DAOCoinLimitOrderEntry
 
