@@ -919,15 +919,8 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 
 	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
 
-	// PrevTransactorDAOCoinLimitOrderEntry is only set if this transaction
-	// cancelled an existing order. If there is a previous transactor order,
-	// we want to un-cancel it. If there is not, that means the transactor
-	// submitted a new order which needs to be deleted.
-	if operationData.PrevTransactorDAOCoinLimitOrderEntry != nil {
-		// Replace cancelled order.
-		bav._setDAOCoinLimitOrderEntryMappings(operationData.PrevTransactorDAOCoinLimitOrderEntry)
-	} else {
-		// Delete submitted order.
+	if txMeta.CancelOrderID == nil {
+		// Delete the order created by this txn.
 		bav._deleteDAOCoinLimitOrderEntryMappings(&DAOCoinLimitOrderEntry{
 			OrderID:                   txnHash,
 			TransactorPKID:            transactorPKID,
@@ -937,6 +930,11 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 			QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
 			BlockHeight:                               blockHeight,
 		})
+	} else {
+		// Replace the order cancelled by this txn. Note:
+		// PrevTransactorDAOCoinLimitOrderEntry is only set
+		// if this transaction cancelled an existing order.
+		bav._setDAOCoinLimitOrderEntryMappings(operationData.PrevTransactorDAOCoinLimitOrderEntry)
 	}
 
 	// Revert DAO Coin balance entries
@@ -1442,7 +1440,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	}
 
 	// Validate SellingDAOCoinCreatorPKID.
-	if order.BuyingDAOCoinCreatorPKID == nil {
+	if order.SellingDAOCoinCreatorPKID == nil {
 		// This should never happen but worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID
 	}
