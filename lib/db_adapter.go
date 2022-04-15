@@ -84,3 +84,19 @@ func (adapter *DbAdapter) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 
 	return outputOrders, err
 }
+
+//
+// PKID
+//
+
+func (adapter *DbAdapter) GetPKIDForPublicKey(pkBytes []byte) *PKID {
+	if adapter.postgresDb != nil {
+		profile := adapter.postgresDb.GetProfileForPublicKey(pkBytes)
+		if profile == nil {
+			return NewPKID(pkBytes)
+		}
+		return profile.PKID
+	}
+
+	return DBGetPKIDEntryForPublicKey(adapter.badgerDb, pkBytes).PKID
+}

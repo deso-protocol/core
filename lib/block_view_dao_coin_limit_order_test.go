@@ -1608,6 +1608,122 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(m2DAOCoinUnitsDecrease, uint256.NewInt().SetUint64(900))
 	}
 
+	{
+		// Scenario: swapping identity
+
+		// Confirm existing orders in the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// m1 submits order selling m0 DAO coins.
+		exchangeRate, err := CalculateScaledExchangeRate(8.0)
+		require.NoError(err)
+
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Confirm order is added to the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		// transactor: m1, buying:  $, selling: m0, price: 8, quantity: 100, type: ASK
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// Confirm 1 order belonging to m0.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// Confirm 1 order belonging to m1.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// Confirm 0 orders belonging to m3.
+		m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// Swap m0's and m3's identities.
+		originalM0PKID := m0PKID.PKID.NewPKID()
+		originalM3PKID := m3PKID.PKID.NewPKID()
+		_swapIdentityWithTestMeta(testMeta, feeRateNanosPerKb, paramUpdaterPub, paramUpdaterPriv, m0PkBytes, m3PkBytes)
+		m0PKID.PKID = dbAdapter.GetPKIDForPublicKey(m0PkBytes)
+		m3PKID.PKID = dbAdapter.GetPKIDForPublicKey(m3PkBytes)
+		require.True(m0PKID.PKID.Eq(originalM3PKID))
+		require.True(m3PKID.PKID.Eq(originalM0PKID))
+
+		// Validate m0's 1 existing order was transferred to m3.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// Validate if m3 submits an order, they can't match to their existing order.
+		exchangeRate, err = CalculateScaledExchangeRate(0.2)
+		require.NoError(err)
+
+		metadataM3 := DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m3PkBytes),
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(350),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m3Pub, m3Priv, metadataM3)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderMatchingOwnOrder)
+
+		// Validate m3 can cancel their open order.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		metadataM3 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m3Pub, m3Priv, metadataM3)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+
+		// Validate m1's orders for m3 DAO coins still persist.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].SellingDAOCoinCreatorPKID.Eq(m3PKID.PKID))
+
+		// Validate m1 can still open an order for m3 DAO coin.
+		exchangeRate, err = CalculateScaledExchangeRate(7.0)
+		require.NoError(err)
+
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m3PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+	}
+
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
