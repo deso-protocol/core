@@ -290,10 +290,9 @@ var (
 	// <
 	//   _PrefixDAOCoinLimitOrder
 	//   BuyingDAOCoinCreatorPKID [33]byte
-	//   SellingDAOCoinCReatorPKID [33]byte
-	//   ScaledPrice [256]byte
+	//   SellingDAOCoinCreatorPKID [33]byte
+	//   ScaledExchangeRateCoinsToSellPerCoinToBuy [32]byte
 	//   BlockHeight [32]byte
-	//   TransactorPKID [33]byte
 	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
 	//
@@ -302,9 +301,7 @@ var (
 	//   _PrefixDAOCoinLimitOrderByTransactorPKID
 	//   TransactorPKID [33]byte
 	//   BuyingDAOCoinCreatorPKID [33]byte
-	//   SellingDAOCoinCReatorPKID [33]byte
-	//   ScaledPrice [256]byte
-	//   BlockHeight [32]byte
+	//   SellingDAOCoinCreatorPKID [33]byte
 	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
 	//
@@ -6189,30 +6186,25 @@ func StartDBSummarySnapshots(db *badger.DB) {
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order)
 	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-
 	// Store MaxUint32 - block height to guarantee FIFO
 	// orders as we seek in reverse order.
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
-
-	key = append(key, order.TransactorPKID[:]...)
 	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }
 
 func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key = append(key, order.BuyingDAOCoinCreatorPKID.Encode()...)
-	key = append(key, order.SellingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID[:]...)
+	key = append(key, order.SellingDAOCoinCreatorPKID[:]...)
 	return key
 }
 
 func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) []byte {
 	key := append([]byte{}, _PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, order.TransactorPKID[:]...)
-	key = append(key, order.BuyingDAOCoinCreatorPKID.Encode()...)
-	key = append(key, order.SellingDAOCoinCreatorPKID.Encode()...)
-	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID[:]...)
+	key = append(key, order.SellingDAOCoinCreatorPKID[:]...)
 	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }
@@ -6277,24 +6269,20 @@ func DBGetMatchingDAOCoinLimitOrders(
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.
 	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
-	//   * Set ScaledPrice to MaxUint256.
+	//   * Set ScaledExchangeRateCoinsToSellPerCoinToBuy to MaxUint256.
 	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
-	//   * Set TransactorPKID to MaxPKID.
 	//   * Set OrderID to MaxBlockHash.
-	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
 	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID
+	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
 	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 	queryOrder.BlockHeight = uint32(0)
-	queryOrder.TransactorPKID = MaxPKID.NewPKID()
 	queryOrder.OrderID = maxHash.NewBlockHash()
 
 	key := DBKeyForDAOCoinLimitOrder(queryOrder)
-
 	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder)
 
 	// If passed a last seen order, start seeking from there.
 	var startKey []byte
-
 	if lastSeenOrder != nil {
 		startKey = DBKeyForDAOCoinLimitOrder(lastSeenOrder)
 		key = startKey
@@ -6363,8 +6351,8 @@ func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 
 	// Get all DAO coin limit orders for this DAO coin pair.
 	key := append([]byte{}, _PrefixDAOCoinLimitOrder...)
-	key = append(key, buyingDAOCoinCreatorPKID.Encode()...)
-	key = append(key, sellingDAOCoinCreatorPKID.Encode()...)
+	key = append(key, buyingDAOCoinCreatorPKID[:]...)
+	key = append(key, sellingDAOCoinCreatorPKID[:]...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
