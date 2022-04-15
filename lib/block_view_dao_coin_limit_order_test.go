@@ -743,12 +743,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		metadataM1.QuantityToFillInBaseUnits = metadataM0.QuantityToFillInBaseUnits
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
-		// Confirm 2 existing limit orders @ 0.1 $DESO / DAO coin.
+		// Confirm 2 existing limit orders.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
-		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
 	}
 
 	// Scenario: non-matching order.
