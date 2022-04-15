@@ -1662,9 +1662,9 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 		return order.BlockHeight < other.BlockHeight
 	}
 
-	// Prefer lower-quantity orders first.
+	// Prefer higher-quantity orders first.
 	if order.QuantityToFillInBaseUnits.Eq(other.QuantityToFillInBaseUnits) {
-		return order.QuantityToFillInBaseUnits.Lt(other.QuantityToFillInBaseUnits)
+		return order.QuantityToFillInBaseUnits.Gt(other.QuantityToFillInBaseUnits)
 	}
 
 	// To break a tie and guarantee idempotency in sorting,
