@@ -1656,14 +1656,18 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Empty(orderEntries)
 
 		// Swap m0's and m3's identities.
+		originalM0PKID := m0PKID.PKID.NewPKID()
+		originalM3PKID := m3PKID.PKID.NewPKID()
 		_swapIdentityWithTestMeta(testMeta, feeRateNanosPerKb, paramUpdaterPub, paramUpdaterPriv, m0PkBytes, m3PkBytes)
+		m0PKID.PKID = dbAdapter.GetPKIDForPublicKey(m0PkBytes)
 		m3PKID.PKID = dbAdapter.GetPKIDForPublicKey(m3PkBytes)
-		require.True(m0PKID.PKID.Eq(m3PKID.PKID))
+		require.True(m0PKID.PKID.Eq(originalM3PKID))
+		require.True(m3PKID.PKID.Eq(originalM0PKID))
 
-		// Validate m0's 1 existing order also present for m3.
+		// Validate m0's 1 existing order was transferred to m3.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
 		require.NoError(err)
-		require.Equal(len(orderEntries), 1)
+		require.Empty(orderEntries)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
