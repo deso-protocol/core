@@ -302,8 +302,6 @@ var (
 	//   TransactorPKID [33]byte
 	//   BuyingDAOCoinCreatorPKID [33]byte
 	//   SellingDAOCoinCreatorPKID [33]byte
-	//   ScaledExchangeRateCoinsToSellPerCoinToBuy [32]byte
-	//   BlockHeight [32]byte
 	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
 	//
@@ -6207,8 +6205,6 @@ func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) []
 	key = append(key, order.TransactorPKID[:]...)
 	key = append(key, order.BuyingDAOCoinCreatorPKID[:]...)
 	key = append(key, order.SellingDAOCoinCreatorPKID[:]...)
-	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
 	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }

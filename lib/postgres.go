@@ -2630,8 +2630,6 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPK
 		Where("transactor_pkid = ?", transactorPKID).
 		Order("buying_dao_coin_creator_pkid ASC").
 		Order("selling_dao_coin_creator_pkid ASC").
-		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy ASC").
-		Order("block_height DESC").
 		Order("order_id ASC").
 		Select()
 
