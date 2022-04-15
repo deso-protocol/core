@@ -919,20 +919,21 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 
 	transactorPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey).PKID
 
-	// First, delete the DAO Coin Limit Order created by this entry. If there was a previous limit order entry,
-	// it will be reset below.
-	bav._deleteDAOCoinLimitOrderEntryMappings(&DAOCoinLimitOrderEntry{
-		OrderID:                   txnHash,
-		TransactorPKID:            transactorPKID,
-		BuyingDAOCoinCreatorPKID:  bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-		SellingDAOCoinCreatorPKID: bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
-		BlockHeight:                               blockHeight,
-	})
-
-	// Revert the Previous Transactor DAO Coin Limit Order entry if it exists
-	if operationData.PrevTransactorDAOCoinLimitOrderEntry != nil {
+	if txMeta.CancelOrderID == nil {
+		// Delete the order created by this txn.
+		bav._deleteDAOCoinLimitOrderEntryMappings(&DAOCoinLimitOrderEntry{
+			OrderID:                   txnHash,
+			TransactorPKID:            transactorPKID,
+			BuyingDAOCoinCreatorPKID:  bav.GetPKIDForPublicKey(txMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			SellingDAOCoinCreatorPKID: bav.GetPKIDForPublicKey(txMeta.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
+			BlockHeight:                               blockHeight,
+		})
+	} else {
+		// Replace the order cancelled by this txn. Note:
+		// PrevTransactorDAOCoinLimitOrderEntry is only set
+		// if this transaction cancelled an existing order.
 		bav._setDAOCoinLimitOrderEntryMappings(operationData.PrevTransactorDAOCoinLimitOrderEntry)
 	}
 
@@ -1428,8 +1429,20 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	if order.OrderID == nil || order.OrderID.IsEqual(&ZeroBlockHash) {
 		// This should never happen. OrderID is set automatically
 		// to the txn hash and isn't specified by the user. But
-		// double-checking doesn't hurt!
+		// worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidOrderID
+	}
+
+	// Validate BuyingDAOCoinCreatorPKID.
+	if order.BuyingDAOCoinCreatorPKID == nil {
+		// This should never happen but worth double-checking.
+		return RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID
+	}
+
+	// Validate SellingDAOCoinCreatorPKID.
+	if order.SellingDAOCoinCreatorPKID == nil {
+		// This should never happen but worth double-checking.
+		return RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID
 	}
 
 	// Validate not buying and selling the same coin.
@@ -1440,6 +1453,8 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	// Validate operation type.
 	if order.OperationType != DAOCoinLimitOrderOperationTypeASK &&
 		order.OperationType != DAOCoinLimitOrderOperationTypeBID {
+		// OperationType can't be nil but worth double-checking.
+		// This check will fail if it's nil.
 		return RuleErrorDAOCoinLimitOrderInvalidOperationType
 	}
 
@@ -1466,12 +1481,16 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	}
 
 	// Validate price > 0.
-	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		// ScaledExchangeRateCoinsToSellPerCoinToBuy can't be nil but worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
 	// Validate quantity > 0.
-	if order.QuantityToFillInBaseUnits.IsZero() {
+	if order.QuantityToFillInBaseUnits == nil ||
+		order.QuantityToFillInBaseUnits.IsZero() {
+		// QuantityToFillInBaseUnits can't be nil but worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 

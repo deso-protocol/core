@@ -8,14 +8,17 @@ import (
 func init() {
 	up := func(db orm.DB) error {
 		// Create pg_metadata_dao_coin_limit_orders table.
+		// Note: all fields are optional other than transaction_hash and
+		// fee_nanos as they depend on whether we are submitting a new
+		// order or cancelling an existing order.
 		_, err := db.Exec(`
 			CREATE TABLE pg_metadata_dao_coin_limit_orders (
 				transaction_hash                                   BYTEA PRIMARY KEY,
-				buying_dao_coin_creator_public_key                 BYTEA NOT NULL,
-				selling_dao_coin_creator_public_key                BYTEA NOT NULL,
-				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT NOT NULL,
-				quantity_to_fill_in_base_units                     TEXT NOT NULL,
-				operation_type                                     BIGINT NOT NULL,
+				buying_dao_coin_creator_public_key                 BYTEA,
+				selling_dao_coin_creator_public_key                BYTEA,
+				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT,
+				quantity_to_fill_in_base_units                     TEXT,
+				operation_type                                     BIGINT,
 				cancel_order_id                                    BYTEA,
 				fee_nanos                                          BIGINT NOT NULL
 			);
