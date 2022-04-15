@@ -599,33 +599,32 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[0].TransactorPKID.Eq(m1PKID.PKID))
 
 		// m1 tries to cancel non-existent order.
-		metadataM1.CancelOrderID = NewBlockHash(uint256.NewInt().SetUint64(1).Bytes())
+		cancelMetadataM1 := DAOCoinLimitOrderMetadata{
+			CancelOrderID: NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
+		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, cancelMetadataM1)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderToCancelNotFound)
 
 		// m0 tries to cancel m1's order.
-		metadataM1.CancelOrderID = orderEntries[0].OrderID
+		cancelMetadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM1)
+			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, cancelMetadataM1)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderToCancelNotYours)
 
 		// m1 cancels their open order.
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, cancelMetadataM1)
 
 		// Confirm no existing limit orders.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Empty(orderEntries)
-
-		// Reset metadataM1.
-		metadataM1.CancelOrderID = nil
 	}
 
 	// Scenario: user sells DAO coins for $DESO, but is able to find a good matching
@@ -709,9 +708,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			updatedM1DAOCoinBalance.BalanceNanos)
 
 		// m0 cancels the remainder of his order.
-		metadataM0.CancelOrderID = orderEntries[0].OrderID
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-		metadataM0.CancelOrderID = nil
+		cancelMetadataM0 := DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, cancelMetadataM0)
 
 		// Confirm no existing limit orders.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -763,9 +761,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
 
 		// m0 cancels their order.
-		metadataM0.CancelOrderID = orderEntries[0].OrderID
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-		metadataM0.CancelOrderID = nil
+		cancelMetadataM0 := DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, cancelMetadataM0)
 
 		// Confirm 1 existing order from m1.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -1050,7 +1047,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
 		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
 
-		require.Equal(int64(m0DESOBalanceBefore-15-uint64(5864-5827)), int64(m0DESOBalanceAfter)) // Fee is 3 nanos
+		require.Equal(int64(m0DESOBalanceBefore-15-uint64(5864-5826)), int64(m0DESOBalanceAfter)) // Fee is 3 nanos
 		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
 		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
 	}
@@ -1500,7 +1497,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m2's accounting
 		m2DESONanosDecrease := m2DESOBalanceNanosBefore - m2DESOBalanceNanosAfter
-		require.Equal(m2DESONanosDecrease, uint64(95)+uint64(37)) // 95: cost of coins, 37: hard-coded fees.
+		require.Equal(m2DESONanosDecrease, uint64(95)+uint64(38)) // 95: cost of coins, 38: hard-coded fees.
 		m2DAOCoinUnitsIncrease, err := SafeUint256().Sub(&m2DAOCoinBalanceUnitsAfter, &m2DAOCoinBalanceUnitsBefore)
 		require.NoError(err)
 		require.Equal(m2DAOCoinUnitsIncrease, uint256.NewInt().SetUint64(110))
