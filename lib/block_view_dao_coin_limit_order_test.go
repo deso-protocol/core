@@ -1657,7 +1657,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// Swap m0's and m3's identities.
 		_swapIdentityWithTestMeta(testMeta, feeRateNanosPerKb, paramUpdaterPub, paramUpdaterPriv, m0PkBytes, m3PkBytes)
-		m3PKID = DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+		m3PKID.PKID = dbAdapter.GetPKIDForPublicKey(m3PkBytes)
 		require.True(m0PKID.PKID.Eq(m3PKID.PKID))
 
 		// Validate m0's 1 existing order also present for m3.
@@ -1691,11 +1691,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		metadataM3 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
-		// TODO: uncomment out once merge in upstream branch.
-		//_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m3Pub, m3Priv, metadataM3)
-		//orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
-		//require.NoError(err)
-		//require.Empty(orderEntries)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m3Pub, m3Priv, metadataM3)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
 
 		// Validate m1's orders for m3 DAO coins still persist.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
