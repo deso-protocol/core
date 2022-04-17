@@ -292,10 +292,9 @@ type DBPrefixes struct {
 	// <
 	//   _PrefixDAOCoinLimitOrder
 	//   BuyingDAOCoinCreatorPKID [33]byte
-	//   SellingDAOCoinCReatorPKID [33]byte
-	//   ScaledPrice [256]byte
+	//   SellingDAOCoinCreatorPKID [33]byte
+	//   ScaledExchangeRateCoinsToSellPerCoinToBuy [32]byte
 	//   BlockHeight [32]byte
-	//   TransactorPKID [33]byte
 	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
 	//
@@ -304,14 +303,20 @@ type DBPrefixes struct {
 	//   _PrefixDAOCoinLimitOrderByTransactorPKID
 	//   TransactorPKID [33]byte
 	//   BuyingDAOCoinCreatorPKID [33]byte
-	//   SellingDAOCoinCReatorPKID [33]byte
-	//   ScaledPrice [256]byte
-	//   BlockHeight [32]byte
-	// > -> <DAOCoinLimitOrder>
+	//   SellingDAOCoinCreatorPKID [33]byte
+	//   OrderID [32]byte
+	// > -> <DAOCoinLimitOrderEntry>
+	//
+	// This index allows users to query for a single order by ID.
+	// This is useful in e.g. cancelling an order.
+	// <
+	//   _PrefixDAOCoinLimitOrderByOrderID
+	//   OrderID [32]byte
+	// > -> <DAOCoinLimitOrderEntry>
 	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
-	// NEXT_TAG: 62
+	// NEXT_TAG: 63
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -7746,12 +7751,9 @@ func DBGetPaginatedProfilesByDeSoLocked(
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order)
 	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-
 	// Store MaxUint32 - block height to guarantee FIFO
 	// orders as we seek in reverse order.
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
-
-	key = append(key, order.TransactorPKID[:]...)
 	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }
@@ -7768,8 +7770,6 @@ func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) []
 	key = append(key, order.TransactorPKID.ToBytes()...)
 	key = append(key, order.BuyingDAOCoinCreatorPKID.ToBytes()...)
 	key = append(key, order.SellingDAOCoinCreatorPKID.ToBytes()...)
-	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
 	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }
@@ -7828,24 +7828,20 @@ func DBGetMatchingDAOCoinLimitOrders(
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.
 	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
-	//   * Set ScaledPrice to MaxUint256.
+	//   * Set ScaledExchangeRateCoinsToSellPerCoinToBuy to MaxUint256.
 	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
-	//   * Set TransactorPKID to MaxPKID.
 	//   * Set OrderID to MaxBlockHash.
-	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
 	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID
+	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
 	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 	queryOrder.BlockHeight = uint32(0)
-	queryOrder.TransactorPKID = MaxPKID.NewPKID()
 	queryOrder.OrderID = maxHash.NewBlockHash()
 
 	key := DBKeyForDAOCoinLimitOrder(queryOrder)
-
 	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder)
 
 	// If passed a last seen order, start seeking from there.
 	var startKey []byte
-
 	if lastSeenOrder != nil {
 		startKey = DBKeyForDAOCoinLimitOrder(lastSeenOrder)
 		key = startKey

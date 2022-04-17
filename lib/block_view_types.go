@@ -4113,14 +4113,10 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 		return order.BlockHeight < other.BlockHeight
 	}
 
-	// Prefer lower-quantity orders first.
-	if order.QuantityToFillInBaseUnits.Eq(other.QuantityToFillInBaseUnits) {
-		return order.QuantityToFillInBaseUnits.Lt(other.QuantityToFillInBaseUnits)
-	}
-
 	// To break a tie and guarantee idempotency in sorting,
-	// prefer lower OrderIDs.
-	return bytes.Compare(order.OrderID.ToBytes(), other.OrderID.ToBytes()) < 0
+	// prefer higher OrderIDs. This matches the BadgerDB
+	// ordering where we SEEK descending.
+	return bytes.Compare(order.OrderID.ToBytes(), other.OrderID.ToBytes()) > 0
 }
 
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToBuyUint256() (*uint256.Int, error) {

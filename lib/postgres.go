@@ -2578,7 +2578,6 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 		Order("selling_dao_coin_creator_pkid ASC").
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy ASC").
 		Order("block_height DESC").
-		Order("transactor_pkid ASC").
 		Order("order_id ASC").
 		Select()
 
@@ -2607,7 +2606,6 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 		Where("selling_dao_coin_creator_pkid = ?", sellingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy ASC").
 		Order("block_height DESC").
-		Order("transactor_pkid ASC").
 		Order("order_id ASC").
 		Select()
 
@@ -2632,8 +2630,6 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPK
 		Where("transactor_pkid = ?", transactorPKID).
 		Order("buying_dao_coin_creator_pkid ASC").
 		Order("selling_dao_coin_creator_pkid ASC").
-		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy ASC").
-		Order("block_height DESC").
 		Order("order_id ASC").
 		Select()
 
@@ -2672,7 +2668,6 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
 		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("transactor_pkid DESC").                                    // Then match BadgerDB ordering
 		Order("order_id DESC").                                           // Then match BadgerDB ordering
 		Select()
 
