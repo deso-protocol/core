@@ -5716,9 +5716,9 @@ type DAOCoinLimitOrderMetadata struct {
 	QuantityToFillInBaseUnits                 *uint256.Int
 	OperationType                             DAOCoinLimitOrderOperationType
 
-	// If set to true, we will cancel an existing
-	// order instead of creating a new one.
-	CancelExistingOrder bool
+	// If set, we will find and delete the
+	// order with the given OrderID.
+	CancelOrderID *BlockHash
 
 	// This is only populated when this order is selling a DAO coin for
 	// $DESO, and is immediately matched with an existing bid-side order
@@ -5739,12 +5739,12 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	data := append([]byte{}, txnData.BuyingDAOCoinCreatorPublicKey.ToBytes()...)
-	data = append(data, txnData.SellingDAOCoinCreatorPublicKey.ToBytes()...)
+	data := append([]byte{}, EncodeOptionalPublicKey(txnData.BuyingDAOCoinCreatorPublicKey)...)
+	data = append(data, EncodeOptionalPublicKey(txnData.SellingDAOCoinCreatorPublicKey)...)
 	data = append(data, EncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(txnData.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
-	data = append(data, BoolToByte(txnData.CancelExistingOrder))
+	data = append(data, EncodeOptionalBlockHash(txnData.CancelOrderID)...)
 	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
 
 	// we use a sorted copy internally, so we don't modify the original struct from underneath the caller
@@ -5759,7 +5759,6 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	}
 
 	data = append(data, UintToBuf(txnData.FeeNanos)...)
-
 	return data, nil
 }
 
@@ -5773,7 +5772,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	var err error
 
 	// Parse BuyingDAOCoinCreatorPublicKey
-	ret.BuyingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
+	ret.BuyingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
 			"DAOCoinLimitOrderMetadata.FromBytes: Error "+
@@ -5781,14 +5780,14 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 
 	// Parse SellingDAOCoinCreatorPublicKey
-	ret.SellingDAOCoinCreatorPublicKey, err = ReadPublicKey(rr)
+	ret.SellingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
 			"DAOCoinLimitOrderMetadata.FromBytes: Error reading "+
 				"SellingDAOCoinCreatorPKID: %v", err)
 	}
 
-	// Parse Price
+	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
 	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = DecodeUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
@@ -5807,10 +5806,10 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
 
-	// Parse CancelExistingOrder
-	ret.CancelExistingOrder, err = ReadBoolByte(rr)
+	// Parse CancelOrderID
+	ret.CancelOrderID, err = ReadOptionalBlockHash(rr)
 	if err != nil {
-		return errors.Wrapf(err, "DAOCoinLimitOrderMetadata: Problem reading CancelExistingOrder")
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
 	}
 
 	// Parse MatchingBidsTransactors
@@ -5868,6 +5867,7 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 		)
 	}
 
+	// Parse FeeNanos
 	ret.FeeNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FeeNanos: %v", err)

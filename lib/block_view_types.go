@@ -716,9 +716,7 @@ type UtxoOperation struct {
 	// DAO coin limit order
 	// PrevTransactorDAOCoinLimitOrderEntry is the previous version of the
 	// transactor's DAO Coin Limit Order before this transaction was connected.
-	// Note: This is only set if the transactor submits multiple limit orders
-	// at the same block height with the same BuyingDAOCoinCreatorPublicKey,
-	// SellingDAOCoinCreatorPublicKey, and ScaledExchangeRateCoinsToSellPerCoinToBuy
+	// Note: This is only set if the transactor is cancelling an existing order.
 	PrevTransactorDAOCoinLimitOrderEntry *DAOCoinLimitOrderEntry
 
 	// PrevBalanceEntries is a map of User PKID, Creator PKID to DAO Coin Balance
@@ -2613,7 +2611,9 @@ func (dk *DerivedKeyEntry) Copy() *DerivedKeyEntry {
 		return nil
 	}
 	newEntry := *dk
-	newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	if dk.TransactionSpendingLimitTracker != nil {
+		newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	}
 	return &newEntry
 }
 
@@ -3929,6 +3929,8 @@ func DecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 // -----------------------------------
 
 type DAOCoinLimitOrderEntry struct {
+	// OrderID is the txn hash (unique identifier) for this order.
+	OrderID *BlockHash
 	// TransactorPKID is the PKID of the user who created this order.
 	TransactorPKID *PKID
 	// The PKID of the coin that we're going to buy
@@ -3995,9 +3997,10 @@ const (
 
 func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 	return &DAOCoinLimitOrderEntry{
-		TransactorPKID:                            order.TransactorPKID.NewPKID(),
-		BuyingDAOCoinCreatorPKID:                  order.BuyingDAOCoinCreatorPKID.NewPKID(),
-		SellingDAOCoinCreatorPKID:                 order.SellingDAOCoinCreatorPKID.NewPKID(),
+		OrderID:                   order.OrderID.NewBlockHash(),
+		TransactorPKID:            order.TransactorPKID.NewPKID(),
+		BuyingDAOCoinCreatorPKID:  order.BuyingDAOCoinCreatorPKID.NewPKID(),
+		SellingDAOCoinCreatorPKID: order.SellingDAOCoinCreatorPKID.NewPKID(),
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
 		QuantityToFillInBaseUnits:                 order.QuantityToFillInBaseUnits.Clone(),
 		OperationType:                             order.OperationType,
@@ -4009,6 +4012,7 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 func (order *DAOCoinLimitOrderEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
+	data = append(data, EncodeToBytes(blockHeight, order.OrderID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.BuyingDAOCoinCreatorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.SellingDAOCoinCreatorPKID, skipMetadata...)...)
@@ -4022,6 +4026,13 @@ func (order *DAOCoinLimitOrderEntry) RawEncodeWithoutMetadata(blockHeight uint64
 
 func (order *DAOCoinLimitOrderEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
+
+	orderID := &BlockHash{}
+	if exist, err := DecodeFromBytes(orderID, rr); exist && err == nil {
+		order.OrderID = orderID
+	} else if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem decoding OrderID")
+	}
 
 	// TransactorPKID
 	transactorPKID := &PKID{}
@@ -4108,19 +4119,20 @@ func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLim
 	}
 
 	// To break a tie and guarantee idempotency in sorting,
-	// prefer lower TransactorPKIDs.
-	return bytes.Compare(order.TransactorPKID[:], other.TransactorPKID[:]) < 0
+	// prefer lower OrderIDs.
+	return bytes.Compare(order.OrderID.ToBytes(), other.OrderID.ToBytes()) < 0
 }
 
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToBuyUint256() (*uint256.Int, error) {
 	if order.OperationType == DAOCoinLimitOrderOperationTypeASK {
-		// In this case, the quantity in the order is the amount to sell, so we return that.
+		// In this case, the quantity specified in the order is the amount to sell,
+		// so needs to be converted.
 		return ComputeBaseUnitsToBuyUint256(
 			order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			order.QuantityToFillInBaseUnits)
 	} else if order.OperationType == DAOCoinLimitOrderOperationTypeBID {
-		// In this case, the order is a bid, which means the quantity specified is the
-		// amount the transactor wants to buy.
+		// In this case, the quantity specified in the order is the amount to buy,
+		// so can be returned as-is.
 		return order.QuantityToFillInBaseUnits, nil
 	} else {
 		return nil, fmt.Errorf("Invalid OperationType %v", order.OperationType)
@@ -4181,12 +4193,14 @@ func ComputeBaseUnitsToBuyUint256(
 
 func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, error) {
 	if order.OperationType == DAOCoinLimitOrderOperationTypeBID {
-		// If we're dealing with a bid, then the quantity specified is amount to "buy" and
-		// needs to be converted.
+		// In this case, the quantity specified in the order is the amount to buy,
+		// so needs to be converted.
 		return ComputeBaseUnitsToSellUint256(
 			order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			order.QuantityToFillInBaseUnits)
 	} else if order.OperationType == DAOCoinLimitOrderOperationTypeASK {
+		// In this case, the quantity specified in the order is the amount to sell,
+		// so can be returned as-is.
 		return order.QuantityToFillInBaseUnits, nil
 	} else {
 		return nil, fmt.Errorf("Invalid OperationType %v", order.OperationType)
@@ -4256,26 +4270,20 @@ func ComputeBaseUnitsToSellUint256(
 }
 
 type DAOCoinLimitOrderMapKey struct {
-	TransactorPKID                            PKID
-	BuyingDAOCoinCreatorPKID                  PKID
-	SellingDAOCoinCreatorPKID                 PKID
-	ScaledExchangeRateCoinsToSellPerCoinToBuy uint256.Int
-	BlockHeight                               uint32
+	// An OrderID uniquely identifies an order
+	OrderID BlockHash
 }
 
 func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	return DAOCoinLimitOrderMapKey{
-		TransactorPKID:                            *order.TransactorPKID.NewPKID(),
-		BuyingDAOCoinCreatorPKID:                  *order.BuyingDAOCoinCreatorPKID.NewPKID(),
-		SellingDAOCoinCreatorPKID:                 *order.SellingDAOCoinCreatorPKID.NewPKID(),
-		ScaledExchangeRateCoinsToSellPerCoinToBuy: *order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		BlockHeight:                               order.BlockHeight,
+		OrderID: *order.OrderID.NewBlockHash(),
 	}
 }
 
 // FilledDAOCoinLimitOrder only exists to support understanding what orders were
 // fulfilled when connecting a DAO Coin Limit Order Txn
 type FilledDAOCoinLimitOrder struct {
+	OrderID                       *BlockHash
 	TransactorPKID                *PKID
 	BuyingDAOCoinCreatorPKID      *PKID
 	SellingDAOCoinCreatorPKID     *PKID
@@ -4287,6 +4295,7 @@ type FilledDAOCoinLimitOrder struct {
 func (order *FilledDAOCoinLimitOrder) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
+	data = append(data, EncodeToBytes(blockHeight, order.OrderID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.BuyingDAOCoinCreatorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.SellingDAOCoinCreatorPKID, skipMetadata...)...)
@@ -4299,6 +4308,14 @@ func (order *FilledDAOCoinLimitOrder) RawEncodeWithoutMetadata(blockHeight uint6
 
 func (order *FilledDAOCoinLimitOrder) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
+
+	// OrderID
+	orderID := &BlockHash{}
+	if exist, err := DecodeFromBytes(orderID, rr); exist && err == nil {
+		order.OrderID = orderID
+	} else if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrder.Decode: Problem reading OrderID")
+	}
 
 	// TransactorPKID
 	transactorPKID := &PKID{}

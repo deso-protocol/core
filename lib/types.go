@@ -163,6 +163,25 @@ func PKIDToPublicKey(pkid *PKID) []byte {
 	return pkid[:]
 }
 
+func EncodeOptionalPublicKey(val *PublicKey) []byte {
+	if val == nil {
+		return UintToBuf(uint64(0))
+	}
+	encodedVal := val.ToBytes()
+	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
+}
+
+func ReadOptionalPublicKey(rr *bytes.Reader) (*PublicKey, error) {
+	byteCount, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, err
+	}
+	if byteCount > uint64(0) {
+		return ReadPublicKey(rr)
+	}
+	return nil, nil
+}
+
 const HashSizeBytes = 32
 
 // BlockHash is a convenient alias for a block hash.
@@ -220,6 +239,34 @@ func (bh *BlockHash) NewBlockHash() *BlockHash {
 	newBlockhash := &BlockHash{}
 	copy(newBlockhash[:], bh[:])
 	return newBlockhash
+}
+
+func ReadBlockHash(rr io.Reader) (*BlockHash, error) {
+	valBytes := make([]byte, HashSizeBytes, HashSizeBytes)
+	_, err := io.ReadFull(rr, valBytes)
+	if err != nil {
+		return nil, fmt.Errorf("ReadBlockHash: Error reading value bytes: %v", err)
+	}
+	return NewBlockHash(valBytes), nil
+}
+
+func EncodeOptionalBlockHash(val *BlockHash) []byte {
+	if val == nil {
+		return UintToBuf(uint64(0))
+	}
+	encodedVal := val.ToBytes()
+	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
+}
+
+func ReadOptionalBlockHash(rr *bytes.Reader) (*BlockHash, error) {
+	byteCount, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, err
+	}
+	if byteCount > uint64(0) {
+		return ReadBlockHash(rr)
+	}
+	return nil, nil
 }
 
 //var _ sql.Scanner = (*BlockHash)(nil)

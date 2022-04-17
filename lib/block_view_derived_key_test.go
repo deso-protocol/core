@@ -3204,9 +3204,10 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		require.NoError(err)
 		require.Len(orders, 1)
 		require.Equal(*orders[0], DAOCoinLimitOrderEntry{
-			TransactorPKID:                            utxoView.GetPKIDForPublicKey(m0PkBytes).PKID,
-			BuyingDAOCoinCreatorPKID:                  m1PKID,
-			SellingDAOCoinCreatorPKID:                 &ZeroPKID,
+			OrderID:                   orders[0].OrderID,
+			TransactorPKID:            utxoView.GetPKIDForPublicKey(m0PkBytes).PKID,
+			BuyingDAOCoinCreatorPKID:  m1PKID,
+			SellingDAOCoinCreatorPKID: &ZeroPKID,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
 			BlockHeight:                               savedHeight,
