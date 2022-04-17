@@ -608,7 +608,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	}
 	// First sort the keys so that we write to BadgerDB in order.
 	recordsKeyList := make([]string, 0, len(lastAncestralCache.AncestralRecordsMap))
-	for kk, _ := range lastAncestralCache.AncestralRecordsMap {
+	for kk := range lastAncestralCache.AncestralRecordsMap {
 		recordsKeyList = append(recordsKeyList, kk)
 	}
 	sort.Strings(recordsKeyList)

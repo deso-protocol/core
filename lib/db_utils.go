@@ -3478,7 +3478,7 @@ func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeS
 		pkMapKey := MakePkMapKey(bro.PublicKey)
 		blockRewardPublicKeys[pkMapKey] = true
 	}
-	for pkMapKeyIter, _ := range blockRewardPublicKeys {
+	for pkMapKeyIter := range blockRewardPublicKeys {
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
