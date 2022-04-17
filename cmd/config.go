@@ -37,6 +37,7 @@ type Config struct {
 	DisableSlowSync           bool
 	MaxSyncBlockHeight        uint32
 	SnapshotBlockHeightPeriod uint64
+	ArchivalMode              bool
 
 	// Mining
 	MinerPublicKeys  []string
@@ -95,6 +96,7 @@ func LoadConfig() *Config {
 	config.DisableSlowSync = viper.GetBool("disable-slow-sync")
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
+	config.ArchivalMode = viper.GetBool("archival-mode")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
@@ -160,6 +162,10 @@ func (config *Config) Print() {
 
 	if config.SnapshotBlockHeightPeriod > 0 {
 		glog.Infof("SnapshotBlockHeightPeriod: %v", config.SnapshotBlockHeightPeriod)
+	}
+
+	if config.ArchivalMode {
+		glog.Infof("ArchivalMode: ON")
 	}
 
 	if config.DisableSlowSync {

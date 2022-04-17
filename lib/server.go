@@ -303,6 +303,7 @@ func NewServer(
 	_hyperSync bool,
 	_disableSlowSync bool,
 	_maxSyncBlockHeight uint32,
+	_archivalMode bool,
 	_rateLimitFeerateNanosPerKB uint64,
 	_minFeeRateNanosPerKB uint64,
 	_stallTimeoutSeconds uint64,
@@ -328,11 +329,17 @@ func NewServer(
 	// Setup snapshot
 	var _snapshot *Snapshot
 	shouldRestart := false
+	archivalMode := false
 	if _hyperSync {
 		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
 			false, false, _params)
 		if err != nil {
 			panic(err)
+		}
+
+		// We only set archival mode true if we're a hypersync node.
+		if _archivalMode {
+			archivalMode = true
 		}
 	}
 
@@ -377,7 +384,7 @@ func NewServer(
 
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
-		_params, timesource, _db, postgres, eventManager, _snapshot)
+		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}
@@ -612,13 +619,23 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
 }
 
-// TODO: This function is a little messy.
-func (srv *Server) GetBlockToStore(pp *Peer) {
+// GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
+// hypersync. We will go through all blocks corresponding to the snapshot and download the blocks.
+func (srv *Server) GetBlocksToStore(pp *Peer) {
+	if !srv.blockchain.downloadingHistoricalBlocks {
+		glog.Errorf("GetBlocksToStore: Called even though all blocks have already been downloaded. This " +
+			"shouldn't happen.")
+		return
+	}
+
+	// Go through the block nodes in the blockchain and download the blocks if they're not stored.
 	for _, blockNode := range srv.blockchain.bestChain {
+		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
 		if blockNode.Status&StatusBlockStored == 0 {
 			numBlocksToFetch := MaxBlocksInFlight - len(pp.requestedBlocks)
 			currentHeight := int(blockNode.Height)
 			blockNodesToFetch := []*BlockNode{}
+			// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
 			var heightLimit int
 			for heightLimit = len(srv.blockchain.bestChain) - 1; heightLimit >= 0; heightLimit-- {
 				if !srv.blockchain.bestChain[heightLimit].Status.IsFullyProcessed() {
@@ -626,13 +643,16 @@ func (srv *Server) GetBlockToStore(pp *Peer) {
 				}
 			}
 
+			// Find the blocks that we should download.
 			for currentHeight <= heightLimit &&
 				len(blockNodesToFetch) < numBlocksToFetch {
 
-				// Get the current hash and increment the height.
+				// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
+				// the array index.
 				currentNode := srv.blockchain.bestChain[currentHeight]
 				currentHeight++
 
+				// If we've already requested this block then we don't request it again.
 				if _, exists := pp.requestedBlocks[*currentNode.Hash]; exists {
 					continue
 				}
@@ -649,11 +669,14 @@ func (srv *Server) GetBlockToStore(pp *Peer) {
 				HashList: hashList,
 			}, false)
 
-			glog.V(1).Infof("GetBlockToStore: Downloading blocks to store for header %v from peer %v",
+			glog.V(1).Infof("GetBlocksToStore: Downloading blocks to store for header %v from peer %v",
 				blockNode.Header, pp)
 			return
 		}
 	}
+
+	// If we get here then it means that we've downloaded all blocks so we can update
+	srv.blockchain.downloadingHistoricalBlocks = false
 }
 
 // GetBlocks computes what blocks we need to fetch and asks for them from the
@@ -867,6 +890,19 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 				// Now proceed to start fetching snapshot data from the peer.
 				srv.GetSnapshot(pp)
+				return
+			}
+		}
+
+		// If we have finished syncing peer's headers, but previously we have bootstrapped the blockchain through
+		// hypersync and the node has the archival mode turned on, we might need to download historical blocks.
+		// We'll check if there are any outstanding historical blocks to download.
+		if srv.blockchain.checkArchivalMode() {
+			glog.V(1).Infof("Server._handleHeaderBundle: Syncing historical blocks because node is in " +
+				"archival mode.")
+			srv.blockchain.downloadingHistoricalBlocks = true
+			srv.GetBlocksToStore(pp)
+			if srv.blockchain.downloadingHistoricalBlocks {
 				return
 			}
 		}
@@ -1256,12 +1292,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.eventManager.snapshotCompleted()
 
 	// Now sync the remaining blocks.
-	// TODO: what if the snapshot height is at the blockchain tip, for instance because PoW takes a while.
-	// 	Will this still work?
-	headerTip := srv.blockchain.headerTip()
-	if srv.blockchain.chainState() == SyncStateFullyCurrent {
-		srv.GetBlockToStore(pp)
+	if srv.blockchain.archivalMode {
+		srv.blockchain.downloadingHistoricalBlocks = true
+		srv.GetBlocksToStore(pp)
+		return
 	}
+
+	headerTip := srv.blockchain.headerTip()
 	srv.GetBlocks(pp, int(headerTip.Height))
 }
 
@@ -1328,10 +1365,6 @@ func (srv *Server) _startSync() {
 	}, false)
 	glog.V(1).Infof("Server._startSync: Downloading headers for blocks starting at "+
 		"header tip height %v from peer %v", bestHeight, bestPeer)
-
-	if bestPeer.cmgr.HyperSync && !srv.blockchain.isSyncing() {
-		srv.GetBlockToStore(bestPeer)
-	}
 
 	srv.SyncPeer = bestPeer
 }
@@ -1730,6 +1763,13 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
+	if srv.blockchain.chainState() == SyncStateSyncingHistoricalBlocks {
+		srv.GetBlocksToStore(pp)
+		if srv.blockchain.downloadingHistoricalBlocks {
+			return
+		}
+	}
+
 	// If we're syncing blocks, call GetBlocks and try to get as many blocks
 	// from our peer as we can. This allows the initial block download to be
 	// more incremental since every time we're able to accept a block (or
@@ -1762,11 +1802,6 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			BlockLocator: locator,
 		}, false)
 		return
-	}
-
-	if srv.cmgr.HyperSync && !srv.blockchain.isSyncing() {
-		srv.GetBlockToStore(pp)
-		// FIXME: Check that we have blocks with StatusBlockStored == false
 	}
 
 	// If we get here, it means we're in SyncStateFullySynced, which is great.

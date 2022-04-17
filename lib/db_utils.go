@@ -89,7 +89,7 @@ type DBPrefixes struct {
 	// the UtxoOperations for a particular block backwards and invert them.
 	//
 	// <prefix_id, hash *BlockHash > -> < serialized []UtxoOperation using custom encoding >
-	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]" is_state:"true"`
+	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]"`
 	// The below are mappings related to the validation of BitcoinExchange transactions.
 	//
 	// The number of nanos that has been purchased thus far.
@@ -287,10 +287,36 @@ type DBPrefixes struct {
 	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
 	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true"`
 
-	// TODO: This process is a bit error-prone. We should come up with a test or
-	// something to at least catch cases where people have two prefixes with the
-	// same ID.
-	// NEXT_TAG: 60
+	// Prefixes for DAO coin limit orders
+	// This index powers the order book.
+	// <
+	//   _PrefixDAOCoinLimitOrder
+	//   BuyingDAOCoinCreatorPKID [33]byte
+	//   SellingDAOCoinCreatorPKID [33]byte
+	//   ScaledExchangeRateCoinsToSellPerCoinToBuy [32]byte
+	//   BlockHeight [32]byte
+	//   OrderID [32]byte
+	// > -> <DAOCoinLimitOrderEntry>
+	//
+	// This index allows users to query for their open orders.
+	// <
+	//   _PrefixDAOCoinLimitOrderByTransactorPKID
+	//   TransactorPKID [33]byte
+	//   BuyingDAOCoinCreatorPKID [33]byte
+	//   SellingDAOCoinCreatorPKID [33]byte
+	//   OrderID [32]byte
+	// > -> <DAOCoinLimitOrderEntry>
+	//
+	// This index allows users to query for a single order by ID.
+	// This is useful in e.g. cancelling an order.
+	// <
+	//   _PrefixDAOCoinLimitOrderByOrderID
+	//   OrderID [32]byte
+	// > -> <DAOCoinLimitOrderEntry>
+	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
+	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
+	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
+	// NEXT_TAG: 63
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -308,9 +334,6 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoNumEntries) {
 		// prefix_id:"[8]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations) {
-		// prefix_id:"[9]"
-		return true, &UtxoOperationBundle{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixNanosPurchased) {
 		// prefix_id:"[10]"
 		return false, nil
@@ -441,6 +464,15 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixAuthorizeDerivedKey) {
 		// prefix_id:"[59]"
 		return true, &DerivedKeyEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrder) {
+		// prefix_id:"[60]"
+		return true, &DAOCoinLimitOrderEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrderByTransactorPKID) {
+		// prefix_id:"[61]"
+		return true, &DAOCoinLimitOrderEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrderByOrderID) {
+		// prefix_id:"[62]"
+		return true, &DAOCoinLimitOrderEntry{}
 	}
 
 	return true, nil
@@ -3446,7 +3478,7 @@ func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeS
 		pkMapKey := MakePkMapKey(bro.PublicKey)
 		blockRewardPublicKeys[pkMapKey] = true
 	}
-	for pkMapKeyIter, _ := range blockRewardPublicKeys {
+	for pkMapKeyIter := range blockRewardPublicKeys {
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
@@ -4136,9 +4168,7 @@ func (txnMeta *BasicTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeigh
 	data = append(data, UintToBuf(txnMeta.TotalInputNanos)...)
 	data = append(data, UintToBuf(txnMeta.TotalOutputNanos)...)
 	data = append(data, UintToBuf(txnMeta.FeeNanos)...)
-	data = append(data, UintToBuf(uint64(len(txnMeta.UtxoOpsDump)))...)
 	data = append(data, EncodeByteArray([]byte(txnMeta.UtxoOpsDump))...)
-
 	data = append(data, UintToBuf(uint64(len(txnMeta.UtxoOps)))...)
 	for _, utxoOp := range txnMeta.UtxoOps {
 		data = append(data, EncodeToBytes(blockHeight, utxoOp, skipMetadata...)...)
@@ -4166,14 +4196,20 @@ func (txnMeta *BasicTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading FeeNanos")
 	}
 
-	lenUtxoOpsDump, err := ReadUvarint(rr)
+	utxoOpsDump, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading UtxoOpsDump")
+	}
+	txnMeta.UtxoOpsDump = string(utxoOpsDump)
+
+	lenUtxoOps, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading len of UtxoOps")
 	}
-	for ; lenUtxoOpsDump > 0; lenUtxoOpsDump-- {
+	for ; lenUtxoOps > 0; lenUtxoOps-- {
 		utxoOp := &UtxoOperation{}
 		if exists, err := DecodeFromBytes(utxoOp, rr); !exists || err != nil {
-			return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading UtxoOpsDump")
+			return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading UtxoOps")
 		}
 		txnMeta.UtxoOps = append(txnMeta.UtxoOps, utxoOp)
 	}
@@ -4432,8 +4468,8 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) GetEncoderType() EncoderType {
 type DAOCoinTxindexMetadata struct {
 	CreatorUsername           string
 	OperationType             string
-	CoinsToMintNanos          uint256.Int
-	CoinsToBurnNanos          uint256.Int
+	CoinsToMintNanos          *uint256.Int
+	CoinsToBurnNanos          *uint256.Int
 	TransferRestrictionStatus string
 }
 
@@ -4443,11 +4479,8 @@ func (txnMeta *DAOCoinTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint
 	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
 	data = append(data, EncodeByteArray([]byte(txnMeta.OperationType))...)
 
-	coinsToMintNanosBytes := txnMeta.CoinsToMintNanos.Bytes()
-	data = append(data, EncodeByteArray(coinsToMintNanosBytes)...)
-
-	coinsToBurnNanosBytes := txnMeta.CoinsToBurnNanos.Bytes()
-	data = append(data, EncodeByteArray(coinsToBurnNanosBytes)...)
+	data = append(data, EncodeUint256(txnMeta.CoinsToMintNanos)...)
+	data = append(data, EncodeUint256(txnMeta.CoinsToBurnNanos)...)
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.TransferRestrictionStatus))...)
 	return data
@@ -4468,17 +4501,15 @@ func (txnMeta *DAOCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	}
 	txnMeta.OperationType = string(operationTypeBytes)
 
-	coinsToMintNanos, err := DecodeUint256(rr)
+	txnMeta.CoinsToMintNanos, err = DecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CoinsToMintNanos")
 	}
-	txnMeta.CoinsToMintNanos = *coinsToMintNanos
 
-	coinsToBurnNanos, err := DecodeUint256(rr)
+	txnMeta.CoinsToBurnNanos, err = DecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CoinsToBurnNanos")
 	}
-	txnMeta.CoinsToBurnNanos = *coinsToBurnNanos
 
 	transferRestrictionStatusBytes, err := DecodeByteArray(rr)
 	if err != nil {
@@ -4495,6 +4526,147 @@ func (txnMeta *DAOCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 
 func (txnMeta *DAOCoinTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDAOCoinTxindexMetadata
+}
+
+type FilledDAOCoinLimitOrderMetadata struct {
+	TransactorPublicKeyBase58Check string
+	BuyingDAOCoinCreatorPublicKey  string
+	SellingDAOCoinCreatorPublicKey string
+	CoinQuantityInBaseUnitsBought  *uint256.Int
+	CoinQuantityInBaseUnitsSold    *uint256.Int
+	IsFulfilled                    bool
+}
+
+func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(orderMeta.TransactorPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(orderMeta.BuyingDAOCoinCreatorPublicKey))...)
+	data = append(data, EncodeByteArray([]byte(orderMeta.SellingDAOCoinCreatorPublicKey))...)
+	data = append(data, EncodeUint256(orderMeta.CoinQuantityInBaseUnitsBought)...)
+	data = append(data, EncodeUint256(orderMeta.CoinQuantityInBaseUnitsSold)...)
+	data = append(data, BoolToByte(orderMeta.IsFulfilled))
+
+	return data
+}
+
+func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	// TransactorPublicKeyBase58Check
+	transactorPublicKeyBase58Check, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading TransactorPublicKeyBase58Check")
+	}
+	orderMeta.TransactorPublicKeyBase58Check = string(transactorPublicKeyBase58Check)
+
+	// BuyingDAOCoinCreatorPublicKey
+	buyingDAOCoinCreatorPublicKey, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "TransactorPublicKeyBase58Check.Decode: Problem reading BuyingDAOCoinCreatorPublicKey")
+	}
+	orderMeta.BuyingDAOCoinCreatorPublicKey = string(buyingDAOCoinCreatorPublicKey)
+
+	// SellingDAOCoinCreatorPublicKey
+	sellingDAOCoinCreatorPublicKey, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading SellingDAOCoinCreatorPublicKey")
+	}
+	orderMeta.SellingDAOCoinCreatorPublicKey = string(sellingDAOCoinCreatorPublicKey)
+
+	// CoinQuantityInBaseUnitsBought
+	orderMeta.CoinQuantityInBaseUnitsBought, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading CoinQuantityInBaseUnitsBought")
+	}
+
+	// CoinQuantityInBaseUnitsSold
+	orderMeta.CoinQuantityInBaseUnitsSold, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading CoinQuantityInBaseUnitsSold")
+	}
+
+	orderMeta.IsFulfilled, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading IsFulfilled")
+	}
+	return nil
+}
+
+func (orderMeta *FilledDAOCoinLimitOrderMetadata) GetVersionByte(blockHeight uint64) byte {
+	return byte(0)
+}
+
+func (orderMeta *FilledDAOCoinLimitOrderMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeFilledDAOCoinLimitOrderMetadata
+}
+
+type DAOCoinLimitOrderTxindexMetadata struct {
+	BuyingDAOCoinCreatorPublicKey             string
+	SellingDAOCoinCreatorPublicKey            string
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	QuantityToFillInBaseUnits                 *uint256.Int
+	FilledDAOCoinLimitOrdersMetadata          []*FilledDAOCoinLimitOrderMetadata
+}
+
+func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray([]byte(daoMeta.BuyingDAOCoinCreatorPublicKey))...)
+	data = append(data, EncodeByteArray([]byte(daoMeta.SellingDAOCoinCreatorPublicKey))...)
+	data = append(data, EncodeUint256(daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, EncodeUint256(daoMeta.QuantityToFillInBaseUnits)...)
+
+	data = append(data, UintToBuf(uint64(len(daoMeta.FilledDAOCoinLimitOrdersMetadata)))...)
+	for _, order := range daoMeta.FilledDAOCoinLimitOrdersMetadata {
+		data = append(data, EncodeToBytes(blockHeight, order)...)
+	}
+	return data
+}
+
+func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	buyingDAOCoinCreatorPublicKey, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading BuyingDAOCoinCreatorPublicKey")
+	}
+	daoMeta.BuyingDAOCoinCreatorPublicKey = string(buyingDAOCoinCreatorPublicKey)
+
+	sellingDAOCoinCreatorPublicKey, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading SellingDAOCoinCreatorPublicKey")
+	}
+	daoMeta.SellingDAOCoinCreatorPublicKey = string(sellingDAOCoinCreatorPublicKey)
+
+	daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading ScaledExchangeRateCoinsToSellPerCoinToBuy")
+	}
+
+	daoMeta.QuantityToFillInBaseUnits, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading QuantityToFillInBaseUnits")
+	}
+
+	lenFilledDAOCoinLimitOrdersMetadata, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading len lenFilledDAOCoinLimitOrdersMetadata")
+	}
+	for ; lenFilledDAOCoinLimitOrdersMetadata > 0; lenFilledDAOCoinLimitOrdersMetadata-- {
+		filledDAOCoinLimitOrderMetadata := &FilledDAOCoinLimitOrderMetadata{}
+		if exist, err := DecodeFromBytes(filledDAOCoinLimitOrderMetadata, rr); !exist || err != nil {
+			return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading len FilledDAOCoinLimitOrdersMetadata")
+		}
+		daoMeta.FilledDAOCoinLimitOrdersMetadata = append(daoMeta.FilledDAOCoinLimitOrdersMetadata, filledDAOCoinLimitOrderMetadata)
+	}
+	return nil
+}
+
+func (daoMeta *DAOCoinLimitOrderTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return byte(0)
+}
+
+func (daoMeta *DAOCoinLimitOrderTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDAOCoinLimitOrderTxindexMetadata
 }
 
 type UpdateProfileTxindexMetadata struct {
@@ -5183,6 +5355,7 @@ type TransactionMetadata struct {
 	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
 	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
 	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata   *DAOCoinLimitOrderTxindexMetadata   `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -5241,7 +5414,8 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateNFTTxindexMetadata, skipMetadata...)...)
 	// encoding UpdateNFTTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateNFTTxindexMetadata, skipMetadata...)...)
-
+	// encoding DAOCoinLimitOrderTxindexMetadata
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
 	return data
 }
 
@@ -5428,7 +5602,13 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UpdateNFTTxindexMetadata")
 	}
-
+	// decoding DAOCoinLimitOrderTxindexMetadata
+	CopyDAOCoinLimitOrderTxindexMetadata := &DAOCoinLimitOrderTxindexMetadata{}
+	if exist, err := DecodeFromBytes(CopyDAOCoinLimitOrderTxindexMetadata, rr); exist && err == nil {
+		txnMeta.DAOCoinLimitOrderTxindexMetadata = CopyDAOCoinLimitOrderTxindexMetadata
+	} else if err != nil {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
+	}
 	return nil
 }
 
@@ -7566,6 +7746,257 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	}
 
 	return profilePubKeys, profileEntries, nil
+}
+
+// ---------------------------------------------
+// DAO coin limit order
+// ---------------------------------------------
+
+func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+	key := DBPrefixKeyForDAOCoinLimitOrder(order)
+	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	// Store MaxUint32 - block height to guarantee FIFO
+	// orders as we seek in reverse order.
+	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
+	key = append(key, order.OrderID.ToBytes()...)
+	return key
+}
+
+func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID.ToBytes()...)
+	key = append(key, order.SellingDAOCoinCreatorPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key = append(key, order.TransactorPKID.ToBytes()...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID.ToBytes()...)
+	key = append(key, order.SellingDAOCoinCreatorPKID.ToBytes()...)
+	key = append(key, order.OrderID.ToBytes()...)
+	return key
+}
+
+func DBKeyForDAOCoinLimitOrderByOrderID(order *DAOCoinLimitOrderEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrderByOrderID...)
+	key = append(key, order.OrderID.ToBytes()...)
+	return key
+}
+
+func DBGetDAOCoinLimitOrder(handle *badger.DB, snap *Snapshot, orderID *BlockHash) (
+	*DAOCoinLimitOrderEntry, error) {
+
+	var ret *DAOCoinLimitOrderEntry
+	var err error
+
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetDAOCoinLimitOrderWithTxn(txn, snap, orderID)
+		return nil
+	})
+
+	return ret, err
+}
+
+func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, orderID *BlockHash) (
+	_order *DAOCoinLimitOrderEntry, _err error) {
+
+	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrderByOrderID...)
+	key = append(key, orderID.ToBytes()...)
+	orderBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found.
+		// Instead, we just want to return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+
+		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem getting limit order")
+	}
+
+	order := &DAOCoinLimitOrderEntry{}
+	rr := bytes.NewReader(orderBytes)
+	if exist, err := DecodeFromBytes(order, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetDAOCoinLimitOrder: problem decoding limit order")
+	}
+
+	return order, nil
+}
+
+func DBGetMatchingDAOCoinLimitOrders(
+	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+
+	queryOrder := inputOrder.Copy()
+	queryQuantityToFill := queryOrder.QuantityToFillInBaseUnits.Clone()
+
+	// Convert the input BID order to the ASK order to query for.
+	// Note that we seek in reverse for the best matching orders.
+	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
+	//   * Set ScaledExchangeRateCoinsToSellPerCoinToBuy to MaxUint256.
+	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
+	//   * Set OrderID to MaxBlockHash.
+	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID
+	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
+	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
+	queryOrder.BlockHeight = uint32(0)
+	queryOrder.OrderID = maxHash.NewBlockHash()
+
+	key := DBKeyForDAOCoinLimitOrder(queryOrder)
+	prefixKey := DBPrefixKeyForDAOCoinLimitOrder(queryOrder)
+
+	// If passed a last seen order, start seeking from there.
+	var startKey []byte
+	if lastSeenOrder != nil {
+		startKey = DBKeyForDAOCoinLimitOrder(lastSeenOrder)
+		key = startKey
+	}
+
+	// Go in reverse order to find the highest prices first.
+	// We break once we hit the input order's inverted scaled
+	// price or the input order's quantity is fulfilled.
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Seek first matching order.
+	matchingOrders := []*DAOCoinLimitOrderEntry{}
+
+	for iterator.Seek(key); iterator.ValidForPrefix(prefixKey) && queryQuantityToFill.GtUint64(0); iterator.Next() {
+		// If picking up from where you left off, skip the first order which
+		// has already been processed previously.
+		if len(startKey) != 0 && bytes.Equal(key, startKey) {
+			startKey = nil
+			continue
+		}
+
+		matchingOrderBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem getting limit order")
+		}
+
+		matchingOrder := &DAOCoinLimitOrderEntry{}
+		rr := bytes.NewReader(matchingOrderBytes)
+		if exist, err := DecodeFromBytes(matchingOrder, rr); !exist || err != nil {
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem decoding limit order")
+		}
+
+		// Validate matching order's price.
+		if !inputOrder.IsValidMatchingOrderPrice(matchingOrder) {
+			break
+		}
+
+		// Calculate how the transactor's quantity to fill will change
+		// after being matched with this order. If the transactor still
+		// has quantity to fill, we loop.
+		queryQuantityToFill, _, _, _, err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+			matchingOrder, queryOrder.OperationType, queryQuantityToFill)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: ")
+		}
+
+		matchingOrders = append(matchingOrders, matchingOrder)
+	}
+
+	return matchingOrders, nil
+}
+
+func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, error) {
+	// Get all DAO Coin limit orders.
+	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
+	handle *badger.DB,
+	buyingDAOCoinCreatorPKID *PKID,
+	sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+
+	// Get all DAO coin limit orders for this DAO coin pair.
+	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
+	key = append(key, buyingDAOCoinCreatorPKID.ToBytes()...)
+	key = append(key, sellingDAOCoinCreatorPKID.ToBytes()...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+func DBGetAllDAOCoinLimitOrdersForThisTransactor(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+	// Get all DAO coin limit orders for this transactor.
+	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrderByTransactorPKID...)
+	key = append(key, transactorPKID[:]...)
+	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
+}
+
+func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
+	// Get all DAO coin limit orders containing this prefix.
+	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey)
+	orders := []*DAOCoinLimitOrderEntry{}
+
+	// Cast resulting values from bytes to order entries.
+	for _, valBytes := range valsFound {
+		order := &DAOCoinLimitOrderEntry{}
+		rr := bytes.NewReader(valBytes)
+		if exist, err := DecodeFromBytes(order, rr); !exist || err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllDAOCoinLimitOrdersByPrefixKey: problem getting limit orders")
+		}
+
+		orders = append(orders, order)
+	}
+
+	return orders, nil
+}
+
+func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry, blockHeight uint64) error {
+	if order == nil {
+		return nil
+	}
+
+	orderBytes := EncodeToBytes(blockHeight, order)
+	// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
+	key := DBKeyForDAOCoinLimitOrder(order)
+
+	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
+	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
+	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	// Store in index: PrefixDAOCoinLimitOrderByOrderID
+	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
+	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing order in index PrefixDAOCoinLimitOrderByOrderID")
+	}
+
+	return nil
+}
+
+func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry) error {
+	if order == nil {
+		return nil
+	}
+
+	// Delete from index: PrefixDAOCoinLimitOrder
+	key := DBKeyForDAOCoinLimitOrder(order)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+	}
+
+	// Delete from index: PrefixDAOCoinLimitOrderByTransactorPKID
+	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
+	}
+
+	// Store in index: PrefixDAOCoinLimitOrderByOrderID
+	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting order from index PrefixDAOCoinLimitOrderByOrderID")
+	}
+
+	return nil
 }
 
 // -------------------------------------------------------------------------------------

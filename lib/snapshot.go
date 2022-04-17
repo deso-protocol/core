@@ -402,8 +402,9 @@ func (snap *Snapshot) ForceResetToLastSnapshot(chain *Blockchain) error {
 	return nil
 }
 
-// StartAncestralRecordsFlush updates the ancestral records after a UtxoView flush.
-// This function should be called in a go-routine after all UtxoView flushes.
+// StartAncestralRecordsFlush updates the ancestral records after a UtxoView flush. This function should be called in a
+// after all UtxoView flushes. shouldIncrement is usually set to true and indicates that we are supposed to update the
+// db semaphores. The semaphore are used to manage concurrency between the main and ancestral dbs.
 func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
 	// If snapshot is broken then there's nothing to do.
 	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush, shouldIncrement: (%v)", shouldIncrement)
@@ -608,7 +609,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	}
 	// First sort the keys so that we write to BadgerDB in order.
 	recordsKeyList := make([]string, 0, len(lastAncestralCache.AncestralRecordsMap))
-	for kk, _ := range lastAncestralCache.AncestralRecordsMap {
+	for kk := range lastAncestralCache.AncestralRecordsMap {
 		recordsKeyList = append(recordsKeyList, kk)
 	}
 	sort.Strings(recordsKeyList)
@@ -2287,8 +2288,8 @@ func (t *Timer) End(eventName string) {
 		return
 	}
 
-	t.mut.RLock()
-	defer t.mut.RUnlock()
+	t.mut.Lock()
+	defer t.mut.Unlock()
 	if _, exists := t.totalElapsedTimes[eventName]; !exists {
 		glog.Errorf("Timer.End: Error called with non-existent eventName")
 		return

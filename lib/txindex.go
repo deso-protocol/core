@@ -159,7 +159,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	// Note that we *DONT* pass server here because it is already tied to the main blockchain.
 	txIndexChain, err := NewBlockchain(
 		[]string{}, 0, coreChain.MaxSyncBlockHeight, params, chainlib.NewMedianTime(),
-		txIndexDb, nil, nil, snapshot)
+		txIndexDb, nil, nil, snapshot, false)
 	if err != nil {
 		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err), true
 	}

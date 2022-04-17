@@ -1238,6 +1238,9 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	ver.Services = SFFullNode
 	if pp.cmgr != nil && pp.cmgr.HyperSync {
 		ver.Services |= SFHyperSync
+		if pp.srv.blockchain.archivalMode {
+			ver.Services |= SFArchivalNode
+		}
 	}
 
 	// When a node asks you for what height you have, you should reply with
@@ -1449,7 +1452,7 @@ func (pp *Peer) Disconnect() {
 
 	// Add the Peer to donePeers so that the ConnectionManager and Server can do any
 	// cleanup they need to do.
-	if pp.cmgr != nil {
+	if pp.cmgr != nil && atomic.LoadInt32(&pp.cmgr.shutdown) == 0 {
 		pp.cmgr.donePeerChan <- pp
 	}
 }

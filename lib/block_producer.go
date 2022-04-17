@@ -40,14 +40,18 @@ type DeSoBlockProducer struct {
 
 	latestBlockTemplateStats *BlockTemplateStats
 
-	mempool *DeSoMempool
-	chain   *Blockchain
-	params  *DeSoParams
+	mempool  *DeSoMempool
+	chain    *Blockchain
+	params   *DeSoParams
+	postgres *Postgres
 
+	// producerWaitGroup allows us to wait until the producer has properly closed.
 	producerWaitGroup sync.WaitGroup
-	exit              int32
-	isAsleep          int32
-	postgres          *Postgres
+	// exit is used to signal that DeSoBlockProducer routines should be terminated.
+	exit int32
+	// isAsleep is a helper variable for quitting that indicates whether the DeSoBlockProducer is asleep. While producing
+	// blocks, we sleep for a few seconds. Instead of waiting for the sleep to finish, we use this variable to quit immediately.
+	isAsleep int32
 }
 
 type BlockTemplateStats struct {

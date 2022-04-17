@@ -10,6 +10,8 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
+	"math"
+	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -31,8 +33,9 @@ const (
 	UtxoTypeNFTBidderChange          UtxoType = 7
 	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
 	UtxoTypeNFTAdditionalDESORoyalty UtxoType = 9
+	UtxoTypeDAOCoinLimitOrderPayout  UtxoType = 10
 
-	// NEXT_TAG = 10
+	// NEXT_TAG = 11
 )
 
 func (mm UtxoType) String() string {
@@ -64,7 +67,7 @@ func (mm UtxoType) String() string {
 
 type EncoderType uint32
 
-// Block view encoder types
+// Block view encoder types. These types to different structs implementing the DeSoEncoder interface.
 const (
 	EncoderTypeUtxoEntry EncoderType = iota
 	EncoderTypeUtxoOperation
@@ -94,9 +97,14 @@ const (
 	EncoderTypePKID
 	EncoderTypePublicKey
 	EncoderTypeBlockHash
+	EncoderTypeDAOCoinLimitOrderEntry
+	EncoderTypeFilledDAOCoinLimitOrder
+
+	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
+	EncoderTypeEndBlockView
 )
 
-// Txindex encoder types
+// Txindex encoder types.
 const (
 	EncoderTypeTransactionMetadata EncoderType = 1000 + iota
 	EncoderTypeBasicTransferTxindexMetadata
@@ -104,6 +112,8 @@ const (
 	EncoderTypeCreatorCoinTxindexMetadata
 	EncoderTypeCreatorCoinTransferTxindexMetadata
 	EncoderTypeDAOCoinTransferTxindexMetadata
+	EncoderTypeFilledDAOCoinLimitOrderMetadata
+	EncoderTypeDAOCoinLimitOrderTxindexMetadata
 	EncoderTypeUpdateProfileTxindexMetadata
 	EncoderTypeSubmitPostTxindexMetadata
 	EncoderTypeLikeTxindexMetadata
@@ -119,8 +129,12 @@ const (
 	EncoderTypeDAOCoinTxindexMetadata
 	EncoderTypeCreateNFTTxindexMetadata
 	EncoderTypeUpdateNFTTxindexMetadata
+
+	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
+	EncoderTypeEndTxIndex
 )
 
+// This function translates the EncoderType into an empty DeSoEncoder struct.
 func (encoderType EncoderType) New() DeSoEncoder {
 	// Block view encoder types
 	switch encoderType {
@@ -180,6 +194,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &PublicKey{}
 	case EncoderTypeBlockHash:
 		return &BlockHash{}
+	case EncoderTypeDAOCoinLimitOrderEntry:
+		return &DAOCoinLimitOrderEntry{}
+	case EncoderTypeFilledDAOCoinLimitOrder:
+		return &FilledDAOCoinLimitOrder{}
 	}
 
 	// Txindex encoder types
@@ -196,6 +214,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &CreatorCoinTransferTxindexMetadata{}
 	case EncoderTypeDAOCoinTransferTxindexMetadata:
 		return &DAOCoinTransferTxindexMetadata{}
+	case EncoderTypeFilledDAOCoinLimitOrderMetadata:
+		return &FilledDAOCoinLimitOrderMetadata{}
+	case EncoderTypeDAOCoinLimitOrderTxindexMetadata:
+		return &DAOCoinLimitOrderTxindexMetadata{}
 	case EncoderTypeUpdateProfileTxindexMetadata:
 		return &UpdateProfileTxindexMetadata{}
 	case EncoderTypeSubmitPostTxindexMetadata:
@@ -231,17 +253,32 @@ func (encoderType EncoderType) New() DeSoEncoder {
 	}
 }
 
-// DeSoEncoder represents types that implement custom to/from bytes encoding.
+// DeSoEncoder is an interface handling our custom, deterministic byte encodings.
 type DeSoEncoder interface {
+	// RawEncodeWithoutMetadata and RawDecodeWithoutMetadata methods should encode/decode a DeSoEncoder struct into a
+	// byte array. The encoding must always be deterministic, and readable by the corresponding RawDecodeWithoutMetadata.
+	// We decided to call these methods with terms like: "RawEncode" and "WithoutMetadata" so that these functions sound
+	// scary enough to not be directly called. They shouldn't be! EncodeToBytes and DecodeFromBytes wrappers should be
+	// used instead. In particular, the implementation shouldn't worry about the DeSoEncoder being nil, nor about encoding
+	// the blockHeight. All of this is handled by the wrappers. The blockHeights are passed to the encoder methods to support
+	// encoder migrations, which allow upgrading existing badgerDB entries without requiring a resync. Lookup EncoderMigrationHeights
+	// for more information on how this works. skipMetadata shouldn't be used directly by the methods; however, it must
+	// always be passed if we're nesting EncodeToBytes in the method implementation.
 	RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte
 	RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error
 
+	// GetVersionByte should return the version of the DeSoEncoder as a function of EncoderMigrationHeights and blockHeight.
+	// For instance, if we added a new migration at height H and version byte V, we should implement the GetVersionByte
+	// method so that V is returned whenever blockHeight >= H.
 	GetVersionByte(blockHeight uint64) byte
+
+	// GetEncoderType should return the EncoderType corresponding to the DeSoEncoder.
 	GetEncoderType() EncoderType
 }
 
-// EncodeToBytes encodes a DeSoEncoder type to bytes, including
-// existence bytes. This byte is used to check if the pointer was nil.
+// EncodeToBytes encodes a DeSoEncoder type to bytes, including encoder metadata such as existence byte, the encoder
+// type, and the current blockHeight. The skipMetadata parameter should be always passed if we're nesting DeSoEncoders,
+// but in general it shouldn't be passed. This parameter is only used when we're computing the state checksum.
 func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
 	var data []byte
 
@@ -352,9 +389,6 @@ func (utxo *UtxoEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata
 	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
 	data = append(data, byte(utxo.UtxoType))
 	data = append(data, EncodeToBytes(blockHeight, utxo.UtxoKey, skipMetadata...)...)
-	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-	//	data = append(data, byte(127))
-	//}
 
 	return data
 }
@@ -390,20 +424,10 @@ func (utxo *UtxoEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading UtxoKey")
 	}
 
-	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-	//	_, err = rr.ReadByte()
-	//	if err != nil {
-	//		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
-	//	}
-	//}
-
 	return nil
 }
 
 func (utxo *UtxoEntry) GetVersionByte(blockHeight uint64) byte {
-	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-	//	return GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Version
-	//}
 	return 0
 }
 
@@ -445,8 +469,9 @@ const (
 	OperationTypeDAOCoin                      OperationType = 25
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
+	OperationTypeDAOCoinLimitOrder            OperationType = 28
 
-	// NEXT_TAG = 28
+	// NEXT_TAG = 29
 )
 
 func (op OperationType) String() string {
@@ -558,6 +583,10 @@ func (op OperationType) String() string {
 	case OperationTypeSpendingLimitAccounting:
 		{
 			return "OperationTypeSpendingLimitAccounting"
+		}
+	case OperationTypeDAOCoinLimitOrder:
+		{
+			return "OperationTypeDAOCoinLimitOrder"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -692,47 +721,95 @@ type UtxoOperation struct {
 	NFTBidCreatorDESORoyaltyNanos uint64
 	NFTBidAdditionalCoinRoyalties []*PublicKeyRoyaltyPair
 	NFTBidAdditionalDESORoyalties []*PublicKeyRoyaltyPair
+
+	// DAO coin limit order
+	// PrevTransactorDAOCoinLimitOrderEntry is the previous version of the
+	// transactor's DAO Coin Limit Order before this transaction was connected.
+	// Note: This is only set if the transactor is cancelling an existing order.
+	PrevTransactorDAOCoinLimitOrderEntry *DAOCoinLimitOrderEntry
+
+	// PrevBalanceEntries is a map of User PKID, Creator PKID to DAO Coin Balance
+	// Entry. When disconnecting a DAO Coin Limit Order, we will revert to these
+	// BalanceEntries.
+	PrevBalanceEntries map[PKID]map[PKID]*BalanceEntry
+
+	// PrevMatchingOrder is a slice of DAOCoinLimitOrderEntries that were deleted
+	// in the DAO Coin Limit Order Transaction. In order to revert the state in
+	// the event of a disconnect, we restore all the deleted Order Entries
+	PrevMatchingOrders []*DAOCoinLimitOrderEntry
+
+	// FilledDAOCoinLimitOrder is a slice of FilledDAOCoinLimitOrder structs
+	// that represent all orders fulfilled by the DAO Coin Limit Order transaction.
+	// These are used to construct notifications for order fulfillment.
+	FilledDAOCoinLimitOrders []*FilledDAOCoinLimitOrder
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
+	// Type
 	data = append(data, UintToBuf(uint64(op.Type))...)
 
-	// The op.Entry encoding will be prefixed by a single-byte flag that tells us if it existed.
-	// If the flag is set to 1 then the entry existed, otherwise the flag will be set to 0.
+	// Entry
 	data = append(data, EncodeToBytes(blockHeight, op.Entry, skipMetadata...)...)
+
+	// Key
 	data = append(data, EncodeToBytes(blockHeight, op.Key, skipMetadata...)...)
 
+	// PrevNanosPurchased
 	data = append(data, UintToBuf(op.PrevNanosPurchased)...)
+
+	// PrevUSDCentsPerBitcoin
 	data = append(data, UintToBuf(op.PrevUSDCentsPerBitcoin)...)
 
+	// PrevPostEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevPostEntry, skipMetadata...)...)
+
+	// PrevParentPostEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevParentPostEntry, skipMetadata...)...)
+
+	// PrevGrandparentPostEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevGrandparentPostEntry, skipMetadata...)...)
+
+	// PrevRepostedPostEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevRepostedPostEntry, skipMetadata...)...)
 
+	// PrevProfileEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevProfileEntry, skipMetadata...)...)
 
+	// PrevLikeEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevLikeEntry, skipMetadata...)...)
+
+	// PrevLikeCount
 	data = append(data, UintToBuf(op.PrevLikeCount)...)
 
+	// PrevDiamondEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevDiamondEntry, skipMetadata...)...)
 
+	// PrevNFTEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevNFTEntry, skipMetadata...)...)
+
+	// PrevNFTBidEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevNFTBidEntry, skipMetadata...)...)
 
+	// DeletedNFTBidEntries
 	data = append(data, UintToBuf(uint64(len(op.DeletedNFTBidEntries)))...)
 	for _, bidEntry := range op.DeletedNFTBidEntries {
 		data = append(data, EncodeToBytes(blockHeight, bidEntry, skipMetadata...)...)
 	}
+
+	// NFTPaymentUtxoKeys
 	data = append(data, UintToBuf(uint64(len(op.NFTPaymentUtxoKeys)))...)
 	for _, utxoKey := range op.NFTPaymentUtxoKeys {
 		data = append(data, EncodeToBytes(blockHeight, utxoKey, skipMetadata...)...)
 	}
+
+	// NFTSpentUtxoEntries
 	data = append(data, UintToBuf(uint64(len(op.NFTSpentUtxoEntries)))...)
 	for _, utxoEntry := range op.NFTSpentUtxoEntries {
 		data = append(data, EncodeToBytes(blockHeight, utxoEntry, skipMetadata...)...)
 	}
+
+	// PrevAcceptedNFTBidEntries
 	// Similarly to op.Entry, we encode an existence flag for the PrevAcceptedNFTBidEntries.
 	if op.PrevAcceptedNFTBidEntries != nil {
 		data = append(data, BoolToByte(true))
@@ -744,14 +821,21 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, BoolToByte(false))
 	}
 
+	// PrevDerivedKeyEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevDerivedKeyEntry, skipMetadata...)...)
 
+	// PrevMessagingKeyEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevMessagingKeyEntry, skipMetadata...)...)
 
+	// PrevRepostEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevRepostEntry, skipMetadata...)...)
+
+	// PrevRepostCount
 	data = append(data, UintToBuf(op.PrevRepostCount)...)
 
+	// PrevCoinEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevCoinEntry, skipMetadata...)...)
+
 	// Encode the PrevCoinRoyaltyCoinEntries map. We define a helper struct to store the <PKID, CoinEntry>
 	// objects as byte arrays. For coin entry, we first encode the struct, and then encode it as byte array.
 	type royaltyEntry struct {
@@ -770,9 +854,10 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, UintToBuf(uint64(len(op.PrevCoinRoyaltyCoinEntries)))...)
 		for pkid, coinEntry := range op.PrevCoinRoyaltyCoinEntries {
 			newPKID := pkid
+			newCoin := coinEntry
 			royaltyCoinEntries = append(royaltyCoinEntries, &royaltyEntry{
 				pkid:      newPKID.ToBytes(),
-				coinEntry: EncodeToBytes(blockHeight, &coinEntry, skipMetadata...),
+				coinEntry: EncodeToBytes(blockHeight, &newCoin, skipMetadata...),
 			})
 		}
 		sort.Slice(royaltyCoinEntries, func(i int, j int) bool {
@@ -793,61 +878,167 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, BoolToByte(false))
 	}
 
+	// PrevTransactorBalanceEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorBalanceEntry, skipMetadata...)...)
+
+	// PrevCreatorBalanceEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevCreatorBalanceEntry, skipMetadata...)...)
 
+	// FounderRewardUtxoKey
 	data = append(data, EncodeToBytes(blockHeight, op.FounderRewardUtxoKey, skipMetadata...)...)
 
+	// PrevSenderBalanceEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevSenderBalanceEntry, skipMetadata...)...)
+
+	// PrevReceiverBalanceEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverBalanceEntry, skipMetadata...)...)
 
+	// PrevGlobalParamsEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevGlobalParamsEntry, skipMetadata...)...)
+
+	// PrevForbiddenPubKeyEntry
 	data = append(data, EncodeToBytes(blockHeight, op.PrevForbiddenPubKeyEntry, skipMetadata...)...)
 
+	// ClobberedProfileBugDESOLockedNanos
 	data = append(data, UintToBuf(op.ClobberedProfileBugDESOLockedNanos)...)
+
+	// CreatorCoinDESOLockedNanosDiff
 	// Note that int64 is encoded identically to uint64, the sign bit is just interpreted differently.
 	data = append(data, UintToBuf(uint64(op.CreatorCoinDESOLockedNanosDiff))...)
 
+	// SwapIdentityFromDESOLockedNanos
 	data = append(data, UintToBuf(op.SwapIdentityFromDESOLockedNanos)...)
+
+	// SwapIdentityToDESOLockedNanos
 	data = append(data, UintToBuf(op.SwapIdentityToDESOLockedNanos)...)
 
+	// AcceptNFTBidCreatorPublicKey
 	data = append(data, EncodeByteArray(op.AcceptNFTBidCreatorPublicKey)...)
+
+	// AcceptNFTBidBidderPublicKey
 	data = append(data, EncodeByteArray(op.AcceptNFTBidBidderPublicKey)...)
+
+	// AcceptNFTBidCreatorRoyaltyNanos
 	data = append(data, UintToBuf(op.AcceptNFTBidCreatorRoyaltyNanos)...)
+
+	// AcceptNFTBidCreatorDESORoyaltyNanos
 	data = append(data, UintToBuf(op.AcceptNFTBidCreatorDESORoyaltyNanos)...)
 
+	// AcceptNFTBidAdditionalCoinRoyalties
 	data = append(data, UintToBuf(uint64(len(op.AcceptNFTBidAdditionalCoinRoyalties)))...)
 	for _, pair := range op.AcceptNFTBidAdditionalCoinRoyalties {
 		data = append(data, EncodeToBytes(blockHeight, pair, skipMetadata...)...)
 	}
+
+	// AcceptNFTBidAdditionalDESORoyalties
 	data = append(data, UintToBuf(uint64(len(op.AcceptNFTBidAdditionalDESORoyalties)))...)
 	for _, pair := range op.AcceptNFTBidAdditionalDESORoyalties {
 		data = append(data, EncodeToBytes(blockHeight, pair, skipMetadata...)...)
 	}
 
+	// NFTBidCreatorPublicKey
 	data = append(data, EncodeByteArray(op.NFTBidCreatorPublicKey)...)
+
+	// NFTBidBidderPublicKey
 	data = append(data, EncodeByteArray(op.NFTBidBidderPublicKey)...)
+
+	// NFTBidCreatorRoyaltyNanos
 	data = append(data, UintToBuf(op.NFTBidCreatorRoyaltyNanos)...)
+
+	// NFTBidCreatorDESORoyaltyNanos
 	data = append(data, UintToBuf(op.NFTBidCreatorDESORoyaltyNanos)...)
 
+	// NFTBidAdditionalCoinRoyalties
 	data = append(data, UintToBuf(uint64(len(op.NFTBidAdditionalCoinRoyalties)))...)
 	for _, pair := range op.NFTBidAdditionalCoinRoyalties {
 		data = append(data, EncodeToBytes(blockHeight, pair, skipMetadata...)...)
 	}
+
+	// NFTBidAdditionalDESORoyalties
 	data = append(data, UintToBuf(uint64(len(op.NFTBidAdditionalDESORoyalties)))...)
 	for _, pair := range op.NFTBidAdditionalDESORoyalties {
 		data = append(data, EncodeToBytes(blockHeight, pair, skipMetadata...)...)
 	}
+
+	// PrevTransactorDAOCoinLimitOrderEntry
+	data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorDAOCoinLimitOrderEntry, skipMetadata...)...)
+
+	// PrevBalanceEntries. We translate the map[PKID]map[PKID]*BalanceEntry to a tuple <PKID, PKID, BalanceEntry>.
+	// Then we sort the bytes to make the ordering deterministic.
+	type prevBalance struct {
+		primaryPKID   []byte
+		secondaryPKID []byte
+		balanceBytes  []byte
+	}
+	encodePrevBalance := func(entry *prevBalance) []byte {
+		var data []byte
+		data = append(data, EncodeByteArray(entry.primaryPKID)...)
+		data = append(data, EncodeByteArray(entry.secondaryPKID)...)
+		data = append(data, EncodeByteArray(entry.balanceBytes)...)
+		return data
+	}
+	var prevBalanceEntries []*prevBalance
+	if op.PrevBalanceEntries != nil {
+		data = append(data, BoolToByte(true))
+		for primaryPkidIter, secondaryMap := range op.PrevBalanceEntries {
+			primaryPkid := primaryPkidIter
+			for secondaryPkidIter, balanceEntry := range secondaryMap {
+				secondaryPkid := secondaryPkidIter
+				newBalance := *balanceEntry
+				prevBalanceEntries = append(prevBalanceEntries, &prevBalance{
+					primaryPKID:   primaryPkid.ToBytes(),
+					secondaryPKID: secondaryPkid.ToBytes(),
+					balanceBytes:  EncodeToBytes(blockHeight, &newBalance, skipMetadata...),
+				})
+			}
+		}
+		sort.Slice(prevBalanceEntries, func(i int, j int) bool {
+			// We compare primaryPKID || secondaryPKID byte arrays so that we don't have to consider the edge-case where
+			// primaryPKID[i] == secondaryPKID[j].
+			switch bytes.Compare(append(prevBalanceEntries[i].primaryPKID, prevBalanceEntries[i].secondaryPKID...),
+				append(prevBalanceEntries[j].primaryPKID, prevBalanceEntries[j].secondaryPKID...)) {
+			case 0:
+				return true
+			case -1:
+				return true
+			case 1:
+				return false
+			}
+			return false
+		})
+		data = append(data, UintToBuf(uint64(len(prevBalanceEntries)))...)
+		for _, entry := range prevBalanceEntries {
+			data = append(data, encodePrevBalance(entry)...)
+		}
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+
+	// PrevMatchingOrders
+	data = append(data, UintToBuf(uint64(len(op.PrevMatchingOrders)))...)
+	for _, entry := range op.PrevMatchingOrders {
+		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+	}
+
+	// FilledDAOCoinLimitOrders
+	data = append(data, UintToBuf(uint64(len(op.FilledDAOCoinLimitOrders)))...)
+	for _, entry := range op.FilledDAOCoinLimitOrders {
+		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+	}
+
 	return data
 }
 
 func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	// Type
 	typeUint64, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading type")
 	}
 	op.Type = OperationType(uint(typeUint64))
 
+	// Entry
 	entry := &UtxoEntry{}
 	if exist, err := DecodeFromBytes(entry, rr); exist && err == nil {
 		op.Entry = entry
@@ -855,6 +1046,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading Entry")
 	}
 
+	// Key
 	key := &UtxoKey{}
 	if exist, err := DecodeFromBytes(key, rr); exist && err == nil {
 		op.Key = key
@@ -862,15 +1054,19 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading Key")
 	}
 
+	// PrevNanosPurchased
 	op.PrevNanosPurchased, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNanosPurchased")
 	}
+
+	// PrevUSDCentsPerBitcoin
 	op.PrevUSDCentsPerBitcoin, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevUSDCentsPerBitcoin")
 	}
 
+	// PrevPostEntry
 	prevPostEntry := &PostEntry{}
 	if exist, err := DecodeFromBytes(prevPostEntry, rr); exist && err == nil {
 		op.PrevPostEntry = prevPostEntry
@@ -878,6 +1074,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostEntry")
 	}
 
+	// PrevParentPostEntry
 	prevParentPostEntry := &PostEntry{}
 	if exist, err := DecodeFromBytes(prevParentPostEntry, rr); exist && err == nil {
 		op.PrevParentPostEntry = prevParentPostEntry
@@ -885,6 +1082,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevParentPostEntry")
 	}
 
+	// PrevGrandparentPostEntry
 	prevGrandparentPostEntry := &PostEntry{}
 	if exist, err := DecodeFromBytes(prevGrandparentPostEntry, rr); exist && err == nil {
 		op.PrevGrandparentPostEntry = prevGrandparentPostEntry
@@ -892,6 +1090,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGrandparentPostEntry")
 	}
 
+	// PrevRepostedPostEntry
 	prevRepostedPostEntry := &PostEntry{}
 	if exist, err := DecodeFromBytes(prevRepostedPostEntry, rr); exist && err == nil {
 		op.PrevRepostedPostEntry = prevRepostedPostEntry
@@ -899,6 +1098,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRepostedPostEntry")
 	}
 
+	// PrevProfileEntry
 	prevProfileEntry := &ProfileEntry{}
 	if exist, err := DecodeFromBytes(prevProfileEntry, rr); exist && err == nil {
 		op.PrevProfileEntry = prevProfileEntry
@@ -906,6 +1106,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevProfileEntry")
 	}
 
+	// PrevLikeEntry
 	prevLikeEntry := &LikeEntry{}
 	if exist, err := DecodeFromBytes(prevLikeEntry, rr); exist && err == nil {
 		op.PrevLikeEntry = prevLikeEntry
@@ -913,11 +1114,13 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLikeEntry")
 	}
 
+	// PrevLikeCount
 	op.PrevLikeCount, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLikeCount")
 	}
 
+	// PrevDiamondEntry
 	prevDiamondEntry := &DiamondEntry{}
 	if exist, err := DecodeFromBytes(prevDiamondEntry, rr); exist && err == nil {
 		op.PrevDiamondEntry = prevDiamondEntry
@@ -925,6 +1128,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDiamondEntry")
 	}
 
+	// PrevNFTEntry
 	prevNFTEntry := &NFTEntry{}
 	if exist, err := DecodeFromBytes(prevNFTEntry, rr); exist && err == nil {
 		op.PrevNFTEntry = prevNFTEntry
@@ -932,6 +1136,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNFTEntry")
 	}
 
+	// PrevNFTBidEntry
 	prevNFTBidEntry := &NFTBidEntry{}
 	if exist, err := DecodeFromBytes(prevNFTBidEntry, rr); exist && err == nil {
 		op.PrevNFTBidEntry = prevNFTBidEntry
@@ -939,6 +1144,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNFTBidEntry")
 	}
 
+	// DeletedNFTBidEntries
 	lenDeletedNFTBidEntries, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of DeletedNFTBidEntries")
@@ -947,11 +1153,12 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		deletedNFTBidEntry := &NFTBidEntry{}
 		if exist, err := DecodeFromBytes(deletedNFTBidEntry, rr); exist && err == nil {
 			op.DeletedNFTBidEntries = append(op.DeletedNFTBidEntries, deletedNFTBidEntry)
-		} else if err != nil {
+		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading deletedNFTBidEntry")
 		}
 	}
 
+	// NFTPaymentUtxoKeys
 	lenNFTPaymentUtxoKeys, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of NFTPaymentUtxoKeys")
@@ -960,11 +1167,12 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		NFTPaymentUtxoKey := &UtxoKey{}
 		if exist, err := DecodeFromBytes(NFTPaymentUtxoKey, rr); exist && err == nil {
 			op.NFTPaymentUtxoKeys = append(op.NFTPaymentUtxoKeys, NFTPaymentUtxoKey)
-		} else if err != nil {
+		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTPaymentUtxoKey")
 		}
 	}
 
+	// NFTSpentUtxoEntries
 	lenNFTSpentUtxoEntries, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of NFTSpentUtxoEntries")
@@ -973,11 +1181,12 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		NFTSpentUtxoEntry := &UtxoEntry{}
 		if exist, err := DecodeFromBytes(NFTSpentUtxoEntry, rr); exist && err == nil {
 			op.NFTSpentUtxoEntries = append(op.NFTSpentUtxoEntries, NFTSpentUtxoEntry)
-		} else if err != nil {
+		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTSpentUtxoEntry")
 		}
 	}
 
+	// PrevAcceptedNFTBidEntries
 	if existByte, err := ReadBoolByte(rr); existByte && err == nil {
 		lenPrevAcceptedNFTBidEntries, err := ReadUvarint(rr)
 		if err != nil {
@@ -988,7 +1197,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 			PrevAcceptedNFTBidEntry := &NFTBidEntry{}
 			if exist, err := DecodeFromBytes(PrevAcceptedNFTBidEntry, rr); exist && err == nil {
 				prevAcceptedNFTBidEntries = append(prevAcceptedNFTBidEntries, PrevAcceptedNFTBidEntry)
-			} else if err != nil {
+			} else {
 				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAcceptedNFTBidEntry")
 			}
 		}
@@ -997,6 +1206,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAcceptedNFTBidEntries")
 	}
 
+	// PrevDerivedKeyEntry
 	prevDerivedKeyEntry := &DerivedKeyEntry{}
 	if exist, err := DecodeFromBytes(prevDerivedKeyEntry, rr); exist && err == nil {
 		op.PrevDerivedKeyEntry = prevDerivedKeyEntry
@@ -1004,6 +1214,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDerivedKeyEntry")
 	}
 
+	// PrevMessagingKeyEntry
 	prevMessagingKeyEntry := &MessagingGroupEntry{}
 	if exist, err := DecodeFromBytes(prevMessagingKeyEntry, rr); exist && err == nil {
 		op.PrevMessagingKeyEntry = prevMessagingKeyEntry
@@ -1011,6 +1222,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevMessagingKeyEntry")
 	}
 
+	// PrevRepostEntry
 	prevRepostEntry := &RepostEntry{}
 	if exist, err := DecodeFromBytes(prevRepostEntry, rr); exist && err == nil {
 		op.PrevRepostEntry = prevRepostEntry
@@ -1018,11 +1230,13 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRepostEntry")
 	}
 
+	// PrevRepostCount
 	op.PrevRepostCount, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRepostCount")
 	}
 
+	// PrevCoinEntry
 	prevCoinEntry := &CoinEntry{}
 	if exist, err := DecodeFromBytes(prevCoinEntry, rr); exist && err == nil {
 		op.PrevCoinEntry = prevCoinEntry
@@ -1030,6 +1244,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCoinEntry")
 	}
 
+	// PrevCoinRoyaltyCoinEntries
 	type royaltyEntry struct {
 		pkid      []byte
 		coinEntry []byte
@@ -1046,7 +1261,6 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 		return entry, nil
 	}
-
 	if existByte, err := ReadBoolByte(rr); existByte && err == nil {
 		op.PrevCoinRoyaltyCoinEntries = make(map[PKID]CoinEntry)
 		lenPrevCoinRoyaltyCoinEntries, err := ReadUvarint(rr)
@@ -1071,6 +1285,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCoinRoyaltyCoinEntries")
 	}
 
+	// PrevTransactorBalanceEntry
 	prevTransactorBalanceEntry := &BalanceEntry{}
 	if exist, err := DecodeFromBytes(prevTransactorBalanceEntry, rr); exist && err == nil {
 		op.PrevTransactorBalanceEntry = prevTransactorBalanceEntry
@@ -1078,6 +1293,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorBalanceEntry")
 	}
 
+	// PrevCreatorBalanceEntry
 	prevCreatorBalanceEntry := &BalanceEntry{}
 	if exist, err := DecodeFromBytes(prevCreatorBalanceEntry, rr); exist && err == nil {
 		op.PrevCreatorBalanceEntry = prevCreatorBalanceEntry
@@ -1085,6 +1301,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCreatorBalanceEntry")
 	}
 
+	// FounderRewardUtxoKey
 	founderRewardUtxoKey := &UtxoKey{}
 	if exist, err := DecodeFromBytes(founderRewardUtxoKey, rr); exist && err == nil {
 		op.FounderRewardUtxoKey = founderRewardUtxoKey
@@ -1092,12 +1309,15 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FounderRewardUtxoKey")
 	}
 
+	// PrevSenderBalanceEntry
 	prevSenderBalanceEntry := &BalanceEntry{}
 	if exist, err := DecodeFromBytes(prevSenderBalanceEntry, rr); exist && err == nil {
 		op.PrevSenderBalanceEntry = prevSenderBalanceEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevSenderBalanceEntry")
 	}
+
+	// PrevReceiverBalanceEntry
 	prevReceiverBalanceEntry := &BalanceEntry{}
 	if exist, err := DecodeFromBytes(prevReceiverBalanceEntry, rr); exist && err == nil {
 		op.PrevReceiverBalanceEntry = prevReceiverBalanceEntry
@@ -1105,12 +1325,15 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevReceiverBalanceEntry")
 	}
 
+	// PrevGlobalParamsEntry
 	prevGlobalParamsEntry := &GlobalParamsEntry{}
 	if exist, err := DecodeFromBytes(prevGlobalParamsEntry, rr); exist && err == nil {
 		op.PrevGlobalParamsEntry = prevGlobalParamsEntry
 	} else if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalParamsEntry")
 	}
+
+	// PrevForbiddenPubKeyEntry
 	prevForbiddenPubKeyEntry := &ForbiddenPubKeyEntry{}
 	if exist, err := DecodeFromBytes(prevForbiddenPubKeyEntry, rr); exist && err == nil {
 		op.PrevForbiddenPubKeyEntry = prevForbiddenPubKeyEntry
@@ -1118,40 +1341,56 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevForbiddenPubKeyEntry")
 	}
 
+	// ClobberedProfileBugDESOLockedNanos
 	op.ClobberedProfileBugDESOLockedNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading ClobberedProfileBugDESOLockedNanos")
 	}
+
+	// CreatorCoinDESOLockedNanosDiff
 	uint64CreatorCoinDESOLockedNanosDiff, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading CreatorCoinDESOLockedNanosDiff")
 	}
 	op.CreatorCoinDESOLockedNanosDiff = int64(uint64CreatorCoinDESOLockedNanosDiff)
+
+	// SwapIdentityFromDESOLockedNanos
 	op.SwapIdentityFromDESOLockedNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading SwapIdentityFromDESOLockedNanos")
 	}
+
+	// SwapIdentityToDESOLockedNanos
 	op.SwapIdentityToDESOLockedNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading SwapIdentityToDESOLockedNanos")
 	}
+
+	// AcceptNFTBidCreatorPublicKey
 	op.AcceptNFTBidCreatorPublicKey, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidCreatorPublicKey")
 	}
+
+	// AcceptNFTBidBidderPublicKey
 	op.AcceptNFTBidBidderPublicKey, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidBidderPublicKey")
 	}
+
+	// AcceptNFTBidCreatorRoyaltyNanos
 	op.AcceptNFTBidCreatorRoyaltyNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidCreatorRoyaltyNanos")
 	}
+
+	// AcceptNFTBidCreatorDESORoyaltyNanos
 	op.AcceptNFTBidCreatorDESORoyaltyNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidCreatorDESORoyaltyNanos")
 	}
 
+	// AcceptNFTBidAdditionalCoinRoyalties
 	lenAcceptNFTBidAdditionalCoinRoyalties, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalCoinRoyalties")
@@ -1160,11 +1399,12 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		pair := &PublicKeyRoyaltyPair{}
 		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
 			op.AcceptNFTBidAdditionalCoinRoyalties = append(op.AcceptNFTBidAdditionalCoinRoyalties, pair)
-		} else if err != nil {
+		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalCoinRoyalties")
 		}
 	}
 
+	// AcceptNFTBidAdditionalDESORoyalties
 	lenAcceptNFTBidAdditionalDESORoyalties, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalDESORoyalties")
@@ -1173,28 +1413,36 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		pair := &PublicKeyRoyaltyPair{}
 		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
 			op.AcceptNFTBidAdditionalDESORoyalties = append(op.AcceptNFTBidAdditionalDESORoyalties, pair)
-		} else if err != nil {
+		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalDESORoyalties")
 		}
 	}
 
+	// NFTBidCreatorPublicKey
 	op.NFTBidCreatorPublicKey, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidCreatorPublicKey")
 	}
+
+	// NFTBidBidderPublicKey
 	op.NFTBidBidderPublicKey, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidBidderPublicKey")
 	}
+
+	// NFTBidCreatorRoyaltyNanos
 	op.NFTBidCreatorRoyaltyNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidCreatorRoyaltyNanos")
 	}
+
+	// NFTBidCreatorDESORoyaltyNanos
 	op.NFTBidCreatorDESORoyaltyNanos, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidCreatorDESORoyaltyNanos")
 	}
 
+	// NFTBidAdditionalCoinRoyalties
 	lenNFTBidAdditionalCoinRoyalties, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalCoinRoyalties")
@@ -1203,12 +1451,13 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		pair := &PublicKeyRoyaltyPair{}
 		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
 			op.NFTBidAdditionalCoinRoyalties = append(op.NFTBidAdditionalCoinRoyalties, pair)
-		} else if err != nil {
+		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalCoinRoyalties")
 		}
 
 	}
 
+	// NFTBidAdditionalDESORoyalties
 	lenNFTBidAdditionalDESORoyalties, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalDESORoyalties")
@@ -1217,10 +1466,98 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		pair := &PublicKeyRoyaltyPair{}
 		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
 			op.NFTBidAdditionalDESORoyalties = append(op.NFTBidAdditionalDESORoyalties, pair)
-		} else if err != nil {
+		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalDESORoyalties")
 		}
 	}
+
+	// PrevTransactorDAOCoinLimitOrderEntry
+	prevTransactorDAOCoinLimitOrderEntry := &DAOCoinLimitOrderEntry{}
+	if exist, err := DecodeFromBytes(prevTransactorDAOCoinLimitOrderEntry, rr); exist && err == nil {
+		op.PrevTransactorDAOCoinLimitOrderEntry = prevTransactorDAOCoinLimitOrderEntry
+	} else if err != nil {
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorDAOCoinLimitOrderEntry")
+	}
+
+	// PrevBalanceEntries
+	type prevBalance struct {
+		primaryPKID   []byte
+		secondaryPKID []byte
+		balanceBytes  []byte
+	}
+	decodePrevBalance := func(rr *bytes.Reader) (*prevBalance, error) {
+		entry := &prevBalance{}
+		entry.primaryPKID, err = DecodeByteArray(rr)
+		if err != nil {
+			return nil, err
+		}
+		entry.secondaryPKID, err = DecodeByteArray(rr)
+		if err != nil {
+			return nil, err
+		}
+		entry.balanceBytes, err = DecodeByteArray(rr)
+		if err != nil {
+			return nil, err
+		}
+		return entry, nil
+	}
+	if exist, err := ReadBoolByte(rr); exist && err == nil {
+		op.PrevBalanceEntries = make(map[PKID]map[PKID]*BalanceEntry)
+		lenPrevBalanceEntries, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevBalanceEntries")
+		}
+		for ; lenPrevBalanceEntries > 0; lenPrevBalanceEntries-- {
+			// decode the <pkid, pkid, BalanceEntry> tuples.
+			entry, err := decodePrevBalance(rr)
+			if err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevBalanceEntries")
+			}
+
+			primaryPKID := *NewPKID(entry.primaryPKID)
+			secondaryPKID := *NewPKID(entry.secondaryPKID)
+			balanceEntry := &BalanceEntry{}
+			rrBalance := bytes.NewReader(entry.balanceBytes)
+			if exist, err := DecodeFromBytes(balanceEntry, rrBalance); !exist || err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevBalanceEntries")
+			}
+			if _, exist := op.PrevBalanceEntries[primaryPKID]; !exist {
+				op.PrevBalanceEntries[primaryPKID] = make(map[PKID]*BalanceEntry)
+			}
+			op.PrevBalanceEntries[primaryPKID][secondaryPKID] = balanceEntry
+		}
+	} else if err != nil {
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevBalanceEntries")
+	}
+
+	// PrevMatchingOrders
+	if lenPrevMatchingOrders, err := ReadUvarint(rr); err == nil {
+		for ; lenPrevMatchingOrders > 0; lenPrevMatchingOrders-- {
+			prevOrder := &DAOCoinLimitOrderEntry{}
+			if exist, err := DecodeFromBytes(prevOrder, rr); exist && err == nil {
+				op.PrevMatchingOrders = append(op.PrevMatchingOrders)
+			} else {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevMatchingOrders")
+			}
+		}
+	} else {
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevMatchingOrders")
+	}
+
+	// FilledDAOCoinLimitOrders
+	if lenFilledDAOCoinLimitOrders, err := ReadUvarint(rr); err == nil {
+		for ; lenFilledDAOCoinLimitOrders > 0; lenFilledDAOCoinLimitOrders-- {
+			filledDAOCoinLimitOrder := &FilledDAOCoinLimitOrder{}
+			if exist, err := DecodeFromBytes(filledDAOCoinLimitOrder, rr); exist && err == nil {
+				op.FilledDAOCoinLimitOrders = append(op.FilledDAOCoinLimitOrders, filledDAOCoinLimitOrder)
+			} else {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
+			}
+		}
+	} else {
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
+	}
+
 	return nil
 }
 
@@ -2275,7 +2612,9 @@ func (dk *DerivedKeyEntry) Copy() *DerivedKeyEntry {
 		return nil
 	}
 	newEntry := *dk
-	newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	if dk.TransactionSpendingLimitTracker != nil {
+		newEntry.TransactionSpendingLimitTracker = dk.TransactionSpendingLimitTracker.Copy()
+	}
 	return &newEntry
 }
 
@@ -2876,6 +3215,16 @@ type BalanceEntry struct {
 	isDeleted bool
 }
 
+func (entry *BalanceEntry) Copy() *BalanceEntry {
+	return &BalanceEntry{
+		HODLerPKID:   entry.HODLerPKID.NewPKID(),
+		CreatorPKID:  entry.CreatorPKID.NewPKID(),
+		BalanceNanos: *entry.BalanceNanos.Clone(),
+		HasPurchased: entry.HasPurchased,
+		isDeleted:    entry.isDeleted,
+	}
+}
+
 func (be *BalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
@@ -2917,7 +3266,7 @@ func (be *BalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 }
 
 func (be *BalanceEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return byte(0)
 }
 
 func (be *BalanceEntry) GetEncoderType() EncoderType {
@@ -3307,7 +3656,6 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 	}
 }
 
-//TODO: Test this
 func EncodePKIDuint64Map(pkidMap map[PKID]uint64) []byte {
 	var data []byte
 
@@ -3540,25 +3888,477 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 }
 
 func EncodeUint256(number *uint256.Int) []byte {
-	numberBytes := number.Bytes()
-	return EncodeByteArray(numberBytes)
+	var data []byte
+	if number != nil {
+		data = append(data, BoolToByte(true))
+		numberBytes := number.Bytes()
+		data = append(data, EncodeByteArray(numberBytes)...)
+	} else {
+		data = append(data, BoolToByte(false))
+	}
+	return data
 }
 
 func DecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
-	maxUint256BytesLen := len(MaxUint256.Bytes())
-	intLen, err := ReadUvarint(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeUint256: Problem reading length")
+	if existenceByte, err := ReadBoolByte(rr); existenceByte && err == nil {
+		maxUint256BytesLen := len(MaxUint256.Bytes())
+		intLen, err := ReadUvarint(rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodeUint256: Problem reading length")
+		}
+		if intLen > uint64(maxUint256BytesLen) {
+			return nil, fmt.Errorf("DecodeUint256: Length (%v) exceeds max (%v) length",
+				intLen, maxUint256BytesLen)
+		}
+
+		numberBytes := make([]byte, intLen)
+		_, err = io.ReadFull(rr, numberBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodeUint256: Error reading uint256")
+		}
+		return uint256.NewInt().SetBytes(numberBytes), nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "DecodeUint256: Error reading uint256")
+	} else {
+		return nil, nil
 	}
-	if intLen > uint64(maxUint256BytesLen) {
-		return nil, fmt.Errorf("DecodeUint256: Length (%v) exceeds max (%v) length",
-			intLen, maxUint256BytesLen)
+}
+
+// -----------------------------------
+// DAO coin limit order
+// -----------------------------------
+
+type DAOCoinLimitOrderEntry struct {
+	// OrderID is the txn hash (unique identifier) for this order.
+	OrderID *BlockHash
+	// TransactorPKID is the PKID of the user who created this order.
+	TransactorPKID *PKID
+	// The PKID of the coin that we're going to buy
+	BuyingDAOCoinCreatorPKID *PKID
+	// The PKID of the coin that we're going to sell
+	SellingDAOCoinCreatorPKID *PKID
+	// ScaledExchangeRateCoinsToSellPerCoinToBuy specifies how many of the coins
+	// associated with SellingDAOCoinCreatorPKID we need to convert in order
+	// to get one BuyingDAOCoinCreatorPKID. For example, if this value was
+	// 2, then we would need to convert 2 SellingDAOCoinCreatorPKID
+	// coins to get 1 BuyingDAOCoinCreatorPKID. Note, however, that to represent
+	// 2, we would actually have to set ScaledExchangeRateCoinsToSellPerCoinToBuy to
+	// be equal to 2*1e38 because of the representation format we describe
+	// below.
+	//
+	// The exchange rate is represented as a fixed-point value, which works
+	// as follows:
+	// - Whenever we reference an exchange rate, call it Y, we pass it
+	//   around as a uint256 BUT we consider it to be implicitly divided
+	//   by 1e38.
+	// - For example, to represent a decimal number like 123456789.987654321,
+	//   call it X, we would pass around Y = X*1e38 = 1234567899876543210000000000000000000000000000
+	//   as a uint256.
+	//   Then, to do operations with Y, we would make sure to always divide by
+	//   1e38 before returning a final quantity.
+	// - We will refer to Y as "scaled." The value of ScaledExchangeRateCoinsToSellPerCoinToBuy
+	//   will always be scaled, meaning it is a uint256 that we implicitly
+	//   assume represents a number that is divided by 1e38.
+	//
+	// This scheme is also referred to as "fixed point," and a similar scheme
+	// is utilized by Uniswap. You can learn more about how this works here:
+	// - https://en.wikipedia.org/wiki/Q_(number_format)
+	// - https://ethereum.org/de/developers/tutorials/uniswap-v2-annotated-code/#FixedPoint
+	// - https://uniswap.org/whitepaper.pdf
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	// QuantityBaseUnits expresses how many "base units" of the coin this order is
+	// buying. Note that we could have called this QuantityToBuyNanos, and in the
+	// case where we're buying DESO, the base unit is a "nano." However, we call it
+	// "base unit" rather than nano because other DAO coins might decide to use a
+	// different scheme than nanos for their base unit. In particular, we expect 1e18
+	// base units to equal 1 DAO coin, rather than using nanos.
+	QuantityToFillInBaseUnits *uint256.Int
+	// This is one of ASK or BID. If the operation type is an ASK, then the quantity
+	// column applies to the selling coin. I.e. the order is considered fulfilled
+	// once the selling coin quantity to fill is zero. If the operation type is a BID,
+	// then quantity column applies to the buying coin. I.e. the order is considered
+	// fulfilled once the buying coin quantity to fill is zero.
+	OperationType DAOCoinLimitOrderOperationType
+	// This is the block height at which the order was placed. We use the block height
+	// to break ties between orders. If there are two orders that could be filled, we
+	// pick the one that was submitted earlier.
+	BlockHeight uint32
+
+	isDeleted bool
+}
+
+type DAOCoinLimitOrderOperationType uint64
+
+const (
+	// We intentionally skip zero as otherwise that would be the default value.
+	DAOCoinLimitOrderOperationTypeASK DAOCoinLimitOrderOperationType = 1
+	DAOCoinLimitOrderOperationTypeBID DAOCoinLimitOrderOperationType = 2
+)
+
+func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
+	return &DAOCoinLimitOrderEntry{
+		OrderID:                   order.OrderID.NewBlockHash(),
+		TransactorPKID:            order.TransactorPKID.NewPKID(),
+		BuyingDAOCoinCreatorPKID:  order.BuyingDAOCoinCreatorPKID.NewPKID(),
+		SellingDAOCoinCreatorPKID: order.SellingDAOCoinCreatorPKID.NewPKID(),
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
+		QuantityToFillInBaseUnits:                 order.QuantityToFillInBaseUnits.Clone(),
+		OperationType:                             order.OperationType,
+		BlockHeight:                               order.BlockHeight,
+		isDeleted:                                 order.isDeleted,
+	}
+}
+
+func (order *DAOCoinLimitOrderEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeToBytes(blockHeight, order.OrderID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, order.TransactorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, order.BuyingDAOCoinCreatorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, order.SellingDAOCoinCreatorPKID, skipMetadata...)...)
+	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, EncodeUint256(order.QuantityToFillInBaseUnits)...)
+	data = append(data, UintToBuf(uint64(order.OperationType))...)
+	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
+
+	return data
+}
+
+func (order *DAOCoinLimitOrderEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	orderID := &BlockHash{}
+	if exist, err := DecodeFromBytes(orderID, rr); exist && err == nil {
+		order.OrderID = orderID
+	} else if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem decoding OrderID")
 	}
 
-	numberBytes := make([]byte, intLen)
-	_, err = io.ReadFull(rr, numberBytes)
-	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeUint256: Error reading uint256")
+	// TransactorPKID
+	transactorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
+		order.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading TransactorPKID")
 	}
-	return uint256.NewInt().SetBytes(numberBytes), nil
+
+	// BuyingDAOCoinCreatorPKID
+	buyingDAOCoinCreatorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(buyingDAOCoinCreatorPKID, rr); exist && err == nil {
+		order.BuyingDAOCoinCreatorPKID = buyingDAOCoinCreatorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading BuyingDAOCoinCreatorPKID")
+	}
+
+	// SellingDAOCoinCreatorPKID
+	sellingDAOCoinCreatorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(sellingDAOCoinCreatorPKID, rr); exist && err == nil {
+		order.SellingDAOCoinCreatorPKID = sellingDAOCoinCreatorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading SellingDAOCoinCreatorPKID")
+	}
+
+	// ScaledExchangeRateCoinsToSellPerCoinToBuy
+	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = DecodeUint256(rr); err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading ScaledExchangeRateCoinsToSellPerCoinToBuy")
+	}
+
+	// QuantityToFillInBaseUnits
+	if order.QuantityToFillInBaseUnits, err = DecodeUint256(rr); err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading QuantityToFillInBaseUnits")
+	}
+
+	// OperationType
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Error reading OperationType")
+	}
+	order.OperationType = DAOCoinLimitOrderOperationType(operationType)
+
+	// BlockHeight
+	daoBlockHeight, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.Decode: Error reading BlockHeight: %v", err)
+	}
+	if daoBlockHeight > uint64(math.MaxUint32) {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Invalid block height %d: Greater than max uint32", daoBlockHeight)
+	}
+	order.BlockHeight = uint32(daoBlockHeight)
+
+	return nil
+}
+
+func (order *DAOCoinLimitOrderEntry) GetVersionByte(blockHeight uint64) byte {
+	return byte(0)
+}
+
+func (order *DAOCoinLimitOrderEntry) GetEncoderType() EncoderType {
+	return EncoderTypeDAOCoinLimitOrderEntry
+}
+
+func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {
+	// We prefer the order with the higher exchange rate. This would result
+	// in more of their selling DAO coin being offered to the transactor
+	// for each of the corresponding buying DAO coin.
+	if !order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Eq(
+		other.ScaledExchangeRateCoinsToSellPerCoinToBuy) {
+
+		// order.ScaledPrice > other.ScaledPrice
+		return order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Gt(
+			other.ScaledExchangeRateCoinsToSellPerCoinToBuy)
+	}
+
+	// FIFO, prefer older orders first, i.e. lower block height.
+	if order.BlockHeight != other.BlockHeight {
+		return order.BlockHeight < other.BlockHeight
+	}
+
+	// To break a tie and guarantee idempotency in sorting,
+	// prefer higher OrderIDs. This matches the BadgerDB
+	// ordering where we SEEK descending.
+	return bytes.Compare(order.OrderID.ToBytes(), other.OrderID.ToBytes()) > 0
+}
+
+func (order *DAOCoinLimitOrderEntry) BaseUnitsToBuyUint256() (*uint256.Int, error) {
+	if order.OperationType == DAOCoinLimitOrderOperationTypeASK {
+		// In this case, the quantity specified in the order is the amount to sell,
+		// so needs to be converted.
+		return ComputeBaseUnitsToBuyUint256(
+			order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			order.QuantityToFillInBaseUnits)
+	} else if order.OperationType == DAOCoinLimitOrderOperationTypeBID {
+		// In this case, the quantity specified in the order is the amount to buy,
+		// so can be returned as-is.
+		return order.QuantityToFillInBaseUnits, nil
+	} else {
+		return nil, fmt.Errorf("Invalid OperationType %v", order.OperationType)
+	}
+}
+
+func ComputeBaseUnitsToBuyUint256(
+	scaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int,
+	quantityToSellBaseUnits *uint256.Int) (*uint256.Int, error) {
+	// Converts quantity to sell to quantity to buy according to the given exchange rate.
+	// Quantity to buy
+	//	 = Scaling factor * Quantity to sell / Scaled exchange rate coins to sell per coin to buy
+	//	 = Scaling factor * Quantity to sell / (Scaling factor * Quantity to sell / Quantity to Buy)
+	//	 = 1 / (1 / Quantity to buy)
+	//	 = Quantity to buy
+
+	// Perform a few validations.
+	if scaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
+		scaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		// This should never happen.
+		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid exchange rate")
+	}
+
+	if quantityToSellBaseUnits == nil || quantityToSellBaseUnits.IsZero() {
+		// This should never happen.
+		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid quantity to sell")
+	}
+
+	// Perform calculation.
+	scaledQuantityToSellBigInt := big.NewInt(0).Mul(
+		OneE38.ToBig(), quantityToSellBaseUnits.ToBig())
+
+	quantityToBuyBigInt := big.NewInt(0).Div(
+		scaledQuantityToSellBigInt, scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig())
+
+	// Check for overflow.
+	if quantityToBuyBigInt.Cmp(MaxUint256.ToBig()) > 0 {
+		return nil, errors.Wrapf(
+			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
+			"ComputeBaseUnitsToBuyUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
+				"quantityToSellBaseUnits: %v",
+			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
+			quantityToSellBaseUnits.Hex())
+	}
+
+	// We don't trust the overflow checker in uint256. It's too risky because
+	// it could cause a money printer bug if there's a problem with it. We
+	// manually check for overflow above.
+	quantityToBuyUint256, _ := uint256.FromBig(quantityToBuyBigInt)
+
+	// Error if resulting quantity to buy is < 1 base unit.
+	if quantityToBuyUint256.IsZero() {
+		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
+	}
+
+	return quantityToBuyUint256, nil
+}
+
+func (order *DAOCoinLimitOrderEntry) BaseUnitsToSellUint256() (*uint256.Int, error) {
+	if order.OperationType == DAOCoinLimitOrderOperationTypeBID {
+		// In this case, the quantity specified in the order is the amount to buy,
+		// so needs to be converted.
+		return ComputeBaseUnitsToSellUint256(
+			order.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			order.QuantityToFillInBaseUnits)
+	} else if order.OperationType == DAOCoinLimitOrderOperationTypeASK {
+		// In this case, the quantity specified in the order is the amount to sell,
+		// so can be returned as-is.
+		return order.QuantityToFillInBaseUnits, nil
+	} else {
+		return nil, fmt.Errorf("Invalid OperationType %v", order.OperationType)
+	}
+}
+
+func ComputeBaseUnitsToSellUint256(
+	scaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int,
+	quantityToBuyBaseUnits *uint256.Int) (*uint256.Int, error) {
+	// Converts quantity to buy to quantity to sell according to the given exchange rate.
+	// Quantity to sell
+	//   = Scaled exchange rate coins to sell per coin to buy * Quantity to buy / Scaling factor
+	//   = (Scaling factor * Quantity to sell / Quantity to buy) * Quantity to buy / Scaling factor
+	//   = Quantity to sell
+
+	// Perform a few validations.
+	if scaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
+		scaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		// This should never happen.
+		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid exchange rate")
+	}
+
+	if quantityToBuyBaseUnits == nil || quantityToBuyBaseUnits.IsZero() {
+		// This should never happen.
+		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid quantity to buy")
+	}
+
+	// Perform calculation.
+	// Note that we account for overflow here. Not doing this could result
+	// in a money printer bug. You need to check the following:
+	// scaledExchangeRateCoinsToSellPerCoinToBuy * quantityToBuyBaseUnits < uint256max
+	// -> scaledExchangeRateCoinsToSellPerCoinToBuy < uint256max / quantitybaseunits
+	//
+	// The division afterward is inherently safe so no need to check it.
+
+	// Returns the total cost of the inputted price x quantity as a uint256.
+	scaledQuantityToSellBigint := big.NewInt(0).Mul(
+		scaledExchangeRateCoinsToSellPerCoinToBuy.ToBig(),
+		quantityToBuyBaseUnits.ToBig())
+
+	// Check for overflow.
+	if scaledQuantityToSellBigint.Cmp(MaxUint256.ToBig()) > 0 {
+		return nil, errors.Wrapf(
+			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
+			"ComputeBaseUnitsToSellUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
+				"quantityToBuyBaseUnits: %v",
+			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
+			quantityToBuyBaseUnits.Hex())
+	}
+
+	// We don't trust the overflow checker in uint256. It's too risky because
+	// it could cause a money printer bug if there's a problem with it. We
+	// manually check for overflow above.
+	scaledQuantityToSellUint256, _ := uint256.FromBig(scaledQuantityToSellBigint)
+	quantityToSellUint256, err := SafeUint256().Div(scaledQuantityToSellUint256, OneE38)
+	if err != nil {
+		// This should never happen as we're dividing by a known constant.
+		return nil, errors.Wrapf(err, "ComputeBaseUnitsToSellUint256: ")
+	}
+
+	// Error if resulting quantity to sell is < 1 base unit.
+	if quantityToSellUint256.IsZero() {
+		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
+	}
+
+	return quantityToSellUint256, nil
+}
+
+type DAOCoinLimitOrderMapKey struct {
+	// An OrderID uniquely identifies an order
+	OrderID BlockHash
+}
+
+func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
+	return DAOCoinLimitOrderMapKey{
+		OrderID: *order.OrderID.NewBlockHash(),
+	}
+}
+
+// FilledDAOCoinLimitOrder only exists to support understanding what orders were
+// fulfilled when connecting a DAO Coin Limit Order Txn
+type FilledDAOCoinLimitOrder struct {
+	OrderID                       *BlockHash
+	TransactorPKID                *PKID
+	BuyingDAOCoinCreatorPKID      *PKID
+	SellingDAOCoinCreatorPKID     *PKID
+	CoinQuantityInBaseUnitsBought *uint256.Int
+	CoinQuantityInBaseUnitsSold   *uint256.Int
+	IsFulfilled                   bool
+}
+
+func (order *FilledDAOCoinLimitOrder) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeToBytes(blockHeight, order.OrderID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, order.TransactorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, order.BuyingDAOCoinCreatorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, order.SellingDAOCoinCreatorPKID, skipMetadata...)...)
+	data = append(data, EncodeUint256(order.CoinQuantityInBaseUnitsBought)...)
+	data = append(data, EncodeUint256(order.CoinQuantityInBaseUnitsSold)...)
+	data = append(data, BoolToByte(order.IsFulfilled))
+
+	return data
+}
+
+func (order *FilledDAOCoinLimitOrder) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// OrderID
+	orderID := &BlockHash{}
+	if exist, err := DecodeFromBytes(orderID, rr); exist && err == nil {
+		order.OrderID = orderID
+	} else if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrder.Decode: Problem reading OrderID")
+	}
+
+	// TransactorPKID
+	transactorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
+		order.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading TransactorPKID")
+	}
+
+	// BuyingDAOCoinCreatorPKID
+	buyingDAOCoinCreatorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(buyingDAOCoinCreatorPKID, rr); exist && err == nil {
+		order.BuyingDAOCoinCreatorPKID = buyingDAOCoinCreatorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading BuyingDAOCoinCreatorPKID")
+	}
+
+	// SellingDAOCoinCreatorPKID
+	sellingDAOCoinCreatorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(sellingDAOCoinCreatorPKID, rr); exist && err == nil {
+		order.SellingDAOCoinCreatorPKID = sellingDAOCoinCreatorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading SellingDAOCoinCreatorPKID")
+	}
+
+	// CoinQuantityInBaseUnitsBought
+	if order.CoinQuantityInBaseUnitsBought, err = DecodeUint256(rr); err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading CoinQuantityInBaseUnitsBought")
+	}
+
+	// CoinQuantityInBaseUnitsSold
+	if order.CoinQuantityInBaseUnitsSold, err = DecodeUint256(rr); err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading CoinQuantityInBaseUnitsSold")
+	}
+
+	// IsFulfilled
+	if order.IsFulfilled, err = ReadBoolByte(rr); err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading IsFulfilled")
+	}
+
+	return nil
+}
+
+func (order *FilledDAOCoinLimitOrder) GetVersionByte(blockHeight uint64) byte {
+	return byte(0)
+}
+
+func (order *FilledDAOCoinLimitOrder) GetEncoderType() EncoderType {
+	return EncoderTypeFilledDAOCoinLimitOrder
 }

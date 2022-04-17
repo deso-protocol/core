@@ -34,7 +34,7 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 // accessSignature is the signed hash of (derivedPublicKey + expirationBlock + transaction spending limit)
 // in DER format, made with the ownerPublicKey.
 func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, derivedPublicKey []byte,
-	expirationBlock uint64, transactionSpendingLimit *TransactionSpendingLimit, accessSignature []byte, blockHeight uint64) error {
+	expirationBlock uint64, transactionSpendingLimitBytes []byte, accessSignature []byte, blockHeight uint64) error {
 
 	// Sanity-check and convert ownerPublicKey to *btcec.PublicKey.
 	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
@@ -46,14 +46,8 @@ func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, d
 		return errors.Wrapf(err, "_verifyAccessSignatureWithTransactionSpendingLimit: Problem parsing derived public key")
 	}
 
-	if transactionSpendingLimit == nil {
+	if len(transactionSpendingLimitBytes) == 0 {
 		return fmt.Errorf("_verifyAccessSignatureWithTransactionSpendingLimit: Transaction Spending limit object is required")
-	}
-
-	var transactionSpendingLimitBytes []byte
-	var err error
-	if transactionSpendingLimitBytes, err = transactionSpendingLimit.ToBytes(); err != nil {
-		return errors.Wrapf(err, "_verifyAccessSignatureWithTransactionSpendingLimit: Problem parsing transaction spending limit")
 	}
 
 	// Compute a hash of derivedPublicKey+expirationBlock.
@@ -147,6 +141,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+			DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			newTransactionSpendingLimit = prevDerivedKeyEntry.TransactionSpendingLimitTracker
@@ -155,6 +150,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		// This is the transaction spending limit object passed in the extra data field. This is required for verifying the
 		// signature later.
 		var transactionSpendingLimit *TransactionSpendingLimit
+		var transactionSpendingLimitBytes []byte
 		if txn.ExtraData != nil {
 			// Only overwrite the memo if the key exists in extra data
 			if memoBytes, exists := txn.ExtraData[DerivedPublicKey]; exists {
@@ -162,7 +158,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			}
 			// If the transaction spending limit key exists, parse it and merge it into the existing transaction
 			// spending limit tracker
-			if transactionSpendingLimitBytes, exists := txn.ExtraData[TransactionSpendingLimitKey]; exists {
+			exists := false
+			if transactionSpendingLimitBytes, exists = txn.ExtraData[TransactionSpendingLimitKey]; exists {
 				transactionSpendingLimit = &TransactionSpendingLimit{}
 				rr := bytes.NewReader(transactionSpendingLimitBytes)
 				if err := transactionSpendingLimit.FromBytes(rr); err != nil {
@@ -201,6 +198,13 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
 					}
 				}
+				for daoCoinLimitOrderLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinLimitOrderLimitMap {
+					if transactionCount == 0 {
+						delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
+					} else {
+						newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
+					}
+				}
 			}
 		}
 		// We skip verifying the access signature if the transaction is signed by the owner.
@@ -209,7 +213,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				ownerPublicKey,
 				derivedPublicKey,
 				txMeta.ExpirationBlock,
-				transactionSpendingLimit,
+				transactionSpendingLimitBytes,
 				txMeta.AccessSignature,
 				uint64(blockHeight)); err != nil {
 				return 0, 0, nil, errors.Wrap(
